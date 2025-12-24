@@ -542,8 +542,9 @@
                     :style="{ left: `${((source.end_time - source.start_time) / (clipEnd - clipStart)) * 100}%` }"
                   ></div>
 
-                  <!-- Waveform canvas overlay -->
+                  <!-- Waveform canvas overlay (hidden if audio has been extracted) -->
                   <canvas
+                    v-if="!source.audioExtracted"
                     :ref="(el) => setSourceWaveformCanvasRef(el, source.id)"
                     class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
                     style="mix-blend-mode: screen; z-index: 5"
@@ -1618,7 +1619,8 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
     // Editor mode: simple linear layout (no video segments to align with)
     if (props.editorMode) {
-      const duration = props.duration || 300;
+      // Use totalDuration for consistency with video source positioning
+      const duration = totalDuration.value;
       if (duration <= 0) return [];
 
       const leftPercent = (audioStart / duration) * 100;
@@ -2971,17 +2973,28 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       // Calculate the trim parameters based on the segment's trim settings
       // trim_start is how far into the source video to start
       // The segment duration is (end_time - start_time) on the timeline
-      const trimStart = source.trim_start || 0;
+      const trimStart = source.trim_start ?? 0;
       const segmentDuration = source.end_time - source.start_time;
       
       console.log('[ClipEditorTimeline] Extraction params:', {
-        trimStart,
+        sourceTrimStart: source.trim_start,
+        sourceTrimEnd: source.trim_end,
+        calculatedTrimStart: trimStart,
         segmentDuration,
         sourceStartTime: source.start_time,
         sourceEndTime: source.end_time,
+        sourceDuration: source.source_duration,
       });
       
       // Call Rust command to extract audio from the specific segment
+      // Tauri expects camelCase params which it converts to snake_case for Rust
+      console.log('[ClipEditorTimeline] Invoking extract_audio_to_file with:', {
+        videoPath: source.source_path,
+        sourceId: source.id,
+        trimStart: trimStart,
+        trimDuration: segmentDuration,
+      });
+      
       const result = await invoke<{ file_path: string; filename: string; duration: number }>('extract_audio_to_file', {
         videoPath: source.source_path,
         sourceId: source.id,
@@ -2993,13 +3006,23 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       
       // Emit event to create audio track with the extracted audio
       // The audio track should start at the same position as the video source on the timeline
+      // Use the actual extracted audio duration for the end time to ensure perfect alignment
+      const audioEndTime = source.start_time + result.duration;
+      
+      console.log('[ClipEditorTimeline] Audio track positioning:', {
+        sourceStartTime: source.start_time,
+        sourceEndTime: source.end_time,
+        extractedDuration: result.duration,
+        calculatedAudioEndTime: audioEndTime,
+      });
+      
       emit('extractedAudio', {
         sourceId: source.id,
         filePath: result.file_path,
         filename: result.filename,
         duration: result.duration,
         startTime: source.start_time,
-        endTime: source.end_time,
+        endTime: audioEndTime,
         sourceName: source.source_name,
       });
       
@@ -3914,12 +3937,25 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       if (rect.width === 0 || rect.height === 0) return;
 
       // Get the trim range for this source (portion of the original video being shown)
-      // This is equivalent to absoluteStartTime/absoluteEndTime in clip mode
-      const trimStart = source.trim_start;
-      const trimEnd = source.trim_end ?? trimStart + (source.end_time - source.start_time);
+      // trim_start is where in the source video this segment starts
+      // trim_end is where in the source video this segment ends
+      // If trim_end is null, calculate it from trim_start + segment duration on timeline
+      const trimStart = source.trim_start ?? 0;
+      const segmentDuration = source.end_time - source.start_time;
+      const trimEnd = source.trim_end ?? (trimStart + segmentDuration);
 
       // Get the waveform peaks (now using simplified single-resolution structure)
       const { duration, peaks } = data;
+
+      console.log('[renderSourceWaveform] Source:', sourceId, {
+        trimStart,
+        trimEnd,
+        sourceDuration: source.source_duration,
+        waveformDuration: duration,
+        peaksLength: peaks.length,
+        sourceStartTime: source.start_time,
+        sourceEndTime: source.end_time,
+      });
 
       if (duration <= 0 || peaks.length === 0) return;
 
@@ -3929,6 +3965,14 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       const startIndex = Math.floor(startRatio * peaks.length);
       const endIndex = Math.ceil(endRatio * peaks.length);
       const segmentPeaks = peaks.slice(startIndex, endIndex);
+
+      console.log('[renderSourceWaveform] Peak extraction:', {
+        startRatio,
+        endRatio,
+        startIndex,
+        endIndex,
+        segmentPeaksLength: segmentPeaks.length,
+      });
 
       if (segmentPeaks.length === 0) return;
 
@@ -3988,9 +4032,9 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       const width = rect.width;
       const height = rect.height;
       const amplitude = 0.7;
-      const barW = Math.max(1, barWidth * 0.9);
-      const barS = Math.max(0.5, barSpacing * 0.9);
-      const totalBarWidth = barW + barS;
+      // Use the full slot width to ensure bars fill the entire canvas
+      const totalBarWidth = canvasWidth / numBars;
+      const barW = Math.max(1, totalBarWidth * 0.6);
       const maxBarHeight = height * amplitude;
       const baselineY = height;
 
@@ -4055,12 +4099,19 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
   // Audio track waveform functions
   async function loadAudioWaveform(trackId: string, audioSrc: string): Promise<void> {
+    console.log('[loadAudioWaveform] Called with trackId:', trackId);
+    console.log('[loadAudioWaveform] Called with audioSrc:', audioSrc);
+    
     // Skip if already loaded
-    if (audioWaveformData.value.has(trackId)) return;
+    if (audioWaveformData.value.has(trackId)) {
+      console.log('[loadAudioWaveform] Already loaded, skipping');
+      return;
+    }
 
     // Check URL type
     const isDataUrl = audioSrc.startsWith('data:');
     const isBlobUrl = audioSrc.startsWith('blob:');
+    const isHttpUrl = audioSrc.startsWith('http://') || audioSrc.startsWith('https://');
 
     // For blob URLs (legacy/invalid), use simulated waveform
     if (isBlobUrl) {
@@ -4075,9 +4126,16 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       if (isDataUrl) {
         // Convert data URL to ArrayBuffer
         arrayBuffer = dataUrlToArrayBuffer(audioSrc);
-      } else {
-        // Fetch from URL
+      } else if (isHttpUrl) {
+        // Already a URL, fetch directly
         const response = await fetch(audioSrc);
+        arrayBuffer = await response.arrayBuffer();
+      } else {
+        // Local file path - convert to video server URL
+        const port = await invoke<number>('get_video_server_port');
+        const encodedPath = btoa(unescape(encodeURIComponent(audioSrc)));
+        const streamingUrl = `http://localhost:${port}/video/${encodedPath}`;
+        const response = await fetch(streamingUrl);
         arrayBuffer = await response.arrayBuffer();
       }
 
@@ -4089,6 +4147,13 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       // Get raw audio data (use first channel)
       const channelData = audioBuffer.getChannelData(0);
       const duration = audioBuffer.duration;
+      
+      console.log('[loadAudioWaveform] Loaded audio for track:', trackId);
+      console.log('[loadAudioWaveform]   audioSrc:', audioSrc);
+      console.log('[loadAudioWaveform]   duration:', duration);
+      console.log('[loadAudioWaveform]   sampleRate:', audioBuffer.sampleRate);
+      console.log('[loadAudioWaveform]   numberOfChannels:', audioBuffer.numberOfChannels);
+      console.log('[loadAudioWaveform]   length:', channelData.length);
 
       // Generate peaks - aim for about 1000 peaks
       const targetPeaks = 1000;
@@ -4117,7 +4182,8 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       // Render the waveform
       renderAudioWaveform(trackId);
     } catch (err) {
-      // Silently fall back to simulated waveform
+      // Fall back to simulated waveform
+      console.error('[loadAudioWaveform] Failed to load audio waveform, falling back to simulated:', err);
       generateSimulatedAudioWaveform(trackId);
     }
   }
@@ -4198,8 +4264,9 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       const { peaks } = data;
       const width = rect.width;
       const height = rect.height;
-      const centerY = height / 2;
-      const maxBarHeight = height * 0.8;
+      const amplitude = 0.7;
+      const maxBarHeight = height * amplitude;
+      const baselineY = height; // Bars grow upward from bottom
 
       // Calculate which portion of the waveform to show for this visual segment
       const audioDuration = track.endTime - track.startTime;
@@ -4262,8 +4329,22 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       const currentVideoTime = props.currentTime;
 
       if (props.editorMode) {
-        // Editor mode: currentTime is directly the timeline time
-        accumulatedAudioTime = currentVideoTime;
+        // Editor mode: calculate playhead position relative to the audio track's start time
+        // The audio track starts at track.startTime on the timeline
+        // So if playhead is at 20s and track starts at 16.6s, we're 3.4s into the audio
+        const audioTrackStart = track.startTime;
+        const audioTrackEnd = track.endTime;
+        
+        if (currentVideoTime < audioTrackStart) {
+          // Playhead is before the audio track - nothing played yet
+          accumulatedAudioTime = 0;
+        } else if (currentVideoTime > audioTrackEnd) {
+          // Playhead is after the audio track - entire track has been played
+          accumulatedAudioTime = audioTrackEnd - audioTrackStart;
+        } else {
+          // Playhead is within the audio track
+          accumulatedAudioTime = currentVideoTime - audioTrackStart;
+        }
       } else {
         // Clip mode: calculate accumulated time based on video segments
         for (const segment of sortedTrimSegments.value) {
@@ -4296,18 +4377,15 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
         ctx.fillStyle = color;
 
-        // Apply gain and clamp to prevent overdrive
-        const gainedMax = Math.min(1, Math.abs(peak.max / normalizer) * gainMultiplier);
-        const gainedMin = Math.min(1, Math.abs(peak.min / normalizer) * gainMultiplier);
-        const positiveHeight = gainedMax * maxBarHeight;
-        const negativeHeight = gainedMin * maxBarHeight;
+        // Apply gain and clamp to prevent overdrive - use magnitude for vertical bars
+        const magnitude = Math.max(Math.abs(peak.max / normalizer), Math.abs(peak.min / normalizer));
+        const gainedMagnitude = Math.min(1, magnitude * gainMultiplier);
+        const barHeight = Math.max(1, gainedMagnitude * maxBarHeight);
         const actualBarWidth = Math.min(barWidth, width - x);
 
-        if (positiveHeight > 0 && actualBarWidth > 0) {
-          ctx.fillRect(x, centerY - positiveHeight, actualBarWidth, positiveHeight);
-        }
-        if (negativeHeight > 0 && actualBarWidth > 0) {
-          ctx.fillRect(x, centerY, actualBarWidth, negativeHeight);
+        if (barHeight > 0 && actualBarWidth > 0) {
+          // Draw vertical bar from bottom
+          ctx.fillRect(x, baselineY - barHeight, actualBarWidth, barHeight);
         }
       });
     } catch (error) {

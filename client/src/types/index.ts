@@ -1074,6 +1074,7 @@ export interface VideoEditorSource {
   isMuted?: boolean;
   isLocked?: boolean;
   isHidden?: boolean;
+  audioExtracted?: boolean; // True if audio has been extracted to a separate track
 }
 
 // Project with all sources loaded

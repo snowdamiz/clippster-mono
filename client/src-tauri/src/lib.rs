@@ -418,6 +418,12 @@ pub fn run() {
                             sql: include_str!("../migrations/067_add_source_id_to_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 68,
+                            description: "add_audio_extracted_to_sources",
+                            sql: include_str!("../migrations/068_add_audio_extracted_to_sources.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

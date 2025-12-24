@@ -254,6 +254,7 @@ export async function updateVideoEditorSource(
     trim_end: number | null;
     order_index: number;
     track_index: number;
+    audio_extracted: boolean;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -305,6 +306,10 @@ export async function updateVideoEditorSource(
   if (updates.track_index !== undefined && trackIndexColumnExists) {
     updateFields.push('track_index = ?');
     values.push(updates.track_index);
+  }
+  if (updates.audio_extracted !== undefined) {
+    updateFields.push('audio_extracted = ?');
+    values.push(updates.audio_extracted ? 1 : 0);
   }
 
   if (updateFields.length === 0) return;

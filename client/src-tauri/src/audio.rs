@@ -399,11 +399,28 @@ pub async fn extract_audio_to_file(
 ) -> Result<ExtractedAudioFile, String> {
     use tauri_plugin_shell::ShellExt;
 
-    println!("[Rust] extract_audio_to_file called with:");
+    println!("[Rust] ========================================");
+    println!("[Rust] extract_audio_to_file called");
+    println!("[Rust] ========================================");
     println!("[Rust]   video_path: {}", video_path);
     println!("[Rust]   source_id: {}", source_id);
     println!("[Rust]   trim_start: {:?}", trim_start);
     println!("[Rust]   trim_duration: {:?}", trim_duration);
+    println!("[Rust]   trim_start.is_some(): {}", trim_start.is_some());
+    println!("[Rust]   trim_duration.is_some(): {}", trim_duration.is_some());
+    
+    // Log the actual values if present
+    if let Some(start) = trim_start {
+        println!("[Rust]   trim_start VALUE: {:.3}", start);
+    } else {
+        println!("[Rust]   trim_start is NONE - will extract from beginning!");
+    }
+    if let Some(dur) = trim_duration {
+        println!("[Rust]   trim_duration VALUE: {:.3}", dur);
+    } else {
+        println!("[Rust]   trim_duration is NONE - will extract entire file!");
+    }
+    println!("[Rust] ========================================");
 
     // Get storage paths
     let paths = storage::init_storage_dirs()
@@ -456,6 +473,7 @@ pub async fn extract_audio_to_file(
     args.push("-y".to_string());  // Overwrite output file
     args.push(output_path.to_str().ok_or("Invalid output path")?.to_string());
 
+    println!("[Rust] FFmpeg args: {:?}", args);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     
     let output = shell.sidecar("ffmpeg")

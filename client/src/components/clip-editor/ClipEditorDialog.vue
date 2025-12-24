@@ -1924,6 +1924,14 @@
         isSolo: newTrack.is_solo === 1,
       });
 
+      // Mark the source as having its audio extracted (removes waveform display)
+      const source = videoSources.value.find(s => s.id === data.sourceId);
+      if (source) {
+        source.audioExtracted = true;
+        await updateVideoEditorSource(data.sourceId, { audio_extracted: true });
+        console.log('[ClipEditorDialog] Source marked as audio extracted:', data.sourceId);
+      }
+
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to create audio track:', error);

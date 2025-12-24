@@ -313,7 +313,7 @@ fn process_wav_file(
     duration: f64
 ) -> Result<WaveformData, String> {
     use std::fs::File;
-    use std::io::Read;
+    use std::io::{Read, Seek, SeekFrom};
 
     println!("[Rust] Processing WAV file: {}", wav_path.display());
 
@@ -321,33 +321,65 @@ fn process_wav_file(
     let mut file = File::open(wav_path)
         .map_err(|e| format!("Failed to open WAV file: {}", e))?;
 
-    // Read WAV header (44 bytes for standard WAV)
-    let mut header = [0u8; 44];
-    file.read_exact(&mut header)
-        .map_err(|e| format!("Failed to read WAV header: {}", e))?;
+    // Read RIFF header (12 bytes)
+    let mut riff_header = [0u8; 12];
+    file.read_exact(&mut riff_header)
+        .map_err(|e| format!("Failed to read RIFF header: {}", e))?;
 
     // Verify WAV format
-    if &header[0..4] != b"RIFF" || &header[8..12] != b"WAVE" {
+    if &riff_header[0..4] != b"RIFF" || &riff_header[8..12] != b"WAVE" {
         return Err("Invalid WAV file format".to_string());
     }
 
-    // Get sample rate from header (bytes 24-27)
-    let sample_rate = u32::from_le_bytes([header[24], header[25], header[26], header[27]]);
-    println!("[Rust] Sample rate: {} Hz", sample_rate);
+    let mut sample_rate: u32 = 0;
+    let mut data_size: u32 = 0;
 
-    // Skip to audio data
-    let mut data_pos = 12; // After RIFF header
-    while data_pos < header.len() - 8 {
-        if &header[data_pos..data_pos + 4] == b"data" {
-            // Found data chunk
-            break;
+    // Parse chunks to find fmt and data
+    loop {
+        // Read chunk header (4 bytes ID + 4 bytes size)
+        let mut chunk_header = [0u8; 8];
+        if file.read_exact(&mut chunk_header).is_err() {
+            break; // End of file
         }
-        data_pos += 8;
+
+        let chunk_id = &chunk_header[0..4];
+        let chunk_size = u32::from_le_bytes([chunk_header[4], chunk_header[5], chunk_header[6], chunk_header[7]]);
+
+        println!("[Rust] Found chunk: {:?} size: {}", String::from_utf8_lossy(chunk_id), chunk_size);
+
+        if chunk_id == b"fmt " {
+            // Read fmt chunk to get sample rate
+            let mut fmt_data = vec![0u8; chunk_size as usize];
+            file.read_exact(&mut fmt_data)
+                .map_err(|e| format!("Failed to read fmt chunk: {}", e))?;
+            
+            if fmt_data.len() >= 8 {
+                sample_rate = u32::from_le_bytes([fmt_data[4], fmt_data[5], fmt_data[6], fmt_data[7]]);
+                println!("[Rust] Sample rate from fmt chunk: {} Hz", sample_rate);
+            }
+        } else if chunk_id == b"data" {
+            // Found data chunk - read audio samples
+            data_size = chunk_size;
+            println!("[Rust] Found data chunk with {} bytes", data_size);
+            break;
+        } else {
+            // Skip unknown chunk
+            file.seek(SeekFrom::Current(chunk_size as i64))
+                .map_err(|e| format!("Failed to skip chunk: {}", e))?;
+        }
     }
 
-    // Read remaining file as audio data
-    let mut audio_data = Vec::new();
-    file.read_to_end(&mut audio_data)
+    if sample_rate == 0 {
+        return Err("Could not find sample rate in WAV file".to_string());
+    }
+
+    if data_size == 0 {
+        return Err("Could not find data chunk in WAV file".to_string());
+    }
+
+    // Read audio data
+    let mut audio_data = vec![0u8; data_size as usize];
+    file.read_exact(&mut audio_data)
         .map_err(|e| format!("Failed to read audio data: {}", e))?;
 
     println!("[Rust] Read {} bytes of audio data", audio_data.len());
@@ -363,38 +395,51 @@ fn process_wav_file(
 
     println!("[Rust] Converted to {} audio samples", samples.len());
 
+    // Calculate actual audio duration from samples
+    let audio_duration_from_samples = samples.len() as f64 / sample_rate as f64;
+    println!("[Rust] Audio duration from samples: {:.2}s, expected duration: {:.2}s", 
+             audio_duration_from_samples, duration);
+    
+    // Check for significant mismatch
+    if (audio_duration_from_samples - duration).abs() > 1.0 {
+        println!("[Rust] WARNING: Audio duration mismatch! Samples suggest {:.2}s but video is {:.2}s", 
+                 audio_duration_from_samples, duration);
+    }
+
     if samples.is_empty() {
         return Err("No audio samples found".to_string());
     }
 
-    // Generate peaks
-    println!("[Rust] Generating {} peaks", target_peaks);
+    // Generate peaks - ensure we cover the entire audio duration
+    let num_samples = samples.len();
+    let actual_peaks = (target_peaks as usize).min(num_samples);
+    
+    println!("[Rust] Generating {} peaks from {} samples", actual_peaks, num_samples);
 
-    let samples_per_peak = (samples.len() as f64 / target_peaks as f64).ceil() as usize;
-    let mut peaks = Vec::with_capacity(target_peaks as usize);
+    let mut peaks = Vec::with_capacity(actual_peaks);
 
-    for i in 0..target_peaks {
-        let start_idx = (i as usize * samples_per_peak).min(samples.len());
-        let end_idx = ((i as usize + 1) * samples_per_peak).min(samples.len());
-
-        if start_idx >= samples.len() {
-            break;
-        }
+    for i in 0..actual_peaks {
+        // Use floating point to ensure we cover all samples evenly
+        let start_idx = (i as f64 * num_samples as f64 / actual_peaks as f64) as usize;
+        let end_idx = ((i + 1) as f64 * num_samples as f64 / actual_peaks as f64) as usize;
 
         let mut min = 0.0f64;
         let mut max = 0.0f64;
 
         // Find min and max in this chunk
-        for &sample in &samples[start_idx..end_idx] {
-            if sample < min { min = sample; }
-            if sample > max { max = sample; }
+        for j in start_idx..end_idx {
+            if j < num_samples {
+                let sample = samples[j];
+                if sample < min { min = sample; }
+                if sample > max { max = sample; }
+            }
         }
 
         peaks.push(WaveformPeak { min, max });
     }
 
     let peak_count = peaks.len() as u32;
-    println!("[Rust] Generated {} peaks", peak_count);
+    println!("[Rust] Generated {} peaks covering {} samples", peak_count, num_samples);
 
     Ok(WaveformData {
         sample_rate,
