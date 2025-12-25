@@ -46,12 +46,20 @@ jobs:
         run: yarn install
         working-directory: client
 
+      - name: Build frontend with production API URL
+        run: |
+          echo "Building frontend with VITE_API_URL=$VITE_API_URL"
+          yarn build:ci
+          echo "Frontend build complete. Verifying API URL in output..."
+          grep -r "clippster-server.fly.dev" dist/assets/*.js | head -3 || echo "Warning: Could not find production URL in build output"
+        working-directory: client
+        env:
+          VITE_API_URL: https://clippster-server.fly.dev
+
       - name: Build and Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Frontend API URL for production builds
-          VITE_API_URL: https://clippster-server.fly.dev
           # Tauri update signing (required for OTA)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -70,3 +78,5 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+          # Skip frontend build - we already built it with VITE_API_URL set
+          beforeBuildCommand: ""
