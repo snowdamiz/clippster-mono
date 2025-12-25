@@ -77,5 +77,3 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
-          # Skip frontend build - we already built it with VITE_API_URL set
-          beforeBuildCommand: ""
