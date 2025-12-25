@@ -634,11 +634,26 @@ export interface ManualFramingConfig {
   sourceAspectRatio?: string; // "16:9" typically
 }
 
-// Per-aspect-ratio manual framing configurations
+// Segment-specific framing configuration
+export interface SegmentFramingConfig {
+  segmentIds: string[]; // Which segment IDs this framing applies to
+  config: ManualFramingConfig;
+}
+
+// Per-aspect-ratio manual framing configurations (legacy - global per aspect ratio)
 export interface ManualFramingConfigs {
   '9:16'?: ManualFramingConfig;
   '4:5'?: ManualFramingConfig;
   '1:1'?: ManualFramingConfig;
+  '16:9'?: ManualFramingConfig;
+}
+
+// Per-aspect-ratio segment-specific framing configurations (new - per segment)
+export interface SegmentFramingConfigs {
+  '9:16'?: SegmentFramingConfig[];
+  '4:5'?: SegmentFramingConfig[];
+  '1:1'?: SegmentFramingConfig[];
+  '16:9'?: SegmentFramingConfig[];
 }
 
 // Predefined colors for POI regions

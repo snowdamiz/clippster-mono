@@ -690,6 +690,21 @@ pub struct ManualFramingConfig {
     pub source_aspect_ratio: Option<String>,
 }
 
+/// Segment-specific framing configuration
+/// Associates a framing config with specific segment IDs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SegmentFramingConfig {
+    /// Which segment IDs this framing applies to
+    pub segment_ids: Vec<String>,
+    /// The framing configuration for these segments
+    pub config: ManualFramingConfig,
+}
+
+/// Per-aspect-ratio segment-specific framing configurations
+/// Maps aspect ratio strings to arrays of segment framing configs
+pub type SegmentFramingConfigs = std::collections::HashMap<String, Vec<SegmentFramingConfig>>;
+
 impl ManualFramingConfig {
     /// Convert manual config to a FramingStrategy with MultiRegion mode
     #[allow(dead_code)]

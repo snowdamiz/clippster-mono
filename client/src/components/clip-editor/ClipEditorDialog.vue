@@ -83,7 +83,7 @@
                   :segments="playbackSegments"
                   :preview-aspect-ratio="previewAspectRatio"
                   :selected-aspect-ratios="selectedAspectRatios"
-                  :framing-configs="framingConfigs"
+                  :framing-configs="effectiveFramingConfigs"
                   :subtitle-settings="subtitleSettings"
                   :transcript-words="transcriptWords"
                   :transcript-segments="transcriptSegments"
@@ -274,6 +274,7 @@
                   :subtitle-settings="subtitleSettings"
                   :framing-mode="framingMode"
                   :framing-configs="framingConfigs"
+                  :segment-framing-configs="segmentFramingConfigs"
                   :filter-segments="filterSegments"
                   :text-overlays="textOverlays"
                   :stickers="stickers"
@@ -411,6 +412,8 @@
     TrimSegment,
     ManualFramingConfigs,
     ManualFramingConfig,
+    SegmentFramingConfigs,
+    SegmentFramingConfig,
     ClipWatermark,
     ClipSubtitleSettings,
     WordInfo,
@@ -826,7 +829,8 @@
   const selectedAspectRatios = ref<string[]>(['16:9']); // Always include 16:9 (Original) by default
   const previewAspectRatio = ref<string>('16:9'); // Currently previewed aspect ratio
   const framingMode = ref<'auto' | 'manual'>('auto');
-  const framingConfigs = ref<ManualFramingConfigs>({});
+  const framingConfigs = ref<ManualFramingConfigs>({}); // Legacy: global per aspect ratio
+  const segmentFramingConfigs = ref<SegmentFramingConfigs>({}); // New: per-segment framing
   const videoPath = ref<string | null>(null);
   const thumbnailUrl = ref<string | null>(null);
   const editorThumbnailUrl = ref<string | null>(null);
@@ -1226,6 +1230,47 @@
         end_time: props.clipStartTime + seg.endTime,
       }))
       .sort((a, b) => a.start_time - b.start_time);
+  });
+
+  // Get current segment ID based on playback time
+  const currentSegmentId = computed(() => {
+    if (trimSegments.value.length === 0) return null;
+    
+    // Find segment that contains the current playback time
+    const segment = trimSegments.value.find(
+      seg => !seg.isDeleted && 
+             previewTime.value >= (props.clipStartTime + seg.startTime) &&
+             previewTime.value <= (props.clipStartTime + seg.endTime)
+    );
+    
+    return segment?.id || null;
+  });
+
+  // Get effective framing config for preview (considers segment-specific framing)
+  const effectiveFramingConfigs = computed(() => {
+    const configs: ManualFramingConfigs = { ...framingConfigs.value };
+    
+    // If we have a current segment, check for segment-specific framing
+    if (currentSegmentId.value) {
+      // For each aspect ratio, check if there's a segment-specific config
+      const ratios: (keyof SegmentFramingConfigs)[] = ['9:16', '4:5', '1:1', '16:9'];
+      
+      for (const ratio of ratios) {
+        const segmentConfigs = segmentFramingConfigs.value[ratio];
+        if (segmentConfigs && segmentConfigs.length > 0) {
+          // Find config that applies to current segment
+          const applicableConfig = segmentConfigs.find(
+            c => c.segmentIds.includes(currentSegmentId.value!)
+          );
+          
+          if (applicableConfig) {
+            configs[ratio] = applicableConfig.config;
+          }
+        }
+      }
+    }
+    
+    return configs;
   });
 
   // Effective audio gain for waveform visualization (uses originalDb which can be initialized from project settings)
@@ -3877,6 +3922,43 @@
     return framingConfigs.value[ratio as keyof ManualFramingConfigs] || null;
   }
 
+  // Get framing config for specific segments and aspect ratio
+  function getFramingForSegments(segmentIds: string[], aspectRatio: string): ManualFramingConfig | null {
+    const configs = segmentFramingConfigs.value[aspectRatio as keyof SegmentFramingConfigs];
+    if (!configs || configs.length === 0) return null;
+
+    // Find config that applies to these segments
+    // For now, return the first config that includes any of the requested segments
+    for (const config of configs) {
+      if (segmentIds.some(id => config.segmentIds.includes(id))) {
+        return config.config;
+      }
+    }
+    return null;
+  }
+
+  // Set framing config for selected segments
+  function setFramingForSegments(segmentIds: string[], aspectRatio: string, config: ManualFramingConfig) {
+    const ratio = aspectRatio as keyof SegmentFramingConfigs;
+    const currentConfigs = segmentFramingConfigs.value[ratio] || [];
+
+    // Remove any existing configs that overlap with these segments
+    const filteredConfigs = currentConfigs.filter(
+      c => !c.segmentIds.some(id => segmentIds.includes(id))
+    );
+
+    // Add new config for these segments
+    filteredConfigs.push({
+      segmentIds: [...segmentIds],
+      config: config,
+    });
+
+    segmentFramingConfigs.value = {
+      ...segmentFramingConfigs.value,
+      [ratio]: filteredConfigs,
+    };
+  }
+
   // Handle POI config confirmation from ManualPOIEditor
   function onManualPOIConfigConfirm(config: ManualFramingConfig) {
     const ratio = config.targetAspectRatio as keyof ManualFramingConfigs;
@@ -3886,10 +3968,20 @@
       selectedAspectRatios.value = [...selectedAspectRatios.value, config.targetAspectRatio];
     }
 
-    framingConfigs.value = {
-      ...framingConfigs.value,
-      [ratio]: config,
-    };
+    // If there are selected segments, apply framing to them specifically
+    if (selectedSegmentIds.value.size > 0) {
+      const segmentIds = Array.from(selectedSegmentIds.value);
+      setFramingForSegments(segmentIds, config.targetAspectRatio, config);
+      console.log('[ClipEditorDialog] Applied framing to segments:', segmentIds);
+    } else {
+      // No segments selected - apply globally (legacy behavior)
+      framingConfigs.value = {
+        ...framingConfigs.value,
+        [ratio]: config,
+      };
+      console.log('[ClipEditorDialog] Applied framing globally to aspect ratio:', ratio);
+    }
+
     // Set framing mode to manual since we now have manual config
     framingMode.value = 'manual';
     // Switch preview to show the configured ratio
@@ -5367,6 +5459,7 @@
             selectedRatios: selectedAspectRatios.value,
             framingMode: framingMode.value,
             configs: framingConfigs.value,
+            segmentConfigs: segmentFramingConfigs.value,
           },
           // Subtitle settings
           subtitleSettings: subtitleSettings.value,
@@ -5558,6 +5651,7 @@
         selectedAspectRatios.value = savedRatios;
         framingMode.value = editData.aspectFraming.framingMode || 'auto';
         framingConfigs.value = editData.aspectFraming.configs || {};
+        segmentFramingConfigs.value = editData.aspectFraming.segmentConfigs || {};
       }
 
       // Load subtitle settings
@@ -6279,6 +6373,12 @@
 
   watch(
     () => framingConfigs.value,
+    () => triggerAutoSave(),
+    { deep: true }
+  );
+
+  watch(
+    () => segmentFramingConfigs.value,
     () => triggerAutoSave(),
     { deep: true }
   );

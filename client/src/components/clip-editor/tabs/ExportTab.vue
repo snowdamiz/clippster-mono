@@ -416,6 +416,7 @@
     subtitleSettings?: any | null;
     framingMode?: 'auto' | 'manual';
     framingConfigs?: any;
+    segmentFramingConfigs?: any;
     filterSegments?: any[];
     textOverlays?: any[];
     stickers?: any[];
@@ -836,6 +837,7 @@
       audioSettings: audioSettings,
       framingStrategy: framingStrategy,
       manualFramingConfigs: props.framingConfigs || null,
+      segmentFramingConfigs: props.segmentFramingConfigs || null,
       videoFilterSegments: videoFilterSegments,
       textOverlays: textOverlaysForExport,
       stickers: stickersForExport,
@@ -946,6 +948,7 @@
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
+        segmentFramingConfigs: props.segmentFramingConfigs || null,
         videoFilterSegments: videoFilterSegments,
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
@@ -1021,6 +1024,7 @@
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
+        segmentFramingConfigs: props.segmentFramingConfigs || null,
         videoFilterSegments: videoFilterSegments,
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,

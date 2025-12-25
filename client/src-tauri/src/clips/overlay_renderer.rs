@@ -1,5 +1,4 @@
 use super::types::{TextOverlaySettings, StickerSettings, ClipWatermarkSettings, SubtitleSettings, WhisperSegment};
-use std::collections::HashMap;
 
 /// Helper to convert hex color to RGB values for FFmpeg
 fn hex_to_rgb(hex: &str) -> Result<(u8, u8, u8), String> {
@@ -345,7 +344,7 @@ pub fn build_subtitle_filter(
     let scaled_font_size = (subtitle_settings.font_size * scale_factor as f32) as u32;
     
     // Calculate position
-    let position_pct = subtitle_settings.position_percentage;
+    let position_pct = subtitle_settings.position_percentage as f64;
     let y_pixels = (video_height as f64 * position_pct / 100.0) as i32;
     
     // Build text color

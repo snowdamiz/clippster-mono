@@ -2326,8 +2326,6 @@
 
   // Get current framing config for the selected aspect ratio
   const currentFramingConfig = computed(() => {
-    if (props.previewAspectRatio === '16:9') return null;
-
     // Check if this aspect ratio is selected
     const isSelected = props.selectedAspectRatios.includes(props.previewAspectRatio);
     if (!isSelected) return null;
@@ -2337,6 +2335,9 @@
     if (manualConfig && manualConfig.regions && manualConfig.regions.length > 0) {
       return manualConfig;
     }
+
+    // For 16:9 without manual config, return null (show full video)
+    if (props.previewAspectRatio === '16:9') return null;
 
     // Generate a default center-crop preview for auto mode or unconfigured manual mode
     return {
