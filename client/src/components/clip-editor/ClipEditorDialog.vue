@@ -91,6 +91,7 @@
                   :editor-mode="editorMode"
                   :editor-total-duration="editorContentDuration"
                   :active-transition="activeTransition"
+                  :video-sources="videoSources"
                   @time-update="onPreviewTimeUpdate"
                   @toggle-play="togglePlay"
                   @video-element-ready="onVideoElementReady"
@@ -4171,6 +4172,14 @@
     // By default, watermark spans the entire clip duration (100% of clip)
     const startTime = 0;
     const endTime = totalSegmentDuration.value;
+    
+    console.log('[ClipEditorDialog] Adding watermark with duration:', {
+      startTime,
+      endTime,
+      totalSegmentDuration: totalSegmentDuration.value,
+      editorContentDuration: editorContentDuration.value,
+      editorMode: editorMode.value
+    });
 
     const watermarkData = {
       watermark_id: watermarkId,

@@ -534,7 +534,7 @@
 
                   <!-- Waveform canvas overlay (hidden if audio has been extracted) -->
                   <canvas
-                    v-if="!source.audioExtracted"
+                    v-if="!(source as any).audio_extracted"
                     :ref="(el) => setSourceWaveformCanvasRef(el, source.id)"
                     class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
                     style="mix-blend-mode: screen; z-index: 5"

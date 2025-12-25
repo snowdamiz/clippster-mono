@@ -896,6 +896,7 @@
         end_time: source.trim_end ?? source.trim_start + (source.end_time - source.start_time),
         duration: (source.trim_end ?? source.trim_start + (source.end_time - source.start_time)) - source.trim_start,
         transcript: null,
+        mute_audio: (source as any).audio_extracted === true, // Mute audio if it has been extracted to a separate track
       }));
 
       // Get intro/outro paths

@@ -714,6 +714,8 @@
       editorTotalDuration?: number;
       // Active transition (crossfade, slide, wipe, etc.)
       activeTransition?: VideoEditorTransition | null;
+      // Video sources for editor mode (to check audio_extracted flag)
+      videoSources?: any[];
     }>(),
     {
       watermarks: () => [],
@@ -726,6 +728,7 @@
       editorMode: false,
       editorTotalDuration: 0,
       activeTransition: null,
+      videoSources: () => [],
     }
   );
 
@@ -2809,6 +2812,31 @@
     }
   }
 
+  // Check if current playback position is in a segment with extracted audio and mute accordingly
+  function updateVideoMuteState(currentTime: number) {
+    if (!videoRef.value || !props.videoSources || props.videoSources.length === 0) return;
+    
+    // Find which video source is currently playing based on timeline position
+    let shouldMute = false;
+    for (const source of props.videoSources) {
+      if (currentTime >= source.start_time && currentTime < source.end_time) {
+        // Check if this source has audio extracted (use snake_case as returned from DB)
+        if ((source as any).audio_extracted === true) {
+          shouldMute = true;
+          break;
+        }
+      }
+    }
+    
+    // Mute/unmute the video element
+    videoRef.value.muted = shouldMute;
+    
+    // Also update preload video if it exists
+    if (preloadVideoRef.value) {
+      preloadVideoRef.value.muted = shouldMute;
+    }
+  }
+
   function goToBeginning() {
     if (videoRef.value) {
       const firstSegment = sortedSegments.value[0];
@@ -2843,9 +2871,10 @@
     if (videoRef.value && !isDraggingProgress.value) {
       const currentVideoTime = videoRef.value.currentTime;
 
-      // In editor mode, simply emit the time without segment logic
-      // The parent component handles time mapping for multiple sources
+      // In editor mode, check if current source has audio extracted and mute accordingly
       if (props.editorMode) {
+        updateVideoMuteState(currentVideoTime);
+        
         // Only emit time updates from main video when it's the active video (index 0)
         // When activeVideoIndex === 1, the preload video is active and handles time updates
         if (activeVideoIndex.value === 0) {
