@@ -7,6 +7,7 @@ mod subtitle;
 pub mod video_processor;
 mod orchestrator;
 pub mod livestream_clip;
+mod overlay_renderer;
 
 // Re-export public types
 pub use types::*;

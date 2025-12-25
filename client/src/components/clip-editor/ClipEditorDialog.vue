@@ -103,6 +103,11 @@
                   @update-watermark-scale="onUpdateWatermarkScale"
                   @update-subtitle-position="onUpdateSubtitlePosition"
                   @update-subtitle-max-width="onUpdateSubtitleMaxWidth"
+                  @overlay-drag-end="onOverlayPositionChangeComplete"
+                  @overlay-resize-end="onOverlayWidthChangeComplete"
+                  @sticker-resize-end="onStickerScaleChangeComplete"
+                  @sticker-rotate-end="onStickerRotationChangeComplete"
+                  @watermark-resize-end="onWatermarkScaleChangeComplete"
                   @video-ended="onVideoEnded"
                 />
 
@@ -392,7 +397,8 @@
   import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { Film, X, Loader2, Check } from 'lucide-vue-next';
   import { Separator } from '@/components/ui/separator';
-  import { CommandHistory, SplitCommand, DeleteCommand, PasteCommand } from '@/services/commands';
+  import { CommandHistory, SplitCommand, DeleteCommand, PasteCommand, ExtractAudioCommand, AddItemCommand, ResizeCommand, LayerChangeCommand, UpdateOverlayPropertyCommand } from '@/services/commands';
+  import type { UpdateOverlayPropertyCommandData } from '@/services/commands';
   import type { ClipSegment } from '@/services/database';
   import type {
     ClipEditorTab,
@@ -636,6 +642,9 @@
   // Multi-select state
   const selectedSegmentIds = ref<Set<string>>(new Set());
   const lastSelectedSegmentId = ref<string | null>(null); // For shift+click range selection
+
+  // Track original values for overlay operations (for undo/redo)
+  const overlayOperationStartValues = ref<Map<string, { property: string; value: any }>>(new Map());
 
   // Timeline markers
   interface TimelineMarker {
@@ -1734,20 +1743,62 @@
     if (!source) return;
 
     try {
-      await updateVideoEditorSource(sourceId, {
-        start_time: updates.start_time,
-        end_time: updates.end_time,
-        trim_start: updates.trim_start,
-        trim_end: updates.trim_end,
-        order_index: updates.order_index,
-        track_index: updates.track_index,
-      });
+      // Check if this is a position/time change that should be tracked for undo
+      const isTimeChange = updates.start_time !== undefined || updates.end_time !== undefined;
+      const isTrimChange = updates.trim_start !== undefined || updates.trim_end !== undefined;
+      
+      if ((isTimeChange || isTrimChange) && videoEditorEditId.value) {
+        // Use ResizeCommand for undo/redo support
+        const reloadCallback = async () => {
+          if (editorProjectId.value) {
+            const sources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
+            videoSources.value = sources;
+            await recalculateProjectDuration(editorProjectId.value);
+          }
+        };
 
-      Object.assign(source, updates);
+        const resizeCommand = new ResizeCommand({
+          type: 'source',
+          itemId: sourceId,
+          editId: videoEditorEditId.value,
+          originalStartTime: source.start_time,
+          originalEndTime: source.end_time,
+          originalTrimStart: source.trim_start ?? undefined,
+          originalTrimEnd: source.trim_end ?? undefined,
+          newStartTime: updates.start_time ?? source.start_time,
+          newEndTime: updates.end_time ?? source.end_time,
+          newTrimStart: updates.trim_start ?? source.trim_start ?? undefined,
+          newTrimEnd: updates.trim_end ?? source.trim_end ?? undefined,
+          onReload: reloadCallback,
+        });
 
-      if (editorProjectId.value) {
-        await recalculateProjectDuration(editorProjectId.value);
+        await commandHistory.executeCommand(resizeCommand);
+        undoRedoTrigger.value++;
+        
+        // Update local state
+        Object.assign(source, updates);
+        
+        if (editorProjectId.value) {
+          await recalculateProjectDuration(editorProjectId.value);
+        }
+      } else {
+        // For non-time changes (like order_index, track_index), update directly
+        await updateVideoEditorSource(sourceId, {
+          start_time: updates.start_time,
+          end_time: updates.end_time,
+          trim_start: updates.trim_start,
+          trim_end: updates.trim_end,
+          order_index: updates.order_index,
+          track_index: updates.track_index,
+        });
+
+        Object.assign(source, updates);
+
+        if (editorProjectId.value) {
+          await recalculateProjectDuration(editorProjectId.value);
+        }
       }
+      
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to update source:', error);
@@ -1868,7 +1919,7 @@
     }
   }
 
-  // Handle extracted audio from video source
+  // Handle extracted audio from video source (with undo/redo support)
   async function onExtractedAudio(data: {
     sourceId: string;
     filePath: string;
@@ -1885,53 +1936,59 @@
     }
 
     try {
-      console.log('[ClipEditorDialog] Creating audio track from extracted audio:', data);
+      console.log('[ClipEditorDialog] Creating audio track from extracted audio (with undo support):', data);
 
       // Calculate the next track order (put it after existing audio tracks)
       const maxTrackOrder = audioTracks.value.length > 0
         ? Math.max(...audioTracks.value.map(t => t.trackOrder)) + 1
         : 0;
 
-      // Create the audio track in the database
-      const newTrack = await createVideoEditorAudioTrack(editId, {
-        file_path: data.filePath,
+      // Create reload callback for undo/redo
+      const reloadCallback = async () => {
+        // Reload audio tracks from database
+        if (videoEditorEditId.value) {
+          const { getVideoEditorAudioTracksByEditId } = await import('@/services/database/video-editor-edits');
+          const tracks = await getVideoEditorAudioTracksByEditId(videoEditorEditId.value);
+          audioTracks.value = tracks.map(t => ({
+            id: t.id,
+            filePath: t.file_path,
+            name: t.name,
+            startTime: t.start_time,
+            endTime: t.end_time,
+            volume: t.volume,
+            fadeIn: t.fade_in,
+            fadeOut: t.fade_out,
+            trackOrder: t.track_order,
+            isMuted: t.is_muted === 1,
+            isSolo: t.is_solo === 1,
+          }));
+        }
+        // Reload video sources to update audioExtracted flag
+        if (editorProjectId.value) {
+          const sources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
+          videoSources.value = sources;
+        }
+      };
+
+      // Create and execute the command
+      const extractAudioCommand = new ExtractAudioCommand({
+        editId,
+        sourceId: data.sourceId,
+        filePath: data.filePath,
         name: data.sourceName ? `${data.sourceName} (Audio)` : 'Extracted Audio',
-        start_time: data.startTime,
-        end_time: data.endTime,
-        volume: 1.0,
-        fade_in: 0,
-        fade_out: 0,
-        track_order: maxTrackOrder,
-        is_muted: 0,
-        is_solo: 0,
-        source_id: data.sourceId,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        trackOrder: maxTrackOrder,
+        onReload: reloadCallback,
       });
 
-      console.log('[ClipEditorDialog] Audio track created:', newTrack);
+      await commandHistory.executeCommand(extractAudioCommand);
+      undoRedoTrigger.value++; // Trigger reactivity update
 
-      // Add to local state
-      audioTracks.value.push({
-        id: newTrack.id,
-        filePath: newTrack.file_path,
-        name: newTrack.name,
-        startTime: newTrack.start_time,
-        endTime: newTrack.end_time,
-        volume: newTrack.volume,
-        fadeIn: newTrack.fade_in,
-        fadeOut: newTrack.fade_out,
-        trackOrder: newTrack.track_order,
-        isMuted: newTrack.is_muted === 1,
-        isSolo: newTrack.is_solo === 1,
-      });
+      // Reload to update local state
+      await reloadCallback();
 
-      // Mark the source as having its audio extracted (removes waveform display)
-      const source = videoSources.value.find(s => s.id === data.sourceId);
-      if (source) {
-        source.audioExtracted = true;
-        await updateVideoEditorSource(data.sourceId, { audio_extracted: true });
-        console.log('[ClipEditorDialog] Source marked as audio extracted:', data.sourceId);
-      }
-
+      console.log('[ClipEditorDialog] Audio extraction complete (with undo support)');
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to create audio track:', error);
@@ -3627,33 +3684,77 @@
   }
 
   async function updateAudioTrackLocal(trackId: string, updates: Partial<AudioTrack>) {
-    const updateData = {
-      name: updates.name,
-      start_time: updates.startTime,
-      end_time: updates.endTime,
-      volume: updates.volume,
-      fade_in: updates.fadeIn,
-      fade_out: updates.fadeOut,
-      track_order: updates.trackOrder,
-      is_muted: updates.isMuted ? 1 : 0,
-      is_solo: updates.isSolo ? 1 : 0,
-    };
+    const track = audioTracks.value.find((t) => t.id === trackId);
+    if (!track) return;
 
-    // Use appropriate database function based on mode
-    if (editorMode.value) {
-      await updateVideoEditorAudioTrack(trackId, updateData);
+    // Check if this is a time change that should be tracked for undo
+    const isTimeChange = updates.startTime !== undefined || updates.endTime !== undefined;
+    
+    if (isTimeChange && editorMode.value && videoEditorEditId.value) {
+      // Use ResizeCommand for undo/redo support
+      const reloadCallback = async () => {
+        if (videoEditorEditId.value) {
+          const { getVideoEditorAudioTracksByEditId } = await import('@/services/database/video-editor-edits');
+          const tracks = await getVideoEditorAudioTracksByEditId(videoEditorEditId.value);
+          audioTracks.value = tracks.map(t => ({
+            id: t.id,
+            filePath: t.file_path,
+            name: t.name,
+            startTime: t.start_time,
+            endTime: t.end_time,
+            volume: t.volume,
+            fadeIn: t.fade_in,
+            fadeOut: t.fade_out,
+            trackOrder: t.track_order,
+            isMuted: t.is_muted === 1,
+            isSolo: t.is_solo === 1,
+          }));
+        }
+      };
+
+      const resizeCommand = new ResizeCommand({
+        type: 'audio',
+        itemId: trackId,
+        editId: videoEditorEditId.value,
+        originalStartTime: track.startTime,
+        originalEndTime: track.endTime,
+        newStartTime: updates.startTime ?? track.startTime,
+        newEndTime: updates.endTime ?? track.endTime,
+        onReload: reloadCallback,
+      });
+
+      await commandHistory.executeCommand(resizeCommand);
+      undoRedoTrigger.value++;
+      
+      // Update local state
+      Object.assign(track, updates);
     } else {
-      await updateAudioTrack(trackId, updateData);
+      // For non-time changes or clip mode, update directly
+      const updateData = {
+        name: updates.name,
+        start_time: updates.startTime,
+        end_time: updates.endTime,
+        volume: updates.volume,
+        fade_in: updates.fadeIn,
+        fade_out: updates.fadeOut,
+        track_order: updates.trackOrder,
+        is_muted: updates.isMuted ? 1 : 0,
+        is_solo: updates.isSolo ? 1 : 0,
+      };
+
+      // Use appropriate database function based on mode
+      if (editorMode.value) {
+        await updateVideoEditorAudioTrack(trackId, updateData);
+      } else {
+        await updateAudioTrack(trackId, updateData);
+      }
+
+      Object.assign(track, updates);
     }
 
-    const track = audioTracks.value.find((t) => t.id === trackId);
-    if (track) {
-      Object.assign(track, updates);
-
-      // Update audio gain if volume or mute changed
-      if (updates.volume !== undefined || updates.isMuted !== undefined) {
-        updateAudioGain(trackId);
-      }
+    // Update audio gain if volume or mute changed
+    if (updates.volume !== undefined || updates.isMuted !== undefined) {
+      updateAudioGain(trackId);
     }
   }
 
@@ -4761,16 +4862,48 @@
   }
 
   // Handle overlay position updates from preview drag
-  function onUpdateOverlayPosition(
+  async function onUpdateOverlayPosition(
     type: 'text' | 'sticker' | 'watermark',
     id: string,
     position: { x: number; y: number }
   ) {
+    const key = `${type}-${id}-position`;
+    const ratio = previewAspectRatio.value;
+    
+    // Get original value if this is the start of an operation
+    let originalValue: { x: number; y: number } | undefined;
+    if (!overlayOperationStartValues.value.has(key)) {
+      // Capture original value
+      if (type === 'text') {
+        const overlay = textOverlays.value.find((o) => o.id === id);
+        if (overlay) {
+          const config = overlay.perRatioConfigs?.[ratio];
+          originalValue = config?.position || overlay.position;
+          overlayOperationStartValues.value.set(key, { property: 'position', value: { ...originalValue } });
+        }
+      } else if (type === 'sticker') {
+        const sticker = stickers.value.find((s) => s.id === id);
+        if (sticker) {
+          const config = sticker.perRatioConfigs?.[ratio];
+          originalValue = config?.position || sticker.position;
+          overlayOperationStartValues.value.set(key, { property: 'position', value: { ...originalValue } });
+        }
+      } else if (type === 'watermark') {
+        const watermark = watermarks.value.find((w) => w.id === id);
+        if (watermark) {
+          const config = watermark.perRatioConfigs?.[ratio];
+          originalValue = config?.position || watermark.position;
+          overlayOperationStartValues.value.set(key, { property: 'position', value: { ...originalValue } });
+        }
+      }
+    } else {
+      originalValue = overlayOperationStartValues.value.get(key)?.value;
+    }
+
+    // Apply the update immediately for responsive UI
     if (type === 'text') {
-      // Store position in per-ratio config for the current preview aspect ratio
       const overlay = textOverlays.value.find((o) => o.id === id);
       if (overlay) {
-        const ratio = previewAspectRatio.value;
         const perRatioConfigs = overlay.perRatioConfigs || {};
         const currentConfig = perRatioConfigs[ratio] || {
           position: { ...overlay.position },
@@ -4781,10 +4914,8 @@
         updateTextOverlayLocal(id, { perRatioConfigs });
       }
     } else if (type === 'sticker') {
-      // Store position in per-ratio config for the current preview aspect ratio
       const sticker = stickers.value.find((s) => s.id === id);
       if (sticker) {
-        const ratio = previewAspectRatio.value;
         const perRatioConfigs = sticker.perRatioConfigs || {};
         const currentConfig = perRatioConfigs[ratio] || {
           position: { ...sticker.position },
@@ -4796,10 +4927,8 @@
         updateStickerLocal(id, { perRatioConfigs });
       }
     } else if (type === 'watermark') {
-      // Store position in per-ratio config for the current preview aspect ratio
       const watermark = watermarks.value.find((w) => w.id === id);
       if (watermark) {
-        const ratio = previewAspectRatio.value;
         const perRatioConfigs = watermark.perRatioConfigs || {};
         const currentConfig = perRatioConfigs[ratio] || {
           position: { ...watermark.position },
@@ -4813,11 +4942,85 @@
     }
   }
 
-  function onUpdateOverlayWidth(id: string, width: number) {
-    // Store width in per-ratio config for the current preview aspect ratio
+  // Called when drag operation ends - creates undo/redo command
+  async function onOverlayPositionChangeComplete(
+    type: 'text' | 'sticker' | 'watermark',
+    id: string
+  ) {
+    const key = `${type}-${id}-position`;
+    const startData = overlayOperationStartValues.value.get(key);
+    
+    if (!startData) return; // No operation in progress
+    
+    const ratio = previewAspectRatio.value;
+    let finalValue: { x: number; y: number } | undefined;
+    
+    // Get final value
+    if (type === 'text') {
+      const overlay = textOverlays.value.find((o) => o.id === id);
+      const config = overlay?.perRatioConfigs?.[ratio];
+      finalValue = config?.position || overlay?.position;
+    } else if (type === 'sticker') {
+      const sticker = stickers.value.find((s) => s.id === id);
+      const config = sticker?.perRatioConfigs?.[ratio];
+      finalValue = config?.position || sticker?.position;
+    } else if (type === 'watermark') {
+      const watermark = watermarks.value.find((w) => w.id === id);
+      const config = watermark?.perRatioConfigs?.[ratio];
+      finalValue = config?.position || watermark?.position;
+    }
+    
+    if (!finalValue) return;
+    
+    // Check if value actually changed
+    const originalValue = startData.value;
+    if (originalValue.x === finalValue.x && originalValue.y === finalValue.y) {
+      overlayOperationStartValues.value.delete(key);
+      return; // No change, don't create command
+    }
+    
+    // Create command for undo/redo
+    const commandData: UpdateOverlayPropertyCommandData = {
+      type,
+      itemId: id,
+      property: 'position',
+      aspectRatio: ratio,
+      originalValue,
+      newValue: finalValue,
+      onReload: async () => {
+        // Reload callback - for clip mode, state is already updated
+        // For editor mode, would reload from database
+        if (editorMode.value) {
+          await loadEditorProject();
+        }
+      },
+    };
+    
+    const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
+    await commandHistory.executeCommand(command);
+    undoRedoTrigger.value++;
+    
+    // Clear the start value
+    overlayOperationStartValues.value.delete(key);
+  }
+
+  async function onUpdateOverlayWidth(id: string, width: number) {
+    const key = `text-${id}-width`;
+    const ratio = previewAspectRatio.value;
+    
+    // Capture original value if this is the start of an operation
+    if (!overlayOperationStartValues.value.has(key)) {
+      const overlay = textOverlays.value.find((o) => o.id === id);
+      if (overlay) {
+        const config = overlay.perRatioConfigs?.[ratio];
+        const originalWidth = config?.style?.width || overlay.style?.width || 0;
+        overlayOperationStartValues.value.set(key, { property: 'width', value: originalWidth });
+      }
+    }
+
+    // Apply the update immediately for responsive UI
     const overlay = textOverlays.value.find((o) => o.id === id);
     if (overlay) {
-      const ratio = previewAspectRatio.value;
       const perRatioConfigs = overlay.perRatioConfigs || {};
       const currentConfig = perRatioConfigs[ratio] || {
         position: { ...overlay.position },
@@ -4829,11 +5032,60 @@
     }
   }
 
-  function onUpdateStickerScale(id: string, scale: number) {
-    // Store scale in per-ratio config for the current preview aspect ratio
+  async function onOverlayWidthChangeComplete(id: string) {
+    const key = `text-${id}-width`;
+    const startData = overlayOperationStartValues.value.get(key);
+    
+    if (!startData) return;
+    
+    const ratio = previewAspectRatio.value;
+    const overlay = textOverlays.value.find((o) => o.id === id);
+    const config = overlay?.perRatioConfigs?.[ratio];
+    const finalWidth = config?.style?.width || overlay?.style?.width || 0;
+    
+    if (!finalWidth || startData.value === finalWidth) {
+      overlayOperationStartValues.value.delete(key);
+      return;
+    }
+    
+    const commandData: UpdateOverlayPropertyCommandData = {
+      type: 'text',
+      itemId: id,
+      property: 'width',
+      aspectRatio: ratio,
+      originalValue: startData.value,
+      newValue: finalWidth,
+      onReload: async () => {
+        if (editorMode.value) {
+          await loadEditorProject();
+        }
+      },
+    };
+    
+    const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
+    await commandHistory.executeCommand(command);
+    undoRedoTrigger.value++;
+    
+    overlayOperationStartValues.value.delete(key);
+  }
+
+  async function onUpdateStickerScale(id: string, scale: number) {
+    const key = `sticker-${id}-scale`;
+    const ratio = previewAspectRatio.value;
+    
+    // Capture original value if this is the start of an operation
+    if (!overlayOperationStartValues.value.has(key)) {
+      const sticker = stickers.value.find((s) => s.id === id);
+      if (sticker) {
+        const config = sticker.perRatioConfigs?.[ratio];
+        const originalScale = config?.scale ?? sticker.scale;
+        overlayOperationStartValues.value.set(key, { property: 'scale', value: originalScale });
+      }
+    }
+
+    // Apply the update immediately for responsive UI
     const sticker = stickers.value.find((s) => s.id === id);
     if (sticker) {
-      const ratio = previewAspectRatio.value;
       const perRatioConfigs = sticker.perRatioConfigs || {};
       const currentConfig = perRatioConfigs[ratio] || {
         position: { ...sticker.position },
@@ -4846,11 +5098,60 @@
     }
   }
 
-  function onUpdateStickerRotation(id: string, rotation: number) {
-    // Store rotation in per-ratio config for the current preview aspect ratio
+  async function onStickerScaleChangeComplete(id: string) {
+    const key = `sticker-${id}-scale`;
+    const startData = overlayOperationStartValues.value.get(key);
+    
+    if (!startData) return;
+    
+    const ratio = previewAspectRatio.value;
+    const sticker = stickers.value.find((s) => s.id === id);
+    const config = sticker?.perRatioConfigs?.[ratio];
+    const finalScale = config?.scale ?? sticker?.scale ?? 1;
+    
+    if (startData.value === finalScale) {
+      overlayOperationStartValues.value.delete(key);
+      return;
+    }
+    
+    const commandData: UpdateOverlayPropertyCommandData = {
+      type: 'sticker',
+      itemId: id,
+      property: 'scale',
+      aspectRatio: ratio,
+      originalValue: startData.value,
+      newValue: finalScale,
+      onReload: async () => {
+        if (editorMode.value) {
+          await loadEditorProject();
+        }
+      },
+    };
+    
+    const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
+    await commandHistory.executeCommand(command);
+    undoRedoTrigger.value++;
+    
+    overlayOperationStartValues.value.delete(key);
+  }
+
+  async function onUpdateStickerRotation(id: string, rotation: number) {
+    const key = `sticker-${id}-rotation`;
+    const ratio = previewAspectRatio.value;
+    
+    // Capture original value if this is the start of an operation
+    if (!overlayOperationStartValues.value.has(key)) {
+      const sticker = stickers.value.find((s) => s.id === id);
+      if (sticker) {
+        const config = sticker.perRatioConfigs?.[ratio];
+        const originalRotation = config?.rotation ?? sticker.rotation ?? 0;
+        overlayOperationStartValues.value.set(key, { property: 'rotation', value: originalRotation });
+      }
+    }
+
+    // Apply the update immediately for responsive UI
     const sticker = stickers.value.find((s) => s.id === id);
     if (sticker) {
-      const ratio = previewAspectRatio.value;
       const perRatioConfigs = sticker.perRatioConfigs || {};
       const currentConfig = perRatioConfigs[ratio] || {
         position: { ...sticker.position },
@@ -4863,11 +5164,60 @@
     }
   }
 
-  function onUpdateWatermarkScale(id: string, scale: number) {
-    // Store scale in per-ratio config for the current preview aspect ratio
+  async function onStickerRotationChangeComplete(id: string) {
+    const key = `sticker-${id}-rotation`;
+    const startData = overlayOperationStartValues.value.get(key);
+    
+    if (!startData) return;
+    
+    const ratio = previewAspectRatio.value;
+    const sticker = stickers.value.find((s) => s.id === id);
+    const config = sticker?.perRatioConfigs?.[ratio];
+    const finalRotation = config?.rotation ?? sticker?.rotation ?? 0;
+    
+    if (startData.value === finalRotation) {
+      overlayOperationStartValues.value.delete(key);
+      return;
+    }
+    
+    const commandData: UpdateOverlayPropertyCommandData = {
+      type: 'sticker',
+      itemId: id,
+      property: 'rotation',
+      aspectRatio: ratio,
+      originalValue: startData.value,
+      newValue: finalRotation,
+      onReload: async () => {
+        if (editorMode.value) {
+          await loadEditorProject();
+        }
+      },
+    };
+    
+    const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
+    await commandHistory.executeCommand(command);
+    undoRedoTrigger.value++;
+    
+    overlayOperationStartValues.value.delete(key);
+  }
+
+  async function onUpdateWatermarkScale(id: string, scale: number) {
+    const key = `watermark-${id}-scale`;
+    const ratio = previewAspectRatio.value;
+    
+    // Capture original value if this is the start of an operation
+    if (!overlayOperationStartValues.value.has(key)) {
+      const watermark = watermarks.value.find((w) => w.id === id);
+      if (watermark) {
+        const config = watermark.perRatioConfigs?.[ratio];
+        const originalScale = config?.scale ?? watermark.scale;
+        overlayOperationStartValues.value.set(key, { property: 'scale', value: originalScale });
+      }
+    }
+
+    // Apply the update immediately for responsive UI
     const watermark = watermarks.value.find((w) => w.id === id);
     if (watermark) {
-      const ratio = previewAspectRatio.value;
       const perRatioConfigs = watermark.perRatioConfigs || {};
       const currentConfig = perRatioConfigs[ratio] || {
         position: { ...watermark.position },
@@ -4878,6 +5228,43 @@
       perRatioConfigs[ratio] = currentConfig;
       updateWatermarkLocal(id, { perRatioConfigs });
     }
+  }
+
+  async function onWatermarkScaleChangeComplete(id: string) {
+    const key = `watermark-${id}-scale`;
+    const startData = overlayOperationStartValues.value.get(key);
+    
+    if (!startData) return;
+    
+    const ratio = previewAspectRatio.value;
+    const watermark = watermarks.value.find((w) => w.id === id);
+    const config = watermark?.perRatioConfigs?.[ratio];
+    const finalScale = config?.scale ?? watermark?.scale ?? 1;
+    
+    if (startData.value === finalScale) {
+      overlayOperationStartValues.value.delete(key);
+      return;
+    }
+    
+    const commandData: UpdateOverlayPropertyCommandData = {
+      type: 'watermark',
+      itemId: id,
+      property: 'scale',
+      aspectRatio: ratio,
+      originalValue: startData.value,
+      newValue: finalScale,
+      onReload: async () => {
+        if (editorMode.value) {
+          await loadEditorProject();
+        }
+      },
+    };
+    
+    const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
+    await commandHistory.executeCommand(command);
+    undoRedoTrigger.value++;
+    
+    overlayOperationStartValues.value.delete(key);
   }
 
   // Effect operations (prefixed with underscore as they may be used in future)
@@ -5445,6 +5832,49 @@
     } else if (e.key === 'm' && !isTyping) {
       e.preventDefault();
       addMarkerAtPlayhead();
+    } else if (e.key === 'ArrowLeft' && !isTyping) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        // Shift+Left: Seek back 10 frames (approx 0.33s)
+        seekFrame(-10);
+      } else {
+        // Left: Seek back 1 frame (approx 0.033s)
+        seekFrame(-1);
+      }
+    } else if (e.key === 'ArrowRight' && !isTyping) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        // Shift+Right: Seek forward 10 frames
+        seekFrame(10);
+      } else {
+        // Right: Seek forward 1 frame
+        seekFrame(1);
+      }
+    }
+  }
+
+  // Frame seek helper (assumes 30fps for now)
+  function seekFrame(frameCount: number) {
+    const FRAME_DURATION = 1 / 30; // 0.0333...
+    const currentTime = editorMode.value ? previewTime.value : relativePreviewTime.value;
+    const maxDuration = editorMode.value ? editorDuration.value : clipDuration.value;
+    
+    // Calculate new time
+    let newTime = currentTime + (frameCount * FRAME_DURATION);
+    
+    // Clamp to bounds
+    newTime = Math.max(0, Math.min(maxDuration, newTime));
+    
+    // Update preview
+    if (editorMode.value) {
+      // In editor mode, previewTime is global
+      previewTime.value = newTime;
+      // Seek logic handles the rest
+      seekTo(newTime); 
+    } else {
+      // In clip mode, convert relative back to absolute
+      const absoluteTime = props.clipStartTime + newTime;
+      seekTo(absoluteTime);
     }
   }
 

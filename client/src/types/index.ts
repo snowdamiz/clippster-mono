@@ -1129,15 +1129,15 @@ export interface VideoEditorDialogEmits {
 // Video Editor Transition Types
 // ==========================================
 
-// Represents a crossfade transition between two overlapping video sources
+// Represents a transition between two overlapping video sources
 export interface VideoEditorTransition {
   id: string;
   sourceAId: string; // First source (ending)
   sourceBId: string; // Second source (starting)
   startTime: number; // When transition starts (sourceB.start_time)
   endTime: number; // When transition ends (sourceA.end_time)
-  duration: number; // Length of the crossfade
-  type: 'crossfade'; // Future: could support 'wipe', 'dissolve', etc.
+  duration: number; // Length of the transition
+  type: 'crossfade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'wipe-left' | 'wipe-right' | 'zoom-in' | 'zoom-out';
 }
 
 // Utility function to detect transitions between overlapping sources
@@ -1165,7 +1165,7 @@ export function detectSourceTransitions(sources: VideoEditorSource[]): VideoEdit
           startTime: overlapStart,
           endTime: overlapEnd,
           duration,
-          type: 'crossfade',
+          type: 'crossfade', // Default to crossfade
         });
       }
     }
@@ -1174,23 +1174,135 @@ export function detectSourceTransitions(sources: VideoEditorSource[]): VideoEdit
   return transitions;
 }
 
-// Calculate crossfade opacity for preview playback
-// Returns { opacityA, opacityB } where values are 0-1
+// Calculate transition state for preview playback
+export interface TransitionState {
+  opacityA: number;
+  opacityB: number;
+  transformA?: string;
+  transformB?: string;
+  clipPathA?: string;
+  clipPathB?: string;
+  zIndexA: number;
+  zIndexB: number;
+}
+
+export function calculateTransitionState(
+  currentTime: number,
+  transition: VideoEditorTransition
+): TransitionState {
+  // Default state (no transition active)
+  if (currentTime < transition.startTime) {
+    return { opacityA: 1, opacityB: 0, zIndexA: 1, zIndexB: 0 };
+  }
+  if (currentTime >= transition.endTime) {
+    return { opacityA: 0, opacityB: 1, zIndexA: 0, zIndexB: 1 };
+  }
+
+  const progress = (currentTime - transition.startTime) / transition.duration;
+  
+  switch (transition.type) {
+    case 'slide-left':
+      // B slides in from right, A slides out to left
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        transformA: `translateX(${-progress * 100}%)`,
+        transformB: `translateX(${(1 - progress) * 100}%)`,
+        zIndexA: 1,
+        zIndexB: 2 // B on top
+      };
+      
+    case 'slide-right':
+      // B slides in from left, A slides out to right
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        transformA: `translateX(${progress * 100}%)`,
+        transformB: `translateX(${-(1 - progress) * 100}%)`,
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'slide-up':
+      // B slides in from bottom
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        transformA: `translateY(${-progress * 100}%)`,
+        transformB: `translateY(${(1 - progress) * 100}%)`,
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'slide-down':
+      // B slides in from top
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        transformA: `translateY(${progress * 100}%)`,
+        transformB: `translateY(${-(1 - progress) * 100}%)`,
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'wipe-left':
+      // B wipes over A from right to left
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        clipPathB: `inset(0 0 0 ${(1 - progress) * 100}%)`, // Reveal B from right
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'wipe-right':
+      // B wipes over A from left to right
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        clipPathB: `inset(0 ${(1 - progress) * 100}% 0 0)`, // Reveal B from left
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'zoom-in':
+      // A zooms in and fades out, B fades in
+      return {
+        opacityA: 1 - progress,
+        opacityB: progress,
+        transformA: `scale(${1 + progress})`,
+        transformB: `scale(1)`,
+        zIndexA: 2,
+        zIndexB: 1
+      };
+      
+    case 'zoom-out':
+      // A zooms out and fades out
+      return {
+        opacityA: 1 - progress,
+        opacityB: progress,
+        transformA: `scale(${1 - progress * 0.5})`,
+        transformB: `scale(1)`,
+        zIndexA: 2,
+        zIndexB: 1
+      };
+
+    case 'crossfade':
+    default:
+      return {
+        opacityA: 1 - progress,
+        opacityB: progress,
+        zIndexA: 1,
+        zIndexB: 1 // Equal z-index for blend
+      };
+  }
+}
+
+// Deprecated: use calculateTransitionState instead
 export function calculateCrossfadeOpacity(
   currentTime: number,
   transition: VideoEditorTransition
 ): { opacityA: number; opacityB: number } {
-  if (currentTime < transition.startTime) {
-    return { opacityA: 1, opacityB: 0 };
-  }
-  if (currentTime >= transition.endTime) {
-    return { opacityA: 0, opacityB: 1 };
-  }
-
-  // Linear crossfade
-  const progress = (currentTime - transition.startTime) / transition.duration;
-  return {
-    opacityA: 1 - progress,
-    opacityB: progress,
-  };
+  const state = calculateTransitionState(currentTime, transition);
+  return { opacityA: state.opacityA, opacityB: state.opacityB };
 }

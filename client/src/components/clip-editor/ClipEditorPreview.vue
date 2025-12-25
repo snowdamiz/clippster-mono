@@ -530,6 +530,41 @@
         </div>
         <!-- Right Controls -->
         <div class="flex items-center gap-2 pr-1">
+          <!-- Playback Speed Control -->
+          <div class="relative">
+            <button
+              @click="showSpeedMenu = !showSpeedMenu"
+              class="flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group text-[11px] font-medium text-white/80"
+              title="Playback Speed"
+            >
+              <span>{{ playbackRate }}x</span>
+            </button>
+            
+            <!-- Speed Menu -->
+            <div
+              v-if="showSpeedMenu"
+              class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl overflow-hidden min-w-[60px] flex flex-col z-50 py-1"
+            >
+              <button
+                v-for="rate in [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]"
+                :key="rate"
+                @click="setPlaybackRate(rate)"
+                class="px-3 py-1.5 text-[11px] hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-2"
+                :class="playbackRate === rate ? 'text-violet-400 font-bold bg-violet-500/10' : 'text-white/70'"
+              >
+                <span>{{ rate }}x</span>
+                <Check v-if="playbackRate === rate" :size="10" />
+              </button>
+            </div>
+            
+            <!-- Click outside handler -->
+            <div
+              v-if="showSpeedMenu"
+              class="fixed inset-0 z-40"
+              @click="showSpeedMenu = false"
+            ></div>
+          </div>
+
           <!-- Volume Control -->
           <div class="flex items-center gap-2 px-1.5 py-1">
             <button
@@ -576,7 +611,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2 } from 'lucide-vue-next';
+  import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2, Check } from 'lucide-vue-next';
   import type {
     TextOverlay,
     Sticker,
@@ -587,7 +622,10 @@
     ClipSubtitleSettings,
     WordInfo,
     WhisperSegment,
+    VideoEditorTransition,
+    TransitionState,
   } from '@/types';
+  import { calculateTransitionState } from '@/types';
 
   interface SegmentInput {
     start_time: number;
@@ -674,8 +712,8 @@
       editorMode?: boolean;
       // Total duration for editor mode (sum of all source durations)
       editorTotalDuration?: number;
-      // Active crossfade transition (when sources overlap)
-      activeTransition?: { startTime: number; endTime: number; duration: number } | null;
+      // Active transition (crossfade, slide, wipe, etc.)
+      activeTransition?: VideoEditorTransition | null;
     }>(),
     {
       watermarks: () => [],
@@ -711,6 +749,14 @@
     (e: 'update:previewAspectRatio', ratio: string): void;
     (e: 'updateSubtitlePosition', position: { x: number; y: number }): void;
     (e: 'updateSubtitleMaxWidth', maxWidth: number): void;
+    // Completion events for undo/redo
+    (e: 'overlayDragEnd', type: 'text' | 'sticker' | 'watermark', id: string): void;
+    (e: 'overlayResizeEnd', id: string): void;
+    (e: 'stickerResizeEnd', id: string): void;
+    (e: 'stickerRotateEnd', id: string): void;
+    (e: 'watermarkResizeEnd', id: string): void;
+    (e: 'subtitleDragEnd'): void;
+    (e: 'subtitleResizeEnd'): void;
   }>();
 
   // Refs
@@ -726,6 +772,8 @@
   const isFullscreen = ref(false);
   const isDraggingProgress = ref(false);
   const containerSize = ref({ width: 0, height: 0 });
+  const playbackRate = ref(1);
+  const showSpeedMenu = ref(false);
 
   // Double-buffer state for seamless transitions (editor mode)
   const activeVideoIndex = ref<0 | 1>(0); // 0 = main video, 1 = preload video
@@ -749,6 +797,37 @@
       return props.preloadVideoSrc;
     }
     return '';
+  });
+
+  function setPlaybackRate(rate: number) {
+    playbackRate.value = rate;
+    showSpeedMenu.value = false;
+    
+    // Apply to main video
+    if (videoRef.value) {
+      videoRef.value.playbackRate = rate;
+    }
+    
+    // Apply to preload video
+    if (preloadVideoRef.value) {
+      preloadVideoRef.value.playbackRate = rate;
+    }
+    
+    // Apply to region videos (multi-region mode)
+    regionVideoRefs.value.forEach(video => {
+      if (video) {
+        video.playbackRate = rate;
+      }
+    });
+  }
+
+  // Ensure playback rate is applied when video elements change or become ready
+  watch(videoRef, (el) => {
+    if (el) el.playbackRate = playbackRate.value;
+  });
+  
+  watch(preloadVideoRef, (el) => {
+    if (el) el.playbackRate = playbackRate.value;
   });
 
   // Track the preload src when it changes (avoid side effects in computed)
@@ -776,47 +855,35 @@
     { immediate: true }
   );
 
-  // Crossfade opacity state - for non-animated states (initial/final)
-  // During active crossfade, the animation loop handles opacity directly
-  const crossfadeState = computed(() => {
-    // If crossfade animation is running, return neutral values (animation loop handles it)
+  // Transition state - for non-animated states (initial/final)
+  // During active transition, the animation loop handles styles directly
+  const transitionState = computed<TransitionState | null>(() => {
+    // If transition animation is running, return neutral values (animation loop handles it)
     if (crossfadeActive.value) {
-      return {
-        mainOpacity: 1, // Will be overridden by animation loop
-        preloadOpacity: 1, // Will be overridden by animation loop
-        isInCrossfade: true,
-      };
+      return null;
     }
 
     // If no active transition, return full visibility for active video
     if (!props.editorMode || !props.activeTransition) {
       return {
-        mainOpacity: activeVideoIndex.value === 0 ? 1 : 0,
-        preloadOpacity: activeVideoIndex.value === 1 ? 1 : 0,
-        isInCrossfade: false,
+        opacityA: activeVideoIndex.value === 0 ? 1 : 0,
+        opacityB: activeVideoIndex.value === 1 ? 1 : 0,
+        zIndexA: activeVideoIndex.value === 0 ? 1 : 0,
+        zIndexB: activeVideoIndex.value === 1 ? 1 : 0,
       };
     }
 
     // Transition exists but animation not started yet - calculate initial state
-    const { startTime, duration } = props.activeTransition;
-    const currentTime = props.currentTime;
-    const progress = duration > 0 ? Math.max(0, Math.min(1, (currentTime - startTime) / duration)) : 0;
-
-    return {
-      mainOpacity: Math.max(0, Math.min(1, 1 - progress)),
-      preloadOpacity: Math.max(0, Math.min(1, progress)),
-      isInCrossfade: progress > 0 && progress < 1,
-    };
+    return calculateTransitionState(props.currentTime, props.activeTransition);
   });
 
-  // Crossfade animation state tracking
-  const crossfadeStartTime = ref<number>(0); // Wall-clock time when crossfade started
-  const crossfadeInitialProgress = ref<number>(0); // Progress into transition when crossfade started
+  // Crossfade/Transition animation state tracking
+  const crossfadeStartTime = ref<number>(0); // Wall-clock time when transition started
+  const crossfadeInitialProgress = ref<number>(0); // Progress into transition when started
   const crossfadePausedAt = ref<number | null>(null); // Progress when animation was paused (for pause/resume)
 
-  // Smooth crossfade animation loop using requestAnimationFrame (60fps)
-  // This bypasses Vue's reactivity for smooth opacity interpolation
-  // Uses elapsed wall-clock time to ensure smooth 60fps animation regardless of video timeupdate frequency
+  // Smooth transition animation loop using requestAnimationFrame (60fps)
+  // This bypasses Vue's reactivity for smooth interpolation of all style properties
   function startCrossfadeAnimation() {
     if (crossfadeAnimationId.value !== null || !props.activeTransition) {
       return;
@@ -827,11 +894,11 @@
     const preloadVideo = preloadVideoRef.value;
 
     if (!mainVideo || !preloadVideo) {
-      console.warn('[startCrossfadeAnimation] Missing video refs');
+      console.warn('[startTransitionAnimation] Missing video refs');
       return;
     }
 
-    // Calculate current progress into transition (when crossfade starts)
+    // Calculate current progress into transition (when starts)
     const currentProgress =
       transition.duration > 0
         ? Math.max(0, Math.min(1, (props.currentTime - transition.startTime) / transition.duration))
@@ -846,8 +913,10 @@
     const remainingDuration = transition.duration * (1 - currentProgress) * 1000;
 
     console.log(
-      '[startCrossfadeAnimation] Starting smooth crossfade animation',
-      'transition:',
+      '[startTransitionAnimation] Starting smooth animation',
+      'type:',
+      transition.type,
+      'range:',
       transition.startTime.toFixed(3),
       '-',
       transition.endTime.toFixed(3),
@@ -867,7 +936,7 @@
       const preloadVideo = preloadVideoRef.value;
 
       if (!mainVideo || !preloadVideo || !props.activeTransition) {
-        stopCrossfadeAnimation(true); // Reset opacity on abort
+        stopCrossfadeAnimation(true); // Reset styles on abort
         return;
       }
 
@@ -894,39 +963,50 @@
       }
 
       // Calculate progress using wall-clock time for smooth animation
-      // This ensures 60fps smooth animation regardless of video timeupdate frequency
       const elapsedMs = performance.now() - crossfadeStartTime.value;
       const transitionDurationMs = transition.duration * 1000;
 
-      // Calculate how much progress we've made since animation started (in progress units)
+      // Calculate how much progress we've made since animation started
       const progressSinceStart = transitionDurationMs > 0 ? elapsedMs / transitionDurationMs : 1;
 
-      // Total progress is initial progress + progress made during animation
+      // Total progress
       const progress = Math.max(0, Math.min(1, crossfadeInitialProgress.value + progressSinceStart));
 
-      // Calculate opacities with smooth interpolation
-      const mainOpacity = Math.max(0, Math.min(1, 1 - progress));
-      const preloadOpacity = Math.max(0, Math.min(1, progress));
+      // Calculate state for this progress point
+      const effectiveTime = transition.startTime + (progress * transition.duration);
+      const state = calculateTransitionState(effectiveTime, transition);
 
-      // Apply opacities directly to DOM elements for smooth animation (bypasses Vue reactivity)
-      mainVideo.style.opacity = String(mainOpacity);
-      preloadVideo.style.opacity = String(preloadOpacity);
+      // Apply styles directly to DOM elements
+      // Opacity
+      mainVideo.style.opacity = String(state.opacityA);
+      preloadVideo.style.opacity = String(state.opacityB);
+      
+      // Transform
+      mainVideo.style.transform = state.transformA || 'none';
+      preloadVideo.style.transform = state.transformB || 'none';
+      
+      // Clip Path
+      mainVideo.style.clipPath = state.clipPathA || 'none';
+      preloadVideo.style.clipPath = state.clipPathB || 'none';
+      
+      // Z-Index
+      mainVideo.style.zIndex = String(state.zIndexA);
+      preloadVideo.style.zIndex = String(state.zIndexB);
 
-      // Apply volume crossfade for smooth audio transition
-      // Use the same opacity values for audio volume (linear fade matches visual)
-      mainVideo.volume = mainOpacity;
-      preloadVideo.volume = preloadOpacity;
+      // Apply volume crossfade (always crossfade audio regardless of visual transition type)
+      // Use linear fade for audio
+      mainVideo.volume = 1 - progress;
+      preloadVideo.volume = progress;
 
-      // Check if crossfade is complete (progress >= 1)
+      // Check if complete
       if (progress >= 1) {
         console.log(
-          '[crossfadeAnimation] Crossfade complete, progress:',
+          '[transitionAnimation] Complete, progress:',
           (progress * 100).toFixed(1) + '%',
           'elapsed:',
           elapsedMs.toFixed(0) + 'ms'
         );
-        // Don't stop animation here - let the parent call completeCrossfade
-        // This ensures sync with parent's state management
+        // Don't stop animation here - let parent call completeCrossfade
         return;
       }
 
@@ -938,7 +1018,7 @@
     crossfadeAnimationId.value = requestAnimationFrame(animate);
   }
 
-  function stopCrossfadeAnimation(resetOpacity: boolean = false) {
+  function stopCrossfadeAnimation(resetStyles: boolean = false) {
     if (crossfadeAnimationId.value !== null) {
       cancelAnimationFrame(crossfadeAnimationId.value);
       crossfadeAnimationId.value = null;
@@ -946,16 +1026,19 @@
     crossfadeActive.value = false;
     crossfadePausedAt.value = null;
 
-    // Only reset opacity styles if requested (e.g., when animation is aborted, not completed)
-    if (resetOpacity) {
+    // Reset styles if requested
+    if (resetStyles) {
       const mainVideo = videoRef.value;
       const preloadVideo = preloadVideoRef.value;
-      if (mainVideo) {
-        mainVideo.style.opacity = '';
-      }
-      if (preloadVideo) {
-        preloadVideo.style.opacity = '';
-      }
+      
+      [mainVideo, preloadVideo].forEach(video => {
+        if (video) {
+          video.style.opacity = '';
+          video.style.transform = '';
+          video.style.clipPath = '';
+          video.style.zIndex = '';
+        }
+      });
     }
   }
 
@@ -2075,6 +2158,8 @@
 
   function onWatermarkResizeEnd() {
     if (watermarkResizeState.id) {
+      // Emit completion event for undo/redo
+      emit('watermarkResizeEnd', watermarkResizeState.id);
       // Clear local scale after emit completes
       delete localWatermarkScales.value[watermarkResizeState.id];
     }
@@ -2127,6 +2212,7 @@
   }
 
   function onSubtitleDragEnd() {
+    emit('subtitleDragEnd');
     dragState.isDragging = false;
     dragState.type = null;
     dragState.id = null;
@@ -2182,6 +2268,7 @@
   }
 
   function onSubtitleResizeEnd() {
+    emit('subtitleResizeEnd');
     // Clear local width after emit completes
     localSubtitleMaxWidth.value = null;
 
@@ -2473,6 +2560,11 @@
   }
 
   function onDragEnd() {
+    // Emit completion event for undo/redo before clearing state
+    if (dragState.type && dragState.id && dragState.type !== 'subtitle') {
+      emit('overlayDragEnd', dragState.type, dragState.id);
+    }
+
     dragState.isDragging = false;
     dragState.type = null;
     dragState.id = null;
@@ -2547,6 +2639,11 @@
   }
 
   function onResizeEnd() {
+    // Emit completion event for undo/redo before clearing state
+    if (resizeState.id) {
+      emit('overlayResizeEnd', resizeState.id);
+    }
+
     resizeState.isResizing = false;
     resizeState.id = null;
     resizeState.side = null;
@@ -2616,6 +2713,8 @@
 
   function onStickerResizeEnd() {
     if (stickerResizeState.id) {
+      // Emit completion event for undo/redo
+      emit('stickerResizeEnd', stickerResizeState.id);
       // Clear local scale after emit completes
       delete localStickerScales.value[stickerResizeState.id];
     }
@@ -2676,6 +2775,8 @@
 
   function onStickerRotateEnd() {
     if (stickerRotateState.id) {
+      // Emit completion event for undo/redo
+      emit('stickerRotateEnd', stickerRotateState.id);
       // Clear local rotation after emit completes
       delete localStickerRotations.value[stickerRotateState.id];
     }
@@ -3680,48 +3781,6 @@
     };
   }
 
-  // Get style for main video including crossfade opacity
-  function getMainVideoStyle(): Record<string, string> {
-    const filterStyle = getVideoFilterStyle();
-
-    if (!props.editorMode) {
-      return filterStyle;
-    }
-
-    // During active crossfade animation, don't set opacity here
-    // The animation loop handles it directly via inline styles for smooth 60fps transitions
-    if (crossfadeActive.value) {
-      return filterStyle;
-    }
-
-    // When not in crossfade, use opacity 1 or 0 based on active video
-    return {
-      ...filterStyle,
-      opacity: activeVideoIndex.value === 0 ? '1' : '0',
-    };
-  }
-
-  // Get style for preload video including crossfade opacity
-  function getPreloadVideoStyle(): Record<string, string> {
-    const filterStyle = getVideoFilterStyle();
-
-    if (!props.editorMode) {
-      return filterStyle;
-    }
-
-    // During active crossfade animation, don't set opacity here
-    // The animation loop handles it directly via inline styles for smooth 60fps transitions
-    if (crossfadeActive.value) {
-      return filterStyle;
-    }
-
-    // When not in crossfade, use opacity 1 or 0 based on active video
-    return {
-      ...filterStyle,
-      opacity: activeVideoIndex.value === 1 ? '1' : '0',
-    };
-  }
-
   function getVignetteStyle(): Record<string, string> {
     const vignette = props.filterSettings?.vignette || 0;
     if (vignette === 0) {
@@ -3735,6 +3794,28 @@
     return {
       background: `radial-gradient(ellipse at center, transparent ${innerStop}%, rgba(0,0,0,${opacity}) 100%)`,
       pointerEvents: 'none',
+    };
+  }
+
+  function getMainVideoStyle(): Record<string, string> {
+    const filterStyle = getVideoFilterStyle();
+    const opacity = activeVideoIndex.value === 0 ? 1 : 0;
+    
+    return {
+      ...filterStyle,
+      opacity: opacity.toString(),
+      transition: crossfadeActive.value ? 'opacity 0.3s ease-in-out' : 'none',
+    };
+  }
+
+  function getPreloadVideoStyle(): Record<string, string> {
+    const filterStyle = getVideoFilterStyle();
+    const opacity = activeVideoIndex.value === 1 ? 1 : 0;
+    
+    return {
+      ...filterStyle,
+      opacity: opacity.toString(),
+      transition: crossfadeActive.value ? 'opacity 0.3s ease-in-out' : 'none',
     };
   }
 

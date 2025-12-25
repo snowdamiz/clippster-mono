@@ -140,6 +140,54 @@
             {{ getTrackDb(track.id) > 0 ? '+' : '' }}{{ getTrackDb(track.id).toFixed(1) }}dB
           </span>
         </div>
+
+        <!-- Fade Controls -->
+        <div class="flex items-center gap-4 mt-2 px-1">
+          <div class="flex items-center gap-1.5 flex-1">
+            <div class="w-3 h-3 text-white/40 rotate-180">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 22L2 22L22 2" />
+              </svg>
+            </div>
+            <div class="flex flex-col flex-1">
+              <label class="text-[9px] text-white/40">Fade In</label>
+              <div class="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  max="5"
+                  step="0.1"
+                  :value="track.fadeIn || 0"
+                  @input="(e) => updateTrackFadeIn(track, e)"
+                  class="w-full bg-black/20 border border-white/10 rounded px-1 py-0.5 text-[10px] text-white/70 focus:border-emerald-500/50 focus:outline-none"
+                />
+                <span class="text-[9px] text-white/30">s</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 flex-1">
+            <div class="w-3 h-3 text-white/40">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 22L2 22L22 2" />
+              </svg>
+            </div>
+            <div class="flex flex-col flex-1">
+              <label class="text-[9px] text-white/40">Fade Out</label>
+              <div class="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  max="5"
+                  step="0.1"
+                  :value="track.fadeOut || 0"
+                  @input="(e) => updateTrackFadeOut(track, e)"
+                  class="w-full bg-black/20 border border-white/10 rounded px-1 py-0.5 text-[10px] text-white/70 focus:border-emerald-500/50 focus:outline-none"
+                />
+                <span class="text-[9px] text-white/30">s</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

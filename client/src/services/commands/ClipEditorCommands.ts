@@ -4,7 +4,7 @@
  * Each command handles both clip mode and editor mode operations.
  */
 
-import { BaseCommand } from './Command';
+import { BaseCommand, type ICommand } from './Command';
 import {
   splitClipSegment,
   deleteClipSegment,
@@ -27,6 +27,14 @@ import {
   updateVideoEditorSticker,
   updateVideoEditorEffect,
   updateVideoEditorAudioTrack,
+  createVideoEditorAudioTrack,
+  deleteVideoEditorAudioTrack,
+  createVideoEditorSticker,
+  deleteVideoEditorSticker,
+  createVideoEditorTextOverlay,
+  deleteVideoEditorTextOverlay,
+  createVideoEditorWatermark,
+  deleteVideoEditorWatermark,
 } from '@/services/database/video-editor-edits';
 
 /**
@@ -680,6 +688,336 @@ export class MoveCommand extends BaseCommand {
   }
 }
 
+/**
+ * Extract Audio Command Data Interface
+ */
+export interface ExtractAudioCommandData {
+  editId: string;
+  sourceId: string;
+  
+  // Audio track data
+  filePath: string;
+  name: string;
+  startTime: number;
+  endTime: number;
+  trackOrder: number;
+  
+  // State for undo
+  createdAudioTrackId?: string;
+  
+  // Callback for reloading UI
+  onReload?: () => Promise<void>;
+}
+
+/**
+ * Extract Audio Command - Extracts audio from a video source and creates an audio track
+ * Supports undo by deleting the created audio track and unmarking the source
+ */
+export class ExtractAudioCommand extends BaseCommand {
+  private data: ExtractAudioCommandData;
+
+  constructor(data: ExtractAudioCommandData) {
+    super(true, `Extract audio from source`);
+    this.data = data;
+  }
+
+  async execute(): Promise<void> {
+    console.log('[ExtractAudioCommand] Creating audio track');
+    
+    // Create the audio track
+    const newTrack = await createVideoEditorAudioTrack(this.data.editId, {
+      file_path: this.data.filePath,
+      name: this.data.name,
+      start_time: this.data.startTime,
+      end_time: this.data.endTime,
+      volume: 1.0,
+      fade_in: 0,
+      fade_out: 0,
+      track_order: this.data.trackOrder,
+      is_muted: 0,
+      is_solo: 0,
+      source_id: this.data.sourceId,
+    });
+    
+    this.data.createdAudioTrackId = newTrack.id;
+    
+    // Mark the source as having audio extracted
+    await updateVideoEditorSource(this.data.sourceId, { audio_extracted: true });
+    
+    console.log('[ExtractAudioCommand] Audio track created:', newTrack.id);
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  async undo(): Promise<void> {
+    if (!this.data.createdAudioTrackId) {
+      throw new Error('Cannot undo: no audio track ID');
+    }
+    
+    console.log('[ExtractAudioCommand] Undoing - deleting audio track:', this.data.createdAudioTrackId);
+    
+    // Delete the audio track
+    await deleteVideoEditorAudioTrack(this.data.createdAudioTrackId);
+    
+    // Unmark the source
+    await updateVideoEditorSource(this.data.sourceId, { audio_extracted: false });
+    
+    console.log('[ExtractAudioCommand] Undo complete');
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+}
+
+/**
+ * Add Item Command Data Interface - for adding stickers, text, watermarks, etc.
+ */
+export interface AddItemCommandData {
+  type: 'sticker' | 'text' | 'watermark';
+  editId: string;
+  itemData: Record<string, unknown>;
+  
+  // State for undo
+  createdItemId?: string;
+  
+  // Callback for reloading UI
+  onReload?: () => Promise<void>;
+}
+
+/**
+ * Add Item Command - Adds a new item (sticker, text, watermark) to the timeline
+ * Supports undo by deleting the created item
+ */
+export class AddItemCommand extends BaseCommand {
+  private data: AddItemCommandData;
+
+  constructor(data: AddItemCommandData) {
+    super(true, `Add ${data.type}`);
+    this.data = data;
+  }
+
+  async execute(): Promise<void> {
+    console.log(`[AddItemCommand] Adding ${this.data.type}`);
+    
+    let createdItem: { id: string };
+    
+    switch (this.data.type) {
+      case 'sticker':
+        createdItem = await createVideoEditorSticker(this.data.editId, this.data.itemData);
+        break;
+      case 'text':
+        createdItem = await createVideoEditorTextOverlay(this.data.editId, this.data.itemData);
+        break;
+      case 'watermark':
+        createdItem = await createVideoEditorWatermark(this.data.editId, this.data.itemData);
+        break;
+      default:
+        throw new Error(`Unknown item type: ${this.data.type}`);
+    }
+    
+    this.data.createdItemId = createdItem.id;
+    console.log(`[AddItemCommand] ${this.data.type} created:`, createdItem.id);
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  async undo(): Promise<void> {
+    if (!this.data.createdItemId) {
+      throw new Error('Cannot undo: no item ID');
+    }
+    
+    console.log(`[AddItemCommand] Undoing - deleting ${this.data.type}:`, this.data.createdItemId);
+    
+    switch (this.data.type) {
+      case 'sticker':
+        await deleteVideoEditorSticker(this.data.createdItemId);
+        break;
+      case 'text':
+        await deleteVideoEditorTextOverlay(this.data.createdItemId);
+        break;
+      case 'watermark':
+        await deleteVideoEditorWatermark(this.data.createdItemId);
+        break;
+    }
+    
+    console.log(`[AddItemCommand] Undo complete`);
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+}
+
+/**
+ * Resize Command Data Interface - for resize operations
+ */
+export interface ResizeCommandData {
+  type: 'watermark' | 'text' | 'sticker' | 'effect' | 'audio' | 'filter' | 'source';
+  itemId: string;
+  editId: string;
+  
+  // Original position (for undo)
+  originalStartTime: number;
+  originalEndTime: number;
+  originalTrimStart?: number;
+  originalTrimEnd?: number;
+  
+  // New position (for execute/redo)
+  newStartTime: number;
+  newEndTime: number;
+  newTrimStart?: number;
+  newTrimEnd?: number;
+  
+  // Callback for reloading UI
+  onReload?: () => Promise<void>;
+}
+
+/**
+ * Resize Command - Resizes a track segment
+ * Supports undo/redo for resize operations
+ */
+export class ResizeCommand extends BaseCommand {
+  private data: ResizeCommandData;
+
+  constructor(data: ResizeCommandData) {
+    super(true, `Resize ${data.type}`);
+    this.data = data;
+  }
+
+  async execute(): Promise<void> {
+    await this.updateItemTimes(
+      this.data.newStartTime,
+      this.data.newEndTime,
+      this.data.newTrimStart,
+      this.data.newTrimEnd
+    );
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  async undo(): Promise<void> {
+    await this.updateItemTimes(
+      this.data.originalStartTime,
+      this.data.originalEndTime,
+      this.data.originalTrimStart,
+      this.data.originalTrimEnd
+    );
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  private async updateItemTimes(
+    startTime: number,
+    endTime: number,
+    trimStart?: number,
+    trimEnd?: number
+  ): Promise<void> {
+    switch (this.data.type) {
+      case 'source':
+        const sourceUpdate: Record<string, unknown> = {
+          start_time: startTime,
+          end_time: endTime,
+        };
+        if (trimStart !== undefined) sourceUpdate.trim_start = trimStart;
+        if (trimEnd !== undefined) sourceUpdate.trim_end = trimEnd;
+        await updateVideoEditorSource(this.data.itemId, sourceUpdate);
+        break;
+      case 'watermark':
+        await updateVideoEditorWatermark(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      case 'text':
+        await updateVideoEditorTextOverlay(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      case 'sticker':
+        await updateVideoEditorSticker(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      case 'effect':
+        await updateVideoEditorEffect(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      case 'audio':
+        await updateVideoEditorAudioTrack(this.data.itemId, { start_time: startTime, end_time: endTime });
+        break;
+      default:
+        console.warn(`[ResizeCommand] Unknown type: ${this.data.type}`);
+    }
+  }
+}
+
+/**
+ * Layer Change Command Data Interface - for moving items between layers
+ */
+export interface LayerChangeCommandData {
+  type: 'sticker' | 'text' | 'watermark' | 'source';
+  itemId: string;
+  
+  // Original layer (for undo)
+  originalLayer: number;
+  
+  // New layer (for execute/redo)
+  newLayer: number;
+  
+  // Callback for reloading UI
+  onReload?: () => Promise<void>;
+}
+
+/**
+ * Layer Change Command - Moves an item to a different layer
+ * Supports undo/redo for layer changes
+ */
+export class LayerChangeCommand extends BaseCommand {
+  private data: LayerChangeCommandData;
+
+  constructor(data: LayerChangeCommandData) {
+    super(true, `Move ${data.type} to layer ${data.newLayer}`);
+    this.data = data;
+  }
+
+  async execute(): Promise<void> {
+    await this.updateItemLayer(this.data.newLayer);
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  async undo(): Promise<void> {
+    await this.updateItemLayer(this.data.originalLayer);
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  private async updateItemLayer(layer: number): Promise<void> {
+    switch (this.data.type) {
+      case 'sticker':
+        await updateVideoEditorSticker(this.data.itemId, { layer });
+        break;
+      case 'text':
+        await updateVideoEditorTextOverlay(this.data.itemId, { layer });
+        break;
+      case 'watermark':
+        await updateVideoEditorWatermark(this.data.itemId, { layer });
+        break;
+      case 'source':
+        // Sources use track_index instead of layer
+        await updateVideoEditorSource(this.data.itemId, { track_index: layer });
+        break;
+      default:
+        console.warn(`[LayerChangeCommand] Unknown type: ${this.data.type}`);
+    }
+  }
+}
+
 // Export factory functions for creating commands
 export function createSplitCommand(editorMode: boolean, data: SplitCommandData): SplitCommand {
   return new SplitCommand(editorMode, data);
@@ -695,4 +1033,180 @@ export function createPasteCommand(editorMode: boolean, data: PasteCommandData):
 
 export function createMoveCommand(data: MoveCommandData): MoveCommand {
   return new MoveCommand(data);
+}
+
+export function createExtractAudioCommand(data: ExtractAudioCommandData): ExtractAudioCommand {
+  return new ExtractAudioCommand(data);
+}
+
+export function createAddItemCommand(data: AddItemCommandData): AddItemCommand {
+  return new AddItemCommand(data);
+}
+
+export function createResizeCommand(data: ResizeCommandData): ResizeCommand {
+  return new ResizeCommand(data);
+}
+
+export function createLayerChangeCommand(data: LayerChangeCommandData): LayerChangeCommand {
+  return new LayerChangeCommand(data);
+}
+
+/**
+ * Update Overlay Property Command Data Interface
+ * For position, scale, rotation, width changes on overlays
+ */
+export interface UpdateOverlayPropertyCommandData {
+  type: 'text' | 'sticker' | 'watermark' | 'subtitle';
+  itemId?: string; // Not needed for subtitle (global settings)
+  property: 'position' | 'scale' | 'rotation' | 'width' | 'maxWidth';
+  aspectRatio: string; // e.g., '9:16', '16:9', '1:1'
+  
+  // Original value (for undo)
+  originalValue: number | { x: number; y: number };
+  
+  // New value (for execute/redo)
+  newValue: number | { x: number; y: number };
+  
+  // Callback for reloading UI
+  onReload?: () => Promise<void>;
+}
+
+/**
+ * Update Overlay Property Command
+ * Handles position, scale, rotation, and width changes for overlays
+ * Supports undo/redo with per-aspect-ratio configurations
+ */
+export class UpdateOverlayPropertyCommand extends BaseCommand {
+  private data: UpdateOverlayPropertyCommandData;
+
+  constructor(editorMode: boolean, data: UpdateOverlayPropertyCommandData) {
+    const valueStr = typeof data.newValue === 'object' 
+      ? `(${data.newValue.x.toFixed(1)}, ${data.newValue.y.toFixed(1)})`
+      : data.newValue.toFixed(1);
+    super(editorMode, `Update ${data.type} ${data.property} to ${valueStr}`);
+    this.data = data;
+  }
+
+  async execute(): Promise<void> {
+    await this.updateProperty(this.data.newValue);
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  async undo(): Promise<void> {
+    await this.updateProperty(this.data.originalValue);
+    
+    if (this.data.onReload) {
+      await this.data.onReload();
+    }
+  }
+
+  private async updateProperty(value: number | { x: number; y: number }): Promise<void> {
+    // For clip mode, these updates are handled through the reactive state in ClipEditorDialog
+    // For editor mode, we need to update the database records
+    
+    if (!this.editorMode) {
+      // Clip mode: Updates are handled through reactive state, no database changes needed
+      // The onReload callback will trigger the UI update
+      return;
+    }
+
+    // Editor mode: Update database records
+    if (this.data.type === 'subtitle') {
+      // Subtitle settings are global, handled differently
+      // Would need to update video_editor_subtitle_settings table
+      console.warn('[UpdateOverlayPropertyCommand] Subtitle updates not yet implemented for editor mode');
+      return;
+    }
+
+    if (!this.data.itemId) {
+      throw new Error('Item ID required for non-subtitle updates');
+    }
+
+    // Build the update object based on property type
+    const update: Record<string, unknown> = {};
+    
+    // Get the ratio config key for this aspect ratio
+    const ratioKey = `ratio_configs.${this.data.aspectRatio}`;
+    
+    switch (this.data.property) {
+      case 'position':
+        if (typeof value === 'object') {
+          update[`${ratioKey}.position`] = value;
+        }
+        break;
+      case 'scale':
+        if (typeof value === 'number') {
+          update[`${ratioKey}.scale`] = value;
+        }
+        break;
+      case 'rotation':
+        if (typeof value === 'number') {
+          update[`${ratioKey}.rotation`] = value;
+        }
+        break;
+      case 'width':
+      case 'maxWidth':
+        if (typeof value === 'number') {
+          update[`${ratioKey}.style.maxWidth`] = value;
+        }
+        break;
+    }
+
+    // Update the appropriate table based on type
+    switch (this.data.type) {
+      case 'text':
+        await updateVideoEditorTextOverlay(this.data.itemId, update);
+        break;
+      case 'sticker':
+        await updateVideoEditorSticker(this.data.itemId, update);
+        break;
+      case 'watermark':
+        await updateVideoEditorWatermark(this.data.itemId, update);
+        break;
+    }
+  }
+
+  /**
+   * Check if this command can be merged with another
+   * Allow merging of sequential property updates on the same item
+   */
+  canMerge(other: ICommand): boolean {
+    if (!(other instanceof UpdateOverlayPropertyCommand)) {
+      return false;
+    }
+    
+    // Can merge if same type, item, property, and aspect ratio
+    return (
+      this.data.type === other.data.type &&
+      this.data.itemId === other.data.itemId &&
+      this.data.property === other.data.property &&
+      this.data.aspectRatio === other.data.aspectRatio
+    );
+  }
+
+  /**
+   * Merge with another command
+   * Keep the original value from this command, update to the new value from other
+   */
+  merge(other: ICommand): void {
+    if (!(other instanceof UpdateOverlayPropertyCommand)) {
+      throw new Error('Cannot merge with non-UpdateOverlayPropertyCommand');
+    }
+    
+    // Keep our original value, but update to the other command's new value
+    this.data.newValue = other.data.newValue;
+    
+    // Note: description is readonly, so we can't update it after construction
+    // The description will reflect the first value, but the actual command will use the merged value
+  }
+}
+
+export function createUpdateOverlayPropertyCommand(
+  editorMode: boolean,
+  data: UpdateOverlayPropertyCommandData
+): UpdateOverlayPropertyCommand {
+  return new UpdateOverlayPropertyCommand(editorMode, data);
 }
