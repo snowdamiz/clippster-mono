@@ -50,9 +50,8 @@ jobs:
         run: |
           echo "Building frontend with VITE_API_URL=$VITE_API_URL"
           yarn build:ci
-          echo "Frontend build complete. Verifying API URL in output..."
-          grep -r "clippster-server.fly.dev" dist/assets/*.js | head -3 || echo "Warning: Could not find production URL in build output"
         working-directory: client
+        shell: bash
         env:
           VITE_API_URL: https://clippster-server.fly.dev
 
