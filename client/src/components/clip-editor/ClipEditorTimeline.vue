@@ -1,6 +1,6 @@
 <template>
   <div class="bg-[#0c0c0c] transition-all duration-300 ease-in-out">
-    <div class="pt-2 px-3 pb-2 flex flex-col max-h-[55vh] gap-2">
+    <div class="pt-2 px-3 pb-1 flex flex-col max-h-[55vh] gap-2">
       <!-- Timeline Header (compact, CapCut-like) -->
       <div class="flex items-center justify-between pr-2 flex-shrink-0 text-white/70 text-[12px]">
         <div class="flex items-center gap-1.5">
@@ -75,7 +75,7 @@
               <Minus :size="13" />
             </button>
             <span class="text-[11px] text-white/60 font-mono tabular-nums min-w-[46px] text-center select-none px-1">
-              {{ Math.round(zoomLevel * 100) }}%
+              {{ getZoomDisplayText() }}
             </span>
             <button
               @click="zoomIn"
@@ -106,13 +106,13 @@
       <!-- Timeline Tracks Container -->
       <div
         ref="timelineScrollContainer"
-        class="bg-[#0c0c0c] rounded-md relative overflow-y-auto overflow-x-hidden flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#333] scrollbar-track-[#0c0c0c]"
+        class="bg-[#0c0c0c] rounded-md relative overflow-y-auto overflow-x-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#333] scrollbar-track-[#0c0c0c]"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
         @click="onTimelineContainerClick"
       >
         <!-- Horizontal scroller for ruler + tracks -->
-        <div class="overflow-x-auto pb-2">
+        <div class="pb-1">
           <!-- Timeline Content Wrapper - handles zoom width -->
           <div
             ref="contentWrapperRef"
@@ -199,16 +199,6 @@
                 ></div>
               </div>
             </div>
-          </div>
-
-          <!-- Placeholder tracks above primary video -->
-          <div
-            v-for="n in PLACEHOLDER_TOP_COUNT"
-            :key="'placeholder-top-'+n"
-            class="flex items-center h-10 relative"
-          >
-            <div class="track-label w-[100px] h-full sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"></div>
-            <div class="flex-1 h-full relative bg-[#111]"></div>
           </div>
 
           <!-- Unified Layer tracks (can contain video sources, text, stickers, watermarks) -->
@@ -764,6 +754,10 @@
               class="flex-1 bg-amber-500 group-hover:bg-amber-400 playhead-line-inner playhead-child"
               style="width: 2px;"
             ></div>
+            <!-- Bottom handle (matches top handle) -->
+            <div
+              class="sticky -bottom-[1px] z-10 flex-shrink-0 w-3 h-3 bg-amber-500 rounded-sm shadow-md playhead-child"
+            ></div>
           </div>
 
           <!-- Snap Indicator Line (shows when segment edge is snapping to another edge) -->
@@ -934,7 +928,7 @@
   const GAP_PERCENT = 0;
   // Balance placeholder lanes above/below primary video track
   const PLACEHOLDER_TOP_COUNT = 2;
-  const PLACEHOLDER_BOTTOM_COUNT = 2;
+  const PLACEHOLDER_BOTTOM_COUNT = 0; // No empty space at bottom - only show when audio tracks exist
 
   const props = withDefaults(
     defineProps<{
@@ -1068,19 +1062,21 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   // emit('videoTrackStateChanged', videoTrackState);
 }
 
-  // CapCut-style zoom: Start more zoomed out, especially for short videos
-  const MIN_ZOOM = 0.2; // Allow zooming out to 20%
-  const zoomLevel = ref(0.5); // Start at 50% zoom by default (CapCut-like)
+  // Zoom system: 0% = fit-to-width (full video visible), positive % = zoomed in
+  // MIN_ZOOM represents the fit-to-width baseline (calculated dynamically)
+  const MIN_ZOOM = ref(1.0); // Will be calculated based on viewport width
+  const baselineZoom = ref(1.0); // The fit-to-width zoom level (1.0 = 100% of container)
+  const zoomLevel = ref(1.0); // Start at baseline (fit-to-width)
 
   // Calculate dynamic zoom step based on current zoom level
-  // Lower zoom = smaller steps, higher zoom = larger steps
+  // Smaller steps for fine control near baseline
   function getZoomStep(): number {
-    if (zoomLevel.value < 1) return 0.05; // Fine control for zoomed-out views
-    if (zoomLevel.value < 2) return 0.1;
-    if (zoomLevel.value < 5) return 0.25;
-    if (zoomLevel.value < 10) return 0.5;
-    if (zoomLevel.value < 50) return 1;
-    if (zoomLevel.value < 100) return 5;
+    const relativeZoom = zoomLevel.value / baselineZoom.value;
+    if (relativeZoom < 2) return 0.1; // Fine control near baseline
+    if (relativeZoom < 5) return 0.25;
+    if (relativeZoom < 10) return 0.5;
+    if (relativeZoom < 50) return 1;
+    if (relativeZoom < 100) return 5;
     return 10;
   }
 
@@ -1091,21 +1087,39 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
   function zoomOut() {
     const step = getZoomStep();
-    zoomLevel.value = Math.max(MIN_ZOOM, zoomLevel.value - step);
+    zoomLevel.value = Math.max(MIN_ZOOM.value, zoomLevel.value - step);
   }
 
-  // Calculate appropriate initial zoom based on video duration (CapCut-style)
-  function calculateInitialZoom(duration: number): number {
-    // For very short videos (< 10s), start zoomed out
-    if (duration < 10) return 0.3;
-    // For short videos (< 30s), start moderately zoomed out
-    if (duration < 30) return 0.4;
-    // For medium videos (< 60s), start at 50%
-    if (duration < 60) return 0.5;
-    // For longer videos, start at 60-80%
-    if (duration < 180) return 0.6;
-    // For very long videos, start at 100% (fill screen)
+  // Calculate fit-to-width zoom level (baseline = 0%)
+  // This makes the entire video duration visible in the viewport
+  function calculateFitToWidthZoom(): number {
+    // Default to 1.0 if we can't calculate (will be updated when container is available)
+    if (!timelineScrollContainer.value) return 1.0;
+    
+    // Get the available width for timeline content
+    const containerWidth = timelineScrollContainer.value.clientWidth;
+    // Assume we want the full duration to fit in the viewport
+    // The zoom level of 1.0 means 100% width, so we return 1.0 as baseline
+    // This will be the "0%" zoom level in the UI
     return 1.0;
+  }
+
+  // Initialize zoom to fit-to-width on mount
+  function initializeZoom() {
+    const fitZoom = calculateFitToWidthZoom();
+    baselineZoom.value = fitZoom;
+    MIN_ZOOM.value = fitZoom;
+    zoomLevel.value = fitZoom; // Start at 0% (fit-to-width)
+  }
+
+  // Get zoom display text (0% = fit-to-width, positive % = zoomed in)
+  function getZoomDisplayText(): string {
+    if (Math.abs(zoomLevel.value - baselineZoom.value) < 0.01) {
+      return '0%'; // At baseline (fit-to-width)
+    }
+    // Calculate zoom percentage relative to baseline
+    const zoomPercent = Math.round(((zoomLevel.value / baselineZoom.value) - 1) * 100);
+    return `${zoomPercent}%`;
   }
 
   // Continuous seeking state
@@ -3150,7 +3164,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     const oldZoom = zoomLevel.value;
     const step = getZoomStep();
     const delta = event.deltaY > 0 ? -step : step;
-    const newZoom = Math.max(MIN_ZOOM, oldZoom + delta);
+    const newZoom = Math.max(MIN_ZOOM.value, oldZoom + delta);
 
     if (newZoom === oldZoom) return;
 
@@ -4883,6 +4897,8 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   onMounted(() => {
     nextTick(async () => {
       setupResizeObserver();
+      // Initialize zoom to fit-to-width
+      initializeZoom();
       if (props.videoSrc) {
         loadWaveformFromVideo(props.videoSrc);
       }
@@ -4983,6 +4999,11 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     cursor: grabbing !important;
   }
 
+  /* Add 6px left offset to all segments to align with playhead minimum position */
+  .clip-segment {
+    margin-left: 6px;
+  }
+
   /* Smooth transitions for non-dragging states */
   .clip-segment:not(.dragging) {
     transition:
@@ -5010,7 +5031,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   /* Label width is w-[100px] = 100px, track content is the remaining width */
   .playhead-line {
     --playhead-position: 0;
-    left: calc(100px + (100% - 100px) * var(--playhead-position));
+    left: calc(100px + max(6px, (100% - 100px) * var(--playhead-position)));
     will-change: left;
     /* Smooth transition for seeks (when paused) */
     transition: left 100ms ease-out;
