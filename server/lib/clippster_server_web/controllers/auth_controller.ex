@@ -501,12 +501,34 @@ defmodule ClippsterServerWeb.AuthController do
           }
         };
 
-        // Post to local Tauri callback server
-        fetch('http://localhost:54321/google-callback', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(authData)
-        }).catch(console.error);
+        // Post to local Tauri callback server with retry logic
+        async function sendToTauri(retries = 3) {
+          for (let i = 0; i < retries; i++) {
+            try {
+              console.log('Attempting to send auth to Tauri (attempt ' + (i + 1) + ')...');
+              const response = await fetch('http://localhost:54321/google-callback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(authData),
+                mode: 'cors'
+              });
+              if (response.ok) {
+                console.log('Successfully sent auth to Tauri app');
+                return true;
+              }
+              console.error('Tauri callback returned status:', response.status);
+            } catch (err) {
+              console.error('Failed to send to Tauri (attempt ' + (i + 1) + '):', err.message);
+              if (i < retries - 1) {
+                await new Promise(r => setTimeout(r, 500)); // Wait 500ms before retry
+              }
+            }
+          }
+          console.error('All retries failed. Please ensure the Clippster app is running.');
+          return false;
+        }
+
+        sendToTauri();
 
         // Also try parent window postMessage for popup flow
         if (window.opener) {
@@ -517,7 +539,7 @@ defmodule ClippsterServerWeb.AuthController do
         // Try to close window after delay
         setTimeout(() => {
           window.close();
-        }, 2000);
+        }, 3000);
       </script>
     </body>
     </html>
