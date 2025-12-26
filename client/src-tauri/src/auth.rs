@@ -363,11 +363,13 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
         let google_auth_result = GOOGLE_AUTH_RESULT.clone();
         let app_handle = app.clone();
 
-        // Callback endpoint for Google OAuth result
-        let google_callback = warp::path("google-callback")
+        // POST callback endpoint for Google OAuth result
+        let google_callback_post = warp::path("google-callback")
             .and(warp::post())
             .and(warp::body::json())
             .map(move |result: GoogleAuthResult| {
+                println!("[Google Auth] Received callback result: {:?}", result);
+                
                 // Store the result
                 *google_auth_result.lock().unwrap() = Some(result.clone());
 
@@ -380,13 +382,20 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                 }))
             });
 
+        // OPTIONS preflight handler for CORS
+        let google_callback_options = warp::path("google-callback")
+            .and(warp::options())
+            .map(|| {
+                warp::reply::with_status("", warp::http::StatusCode::OK)
+            });
+
         // CORS configuration
         let cors = warp::cors()
             .allow_any_origin()
             .allow_methods(vec!["GET", "POST", "OPTIONS"])
-            .allow_headers(vec!["Content-Type"]);
+            .allow_headers(vec!["Content-Type", "Accept"]);
 
-        let routes = google_callback.with(cors);
+        let routes = google_callback_options.or(google_callback_post).with(cors);
 
         println!("Starting Google auth callback server on port {}", GOOGLE_AUTH_SERVER_PORT);
         warp::serve(routes).run(([127, 0, 0, 1], GOOGLE_AUTH_SERVER_PORT)).await;
