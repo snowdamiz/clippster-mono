@@ -77,7 +77,8 @@ defmodule ClippsterServerWeb.AuthController do
               account_type: user.account_type,
               owned_organization_id: user.owned_organization_id,
               created_by_organization_id: user.created_by_organization_id,
-              ai_allowed: ai_allowed
+              ai_allowed: ai_allowed,
+              beta_activated: user.beta_activated
             }
           })
 
@@ -497,7 +498,8 @@ defmodule ClippsterServerWeb.AuthController do
             account_type: #{if user.account_type, do: "\"#{user.account_type}\"", else: "null"},
             owned_organization_id: #{user.owned_organization_id || "null"},
             created_by_organization_id: #{user.created_by_organization_id || "null"},
-            ai_allowed: #{ai_allowed}
+            ai_allowed: #{ai_allowed},
+            beta_activated: #{user.beta_activated}
           }
         };
 
@@ -643,7 +645,8 @@ defmodule ClippsterServerWeb.AuthController do
         account_type: user.account_type,
         owned_organization_id: user.owned_organization_id,
         created_by_organization_id: user.created_by_organization_id,
-        ai_allowed: ai_allowed
+        ai_allowed: ai_allowed,
+        beta_activated: user.beta_activated
       }
     })
   end
