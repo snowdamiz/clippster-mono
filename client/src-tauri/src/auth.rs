@@ -363,23 +363,140 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
         let google_auth_result = GOOGLE_AUTH_RESULT.clone();
         let app_handle = app.clone();
 
-        // POST callback endpoint for Google OAuth result
+        // POST callback endpoint for Google OAuth result (kept for backwards compatibility)
+        let google_auth_result_post = google_auth_result.clone();
+        let app_handle_post = app_handle.clone();
         let google_callback_post = warp::path("google-callback")
             .and(warp::post())
             .and(warp::body::json())
             .map(move |result: GoogleAuthResult| {
-                println!("[Google Auth] Received callback result: {:?}", result);
+                println!("[Google Auth] Received POST callback result: {:?}", result);
                 
                 // Store the result
-                *google_auth_result.lock().unwrap() = Some(result.clone());
+                *google_auth_result_post.lock().unwrap() = Some(result.clone());
 
                 // Emit event to frontend
-                let _ = app_handle.emit("google-auth-complete", result);
+                let _ = app_handle_post.emit("google-auth-complete", result);
 
                 warp::reply::json(&serde_json::json!({
                     "success": true,
                     "message": "Google authentication received. You can close this tab."
                 }))
+            });
+
+        // GET callback endpoint for redirect from backend (avoids mixed content issues)
+        let google_auth_result_get = google_auth_result.clone();
+        let app_handle_get = app_handle.clone();
+        let google_callback_get = warp::path("google-callback")
+            .and(warp::get())
+            .and(warp::query::<std::collections::HashMap<String, String>>())
+            .map(move |params: std::collections::HashMap<String, String>| {
+                let success = params.get("success").map(|s| s == "true").unwrap_or(false);
+                let error = params.get("error").cloned();
+
+                if success {
+                    // Parse user data from query params
+                    let user = GoogleAuthUser {
+                        id: params.get("user_id").and_then(|s| s.parse().ok()).unwrap_or(0),
+                        email: params.get("email").cloned().filter(|s| !s.is_empty()),
+                        name: params.get("name").cloned().filter(|s| !s.is_empty()),
+                        avatar_url: params.get("avatar_url").cloned().filter(|s| !s.is_empty()),
+                        is_admin: params.get("is_admin").map(|s| s == "true").unwrap_or(false),
+                        account_type: params.get("account_type").cloned().filter(|s| !s.is_empty()),
+                        owned_organization_id: params.get("owned_organization_id").and_then(|s| s.parse().ok()),
+                        created_by_organization_id: params.get("created_by_organization_id").and_then(|s| s.parse().ok()),
+                        ai_allowed: Some(params.get("ai_allowed").map(|s| s == "true").unwrap_or(true)),
+                    };
+
+                    let result = GoogleAuthResult {
+                        success: true,
+                        token: params.get("token").cloned().unwrap_or_default(),
+                        provider: params.get("provider").cloned().unwrap_or_else(|| "google".to_string()),
+                        user,
+                    };
+
+                    println!("[Google Auth] Received GET callback result: {:?}", result);
+
+                    // Store the result
+                    *google_auth_result_get.lock().unwrap() = Some(result.clone());
+
+                    // Emit event to frontend
+                    let _ = app_handle_get.emit("google-auth-complete", result);
+
+                    // Return success HTML page
+                    let html = r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Authentication Successful - Clippster</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #0a0a0a; color: #fff; }
+        .container { text-align: center; padding: 2rem; }
+        .icon { font-size: 4rem; margin-bottom: 1rem; color: #22c55e; }
+        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+        p { color: #888; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">✓</div>
+        <h1>Authentication Successful</h1>
+        <p>You can close this tab and return to the app.</p>
+    </div>
+</body>
+</html>"#.to_string();
+                    warp::reply::html(html)
+                } else {
+                    // Handle error case
+                    let error_msg = error.clone().unwrap_or_else(|| "Unknown error".to_string());
+                    
+                    println!("[Google Auth] Received GET callback error: {}", error_msg);
+
+                    // Create a failed result to notify the frontend
+                    let failed_result = GoogleAuthResult {
+                        success: false,
+                        token: String::new(),
+                        provider: "google".to_string(),
+                        user: GoogleAuthUser {
+                            id: 0,
+                            email: None,
+                            name: None,
+                            avatar_url: None,
+                            is_admin: false,
+                            account_type: None,
+                            owned_organization_id: None,
+                            created_by_organization_id: None,
+                            ai_allowed: None,
+                        },
+                    };
+
+                    // Emit error event to frontend so it can stop loading
+                    let _ = app_handle_get.emit("google-auth-complete", failed_result);
+
+                    // Return error HTML page
+                    let html = format!(r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Authentication Failed - Clippster</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #0a0a0a; color: #fff; }}
+        .container {{ text-align: center; padding: 2rem; }}
+        .icon {{ font-size: 4rem; margin-bottom: 1rem; color: #ef4444; }}
+        h1 {{ font-size: 1.5rem; margin-bottom: 0.5rem; }}
+        p {{ color: #888; }}
+        .error {{ color: #ef4444; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">✗</div>
+        <h1>Authentication Failed</h1>
+        <p class="error">{}</p>
+        <p>Please close this tab and try again.</p>
+    </div>
+</body>
+</html>"#, error_msg);
+                    warp::reply::html(html)
+                }
             });
 
         // OPTIONS preflight handler for CORS
@@ -395,7 +512,7 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
             .allow_methods(vec!["GET", "POST", "OPTIONS"])
             .allow_headers(vec!["Content-Type", "Accept"]);
 
-        let routes = google_callback_options.or(google_callback_post).with(cors);
+        let routes = google_callback_options.or(google_callback_get).or(google_callback_post).with(cors);
 
         println!("Starting Google auth callback server on port {}", GOOGLE_AUTH_SERVER_PORT);
         warp::serve(routes).run(([127, 0, 0, 1], GOOGLE_AUTH_SERVER_PORT)).await;

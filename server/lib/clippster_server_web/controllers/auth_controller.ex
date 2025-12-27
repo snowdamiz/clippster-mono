@@ -358,248 +358,39 @@ defmodule ClippsterServerWeb.AuthController do
     end
   end
 
-  @auth_page_styles """
-  <style>
-    :root {
-      --background: oklch(0.145 0 0);
-      --foreground: oklch(0.985 0 0);
-      --card: oklch(0.145 0 0);
-      --muted-foreground: oklch(0.708 0 0);
-      --success: oklch(0.696 0.17 162.48);
-      --success-bg: oklch(0.269 0.05 162.48);
-      --destructive: oklch(0.396 0.141 25.723);
-      --destructive-foreground: oklch(0.637 0.237 25.331);
-      --radius: 0.625rem;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: var(--background);
-      color: var(--foreground);
-      padding: 1.5rem;
-    }
-    .container { max-width: 28rem; width: 100%; }
-    .card {
-      position: relative;
-      overflow: hidden;
-      border-radius: calc(var(--radius) * 2);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      background: var(--card);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-    }
-    .gradient-overlay {
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, transparent 50%, rgba(147, 51, 234, 0.03) 100%);
-      pointer-events: none;
-    }
-    .content { position: relative; padding: 2rem; }
-    .icon-container { display: flex; justify-content: center; margin-bottom: 1.5rem; }
-    .icon-wrapper {
-      padding: 1rem;
-      border-radius: 9999px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    .icon-wrapper.success { background: var(--success-bg); }
-    .icon-wrapper.error { background: rgba(239, 68, 68, 0.1); }
-    .icon { width: 3rem; height: 3rem; }
-    .icon.success { color: var(--success); }
-    .icon.error { color: var(--destructive-foreground); }
-    .text-center { text-align: center; margin-bottom: 1.5rem; }
-    h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
-    .subtitle { font-size: 0.875rem; color: var(--muted-foreground); }
-    .message-box {
-      padding: 0.75rem 1rem;
-      border-radius: calc(var(--radius) - 2px);
-      font-size: 0.875rem;
-      text-align: center;
-      font-weight: 500;
-    }
-    .message-box.success {
-      color: var(--success);
-      background: var(--success-bg);
-      border: 1px solid rgba(104, 211, 145, 0.2);
-    }
-    .message-box.error {
-      color: var(--destructive-foreground);
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.2);
-    }
-    .close-btn {
-      width: 100%;
-      margin-top: 1rem;
-      padding: 0.75rem 1.5rem;
-      border-radius: var(--radius);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      background: transparent;
-      color: var(--foreground);
-      font-size: 0.875rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .close-btn:hover { background: rgba(255, 255, 255, 0.05); }
-  </style>
-  """
-
   defp send_auth_success_html(conn, token, user) do
-    # Escape values for safe JavaScript embedding
-    escaped_email = (user.email || "") |> String.replace("\"", "\\\"")
-    escaped_name = (user.name || "") |> String.replace("\"", "\\\"")
-    escaped_avatar = (user.avatar_url || "") |> String.replace("\"", "\\\"")
+    # Redirect to local Tauri callback server with auth data as query params
+    # This avoids mixed content issues (HTTPS page trying to fetch HTTP localhost)
     ai_allowed = check_ai_allowed_for_user(user)
 
-    html_response = """
-    <!DOCTYPE html>
-    <html lang="en" class="dark">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Authentication Successful - Clippster</title>
-      #{@auth_page_styles}
-    </head>
-    <body>
-      <div class="container">
-        <div class="card">
-          <div class="gradient-overlay"></div>
-          <div class="content">
-            <div class="icon-container">
-              <div class="icon-wrapper success">
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            </div>
-            <div class="text-center">
-              <h1>Authentication Successful</h1>
-              <p class="subtitle">You have been signed in with Google</p>
-            </div>
-            <div class="message-box success">✓ You can close this window now</div>
-          </div>
-        </div>
-      </div>
-      <script>
-        const authData = {
-          success: true,
-          token: "#{token}",
-          provider: "google",
-          user: {
-            id: #{user.id},
-            email: "#{escaped_email}",
-            name: "#{escaped_name}",
-            avatar_url: "#{escaped_avatar}",
-            is_admin: #{user.is_admin},
-            account_type: #{if user.account_type, do: "\"#{user.account_type}\"", else: "null"},
-            owned_organization_id: #{user.owned_organization_id || "null"},
-            created_by_organization_id: #{user.created_by_organization_id || "null"},
-            ai_allowed: #{ai_allowed},
-            beta_activated: #{user.beta_activated}
-          }
-        };
+    params = URI.encode_query(%{
+      "success" => "true",
+      "token" => token,
+      "provider" => "google",
+      "user_id" => user.id,
+      "email" => user.email || "",
+      "name" => user.name || "",
+      "avatar_url" => user.avatar_url || "",
+      "is_admin" => user.is_admin,
+      "account_type" => user.account_type || "",
+      "owned_organization_id" => user.owned_organization_id || "",
+      "created_by_organization_id" => user.created_by_organization_id || "",
+      "ai_allowed" => ai_allowed,
+      "beta_activated" => user.beta_activated
+    })
 
-        // Post to local Tauri callback server with retry logic
-        async function sendToTauri(retries = 3) {
-          for (let i = 0; i < retries; i++) {
-            try {
-              console.log('Attempting to send auth to Tauri (attempt ' + (i + 1) + ')...');
-              const response = await fetch('http://localhost:54321/google-callback', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(authData),
-                mode: 'cors'
-              });
-              if (response.ok) {
-                console.log('Successfully sent auth to Tauri app');
-                return true;
-              }
-              console.error('Tauri callback returned status:', response.status);
-            } catch (err) {
-              console.error('Failed to send to Tauri (attempt ' + (i + 1) + '):', err.message);
-              if (i < retries - 1) {
-                await new Promise(r => setTimeout(r, 500)); // Wait 500ms before retry
-              }
-            }
-          }
-          console.error('All retries failed. Please ensure the Clippster app is running.');
-          return false;
-        }
-
-        sendToTauri();
-
-        // Also try parent window postMessage for popup flow
-        if (window.opener) {
-          window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS', ...authData }, '*');
-          setTimeout(() => window.close(), 1500);
-        }
-
-        // Try to close window after delay
-        setTimeout(() => {
-          window.close();
-        }, 3000);
-      </script>
-    </body>
-    </html>
-    """
-
-    conn
-    |> put_resp_content_type("text/html")
-    |> send_resp(200, html_response)
+    redirect(conn, external: "http://localhost:54321/google-callback?#{params}")
   end
 
   defp send_auth_error_html(conn, error_message) do
-    escaped_error = error_message |> String.replace("\"", "\\\"")
+    # Redirect to local Tauri callback server with error as query params
+    # This avoids mixed content issues (HTTPS page trying to fetch HTTP localhost)
+    params = URI.encode_query(%{
+      "success" => "false",
+      "error" => error_message
+    })
 
-    html_response = """
-    <!DOCTYPE html>
-    <html lang="en" class="dark">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Authentication Failed - Clippster</title>
-      #{@auth_page_styles}
-    </head>
-    <body>
-      <div class="container">
-        <div class="card">
-          <div class="gradient-overlay"></div>
-          <div class="content">
-            <div class="icon-container">
-              <div class="icon-wrapper error">
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </div>
-            </div>
-            <div class="text-center">
-              <h1>Authentication Failed</h1>
-              <p class="subtitle">#{escaped_error}</p>
-            </div>
-            <div class="message-box error">Please try again or use a different sign-in method</div>
-            <button class="close-btn" onclick="window.close()">Close Window</button>
-          </div>
-        </div>
-      </div>
-      <script>
-        // Notify Tauri of failure
-        fetch('http://localhost:54321/google-callback', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ success: false, error: "#{escaped_error}" })
-        }).catch(console.error);
-      </script>
-    </body>
-    </html>
-    """
-
-    conn
-    |> put_resp_content_type("text/html")
-    |> send_resp(200, html_response)
+    redirect(conn, external: "http://localhost:54321/google-callback?#{params}")
   end
 
   @doc """
