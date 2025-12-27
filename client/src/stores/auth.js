@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { setCurrentUserId, clearCurrentUserId } from '../services/database/core';
+import api from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -74,11 +75,13 @@ export const useAuthStore = defineStore('auth', {
 
   actions: {
     /**
-     * Helper to get token with localStorage fallback
-     * Use this instead of this.token for API calls to handle race conditions
+     * Helper to get token - uses localStorage as primary source for reliability
+     * The store state can have race conditions, but localStorage is synchronous
      */
     getAuthToken() {
-      return this.token || localStorage.getItem('auth_token');
+      const token = localStorage.getItem('auth_token') || this.token;
+      console.log('[Auth] getAuthToken called, token exists:', !!token);
+      return token;
     },
 
     async requestChallenge() {
@@ -756,28 +759,20 @@ export const useAuthStore = defineStore('auth', {
      */
     async setAccountType(accountType) {
       try {
-        const response = await fetch(`${API_BASE}/api/account/type`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.getAuthToken()}`,
-          },
-          body: JSON.stringify({ account_type: accountType }),
-        });
+        // Use axios api instance which handles auth token automatically
+        const response = await api.post('/account/type', { account_type: accountType });
 
-        const data = await response.json();
-
-        if (data.success) {
+        if (response.data.success) {
           if (this.user) {
-            this.user.account_type = data.account_type;
+            this.user.account_type = response.data.account_type;
             localStorage.setItem('user', JSON.stringify(this.user));
           }
-          return { success: true, needsOrgSetup: data.needs_org_setup };
+          return { success: true, needsOrgSetup: response.data.needs_org_setup };
         }
 
-        return { success: false, error: data.error };
+        return { success: false, error: response.data.error };
       } catch (error) {
-        return { success: false, error: error.message };
+        return { success: false, error: error.response?.data?.error || error.message };
       }
     },
 
@@ -833,14 +828,13 @@ export const useAuthStore = defineStore('auth', {
      */
     async getOrganizations() {
       try {
-        const response = await fetch(`${API_BASE}/api/organizations`, {
-          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
-        });
-
-        const data = await response.json();
-        return data.success ? data : { success: false, error: data.error };
+        // Use axios api instance which handles auth token automatically
+        const response = await api.get('/organizations');
+        return response.data.success
+          ? response.data
+          : { success: false, error: response.data.error };
       } catch (error) {
-        return { success: false, error: error.message };
+        return { success: false, error: error.response?.data?.error || error.message };
       }
     },
 
