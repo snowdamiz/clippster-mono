@@ -35,6 +35,7 @@ defmodule ClippsterServerWeb.Router do
   def cors_origins do
     [
       "tauri://localhost",
+      "https://tauri.localhost",  # Tauri v2 production builds use this origin
       "http://localhost:5173",
       "http://localhost:1420",
       ~r/http:\/\/localhost:\d+/
