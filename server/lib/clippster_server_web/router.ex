@@ -102,6 +102,9 @@ defmodule ClippsterServerWeb.Router do
     # Get current user info (refreshes user data from server)
     get "/auth/me", AuthController, :me
 
+    # Beta code activation (requires auth)
+    post "/beta/activate", BetaController, :activate
+
     post "/clips/detect", ClipsController, :detect
     post "/clips/detect-chunked", ClipsController, :detect_chunked
     post "/clips/transcribe", ClipsController, :transcribe
@@ -241,6 +244,10 @@ defmodule ClippsterServerWeb.Router do
     # Admin settings management
     get "/admin/settings", AdminController, :get_settings
     put "/admin/settings/:key", AdminController, :update_setting
+
+    # Admin beta codes management
+    post "/admin/beta-codes/generate", AdminController, :generate_beta_codes
+    get "/admin/beta-codes", AdminController, :list_beta_codes
   end
 
 

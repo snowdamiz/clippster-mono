@@ -27,6 +27,9 @@ defmodule ClippsterServer.Accounts.User do
     field :owned_organization_id, :integer
     field :created_by_organization_id, :integer  # Set when account is created by an org admin
 
+    # Beta activation
+    field :beta_activated, :boolean, default: false
+
     timestamps(type: :utc_datetime)
   end
 
@@ -162,6 +165,15 @@ defmodule ClippsterServer.Accounts.User do
   def admin_changeset(user, attrs) do
     user
     |> cast(attrs, [:is_admin])
+  end
+
+  @doc """
+  Changeset for beta activation.
+  """
+  def beta_activation_changeset(user) do
+    user
+    |> change()
+    |> put_change(:beta_activated, true)
   end
 
   defp put_wallet_provider(changeset) do

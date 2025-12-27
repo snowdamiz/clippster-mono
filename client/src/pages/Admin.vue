@@ -41,6 +41,17 @@
         <Loader2 v-else class="h-4 w-4 animate-spin" />
         Refresh Organizations
       </button>
+
+      <button
+        v-if="activeTab === 'beta'"
+        @click="fetchBetaCodes"
+        :disabled="betaCodesLoading"
+        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md flex items-center gap-2 text-sm font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <RefreshCw v-if="!betaCodesLoading" class="h-4 w-4" />
+        <Loader2 v-else class="h-4 w-4 animate-spin" />
+        Refresh Codes
+      </button>
     </template>
 
     <!-- Tabs Navigation -->
@@ -678,6 +689,177 @@
       </div>
     </div>
 
+    <!-- Beta Codes Tab -->
+    <div v-if="activeTab === 'beta'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <!-- Stats Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <h3 class="text-sm font-medium text-muted-foreground">Total Codes</h3>
+          <p class="text-2xl font-bold text-foreground mt-2">{{ betaCodeStats.total }}</p>
+        </div>
+        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <h3 class="text-sm font-medium text-muted-foreground">Available</h3>
+          <p class="text-2xl font-bold text-green-500 mt-2">{{ betaCodeStats.available }}</p>
+        </div>
+        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
+          <h3 class="text-sm font-medium text-muted-foreground">Used</h3>
+          <p class="text-2xl font-bold text-amber-500 mt-2">{{ betaCodeStats.used }}</p>
+        </div>
+      </div>
+
+      <!-- Generate Codes Section -->
+      <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold text-foreground">Generate Beta Codes</h2>
+            <p class="text-sm text-muted-foreground mt-1">Create new codes for beta testers</p>
+          </div>
+          <div class="flex items-center gap-3 w-full sm:w-auto">
+            <input
+              v-model.number="generateCodeCount"
+              type="number"
+              min="1"
+              max="100"
+              class="w-20 px-3 py-1.5 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+            <button
+              @click="handleGenerateCodes"
+              :disabled="generatingCodes"
+              class="px-4 py-2 bg-gradient-to-r from-amber-500/80 to-orange-500/80 hover:from-amber-500/90 hover:to-orange-500/90 text-white rounded-md flex items-center gap-2 text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Loader2 v-if="generatingCodes" class="h-4 w-4 animate-spin" />
+              <Plus v-else class="h-4 w-4" />
+              Generate
+            </button>
+            <button
+              v-if="availableBetaCodes.length > 0"
+              @click="copyAllAvailableCodes"
+              class="px-4 py-2 bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground rounded-md flex items-center gap-2 text-sm font-medium transition-all"
+            >
+              <Copy class="h-4 w-4" />
+              Copy All Available
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Display -->
+      <div
+        v-if="betaCodesError"
+        class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4"
+      >
+        <div class="flex items-center gap-2">
+          <AlertTriangle class="h-4 w-4 text-red-500" />
+          <p class="text-red-600 dark:text-red-400 text-sm">{{ betaCodesError }}</p>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="betaCodesLoading && !betaCodes.length" class="flex items-center justify-center py-12">
+        <div class="text-center">
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p class="text-muted-foreground">Loading beta codes...</p>
+        </div>
+      </div>
+
+      <!-- Beta Codes Table -->
+      <div v-else-if="betaCodes.length > 0" class="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-muted/30">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Code
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Status
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Used By
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Created
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-card divide-y divide-border">
+              <tr v-for="code in betaCodes" :key="code.id" class="hover:bg-muted/20 transition-colors">
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <code class="text-sm bg-muted px-2 py-1 rounded font-mono text-primary tracking-wider">
+                    {{ code.code }}
+                  </code>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span
+                    v-if="code.used"
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                  >
+                    <XCircle class="h-3 w-3 mr-1" />
+                    Used
+                  </span>
+                  <span
+                    v-else
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800"
+                  >
+                    <CheckCircle class="h-3 w-3 mr-1" />
+                    Available
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <template v-if="code.used_by">
+                    <span v-if="code.used_by.email" class="text-sm text-foreground">
+                      {{ code.used_by.email }}
+                    </span>
+                    <code
+                      v-else-if="code.used_by.wallet_address"
+                      class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary"
+                    >
+                      {{ formatWalletAddress(code.used_by.wallet_address) }}
+                    </code>
+                    <span v-else class="text-sm text-muted-foreground">User #{{ code.used_by.id }}</span>
+                  </template>
+                  <span v-else class="text-sm text-muted-foreground">-</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
+                  {{ formatDate(code.created_at) }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                  <button
+                    v-if="!code.used"
+                    @click="copyBetaCode(code.code, code.id)"
+                    class="inline-flex items-center px-3 py-1.5 bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground text-xs font-medium rounded-md transition-all"
+                  >
+                    <Check v-if="copiedCodeId === code.id" class="h-3 w-3 mr-1 text-green-500" />
+                    <Copy v-else class="h-3 w-3 mr-1" />
+                    {{ copiedCodeId === code.id ? 'Copied!' : 'Copy' }}
+                  </button>
+                  <span v-else class="text-xs text-muted-foreground">
+                    Used {{ code.used_at ? formatDate(code.used_at) : '' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else class="text-center py-12 bg-card border border-border rounded-lg">
+        <KeyRound class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+        <p class="text-muted-foreground mb-4">No beta codes generated yet</p>
+        <button
+          @click="handleGenerateCodes"
+          :disabled="generatingCodes"
+          class="px-4 py-2 bg-gradient-to-r from-amber-500/80 to-orange-500/80 hover:from-amber-500/90 hover:to-orange-500/90 text-white rounded-md text-sm font-medium transition-all disabled:opacity-50"
+        >
+          Generate Your First Codes
+        </button>
+      </div>
+    </div>
+
     <!-- UI Overrides Tab -->
     <div v-if="activeTab === 'settings'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
@@ -736,6 +918,48 @@
                 <p class="text-sm text-amber-700 dark:text-amber-300">
                   <strong>Live Clip is disabled.</strong>
                   The Live Clip page and monitoring controls are hidden from all users.
+                </p>
+              </div>
+
+              <!-- Beta Mode Toggle -->
+              <div class="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
+                <div class="flex-1">
+                  <div class="flex items-center gap-2">
+                    <KeyRound class="h-4 w-4 text-amber-500" />
+                    <span class="font-medium text-foreground">Beta Mode</span>
+                  </div>
+                  <p class="text-sm text-muted-foreground mt-1">
+                    Require new users to enter a beta code before accessing the app.
+                  </p>
+                </div>
+                <div class="flex items-center gap-3">
+                  <span v-if="featureFlagsLoading" class="text-xs text-muted-foreground flex items-center gap-1">
+                    <Loader2 class="h-3 w-3 animate-spin" />
+                    Loading...
+                  </span>
+                  <button
+                    @click="toggleBetaModeFeature"
+                    :disabled="featureFlagsLoading || updatingBetaModeFlag"
+                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    :class="isBetaModeEnabled ? 'bg-amber-500' : 'bg-muted'"
+                    role="switch"
+                    :aria-checked="isBetaModeEnabled"
+                  >
+                    <span
+                      class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                      :class="isBetaModeEnabled ? 'translate-x-5' : 'translate-x-0'"
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                v-if="isBetaModeEnabled"
+                class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md"
+              >
+                <p class="text-sm text-amber-700 dark:text-amber-300">
+                  <strong>Beta Mode is enabled.</strong>
+                  New users must enter a valid beta code to access the app. Generate codes in the Beta Codes tab.
                 </p>
               </div>
             </div>
@@ -996,7 +1220,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue';
+  import { ref, onMounted, computed } from 'vue';
   import { useAuthStore } from '@/stores/auth';
   import PageLayout from '@/components/PageLayout.vue';
   import {
@@ -1016,10 +1240,15 @@
     Building2,
     Users,
     Radio,
+    KeyRound,
+    Plus,
+    CheckCircle,
+    XCircle,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import api from '@/services/api';
+  import { generateCodes, listCodes, type BetaCode, type BetaCodeStats } from '@/services/betaCodes';
 
   interface User {
     id: number;
@@ -1138,6 +1367,7 @@
     { id: 'organizations', label: 'Organizations' },
     { id: 'bugs', label: 'Bug Reports' },
     { id: 'ai', label: 'AI Usage' },
+    { id: 'beta', label: 'Beta Codes' },
     { id: 'settings', label: 'Settings' },
   ];
 
@@ -1170,11 +1400,23 @@
   // Feature Flags state
   const {
     isLiveClipEnabled,
+    isBetaModeEnabled,
     isLoading: featureFlagsLoading,
     fetchFeatureFlags,
     setLiveClipEnabled,
+    setBetaModeEnabled,
   } = useFeatureFlags();
   const updatingLiveClipFlag = ref(false);
+  const updatingBetaModeFlag = ref(false);
+
+  // Beta Codes state
+  const betaCodes = ref<BetaCode[]>([]);
+  const betaCodeStats = ref<BetaCodeStats>({ total: 0, used: 0, available: 0 });
+  const betaCodesLoading = ref(false);
+  const generatingCodes = ref(false);
+  const generateCodeCount = ref(10);
+  const betaCodesError = ref<string | null>(null);
+  const copiedCodeId = ref<number | null>(null);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -1755,11 +1997,117 @@
     }
   };
 
+  // Toggle Beta Mode feature flag
+  const toggleBetaModeFeature = async () => {
+    updatingBetaModeFlag.value = true;
+    try {
+      const newValue = !isBetaModeEnabled.value;
+      const success = await setBetaModeEnabled(newValue);
+      if (success) {
+        console.log(`🔐 Admin - Beta Mode ${newValue ? 'enabled' : 'disabled'}`);
+      } else {
+        console.error('🔐 Admin - Failed to update Beta Mode feature flag');
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error toggling Beta Mode feature:', err);
+    } finally {
+      updatingBetaModeFlag.value = false;
+    }
+  };
+
+  // Beta Codes functions
+  const fetchBetaCodes = async () => {
+    betaCodesLoading.value = true;
+    betaCodesError.value = null;
+
+    try {
+      console.log('🔐 Admin - Fetching beta codes...');
+      const result = await listCodes();
+
+      if (result.success) {
+        betaCodes.value = result.codes;
+        betaCodeStats.value = result.stats;
+        console.log(`🔐 Admin - Loaded ${result.codes.length} beta codes`);
+      } else {
+        betaCodesError.value = result.error || 'Failed to load beta codes';
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error fetching beta codes:', err);
+      betaCodesError.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      betaCodesLoading.value = false;
+    }
+  };
+
+  const handleGenerateCodes = async () => {
+    if (generateCodeCount.value < 1 || generateCodeCount.value > 100) {
+      betaCodesError.value = 'Please enter a number between 1 and 100';
+      return;
+    }
+
+    generatingCodes.value = true;
+    betaCodesError.value = null;
+
+    try {
+      console.log(`🔐 Admin - Generating ${generateCodeCount.value} beta codes...`);
+      const result = await generateCodes(generateCodeCount.value);
+
+      if (result.success) {
+        console.log(`🔐 Admin - Generated ${result.codes?.length || 0} codes`);
+        // Refresh the codes list
+        await fetchBetaCodes();
+      } else {
+        betaCodesError.value = result.error || 'Failed to generate codes';
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error generating beta codes:', err);
+      betaCodesError.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      generatingCodes.value = false;
+    }
+  };
+
+  const copyBetaCode = async (code: string, codeId: number) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      copiedCodeId.value = codeId;
+      setTimeout(() => {
+        copiedCodeId.value = null;
+      }, 2000);
+      console.log('Copied beta code to clipboard:', code);
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+    }
+  };
+
+  const copyAllAvailableCodes = async () => {
+    const availableCodes = betaCodes.value
+      .filter((code) => !code.used)
+      .map((code) => code.code)
+      .join('\n');
+
+    if (!availableCodes) {
+      betaCodesError.value = 'No available codes to copy';
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(availableCodes);
+      console.log('Copied all available codes to clipboard');
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+    }
+  };
+
+  const availableBetaCodes = computed(() => betaCodes.value.filter((code) => !code.used));
+  const usedBetaCodes = computed(() => betaCodes.value.filter((code) => code.used));
+
   onMounted(() => {
     fetchUsers();
     fetchOrganizations();
     fetchBugReports();
     fetchAiStats();
+    fetchBetaCodes();
     loadPlatformOverride();
     fetchFeatureFlags();
   });
