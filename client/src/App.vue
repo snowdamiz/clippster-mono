@@ -1,31 +1,61 @@
 <script setup lang="ts">
-  import { onMounted, onUnmounted, ref } from 'vue';
+  import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
   import Toast from '@/components/Toast.vue';
   import AppCloseDialog from '@/components/AppCloseDialog.vue';
   import TitleBar from '@/components/TitleBar.vue';
   import LoadingScreen from '@/components/LoadingScreen.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import BetaActivationDialog from '@/components/BetaActivationDialog.vue';
   import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
   import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
   import { useLivestreamStore } from '@/stores/livestream';
+  import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { invoke } from '@tauri-apps/api/core';
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
   const livestreamStore = useLivestreamStore();
+  const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
+
+  // Show beta activation dialog when:
+  // - User is authenticated
+  // - Beta mode is enabled
+  // - User is not an admin (admins bypass beta requirement)
+  // - User has not activated their beta access
+  const showBetaActivationDialog = computed(() => {
+    return (
+      authStore.isAuthenticated &&
+      isBetaModeEnabled.value &&
+      !authStore.user?.is_admin &&
+      !authStore.user?.beta_activated
+    );
+  });
+
+  // Handle beta activation success
+  const handleBetaActivated = async () => {
+    // Refresh user data to get updated beta_activated status
+    await authStore.checkAuth();
+  };
+
+  // Handle logout from beta dialog
+  const handleBetaLogout = async () => {
+    await authStore.logout();
+  };
 
   // Handle clip created from global livestream dialog
   function handleClipCreated(clipPath: string, projectId: string) {
     console.log('[App] Clip created:', { clipPath, projectId });
     // Dispatch event so LiveClip page can react if open
-    window.dispatchEvent(new CustomEvent('livestream-clip-created', { 
-      detail: { clipPath, projectId } 
-    }));
+    window.dispatchEvent(
+      new CustomEvent('livestream-clip-created', {
+        detail: { clipPath, projectId },
+      })
+    );
   }
 
   // Key for router-view to force re-render on auth changes
@@ -70,6 +100,13 @@
       await authStore.checkAuth();
     } catch (error) {
       console.error('[App] Failed to check authentication:', error);
+    }
+
+    // Fetch feature flags (including beta mode status)
+    try {
+      await fetchFeatureFlags();
+    } catch (error) {
+      console.error('[App] Failed to fetch feature flags:', error);
     }
 
     // Listen for auth-required events (e.g., when token expires)
@@ -147,7 +184,14 @@
       <AppCloseDialog />
       <!-- Authentication Modal -->
       <AuthModal v-model="showAuthModal" />
-      
+
+      <!-- Beta Activation Dialog -->
+      <BetaActivationDialog
+        :show="showBetaActivationDialog"
+        @activated="handleBetaActivated"
+        @logout="handleBetaLogout"
+      />
+
       <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
       <LivestreamWatchDialog
         v-if="livestreamStore.currentStreamer.mintId"
@@ -158,7 +202,7 @@
         :profile-image-url="livestreamStore.currentStreamer.profileImageUrl"
         :is-pip-mode-external="livestreamStore.isInPipMode"
         @clip-created="handleClipCreated"
-        @pip-mode-changed="(isPip: boolean) => isPip ? livestreamStore.enterPipMode() : livestreamStore.exitPipMode()"
+        @pip-mode-changed="(isPip: boolean) => (isPip ? livestreamStore.enterPipMode() : livestreamStore.exitPipMode())"
         @closed="livestreamStore.reset()"
       />
     </div>

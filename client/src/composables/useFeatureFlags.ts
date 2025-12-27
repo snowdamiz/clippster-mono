@@ -3,6 +3,7 @@ import api from '@/services/api';
 
 // Feature flags state (shared across all components using this composable)
 const isLiveClipEnabled = ref(true); // Default to true until we fetch from server
+const isBetaModeEnabled = ref(false); // Default to false until we fetch from server
 const isLoading = ref(false);
 const lastFetchTime = ref<number | null>(null);
 const error = ref<string | null>(null);
@@ -42,6 +43,7 @@ export function useFeatureFlags() {
       if (response.data.success) {
         const flags = response.data.feature_flags;
         isLiveClipEnabled.value = flags.live_clip_enabled ?? true;
+        isBetaModeEnabled.value = flags.beta_mode_enabled ?? false;
         lastFetchTime.value = Date.now();
       }
     } catch (err) {
@@ -78,6 +80,30 @@ export function useFeatureFlags() {
   }
 
   /**
+   * Set the Beta Mode feature flag (admin only).
+   * Makes an API call to update the server-side setting.
+   */
+  async function setBetaModeEnabled(enabled: boolean): Promise<boolean> {
+    try {
+      const response = await api.put('/admin/settings/beta_mode_enabled', {
+        key: 'beta_mode_enabled',
+        value: String(enabled),
+      });
+
+      if (response.data.success) {
+        isBetaModeEnabled.value = enabled;
+        lastFetchTime.value = Date.now();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('[FeatureFlags] Failed to update beta_mode_enabled:', err);
+      error.value = err instanceof Error ? err.message : 'Failed to update setting';
+      return false;
+    }
+  }
+
+  /**
    * Initialize feature flags by fetching from server.
    * Call this once when the app starts.
    */
@@ -95,6 +121,7 @@ export function useFeatureFlags() {
   return {
     // State (readonly to prevent direct mutation)
     isLiveClipEnabled: readonly(isLiveClipEnabled),
+    isBetaModeEnabled: readonly(isBetaModeEnabled),
     isLoading: readonly(isLoading),
     error: readonly(error),
 
@@ -103,12 +130,14 @@ export function useFeatureFlags() {
     refresh,
     fetchFeatureFlags,
     setLiveClipEnabled,
+    setBetaModeEnabled,
   };
 }
 
 // Export a singleton for components that need direct access to the reactive values
 export const featureFlags = {
   isLiveClipEnabled,
+  isBetaModeEnabled,
   isLoading,
   error,
 };
