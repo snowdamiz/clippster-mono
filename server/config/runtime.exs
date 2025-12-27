@@ -56,6 +56,19 @@ if resend_api_key do
     api_key: resend_api_key
 end
 
+# JWT secret for token signing (REQUIRED in production)
+jwt_secret = System.get_env("JWT_SECRET")
+
+if config_env() == :prod and is_nil(jwt_secret) do
+  raise """
+  environment variable JWT_SECRET is missing.
+  You can generate one by running: mix phx.gen.secret
+  """
+end
+
+config :clippster_server,
+  jwt_secret: jwt_secret || "dev_secret_key_change_in_production"
+
 # Email auth configuration
 config :clippster_server, :email_auth,
   from_email: System.get_env("EMAIL_FROM") || "noreply@clippster.app",

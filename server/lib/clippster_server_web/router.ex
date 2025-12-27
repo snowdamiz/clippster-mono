@@ -84,9 +84,8 @@ defmodule ClippsterServerWeb.Router do
     post "/auth/email/forgot-password", EmailAuthController, :forgot_password
     post "/auth/email/reset-password", EmailAuthController, :reset_password
 
-    # Payment and credit routes
+    # Payment routes (public - pricing info)
     get "/pricing", PaymentController, :get_pricing
-    get "/credits/balance", PaymentController, :get_balance
     post "/payments/quote", PaymentController, :get_quote
     post "/payments/confirm", PaymentController, :confirm_payment
 
@@ -112,6 +111,9 @@ defmodule ClippsterServerWeb.Router do
 
     # Get current user info (refreshes user data from server)
     get "/auth/me", AuthController, :me
+
+    # Credit balance (requires auth)
+    get "/credits/balance", PaymentController, :get_balance
 
     # Beta code activation (requires auth)
     post "/beta/activate", BetaController, :activate
