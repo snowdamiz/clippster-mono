@@ -33,6 +33,8 @@ pub struct GoogleAuthUser {
     pub created_by_organization_id: Option<i64>,
     #[serde(default)]
     pub ai_allowed: Option<bool>,
+    #[serde(default)]
+    pub beta_activated: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -406,6 +408,7 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                         owned_organization_id: params.get("owned_organization_id").and_then(|s| s.parse().ok()),
                         created_by_organization_id: params.get("created_by_organization_id").and_then(|s| s.parse().ok()),
                         ai_allowed: Some(params.get("ai_allowed").map(|s| s == "true").unwrap_or(true)),
+                        beta_activated: Some(params.get("beta_activated").map(|s| s == "true").unwrap_or(false)),
                     };
 
                     let result = GoogleAuthResult {
@@ -421,7 +424,10 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                     *google_auth_result_get.lock().unwrap() = Some(result.clone());
 
                     // Emit event to frontend
-                    let _ = app_handle_get.emit("google-auth-complete", result);
+                    match app_handle_get.emit("google-auth-complete", result) {
+                        Ok(_) => println!("[Google Auth] Successfully emitted google-auth-complete event"),
+                        Err(e) => println!("[Google Auth] Failed to emit event: {:?}", e),
+                    }
 
                     // Return success HTML page
                     let html = r#"<!DOCTYPE html>
@@ -466,6 +472,7 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                             owned_organization_id: None,
                             created_by_organization_id: None,
                             ai_allowed: None,
+                            beta_activated: None,
                         },
                     };
 

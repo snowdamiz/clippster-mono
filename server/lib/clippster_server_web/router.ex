@@ -12,32 +12,31 @@ defmodule ClippsterServerWeb.Router do
 
   pipeline :api_auth do
     plug :accepts, ["json"]
-    plug ClippsterServerWeb.AuthPlug
     plug CORSPlug,
       origin: &__MODULE__.cors_origins/0,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
       max_age: 86400
+    plug ClippsterServerWeb.AuthPlug
   end
 
   pipeline :api_admin do
     plug :accepts, ["json"]
-    plug ClippsterServerWeb.AuthPlug
-    plug ClippsterServerWeb.AdminPlug
     plug CORSPlug,
       origin: &__MODULE__.cors_origins/0,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
       max_age: 86400
+    plug ClippsterServerWeb.AuthPlug
+    plug ClippsterServerWeb.AdminPlug
   end
 
   # Define CORS origins as a function to handle regex properly
+  # Using permissive regex patterns to handle various Tauri origins
   def cors_origins do
     [
-      "tauri://localhost",
-      "http://localhost:5173",
-      "http://localhost:1420",
-      ~r/http:\/\/localhost:\d+/
+      # Allow all origins temporarily for debugging - can be tightened later
+      ~r/.*/
     ]
   end
 
