@@ -2,9 +2,18 @@ import { defineStore } from 'pinia';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { setCurrentUserId, clearCurrentUserId } from '../services/database/core';
-import api from '../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+// Lazy load api to avoid circular dependency (api.ts imports useAuthStore)
+let apiInstance = null;
+async function getApi() {
+  if (!apiInstance) {
+    const module = await import('../services/api');
+    apiInstance = module.default;
+  }
+  return apiInstance;
+}
 
 /**
  * Set user context in both TypeScript (database) and Rust (storage) layers
@@ -760,6 +769,7 @@ export const useAuthStore = defineStore('auth', {
     async setAccountType(accountType) {
       try {
         // Use axios api instance which handles auth token automatically
+        const api = await getApi();
         const response = await api.post('/account/type', { account_type: accountType });
 
         if (response.data.success) {
@@ -829,6 +839,7 @@ export const useAuthStore = defineStore('auth', {
     async getOrganizations() {
       try {
         // Use axios api instance which handles auth token automatically
+        const api = await getApi();
         const response = await api.get('/organizations');
         return response.data.success
           ? response.data
