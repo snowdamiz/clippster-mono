@@ -5,18 +5,20 @@ defmodule ClippsterServerWeb.Router do
     plug :accepts, ["json"]
     plug CORSPlug,
       origin: &__MODULE__.cors_origins/0,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
       headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
-      max_age: 86400
+      max_age: 86400,
+      credentials: true
   end
 
   pipeline :api_auth do
     plug :accepts, ["json"]
     plug CORSPlug,
       origin: &__MODULE__.cors_origins/0,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
       headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
-      max_age: 86400
+      max_age: 86400,
+      credentials: true
     plug ClippsterServerWeb.AuthPlug
   end
 
@@ -24,19 +26,29 @@ defmodule ClippsterServerWeb.Router do
     plug :accepts, ["json"]
     plug CORSPlug,
       origin: &__MODULE__.cors_origins/0,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
       headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
-      max_age: 86400
+      max_age: 86400,
+      credentials: true
     plug ClippsterServerWeb.AuthPlug
     plug ClippsterServerWeb.AdminPlug
   end
 
-  # Define CORS origins as a function to handle regex properly
-  # Using permissive regex patterns to handle various Tauri origins
+  # Define CORS origins - must be specific origins (not "*") when Authorization header is used
+  # as the browser treats requests with Authorization as credentialed requests
   def cors_origins do
     [
-      # Allow all origins temporarily for debugging - can be tightened later
-      ~r/.*/
+      "tauri://localhost",
+      "https://tauri.localhost",
+      "http://tauri.localhost",
+      "http://localhost:5173",
+      "http://localhost:1420",
+      "http://localhost:4000",
+      # Match any localhost port
+      ~r/^http:\/\/localhost:\d+$/,
+      # Match Tauri custom protocols
+      ~r/^tauri:\/\//,
+      ~r/^https?:\/\/tauri\./
     ]
   end
 

@@ -73,6 +73,14 @@ export const useAuthStore = defineStore('auth', {
   },
 
   actions: {
+    /**
+     * Helper to get token with localStorage fallback
+     * Use this instead of this.token for API calls to handle race conditions
+     */
+    getAuthToken() {
+      return this.token || localStorage.getItem('auth_token');
+    },
+
     async requestChallenge() {
       const response = await fetch(`${API_BASE}/api/auth/challenge`, {
         method: 'POST',
@@ -718,7 +726,7 @@ export const useAuthStore = defineStore('auth', {
 
       try {
         const response = await fetch(`${API_BASE}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         if (response.ok) {
@@ -752,7 +760,7 @@ export const useAuthStore = defineStore('auth', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.authToken}`,
+            Authorization: `Bearer ${this.getAuthToken()}`,
           },
           body: JSON.stringify({ account_type: accountType }),
         });
@@ -782,7 +790,7 @@ export const useAuthStore = defineStore('auth', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.authToken}`,
+            Authorization: `Bearer ${this.getAuthToken()}`,
           },
           body: JSON.stringify(orgData),
         });
@@ -810,7 +818,7 @@ export const useAuthStore = defineStore('auth', {
     async getOrganization(orgId) {
       try {
         const response = await fetch(`${API_BASE}/api/organizations/${orgId}`, {
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         const data = await response.json();
@@ -826,7 +834,7 @@ export const useAuthStore = defineStore('auth', {
     async getOrganizations() {
       try {
         const response = await fetch(`${API_BASE}/api/organizations`, {
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         const data = await response.json();
@@ -845,7 +853,7 @@ export const useAuthStore = defineStore('auth', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.authToken}`,
+            Authorization: `Bearer ${this.getAuthToken()}`,
           },
           body: JSON.stringify(updates),
         });
@@ -864,7 +872,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const response = await fetch(`${API_BASE}/api/organizations/${orgId}`, {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         const data = await response.json();
@@ -887,7 +895,7 @@ export const useAuthStore = defineStore('auth', {
     async getOrganizationMembers(orgId) {
       try {
         const response = await fetch(`${API_BASE}/api/organizations/${orgId}/members`, {
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         const data = await response.json();
@@ -906,7 +914,7 @@ export const useAuthStore = defineStore('auth', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.authToken}`,
+            Authorization: `Bearer ${this.getAuthToken()}`,
           },
           body: JSON.stringify({ role }),
         });
@@ -925,7 +933,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const response = await fetch(`${API_BASE}/api/organizations/${orgId}/members/${userId}`, {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         const data = await response.json();
@@ -946,7 +954,7 @@ export const useAuthStore = defineStore('auth', {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${this.authToken}`,
+              Authorization: `Bearer ${this.getAuthToken()}`,
             },
             body: JSON.stringify(updates),
           }
@@ -965,7 +973,7 @@ export const useAuthStore = defineStore('auth', {
     async getOrganizationInvitations(orgId) {
       try {
         const response = await fetch(`${API_BASE}/api/organizations/${orgId}/invitations`, {
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         const data = await response.json();
@@ -984,7 +992,7 @@ export const useAuthStore = defineStore('auth', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.authToken}`,
+            Authorization: `Bearer ${this.getAuthToken()}`,
           },
           body: JSON.stringify({ email, role }),
         });
@@ -1005,7 +1013,7 @@ export const useAuthStore = defineStore('auth', {
           `${API_BASE}/api/organizations/${orgId}/invitations/${invitationId}`,
           {
             method: 'DELETE',
-            headers: { Authorization: `Bearer ${this.authToken}` },
+            headers: { Authorization: `Bearer ${this.getAuthToken()}` },
           }
         );
 
@@ -1025,7 +1033,7 @@ export const useAuthStore = defineStore('auth', {
           `${API_BASE}/api/organizations/${orgId}/invitations/${invitationId}/resend`,
           {
             method: 'POST',
-            headers: { Authorization: `Bearer ${this.authToken}` },
+            headers: { Authorization: `Bearer ${this.getAuthToken()}` },
           }
         );
 
@@ -1045,7 +1053,7 @@ export const useAuthStore = defineStore('auth', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.authToken}`,
+            Authorization: `Bearer ${this.getAuthToken()}`,
           },
           body: JSON.stringify({ email, password, role, name: name || undefined }),
         });
@@ -1077,7 +1085,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const response = await fetch(`${API_BASE}/api/invitations/${inviteToken}/accept`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         const data = await response.json();
@@ -1093,7 +1101,7 @@ export const useAuthStore = defineStore('auth', {
     async getOrganizationCredits(orgId) {
       try {
         const response = await fetch(`${API_BASE}/api/organizations/${orgId}/credits`, {
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         const data = await response.json();
@@ -1112,7 +1120,7 @@ export const useAuthStore = defineStore('auth', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.authToken}`,
+            Authorization: `Bearer ${this.getAuthToken()}`,
           },
           body: JSON.stringify({ user_id: userId, hours }),
         });
@@ -1135,7 +1143,7 @@ export const useAuthStore = defineStore('auth', {
 
         const url = `${API_BASE}/api/organizations/${orgId}/transactions${params.toString() ? '?' + params.toString() : ''}`;
         const response = await fetch(url, {
-          headers: { Authorization: `Bearer ${this.authToken}` },
+          headers: { Authorization: `Bearer ${this.getAuthToken()}` },
         });
 
         const data = await response.json();
