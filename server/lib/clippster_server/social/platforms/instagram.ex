@@ -126,6 +126,9 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     case HTTPoison.get(url) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
+          {:ok, %{"error" => error}} ->
+            {:error, error["message"] || "Failed to get profile"}
+
           {:ok, profile} ->
             {:ok, %{
               user_id: profile["id"],
@@ -136,9 +139,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
               followers_count: profile["followers_count"],
               media_count: profile["media_count"]
             }}
-
-          {:ok, %{"error" => error}} ->
-            {:error, error["message"] || "Failed to get profile"}
 
           {:error, _} ->
             {:error, :invalid_response}
@@ -184,6 +184,9 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     case HTTPoison.get(media_url) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
+          {:ok, %{"error" => error}} ->
+            {:error, error["message"] || "Failed to get media info"}
+
           {:ok, media_data} ->
             media_type = media_data["media_type"]
             base_insights = %{
@@ -219,9 +222,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
               _ ->
                 {:ok, base_insights}
             end
-
-          {:ok, %{"error" => error}} ->
-            {:error, error["message"] || "Failed to get media info"}
 
           {:error, _} ->
             {:error, :invalid_response}
