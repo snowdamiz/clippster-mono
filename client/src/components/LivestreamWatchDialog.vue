@@ -7,7 +7,7 @@
         :class="[
           'fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50',
           // Hide dialog visually when in PiP mode but keep video element alive
-          (isInPipMode || props.isPipModeExternal) && !modelValue ? 'opacity-0 pointer-events-none' : ''
+          (isInPipMode || props.isPipModeExternal) && !modelValue ? 'opacity-0 pointer-events-none' : '',
         ]"
         @keydown="handleKeydown"
         tabindex="0"
@@ -145,15 +145,9 @@
                 playsinline
                 :muted="viewer.state.value.isMuted"
               />
-              
+
               <!-- Hidden WebRTC video element (needed for track reception, not displayed) -->
-              <video
-                ref="liveVideoRef"
-                class="hidden"
-                playsinline
-                autoplay
-                muted
-              />
+              <video ref="liveVideoRef" class="hidden" playsinline autoplay muted />
 
               <!-- Watermark Overlay -->
               <div
@@ -323,7 +317,10 @@
                       <button
                         @click="openClipModal"
                         class="px-3 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
-                        :disabled="viewer.state.value.totalRecordedDuration < 5 || viewer.state.value.availableSegments.length === 0"
+                        :disabled="
+                          viewer.state.value.totalRecordedDuration < 5 ||
+                          viewer.state.value.availableSegments.length === 0
+                        "
                         :title="
                           viewer.state.value.availableSegments.length === 0
                             ? 'Waiting for segments to load...'
@@ -408,12 +405,15 @@
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-  import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
   import ClipDurationModal from './ClipDurationModal.vue';
-  import { getWatermarkImage, resolveWatermarkById, createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
+  import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
+  import { getWatermarkImage, resolveWatermarkById } from '@/services/database/watermarks';
+  import { createClipVersion } from '@/services/database/clip-versions';
+  import { updateClip } from '@/services/database/clips';
+  import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
 
   interface Props {
     modelValue: boolean;
@@ -522,8 +522,7 @@
     const opacity = Math.max(0, Math.min(100, opacityRaw));
 
     const dims = watermarkDimensions.value;
-    const is16x9 =
-      !!dims && dims.height > 0 ? Math.abs(dims.width / dims.height - 16 / 9) < 0.02 : false;
+    const is16x9 = !!dims && dims.height > 0 ? Math.abs(dims.width / dims.height - 16 / 9) < 0.02 : false;
     const isHd = !!dims && dims.width >= 1600 && dims.height >= 900;
     const isAutoFullFrame = is16x9 && isHd;
 
@@ -573,7 +572,7 @@
     if (viewer.state.value.isAtLiveEdge) {
       return '5-10';
     }
-    
+
     // If seeking back, show how far behind we are
     const behindLive = Math.round(viewer.state.value.liveEdgeTime - viewer.state.value.playbackPosition);
     return behindLive > 0 ? behindLive : '5-10';
@@ -596,9 +595,9 @@
   async function loadWatermark() {
     const watermarkId = viewer.state.value.watermarkId;
     const watermarkSettings = viewer.state.value.watermarkSettings;
-    
+
     console.log('[WatchDialog] loadWatermark called:', { watermarkId, watermarkSettings });
-    
+
     if (!watermarkId) {
       console.log('[WatchDialog] No watermarkId, skipping watermark load');
       watermarkUrl.value = null;
@@ -697,7 +696,7 @@
   // Quick clip: Create a 30-second clip without any dialog
   async function performQuickClip() {
     const QUICK_CLIP_DURATION = 30;
-    
+
     // Prevent multiple quick clips at once
     if (isCreatingQuickClip.value) {
       console.log('[WatchDialog] Quick clip already in progress');
@@ -706,7 +705,10 @@
 
     // Check if we have enough recorded duration
     if (viewer.state.value.totalRecordedDuration < QUICK_CLIP_DURATION) {
-      showError('Not Enough Content', `Need at least ${QUICK_CLIP_DURATION}s recorded. Currently: ${Math.floor(viewer.state.value.totalRecordedDuration)}s`);
+      showError(
+        'Not Enough Content',
+        `Need at least ${QUICK_CLIP_DURATION}s recorded. Currently: ${Math.floor(viewer.state.value.totalRecordedDuration)}s`
+      );
       return;
     }
 
@@ -799,10 +801,7 @@
           startTime: clipStartTime,
           endTime: clipEndTime,
         });
-        const { createClipVersion } = await import('@/services/database/clip-versions');
-        const { updateClip } = await import('@/services/database/clips');
-        const { getOrCreateManualSession } = await import('@/services/database/clip-detection-sessions');
-        
+
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);
         const versionId = await createClipVersion(
           clipId,
@@ -824,7 +823,6 @@
       clipsCreatedCount.value++;
       showSuccess('Quick Clip Created', `${QUICK_CLIP_DURATION}s clip saved!`);
       emit('clip-created', result, effectiveProjectId);
-
     } catch (err) {
       console.error('[WatchDialog] Quick clip failed:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -863,7 +861,7 @@
       isInPipMode.value = false;
       emit('pip-mode-changed', false);
     }
-    
+
     // Clean up global key listener
     cleanupGlobalKeyListener();
 
@@ -908,7 +906,7 @@
         if (video.paused) {
           await video.play().catch(() => {});
         }
-        
+
         await video.requestPictureInPicture();
         // PiP entered successfully - close dialog but keep stream running
         isInPipMode.value = true;
@@ -918,10 +916,10 @@
         // Reset flag after emit is processed
         await nextTick();
         closingForPip.value = false;
-        
+
         // Setup global keyboard listener for quick clip
         setupGlobalKeyListener();
-        
+
         // Ensure video continues playing in PiP
         if (video.paused) {
           await video.play().catch(() => {});
@@ -953,7 +951,7 @@
     // Only handle if in PiP mode and dialog is not open
     if (!isInPipMode.value && !props.isPipModeExternal) return;
     if (props.modelValue) return; // Dialog is open, it handles its own keys
-    
+
     // Don't handle if user is typing in an input anywhere in the app
     const target = event.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
@@ -1082,7 +1080,7 @@
           // Connect to livestream
           try {
             await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
-            
+
             // Load watermark from creator profile after connection
             await loadWatermark();
           } catch (error) {
@@ -1101,7 +1099,7 @@
 
         // Focus dialog for keyboard events
         dialogRef.value?.focus();
-        
+
         // If returning from PiP, ensure video continues playing
         if (isInPipMode.value) {
           const video = hlsVideoRef.value;
@@ -1109,7 +1107,7 @@
             video.play().catch(() => {});
           }
         }
-        
+
         // Reset PiP mode flag after dialog reopens
         isInPipMode.value = false;
       } else {
@@ -1162,7 +1160,7 @@
     }
     // Clean up global key listener and shortcut
     cleanupGlobalKeyListener();
-    
+
     // Exit PiP if active when component unmounts
     if (document.pictureInPictureElement) {
       document.exitPictureInPicture().catch(() => {});

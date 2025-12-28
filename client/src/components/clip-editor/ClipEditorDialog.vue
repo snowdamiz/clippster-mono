@@ -399,7 +399,17 @@
   import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { Film, X, Loader2, Check } from 'lucide-vue-next';
   import { Separator } from '@/components/ui/separator';
-  import { CommandHistory, SplitCommand, DeleteCommand, PasteCommand, ExtractAudioCommand, AddItemCommand, ResizeCommand, LayerChangeCommand, UpdateOverlayPropertyCommand } from '@/services/commands';
+  import {
+    CommandHistory,
+    SplitCommand,
+    DeleteCommand,
+    PasteCommand,
+    ExtractAudioCommand,
+    AddItemCommand,
+    ResizeCommand,
+    LayerChangeCommand,
+    UpdateOverlayPropertyCommand,
+  } from '@/services/commands';
   import type { UpdateOverlayPropertyCommandData } from '@/services/commands';
   import type { ClipSegment } from '@/services/database';
   import type {
@@ -469,10 +479,10 @@
     createVideoEditorWatermark,
     updateVideoEditorWatermark,
     deleteVideoEditorWatermark,
-    getWatermarkImage,
     getWatermarkByServerId,
     getProject,
   } from '@/services/database';
+  import { getWatermarkImage } from '@/services/database/watermarks';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { ensureAssetDownloaded } from '@/services/orgAssetSync';
   import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro } from '@/types';
@@ -1236,41 +1246,40 @@
   // Get current segment ID based on playback time
   const currentSegmentId = computed(() => {
     if (trimSegments.value.length === 0) return null;
-    
+
     // Find segment that contains the current playback time
     const segment = trimSegments.value.find(
-      seg => !seg.isDeleted && 
-             previewTime.value >= (props.clipStartTime + seg.startTime) &&
-             previewTime.value <= (props.clipStartTime + seg.endTime)
+      (seg) =>
+        !seg.isDeleted &&
+        previewTime.value >= props.clipStartTime + seg.startTime &&
+        previewTime.value <= props.clipStartTime + seg.endTime
     );
-    
+
     return segment?.id || null;
   });
 
   // Get effective framing config for preview (considers segment-specific framing)
   const effectiveFramingConfigs = computed(() => {
     const configs: ManualFramingConfigs = { ...framingConfigs.value };
-    
+
     // If we have a current segment, check for segment-specific framing
     if (currentSegmentId.value) {
       // For each aspect ratio, check if there's a segment-specific config
       const ratios: (keyof SegmentFramingConfigs)[] = ['9:16', '4:5', '1:1', '16:9'];
-      
+
       for (const ratio of ratios) {
         const segmentConfigs = segmentFramingConfigs.value[ratio];
         if (segmentConfigs && segmentConfigs.length > 0) {
           // Find config that applies to current segment
-          const applicableConfig = segmentConfigs.find(
-            c => c.segmentIds.includes(currentSegmentId.value!)
-          );
-          
+          const applicableConfig = segmentConfigs.find((c) => c.segmentIds.includes(currentSegmentId.value!));
+
           if (applicableConfig) {
             configs[ratio] = applicableConfig.config;
           }
         }
       }
     }
-    
+
     return configs;
   });
 
@@ -1792,7 +1801,7 @@
       // Check if this is a position/time change that should be tracked for undo
       const isTimeChange = updates.start_time !== undefined || updates.end_time !== undefined;
       const isTrimChange = updates.trim_start !== undefined || updates.trim_end !== undefined;
-      
+
       if ((isTimeChange || isTrimChange) && videoEditorEditId.value) {
         // Use ResizeCommand for undo/redo support
         const reloadCallback = async () => {
@@ -1820,10 +1829,10 @@
 
         await commandHistory.executeCommand(resizeCommand);
         undoRedoTrigger.value++;
-        
+
         // Update local state
         Object.assign(source, updates);
-        
+
         if (editorProjectId.value) {
           await recalculateProjectDuration(editorProjectId.value);
         }
@@ -1844,7 +1853,7 @@
           await recalculateProjectDuration(editorProjectId.value);
         }
       }
-      
+
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to update source:', error);
@@ -1985,9 +1994,8 @@
       console.log('[ClipEditorDialog] Creating audio track from extracted audio (with undo support):', data);
 
       // Calculate the next track order (put it after existing audio tracks)
-      const maxTrackOrder = audioTracks.value.length > 0
-        ? Math.max(...audioTracks.value.map(t => t.trackOrder)) + 1
-        : 0;
+      const maxTrackOrder =
+        audioTracks.value.length > 0 ? Math.max(...audioTracks.value.map((t) => t.trackOrder)) + 1 : 0;
 
       // Create reload callback for undo/redo
       const reloadCallback = async () => {
@@ -1995,7 +2003,7 @@
         if (videoEditorEditId.value) {
           const { getVideoEditorAudioTracksByEditId } = await import('@/services/database/video-editor-edits');
           const tracks = await getVideoEditorAudioTracksByEditId(videoEditorEditId.value);
-          audioTracks.value = tracks.map(t => ({
+          audioTracks.value = tracks.map((t) => ({
             id: t.id,
             filePath: t.file_path,
             name: t.name,
@@ -3735,14 +3743,14 @@
 
     // Check if this is a time change that should be tracked for undo
     const isTimeChange = updates.startTime !== undefined || updates.endTime !== undefined;
-    
+
     if (isTimeChange && editorMode.value && videoEditorEditId.value) {
       // Use ResizeCommand for undo/redo support
       const reloadCallback = async () => {
         if (videoEditorEditId.value) {
           const { getVideoEditorAudioTracksByEditId } = await import('@/services/database/video-editor-edits');
           const tracks = await getVideoEditorAudioTracksByEditId(videoEditorEditId.value);
-          audioTracks.value = tracks.map(t => ({
+          audioTracks.value = tracks.map((t) => ({
             id: t.id,
             filePath: t.file_path,
             name: t.name,
@@ -3771,7 +3779,7 @@
 
       await commandHistory.executeCommand(resizeCommand);
       undoRedoTrigger.value++;
-      
+
       // Update local state
       Object.assign(track, updates);
     } else {
@@ -3931,7 +3939,7 @@
     // Find config that applies to these segments
     // For now, return the first config that includes any of the requested segments
     for (const config of configs) {
-      if (segmentIds.some(id => config.segmentIds.includes(id))) {
+      if (segmentIds.some((id) => config.segmentIds.includes(id))) {
         return config.config;
       }
     }
@@ -3944,9 +3952,7 @@
     const currentConfigs = segmentFramingConfigs.value[ratio] || [];
 
     // Remove any existing configs that overlap with these segments
-    const filteredConfigs = currentConfigs.filter(
-      c => !c.segmentIds.some(id => segmentIds.includes(id))
-    );
+    const filteredConfigs = currentConfigs.filter((c) => !c.segmentIds.some((id) => segmentIds.includes(id)));
 
     // Add new config for these segments
     filteredConfigs.push({
@@ -4047,7 +4053,7 @@
       preview_height: currentPreviewHeight,
       animation: updates.animation,
     };
-    
+
     // Handle layer property for multi-track support
     if (updates.layer !== undefined) {
       updateData.layer = updates.layer;
@@ -4135,7 +4141,7 @@
       animation: updates.animation,
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
     };
-    
+
     // Handle layer property for multi-track support
     if (updates.layer !== undefined) {
       updateData.layer = updates.layer;
@@ -4172,13 +4178,13 @@
     // By default, watermark spans the entire clip duration (100% of clip)
     const startTime = 0;
     const endTime = totalSegmentDuration.value;
-    
+
     console.log('[ClipEditorDialog] Adding watermark with duration:', {
       startTime,
       endTime,
       totalSegmentDuration: totalSegmentDuration.value,
       editorContentDuration: editorContentDuration.value,
-      editorMode: editorMode.value
+      editorMode: editorMode.value,
     });
 
     const watermarkData = {
@@ -4223,7 +4229,7 @@
       opacity: updates.opacity,
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
     };
-    
+
     // Handle layer property for multi-track support
     if (updates.layer !== undefined) {
       updateData.layer = updates.layer;
@@ -4254,12 +4260,12 @@
 
   async function splitWatermarkLocal(watermarkId: string, cutTime: number) {
     if (!videoEditorEditId.value) return;
-    
+
     const { splitVideoEditorWatermark } = await import('@/services/database/video-editor-edits');
     const { left, right } = await splitVideoEditorWatermark(videoEditorEditId.value, watermarkId, cutTime);
-    
+
     // Update local state
-    const index = watermarks.value.findIndex(w => w.id === watermarkId);
+    const index = watermarks.value.findIndex((w) => w.id === watermarkId);
     if (index !== -1) {
       watermarks.value[index] = {
         id: left.id,
@@ -4288,11 +4294,11 @@
 
   async function splitTextOverlayLocal(overlayId: string, cutTime: number) {
     if (!videoEditorEditId.value) return;
-    
+
     const { splitVideoEditorTextOverlay } = await import('@/services/database/video-editor-edits');
     const { left, right } = await splitVideoEditorTextOverlay(videoEditorEditId.value, overlayId, cutTime);
-    
-    const index = textOverlays.value.findIndex(t => t.id === overlayId);
+
+    const index = textOverlays.value.findIndex((t) => t.id === overlayId);
     if (index !== -1) {
       textOverlays.value[index] = {
         id: left.id,
@@ -4317,11 +4323,11 @@
 
   async function splitStickerLocal(stickerId: string, cutTime: number) {
     if (!videoEditorEditId.value) return;
-    
+
     const { splitVideoEditorSticker } = await import('@/services/database/video-editor-edits');
     const { left, right } = await splitVideoEditorSticker(videoEditorEditId.value, stickerId, cutTime);
-    
-    const index = stickers.value.findIndex(s => s.id === stickerId);
+
+    const index = stickers.value.findIndex((s) => s.id === stickerId);
     if (index !== -1) {
       stickers.value[index] = {
         id: left.id,
@@ -4350,11 +4356,11 @@
 
   async function splitEffectLocal(effectId: string, cutTime: number) {
     if (!videoEditorEditId.value) return;
-    
+
     const { splitVideoEditorEffect } = await import('@/services/database/video-editor-edits');
     const { left, right } = await splitVideoEditorEffect(videoEditorEditId.value, effectId, cutTime);
-    
-    const index = effects.value.findIndex(e => e.id === effectId);
+
+    const index = effects.value.findIndex((e) => e.id === effectId);
     if (index !== -1) {
       effects.value[index] = {
         id: left.id,
@@ -4375,11 +4381,11 @@
 
   async function splitAudioTrackLocal(trackId: string, cutTime: number) {
     if (!videoEditorEditId.value) return;
-    
+
     const { splitVideoEditorAudioTrack } = await import('@/services/database/video-editor-edits');
     const { left, right } = await splitVideoEditorAudioTrack(videoEditorEditId.value, trackId, cutTime);
-    
-    const index = audioTracks.value.findIndex(t => t.id === trackId);
+
+    const index = audioTracks.value.findIndex((t) => t.id === trackId);
     if (index !== -1) {
       audioTracks.value[index] = {
         id: left.id,
@@ -4411,23 +4417,23 @@
   }
 
   async function splitFilterLocal(filterId: string, cutTime: number) {
-    const index = filterSegments.value.findIndex(f => f.id === filterId);
+    const index = filterSegments.value.findIndex((f) => f.id === filterId);
     if (index === -1) return;
-    
+
     const filter = filterSegments.value[index];
-    
+
     // Validate cut time
     if (cutTime <= filter.startTime || cutTime >= filter.endTime) {
       console.warn('[splitFilterLocal] Cut time is outside filter bounds');
       return;
     }
-    
+
     // Update the original filter to end at cut time (left portion)
     filterSegments.value[index] = {
       ...filter,
       endTime: cutTime,
     };
-    
+
     // Create new filter for right portion
     const newFilterId = `filter-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     filterSegments.value.push({
@@ -4436,7 +4442,7 @@
       endTime: filter.endTime,
       settings: { ...filter.settings },
     });
-    
+
     // Persist to database if in editor mode
     if (videoEditorEditId.value) {
       const { updateVideoEditorEdit } = await import('@/services/database/video-editor-edits');
@@ -4970,7 +4976,7 @@
   ) {
     const key = `${type}-${id}-position`;
     const ratio = previewAspectRatio.value;
-    
+
     // Get original value if this is the start of an operation
     let originalValue: { x: number; y: number } | undefined;
     if (!overlayOperationStartValues.value.has(key)) {
@@ -5044,18 +5050,15 @@
   }
 
   // Called when drag operation ends - creates undo/redo command
-  async function onOverlayPositionChangeComplete(
-    type: 'text' | 'sticker' | 'watermark',
-    id: string
-  ) {
+  async function onOverlayPositionChangeComplete(type: 'text' | 'sticker' | 'watermark', id: string) {
     const key = `${type}-${id}-position`;
     const startData = overlayOperationStartValues.value.get(key);
-    
+
     if (!startData) return; // No operation in progress
-    
+
     const ratio = previewAspectRatio.value;
     let finalValue: { x: number; y: number } | undefined;
-    
+
     // Get final value
     if (type === 'text') {
       const overlay = textOverlays.value.find((o) => o.id === id);
@@ -5070,16 +5073,16 @@
       const config = watermark?.perRatioConfigs?.[ratio];
       finalValue = config?.position || watermark?.position;
     }
-    
+
     if (!finalValue) return;
-    
+
     // Check if value actually changed
     const originalValue = startData.value;
     if (originalValue.x === finalValue.x && originalValue.y === finalValue.y) {
       overlayOperationStartValues.value.delete(key);
       return; // No change, don't create command
     }
-    
+
     // Create command for undo/redo
     const commandData: UpdateOverlayPropertyCommandData = {
       type,
@@ -5096,11 +5099,11 @@
         }
       },
     };
-    
+
     const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
     await commandHistory.executeCommand(command);
     undoRedoTrigger.value++;
-    
+
     // Clear the start value
     overlayOperationStartValues.value.delete(key);
   }
@@ -5108,7 +5111,7 @@
   async function onUpdateOverlayWidth(id: string, width: number) {
     const key = `text-${id}-width`;
     const ratio = previewAspectRatio.value;
-    
+
     // Capture original value if this is the start of an operation
     if (!overlayOperationStartValues.value.has(key)) {
       const overlay = textOverlays.value.find((o) => o.id === id);
@@ -5136,19 +5139,19 @@
   async function onOverlayWidthChangeComplete(id: string) {
     const key = `text-${id}-width`;
     const startData = overlayOperationStartValues.value.get(key);
-    
+
     if (!startData) return;
-    
+
     const ratio = previewAspectRatio.value;
     const overlay = textOverlays.value.find((o) => o.id === id);
     const config = overlay?.perRatioConfigs?.[ratio];
     const finalWidth = config?.style?.width || overlay?.style?.width || 0;
-    
+
     if (!finalWidth || startData.value === finalWidth) {
       overlayOperationStartValues.value.delete(key);
       return;
     }
-    
+
     const commandData: UpdateOverlayPropertyCommandData = {
       type: 'text',
       itemId: id,
@@ -5162,18 +5165,18 @@
         }
       },
     };
-    
+
     const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
     await commandHistory.executeCommand(command);
     undoRedoTrigger.value++;
-    
+
     overlayOperationStartValues.value.delete(key);
   }
 
   async function onUpdateStickerScale(id: string, scale: number) {
     const key = `sticker-${id}-scale`;
     const ratio = previewAspectRatio.value;
-    
+
     // Capture original value if this is the start of an operation
     if (!overlayOperationStartValues.value.has(key)) {
       const sticker = stickers.value.find((s) => s.id === id);
@@ -5202,19 +5205,19 @@
   async function onStickerScaleChangeComplete(id: string) {
     const key = `sticker-${id}-scale`;
     const startData = overlayOperationStartValues.value.get(key);
-    
+
     if (!startData) return;
-    
+
     const ratio = previewAspectRatio.value;
     const sticker = stickers.value.find((s) => s.id === id);
     const config = sticker?.perRatioConfigs?.[ratio];
     const finalScale = config?.scale ?? sticker?.scale ?? 1;
-    
+
     if (startData.value === finalScale) {
       overlayOperationStartValues.value.delete(key);
       return;
     }
-    
+
     const commandData: UpdateOverlayPropertyCommandData = {
       type: 'sticker',
       itemId: id,
@@ -5228,18 +5231,18 @@
         }
       },
     };
-    
+
     const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
     await commandHistory.executeCommand(command);
     undoRedoTrigger.value++;
-    
+
     overlayOperationStartValues.value.delete(key);
   }
 
   async function onUpdateStickerRotation(id: string, rotation: number) {
     const key = `sticker-${id}-rotation`;
     const ratio = previewAspectRatio.value;
-    
+
     // Capture original value if this is the start of an operation
     if (!overlayOperationStartValues.value.has(key)) {
       const sticker = stickers.value.find((s) => s.id === id);
@@ -5268,19 +5271,19 @@
   async function onStickerRotationChangeComplete(id: string) {
     const key = `sticker-${id}-rotation`;
     const startData = overlayOperationStartValues.value.get(key);
-    
+
     if (!startData) return;
-    
+
     const ratio = previewAspectRatio.value;
     const sticker = stickers.value.find((s) => s.id === id);
     const config = sticker?.perRatioConfigs?.[ratio];
     const finalRotation = config?.rotation ?? sticker?.rotation ?? 0;
-    
+
     if (startData.value === finalRotation) {
       overlayOperationStartValues.value.delete(key);
       return;
     }
-    
+
     const commandData: UpdateOverlayPropertyCommandData = {
       type: 'sticker',
       itemId: id,
@@ -5294,18 +5297,18 @@
         }
       },
     };
-    
+
     const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
     await commandHistory.executeCommand(command);
     undoRedoTrigger.value++;
-    
+
     overlayOperationStartValues.value.delete(key);
   }
 
   async function onUpdateWatermarkScale(id: string, scale: number) {
     const key = `watermark-${id}-scale`;
     const ratio = previewAspectRatio.value;
-    
+
     // Capture original value if this is the start of an operation
     if (!overlayOperationStartValues.value.has(key)) {
       const watermark = watermarks.value.find((w) => w.id === id);
@@ -5334,19 +5337,19 @@
   async function onWatermarkScaleChangeComplete(id: string) {
     const key = `watermark-${id}-scale`;
     const startData = overlayOperationStartValues.value.get(key);
-    
+
     if (!startData) return;
-    
+
     const ratio = previewAspectRatio.value;
     const watermark = watermarks.value.find((w) => w.id === id);
     const config = watermark?.perRatioConfigs?.[ratio];
     const finalScale = config?.scale ?? watermark?.scale ?? 1;
-    
+
     if (startData.value === finalScale) {
       overlayOperationStartValues.value.delete(key);
       return;
     }
-    
+
     const commandData: UpdateOverlayPropertyCommandData = {
       type: 'watermark',
       itemId: id,
@@ -5360,11 +5363,11 @@
         }
       },
     };
-    
+
     const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
     await commandHistory.executeCommand(command);
     undoRedoTrigger.value++;
-    
+
     overlayOperationStartValues.value.delete(key);
   }
 
@@ -5961,19 +5964,19 @@
     const FRAME_DURATION = 1 / 30; // 0.0333...
     const currentTime = editorMode.value ? previewTime.value : relativePreviewTime.value;
     const maxDuration = editorMode.value ? editorDuration.value : clipDuration.value;
-    
+
     // Calculate new time
-    let newTime = currentTime + (frameCount * FRAME_DURATION);
-    
+    let newTime = currentTime + frameCount * FRAME_DURATION;
+
     // Clamp to bounds
     newTime = Math.max(0, Math.min(maxDuration, newTime));
-    
+
     // Update preview
     if (editorMode.value) {
       // In editor mode, previewTime is global
       previewTime.value = newTime;
       // Seek logic handles the rest
-      seekTo(newTime); 
+      seekTo(newTime);
     } else {
       // In clip mode, convert relative back to absolute
       const absoluteTime = props.clipStartTime + newTime;

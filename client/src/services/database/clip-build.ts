@@ -277,6 +277,7 @@ export async function getClipWithBuildStatus(clipId: string): Promise<Clip | nul
       built_at: row.built_at,
       built_file_size: row.built_file_size,
       built_duration: row.built_duration,
+      current_version_id: row.current_version_id,
       created_at: row.created_at,
       updated_at: row.updated_at,
     };

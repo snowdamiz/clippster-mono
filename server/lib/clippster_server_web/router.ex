@@ -5,39 +5,50 @@ defmodule ClippsterServerWeb.Router do
     plug :accepts, ["json"]
     plug CORSPlug,
       origin: &__MODULE__.cors_origins/0,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
       headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
-      max_age: 86400
+      max_age: 86400,
+      credentials: true
   end
 
   pipeline :api_auth do
     plug :accepts, ["json"]
-    plug ClippsterServerWeb.AuthPlug
     plug CORSPlug,
       origin: &__MODULE__.cors_origins/0,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
       headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
-      max_age: 86400
+      max_age: 86400,
+      credentials: true
+    plug ClippsterServerWeb.AuthPlug
   end
 
   pipeline :api_admin do
     plug :accepts, ["json"]
-    plug ClippsterServerWeb.AuthPlug
-    plug ClippsterServerWeb.AdminPlug
     plug CORSPlug,
       origin: &__MODULE__.cors_origins/0,
-      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
       headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
-      max_age: 86400
+      max_age: 86400,
+      credentials: true
+    plug ClippsterServerWeb.AuthPlug
+    plug ClippsterServerWeb.AdminPlug
   end
 
-  # Define CORS origins as a function to handle regex properly
+  # Define CORS origins - must be specific origins (not "*") when Authorization header is used
+  # as the browser treats requests with Authorization as credentialed requests
   def cors_origins do
     [
       "tauri://localhost",
+      "https://tauri.localhost",
+      "http://tauri.localhost",
       "http://localhost:5173",
       "http://localhost:1420",
-      ~r/http:\/\/localhost:\d+/
+      "http://localhost:4000",
+      # Match any localhost port
+      ~r/^http:\/\/localhost:\d+$/,
+      # Match Tauri custom protocols
+      ~r/^tauri:\/\//,
+      ~r/^https?:\/\/tauri\./
     ]
   end
 
@@ -73,9 +84,8 @@ defmodule ClippsterServerWeb.Router do
     post "/auth/email/forgot-password", EmailAuthController, :forgot_password
     post "/auth/email/reset-password", EmailAuthController, :reset_password
 
-    # Payment and credit routes
+    # Payment routes (public - pricing info)
     get "/pricing", PaymentController, :get_pricing
-    get "/credits/balance", PaymentController, :get_balance
     post "/payments/quote", PaymentController, :get_quote
     post "/payments/confirm", PaymentController, :confirm_payment
 
@@ -101,6 +111,12 @@ defmodule ClippsterServerWeb.Router do
 
     # Get current user info (refreshes user data from server)
     get "/auth/me", AuthController, :me
+
+    # Credit balance (requires auth)
+    get "/credits/balance", PaymentController, :get_balance
+
+    # Beta code activation (requires auth)
+    post "/beta/activate", BetaController, :activate
 
     post "/clips/detect", ClipsController, :detect
     post "/clips/detect-chunked", ClipsController, :detect_chunked
@@ -241,6 +257,10 @@ defmodule ClippsterServerWeb.Router do
     # Admin settings management
     get "/admin/settings", AdminController, :get_settings
     put "/admin/settings/:key", AdminController, :update_setting
+
+    # Admin beta codes management
+    post "/admin/beta-codes/generate", AdminController, :generate_beta_codes
+    get "/admin/beta-codes", AdminController, :list_beta_codes
   end
 
 

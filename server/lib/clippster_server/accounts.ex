@@ -208,6 +208,21 @@ defmodule ClippsterServer.Accounts do
     end
   end
 
+  @doc """
+  Activates a user's beta status.
+  """
+  def activate_user_beta(user_id) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      user ->
+        user
+        |> User.beta_activation_changeset()
+        |> Repo.update()
+    end
+  end
+
   # ============================================
   # Email Authentication Functions
   # ============================================

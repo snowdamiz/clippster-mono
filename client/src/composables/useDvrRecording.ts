@@ -256,7 +256,7 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
           console.log('[DvrRecording] Attached video track to consumer element');
 
           // Continuously request HIGH quality to prevent SFU from downgrading
-          const publication = videoTrackRef.publication;
+          const publication = (videoTrackRef as any).publication;
           let qualityRequestInterval: number | null = null;
           if (publication && 'setVideoQuality' in publication) {
             // Request high quality immediately
@@ -1158,7 +1158,7 @@ export function useDvrRecording() {
         console.warn('[DvrRecording] Too many bad chunks, attempting recorder restart...');
         consecutiveBadChunks = 0;
 
-        const currentSession = activeDvrSessions.value.get(mintId);
+        const currentSession = activeDvrSessions.value.get(mintId) as DvrSession | undefined;
         if (currentSession && currentSession.mediaRecorder?.state === 'recording') {
           // Stop and restart to try to recover
           restartMediaRecorder(mintId, currentSession, mimeType);
@@ -1334,7 +1334,7 @@ export function useDvrRecording() {
 
       // Create new recorder after a brief delay
       setTimeout(() => {
-        const currentSession = activeDvrSessions.value.get(mintId);
+        const currentSession = activeDvrSessions.value.get(mintId) as DvrSession | undefined;
         if (!currentSession || !currentSession.mediaStream?.active) {
           return;
         }

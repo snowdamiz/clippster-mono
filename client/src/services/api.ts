@@ -28,9 +28,11 @@ const api: AxiosInstance = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
+    // Use token from store, with localStorage fallback for race conditions
     const authStore = useAuthStore();
-    if (authStore.token) {
-      config.headers.Authorization = `Bearer ${authStore.token}`;
+    const token = authStore.token || localStorage.getItem('auth_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
@@ -38,6 +40,17 @@ api.interceptors.request.use(
     return Promise.reject(error);
   }
 );
+
+// Track when user last logged in to prevent immediate logout on race condition 401s
+let lastLoginTime = 0;
+
+// Listen for successful logins
+window.addEventListener('auth-state-changed', (event: Event) => {
+  const customEvent = event as CustomEvent;
+  if (customEvent.detail?.userId) {
+    lastLoginTime = Date.now();
+  }
+});
 
 // Response interceptor for auth errors
 api.interceptors.response.use(
@@ -47,7 +60,9 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401) {
       // Only auto-logout if user was previously authenticated
-      if (authStore.isAuthenticated) {
+      // AND it's been more than 5 seconds since login (to avoid race condition logouts)
+      const timeSinceLogin = Date.now() - lastLoginTime;
+      if (authStore.isAuthenticated && timeSinceLogin > 5000) {
         authStore.logout();
         // Dispatch auth-required event for components to handle individually
         window.dispatchEvent(new CustomEvent('auth-required'));

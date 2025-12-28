@@ -87,7 +87,9 @@
           </div>
         </div>
         <div class="flex items-center gap-1.5">
-          <label class="flex items-center gap-1.5 text-[11px] text-white/60 bg-white/[0.04] px-2 py-1 rounded-md border border-white/10">
+          <label
+            class="flex items-center gap-1.5 text-[11px] text-white/60 bg-white/[0.04] px-2 py-1 rounded-md border border-white/10"
+          >
             <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3 w-3" />
             <span>Snap</span>
           </label>
@@ -120,660 +122,762 @@
             :class="{ dragging: isDragging || isResizing }"
             :style="{ width: `${Math.max(1, zoomLevel) * 100}%`, minHeight: '100%' }"
           >
-          <!-- Full-width Timestamp Ruler -->
-          <div
-            class="h-7 border-b border-white/[0.06] flex items-center bg-[#0c0c0c] sticky top-0 z-50 timeline-ruler"
-            @wheel="onRulerWheel"
-            title="Scroll to zoom"
-          >
-            <!-- Track label spacer - matches track header width -->
+            <!-- Full-width Timestamp Ruler -->
             <div
-              class="w-[100px] h-full flex items-center justify-start flex-shrink-0 sticky left-0 z-[70] bg-[#0c0c0c] border-r border-white/[0.08]"
+              class="h-7 border-b border-white/[0.06] flex items-center bg-[#0c0c0c] sticky top-0 z-50 timeline-ruler"
+              @wheel="onRulerWheel"
+              title="Scroll to zoom"
             >
-            </div>
-            <!-- Continuous ruler ticks across full duration -->
-            <div
-              ref="rulerContentRef"
-              class="flex-1 relative h-full flex items-center cursor-pointer"
-              @click="onRulerClick"
-            >
-              <div class="absolute inset-0">
-                <div
-                  v-for="tick in rulerTicks"
-                  :key="tick.key"
-                  class="absolute flex flex-col items-center"
-                  :style="{ left: `${tick.percent}%`, transform: 'translateX(-50%)', bottom: '0' }"
-                >
-                  <div class="w-px bg-foreground/20 timeline-tick" :class="tick.isMajor ? 'h-4' : 'h-2'"></div>
-                  <span
-                    v-if="tick.isMajor"
-                    class="text-[10px] text-foreground/40 whitespace-nowrap font-normal mt-0.5"
-                  >
-                    {{ formatTime(tick.time) }}
-                  </span>
-                </div>
-              </div>
-
-              <!-- Timeline Markers -->
+              <!-- Track label spacer - matches track header width -->
               <div
-                v-for="marker in visibleMarkers"
-                :key="marker.id"
-                class="absolute top-0 bottom-0 flex flex-col items-center cursor-pointer z-[60] group"
-                :class="{
-                  'opacity-100': props.selectedMarkerId === marker.id,
-                  'opacity-80 hover:opacity-100': props.selectedMarkerId !== marker.id,
-                }"
-                :style="{ left: `${marker.leftPercent}%`, transform: 'translateX(-50%)' }"
-                @click.stop="emit('markerClick', marker.id)"
-                :title="marker.label || 'Marker'"
-              >
-                <!-- Marker flag icon -->
-                <div
-                  class="w-6 h-6 flex items-center justify-center rounded-full transition-all duration-150"
-                  :class="
-                    props.selectedMarkerId === marker.id
-                      ? 'bg-yellow-500 shadow-lg shadow-yellow-500/50'
-                      : 'bg-yellow-500/80 group-hover:bg-yellow-500'
-                  "
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="white"
-                    stroke="none"
-                  >
-                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                    <line x1="4" y1="22" x2="4" y2="15" stroke="white" stroke-width="2" />
-                  </svg>
-                </div>
-                <!-- Marker line -->
-                <div
-                  class="w-0.5 h-full transition-all duration-150"
-                  :class="
-                    props.selectedMarkerId === marker.id
-                      ? 'bg-yellow-500'
-                      : 'bg-yellow-500/60 group-hover:bg-yellow-500/80'
-                  "
-                ></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Unified Layer tracks (can contain video sources, text, stickers, watermarks) -->
-          <div
-            v-for="layerGroup in visualLayers"
-            :key="`layer-${layerGroup.layer}`"
-            :data-layer-track="layerGroup.layer"
-            class="flex items-center h-10 relative"
-            :class="{
-              'bg-purple-500/10 ring-2 ring-purple-500/50': (isDragging && dragInfo?.type && ['text', 'sticker', 'watermark'].includes(dragInfo.type) && dragInfo?.targetLayer === layerGroup.layer) || (isDraggingSource && dragSourceInfo?.targetTrackIndex === layerGroup.layer)
-            }"
-          >
-            <div
-              class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
-            >
-              <div class="font-medium">Layer {{ layerGroup.layer }}</div>
-            </div>
-            <div class="flex-1 h-full relative" @click="onTrackContentClick">
-              <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
-              
-              <!-- Render all items in this layer -->
-              <template v-for="overlayItem in layerGroup.items" :key="`${overlayItem.type}-${overlayItem.item.id}`">
-                <!-- Video Source (in layer) -->
-                <div
-                  v-if="overlayItem.type === 'source'"
-                  :ref="(el) => setSegmentRef(el, 'source', overlayItem.item.id)"
-                  class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group border-2 border-cyan-500"
-                  :class="getSegmentClasses('source', overlayItem.item.id)"
-                  :style="getVideoSourceStyle(overlayItem.item, sourcePreview)"
-                  @mousedown="(e) => onSourceMouseDown(e, overlayItem.item)"
-                  @click.stop="selectItem('source', overlayItem.item.id)"
-                >
-                  <div class="absolute inset-0 bg-[#1a1a1a]"></div>
-                  <span class="relative z-10 text-xs text-cyan-400 font-medium truncate px-1 drop-shadow-sm pointer-events-none">
-                    {{ overlayItem.item.source_name || 'Video' }}
-                  </span>
-                </div>
-                
-                <!-- Sticker -->
-                <div
-                  v-if="overlayItem.type === 'sticker'"
-                  :ref="(el) => setSegmentRef(el, 'sticker', overlayItem.item.id)"
-                  class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center justify-center group"
-                  :class="getSegmentClasses('sticker', overlayItem.item.id)"
-                  :style="getSegmentStyle(overlayItem.item.startTime, overlayItem.item.endTime, 'pink', 'sticker', overlayItem.item.id)"
-                  @mousedown="(e) => onSegmentMouseDown(e, 'sticker', overlayItem.item.id, overlayItem.item)"
-                  @click.stop="selectItem('sticker', overlayItem.item.id)"
-                >
-                  <span v-if="overlayItem.item.stickerType === 'emoji'" class="text-sm pointer-events-none">
-                    {{ overlayItem.item.stickerPath }}
-                  </span>
-                  <span v-else class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm pointer-events-none">
-                    Sticker
-                  </span>
-                  <!-- Left resize handle -->
-                  <div
-                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', overlayItem.item.id, 'left', overlayItem.item)"
-                  >
-                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                  </div>
-                  <!-- Right resize handle -->
-                  <div
-                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onResizeMouseDown(e, 'sticker', overlayItem.item.id, 'right', overlayItem.item)"
-                  >
-                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                  </div>
-                </div>
-                
-                <!-- Text Overlay -->
-                <div
-                  v-if="overlayItem.type === 'text'"
-                  :ref="(el) => setSegmentRef(el, 'text', overlayItem.item.id)"
-                  class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                  :class="getSegmentClasses('text', overlayItem.item.id)"
-                  :style="getSegmentStyle(overlayItem.item.startTime, overlayItem.item.endTime, 'amber', 'text', overlayItem.item.id)"
-                  @mousedown="(e) => onSegmentMouseDown(e, 'text', overlayItem.item.id, overlayItem.item)"
-                  @click.stop="selectItem('text', overlayItem.item.id)"
-                >
-                  <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
-                    {{ overlayItem.item.text }}
-                  </span>
-                  <!-- Left resize handle -->
-                  <div
-                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlayItem.item.id, 'left', overlayItem.item)"
-                  >
-                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                  </div>
-                  <!-- Right resize handle -->
-                  <div
-                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlayItem.item.id, 'right', overlayItem.item)"
-                  >
-                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                  </div>
-                </div>
-                
-                <!-- Watermark -->
-                <div
-                  v-if="overlayItem.type === 'watermark'"
-                  :ref="(el) => setSegmentRef(el, 'watermark', overlayItem.item.id)"
-                  class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                  :class="getSegmentClasses('watermark', overlayItem.item.id)"
-                  :style="getSegmentStyle(overlayItem.item.startTime, overlayItem.item.endTime, 'cyan', 'watermark', overlayItem.item.id)"
-                  @mousedown="(e) => onSegmentMouseDown(e, 'watermark', overlayItem.item.id, overlayItem.item)"
-                  @click.stop="selectItem('watermark', overlayItem.item.id)"
-                >
-                  <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
-                    Watermark
-                  </span>
-                  <!-- Left resize handle -->
-                  <div
-                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'left', overlayItem.item)"
-                  >
-                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                  </div>
-                  <!-- Right resize handle -->
-                  <div
-                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'right', overlayItem.item)"
-                  >
-                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-
-          <!-- Legacy single tracks (kept for backward compatibility if no layers defined) -->
-          <div v-if="textOverlays.length > 0 && visualOverlayLayers.length === 0" class="flex items-center h-12 relative">
-            <div
-              class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
-            >
-              <div class="font-medium flex items-center gap-1">
-                <Type :size="12" />
-                Text
-              </div>
-            </div>
-            <div class="flex-1 h-full relative" @click="onTrackContentClick">
-              <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                class="w-[100px] h-full flex items-center justify-start flex-shrink-0 sticky left-0 z-[70] bg-[#0c0c0c] border-r border-white/[0.08]"
+              ></div>
+              <!-- Continuous ruler ticks across full duration -->
               <div
-                v-for="overlay in textOverlays"
-                :key="overlay.id"
-                :ref="(el) => setSegmentRef(el, 'text', overlay.id)"
-                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                :class="getSegmentClasses('text', overlay.id)"
-                :style="getSegmentStyle(overlay.startTime, overlay.endTime, 'amber', 'text', overlay.id)"
-                @mousedown="(e) => onSegmentMouseDown(e, 'text', overlay.id, overlay)"
-                @click.stop="selectItem('text', overlay.id)"
+                ref="rulerContentRef"
+                class="flex-1 relative h-full flex items-center cursor-pointer"
+                @click="onRulerClick"
               >
-                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
-                  {{ overlay.text }}
-                </span>
-                <!-- Left resize handle -->
-                <div
-                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlay.id, 'left', overlay)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-                <!-- Right resize handle -->
-                <div
-                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlay.id, 'right', overlay)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="effects.length > 0" class="flex items-center h-12 relative">
-            <div
-              class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
-            >
-              <div class="font-medium flex items-center gap-1">
-                <Sparkles :size="12" />
-                Effects
-              </div>
-            </div>
-            <div class="flex-1 h-full relative" @click="onTrackContentClick">
-              <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
-              <div
-                v-for="effect in effects"
-                :key="effect.id"
-                :ref="(el) => setSegmentRef(el, 'effect', effect.id)"
-                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                :class="getSegmentClasses('effect', effect.id)"
-                :style="getSegmentStyle(effect.startTime, effect.endTime, 'cyan', 'effect', effect.id)"
-                @mousedown="(e) => onSegmentMouseDown(e, 'effect', effect.id, effect)"
-                @click.stop="selectItem('effect', effect.id)"
-              >
-                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm capitalize pointer-events-none">
-                  {{ effect.type }}
-                </span>
-                <!-- Left resize handle -->
-                <div
-                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'effect', effect.id, 'left', effect)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-                <!-- Right resize handle -->
-                <div
-                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'effect', effect.id, 'right', effect)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="filterSegments.length > 0" class="flex items-center h-12 relative">
-            <div
-              class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
-            >
-              <div class="font-medium flex items-center gap-1">
-                <Palette :size="12" />
-                Filters
-              </div>
-            </div>
-            <div class="flex-1 h-full relative" @click="onTrackContentClick">
-              <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
-              <div
-                v-for="filterSeg in filterSegments"
-                :key="filterSeg.id"
-                :ref="(el) => setSegmentRef(el, 'filter', filterSeg.id)"
-                class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                :class="getSegmentClasses('filter', filterSeg.id)"
-                :style="getFilterSegmentStyle(filterSeg)"
-                @mousedown="(e) => onSegmentMouseDown(e, 'filter', filterSeg.id, filterSeg)"
-                @click.stop="selectItem('filter', filterSeg.id)"
-              >
-                <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm capitalize pointer-events-none">
-                  {{ getFilterPresetName(filterSeg.settings.preset) }}
-                </span>
-                <!-- Left resize handle -->
-                <div
-                  class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'filter', filterSeg.id, 'left', filterSeg)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-                <!-- Right resize handle -->
-                <div
-                  class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
-                  @mousedown.stop="(e) => onResizeMouseDown(e, 'filter', filterSeg.id, 'right', filterSeg)"
-                >
-                  <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Source Track (Primary Video - Editor Mode) -->
-          <template v-if="editorMode">
-            <div class="flex items-center h-[72px] relative">
-              <div
-                class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
-              >
-                <!-- Track controls row (CapCut style: icons in a row) -->
-                <div class="flex items-center gap-1 text-white/50 mb-1">
-                  <button @click.stop="toggleVideoTrackState('isLocked')" class="p-0.5 hover:text-white" :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'" :class="{ 'text-cyan-400': videoTrackState.isLocked }">
-                    <Lock v-if="videoTrackState.isLocked" :size="13" />
-                    <Unlock v-else :size="13" />
-                  </button>
-                  <button @click.stop="toggleVideoTrackState('isHidden')" class="p-0.5 hover:text-white" :title="videoTrackState.isHidden ? 'Show' : 'Hide'" :class="{ 'text-cyan-400': videoTrackState.isHidden }">
-                    <EyeOff v-if="videoTrackState.isHidden" :size="13" />
-                    <Eye v-else :size="13" />
-                  </button>
-                  <button @click.stop="toggleVideoTrackState('isMuted')" class="p-0.5 hover:text-white" :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'" :class="{ 'text-cyan-400': videoTrackState.isMuted }">
-                    <VolumeX v-if="videoTrackState.isMuted" :size="13" />
-                    <Volume2 v-else :size="13" />
-                  </button>
-                </div>
-                <!-- Track label -->
-                <span class="text-[11px] text-white/60 truncate">Source</span>
-              </div>
-              <div
-                ref="videoTrackContentRef"
-                class="flex-1 h-full relative"
-                @click="onTrackContentClick"
-                @dragover.prevent="onTimelineDragOver"
-                @drop.prevent="onTimelineDrop"
-              >
-                <!-- Background -->
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
-
-                <!-- Empty state drop zone -->
-                <div
-                  v-if="primaryVideoSources.length === 0"
-                  class="absolute inset-0 flex items-center justify-center border-2 border-dashed border-white/12 rounded-md"
-                  :class="{ 'border-violet-500/50 bg-violet-500/5': isDragOverTimeline }"
-                >
-                  <span class="text-xs text-white/30">Drop sources here</span>
-                </div>
-
-                <!-- Primary video source segments -->
-                <div
-                  v-for="source in primaryVideoSources"
-                  :key="source.id"
-                  :ref="(el) => setSegmentRef(el, 'source', source.id)"
-                  class="clip-segment absolute top-0 bottom-0 overflow-hidden group border-2"
-                  :class="[
-                    getSegmentClasses('source', source.id),
-                    isCutToolActive && cutHoverInfo?.segmentId === source.id
-                      ? 'cursor-crosshair z-65 shadow-xl border-orange-400 ring-2 ring-orange-400/50'
-                      : isCutToolActive
-                        ? 'cursor-crosshair z-62 border-cyan-500'
-                        : 'cursor-pointer border-cyan-500',
-                  ]"
-                  :style="getVideoSourceStyle(source, sourcePreview)"
-                  @mouseenter="isCutToolActive && onSourceHoverForCut($event, source)"
-                  @mousemove="isCutToolActive && onSourceHoverForCut($event, source)"
-                  @mouseleave="isCutToolActive && (cutHoverInfo = null)"
-                  @mousedown="isCutToolActive ? onSourceClickForCut($event, source) : onSourceMouseDown($event, source)"
-                  @click.stop="!isCutToolActive && onSourceClick($event, source)"
-                  @contextmenu.prevent="onSourceContextMenu($event, source)"
-                >
-                  <!-- Video thumbnails background -->
-                  <div class="absolute inset-0 bg-[#1a1a1a] flex overflow-hidden">
-                  </div>
-
-                  <!-- Remaining duration overlay -->
+                <div class="absolute inset-0">
                   <div
-                    class="absolute top-0 bottom-0 right-0 bg-white/6 pointer-events-none"
-                    :style="{ left: `${((source.end_time - source.start_time) / (clipEnd - clipStart)) * 100}%` }"
-                  ></div>
-
-                  <!-- Waveform canvas overlay (hidden if audio has been extracted) -->
-                  <canvas
-                    v-if="!(source as any).audio_extracted"
-                    :ref="(el) => setSourceWaveformCanvasRef(el, source.id)"
-                    class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
-                    style="mix-blend-mode: screen; z-index: 5"
-                  ></canvas>
-
-                  <!-- Source label (CapCut style - cyan text at top left) -->
-                  <div
-                    class="absolute top-0 left-0 right-0 z-10 flex items-start justify-start pointer-events-none px-2 py-1"
+                    v-for="tick in rulerTicks"
+                    :key="tick.key"
+                    class="absolute flex flex-col items-center"
+                    :style="{ left: `${tick.percent}%`, transform: 'translateX(-50%)', bottom: '0' }"
                   >
+                    <div class="w-px bg-foreground/20 timeline-tick" :class="tick.isMajor ? 'h-4' : 'h-2'"></div>
                     <span
-                      class="text-[11px] text-cyan-400 font-medium truncate"
+                      v-if="tick.isMajor"
+                      class="text-[10px] text-foreground/40 whitespace-nowrap font-normal mt-0.5"
                     >
-                      {{ source.source_name || 'Untitled' }} {{ formatTime(source.end_time - source.start_time) }}
+                      {{ formatTime(tick.time) }}
                     </span>
                   </div>
                 </div>
+
+                <!-- Timeline Markers -->
+                <div
+                  v-for="marker in visibleMarkers"
+                  :key="marker.id"
+                  class="absolute top-0 bottom-0 flex flex-col items-center cursor-pointer z-[60] group"
+                  :class="{
+                    'opacity-100': props.selectedMarkerId === marker.id,
+                    'opacity-80 hover:opacity-100': props.selectedMarkerId !== marker.id,
+                  }"
+                  :style="{ left: `${marker.leftPercent}%`, transform: 'translateX(-50%)' }"
+                  @click.stop="emit('markerClick', marker.id)"
+                  :title="marker.label || 'Marker'"
+                >
+                  <!-- Marker flag icon -->
+                  <div
+                    class="w-6 h-6 flex items-center justify-center rounded-full transition-all duration-150"
+                    :class="
+                      props.selectedMarkerId === marker.id
+                        ? 'bg-yellow-500 shadow-lg shadow-yellow-500/50'
+                        : 'bg-yellow-500/80 group-hover:bg-yellow-500'
+                    "
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="white"
+                      stroke="none"
+                    >
+                      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                      <line x1="4" y1="22" x2="4" y2="15" stroke="white" stroke-width="2" />
+                    </svg>
+                  </div>
+                  <!-- Marker line -->
+                  <div
+                    class="w-0.5 h-full transition-all duration-150"
+                    :class="
+                      props.selectedMarkerId === marker.id
+                        ? 'bg-yellow-500'
+                        : 'bg-yellow-500/60 group-hover:bg-yellow-500/80'
+                    "
+                  ></div>
+                </div>
               </div>
             </div>
-          </template>
 
-          <!-- Single Video Track (Clip Mode) -->
-          <template v-else>
-            <div class="flex items-center h-[72px] relative">
+            <!-- Unified Layer tracks (can contain video sources, text, stickers, watermarks) -->
+            <div
+              v-for="layerGroup in visualLayers"
+              :key="`layer-${layerGroup.layer}`"
+              :data-layer-track="layerGroup.layer"
+              class="flex items-center h-10 relative"
+              :class="{
+                'bg-purple-500/10 ring-2 ring-purple-500/50':
+                  (isDragging &&
+                    dragInfo?.type &&
+                    ['text', 'sticker', 'watermark'].includes(dragInfo.type) &&
+                    dragInfo?.targetLayer === layerGroup.layer) ||
+                  (isDraggingSource && dragSourceInfo?.targetTrackIndex === layerGroup.layer),
+              }"
+            >
               <div
-                class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
               >
-                <!-- Track controls row (CapCut style: icons in a row) -->
-                <div class="flex items-center gap-1 text-white/50 mb-1">
-                  <button @click.stop="toggleVideoTrackState('isLocked')" class="p-0.5 hover:text-white" :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'" :class="{ 'text-cyan-400': videoTrackState.isLocked }">
-                    <Lock v-if="videoTrackState.isLocked" :size="13" />
-                    <Unlock v-else :size="13" />
-                  </button>
-                  <button @click.stop="toggleVideoTrackState('isHidden')" class="p-0.5 hover:text-white" :title="videoTrackState.isHidden ? 'Show' : 'Hide'" :class="{ 'text-cyan-400': videoTrackState.isHidden }">
-                    <EyeOff v-if="videoTrackState.isHidden" :size="13" />
-                    <Eye v-else :size="13" />
-                  </button>
-                  <button @click.stop="toggleVideoTrackState('isMuted')" class="p-0.5 hover:text-white" :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'" :class="{ 'text-cyan-400': videoTrackState.isMuted }">
-                    <VolumeX v-if="videoTrackState.isMuted" :size="13" />
-                    <Volume2 v-else :size="13" />
-                  </button>
-                </div>
-                <!-- Track label -->
-                <span class="text-[11px] text-white/60 truncate">Cover</span>
+                <div class="font-medium">Layer {{ layerGroup.layer }}</div>
               </div>
-              <div
-                ref="videoTrackContentRef"
-                class="flex-1 h-full relative"
-                @click="onTrackContentClick"
-              >
-                <!-- Background -->
+              <div class="flex-1 h-full relative" @click="onTrackContentClick">
                 <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
 
-                <!-- Clip Mode: Trim Segments -->
-                <template v-for="(segmentLayout, _index) in segmentLayouts" :key="segmentLayout.segment.id">
+                <!-- Render all items in this layer -->
+                <template v-for="overlayItem in layerGroup.items" :key="`${overlayItem.type}-${overlayItem.item.id}`">
+                  <!-- Video Source (in layer) -->
                   <div
-                    :ref="(el) => setSegmentRef(el, 'trim', segmentLayout.segment.id)"
-                    class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group"
-                    :class="[
-                      getSegmentClasses('trim', segmentLayout.segment.id, segmentLayout.segment.isDeleted),
-                      props.selectedSegmentIds?.has(segmentLayout.segment.id)
-                        ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-black shadow-lg shadow-blue-400/30'
-                        : '',
-                      isCutToolActive && cutHoverInfo?.segmentId === segmentLayout.segment.id
-                        ? 'cursor-crosshair z-65 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
-                        : isCutToolActive
-                          ? 'cursor-crosshair z-62'
-                          : 'cursor-pointer',
-                    ]"
-                    :style="getSegmentLayoutStyle(segmentLayout, 'violet', 'trim', segmentLayout.segment.id)"
-                    @mouseenter="isCutToolActive && onSegmentHoverForCut($event, segmentLayout.segment)"
-                    @mousemove="isCutToolActive && onSegmentHoverForCut($event, segmentLayout.segment)"
-                    @mouseleave="isCutToolActive && (cutHoverInfo = null)"
-                    @mousedown="
-                      isCutToolActive
-                        ? onSegmentClickForCut($event, segmentLayout.segment)
-                        : onSegmentMouseDown($event, 'trim', segmentLayout.segment.id, segmentLayout.segment)
-                    "
-                    @click.stop="!isCutToolActive && onSegmentClick($event, segmentLayout.segment)"
+                    v-if="overlayItem.type === 'source'"
+                    :ref="(el) => setSegmentRef(el, 'source', overlayItem.item.id)"
+                    class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group border-2 border-cyan-500"
+                    :class="getSegmentClasses('source', overlayItem.item.id)"
+                    :style="getVideoSourceStyle(overlayItem.item, sourcePreview)"
+                    @mousedown="(e) => onSourceMouseDown(e, overlayItem.item)"
+                    @click.stop="selectItem('source', overlayItem.item.id)"
                   >
-                    <div class="absolute inset-0 bg-black flex overflow-hidden">
-                      <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
-                      <div class="absolute inset-0 bg-[#1a1a1a]"></div>
+                    <div class="absolute inset-0 bg-[#1a1a1a]"></div>
+                    <span
+                      class="relative z-10 text-xs text-cyan-400 font-medium truncate px-1 drop-shadow-sm pointer-events-none"
+                    >
+                      {{ overlayItem.item.source_name || 'Video' }}
+                    </span>
+                  </div>
+
+                  <!-- Sticker -->
+                  <div
+                    v-if="overlayItem.type === 'sticker'"
+                    :ref="(el) => setSegmentRef(el, 'sticker', overlayItem.item.id)"
+                    class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center justify-center group"
+                    :class="getSegmentClasses('sticker', overlayItem.item.id)"
+                    :style="
+                      getSegmentStyle(
+                        overlayItem.item.startTime,
+                        overlayItem.item.endTime,
+                        'pink',
+                        'sticker',
+                        overlayItem.item.id
+                      )
+                    "
+                    @mousedown="(e) => onSegmentMouseDown(e, 'sticker', overlayItem.item.id, overlayItem.item)"
+                    @click.stop="selectItem('sticker', overlayItem.item.id)"
+                  >
+                    <span v-if="overlayItem.item.stickerType === 'emoji'" class="text-sm pointer-events-none">
+                      {{ overlayItem.item.stickerPath }}
+                    </span>
+                    <span
+                      v-else
+                      class="text-xs text-white/90 font-medium truncate px-1 drop-shadow-sm pointer-events-none"
+                    >
+                      Sticker
+                    </span>
+                    <!-- Left resize handle -->
+                    <div
+                      class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'sticker', overlayItem.item.id, 'left', overlayItem.item)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                     </div>
-                    <canvas
-                      :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
-                      class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
-                      style="mix-blend-mode: screen; z-index: 5"
-                    ></canvas>
+                    <!-- Right resize handle -->
+                    <div
+                      class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'sticker', overlayItem.item.id, 'right', overlayItem.item)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                  </div>
+
+                  <!-- Text Overlay -->
+                  <div
+                    v-if="overlayItem.type === 'text'"
+                    :ref="(el) => setSegmentRef(el, 'text', overlayItem.item.id)"
+                    class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                    :class="getSegmentClasses('text', overlayItem.item.id)"
+                    :style="
+                      getSegmentStyle(
+                        overlayItem.item.startTime,
+                        overlayItem.item.endTime,
+                        'amber',
+                        'text',
+                        overlayItem.item.id
+                      )
+                    "
+                    @mousedown="(e) => onSegmentMouseDown(e, 'text', overlayItem.item.id, overlayItem.item)"
+                    @click.stop="selectItem('text', overlayItem.item.id)"
+                  >
+                    <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
+                      {{ overlayItem.item.text }}
+                    </span>
+                    <!-- Left resize handle -->
+                    <div
+                      class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'text', overlayItem.item.id, 'left', overlayItem.item)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                    <!-- Right resize handle -->
+                    <div
+                      class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'text', overlayItem.item.id, 'right', overlayItem.item)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                  </div>
+
+                  <!-- Watermark -->
+                  <div
+                    v-if="overlayItem.type === 'watermark'"
+                    :ref="(el) => setSegmentRef(el, 'watermark', overlayItem.item.id)"
+                    class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                    :class="getSegmentClasses('watermark', overlayItem.item.id)"
+                    :style="
+                      getSegmentStyle(
+                        overlayItem.item.startTime,
+                        overlayItem.item.endTime,
+                        'cyan',
+                        'watermark',
+                        overlayItem.item.id
+                      )
+                    "
+                    @mousedown="(e) => onSegmentMouseDown(e, 'watermark', overlayItem.item.id, overlayItem.item)"
+                    @click.stop="selectItem('watermark', overlayItem.item.id)"
+                  >
+                    <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
+                      Watermark
+                    </span>
+                    <!-- Left resize handle -->
+                    <div
+                      class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'left', overlayItem.item)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                    <!-- Right resize handle -->
+                    <div
+                      class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'right', overlayItem.item)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
                   </div>
                 </template>
               </div>
             </div>
-          </template>
 
-          <!-- Audio Tracks (BELOW primary video) -->
-          <div
-            v-for="track in audioTracks"
-            :key="track.id"
-            class="flex items-center h-12 relative"
-            :class="{
-              'bg-blue-500/10 ring-2 ring-blue-500/50': isDragging && dragInfo?.type === 'audio' && dragInfo?.targetTrackOrder === track.trackOrder
-            }"
-          >
+            <!-- Legacy single tracks (kept for backward compatibility if no layers defined) -->
             <div
-              class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+              v-if="textOverlays.length > 0 && visualOverlayLayers.length === 0"
+              class="flex items-center h-12 relative"
             >
-              <!-- Track controls row -->
-              <div class="flex items-center gap-1 text-white/50 mb-1">
-                <button @click.stop="emit('toggleAudioLock', track.id)" class="p-0.5 hover:text-white" :title="track.isLocked ? 'Unlock' : 'Lock'" :class="{ 'text-cyan-400': track.isLocked }">
-                  <Lock v-if="track.isLocked" :size="13" />
-                  <Unlock v-else :size="13" />
-                </button>
-                <button @click.stop="emit('toggleAudioHidden', track.id)" class="p-0.5 hover:text-white" :title="track.isHidden ? 'Show' : 'Hide'" :class="{ 'text-cyan-400': track.isHidden }">
-                  <EyeOff v-if="track.isHidden" :size="13" />
-                  <Eye v-else :size="13" />
-                </button>
-                <button @click.stop="emit('toggleAudioMute', track.id)" class="p-0.5 hover:text-white" :title="track.isMuted ? 'Unmute' : 'Mute'" :class="{ 'text-cyan-400': track.isMuted }">
-                  <VolumeX v-if="track.isMuted" :size="13" />
-                  <Volume2 v-else :size="13" />
-                </button>
+              <div
+                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+              >
+                <div class="font-medium flex items-center gap-1">
+                  <Type :size="12" />
+                  Text
+                </div>
               </div>
-              <!-- Track label -->
-              <span class="text-[11px] text-white/60 truncate">{{ track.name }}</span>
-            </div>
-            <div
-              :ref="(el) => setSegmentRef(el, 'audio', track.id)"
-              class="flex-1 h-full relative"
-              @click="onTrackContentClick"
-            >
-              <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
-
-              <!-- Render audio track as visual segments that split at video segment boundaries -->
-              <template v-for="(visualSeg, segIdx) in getAudioVisualSegments(track)" :key="`${track.id}-vis-${segIdx}`">
-                <!-- Audio visual segment -->
+              <div class="flex-1 h-full relative" @click="onTrackContentClick">
+                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
                 <div
-                  class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer"
-                  :class="getSegmentClasses('audio', track.id)"
-                  :style="getAudioVisualSegmentStyle(track, visualSeg)"
-                  @mousedown="(e) => onSegmentMouseDown(e, 'audio', track.id, track)"
-                  @click.stop="selectItem('audio', track.id)"
+                  v-for="overlay in textOverlays"
+                  :key="overlay.id"
+                  :ref="(el) => setSegmentRef(el, 'text', overlay.id)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                  :class="getSegmentClasses('text', overlay.id)"
+                  :style="getSegmentStyle(overlay.startTime, overlay.endTime, 'amber', 'text', overlay.id)"
+                  @mousedown="(e) => onSegmentMouseDown(e, 'text', overlay.id, overlay)"
+                  @click.stop="selectItem('text', overlay.id)"
                 >
-                  <!-- Audio track background gradient -->
-                  <div class="absolute inset-0 bg-gradient-to-r from-emerald-900/30 to-teal-900/20"></div>
-
-                  <!-- Waveform canvas for this visual segment -->
-                  <canvas
-                    :ref="(el) => setAudioSegmentCanvasRef(el, track.id, segIdx)"
-                    class="absolute inset-0 w-full h-full pointer-events-none"
-                    style="mix-blend-mode: normal; z-index: 5"
-                  ></canvas>
-
-                  <!-- Track label (only show on hover in first segment) -->
+                  <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
+                    {{ overlay.text }}
+                  </span>
+                  <!-- Left resize handle -->
                   <div
-                    v-if="visualSeg.isFirst"
-                    class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                  >
-                    <span
-                      class="text-xs text-white font-medium truncate drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded"
-                    >
-                      {{ track.name }}
-                    </span>
-                  </div>
-
-                  <!-- Left resize handle (only on first segment, disabled in editor mode) -->
-                  <div
-                    v-if="visualSeg.isFirst && !editorMode"
-                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'left', track)"
+                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlay.id, 'left', overlay)"
                   >
                     <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                   </div>
-                  <!-- Right resize handle (only on last segment, disabled in editor mode) -->
+                  <!-- Right resize handle -->
                   <div
-                    v-if="visualSeg.isLast && !editorMode"
-                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                    @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'right', track)"
+                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'text', overlay.id, 'right', overlay)"
                   >
                     <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                   </div>
                 </div>
-              </template>
+              </div>
+            </div>
+
+            <div v-if="effects.length > 0" class="flex items-center h-12 relative">
+              <div
+                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+              >
+                <div class="font-medium flex items-center gap-1">
+                  <Sparkles :size="12" />
+                  Effects
+                </div>
+              </div>
+              <div class="flex-1 h-full relative" @click="onTrackContentClick">
+                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div
+                  v-for="effect in effects"
+                  :key="effect.id"
+                  :ref="(el) => setSegmentRef(el, 'effect', effect.id)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                  :class="getSegmentClasses('effect', effect.id)"
+                  :style="getSegmentStyle(effect.startTime, effect.endTime, 'cyan', 'effect', effect.id)"
+                  @mousedown="(e) => onSegmentMouseDown(e, 'effect', effect.id, effect)"
+                  @click.stop="selectItem('effect', effect.id)"
+                >
+                  <span
+                    class="text-xs text-white/90 font-medium truncate drop-shadow-sm capitalize pointer-events-none"
+                  >
+                    {{ effect.type }}
+                  </span>
+                  <!-- Left resize handle -->
+                  <div
+                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'effect', effect.id, 'left', effect)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                  <!-- Right resize handle -->
+                  <div
+                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'effect', effect.id, 'right', effect)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="filterSegments.length > 0" class="flex items-center h-12 relative">
+              <div
+                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+              >
+                <div class="font-medium flex items-center gap-1">
+                  <Palette :size="12" />
+                  Filters
+                </div>
+              </div>
+              <div class="flex-1 h-full relative" @click="onTrackContentClick">
+                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div
+                  v-for="filterSeg in filterSegments"
+                  :key="filterSeg.id"
+                  :ref="(el) => setSegmentRef(el, 'filter', filterSeg.id)"
+                  class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
+                  :class="getSegmentClasses('filter', filterSeg.id)"
+                  :style="getFilterSegmentStyle(filterSeg)"
+                  @mousedown="(e) => onSegmentMouseDown(e, 'filter', filterSeg.id, filterSeg)"
+                  @click.stop="selectItem('filter', filterSeg.id)"
+                >
+                  <span
+                    class="text-xs text-white/90 font-medium truncate drop-shadow-sm capitalize pointer-events-none"
+                  >
+                    {{ getFilterPresetName(filterSeg.settings.preset) }}
+                  </span>
+                  <!-- Left resize handle -->
+                  <div
+                    class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'filter', filterSeg.id, 'left', filterSeg)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                  <!-- Right resize handle -->
+                  <div
+                    class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
+                    @mousedown.stop="(e) => onResizeMouseDown(e, 'filter', filterSeg.id, 'right', filterSeg)"
+                  >
+                    <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Source Track (Primary Video - Editor Mode) -->
+            <template v-if="editorMode">
+              <div class="flex items-center h-[72px] relative">
+                <div
+                  class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                >
+                  <!-- Track controls row (CapCut style: icons in a row) -->
+                  <div class="flex items-center gap-1 text-white/50 mb-1">
+                    <button
+                      @click.stop="toggleVideoTrackState('isLocked')"
+                      class="p-0.5 hover:text-white"
+                      :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'"
+                      :class="{ 'text-cyan-400': videoTrackState.isLocked }"
+                    >
+                      <Lock v-if="videoTrackState.isLocked" :size="13" />
+                      <Unlock v-else :size="13" />
+                    </button>
+                    <button
+                      @click.stop="toggleVideoTrackState('isHidden')"
+                      class="p-0.5 hover:text-white"
+                      :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
+                      :class="{ 'text-cyan-400': videoTrackState.isHidden }"
+                    >
+                      <EyeOff v-if="videoTrackState.isHidden" :size="13" />
+                      <Eye v-else :size="13" />
+                    </button>
+                    <button
+                      @click.stop="toggleVideoTrackState('isMuted')"
+                      class="p-0.5 hover:text-white"
+                      :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'"
+                      :class="{ 'text-cyan-400': videoTrackState.isMuted }"
+                    >
+                      <VolumeX v-if="videoTrackState.isMuted" :size="13" />
+                      <Volume2 v-else :size="13" />
+                    </button>
+                  </div>
+                  <!-- Track label -->
+                  <span class="text-[11px] text-white/60 truncate">Source</span>
+                </div>
+                <div
+                  ref="videoTrackContentRef"
+                  class="flex-1 h-full relative"
+                  @click="onTrackContentClick"
+                  @dragover.prevent="onTimelineDragOver"
+                  @drop.prevent="onTimelineDrop"
+                >
+                  <!-- Background -->
+                  <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+
+                  <!-- Empty state drop zone -->
+                  <div
+                    v-if="primaryVideoSources.length === 0"
+                    class="absolute inset-0 flex items-center justify-center border-2 border-dashed border-white/12 rounded-md"
+                    :class="{ 'border-violet-500/50 bg-violet-500/5': isDragOverTimeline }"
+                  >
+                    <span class="text-xs text-white/30">Drop sources here</span>
+                  </div>
+
+                  <!-- Primary video source segments -->
+                  <div
+                    v-for="source in primaryVideoSources"
+                    :key="source.id"
+                    :ref="(el) => setSegmentRef(el, 'source', source.id)"
+                    class="clip-segment absolute top-0 bottom-0 overflow-hidden group border-2"
+                    :class="[
+                      getSegmentClasses('source', source.id),
+                      isCutToolActive && cutHoverInfo?.segmentId === source.id
+                        ? 'cursor-crosshair z-65 shadow-xl border-orange-400 ring-2 ring-orange-400/50'
+                        : isCutToolActive
+                          ? 'cursor-crosshair z-62 border-cyan-500'
+                          : 'cursor-pointer border-cyan-500',
+                    ]"
+                    :style="getVideoSourceStyle(source, sourcePreview)"
+                    @mouseenter="isCutToolActive && onSourceHoverForCut($event, source)"
+                    @mousemove="isCutToolActive && onSourceHoverForCut($event, source)"
+                    @mouseleave="isCutToolActive && (cutHoverInfo = null)"
+                    @mousedown="
+                      isCutToolActive ? onSourceClickForCut($event, source) : onSourceMouseDown($event, source)
+                    "
+                    @click.stop="!isCutToolActive && onSourceClick($event, source)"
+                    @contextmenu.prevent="onSourceContextMenu($event, source)"
+                  >
+                    <!-- Video thumbnails background -->
+                    <div class="absolute inset-0 bg-[#1a1a1a] flex overflow-hidden"></div>
+
+                    <!-- Remaining duration overlay -->
+                    <div
+                      class="absolute top-0 bottom-0 right-0 bg-white/6 pointer-events-none"
+                      :style="{ left: `${((source.end_time - source.start_time) / (clipEnd - clipStart)) * 100}%` }"
+                    ></div>
+
+                    <!-- Waveform canvas overlay (hidden if audio has been extracted) -->
+                    <canvas
+                      v-if="!(source as any).audio_extracted"
+                      :ref="(el) => setSourceWaveformCanvasRef(el, source.id)"
+                      class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
+                      style="mix-blend-mode: screen; z-index: 5"
+                    ></canvas>
+
+                    <!-- Source label (CapCut style - cyan text at top left) -->
+                    <div
+                      class="absolute top-0 left-0 right-0 z-10 flex items-start justify-start pointer-events-none px-2 py-1"
+                    >
+                      <span class="text-[11px] text-cyan-400 font-medium truncate">
+                        {{ source.source_name || 'Untitled' }} {{ formatTime(source.end_time - source.start_time) }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Single Video Track (Clip Mode) -->
+            <template v-else>
+              <div class="flex items-center h-[72px] relative">
+                <div
+                  class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                >
+                  <!-- Track controls row (CapCut style: icons in a row) -->
+                  <div class="flex items-center gap-1 text-white/50 mb-1">
+                    <button
+                      @click.stop="toggleVideoTrackState('isLocked')"
+                      class="p-0.5 hover:text-white"
+                      :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'"
+                      :class="{ 'text-cyan-400': videoTrackState.isLocked }"
+                    >
+                      <Lock v-if="videoTrackState.isLocked" :size="13" />
+                      <Unlock v-else :size="13" />
+                    </button>
+                    <button
+                      @click.stop="toggleVideoTrackState('isHidden')"
+                      class="p-0.5 hover:text-white"
+                      :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
+                      :class="{ 'text-cyan-400': videoTrackState.isHidden }"
+                    >
+                      <EyeOff v-if="videoTrackState.isHidden" :size="13" />
+                      <Eye v-else :size="13" />
+                    </button>
+                    <button
+                      @click.stop="toggleVideoTrackState('isMuted')"
+                      class="p-0.5 hover:text-white"
+                      :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'"
+                      :class="{ 'text-cyan-400': videoTrackState.isMuted }"
+                    >
+                      <VolumeX v-if="videoTrackState.isMuted" :size="13" />
+                      <Volume2 v-else :size="13" />
+                    </button>
+                  </div>
+                  <!-- Track label -->
+                  <span class="text-[11px] text-white/60 truncate">Cover</span>
+                </div>
+                <div ref="videoTrackContentRef" class="flex-1 h-full relative" @click="onTrackContentClick">
+                  <!-- Background -->
+                  <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+
+                  <!-- Clip Mode: Trim Segments -->
+                  <template v-for="(segmentLayout, _index) in segmentLayouts" :key="segmentLayout.segment.id">
+                    <div
+                      :ref="(el) => setSegmentRef(el, 'trim', segmentLayout.segment.id)"
+                      class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group"
+                      :class="[
+                        getSegmentClasses('trim', segmentLayout.segment.id, segmentLayout.segment.isDeleted),
+                        props.selectedSegmentIds?.has(segmentLayout.segment.id)
+                          ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-black shadow-lg shadow-blue-400/30'
+                          : '',
+                        isCutToolActive && cutHoverInfo?.segmentId === segmentLayout.segment.id
+                          ? 'cursor-crosshair z-65 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
+                          : isCutToolActive
+                            ? 'cursor-crosshair z-62'
+                            : 'cursor-pointer',
+                      ]"
+                      :style="getSegmentLayoutStyle(segmentLayout, 'violet', 'trim', segmentLayout.segment.id)"
+                      @mouseenter="isCutToolActive && onSegmentHoverForCut($event, segmentLayout.segment)"
+                      @mousemove="isCutToolActive && onSegmentHoverForCut($event, segmentLayout.segment)"
+                      @mouseleave="isCutToolActive && (cutHoverInfo = null)"
+                      @mousedown="
+                        isCutToolActive
+                          ? onSegmentClickForCut($event, segmentLayout.segment)
+                          : onSegmentMouseDown($event, 'trim', segmentLayout.segment.id, segmentLayout.segment)
+                      "
+                      @click.stop="!isCutToolActive && onSegmentClick($event, segmentLayout.segment)"
+                    >
+                      <div class="absolute inset-0 bg-black flex overflow-hidden">
+                        <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
+                        <div class="absolute inset-0 bg-[#1a1a1a]"></div>
+                      </div>
+                      <canvas
+                        :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
+                        class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
+                        style="mix-blend-mode: screen; z-index: 5"
+                      ></canvas>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+
+            <!-- Audio Tracks (BELOW primary video) -->
+            <div
+              v-for="track in audioTracks"
+              :key="track.id"
+              class="flex items-center h-12 relative"
+              :class="{
+                'bg-blue-500/10 ring-2 ring-blue-500/50':
+                  isDragging && dragInfo?.type === 'audio' && dragInfo?.targetTrackOrder === track.trackOrder,
+              }"
+            >
+              <div
+                class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+              >
+                <!-- Track controls row -->
+                <div class="flex items-center gap-1 text-white/50 mb-1">
+                  <button
+                    @click.stop="emit('toggleAudioLock', track.id)"
+                    class="p-0.5 hover:text-white"
+                    :title="track.isLocked ? 'Unlock' : 'Lock'"
+                    :class="{ 'text-cyan-400': track.isLocked }"
+                  >
+                    <Lock v-if="track.isLocked" :size="13" />
+                    <Unlock v-else :size="13" />
+                  </button>
+                  <button
+                    @click.stop="emit('toggleAudioHidden', track.id)"
+                    class="p-0.5 hover:text-white"
+                    :title="track.isHidden ? 'Show' : 'Hide'"
+                    :class="{ 'text-cyan-400': track.isHidden }"
+                  >
+                    <EyeOff v-if="track.isHidden" :size="13" />
+                    <Eye v-else :size="13" />
+                  </button>
+                  <button
+                    @click.stop="emit('toggleAudioMute', track.id)"
+                    class="p-0.5 hover:text-white"
+                    :title="track.isMuted ? 'Unmute' : 'Mute'"
+                    :class="{ 'text-cyan-400': track.isMuted }"
+                  >
+                    <VolumeX v-if="track.isMuted" :size="13" />
+                    <Volume2 v-else :size="13" />
+                  </button>
+                </div>
+                <!-- Track label -->
+                <span class="text-[11px] text-white/60 truncate">{{ track.name }}</span>
+              </div>
+              <div
+                :ref="(el) => setSegmentRef(el, 'audio', track.id)"
+                class="flex-1 h-full relative"
+                @click="onTrackContentClick"
+              >
+                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+
+                <!-- Render audio track as visual segments that split at video segment boundaries -->
+                <template
+                  v-for="(visualSeg, segIdx) in getAudioVisualSegments(track)"
+                  :key="`${track.id}-vis-${segIdx}`"
+                >
+                  <!-- Audio visual segment -->
+                  <div
+                    class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer"
+                    :class="getSegmentClasses('audio', track.id)"
+                    :style="getAudioVisualSegmentStyle(track, visualSeg)"
+                    @mousedown="(e) => onSegmentMouseDown(e, 'audio', track.id, track)"
+                    @click.stop="selectItem('audio', track.id)"
+                  >
+                    <!-- Audio track background gradient -->
+                    <div class="absolute inset-0 bg-gradient-to-r from-emerald-900/30 to-teal-900/20"></div>
+
+                    <!-- Waveform canvas for this visual segment -->
+                    <canvas
+                      :ref="(el) => setAudioSegmentCanvasRef(el, track.id, segIdx)"
+                      class="absolute inset-0 w-full h-full pointer-events-none"
+                      style="mix-blend-mode: normal; z-index: 5"
+                    ></canvas>
+
+                    <!-- Track label (only show on hover in first segment) -->
+                    <div
+                      v-if="visualSeg.isFirst"
+                      class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                    >
+                      <span
+                        class="text-xs text-white font-medium truncate drop-shadow-md bg-black/60 px-1.5 py-0.5 rounded"
+                      >
+                        {{ track.name }}
+                      </span>
+                    </div>
+
+                    <!-- Left resize handle (only on first segment, disabled in editor mode) -->
+                    <div
+                      v-if="visualSeg.isFirst && !editorMode"
+                      class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'left', track)"
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                    <!-- Right resize handle (only on last segment, disabled in editor mode) -->
+                    <div
+                      v-if="visualSeg.isLast && !editorMode"
+                      class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'right', track)"
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Placeholder tracks below -->
+            <div
+              v-for="n in PLACEHOLDER_BOTTOM_COUNT"
+              :key="'placeholder-bottom-' + n"
+              class="flex items-center h-10 relative"
+            >
+              <div
+                class="track-label w-[100px] h-full sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+              ></div>
+              <div class="flex-1 h-full relative bg-[#111]"></div>
+            </div>
+
+            <!-- Playhead Line (CapCut style - orange/amber thin line) -->
+            <div
+              v-if="totalDuration > 0"
+              class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group playhead-line flex flex-col items-center"
+              :class="{
+                'cursor-grabbing': isDraggingPlayhead,
+                'playhead-dragging': isDraggingPlayhead,
+                'playhead-playing': props.isPlaying && !isDraggingPlayhead,
+              }"
+              :style="{
+                '--playhead-position': effectivePlayheadPosition,
+                width: '12px',
+                marginLeft: '-6px',
+              }"
+              @mousedown="onPlayheadMouseDown"
+            >
+              <!-- Top handle (CapCut style - small rectangle) -->
+              <div
+                class="sticky -top-[1px] z-10 flex-shrink-0 w-3 h-3 bg-amber-500 rounded-sm shadow-md playhead-child"
+              ></div>
+              <!-- The line (CapCut style - thin amber/orange line) -->
+              <div
+                class="flex-1 bg-amber-500 group-hover:bg-amber-400 playhead-line-inner playhead-child"
+                style="width: 2px"
+              ></div>
+              <!-- Bottom handle (matches top handle) -->
+              <div
+                class="sticky -bottom-[1px] z-10 flex-shrink-0 w-3 h-3 bg-amber-500 rounded-sm shadow-md playhead-child"
+              ></div>
+            </div>
+
+            <!-- Snap Indicator Line (shows when segment edge is snapping to another edge) -->
+            <div
+              v-if="snapIndicatorPosition !== null"
+              class="snap-indicator-line absolute top-0 bottom-0 z-[55] pointer-events-none"
+              :style="{
+                '--snap-position': snapIndicatorPosition,
+              }"
+            >
+              <div class="absolute inset-0 w-0.5 bg-blue-400 shadow-lg shadow-blue-400/50"></div>
             </div>
           </div>
-
-          <!-- Placeholder tracks below -->
-          <div
-            v-for="n in PLACEHOLDER_BOTTOM_COUNT"
-            :key="'placeholder-bottom-'+n"
-            class="flex items-center h-10 relative"
-          >
-            <div class="track-label w-[100px] h-full sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"></div>
-            <div class="flex-1 h-full relative bg-[#111]"></div>
-          </div>
-
-          <!-- Playhead Line (CapCut style - orange/amber thin line) -->
-          <div
-            v-if="totalDuration > 0"
-            class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group playhead-line flex flex-col items-center"
-            :class="{
-              'cursor-grabbing': isDraggingPlayhead,
-              'playhead-dragging': isDraggingPlayhead,
-              'playhead-playing': props.isPlaying && !isDraggingPlayhead,
-            }"
-            :style="{
-              '--playhead-position': effectivePlayheadPosition,
-              width: '12px',
-              marginLeft: '-6px',
-            }"
-            @mousedown="onPlayheadMouseDown"
-          >
-            <!-- Top handle (CapCut style - small rectangle) -->
-            <div
-              class="sticky -top-[1px] z-10 flex-shrink-0 w-3 h-3 bg-amber-500 rounded-sm shadow-md playhead-child"
-            ></div>
-            <!-- The line (CapCut style - thin amber/orange line) -->
-            <div
-              class="flex-1 bg-amber-500 group-hover:bg-amber-400 playhead-line-inner playhead-child"
-              style="width: 2px;"
-            ></div>
-            <!-- Bottom handle (matches top handle) -->
-            <div
-              class="sticky -bottom-[1px] z-10 flex-shrink-0 w-3 h-3 bg-amber-500 rounded-sm shadow-md playhead-child"
-            ></div>
-          </div>
-
-          <!-- Snap Indicator Line (shows when segment edge is snapping to another edge) -->
-          <div
-            v-if="snapIndicatorPosition !== null"
-            class="snap-indicator-line absolute top-0 bottom-0 z-[55] pointer-events-none"
-            :style="{
-              '--snap-position': snapIndicatorPosition,
-            }"
-          >
-            <div class="absolute inset-0 w-0.5 bg-blue-400 shadow-lg shadow-blue-400/50"></div>
-          </div>
-          </div> <!-- end contentWrapper -->
-        </div> <!-- end horizontal scroller -->
-      </div> <!-- end scroll container -->
-    </div> <!-- end inner container -->
+          <!-- end contentWrapper -->
+        </div>
+        <!-- end horizontal scroller -->
+      </div>
+      <!-- end scroll container -->
+    </div>
+    <!-- end inner container -->
 
     <!-- Timeline Hover Line -->
     <TimelineHoverLine
@@ -821,7 +925,8 @@
       @click="closeSourceContextMenu"
       @contextmenu.prevent="closeSourceContextMenu"
     ></div>
-  </div> <!-- end outer bg container -->
+  </div>
+  <!-- end outer bg container -->
 </template>
 
 <script setup lang="ts">
@@ -887,7 +992,6 @@
     targetLayer?: number;
     targetTrackIndex?: number;
   }
-
 
   interface ResizeInfo {
     type: ItemType;
@@ -1000,7 +1104,17 @@
     (e: 'splitWatermark', watermarkId: string, cutTime: number): void;
     (e: 'updateEffect', effectId: string, updates: Partial<Effect>): void;
     (e: 'splitEffect', effectId: string, cutTime: number): void;
-    (e: 'moveTrack', data: { type: ItemType; id: string; originalStartTime: number; originalEndTime: number; newStartTime: number; newEndTime: number }): void;
+    (
+      e: 'moveTrack',
+      data: {
+        type: ItemType;
+        id: string;
+        originalStartTime: number;
+        originalEndTime: number;
+        newStartTime: number;
+        newEndTime: number;
+      }
+    ): void;
     (e: 'toggleVideoMute', id: string): void;
     (e: 'toggleVideoLock', id: string): void;
     (e: 'toggleVideoHidden', id: string): void;
@@ -1013,7 +1127,18 @@
     (e: 'dropSource', data: { source: SourceItem; position: number }): void;
     (e: 'transitionsDetected', transitions: VideoEditorTransition[]): void;
     (e: 'splitSource', sourceId: string, cutTimelinePosition: number, cutSourceTime: number): void;
-    (e: 'extractedAudio', data: { sourceId: string; filePath: string; filename: string; duration: number; startTime: number; endTime: number; sourceName: string | null }): void;
+    (
+      e: 'extractedAudio',
+      data: {
+        sourceId: string;
+        filePath: string;
+        filename: string;
+        duration: number;
+        startTime: number;
+        endTime: number;
+        sourceName: string | null;
+      }
+    ): void;
   }>();
 
   // Computed: detect transitions between overlapping sources in editor mode
@@ -1050,17 +1175,17 @@
   const sourceWaveformData = ref<Map<string, WaveformData>>(new Map());
   const sourceWaveformLoading = ref<Set<string>>(new Set());
 
-const videoTrackState = reactive({
-  isMuted: false,
-  isLocked: false,
-  isHidden: false,
-});
+  const videoTrackState = reactive({
+    isMuted: false,
+    isLocked: false,
+    isHidden: false,
+  });
 
-function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
-  videoTrackState[prop] = !videoTrackState[prop];
-  // Optionally, emit an event to notify the parent component
-  // emit('videoTrackStateChanged', videoTrackState);
-}
+  function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
+    videoTrackState[prop] = !videoTrackState[prop];
+    // Optionally, emit an event to notify the parent component
+    // emit('videoTrackStateChanged', videoTrackState);
+  }
 
   // Zoom system: 0% = fit-to-width (full video visible), positive % = zoomed in
   // MIN_ZOOM represents the fit-to-width baseline (calculated dynamically)
@@ -1095,7 +1220,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   function calculateFitToWidthZoom(): number {
     // Default to 1.0 if we can't calculate (will be updated when container is available)
     if (!timelineScrollContainer.value) return 1.0;
-    
+
     // Get the available width for timeline content
     const containerWidth = timelineScrollContainer.value.clientWidth;
     // Assume we want the full duration to fit in the viewport
@@ -1118,7 +1243,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       return '0%'; // At baseline (fit-to-width)
     }
     // Calculate zoom percentage relative to baseline
-    const zoomPercent = Math.round(((zoomLevel.value / baselineZoom.value) - 1) * 100);
+    const zoomPercent = Math.round((zoomLevel.value / baselineZoom.value - 1) * 100);
     return `${zoomPercent}%`;
   }
 
@@ -1286,7 +1411,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   // Primary video sources (track_index = 0 or undefined) - shown in Source track
   const primaryVideoSources = computed(() => {
     if (!props.editorMode) return [];
-    return props.videoSources.filter(source => (source.track_index ?? 0) === 0);
+    return props.videoSources.filter((source) => (source.track_index ?? 0) === 0);
   });
 
   // Group ALL visual content by layer for unified layer display above Source
@@ -1295,7 +1420,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     type: 'source' | 'text' | 'sticker' | 'watermark';
     item: any;
   }
-  
+
   interface VisualLayer {
     layer: number;
     items: LayerItem[];
@@ -1303,47 +1428,49 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
   const visualLayers = computed<VisualLayer[]>(() => {
     const layerMap = new Map<number, LayerItem[]>();
-    
+
     // Add video sources with track_index > 0 (these go to layers above Source)
     // Map track_index to layer: track_index 1 → layer 0, track_index 2 → layer 1, etc.
     if (props.editorMode) {
-      props.videoSources.forEach(source => {
+      props.videoSources.forEach((source) => {
         const trackIndex = source.track_index ?? 0;
-        if (trackIndex > 0) { // Only sources above the primary track
+        if (trackIndex > 0) {
+          // Only sources above the primary track
           const layer = trackIndex - 1; // Map: track_index 1 → layer 0, 2 → layer 1, etc.
           if (!layerMap.has(layer)) layerMap.set(layer, []);
           layerMap.get(layer)!.push({ type: 'source', item: source });
         }
       });
     }
-    
+
     // Add text overlays
-    props.textOverlays.forEach(item => {
+    props.textOverlays.forEach((item) => {
       const layer = item.layer ?? 0;
       if (!layerMap.has(layer)) layerMap.set(layer, []);
       layerMap.get(layer)!.push({ type: 'text', item });
     });
-    
+
     // Add stickers
-    props.stickers.forEach(item => {
+    props.stickers.forEach((item) => {
       const layer = item.layer ?? 0;
       if (!layerMap.has(layer)) layerMap.set(layer, []);
       layerMap.get(layer)!.push({ type: 'sticker', item });
     });
-    
+
     // Add watermarks
-    props.watermarks.forEach(item => {
+    props.watermarks.forEach((item) => {
       const layer = item.layer ?? 0;
       if (!layerMap.has(layer)) layerMap.set(layer, []);
       layerMap.get(layer)!.push({ type: 'watermark', item });
     });
-    
+
     // Also ensure target layer exists during drag (for visual feedback)
     // Access the full dragSourceInfo to ensure Vue tracks it reactively
     const sourceDragInfo = dragSourceInfo.value;
     const overlayDragInfo = dragInfo.value;
-    const isDraggingToLayer = (isDragging.value && overlayDragInfo?.targetLayer !== undefined) ||
-                              (isDraggingSource.value && sourceDragInfo?.targetTrackIndex !== undefined && sourceDragInfo.targetTrackIndex > 0);
+    const isDraggingToLayer =
+      (isDragging.value && overlayDragInfo?.targetLayer !== undefined) ||
+      (isDraggingSource.value && sourceDragInfo?.targetTrackIndex !== undefined && sourceDragInfo.targetTrackIndex > 0);
     if (isDraggingToLayer) {
       const targetLayer = isDraggingSource.value ? sourceDragInfo?.targetTrackIndex : overlayDragInfo?.targetLayer;
       console.log('[visualLayers] Creating empty layer for drag target:', targetLayer);
@@ -1351,7 +1478,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
         layerMap.set(targetLayer, []);
       }
     }
-    
+
     // Convert to array and sort by layer (higher layers on top, rendered first)
     return Array.from(layerMap.entries())
       .map(([layer, items]) => ({ layer, items }))
@@ -1433,8 +1560,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     for (let t = 0; t <= timelineDuration + 0.0001; t += minorInterval) {
       const percent = (t / timelineDuration) * 100;
       if (percent < -0.1 || percent > 100.1) continue;
-      const isMajor =
-        Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
+      const isMajor = Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
       ticks.push({
         key: `${t.toFixed(3)}`,
         time: t,
@@ -2349,10 +2475,10 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     // Account for the track label width - timeline content starts after labels
     const timelineLeft = contentRect.left + TRACK_LABEL_WIDTH;
     const timelineWidth = contentRect.width - TRACK_LABEL_WIDTH;
-    
+
     // If click is in the label area, ignore
     if (e.clientX < timelineLeft) return;
-    
+
     const x = e.clientX - timelineLeft;
     const percent = Math.max(0, Math.min(1, x / timelineWidth));
     const time = clickPositionToTime(percent);
@@ -2459,7 +2585,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
         case 'source':
           // For video sources in editor mode
           if (props.editorMode && props.videoSources) {
-            const source = props.videoSources.find(s => s.id === id);
+            const source = props.videoSources.find((s) => s.id === id);
             if (source) {
               const cutTime = currentTime - source.start_time;
               emit('splitSource', source.id, currentTime, cutTime);
@@ -2685,7 +2811,10 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   }
 
   // Video source functions (editor mode)
-  function getVideoSourceStyle(source: VideoEditorSource, _preview?: { sourceId: string; startTime: number; endTime: number } | null): Record<string, string> {
+  function getVideoSourceStyle(
+    source: VideoEditorSource,
+    _preview?: { sourceId: string; startTime: number; endTime: number } | null
+  ): Record<string, string> {
     const colors = colorMap.violet;
     const isSelected = selectedItemKey.value === `source_${source.id}`;
     const duration = totalDuration.value;
@@ -2770,10 +2899,10 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     // Detect which layer the mouse is currently over by checking all layer elements
     let targetTrackIndex = dragSourceInfo.value.originalTrackIndex;
     let foundLayer = false;
-    
+
     // Get all layer track elements
     const layerElements = document.querySelectorAll('[data-layer-track]');
-    
+
     for (const layerEl of layerElements) {
       const layerRect = layerEl.getBoundingClientRect();
       // Check if mouse Y position is within this layer's bounds
@@ -2786,14 +2915,14 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
         break;
       }
     }
-    
+
     // If not over any layer, check if over Source track
     const sourceTrackRect = rect;
     if (e.clientY >= sourceTrackRect.top && e.clientY <= sourceTrackRect.bottom) {
       targetTrackIndex = 0; // Source track
       foundLayer = true;
     }
-    
+
     // Fallback: If no existing layers found or not over any track, use pixel-based calculation
     if (!foundLayer) {
       const deltaY = e.clientY - dragSourceInfo.value.startY;
@@ -2801,7 +2930,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       const trackOffset = Math.round(-deltaY / LAYER_HEIGHT);
       targetTrackIndex = Math.max(0, dragSourceInfo.value.originalTrackIndex + trackOffset);
     }
-    
+
     // Replace entire object to trigger Vue reactivity for computed properties
     dragSourceInfo.value = {
       ...dragSourceInfo.value,
@@ -2836,13 +2965,13 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
         // If no snap found, find the closest segment edge and snap to it
         const targets = getSnapTargets(dragSourceInfo.value.sourceId);
         let closestTarget: { time: number; distance: number } | null = null;
-        
+
         // Check both start and end edges
         for (const target of targets) {
           if (target.type === 'segment-start' || target.type === 'segment-end') {
             const distanceToStart = Math.abs(newStartTime - target.time);
             const distanceToEnd = Math.abs(newEndTime - target.time);
-            
+
             if (!closestTarget || distanceToStart < closestTarget.distance) {
               closestTarget = { time: target.time, distance: distanceToStart };
             }
@@ -2851,13 +2980,13 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
             }
           }
         }
-        
+
         // Snap to closest edge
         if (closestTarget) {
           // Determine if we should snap start or end
           const distanceToStart = Math.abs(newStartTime - closestTarget.time);
           const distanceToEnd = Math.abs(newEndTime - closestTarget.time);
-          
+
           if (distanceToStart < distanceToEnd) {
             // Snap start edge
             newStartTime = closestTarget.time;
@@ -2895,22 +3024,29 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     if (sourcePreview.value && dragSourceInfo.value) {
       let finalStartTime = sourcePreview.value.startTime;
       let finalEndTime = sourcePreview.value.endTime;
-      
-      console.log('[onSourceDragEnd] Initial position:', finalStartTime, '-', finalEndTime, 'targetTrackIndex:', dragSourceInfo.value.targetTrackIndex);
-      
+
+      console.log(
+        '[onSourceDragEnd] Initial position:',
+        finalStartTime,
+        '-',
+        finalEndTime,
+        'targetTrackIndex:',
+        dragSourceInfo.value.targetTrackIndex
+      );
+
       // Source track (track_index 0): Force final snap to nearest segment edge (ignore threshold)
       if (dragSourceInfo.value.targetTrackIndex === 0) {
         const duration = finalEndTime - finalStartTime;
         const targets = getSnapTargets(dragSourceInfo.value.sourceId);
         console.log('[onSourceDragEnd] Source track - finding closest from', targets.length, 'targets');
         let closestTarget: { time: number; distance: number; edge: 'start' | 'end' } | null = null;
-        
+
         // Find the absolute closest segment edge (no threshold)
         for (const target of targets) {
           if (target.type === 'segment-start' || target.type === 'segment-end') {
             const distanceToStart = Math.abs(finalStartTime - target.time);
             const distanceToEnd = Math.abs(finalEndTime - target.time);
-            
+
             if (!closestTarget || distanceToStart < closestTarget.distance) {
               closestTarget = { time: target.time, distance: distanceToStart, edge: 'start' };
             }
@@ -2919,36 +3055,50 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
             }
           }
         }
-        
+
         console.log('[onSourceDragEnd] Closest target:', closestTarget);
-        
+
         if (closestTarget) {
           if (closestTarget.edge === 'start') {
             // Snap our start edge to the target
             finalStartTime = closestTarget.time;
             finalEndTime = finalStartTime + duration;
-            console.log('[onSourceDragEnd] Snapped START to', closestTarget.time, 'new position:', finalStartTime, '-', finalEndTime);
+            console.log(
+              '[onSourceDragEnd] Snapped START to',
+              closestTarget.time,
+              'new position:',
+              finalStartTime,
+              '-',
+              finalEndTime
+            );
           } else {
             // Snap our end edge to the target
             finalEndTime = closestTarget.time;
             finalStartTime = finalEndTime - duration;
-            console.log('[onSourceDragEnd] Snapped END to', closestTarget.time, 'new position:', finalStartTime, '-', finalEndTime);
+            console.log(
+              '[onSourceDragEnd] Snapped END to',
+              closestTarget.time,
+              'new position:',
+              finalStartTime,
+              '-',
+              finalEndTime
+            );
           }
         } else {
           console.log('[onSourceDragEnd] NO TARGETS FOUND - keeping position:', finalStartTime, '-', finalEndTime);
         }
       }
-      
+
       const updates: Partial<VideoEditorSource> = {
         start_time: finalStartTime,
         end_time: finalEndTime,
       };
-      
+
       // Include track_index if it changed
       if (dragSourceInfo.value.targetTrackIndex !== dragSourceInfo.value.originalTrackIndex) {
         updates.track_index = dragSourceInfo.value.targetTrackIndex;
       }
-      
+
       emit('updateSource', dragSourceInfo.value.sourceId, updates);
     }
 
@@ -2975,21 +3125,21 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
   async function extractAudioFromSource() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     isExtractingAudio.value = true;
-    
+
     try {
       console.log('[ClipEditorTimeline] Extracting audio from source:', source.id);
-      
+
       // Calculate the trim parameters based on the segment's trim settings
       // trim_start is how far into the source video to start
       // The segment duration is (end_time - start_time) on the timeline
       const trimStart = source.trim_start ?? 0;
       const segmentDuration = source.end_time - source.start_time;
-      
+
       console.log('[ClipEditorTimeline] Extraction params:', {
         sourceTrimStart: source.trim_start,
         sourceTrimEnd: source.trim_end,
@@ -2999,7 +3149,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
         sourceEndTime: source.end_time,
         sourceDuration: source.source_duration,
       });
-      
+
       // Call Rust command to extract audio from the specific segment
       // Tauri expects camelCase params which it converts to snake_case for Rust
       console.log('[ClipEditorTimeline] Invoking extract_audio_to_file with:', {
@@ -3008,28 +3158,28 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
         trimStart: trimStart,
         trimDuration: segmentDuration,
       });
-      
+
       const result = await invoke<{ file_path: string; filename: string; duration: number }>('extract_audio_to_file', {
         videoPath: source.source_path,
         sourceId: source.id,
         trimStart: trimStart,
         trimDuration: segmentDuration,
       });
-      
+
       console.log('[ClipEditorTimeline] Audio extraction complete:', result);
-      
+
       // Emit event to create audio track with the extracted audio
       // The audio track should start at the same position as the video source on the timeline
       // Use the actual extracted audio duration for the end time to ensure perfect alignment
       const audioEndTime = source.start_time + result.duration;
-      
+
       console.log('[ClipEditorTimeline] Audio track positioning:', {
         sourceStartTime: source.start_time,
         sourceEndTime: source.end_time,
         extractedDuration: result.duration,
         calculatedAudioEndTime: audioEndTime,
       });
-      
+
       emit('extractedAudio', {
         sourceId: source.id,
         filePath: result.file_path,
@@ -3039,7 +3189,6 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
         endTime: audioEndTime,
         sourceName: source.source_name,
       });
-      
     } catch (error) {
       console.error('[ClipEditorTimeline] Failed to extract audio:', error);
     } finally {
@@ -3049,10 +3198,10 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
   function deleteSourceFromContextMenu() {
     if (!sourceContextMenu.source) return;
-    
+
     const sourceId = sourceContextMenu.source.id;
     closeSourceContextMenu();
-    
+
     emit('deleteSource', sourceId);
   }
 
@@ -3223,29 +3372,29 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       const TRACK_HEIGHT = 48; // 12 * 4px (h-12 in Tailwind)
       const trackOffset = Math.round(deltaY / TRACK_HEIGHT);
       const targetTrackOrder = dragInfo.value.originalTrackOrder + trackOffset;
-      
+
       // Clamp to valid track range
-      const maxTrackOrder = Math.max(...props.audioTracks.map(t => t.trackOrder));
-      const minTrackOrder = Math.min(...props.audioTracks.map(t => t.trackOrder));
+      const maxTrackOrder = Math.max(...props.audioTracks.map((t) => t.trackOrder));
+      const minTrackOrder = Math.min(...props.audioTracks.map((t) => t.trackOrder));
       dragInfo.value.targetTrackOrder = Math.max(minTrackOrder, Math.min(maxTrackOrder, targetTrackOrder));
     }
-    
+
     // For video sources, detect which video track the mouse is over
     if (dragInfo.value.type === 'source' && dragInfo.value.originalTrackIndex !== undefined) {
       const TRACK_HEIGHT = 72; // Video track height in pixels (h-[72px])
       const trackOffset = Math.round(deltaY / TRACK_HEIGHT);
       const targetTrackIndex = dragInfo.value.originalTrackIndex + trackOffset;
-      
+
       // Allow creating new video tracks - minimum is 0
       dragInfo.value.targetTrackIndex = Math.max(0, targetTrackIndex);
     }
-    
+
     // For visual overlays, detect which layer the mouse is over
     if (['text', 'sticker', 'watermark'].includes(dragInfo.value.type) && dragInfo.value.originalLayer !== undefined) {
       const TRACK_HEIGHT = 40; // 10 * 4px (h-10 in Tailwind)
       const trackOffset = Math.round(deltaY / TRACK_HEIGHT);
       const targetLayer = dragInfo.value.originalLayer - trackOffset; // Negative because layers are rendered top-to-bottom
-      
+
       // Allow creating new layers - don't clamp to existing layers
       // Minimum layer is 0, maximum can be any positive number
       dragInfo.value.targetLayer = Math.max(0, targetLayer);
@@ -3355,16 +3504,24 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     // Commit the final position to database with undo/redo support
     if (dragPreview.value && dragInfo.value) {
       const type = dragPreview.value.type;
-      
+
       // For video sources with cross-track dragging
-      if (type === 'source' && dragInfo.value.targetTrackIndex !== undefined && dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex) {
+      if (
+        type === 'source' &&
+        dragInfo.value.targetTrackIndex !== undefined &&
+        dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex
+      ) {
         // Video source was dragged to a different track
         emit('updateSource', dragPreview.value.id, {
           start_time: dragPreview.value.startTime,
           end_time: dragPreview.value.endTime,
           track_index: dragInfo.value.targetTrackIndex,
         });
-      } else if (type === 'audio' && dragInfo.value.targetTrackOrder !== undefined && dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder) {
+      } else if (
+        type === 'audio' &&
+        dragInfo.value.targetTrackOrder !== undefined &&
+        dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder
+      ) {
         // Audio was dragged to a different track
         emit('updateAudioTrack', dragPreview.value.id, {
           startTime: dragPreview.value.startTime,
@@ -3379,7 +3536,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
           endTime: dragPreview.value.endTime,
           layer: currentLayer,
         };
-        
+
         if (type === 'text') {
           emit('updateTextOverlay', dragPreview.value.id, updateData);
         } else if (type === 'sticker') {
@@ -3399,7 +3556,12 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
         });
       } else {
         // For other types (trim, source), use direct update
-        emitUpdate(dragPreview.value.type, dragPreview.value.id, dragPreview.value.startTime, dragPreview.value.endTime);
+        emitUpdate(
+          dragPreview.value.type,
+          dragPreview.value.id,
+          dragPreview.value.startTime,
+          dragPreview.value.endTime
+        );
       }
     }
 
@@ -3642,18 +3804,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       // For segments, we need more peaks because we're showing a smaller portion of the video
       const { duration, peaks } = waveformData.value;
 
-      // Try resolutions in order of detail (highest first)
-      const resolutionOrder = ['extreme', 'ultra', 'high', 'medium', 'low'];
-      let peaksData: any[] = [];
-
-      for (const res of resolutionOrder) {
-        const peaks = waveformData.value.peaks;
-        if (peaks.length > 0) {
-          break;
-        }
-      }
-
-      if (peaks.length === 0) return;
+      if (!peaks || peaks.length === 0) return;
 
       // Extract peaks for this segment's time range
       const startRatio = absoluteStartTime / duration;
@@ -3956,7 +4107,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       // If trim_end is null, calculate it from trim_start + segment duration on timeline
       const trimStart = source.trim_start ?? 0;
       const segmentDuration = source.end_time - source.start_time;
-      const trimEnd = source.trim_end ?? (trimStart + segmentDuration);
+      const trimEnd = source.trim_end ?? trimStart + segmentDuration;
 
       // Get the waveform peaks (now using simplified single-resolution structure)
       const { duration, peaks } = data;
@@ -4000,7 +4151,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
 
       // Target a specific number of bars for consistent appearance
       const targetBars = Math.min(numPeaks, Math.floor(canvasWidth / 3)); // ~3px per bar slot
-      
+
       if (numPeaks > targetBars) {
         // Downsample to target number of bars
         const step = numPeaks / targetBars;
@@ -4012,7 +4163,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
           }
         }
       }
-      
+
       // Calculate bar dimensions for visible vertical bars
       const numBars = displayPeaks.length;
       const totalWidth = canvasWidth / numBars;
@@ -4115,7 +4266,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
   async function loadAudioWaveform(trackId: string, audioSrc: string): Promise<void> {
     console.log('[loadAudioWaveform] Called with trackId:', trackId);
     console.log('[loadAudioWaveform] Called with audioSrc:', audioSrc);
-    
+
     // Skip if already loaded
     if (audioWaveformData.value.has(trackId)) {
       console.log('[loadAudioWaveform] Already loaded, skipping');
@@ -4161,7 +4312,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
       // Get raw audio data (use first channel)
       const channelData = audioBuffer.getChannelData(0);
       const duration = audioBuffer.duration;
-      
+
       console.log('[loadAudioWaveform] Loaded audio for track:', trackId);
       console.log('[loadAudioWaveform]   audioSrc:', audioSrc);
       console.log('[loadAudioWaveform]   duration:', duration);
@@ -4348,7 +4499,7 @@ function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
         // So if playhead is at 20s and track starts at 16.6s, we're 3.4s into the audio
         const audioTrackStart = track.startTime;
         const audioTrackEnd = track.endTime;
-        
+
         if (currentVideoTime < audioTrackStart) {
           // Playhead is before the audio track - nothing played yet
           accumulatedAudioTime = 0;

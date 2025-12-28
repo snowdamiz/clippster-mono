@@ -539,7 +539,7 @@
             >
               <span>{{ playbackRate }}x</span>
             </button>
-            
+
             <!-- Speed Menu -->
             <div
               v-if="showSpeedMenu"
@@ -556,13 +556,9 @@
                 <Check v-if="playbackRate === rate" :size="10" />
               </button>
             </div>
-            
+
             <!-- Click outside handler -->
-            <div
-              v-if="showSpeedMenu"
-              class="fixed inset-0 z-40"
-              @click="showSpeedMenu = false"
-            ></div>
+            <div v-if="showSpeedMenu" class="fixed inset-0 z-40" @click="showSpeedMenu = false"></div>
           </div>
 
           <!-- Volume Control -->
@@ -600,7 +596,10 @@
             class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group"
             title="Toggle Fullscreen"
           >
-            <Minimize2 v-if="isFullscreen" class="h-3.5 w-3.5 text-white/60 group-hover:text-white/90 transition-colors" />
+            <Minimize2
+              v-if="isFullscreen"
+              class="h-3.5 w-3.5 text-white/60 group-hover:text-white/90 transition-colors"
+            />
             <Maximize2 v-else class="h-3.5 w-3.5 text-white/60 group-hover:text-white/90 transition-colors" />
           </button>
         </div>
@@ -805,19 +804,19 @@
   function setPlaybackRate(rate: number) {
     playbackRate.value = rate;
     showSpeedMenu.value = false;
-    
+
     // Apply to main video
     if (videoRef.value) {
       videoRef.value.playbackRate = rate;
     }
-    
+
     // Apply to preload video
     if (preloadVideoRef.value) {
       preloadVideoRef.value.playbackRate = rate;
     }
-    
+
     // Apply to region videos (multi-region mode)
-    regionVideoRefs.value.forEach(video => {
+    regionVideoRefs.value.forEach((video) => {
       if (video) {
         video.playbackRate = rate;
       }
@@ -828,7 +827,7 @@
   watch(videoRef, (el) => {
     if (el) el.playbackRate = playbackRate.value;
   });
-  
+
   watch(preloadVideoRef, (el) => {
     if (el) el.playbackRate = playbackRate.value;
   });
@@ -976,22 +975,22 @@
       const progress = Math.max(0, Math.min(1, crossfadeInitialProgress.value + progressSinceStart));
 
       // Calculate state for this progress point
-      const effectiveTime = transition.startTime + (progress * transition.duration);
+      const effectiveTime = transition.startTime + progress * transition.duration;
       const state = calculateTransitionState(effectiveTime, transition);
 
       // Apply styles directly to DOM elements
       // Opacity
       mainVideo.style.opacity = String(state.opacityA);
       preloadVideo.style.opacity = String(state.opacityB);
-      
+
       // Transform
       mainVideo.style.transform = state.transformA || 'none';
       preloadVideo.style.transform = state.transformB || 'none';
-      
+
       // Clip Path
       mainVideo.style.clipPath = state.clipPathA || 'none';
       preloadVideo.style.clipPath = state.clipPathB || 'none';
-      
+
       // Z-Index
       mainVideo.style.zIndex = String(state.zIndexA);
       preloadVideo.style.zIndex = String(state.zIndexB);
@@ -1033,8 +1032,8 @@
     if (resetStyles) {
       const mainVideo = videoRef.value;
       const preloadVideo = preloadVideoRef.value;
-      
-      [mainVideo, preloadVideo].forEach(video => {
+
+      [mainVideo, preloadVideo].forEach((video) => {
         if (video) {
           video.style.opacity = '';
           video.style.transform = '';
@@ -1321,7 +1320,8 @@
 
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const { getWatermarkImage, getWatermarkByServerId } = await import('@/services/database');
+        const { getWatermarkImage } = await import('@/services/database/watermarks');
+        const { getWatermarkByServerId } = await import('@/services/database');
 
         let dataUrl: string | null = null;
         let dimensions: { width: number; height: number } | null = null;
@@ -2815,7 +2815,7 @@
   // Check if current playback position is in a segment with extracted audio and mute accordingly
   function updateVideoMuteState(currentTime: number) {
     if (!videoRef.value || !props.videoSources || props.videoSources.length === 0) return;
-    
+
     // Find which video source is currently playing based on timeline position
     let shouldMute = false;
     for (const source of props.videoSources) {
@@ -2827,10 +2827,10 @@
         }
       }
     }
-    
+
     // Mute/unmute the video element
     videoRef.value.muted = shouldMute;
-    
+
     // Also update preload video if it exists
     if (preloadVideoRef.value) {
       preloadVideoRef.value.muted = shouldMute;
@@ -2874,7 +2874,7 @@
       // In editor mode, check if current source has audio extracted and mute accordingly
       if (props.editorMode) {
         updateVideoMuteState(currentVideoTime);
-        
+
         // Only emit time updates from main video when it's the active video (index 0)
         // When activeVideoIndex === 1, the preload video is active and handles time updates
         if (activeVideoIndex.value === 0) {
@@ -3830,7 +3830,7 @@
   function getMainVideoStyle(): Record<string, string> {
     const filterStyle = getVideoFilterStyle();
     const opacity = activeVideoIndex.value === 0 ? 1 : 0;
-    
+
     return {
       ...filterStyle,
       opacity: opacity.toString(),
@@ -3841,7 +3841,7 @@
   function getPreloadVideoStyle(): Record<string, string> {
     const filterStyle = getVideoFilterStyle();
     const opacity = activeVideoIndex.value === 1 ? 1 : 0;
-    
+
     return {
       ...filterStyle,
       opacity: opacity.toString(),

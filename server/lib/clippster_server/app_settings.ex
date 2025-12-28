@@ -7,10 +7,12 @@ defmodule ClippsterServer.AppSettings do
 
   # Known feature flag keys
   @live_clip_enabled_key "live_clip_enabled"
+  @beta_mode_enabled_key "beta_mode_enabled"
 
   # Default values for feature flags
   @default_settings %{
-    @live_clip_enabled_key => "true"
+    @live_clip_enabled_key => "true",
+    @beta_mode_enabled_key => "false"
   }
 
   @doc """
@@ -58,7 +60,8 @@ defmodule ClippsterServer.AppSettings do
   """
   def get_feature_flags do
     %{
-      live_clip_enabled: is_live_clip_enabled?()
+      live_clip_enabled: is_live_clip_enabled?(),
+      beta_mode_enabled: is_beta_mode_enabled?()
     }
   end
 
@@ -74,5 +77,19 @@ defmodule ClippsterServer.AppSettings do
   """
   def set_live_clip_enabled(enabled) when is_boolean(enabled) do
     set_setting(@live_clip_enabled_key, to_string(enabled))
+  end
+
+  @doc """
+  Check if Beta Mode is enabled.
+  """
+  def is_beta_mode_enabled? do
+    get_setting(@beta_mode_enabled_key) == "true"
+  end
+
+  @doc """
+  Enable or disable Beta Mode.
+  """
+  def set_beta_mode_enabled(enabled) when is_boolean(enabled) do
+    set_setting(@beta_mode_enabled_key, to_string(enabled))
   end
 end

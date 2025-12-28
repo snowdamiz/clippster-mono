@@ -4,6 +4,9 @@ import { getWatermarkByServerId } from './organization-assets';
 import { getUserOrganizationAssets } from '../organizationAssetsApi';
 import { ensureAssetDownloaded } from '../orgAssetSync';
 
+// Re-export the type for consumers who import directly from this module
+export type { WatermarkImage } from './types';
+
 export async function createWatermarkImage(
   name: string,
   filePath: string,

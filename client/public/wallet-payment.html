@@ -202,11 +202,11 @@
 
   <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
   <script>
-    const API_BASE = 'http://localhost:4000';
-    const CALLBACK_PORT = 48275; // Different port from auth
-    
     // Get payment details from URL params
     const urlParams = new URLSearchParams(window.location.search);
+    // Get API base URL from URL params (passed from Tauri app)
+    const API_BASE = urlParams.get('apiBase') || 'https://clippster-server.fly.dev';
+    const CALLBACK_PORT = 48275; // Different port from auth
     const paymentData = {
       packKey: urlParams.get('packKey'),
       packName: urlParams.get('packName'),

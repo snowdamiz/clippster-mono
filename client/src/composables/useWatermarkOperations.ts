@@ -4,7 +4,7 @@ import {
   deleteWatermarkImage,
   getAllWatermarkImages,
   type WatermarkImage,
-} from '@/services/database';
+} from '@/services/database/watermarks';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '@/composables/useToast';
 

@@ -1348,7 +1348,6 @@
     deleteClip,
     getCreatorProfileByProjectId,
     getIntroOutroById,
-    getWatermarkImage,
     getWatermarkByServerId,
     type Project,
     type RawVideo,
@@ -1356,6 +1355,7 @@
     type IntroOutro,
     type WatermarkSettings,
   } from '@/services/database';
+  import { getWatermarkImage } from '@/services/database/watermarks';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
   import { useToast } from '@/composables/useToast';
@@ -2857,7 +2857,7 @@
       // Prepare watermark settings if enabled
       let watermarkSettings = null;
       if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
-        const { getWatermarkImage } = await import('@/services/database');
+        const { getWatermarkImage } = await import('@/services/database/watermarks');
         const watermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
         if (watermarkImage) {
           watermarkSettings = {
