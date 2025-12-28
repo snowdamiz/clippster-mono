@@ -1,7 +1,9 @@
 import { Twitter, Github, MessageCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-const links = {
+type LinkItem = { label: string; href: string; isPage?: boolean }
+
+const links: Record<string, LinkItem[]> = {
   Product: [
     { label: 'Features', href: '#features' },
     { label: 'Pricing', href: '/pricing', isPage: true },
