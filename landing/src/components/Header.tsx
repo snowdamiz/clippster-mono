@@ -1,27 +1,22 @@
 import { useState, useEffect } from 'react'
-import { Menu, X, Apple, Monitor } from 'lucide-react'
-import { useOS } from '../hooks/useOS'
+import { Menu, X, Apple, Monitor, Loader2 } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
+import { useDownloads } from '../hooks/usePlatform'
 
 const navLinks = [
   { href: '#features', label: 'Features' },
   { href: '#how-it-works', label: 'How it Works' },
   { href: '#testimonials', label: 'Testimonials' },
-  { href: '#pricing', label: 'Pricing' },
+  { href: '/pricing', label: 'Pricing', isPage: true },
 ]
-
-// TODO: Replace with actual download URLs
-const DOWNLOAD_URLS = {
-  mac: '#download-mac',
-  windows: '#download-windows',
-}
 
 export function Header() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const os = useOS()
+  const { primaryDownload, otherDownloads, isLoading } = useDownloads()
+  const location = useLocation()
   
-  const primaryOS = os === 'windows' ? 'windows' : 'mac'
-  const secondaryOS = primaryOS === 'mac' ? 'windows' : 'mac'
+  const secondaryDownload = otherDownloads[0]
 
   useEffect(() => {
     const handleScroll = () => {
@@ -31,69 +26,104 @@ export function Header() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
+  // Handle anchor links when on home page
+  const handleNavClick = (href: string, isPage?: boolean) => {
+    if (isPage) return // Let Link handle page navigation
+    
+    // If we're on a different page, navigate to home with hash
+    if (location.pathname !== '/') {
+      window.location.href = '/' + href
+      return
+    }
+    
+    // If on home page, smooth scroll to section
+    const element = document.querySelector(href)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' })
+    }
+  }
+
   return (
-    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-      isScrolled ? 'bg-black/90 backdrop-blur-xl border-b border-white/10 sm:bg-transparent sm:border-b-0' : ''
+    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${
+      isScrolled ? 'bg-[#09090b]/80 backdrop-blur-lg border-b border-zinc-800/50' : ''
     }`}>
-      <div className="max-w-7xl mx-auto px-6 py-3 sm:py-4">
-        <div
-          className={`flex items-center justify-between sm:py-3 sm:px-5 sm:rounded-full transition-all duration-300 ${
-            isScrolled 
-              ? 'sm:bg-black/80 sm:backdrop-blur-xl sm:border sm:border-white/10' 
-              : 'bg-transparent'
-          }`}
-        >
+      <div className="max-w-6xl mx-auto px-6 py-4">
+        <div className="flex items-center justify-between">
           {/* Logo */}
-          <a href="/" className="flex items-center gap-3 group">
+          <Link to="/" className="flex items-center gap-3">
             <img 
               src="/logo-icon.svg" 
               alt="Clippster" 
-              className="w-8 h-8 group-hover:scale-105 transition-transform"
+              className="w-8 h-8"
             />
             <img 
               src="/logo.svg" 
               alt="Clippster" 
               className="h-5"
             />
-          </a>
+          </Link>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
             {navLinks.map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                className="px-4 py-2 text-neutral-400 hover:text-white transition-colors text-sm"
-              >
-                {link.label}
-              </a>
+              link.isPage ? (
+                <Link
+                  key={link.href}
+                  to={link.href}
+                  className="px-4 py-2 text-zinc-400 hover:text-white transition-colors text-sm"
+                >
+                  {link.label}
+                </Link>
+              ) : (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    handleNavClick(link.href)
+                  }}
+                  className="px-4 py-2 text-zinc-400 hover:text-white transition-colors text-sm"
+                >
+                  {link.label}
+                </a>
+              )
             ))}
           </nav>
 
           {/* Download Buttons */}
-          <div className="hidden md:flex items-center gap-2">
-            <a
-              href={DOWNLOAD_URLS[secondaryOS]}
-              className="p-2 text-neutral-400 hover:text-white transition-colors"
-              title={`Download for ${secondaryOS === 'mac' ? 'Mac' : 'Windows'}`}
-            >
-              {secondaryOS === 'mac' ? (
-                <Apple className="w-4 h-4" />
-              ) : (
-                <Monitor className="w-4 h-4" />
-              )}
-            </a>
-            <a
-              href={DOWNLOAD_URLS[primaryOS]}
-              className="px-4 py-2 rounded-full bg-white text-black font-medium text-sm hover:bg-neutral-100 transition-colors flex items-center gap-2"
-            >
-              {primaryOS === 'mac' ? (
-                <Apple className="w-4 h-4" />
-              ) : (
-                <Monitor className="w-4 h-4" />
-              )}
-              Download
-            </a>
+          <div className="hidden md:flex items-center gap-3">
+            {isLoading ? (
+              <div className="px-5 py-2.5 rounded-full bg-white/50 text-zinc-900 font-medium text-sm flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+              </div>
+            ) : primaryDownload ? (
+              <>
+                {secondaryDownload && (
+                  <a
+                    href={secondaryDownload.downloadUrl}
+                    className="p-2 text-zinc-400 hover:text-white transition-colors"
+                    title={`Download for ${secondaryDownload.label}`}
+                  >
+                    {secondaryDownload.platform.os === 'mac' ? (
+                      <Apple className="w-4 h-4" />
+                    ) : (
+                      <Monitor className="w-4 h-4" />
+                    )}
+                  </a>
+                )}
+                <a
+                  href={primaryDownload.downloadUrl}
+                  className="px-5 py-2.5 rounded-full bg-white text-zinc-900 font-medium text-sm hover:bg-zinc-100 transition-colors flex items-center gap-2"
+                >
+                  {primaryDownload.platform.os === 'mac' ? (
+                    <Apple className="w-4 h-4" />
+                  ) : (
+                    <Monitor className="w-4 h-4" />
+                  )}
+                  Download
+                </a>
+              </>
+            ) : null}
           </div>
 
           {/* Mobile Menu Button */}
@@ -108,44 +138,62 @@ export function Header() {
 
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
-        <div className="md:hidden mx-6 mt-1 p-4 rounded-2xl bg-black/95 backdrop-blur-xl border border-white/10">
+        <div className="md:hidden mx-6 mt-1 p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
           <nav className="flex flex-col gap-1">
             {navLinks.map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                className="px-4 py-3 text-neutral-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                {link.label}
-              </a>
+              link.isPage ? (
+                <Link
+                  key={link.href}
+                  to={link.href}
+                  className="px-4 py-3 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  {link.label}
+                </Link>
+              ) : (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="px-4 py-3 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false)
+                    handleNavClick(link.href)
+                  }}
+                >
+                  {link.label}
+                </a>
+              )
             ))}
-            <div className="mt-3 pt-3 border-t border-white/10 space-y-2">
-              <a
-                href={DOWNLOAD_URLS[primaryOS]}
-                className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-white text-black font-medium"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                {primaryOS === 'mac' ? (
-                  <Apple className="w-4 h-4" />
-                ) : (
-                  <Monitor className="w-4 h-4" />
+            {primaryDownload && (
+              <div className="mt-3 pt-3 border-t border-zinc-800 space-y-2">
+                <a
+                  href={primaryDownload.downloadUrl}
+                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-white text-zinc-900 font-medium"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  {primaryDownload.platform.os === 'mac' ? (
+                    <Apple className="w-4 h-4" />
+                  ) : (
+                    <Monitor className="w-4 h-4" />
+                  )}
+                  Download for {primaryDownload.label}
+                </a>
+                {secondaryDownload && (
+                  <a
+                    href={secondaryDownload.downloadUrl}
+                    className="flex items-center justify-center gap-2 px-4 py-3 text-zinc-400 hover:text-white rounded-lg"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    {secondaryDownload.platform.os === 'mac' ? (
+                      <Apple className="w-4 h-4" />
+                    ) : (
+                      <Monitor className="w-4 h-4" />
+                    )}
+                    {secondaryDownload.label}
+                  </a>
                 )}
-                Download for {primaryOS === 'mac' ? 'Mac' : 'Windows'}
-              </a>
-              <a
-                href={DOWNLOAD_URLS[secondaryOS]}
-                className="flex items-center justify-center gap-2 px-4 py-3 text-neutral-400 hover:text-white rounded-lg"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                {secondaryOS === 'mac' ? (
-                  <Apple className="w-4 h-4" />
-                ) : (
-                  <Monitor className="w-4 h-4" />
-                )}
-                {secondaryOS === 'mac' ? 'Mac' : 'Windows'} version
-              </a>
-            </div>
+              </div>
+            )}
           </nav>
         </div>
       )}
