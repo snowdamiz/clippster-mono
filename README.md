@@ -181,6 +181,12 @@ Optional:
 - **Custom Windowing**: Transparent, frameless design
 - **Media Processing**: FFmpeg integration for video/audio
 
+### Over-the-Air Updates
+- **Mandatory Updates**: Users must install updates before using the app
+- **Automatic Detection**: Checks for updates on every app launch
+- **Signed Artifacts**: Cryptographically signed for security
+- **Cross-Platform**: Works on Windows and macOS
+
 ### Real-time Features
 - **Live Updates**: Phoenix channels for real-time sync
 - **Progress Tracking**: Async operation monitoring
@@ -264,6 +270,53 @@ cd client && yarn tauri build
 - Use reverse proxy for SSL termination
 - Configure proper logging and monitoring
 
+## OTA Updates
+
+Clippster uses Tauri's official updater plugin to deliver **mandatory updates**. Users must install updates before they can use the app.
+
+### How Updates Work
+
+1. Push to `release` branch triggers GitHub Actions
+2. CI builds and signs artifacts for all platforms
+3. `latest.json` manifest is uploaded to GitHub Releases
+4. App checks for updates on startup and blocks until updated
+
+### Triggering a Release
+
+```bash
+# 1. Update version in client/src-tauri/tauri.conf.json
+# 2. Push to release branch
+git checkout release
+git merge main
+git push origin release
+
+# 3. GitHub Actions builds and creates draft release
+# 4. Review and publish the release manually
+```
+
+### Required GitHub Secrets
+
+| Secret | Purpose |
+|--------|---------|
+| `TAURI_SIGNING_PRIVATE_KEY` | Signs update artifacts (required) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Decrypts private key (if encrypted) |
+| `APPLE_ID` | macOS notarization (optional) |
+| `APPLE_PASSWORD` | macOS notarization (optional) |
+| `APPLE_TEAM_ID` | macOS notarization (optional) |
+| `WINDOWS_CERTIFICATE` | Windows code signing (optional) |
+| `WINDOWS_CERTIFICATE_PASSWORD` | Windows code signing (optional) |
+
+### Generating Signing Keys
+
+```bash
+cd client
+npx tauri signer generate -w ~/.tauri/clippster.key
+# Copy public key to tauri.conf.json "plugins.updater.pubkey"
+# Set private key as TAURI_SIGNING_PRIVATE_KEY secret
+```
+
+For detailed documentation, see [docs/OTA-UPDATES.md](docs/OTA-UPDATES.md).
+
 ## Contributing
 
 1. Fork the repository
@@ -283,6 +336,7 @@ cd client && yarn tauri build
 - **Client Documentation**: See `client/README.md`
 - **Server Documentation**: See `server/README.md`
 - **Landing Page**: See `landing/README.md`
+- **OTA Updates**: See `docs/OTA-UPDATES.md`
 - **Issues**: Report bugs and feature requests via GitHub issues
 
 ## License

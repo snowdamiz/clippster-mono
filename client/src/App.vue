@@ -7,17 +7,25 @@
   import AuthModal from '@/components/AuthModal.vue';
   import BetaActivationDialog from '@/components/BetaActivationDialog.vue';
   import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
+  import MandatoryUpdateDialog from '@/components/MandatoryUpdateDialog.vue';
   import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
   import { useLivestreamStore } from '@/stores/livestream';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
+  import { useAppUpdater } from '@/composables/useAppUpdater';
   import { invoke } from '@tauri-apps/api/core';
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
   const livestreamStore = useLivestreamStore();
   const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
+  const { state: updateState, checkForUpdates } = useAppUpdater();
+
+  // Update check must complete before app continues
+  const isCheckingForUpdates = ref(true);
+  const updateRequired = ref(false);
+
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
@@ -95,6 +103,38 @@
     // Load platform override from localStorage
     loadPlatformOverride();
 
+    // Show the main window early so users can see the update check
+    try {
+      await invoke('show_main_window');
+    } catch (error) {
+      console.error('[App] Failed to show main window:', error);
+    }
+
+    // MANDATORY UPDATE CHECK - must complete before app continues
+    // Check for updates FIRST before any other initialization
+    try {
+      console.log('[App] Checking for mandatory updates...');
+      const hasUpdate = await checkForUpdates();
+      if (hasUpdate) {
+        console.log('[App] Update required - blocking app until update is installed');
+        updateRequired.value = true;
+        isCheckingForUpdates.value = false;
+        // Stop here - user must update before continuing
+        return;
+      }
+      console.log('[App] No update required, continuing with app initialization');
+    } catch (error) {
+      console.error('[App] Failed to check for updates:', error);
+      // On error, allow app to continue (don't block users if update server is down)
+    }
+    isCheckingForUpdates.value = false;
+
+    // Continue with normal app initialization only if no update required
+    await initializeApp();
+  });
+
+  // Separate function for app initialization (called after update check passes)
+  async function initializeApp() {
     // Check authentication status on app start
     try {
       await authStore.checkAuth();
@@ -143,16 +183,9 @@
       console.error('[App] Failed to initialize window close handler:', error);
     }
 
-    // Hide loading screen after initialization and show main window
+    // Hide loading screen after initialization
     isLoading.value = false;
-
-    // Show the main window now that everything is loaded
-    try {
-      await invoke('show_main_window');
-    } catch (error) {
-      console.error('[App] Failed to show main window:', error);
-    }
-  });
+  }
 
   // Cleanup auth event listener on unmount
   onUnmounted(() => {
@@ -166,10 +199,21 @@
 </script>
 
 <template>
-  <!-- Loading screen -->
-  <LoadingScreen v-if="isLoading" />
+  <!-- Mandatory Update Dialog - blocks entire app when update is required -->
+  <MandatoryUpdateDialog
+    v-if="
+      isCheckingForUpdates ||
+      updateRequired ||
+      updateState.status === 'available' ||
+      updateState.status === 'downloading' ||
+      updateState.status === 'installing'
+    "
+  />
 
-  <!-- Main app (hidden while loading) -->
+  <!-- Loading screen (only shown after update check passes) -->
+  <LoadingScreen v-else-if="isLoading" />
+
+  <!-- Main app (hidden while loading or updating) -->
   <div v-else class="app-container">
     <!-- Custom titlebar -->
     <TitleBar :dark-mode="true" :platform-override="titleBarPlatformOverride" />
