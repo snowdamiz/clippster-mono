@@ -86,7 +86,7 @@
     <!-- User info and logout at bottom -->
     <div class="absolute bottom-0 w-64 border-t border-border">
       <!-- Credit Balance - Hidden for org members with AI disabled -->
-      <div v-if="isAIAllowed" class="px-2 pb-2 pt-2">
+      <!-- <div v-if="isAIAllowed" class="px-2 pb-2 pt-2">
         <button
           @click="handleCreditClick"
           class="credit-balance-card w-full"
@@ -101,7 +101,6 @@
             </div>
 
             <div v-if="!loadingBalance" class="credit-right">
-              <!-- Authenticated user: show balance -->
               <div v-if="authStore.isAuthenticated">
                 <div v-if="typeof hoursRemaining === 'string'" class="credit-value-wrapper">
                   <span class="credit-value unlimited">∞</span>
@@ -113,7 +112,6 @@
                   <span class="credit-unit">{{ hoursRemaining === 1 ? 'hr' : 'hrs' }}</span>
                 </div>
               </div>
-              <!-- Unauthenticated user: show sign in prompt -->
               <div v-else class="credit-sign-in-prompt">
                 <span class="credit-sign-in-text">Sign in</span>
               </div>
@@ -126,7 +124,7 @@
             </div>
           </div>
         </button>
-      </div>
+      </div> -->
       <!-- User info -->
       <div :class="authStore.isAuthenticated ? 'px-4 pb-4 pt-4' : 'px-2 pb-2 pt-2'" class="border-t border-border">
         <div v-if="authStore.isAuthenticated" class="flex items-center justify-between gap-2 min-w-0">
