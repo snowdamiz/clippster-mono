@@ -135,17 +135,25 @@ jobs:
 
       - name: Build Tauri App (Windows)
         if: matrix.platform == 'windows-latest'
-        shell: pwsh
+        shell: bash
         env:
           VITE_API_URL: https://clippster-server.fly.dev
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         working-directory: client
         run: |
-          Write-Host "Building Tauri app for Windows..."
+          # Debug: Check if signing key is set
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "✓ TAURI_SIGNING_PRIVATE_KEY is set (length: ${#TAURI_SIGNING_PRIVATE_KEY})"
+          else
+            echo "✗ TAURI_SIGNING_PRIVATE_KEY is NOT set!"
+          fi
+          
+          echo "Building Tauri app for Windows..."
           cargo tauri build
-          Write-Host "Build complete. Listing bundle directory:"
-          Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse | ForEach-Object { Write-Host $_.FullName }
+          
+          echo "Build complete. Listing NSIS bundle directory:"
+          ls -la src-tauri/target/release/bundle/nsis/ || echo "NSIS directory not found"
 
       - name: Upload artifacts to public releases repo (macOS)
         if: matrix.platform == 'macos-latest'
