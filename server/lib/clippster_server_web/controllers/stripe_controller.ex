@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.StripeController do
   alias ClippsterServer.Credits
   alias ClippsterServer.Accounts
   alias ClippsterServer.Organizations
+  alias ClippsterServer.Subscriptions
 
   @doc """
   Creates a Stripe Checkout session for purchasing a credit pack.
@@ -12,7 +13,7 @@ defmodule ClippsterServerWeb.StripeController do
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, user} <- get_user(user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type) do
-      
+
       # Get Stripe configuration
       stripe_config = Application.get_env(:clippster_server, :stripe)
       success_url = stripe_config[:success_url] || "http://localhost:48276/stripe-success"
@@ -28,7 +29,7 @@ defmodule ClippsterServerWeb.StripeController do
               currency: "usd",
               product_data: %{
                 name: "#{String.capitalize(pack_type)} Credit Pack",
-                description: "#{pack_info.hours} hours of video processing credits"
+                description: "#{pack_info.hours} minutes of video processing credits"
               },
               unit_amount: trunc(pack_info.usd * 100)  # Stripe expects cents
             },
@@ -92,7 +93,7 @@ defmodule ClippsterServerWeb.StripeController do
          {:ok, _org} <- get_organization(org_id),
          true <- Organizations.is_admin?(org_id, user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type) do
-      
+
       # Get Stripe configuration
       stripe_config = Application.get_env(:clippster_server, :stripe)
       success_url = stripe_config[:success_url] || "http://localhost:48276/stripe-success"
@@ -108,7 +109,7 @@ defmodule ClippsterServerWeb.StripeController do
               currency: "usd",
               product_data: %{
                 name: "#{String.capitalize(pack_type)} Credit Pack (Organization)",
-                description: "#{pack_info.hours} hours of video processing credits for your organization"
+                description: "#{pack_info.hours} minutes of video processing credits for your organization"
               },
               unit_amount: trunc(pack_info.usd * 100)  # Stripe expects cents
             },
@@ -181,7 +182,7 @@ defmodule ClippsterServerWeb.StripeController do
     # Get the raw body and signature header
     payload = conn.assigns[:raw_body]
     signature = get_req_header(conn, "stripe-signature") |> List.first()
-    
+
     stripe_config = Application.get_env(:clippster_server, :stripe)
     webhook_secret = stripe_config[:webhook_secret]
 
@@ -225,31 +226,161 @@ defmodule ClippsterServerWeb.StripeController do
 
   defp handle_event(%{type: "checkout.session.completed", data: %{object: session}}) do
     IO.puts("[Stripe Webhook] Processing checkout.session.completed")
-    
+
     metadata = session["metadata"] || session.metadata || %{}
     user_id = get_metadata_value(metadata, "user_id")
     organization_id = get_metadata_value(metadata, "organization_id")
     pack_type = get_metadata_value(metadata, "pack_type")
     hours = get_metadata_value(metadata, "hours")
     amount_usd = get_metadata_value(metadata, "amount_usd")
-    
+    payment_type = get_metadata_value(metadata, "type")
+    subscription_tier = get_metadata_value(metadata, "subscription_tier")
+
     session_id = session["id"] || session.id
     payment_intent = session["payment_intent"] || Map.get(session, :payment_intent)
+    stripe_subscription_id = session["subscription"] || Map.get(session, :subscription)
+    stripe_customer_id = session["customer"] || Map.get(session, :customer)
     amount_total = session["amount_total"] || Map.get(session, :amount_total)
 
-    IO.puts("[Stripe Webhook] User ID: #{user_id}, Org ID: #{organization_id}, Pack: #{pack_type}, Hours: #{hours}")
+    IO.puts("[Stripe Webhook] User ID: #{user_id}, Type: #{payment_type}, Tier: #{subscription_tier}, Pack: #{pack_type}, Hours: #{hours}")
 
-    if user_id && pack_type && hours do
-      # Check if this is an organization purchase
-      if organization_id do
-        # Add credits to organization pool with transaction record
+    cond do
+      # Handle subscription checkout
+      payment_type == "subscription" && user_id && subscription_tier ->
+        handle_subscription_checkout(user_id, subscription_tier, stripe_subscription_id, stripe_customer_id)
+
+      # Handle credit pack purchase for organization
+      user_id && pack_type && hours && organization_id ->
         handle_org_stripe_payment(organization_id, user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent)
-      else
-        # Add credits to personal user balance (original flow)
+
+      # Handle credit pack purchase for personal use
+      user_id && pack_type && hours ->
         handle_personal_stripe_payment(user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent)
+
+      true ->
+        IO.puts("[Stripe Webhook] Missing required metadata for checkout")
+    end
+  end
+
+  # Handle subscription created via Stripe
+  defp handle_event(%{type: "customer.subscription.created", data: %{object: subscription}}) do
+    IO.puts("[Stripe Webhook] Processing customer.subscription.created")
+
+    stripe_subscription_id = subscription["id"] || Map.get(subscription, :id)
+    stripe_customer_id = subscription["customer"] || Map.get(subscription, :customer)
+    metadata = subscription["metadata"] || Map.get(subscription, :metadata) || %{}
+
+    user_id = get_metadata_value(metadata, "user_id")
+    subscription_tier = get_metadata_value(metadata, "subscription_tier")
+
+    if user_id && subscription_tier do
+      handle_subscription_created(user_id, subscription_tier, stripe_subscription_id, stripe_customer_id)
+    else
+      # Try to find user by customer ID
+      case Subscriptions.get_user_by_stripe_customer(stripe_customer_id) do
+        nil ->
+          IO.puts("[Stripe Webhook] Could not find user for subscription #{stripe_subscription_id}")
+        user ->
+          # Can't determine tier without metadata, log warning
+          IO.puts("[Stripe Webhook] Found user #{user.id} but missing tier metadata")
+      end
+    end
+  end
+
+  # Handle successful invoice payment (subscription renewal)
+  defp handle_event(%{type: "invoice.payment_succeeded", data: %{object: invoice}}) do
+    IO.puts("[Stripe Webhook] Processing invoice.payment_succeeded")
+
+    stripe_subscription_id = invoice["subscription"] || Map.get(invoice, :subscription)
+    billing_reason = invoice["billing_reason"] || Map.get(invoice, :billing_reason)
+
+    # Only process renewal invoices, not initial subscription
+    if stripe_subscription_id && billing_reason in ["subscription_cycle", "subscription_update"] do
+      case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
+        nil ->
+          IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+        user ->
+          case Subscriptions.renew_subscription(user.id) do
+            {:ok, _result} ->
+              IO.puts("[Stripe Webhook] Renewed subscription for user #{user.id}")
+            {:error, reason} ->
+              IO.puts("[Stripe Webhook] Failed to renew subscription: #{inspect(reason)}")
+          end
       end
     else
-      IO.puts("[Stripe Webhook] Missing required metadata: user_id=#{user_id}, pack_type=#{pack_type}, hours=#{hours}")
+      IO.puts("[Stripe Webhook] Skipping invoice - billing_reason: #{billing_reason}")
+    end
+  end
+
+  # Handle failed invoice payment
+  defp handle_event(%{type: "invoice.payment_failed", data: %{object: invoice}}) do
+    IO.puts("[Stripe Webhook] Processing invoice.payment_failed")
+
+    stripe_subscription_id = invoice["subscription"] || Map.get(invoice, :subscription)
+
+    if stripe_subscription_id do
+      case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
+        nil ->
+          IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+        user ->
+          # Expire the subscription on payment failure
+          case Subscriptions.expire_subscription(user.id) do
+            {:ok, _user} ->
+              IO.puts("[Stripe Webhook] Expired subscription for user #{user.id} due to payment failure")
+            {:error, reason} ->
+              IO.puts("[Stripe Webhook] Failed to expire subscription: #{inspect(reason)}")
+          end
+      end
+    end
+  end
+
+  # Handle subscription deletion/cancellation
+  defp handle_event(%{type: "customer.subscription.deleted", data: %{object: subscription}}) do
+    IO.puts("[Stripe Webhook] Processing customer.subscription.deleted")
+
+    stripe_subscription_id = subscription["id"] || Map.get(subscription, :id)
+
+    case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
+      nil ->
+        IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+      user ->
+        case Subscriptions.expire_subscription(user.id) do
+          {:ok, _user} ->
+            IO.puts("[Stripe Webhook] Expired subscription for user #{user.id}")
+          {:error, reason} ->
+            IO.puts("[Stripe Webhook] Failed to expire subscription: #{inspect(reason)}")
+        end
+    end
+  end
+
+  # Handle subscription update (tier change)
+  defp handle_event(%{type: "customer.subscription.updated", data: %{object: subscription}}) do
+    IO.puts("[Stripe Webhook] Processing customer.subscription.updated")
+
+    stripe_subscription_id = subscription["id"] || Map.get(subscription, :id)
+    status = subscription["status"] || Map.get(subscription, :status)
+    cancel_at_period_end = subscription["cancel_at_period_end"] || Map.get(subscription, :cancel_at_period_end)
+
+    case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
+      nil ->
+        IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+      user ->
+        cond do
+          cancel_at_period_end == true ->
+            # User has requested cancellation
+            case Subscriptions.cancel_subscription(user.id) do
+              {:ok, _} -> IO.puts("[Stripe Webhook] Marked subscription as cancelled for user #{user.id}")
+              {:error, reason} -> IO.puts("[Stripe Webhook] Failed to cancel: #{inspect(reason)}")
+            end
+          status in ["canceled", "unpaid", "incomplete_expired"] ->
+            # Subscription is no longer active
+            case Subscriptions.expire_subscription(user.id) do
+              {:ok, _} -> IO.puts("[Stripe Webhook] Expired subscription for user #{user.id}")
+              {:error, reason} -> IO.puts("[Stripe Webhook] Failed to expire: #{inspect(reason)}")
+            end
+          true ->
+            IO.puts("[Stripe Webhook] Subscription update - status: #{status}")
+        end
     end
   end
 
@@ -258,6 +389,39 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   defp handle_event(_), do: :ok
+
+  # Handle subscription checkout completion
+  defp handle_subscription_checkout(user_id, tier, stripe_subscription_id, stripe_customer_id) do
+    user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
+
+    IO.puts("[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, sub_id=#{stripe_subscription_id}")
+
+    case Subscriptions.create_stripe_subscription(user_id_int, tier, stripe_subscription_id, stripe_customer_id) do
+      {:ok, _result} ->
+        IO.puts("[Stripe Webhook] Successfully created #{tier} subscription for user #{user_id_int}")
+      {:error, reason} ->
+        IO.puts("[Stripe Webhook] Failed to create subscription: #{inspect(reason)}")
+    end
+  end
+
+  # Handle subscription created event (backup for checkout)
+  defp handle_subscription_created(user_id, tier, stripe_subscription_id, stripe_customer_id) do
+    user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
+
+    # Check if user already has this subscription (from checkout handler)
+    user = Accounts.get_user(user_id_int)
+
+    if user && user.stripe_subscription_id == stripe_subscription_id do
+      IO.puts("[Stripe Webhook] Subscription already created for user #{user_id_int}")
+    else
+      case Subscriptions.create_stripe_subscription(user_id_int, tier, stripe_subscription_id, stripe_customer_id) do
+        {:ok, _result} ->
+          IO.puts("[Stripe Webhook] Created #{tier} subscription for user #{user_id_int}")
+        {:error, reason} ->
+          IO.puts("[Stripe Webhook] Failed to create subscription: #{inspect(reason)}")
+      end
+    end
+  end
 
   defp handle_personal_stripe_payment(user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent) do
     # Create and confirm the transaction for personal credits
@@ -394,4 +558,3 @@ defmodule ClippsterServerWeb.StripeController do
     end
   end
 end
-

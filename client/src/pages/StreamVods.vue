@@ -343,7 +343,9 @@
                   </span>
                   <span class="text-border">|</span>
                   <span>
-                    {{ clipToDownload?.createdAt ? formatAbsoluteDate(clipToDownload?.createdAt, true) : 'No timestamp' }}
+                    {{
+                      clipToDownload?.createdAt ? formatAbsoluteDate(clipToDownload?.createdAt, true) : 'No timestamp'
+                    }}
                   </span>
                   <span v-if="clipToDownload?.createdAt" class="text-border">|</span>
                   <span v-if="clipToDownload?.createdAt">{{ formatRelativeTime(clipToDownload?.createdAt) }}</span>
@@ -483,8 +485,10 @@
   import { getCreatorProfileByPlatformId } from '@/services/database';
   import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
   import { useAuthStore } from '@/stores/auth';
+  import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
   const router = useRouter();
+  const { gates } = useSubscriptionGate();
   const route = useRoute();
   const { success, error: showError } = useToast();
   const { startDownload } = useDownloads();
@@ -787,7 +791,12 @@
     console.log('Clicked clip:', clip);
   }
 
-  function handleDownloadClip(clip: PlatformClip) {
+  async function handleDownloadClip(clip: PlatformClip) {
+    // Check subscription access before allowing download
+    if (!(await gates.download(`Download "${clip.title}"`))) {
+      return; // Gate was shown, user doesn't have access
+    }
+
     clipToDownload.value = clip;
     selectedTimeRange.value = { startTime: 0, endTime: clip.duration || 0 };
     // Default auto-segment off, user can enable if they want to split
@@ -864,13 +873,16 @@
               // Find a profile with a matching platform link
               for (const orgProfile of orgResponse.profiles) {
                 // Log all platform links for debugging
-                console.log('[StreamVods] Checking org profile:', orgProfile.name, 'platform_links:', 
-                  orgProfile.platform_links.map(l => ({ platform: l.platform, platform_id: l.platform_id }))
+                console.log(
+                  '[StreamVods] Checking org profile:',
+                  orgProfile.name,
+                  'platform_links:',
+                  orgProfile.platform_links.map((l) => ({ platform: l.platform, platform_id: l.platform_id }))
                 );
-                
+
                 const matchingLink = orgProfile.platform_links.find((link) => {
                   if (link.platform !== detectedPlatform.value) return false;
-                  
+
                   // Extract the normalized ID from the stored platform_id
                   // This handles cases where the server stores full URLs instead of just IDs
                   let storedId = link.platform_id;
@@ -883,7 +895,7 @@
                     const extractedMint = extractMintId(storedId);
                     if (extractedMint) storedId = extractedMint;
                   }
-                  
+
                   return storedId.toLowerCase() === platformStore.currentSearchId.toLowerCase();
                 });
                 if (matchingLink) {
@@ -898,9 +910,7 @@
                         transformedSettings[ratio] = {
                           ...ratioConfig,
                           // Prefix the per-ratio watermarkId if present
-                          watermarkId: ratioConfig.watermarkId
-                            ? `org-asset-${ratioConfig.watermarkId}`
-                            : null,
+                          watermarkId: ratioConfig.watermarkId ? `org-asset-${ratioConfig.watermarkId}` : null,
                         };
                       } else {
                         // null means disabled for this ratio
@@ -920,7 +930,12 @@
                 }
               }
               if (!creatorWatermarkSettings) {
-                console.log('[StreamVods] No matching org profile found. Looking for platform:', detectedPlatform.value, 'platformId:', platformStore.currentSearchId);
+                console.log(
+                  '[StreamVods] No matching org profile found. Looking for platform:',
+                  detectedPlatform.value,
+                  'platformId:',
+                  platformStore.currentSearchId
+                );
               }
             }
           }

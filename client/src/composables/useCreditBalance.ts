@@ -11,12 +11,24 @@ export interface OrganizationAllocation {
   hours_remaining: number;
 }
 
+export interface SubscriptionStatus {
+  status: 'none' | 'active' | 'cancelled' | 'expired';
+  tier: string | null;
+  tier_name: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  renewal_method: 'stripe' | 'crypto' | null;
+  needs_subscription: boolean;
+  days_remaining: number;
+}
+
 export interface CreditBalanceResponse {
   success: boolean;
   balance: {
     hours_remaining: number | 'unlimited';
     hours_used: number;
   };
+  subscription: SubscriptionStatus;
   organization_allocations: OrganizationAllocation[];
   total_available: number | 'unlimited';
 }
@@ -30,6 +42,9 @@ export function useCreditBalance() {
   const hoursRemaining = ref<number | 'unlimited' | null>(null);
   const hoursUsed = ref<number>(0);
   const isAdmin = ref(false);
+
+  // Subscription status
+  const subscriptionStatus = ref<SubscriptionStatus | null>(null);
 
   // Organization allocations
   const organizationAllocations = ref<OrganizationAllocation[]>([]);
@@ -49,6 +64,34 @@ export function useCreditBalance() {
     return organizationAllocations.value.reduce((sum, alloc) => sum + alloc.hours_remaining, 0);
   });
 
+  // Computed: does user have a valid subscription?
+  const hasValidSubscription = computed(() => {
+    if (!subscriptionStatus.value) return false;
+    return ['active', 'cancelled'].includes(subscriptionStatus.value.status);
+  });
+
+  // Computed: does user need a subscription?
+  const needsSubscription = computed(() => {
+    return subscriptionStatus.value?.needs_subscription ?? true;
+  });
+
+  // Computed: can user access the app?
+  const canAccessApp = computed(() => {
+    // Admin always has access
+    if (isAdmin.value) return true;
+    // If user doesn't need subscription (org-created), they can access
+    if (!needsSubscription.value) return true;
+    // Otherwise, need valid subscription
+    return hasValidSubscription.value;
+  });
+
+  // Computed: can user use AI features (requires credits)?
+  const canUseAIFeatures = computed(() => {
+    if (totalAvailable.value === 'unlimited') return true;
+    if (totalAvailable.value === null) return false;
+    return totalAvailable.value > 0;
+  });
+
   // Get allocation for a specific organization
   function getOrgAllocation(orgId: number): OrganizationAllocation | undefined {
     return organizationAllocations.value.find((alloc) => alloc.organization_id === orgId);
@@ -60,6 +103,7 @@ export function useCreditBalance() {
       hoursRemaining.value = null;
       hoursUsed.value = 0;
       isAdmin.value = false;
+      subscriptionStatus.value = null;
       organizationAllocations.value = [];
       totalAvailable.value = null;
       error.value = null;
@@ -80,6 +124,9 @@ export function useCreditBalance() {
             : response.data.balance.hours_remaining;
         hoursUsed.value = response.data.balance.hours_used || 0;
         isAdmin.value = response.data.balance.hours_remaining === 'unlimited';
+
+        // Subscription status
+        subscriptionStatus.value = response.data.subscription || null;
 
         // Organization allocations
         organizationAllocations.value = response.data.organization_allocations || [];
@@ -110,6 +157,7 @@ export function useCreditBalance() {
     hoursRemaining,
     hoursUsed,
     isAdmin,
+    subscriptionStatus,
     organizationAllocations,
     totalAvailable,
 
@@ -117,6 +165,10 @@ export function useCreditBalance() {
     isAuthenticated,
     hasOrgCredits,
     totalOrgCredits,
+    hasValidSubscription,
+    needsSubscription,
+    canAccessApp,
+    canUseAIFeatures,
 
     // Methods
     fetchBalance,

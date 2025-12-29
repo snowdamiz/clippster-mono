@@ -8,6 +8,7 @@
   import BetaActivationDialog from '@/components/BetaActivationDialog.vue';
   import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
   import MandatoryUpdateDialog from '@/components/MandatoryUpdateDialog.vue';
+  import SubscriptionGate from '@/components/SubscriptionGate.vue';
   import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
@@ -235,6 +236,9 @@
         @activated="handleBetaActivated"
         @logout="handleBetaLogout"
       />
+
+      <!-- Subscription Gate Dialog (triggered on protected actions) -->
+      <SubscriptionGate />
 
       <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
       <LivestreamWatchDialog

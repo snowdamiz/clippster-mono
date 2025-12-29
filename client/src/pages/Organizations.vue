@@ -96,7 +96,7 @@
                       <div class="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                         <Clock class="h-4 w-4 text-violet-400" />
                         <span>{{ formatCredits(orgCredits[org.id]?.hours_remaining) }}</span>
-                        <span class="text-muted-foreground font-normal">hrs</span>
+                        <span class="text-muted-foreground font-normal">min</span>
                       </div>
                       <div class="text-xs text-muted-foreground">
                         {{ formatCredits(orgCredits[org.id]?.hours_used) }} used
@@ -215,7 +215,7 @@
     if (!value) return '0';
     const num = parseFloat(value);
     if (isNaN(num)) return '0';
-    return num.toFixed(2).replace(/\.?0+$/, '');
+    return Math.round(num).toString();
   }
 </script>
 

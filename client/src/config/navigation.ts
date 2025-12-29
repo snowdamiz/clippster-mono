@@ -11,6 +11,7 @@ import {
   Users,
   Clapperboard,
   Building2,
+  Receipt,
 } from 'lucide-vue-next';
 
 export interface NavigationItem {
@@ -73,6 +74,11 @@ export const navigationItems: NavigationItem[] = [
     path: '/organizations',
     icon: Building2,
     orgMember: true, // Show for any user who is a member of at least one organization
+  },
+  {
+    name: 'Billing',
+    path: '/billing',
+    icon: Receipt,
   },
   {
     name: 'Admin',

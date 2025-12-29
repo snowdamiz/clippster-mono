@@ -30,6 +30,15 @@ defmodule ClippsterServer.Accounts.User do
     # Beta activation
     field :beta_activated, :boolean, default: false
 
+    # Subscription fields
+    field :subscription_status, :string, default: "none"  # none, active, cancelled, expired
+    field :subscription_tier, :string  # starter, creator, pro
+    field :subscription_start_date, :utc_datetime
+    field :subscription_end_date, :utc_datetime
+    field :subscription_renewal_method, :string  # stripe, crypto
+    field :stripe_subscription_id, :string
+    field :stripe_customer_id, :string
+
     timestamps(type: :utc_datetime)
   end
 
@@ -174,6 +183,25 @@ defmodule ClippsterServer.Accounts.User do
     user
     |> change()
     |> put_change(:beta_activated, true)
+  end
+
+  @doc """
+  Changeset for subscription management.
+  """
+  def subscription_changeset(user, attrs) do
+    user
+    |> cast(attrs, [
+      :subscription_status,
+      :subscription_tier,
+      :subscription_start_date,
+      :subscription_end_date,
+      :subscription_renewal_method,
+      :stripe_subscription_id,
+      :stripe_customer_id
+    ])
+    |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
+    |> validate_inclusion(:subscription_tier, ["starter", "creator", "pro", nil])
+    |> validate_inclusion(:subscription_renewal_method, ["stripe", "crypto", nil])
   end
 
   defp put_wallet_provider(changeset) do

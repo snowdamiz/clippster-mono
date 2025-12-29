@@ -194,7 +194,7 @@
                         <span class="font-medium text-foreground">
                           {{ formatCredits(user.credits?.hours_remaining || 0) }}
                         </span>
-                        <span class="text-muted-foreground ml-1">hours</span>
+                        <span class="text-muted-foreground ml-1">min</span>
                       </div>
                       <div class="flex items-center text-xs text-muted-foreground">
                         <span>{{ formatCredits(user.credits?.hours_used || 0) }} used</span>
@@ -317,7 +317,7 @@
                         <span class="font-medium text-foreground">
                           {{ formatCredits(org.credits.hours_remaining) }}
                         </span>
-                        <span class="text-muted-foreground ml-1">hours</span>
+                        <span class="text-muted-foreground ml-1">min</span>
                       </div>
                       <div class="flex items-center text-xs text-muted-foreground">
                         <span>{{ formatCredits(org.credits.hours_used) }} used</span>
@@ -1062,9 +1062,9 @@
                 min="0.01"
                 required
                 class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="Enter hours to add"
+                placeholder="Enter minutes to add"
               />
-              <p class="text-xs text-muted-foreground mt-1">Enter the number of hours to add to the user's balance</p>
+              <p class="text-xs text-muted-foreground mt-1">Enter the number of minutes to add to the user's balance</p>
             </div>
 
             <!-- Error Display -->
@@ -1079,8 +1079,8 @@
             <div v-if="userToEditCredits?.credits" class="bg-muted/30 border border-border rounded-md p-3">
               <p class="text-sm text-muted-foreground mb-1">Current balance:</p>
               <div class="flex justify-between text-sm mb-2">
-                <span>Remaining: {{ formatCredits(userToEditCredits.credits.hours_remaining) }} hours</span>
-                <span>Used: {{ formatCredits(userToEditCredits.credits.hours_used) }} hours</span>
+                <span>Remaining: {{ formatCredits(userToEditCredits.credits.hours_remaining) }} min</span>
+                <span>Used: {{ formatCredits(userToEditCredits.credits.hours_used) }} min</span>
               </div>
               <div v-if="creditForm.hours_to_add && creditForm.hours_to_add > 0" class="pt-2 border-t border-border">
                 <p class="text-sm text-muted-foreground mb-1">After adding credits:</p>
@@ -1094,7 +1094,7 @@
                           : Number(userToEditCredits.credits.hours_remaining)) + creditForm.hours_to_add
                       )
                     }}
-                    hours
+                    min
                   </span>
                 </div>
               </div>
@@ -1143,7 +1143,7 @@
             <!-- Hours Remaining -->
             <div>
               <label for="org_hours_remaining" class="block text-sm font-medium text-foreground mb-1">
-                Hours Remaining
+                Minutes Remaining
               </label>
               <input
                 id="org_hours_remaining"
@@ -1153,14 +1153,14 @@
                 min="0"
                 required
                 class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="Enter hours remaining"
+                placeholder="Enter minutes remaining"
               />
               <p class="text-xs text-muted-foreground mt-1">The total credit balance available to the organization</p>
             </div>
 
-            <!-- Hours Used -->
+            <!-- Minutes Used -->
             <div>
-              <label for="org_hours_used" class="block text-sm font-medium text-foreground mb-1">Hours Used</label>
+              <label for="org_hours_used" class="block text-sm font-medium text-foreground mb-1">Minutes Used</label>
               <input
                 id="org_hours_used"
                 v-model.number="orgCreditForm.hours_used"
@@ -1169,9 +1169,11 @@
                 min="0"
                 required
                 class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="Enter hours used"
+                placeholder="Enter minutes used"
               />
-              <p class="text-xs text-muted-foreground mt-1">Total hours consumed by the organization (for tracking)</p>
+              <p class="text-xs text-muted-foreground mt-1">
+                Total minutes consumed by the organization (for tracking)
+              </p>
             </div>
 
             <!-- Error Display -->
@@ -1186,8 +1188,8 @@
             <div v-if="orgToEditCredits?.credits" class="bg-muted/30 border border-border rounded-md p-3">
               <p class="text-sm text-muted-foreground mb-1">Current balance:</p>
               <div class="flex justify-between text-sm">
-                <span>Remaining: {{ formatCredits(orgToEditCredits.credits.hours_remaining) }} hours</span>
-                <span>Used: {{ formatCredits(orgToEditCredits.credits.hours_used) }} hours</span>
+                <span>Remaining: {{ formatCredits(orgToEditCredits.credits.hours_remaining) }} min</span>
+                <span>Used: {{ formatCredits(orgToEditCredits.credits.hours_used) }} min</span>
               </div>
             </div>
 
@@ -1490,8 +1492,8 @@
 
   const formatCredits = (credits: number | 'unlimited') => {
     if (credits === 'unlimited') return '∞';
-    if (!credits || credits === 0) return '0.00';
-    return credits.toFixed(2);
+    if (!credits || credits === 0) return '0';
+    return Math.round(credits).toString();
   };
 
   const formatNumber = (num: number) => {

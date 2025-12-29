@@ -90,7 +90,7 @@
         <button
           @click="handleCreditClick"
           class="credit-balance-card w-full"
-          :title="authStore.isAuthenticated ? 'View Pricing & Purchase Credits' : 'Sign in to view credits'"
+          :title="authStore.isAuthenticated ? 'View Billing & Subscription' : 'Sign in to view credits'"
         >
           <div class="credit-balance-header">
             <div class="credit-left">
@@ -107,9 +107,9 @@
                 </div>
                 <div v-else class="credit-value-wrapper">
                   <span class="credit-value">
-                    {{ typeof hoursRemaining === 'number' ? hoursRemaining.toFixed(2) : hoursRemaining }}
+                    {{ typeof hoursRemaining === 'number' ? Math.round(hoursRemaining) : hoursRemaining }}
                   </span>
-                  <span class="credit-unit">{{ hoursRemaining === 1 ? 'hr' : 'hrs' }}</span>
+                  <span class="credit-unit">min</span>
                 </div>
               </div>
               <div v-else class="credit-sign-in-prompt">
@@ -284,7 +284,7 @@
 
   const handleCreditClick = () => {
     if (authStore.isAuthenticated) {
-      router.push('/pricing');
+      router.push('/billing');
     } else {
       showAuthModal();
     }

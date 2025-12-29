@@ -92,6 +92,9 @@ defmodule ClippsterServerWeb.Router do
     # Stripe payment routes (webhook is public, no auth needed)
     post "/stripe/webhook", StripeController, :webhook
 
+    # Subscription tiers (public - for pricing display)
+    get "/subscription/tiers", SubscriptionController, :get_tiers
+
     # Metadata routes
     get "/metadata/:mint_id", MetadataController, :fetch
 
@@ -114,6 +117,15 @@ defmodule ClippsterServerWeb.Router do
 
     # Credit balance (requires auth)
     get "/credits/balance", PaymentController, :get_balance
+    get "/credits/transactions", PaymentController, :get_transactions
+
+    # Subscription management (requires auth)
+    get "/subscription/status", SubscriptionController, :get_status
+    post "/subscription/checkout", SubscriptionController, :create_checkout
+    post "/subscription/crypto-quote", SubscriptionController, :get_crypto_quote
+    post "/subscription/crypto-confirm", SubscriptionController, :confirm_crypto_payment
+    post "/subscription/cancel", SubscriptionController, :cancel
+    get "/subscription/history", SubscriptionController, :history
 
     # Beta code activation (requires auth)
     post "/beta/activate", BetaController, :activate

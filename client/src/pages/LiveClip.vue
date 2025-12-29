@@ -199,7 +199,7 @@
                           streamer.autoDvr
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
                             : 'bg-background text-muted-foreground border-border/50 hover:bg-muted/50',
-                          streamer.isDetecting && streamer.status === 'STOPPING' ? 'opacity-50 cursor-not-allowed' : ''
+                          streamer.isDetecting && streamer.status === 'STOPPING' ? 'opacity-50 cursor-not-allowed' : '',
                         ]"
                         title="Automatically start persistent recording when streamer goes live"
                       >
@@ -386,14 +386,13 @@
       <ConfirmationModal
         :show="showCreditWarningDialog"
         title="Low Credits Warning"
-        message="You have less than 1 hour of credits remaining. If you run out of credits, detection will automatically stop and only recording will continue."
+        message="You have less than 60 minutes of credits remaining. If you run out of credits, detection will automatically stop and only recording will continue."
         confirm-text="Continue"
         close-text="Cancel"
         :show-cannot-undone-text="false"
         @close="showCreditWarningDialog = false"
         @confirm="confirmCreditWarning"
       />
-
     </div>
   </PageLayout>
 </template>
@@ -440,8 +439,11 @@
   } from '@/services/pumpfun';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
+  import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
+
+  const { gates, requireSubscription } = useSubscriptionGate();
 
   type ExtendedStreamer = MonitoredStreamer & {
     isDetecting: boolean;
@@ -528,7 +530,7 @@
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses();
     }, 60_000);
-    
+
     // Listen for clip created events from global livestream dialog
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
     // Refresh monitored streamers when changes occur elsewhere in the app
@@ -652,7 +654,7 @@
       clearInterval(liveStatusInterval.value);
       liveStatusInterval.value = null;
     }
-    
+
     // Remove global clip created listener
     window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
     window.removeEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
@@ -695,12 +697,7 @@
   // Open watch dialog for a live streamer (uses global store for PIP persistence)
   function openWatchDialog(streamer: ExtendedStreamer) {
     if (!streamer.isLive) return;
-    livestreamStore.openWatchDialog(
-      streamer.mintId,
-      streamer.id,
-      streamer.displayName,
-      streamer.profileImageUrl
-    );
+    livestreamStore.openWatchDialog(streamer.mintId, streamer.id, streamer.displayName, streamer.profileImageUrl);
   }
 
   // Handle clip created from watch dialog (called via global event from App.vue)
@@ -1004,7 +1001,7 @@
     try {
       // Find the streamer to get the mintId for HLS cleanup
       const streamer = streamers.value.find((s) => s.id === id);
-      
+
       if (streamer) {
         // Stop and cleanup any HLS recordings for this streamer
         try {
@@ -1015,7 +1012,7 @@
           console.warn('[LiveClip] HLS cleanup warning:', hlsError);
         }
       }
-      
+
       await deleteMonitoredStreamer(id);
       streamers.value = streamers.value.filter((s) => s.id !== id);
     } catch (error) {
@@ -1024,7 +1021,23 @@
   }
 
   async function startStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
+    // Check subscription access first
+    const mode = detectClips ? 'Auto-Detect' : 'Record';
+    if (
+      !(await requireSubscription({
+        context: `${mode} mode for ${streamer.displayName}`,
+        type: 'live',
+      }))
+    ) {
+      return; // Gate was shown, user doesn't have access
+    }
+
+    // For auto-detect mode, also check AI access (credits)
     if (detectClips) {
+      if (!(await gates.aiDetection(`Use AI clip detection for ${streamer.displayName}`))) {
+        return; // No credits available
+      }
+
       await fetchBalance();
       const balance = hoursRemaining.value;
 

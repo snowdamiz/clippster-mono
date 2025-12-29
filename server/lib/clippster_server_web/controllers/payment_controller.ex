@@ -48,10 +48,11 @@ defmodule ClippsterServerWeb.PaymentController do
 
   @doc """
   Get user's credit balance (requires authentication)
-  Returns personal credits, organization allocations, and total available.
+  Returns personal credits, organization allocations, subscription status, and total available.
   """
   def get_balance(conn, _params) do
     alias ClippsterServer.Organizations
+    alias ClippsterServer.Subscriptions
 
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, claims} <- get_token_claims(conn) do
@@ -63,31 +64,68 @@ defmodule ClippsterServerWeb.PaymentController do
             hours_remaining: :unlimited,
             hours_used: Decimal.new(0)
           },
+          subscription: %{
+            status: "active",
+            tier: nil,
+            tier_name: "Admin",
+            end_date: nil,
+            needs_subscription: false,
+            days_remaining: nil
+          },
           organization_allocations: [],
           total_available: :unlimited
         })
       else
-        # Regular user - get personal balance
-        {:ok, personal_balance} = Credits.get_user_balance(user_id)
+        try do
+          # Regular user - get personal balance
+          {:ok, personal_balance} = Credits.get_user_balance(user_id)
 
-        # Get organization allocations
-        org_allocations = get_organization_allocations(user_id)
+          # Get subscription status (with fallback for users without subscription fields)
+          subscription_status = try do
+            Subscriptions.get_subscription_status(user_id)
+          rescue
+            e ->
+              IO.puts("[PaymentController] Error getting subscription status: #{inspect(e)}")
+              # Return a default subscription status
+              %{
+                status: "none",
+                tier: nil,
+                tier_name: nil,
+                start_date: nil,
+                end_date: nil,
+                renewal_method: nil,
+                needs_subscription: true,
+                days_remaining: 0
+              }
+          end
 
-        # Calculate total available
-        org_total = Enum.reduce(org_allocations, 0.0, fn alloc, acc ->
-          acc + alloc.hours_remaining
-        end)
-        total_available = Decimal.to_float(personal_balance.hours_remaining) + org_total
+          # Get organization allocations
+          org_allocations = get_organization_allocations(user_id)
 
-        json(conn, %{
-          success: true,
-          balance: %{
-            hours_remaining: Decimal.to_float(personal_balance.hours_remaining),
-            hours_used: Decimal.to_float(personal_balance.hours_used)
-          },
-          organization_allocations: org_allocations,
-          total_available: total_available
-        })
+          # Calculate total available
+          org_total = Enum.reduce(org_allocations, 0.0, fn alloc, acc ->
+            acc + alloc.hours_remaining
+          end)
+          total_available = Decimal.to_float(personal_balance.hours_remaining) + org_total
+
+          json(conn, %{
+            success: true,
+            balance: %{
+              hours_remaining: Decimal.to_float(personal_balance.hours_remaining),
+              hours_used: Decimal.to_float(personal_balance.hours_used)
+            },
+            subscription: subscription_status,
+            organization_allocations: org_allocations,
+            total_available: total_available
+          })
+        rescue
+          e ->
+            IO.puts("[PaymentController] Error in get_balance: #{inspect(e)}")
+            IO.puts("[PaymentController] Stacktrace: #{Exception.format_stacktrace(__STACKTRACE__)}")
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Internal server error: #{inspect(e)}"})
+        end
       end
     else
       {:error, :unauthorized} ->
@@ -99,6 +137,39 @@ defmodule ClippsterServerWeb.PaymentController do
         conn
         |> put_status(500)
         |> json(%{success: false, error: to_string(reason)})
+    end
+  end
+
+  @doc """
+  Get user's credit transaction history (requires authentication)
+  Returns all credit pack purchases.
+  """
+  def get_transactions(conn, _params) do
+    with {:ok, user_id} <- get_user_id_from_token(conn) do
+      transactions = Credits.list_user_transactions(user_id)
+
+      formatted_transactions = Enum.map(transactions, fn tx ->
+        %{
+          id: tx.id,
+          pack_type: tx.pack_type,
+          hours_purchased: if(tx.hours_purchased, do: Decimal.to_float(tx.hours_purchased), else: 0),
+          amount_usd: if(tx.amount_usd, do: Decimal.to_float(tx.amount_usd), else: 0),
+          amount_sol: if(tx.amount_sol, do: Decimal.to_float(tx.amount_sol), else: 0),
+          payment_method: tx.payment_method || "solana",
+          status: tx.status,
+          created_at: tx.inserted_at
+        }
+      end)
+
+      json(conn, %{
+        success: true,
+        transactions: formatted_transactions
+      })
+    else
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Unauthorized"})
     end
   end
 

@@ -230,21 +230,21 @@ defmodule ClippsterServerWeb.ClipsController do
     |> Enum.with_index()
     |> Enum.reduce({[], 0}, fn {chunk, index}, {acc_clips, acc_tokens} ->
        IO.puts("[ClipsController] AI Processing chunk #{index + 1}/#{length(sorted_chunks)}...")
-       
+
        progress_percent = 85 + trunc((index / length(sorted_chunks)) * 10)
-       ProgressChannel.broadcast_progress(project_id, "analyzing", progress_percent, 
+       ProgressChannel.broadcast_progress(project_id, "analyzing", progress_percent,
          "Analyzing content chunk #{index + 1}/#{length(sorted_chunks)}...")
-       
+
        # Prepare optimized transcript for this chunk
        # We use adjusted_whisper_response so timestamps are correct globally
        ai_transcript = process_whisper_response_for_ai(chunk.adjusted_whisper_response)
-       
+
        # Call AI for this chunk
        case OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id) do
       {:ok, ai_response, usage} ->
             clips = ai_response["clips"] || []
             IO.puts("[ClipsController] Chunk #{index + 1}: Found #{length(clips)} clips")
-        
+
             # Log usage for this chunk
         AI.log_usage(%{
           user_id: user_id,
@@ -258,9 +258,9 @@ defmodule ClippsterServerWeb.ClipsController do
         })
 
             total_tokens = Map.get(usage, "total_tokens", 0)
-            
+
             {acc_clips ++ clips, acc_tokens + total_tokens}
-            
+
          {:error, reason} ->
             IO.puts("[ClipsController] Error processing chunk #{index + 1} with AI: #{inspect(reason)}")
             # Continue with other chunks
@@ -307,7 +307,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
           _ ->
             IO.puts("[ClipsController] Enhanced validation failed, using original clips")
-        
+
             total_processed = length(successful_chunks) + length(failed_chunks)
             ProgressChannel.broadcast_progress(project_id, "completed", 100,
           "Chunked clip detection completed! Found #{length(all_clips)} clips.")
@@ -339,9 +339,9 @@ defmodule ClippsterServerWeb.ClipsController do
       {:ok, user_id, is_admin} ->
         if Map.has_key?(params, "audio") do
           audio_upload = params["audio"]
-          
+
           duration_hours = calculate_audio_duration_hours(params)
-          
+
           # Deduct credits and create job for tracking/refunds
           credit_result = if is_admin do
             {:ok, %{credits: 0.0, job_id: nil}}
@@ -363,7 +363,7 @@ defmodule ClippsterServerWeb.ClipsController do
                  {:halt, conn
                  |> put_status(402)
                  |> json(%{
-                   success: false, 
+                   success: false,
                    error: "Insufficient credits",
                    details: "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}"
                  })}
@@ -378,18 +378,18 @@ defmodule ClippsterServerWeb.ClipsController do
             {:halt, response} -> response
             {:ok, %{credits: credits, job_id: job_id}} ->
               IO.puts("[ClipsController] Processing transcription with credits: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}")
-              
+
               case WhisperAPI.transcribe(audio_upload) do
                 {:ok, response} ->
                    # Mark job as completed
                    complete_job(job_id)
-                   
+
                    duration = Map.get(response, "duration", 0)
                    AI.log_usage(%{
                       user_id: user_id,
                       project_id: project_id,
                       provider: "whisper",
-                      model: "whisper-1", 
+                      model: "whisper-1",
                       duration_seconds: Decimal.new(to_string(duration)),
                       operation_type: "transcription_only"
                    })
@@ -604,7 +604,7 @@ defmodule ClippsterServerWeb.ClipsController do
         IO.puts("[ClipsController] Sending audio to Whisper API...")
         ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing audio with Whisper...")
         whisper_result = WhisperAPI.transcribe(audio_upload)
-        
+
         # Log Whisper usage if successful
         case whisper_result do
           {:ok, response} ->
@@ -613,7 +613,7 @@ defmodule ClippsterServerWeb.ClipsController do
                 user_id: user_id,
                 project_id: project_id,
                 provider: "whisper",
-                model: "whisper-1", 
+                model: "whisper-1",
                 duration_seconds: Decimal.new(to_string(duration)),
                 operation_type: "transcription"
              })
@@ -1411,14 +1411,14 @@ defmodule ClippsterServerWeb.ClipsController do
       case WhisperAPI.transcribe_binary(audio_data, chunk_upload) do
         {:ok, whisper_response} ->
           IO.puts("[ClipsController] Chunk #{chunk_index} transcription successful")
-          
+
           # Log Whisper usage
           duration = Map.get(whisper_response, "duration")
           AI.log_usage(%{
              user_id: user_id,
              project_id: project_id,
              provider: "whisper",
-             model: "whisper-1", 
+             model: "whisper-1",
              duration_seconds: Decimal.new(to_string(duration)),
              operation_type: "transcription_chunk"
           })
@@ -1503,9 +1503,9 @@ defmodule ClippsterServerWeb.ClipsController do
       Map.has_key?(source, "duration") ->
         case Float.parse(to_string(source["duration"])) do
           {duration_seconds, _} ->
-            duration_hours = duration_seconds / 3600.0
-            IO.puts("[ClipsController] Duration from params: #{Float.round(duration_hours, 3)} hours (#{duration_seconds}s)")
-            duration_hours
+            duration_minutes = duration_seconds / 60.0
+            IO.puts("[ClipsController] Duration from params: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)")
+            duration_minutes
           :error ->
             IO.puts("[ClipsController] Warning: Could not parse duration param")
             # Fallback to other methods if parsing fails
@@ -1548,9 +1548,8 @@ defmodule ClippsterServerWeb.ClipsController do
         # Basic estimation: assume 1MB = 1 minute of audio (rough approximation)
         file_size_mb = get_file_size_mb(path)
         estimated_minutes = file_size_mb * 1.0
-        estimated_hours = estimated_minutes / 60.0
-        IO.puts("[ClipsController] Estimated duration from file size: #{Float.round(estimated_hours, 3)} hours")
-        estimated_hours
+        IO.puts("[ClipsController] Estimated duration from file size: #{Float.round(estimated_minutes, 3)} minutes")
+        estimated_minutes
 
       _ ->
         IO.puts("[ClipsController] Warning: Could not estimate duration from audio upload")
@@ -1565,9 +1564,9 @@ defmodule ClippsterServerWeb.ClipsController do
         case Jason.decode(raw_response_str) do
           {:ok, raw_response} ->
             duration_seconds = Map.get(raw_response, "duration", 0.0)
-            duration_hours = duration_seconds / 3600.0
-            IO.puts("[ClipsController] Duration from transcript: #{Float.round(duration_hours, 3)} hours (#{duration_seconds}s)")
-            duration_hours
+            duration_minutes = duration_seconds / 60.0
+            IO.puts("[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)")
+            duration_minutes
 
           _ ->
             IO.puts("[ClipsController] Warning: Could not parse raw_response from transcript")
@@ -1575,9 +1574,9 @@ defmodule ClippsterServerWeb.ClipsController do
         end
 
       %{"duration" => duration_seconds} when is_number(duration_seconds) ->
-        duration_hours = duration_seconds / 3600.0
-        IO.puts("[ClipsController] Duration from transcript: #{Float.round(duration_hours, 3)} hours (#{duration_seconds}s)")
-        duration_hours
+        duration_minutes = duration_seconds / 60.0
+        IO.puts("[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)")
+        duration_minutes
 
       _ ->
         IO.puts("[ClipsController] Warning: No duration found in transcript data")
@@ -1595,9 +1594,9 @@ defmodule ClippsterServerWeb.ClipsController do
         |> Enum.max()
         |> Kernel.||(0.0)
 
-        duration_hours = max_end_time / 3600.0
-        IO.puts("[ClipsController] Duration from chunks: #{Float.round(duration_hours, 3)} hours (#{max_end_time}s)")
-        duration_hours
+        duration_minutes = max_end_time / 60.0
+        IO.puts("[ClipsController] Duration from chunks: #{Float.round(duration_minutes, 3)} minutes (#{max_end_time}s)")
+        duration_minutes
 
       _ ->
         IO.puts("[ClipsController] Warning: Could not parse chunks for duration calculation")
@@ -1623,15 +1622,16 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Deduct credits for transcription only (0.3 rate)
-  defp deduct_credits_for_transcription(user_id, duration_hours) do
+  # Credits are rounded up to whole minutes
+  defp deduct_credits_for_transcription(user_id, duration_minutes) do
     credit_rate = 0.3
-    credits_to_deduct = duration_hours * credit_rate
+    credits_to_deduct = Float.ceil(duration_minutes * credit_rate)
 
     case Credits.get_user_balance(user_id) do
       {:ok, %{hours_remaining: remaining}} when remaining != :unlimited ->
-        remaining_hours = Decimal.to_float(remaining)
-        if remaining_hours < credits_to_deduct do
-          {:error, :insufficient_credits, remaining_hours, credits_to_deduct}
+        remaining_credits = Decimal.to_float(remaining)
+        if remaining_credits < credits_to_deduct do
+          {:error, :insufficient_credits, remaining_credits, credits_to_deduct}
         else
           case Credits.deduct_credits(user_id, credits_to_deduct) do
             {:ok, _} -> {:ok, credits_to_deduct}
@@ -1644,14 +1644,15 @@ defmodule ClippsterServerWeb.ClipsController do
 
   # Deduct credits based on processing type and duration
   # Now supports optional organization_id for org credit deduction
-  defp deduct_credits_for_processing(user_id, duration_hours, is_first_run, organization_id) do
+  # Credits are rounded up to whole minutes
+  defp deduct_credits_for_processing(user_id, duration_minutes, is_first_run, organization_id) do
     # Determine credit rate based on processing type
     credit_rate = if is_first_run, do: 1.0, else: 0.7
 
-    credits_to_deduct = duration_hours * credit_rate
+    credits_to_deduct = Float.ceil(duration_minutes * credit_rate)
 
     IO.puts("[ClipsController] Credit deduction calculation:")
-    IO.puts("[ClipsController]   Duration: #{Float.round(duration_hours, 3)} hours")
+    IO.puts("[ClipsController]   Duration: #{Float.round(duration_minutes, 3)} minutes")
     IO.puts("[ClipsController]   Processing type: #{if is_first_run, do: "First run", else: "Followup run"}")
     IO.puts("[ClipsController]   Credit rate: #{credit_rate}x")
     IO.puts("[ClipsController]   Credits to deduct: #{Float.round(credits_to_deduct, 3)}")
