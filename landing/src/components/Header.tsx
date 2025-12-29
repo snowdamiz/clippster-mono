@@ -5,7 +5,7 @@ import { useDownloads } from '../hooks/usePlatform'
 
 const navLinks: { href: string; label: string; isPage?: boolean }[] = [
   { href: '#features', label: 'Features' },
-  { href: '#pricing', label: 'Pricing' },
+  { href: '/pricing', label: 'Pricing', isPage: true },
   { href: '#how-it-works', label: 'How it Works' },
   { href: '#testimonials', label: 'Testimonials' },
 ]
