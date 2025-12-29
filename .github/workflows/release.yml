@@ -238,12 +238,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          Write-Host "=== Debug: Listing all bundle files ==="
-          Get-ChildItem -Path "client/src-tauri/target" -Recurse -Include "*.exe","*.msi","*.zip","*.sig" | ForEach-Object { Write-Host $_.FullName }
+          Write-Host "=== Debug: Current working directory ==="
+          Write-Host (Get-Location).Path
+          Write-Host "=== Debug: Listing NSIS bundle directory ==="
+          $nsisDir = "client/src-tauri/target/release/bundle/nsis"
+          if (Test-Path $nsisDir) {
+            Write-Host "NSIS directory exists at: $nsisDir"
+            Get-ChildItem -Path $nsisDir | ForEach-Object { Write-Host "  $($_.Name)" }
+          } else {
+            Write-Host "NSIS directory NOT found at: $nsisDir"
+            Write-Host "Searching for nsis directory recursively..."
+            Get-ChildItem -Path "client/src-tauri/target" -Recurse -Directory | Where-Object { $_.Name -eq "nsis" } | ForEach-Object { 
+              Write-Host "Found nsis dir at: $($_.FullName)"
+              Get-ChildItem -Path $_.FullName | ForEach-Object { Write-Host "  $($_.Name)" }
+            }
+          }
           Write-Host "=== End debug listing ==="
           
-          # Find and upload NSIS installer
-          $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*-setup.exe" | Select-Object -First 1
+          # Find and upload NSIS installer - use Where-Object for reliable matching
+          $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe" } | Select-Object -First 1
           if ($exeFile) {
             Write-Host "Uploading EXE: $($exeFile.FullName)"
             gh release upload "v$env:VERSION" "$($exeFile.FullName)" --repo $env:RELEASES_REPO --clobber
@@ -251,8 +264,8 @@ jobs:
             Write-Host "WARNING: No setup.exe file found!"
           }
           
-          # Find and upload MSI
-          $msiFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*.msi" | Select-Object -First 1
+          # Find and upload MSI - use Where-Object for reliable matching
+          $msiFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.msi" } | Select-Object -First 1
           if ($msiFile) {
             Write-Host "Uploading MSI: $($msiFile.FullName)"
             gh release upload "v$env:VERSION" "$($msiFile.FullName)" --repo $env:RELEASES_REPO --clobber
@@ -260,28 +273,20 @@ jobs:
             Write-Host "WARNING: No MSI file found!"
           }
           
-          # Find and upload nsis.zip (for updater) - search for files ending in .nsis.zip
-          $nsisZip = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
+          # Find and upload nsis.zip (for updater) - use Where-Object for reliable wildcard matching
+          $nsisZip = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.nsis.zip" } | Select-Object -First 1
           if ($nsisZip) {
             Write-Host "Uploading NSIS zip: $($nsisZip.FullName)"
             gh release upload "v$env:VERSION" "$($nsisZip.FullName)" --repo $env:RELEASES_REPO --clobber
-            
-            # Store info for latest.json
-            $script:nsisZipName = $nsisZip.Name
           } else {
             Write-Host "WARNING: No .nsis.zip file found! Auto-updates will NOT work on Windows."
-            Write-Host "Searching recursively..."
-            Get-ChildItem -Path "client/src-tauri/target" -Recurse | Where-Object { $_.Name -like "*.nsis.zip" } | ForEach-Object { Write-Host "Found: $($_.FullName)" }
           }
           
           # Find and upload nsis.zip.sig (signature for updater)
-          $nsisSig = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip.sig" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.nsis.zip.sig" } | Select-Object -First 1
           if ($nsisSig) {
             Write-Host "Uploading NSIS signature: $($nsisSig.FullName)"
             gh release upload "v$env:VERSION" "$($nsisSig.FullName)" --repo $env:RELEASES_REPO --clobber
-            
-            # Read signature content for latest.json
-            $script:nsisSignature = Get-Content $nsisSig.FullName -Raw
           } else {
             Write-Host "WARNING: No .nsis.zip.sig file found!"
           }
@@ -293,19 +298,25 @@ jobs:
           VERSION: ${{ needs.create-release.outputs.version }}
           RUNNER_TEMP: ${{ runner.temp }}
         run: |
-          # Find the nsis.zip and signature files
-          $nsisZip = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $nsisSig = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip.sig" -ErrorAction SilentlyContinue | Select-Object -First 1
+          # Find the nsis.zip and signature files using reliable Where-Object matching
+          $nsisZip = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.nsis.zip" } | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.nsis.zip.sig" } | Select-Object -First 1
           
           $signature = ""
           if ($nsisSig) {
+            Write-Host "Found signature file: $($nsisSig.FullName)"
             $signature = Get-Content $nsisSig.FullName -Raw
             $signature = $signature.Trim()
+          } else {
+            Write-Host "WARNING: No signature file found for Windows updater"
           }
           
           $nsisZipName = ""
           if ($nsisZip) {
+            Write-Host "Found nsis.zip: $($nsisZip.FullName)"
             $nsisZipName = $nsisZip.Name
+          } else {
+            Write-Host "WARNING: No nsis.zip found for Windows updater"
           }
           
           # Create latest.json for Windows - use RUNNER_TEMP to match artifact upload path
@@ -329,6 +340,7 @@ jobs:
           $outputFile = "$outputDir/latest.json"
           $json | Out-File -FilePath $outputFile -Encoding utf8
           Write-Host "Generated latest.json for windows-x86_64 at: $outputFile"
+          Write-Host "Contents:"
           Get-Content $outputFile
 
       - name: Upload latest.json artifact (macOS)
@@ -356,15 +368,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: latest-json-*
-          merge-multiple: true
+          # Don't merge - keep each artifact in its own directory to avoid overwrites
+          merge-multiple: false
 
       - name: Find and merge latest.json
         id: merge_json
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          echo "Looking for latest.json files..."
+          echo "=== Listing downloaded artifact directories ==="
+          ls -la
+          echo ""
+          echo "=== Looking for latest.json files ==="
           find . -name "latest.json" -type f
+          echo ""
           
           # Find all latest.json files
           JSON_FILES=$(find . -name "latest.json" -type f)
