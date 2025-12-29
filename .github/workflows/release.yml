@@ -160,22 +160,71 @@ jobs:
             cp "$APP_TAR" "/tmp/$NEW_NAME"
             echo "Uploading app tar as: $NEW_NAME"
             gh release upload "v$VERSION" "/tmp/$NEW_NAME" --repo $RELEASES_REPO --clobber
+            
+            # Read signature from .sig file for latest.json
+            APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
+            if [ -n "$APP_SIG" ]; then
+              SIGNATURE=$(cat "$APP_SIG")
+              # Rename and upload signature
+              SIG_NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz.sig"
+              cp "$APP_SIG" "/tmp/$SIG_NEW_NAME"
+              echo "Uploading app signature as: $SIG_NEW_NAME"
+              gh release upload "v$VERSION" "/tmp/$SIG_NEW_NAME" --repo $RELEASES_REPO --clobber
+              
+              # Store signature for later use
+              echo "$SIGNATURE" > /tmp/signature_${ARCH_SUFFIX}.txt
+            fi
           else
             echo "WARNING: No .app.tar.gz file found!"
           fi
-          
-          # Find and upload .app.tar.gz.sig (signature for updater)
-          APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
-          if [ -n "$APP_SIG" ]; then
-            # Rename to include architecture suffix
-            BASENAME=$(basename "$APP_SIG")
-            NEW_NAME="${BASENAME%.app.tar.gz.sig}_${ARCH_SUFFIX}.app.tar.gz.sig"
-            cp "$APP_SIG" "/tmp/$NEW_NAME"
-            echo "Uploading app signature as: $NEW_NAME"
-            gh release upload "v$VERSION" "/tmp/$NEW_NAME" --repo $RELEASES_REPO --clobber
+
+      - name: Generate latest.json for macOS
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          ARCH_SUFFIX: ${{ matrix.artifact_suffix }}
+        run: |
+          # Determine platform key based on architecture
+          if [ "$ARCH_SUFFIX" = "aarch64" ]; then
+            PLATFORM_KEY="darwin-aarch64"
           else
-            echo "WARNING: No .app.tar.gz.sig file found!"
+            PLATFORM_KEY="darwin-x86_64"
           fi
+          
+          # Read signature
+          APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
+          SIGNATURE=""
+          if [ -n "$APP_SIG" ]; then
+            SIGNATURE=$(cat "$APP_SIG")
+          fi
+          
+          # Get the renamed filename
+          APP_TAR=$(find client/src-tauri/target -name "*.app.tar.gz" -type f | head -1)
+          BASENAME=$(basename "$APP_TAR")
+          NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz"
+          
+          # Create latest.json for this platform
+          mkdir -p /tmp/latest-json
+          cat > /tmp/latest-json/latest.json << EOF
+          {
+            "version": "$VERSION",
+            "notes": "See release notes on GitHub.",
+            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "platforms": {
+              "$PLATFORM_KEY": {
+                "signature": "$SIGNATURE",
+                "url": "https://github.com/$RELEASES_REPO/releases/download/v$VERSION/$NEW_NAME"
+              }
+            }
+          }
+          EOF
+          
+          # Remove leading whitespace from heredoc (bash heredoc preserves indentation)
+          sed -i 's/^          //' /tmp/latest-json/latest.json
+          
+          echo "Generated latest.json for $PLATFORM_KEY:"
+          cat /tmp/latest-json/latest.json
 
       - name: Upload artifacts to public releases repo (Windows)
         if: matrix.platform == 'windows-latest'
@@ -206,31 +255,91 @@ jobs:
             Write-Host "WARNING: No MSI file found!"
           }
           
-          # Find and upload nsis.zip (for updater) - try multiple patterns
-          $nsisZip = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*.nsis.zip" | Select-Object -First 1
+          # Find and upload nsis.zip (for updater) - search for files ending in .nsis.zip
+          $nsisZip = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($nsisZip) {
             Write-Host "Uploading NSIS zip: $($nsisZip.FullName)"
             gh release upload "v$env:VERSION" "$($nsisZip.FullName)" --repo $env:RELEASES_REPO --clobber
+            
+            # Store info for latest.json
+            $script:nsisZipName = $nsisZip.Name
           } else {
             Write-Host "WARNING: No .nsis.zip file found! Auto-updates will NOT work on Windows."
-            Write-Host "This usually means TAURI_SIGNING_PRIVATE_KEY is not set or invalid."
+            Write-Host "Searching recursively..."
+            Get-ChildItem -Path "client/src-tauri/target" -Recurse | Where-Object { $_.Name -like "*.nsis.zip" } | ForEach-Object { Write-Host "Found: $($_.FullName)" }
           }
           
           # Find and upload nsis.zip.sig (signature for updater)
-          $nsisSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*.nsis.zip.sig" | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip.sig" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($nsisSig) {
             Write-Host "Uploading NSIS signature: $($nsisSig.FullName)"
             gh release upload "v$env:VERSION" "$($nsisSig.FullName)" --repo $env:RELEASES_REPO --clobber
+            
+            # Read signature content for latest.json
+            $script:nsisSignature = Get-Content $nsisSig.FullName -Raw
           } else {
             Write-Host "WARNING: No .nsis.zip.sig file found!"
           }
 
-      - name: Upload latest.json artifact
+      - name: Generate latest.json for Windows
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          # Find the nsis.zip and signature files
+          $nsisZip = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip.sig" -ErrorAction SilentlyContinue | Select-Object -First 1
+          
+          $signature = ""
+          if ($nsisSig) {
+            $signature = Get-Content $nsisSig.FullName -Raw
+            $signature = $signature.Trim()
+          }
+          
+          $nsisZipName = ""
+          if ($nsisZip) {
+            $nsisZipName = $nsisZip.Name
+          }
+          
+          # Create latest.json for Windows
+          New-Item -ItemType Directory -Force -Path "$env:TEMP/latest-json" | Out-Null
+          
+          $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          
+          $json = @{
+            version = $env:VERSION
+            notes = "See release notes on GitHub."
+            pub_date = $pubDate
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $signature
+                url = "https://github.com/$env:RELEASES_REPO/releases/download/v$env:VERSION/$nsisZipName"
+              }
+            }
+          } | ConvertTo-Json -Depth 10
+          
+          $json | Out-File -FilePath "$env:TEMP/latest-json/latest.json" -Encoding utf8
+          Write-Host "Generated latest.json for windows-x86_64:"
+          Get-Content "$env:TEMP/latest-json/latest.json"
+
+      - name: Upload latest.json artifact (macOS)
+        if: matrix.platform == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: latest-json-${{ matrix.artifact_suffix }}
-          path: client/src-tauri/target/**/latest.json
-          if-no-files-found: ignore
+          path: /tmp/latest-json/latest.json
+          if-no-files-found: warn
+
+      - name: Upload latest.json artifact (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        env:
+          TEMP: ${{ runner.temp }}
+        with:
+          name: latest-json-${{ matrix.artifact_suffix }}
+          path: ${{ runner.temp }}/latest-json/latest.json
+          if-no-files-found: warn
 
   # Merge latest.json files and publish release
   finalize-release:
@@ -255,40 +364,57 @@ jobs:
           JSON_FILES=$(find . -name "latest.json" -type f)
           
           if [ -z "$JSON_FILES" ]; then
-            echo "No latest.json files found"
+            echo "ERROR: No latest.json files found! OTA updates will not work."
+            echo "Creating a minimal latest.json as fallback..."
+            
+            # Create minimal fallback - this shouldn't happen but prevents complete failure
+            cat > merged.json << EOF
+          {
+            "version": "$VERSION",
+            "notes": "See release notes on GitHub.",
+            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "platforms": {}
+          }
+          EOF
+            sed -i 's/^          //' merged.json
             exit 0
           fi
           
           # Use jq to merge all platforms into one latest.json
           # Each file has structure: { version, notes, pub_date, platforms: {...} }
-          echo '{}' > merged.json
+          echo '{"platforms":{}}' > merged.json
           
           for file in $JSON_FILES; do
             echo "Processing: $file"
             cat "$file"
             echo ""
             
-            # Merge platforms
-            jq -s '.[0] * {platforms: (.[0].platforms + .[1].platforms)} | 
-                   if .[1].version then .version = .[1].version else . end |
-                   if .[1].notes then .notes = .[1].notes else . end |
-                   if .[1].pub_date then .pub_date = .[1].pub_date else . end' \
-                   merged.json "$file" > tmp.json && mv tmp.json merged.json
+            # Merge platforms from each file
+            jq -s '
+              {
+                version: (.[1].version // .[0].version),
+                notes: (.[1].notes // .[0].notes),
+                pub_date: (.[1].pub_date // .[0].pub_date),
+                platforms: ((.[0].platforms // {}) + (.[1].platforms // {}))
+              }
+            ' merged.json "$file" > tmp.json && mv tmp.json merged.json
           done
-          
-          # Update URLs to point to public releases repo
-          sed -i "s|snowdamiz/clippster-mono|$RELEASES_REPO|g" merged.json
-          
-          # Fix macOS URLs to use architecture-specific filenames
-          # darwin-aarch64 should point to *_aarch64.app.tar.gz
-          # darwin-x86_64 should point to *_x64.app.tar.gz
-          jq --arg version "$VERSION" '
-            .platforms["darwin-aarch64"].url |= gsub("\\.app\\.tar\\.gz$"; "_aarch64.app.tar.gz") |
-            .platforms["darwin-x86_64"].url |= gsub("\\.app\\.tar\\.gz$"; "_x64.app.tar.gz")
-          ' merged.json > tmp.json && mv tmp.json merged.json
           
           echo "Final merged latest.json:"
           cat merged.json
+          
+          # Validate JSON
+          if ! jq empty merged.json 2>/dev/null; then
+            echo "ERROR: Generated invalid JSON!"
+            exit 1
+          fi
+          
+          # Check that we have at least one platform
+          PLATFORM_COUNT=$(jq '.platforms | length' merged.json)
+          echo "Platform count: $PLATFORM_COUNT"
+          if [ "$PLATFORM_COUNT" -eq 0 ]; then
+            echo "WARNING: No platforms in latest.json!"
+          fi
 
       - name: Upload latest.json to release
         env:
