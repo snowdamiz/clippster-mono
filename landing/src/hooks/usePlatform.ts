@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 
 export type OS = 'mac' | 'windows' | 'linux' | 'unknown'
 export type Architecture = 'arm64' | 'x64' | 'unknown'
@@ -15,103 +15,58 @@ export interface PlatformDownload {
   label: string
 }
 
-// GitHub repository for releases (public repo for downloads)
-const GITHUB_REPO = 'snowdamiz/clippster-releases'
-const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases/latest`
-const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
+// Backend API endpoint for release info (cached server-side)
+const API_URL = 'https://clippster-server.fly.dev/api/releases/latest'
+const GITHUB_RELEASES_URL = 'https://github.com/snowdamiz/clippster-releases/releases/latest'
 
-// Asset filename suffixes for pattern matching
-const ASSET_SUFFIXES = {
-  'mac-arm64': '_aarch64.dmg',
-  'mac-x64': '_x64.dmg',
-  'windows-x64': '_x64-setup.exe',
-} as const
-
-interface GitHubAsset {
-  name: string
-  browser_download_url: string
+// Platform configurations
+const PLATFORM_CONFIG: Record<string, { os: OS; arch: Architecture }> = {
+  'mac-arm64': { os: 'mac', arch: 'arm64' },
+  'mac-x64': { os: 'mac', arch: 'x64' },
+  'windows-x64': { os: 'windows', arch: 'x64' },
 }
 
-interface GitHubRelease {
-  tag_name: string
-  assets: GitHubAsset[]
+interface ReleaseDownload {
+  platform: string
+  label: string
+  filename: string
+  download_url: string
 }
 
-// Cache for GitHub release data
-let releaseCache: GitHubRelease | null = null
-let fetchPromise: Promise<GitHubRelease | null> | null = null
+interface ReleaseResponse {
+  version: string
+  tag: string
+  downloads: ReleaseDownload[]
+}
 
-async function fetchLatestRelease(): Promise<GitHubRelease | null> {
+// Cache for release data
+let releaseCache: ReleaseResponse | null = null
+let fetchPromise: Promise<ReleaseResponse | null> | null = null
+
+async function fetchRelease(): Promise<ReleaseResponse | null> {
   if (releaseCache) return releaseCache
-  
   if (fetchPromise) return fetchPromise
-  
-  fetchPromise = fetch(GITHUB_API_URL, {
-    headers: {
-      'Accept': 'application/vnd.github.v3+json',
-    },
-  })
+
+  fetchPromise = fetch(API_URL)
     .then(res => {
-      if (!res.ok) throw new Error(`Failed to fetch release: ${res.status}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     })
-    .then((data: GitHubRelease) => {
+    .then((data: ReleaseResponse) => {
       releaseCache = data
       return data
     })
-    .catch((err) => {
-      console.warn('Failed to fetch GitHub release:', err)
-      return null
-    })
-  
+    .catch(() => null)
+
   return fetchPromise
-}
-
-function getAssetKey(os: OS, arch: Architecture): keyof typeof ASSET_SUFFIXES | null {
-  if (os === 'mac') {
-    return arch === 'arm64' ? 'mac-arm64' : 'mac-x64'
-  }
-  if (os === 'windows') {
-    return 'windows-x64'
-  }
-  return null
-}
-
-function findAssetUrl(release: GitHubRelease | null, os: OS, arch: Architecture): { url: string; fileName: string } {
-  const assetKey = getAssetKey(os, arch)
-  
-  if (assetKey) {
-    const suffix = ASSET_SUFFIXES[assetKey]
-    
-    // Try to find asset from API response
-    if (release) {
-      const asset = release.assets.find(a => a.name.endsWith(suffix))
-      if (asset) {
-        return { url: asset.browser_download_url, fileName: asset.name }
-      }
-    }
-    
-    // Construct direct download URL using tag name if available
-    // This works even if asset list didn't match, as long as we have the release tag
-    if (release?.tag_name) {
-      const version = release.tag_name.replace(/^v/, '')
-      const fileName = `Clippster_${version}${suffix}`
-      const url = `https://github.com/${GITHUB_REPO}/releases/download/${release.tag_name}/${fileName}`
-      return { url, fileName }
-    }
-  }
-  
-  // Fallback to releases page
-  return { url: GITHUB_RELEASES_URL, fileName: '' }
 }
 
 function detectOS(): OS {
   if (typeof navigator === 'undefined') return 'unknown'
-  
+
   const userAgent = navigator.userAgent.toLowerCase()
   const platform = (navigator.platform || '').toLowerCase()
-  
-  // Check platform first (more reliable)
+
   if (platform.includes('mac') || platform.includes('darwin')) {
     return 'mac'
   }
@@ -121,8 +76,7 @@ function detectOS(): OS {
   if (platform.includes('linux')) {
     return 'linux'
   }
-  
-  // Fallback to user agent
+
   if (userAgent.includes('mac os') || userAgent.includes('macos')) {
     return 'mac'
   }
@@ -132,42 +86,21 @@ function detectOS(): OS {
   if (userAgent.includes('linux')) {
     return 'linux'
   }
-  
+
   return 'unknown'
 }
 
 function detectArchitecture(): Architecture {
   if (typeof navigator === 'undefined') return 'unknown'
-  
+
   const userAgent = navigator.userAgent.toLowerCase()
-  
-  // Try modern API first (Chrome 90+, Edge 90+)
-  // @ts-expect-error - userAgentData is not in all TypeScript definitions yet
-  const uaData = navigator.userAgentData
-  if (uaData?.platform) {
-    // Can get high entropy values for more accurate detection
-    // But for now, use basic heuristics
-  }
-  
-  // Check for Apple Silicon (M1/M2/M3)
-  // Safari on Apple Silicon includes "ARM64" or the UA doesn't include "Intel"
-  // Chrome/Firefox on Apple Silicon may run in Rosetta, but newer versions indicate ARM
+
   if (userAgent.includes('arm64') || userAgent.includes('aarch64')) {
     return 'arm64'
   }
-  
-  // macOS specific: Check if NOT Intel (newer Macs without Intel mention are likely ARM)
+
   const platform = (navigator.platform || '').toLowerCase()
   if (platform.includes('mac')) {
-    // Safari on Apple Silicon will have "MacIntel" for platform but we can check other signals
-    // If running on macOS and user agent doesn't explicitly say Intel, check for ARM hints
-    if (userAgent.includes('applewebkit') && !userAgent.includes('intel')) {
-      // This is tricky - modern Safari doesn't always indicate architecture clearly
-      // We'll use a heuristic: check screen/GPU hints or default to arm64 for newer detection
-    }
-    
-    // Try to detect via GPU (Apple GPU = Apple Silicon)
-    // This is a best-effort detection
     try {
       const canvas = document.createElement('canvas')
       const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
@@ -177,11 +110,9 @@ function detectArchitecture(): Architecture {
           const renderer = (gl as WebGLRenderingContext).getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
           if (renderer && typeof renderer === 'string') {
             const rendererLower = renderer.toLowerCase()
-            // Apple GPU indicates Apple Silicon
             if (rendererLower.includes('apple m') || rendererLower.includes('apple gpu')) {
               return 'arm64'
             }
-            // Intel GPU indicates Intel Mac
             if (rendererLower.includes('intel')) {
               return 'x64'
             }
@@ -189,20 +120,17 @@ function detectArchitecture(): Architecture {
         }
       }
     } catch {
-      // WebGL detection failed, continue with other methods
+      // WebGL detection failed
     }
   }
-  
-  // Windows ARM detection
+
   if (platform.includes('win') || userAgent.includes('windows')) {
     if (userAgent.includes('arm64') || userAgent.includes('arm')) {
       return 'arm64'
     }
-    // Most Windows machines are x64
     return 'x64'
   }
-  
-  // Default to x64 for unknown (most common)
+
   return 'x64'
 }
 
@@ -219,22 +147,9 @@ export function usePlatform(): Platform {
   return platform
 }
 
-export function getDownloadLabel(os: OS, arch: Architecture): string {
-  if (os === 'mac') {
-    return arch === 'arm64' ? 'Mac (Apple Silicon)' : 'Mac (Intel)'
-  }
-  if (os === 'windows') {
-    return 'Windows'
-  }
+export function getDownloadLabel(_os: OS, _arch: Architecture): string {
   return 'Download'
 }
-
-// All supported platforms
-const ALL_PLATFORMS: Array<{ os: OS; arch: Architecture }> = [
-  { os: 'mac', arch: 'arm64' },
-  { os: 'mac', arch: 'x64' },
-  { os: 'windows', arch: 'x64' },
-]
 
 export interface DownloadsState {
   platform: Platform
@@ -244,26 +159,58 @@ export interface DownloadsState {
   isLoading: boolean
 }
 
+function buildFallbackDownloads(): PlatformDownload[] {
+  return [
+    {
+      platform: { os: 'mac', arch: 'arm64' },
+      downloadUrl: GITHUB_RELEASES_URL,
+      fileName: '',
+      label: 'Mac (Apple Silicon)',
+    },
+    {
+      platform: { os: 'mac', arch: 'x64' },
+      downloadUrl: GITHUB_RELEASES_URL,
+      fileName: '',
+      label: 'Mac (Intel)',
+    },
+    {
+      platform: { os: 'windows', arch: 'x64' },
+      downloadUrl: GITHUB_RELEASES_URL,
+      fileName: '',
+      label: 'Windows',
+    },
+  ]
+}
+
+function buildDownloads(release: ReleaseResponse): PlatformDownload[] {
+  return release.downloads.map(d => {
+    const config = PLATFORM_CONFIG[d.platform] || { os: 'unknown' as OS, arch: 'unknown' as Architecture }
+    return {
+      platform: config,
+      downloadUrl: d.download_url,
+      fileName: d.filename,
+      label: d.label,
+    }
+  })
+}
+
 export function useDownloads(): DownloadsState {
   const platform = usePlatform()
-  const [downloads, setDownloads] = useState<PlatformDownload[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [release, setRelease] = useState<ReleaseResponse | null>(releaseCache)
+  const [isLoading, setIsLoading] = useState(!releaseCache)
 
   useEffect(() => {
-    fetchLatestRelease().then(release => {
-      const allDownloads = ALL_PLATFORMS.map(({ os, arch }) => {
-        const { url, fileName } = findAssetUrl(release, os, arch)
-        return {
-          platform: { os, arch },
-          downloadUrl: url,
-          fileName,
-          label: getDownloadLabel(os, arch)
-        }
+    if (!releaseCache) {
+      fetchRelease().then(data => {
+        setRelease(data)
+        setIsLoading(false)
       })
-      setDownloads(allDownloads)
-      setIsLoading(false)
-    })
+    }
   }, [])
+
+  const downloads = useMemo(() => {
+    return release ? buildDownloads(release) : buildFallbackDownloads()
+  }, [release])
 
   const primaryDownload = downloads.find(
     d => d.platform.os === platform.os && d.platform.arch === platform.arch
@@ -276,7 +223,6 @@ export function useDownloads(): DownloadsState {
     downloads,
     primaryDownload,
     otherDownloads,
-    isLoading
+    isLoading,
   }
 }
-
