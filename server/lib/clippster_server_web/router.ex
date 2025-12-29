@@ -44,6 +44,9 @@ defmodule ClippsterServerWeb.Router do
       "http://localhost:5173",
       "http://localhost:1420",
       "http://localhost:4000",
+      # Landing page
+      "https://clippster.app",
+      "https://www.clippster.app",
       # Match any localhost port
       ~r/^http:\/\/localhost:\d+$/,
       # Match Tauri custom protocols
@@ -106,6 +109,9 @@ defmodule ClippsterServerWeb.Router do
 
     # Public settings/feature flags
     get "/settings/feature-flags", SettingsController, :get_feature_flags
+
+    # App release info (for download buttons on landing page)
+    get "/releases/latest", ReleaseController, :latest
   end
 
   # Protected routes (require authentication)
