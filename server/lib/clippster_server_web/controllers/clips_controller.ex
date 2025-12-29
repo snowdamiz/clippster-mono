@@ -4,6 +4,7 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.AI.WhisperAPI
   alias ClippsterServer.AI.OpenRouterAPI
   alias ClippsterServer.AI.SystemPrompt
+  alias ClippsterServer.Analytics
   alias ClippsterServer.ClipValidation
   alias ClippsterServer.Credits
   alias ClippsterServerWeb.ProgressChannel
@@ -525,6 +526,12 @@ defmodule ClippsterServerWeb.ClipsController do
       {:ok, result_map} ->
         # Mark job as completed
         complete_job(job_id)
+
+        # Track analytics
+        Analytics.track_event("clip_detection", user_id, %{
+          project_id: project_id,
+          credits_deducted: credits_deducted
+        })
 
         # Get updated user balance after credit deduction (or show unlimited for admins)
         remaining_credits = if is_admin do

@@ -8,6 +8,7 @@ import {
   getDatabase,
 } from '@/services/database';
 import { generateId } from '@/services/database';
+import { trackEvent } from '@/services/analytics';
 
 // Event emitter for download completion notifications
 const completionCallbacks = new Set<(download: ActiveDownload) => void>();
@@ -259,6 +260,17 @@ export function useDownloads() {
               }
 
               download.rawVideoId = rawVideoId;
+
+              // Track analytics
+              trackEvent({
+                event_type: 'vod_download',
+                metadata: {
+                  download_id: event.payload.download_id,
+                  title: download.title,
+                  provider: download.provider,
+                  is_segment: download.isSegment,
+                },
+              });
 
               // Notify all listeners about completion
               completionCallbacks.forEach((callback) => {

@@ -32,6 +32,17 @@
       </button>
 
       <button
+        v-if="activeTab === 'analytics'"
+        @click="fetchAnalyticsStats"
+        :disabled="analyticsLoading"
+        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md flex items-center gap-2 text-sm font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <RefreshCw v-if="!analyticsLoading" class="h-4 w-4" />
+        <Loader2 v-else class="h-4 w-4 animate-spin" />
+        Refresh Analytics
+      </button>
+
+      <button
         v-if="activeTab === 'organizations'"
         @click="fetchOrganizations"
         :disabled="organizationsLoading"
@@ -689,6 +700,54 @@
       </div>
     </div>
 
+    <!-- Analytics Tab -->
+    <div v-if="activeTab === 'analytics'" class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-foreground">Analytics</h2>
+          <span class="text-sm text-muted-foreground">Track key user actions and events</span>
+        </div>
+      </div>
+
+      <div v-if="analyticsLoading" class="flex items-center justify-center py-12">
+        <div class="text-center">
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p class="text-muted-foreground">Loading analytics...</p>
+        </div>
+      </div>
+
+      <div v-else-if="analyticsStats" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          v-for="(stats, event_type) in analyticsStats"
+          :key="event_type"
+          class="bg-card border border-border rounded-lg p-4 shadow-sm"
+        >
+          <div class="flex items-center gap-2 mb-3">
+            <Activity class="h-5 w-5 text-primary" />
+            <h3 class="text-sm font-medium text-foreground capitalize">{{ formatEventName(event_type) }}</h3>
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <p class="text-xs text-muted-foreground mb-1">Today</p>
+              <p class="text-xl font-bold text-foreground">{{ stats.today }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-muted-foreground mb-1">This Week</p>
+              <p class="text-xl font-bold text-foreground">{{ stats.this_week }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-muted-foreground mb-1">Total</p>
+              <p class="text-xl font-bold text-primary">{{ stats.total }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="bg-card border border-border rounded-lg p-6 text-center">
+        <p class="text-muted-foreground">No analytics data available</p>
+      </div>
+    </div>
+
     <!-- Beta Codes Tab -->
     <div v-if="activeTab === 'beta'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <!-- Stats Cards -->
@@ -1251,6 +1310,7 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import api from '@/services/api';
   import { generateCodes, listCodes, type BetaCode, type BetaCodeStats } from '@/services/betaCodes';
+  import { getAnalyticsStats } from '@/services/analytics';
 
   interface User {
     id: number;
@@ -1351,6 +1411,8 @@
   const loading = ref(false);
   const error = ref<string | null>(null);
   const aiStats = ref<AiUsageStats | null>(null);
+  const analyticsStats = ref<Record<string, { total: number; today: number; this_week: number }> | null>(null);
+  const analyticsLoading = ref(false);
   const promotingUserId = ref<number | null>(null);
   const showPromoteDialog = ref(false);
   const userToPromote = ref<User | null>(null);
@@ -1369,6 +1431,7 @@
     { id: 'organizations', label: 'Organizations' },
     { id: 'bugs', label: 'Bug Reports' },
     { id: 'ai', label: 'AI Usage' },
+    { id: 'analytics', label: 'Analytics' },
     { id: 'beta', label: 'Beta Codes' },
     { id: 'settings', label: 'Settings' },
   ];
@@ -1708,6 +1771,23 @@
       }
     } catch (err) {
       console.error('🔐 Admin - Error fetching AI stats:', err);
+    }
+  };
+
+  const fetchAnalyticsStats = async () => {
+    analyticsLoading.value = true;
+    try {
+      console.log('🔐 Admin - Fetching analytics stats...');
+      const stats = await getAnalyticsStats();
+
+      analyticsStats.value = Object.keys(stats).length > 0 ? stats : null;
+      console.log('🔐 Admin - Analytics stats loaded:', stats);
+      console.log('🔐 Admin - Analytics stats keys:', Object.keys(stats));
+    } catch (err) {
+      console.error('🔐 Admin - Error fetching analytics stats:', err);
+      analyticsStats.value = null;
+    } finally {
+      analyticsLoading.value = false;
     }
   };
 
@@ -2104,11 +2184,24 @@
   const availableBetaCodes = computed(() => betaCodes.value.filter((code) => !code.used));
   const usedBetaCodes = computed(() => betaCodes.value.filter((code) => code.used));
 
+  const formatEventName = (eventType: string): string => {
+    const names: Record<string, string> = {
+      clip_detection: 'Clip Detection',
+      clip_export: 'Clip Export',
+      vod_download: 'VOD Download',
+      user_created: 'User Created',
+      credits_purchased: 'Credits Purchased',
+      credits_spent: 'Credits Spent',
+    };
+    return names[eventType] || eventType;
+  };
+
   onMounted(() => {
     fetchUsers();
     fetchOrganizations();
     fetchBugReports();
     fetchAiStats();
+    fetchAnalyticsStats();
     fetchBetaCodes();
     loadPlatformOverride();
     fetchFeatureFlags();

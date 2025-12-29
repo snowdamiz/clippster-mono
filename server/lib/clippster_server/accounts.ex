@@ -7,7 +7,7 @@ defmodule ClippsterServer.Accounts do
   alias ClippsterServer.Repo
   alias ClippsterServer.Accounts.User
   alias ClippsterServer.Credits
-  alias ClippsterServer.{Emails, Mailer}
+  alias ClippsterServer.{Emails, Mailer, Analytics}
   alias ClippsterServer.Auth.TokenGenerator
 
   # OTP expires in 10 minutes
@@ -97,7 +97,12 @@ defmodule ClippsterServer.Accounts do
       user
     end)
     |> case do
-      {:ok, user} -> {:ok, user}
+      {:ok, user} ->
+        Analytics.track_event("user_created", user.id, %{
+          wallet_address: user.wallet_address,
+          is_admin: user.is_admin
+        })
+        {:ok, user}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -138,7 +143,13 @@ defmodule ClippsterServer.Accounts do
       user
     end)
     |> case do
-      {:ok, user} -> {:ok, user}
+      {:ok, user} ->
+        Analytics.track_event("user_created", user.id, %{
+          provider: provider,
+          email: user.email,
+          is_admin: user.is_admin
+        })
+        {:ok, user}
       {:error, reason} -> {:error, reason}
     end
   end

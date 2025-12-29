@@ -250,6 +250,9 @@ defmodule ClippsterServerWeb.Router do
     put "/organizations/:organization_id/posts/:id", PostSubmissionController, :update
     post "/organizations/:organization_id/posts/:id/sync", PostSubmissionController, :sync_analytics
     post "/organizations/:organization_id/posts/:id/reset-override", PostSubmissionController, :reset_override
+
+    # Analytics tracking (requires authentication)
+    post "/analytics/track", AnalyticsController, :track
   end
 
   # Admin-only routes
@@ -258,6 +261,7 @@ defmodule ClippsterServerWeb.Router do
 
     get "/admin/users", AdminController, :list_users
     get "/admin/ai-usage", AdminController, :get_ai_usage_stats
+    get "/admin/analytics", AnalyticsController, :stats
     post "/admin/users/:user_id/promote", AdminController, :promote_user
     put "/admin/users/:user_id/credits", AdminController, :update_user_credits
 

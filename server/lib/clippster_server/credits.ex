@@ -6,6 +6,7 @@ defmodule ClippsterServer.Credits do
   import Ecto.Query, warn: false
   alias ClippsterServer.Repo
   alias ClippsterServer.Credits.{CreditTransaction, UserCredit, ProcessingJob}
+  alias ClippsterServer.Analytics
 
   # Credit packs for purchasing additional credits (separate from subscription)
   # 1 credit = 1 minute of video processing
@@ -98,6 +99,13 @@ defmodule ClippsterServer.Credits do
             {:ok, transaction} ->
               # Add credits to user balance
               {:ok, _user_credit} = add_credits(transaction.user_id, Decimal.to_float(transaction.hours_purchased))
+
+              Analytics.track_event("credits_purchased", transaction.user_id, %{
+                hours: transaction.hours_purchased,
+                amount_usd: transaction.amount_usd,
+                payment_method: "stripe"
+              })
+
               transaction
 
             {:error, changeset} ->
@@ -209,6 +217,9 @@ defmodule ClippsterServer.Credits do
 
       case UserCredit.deduct_hours_changeset(user_credit, hours) |> Repo.update() do
         {:ok, updated_credit} ->
+          Analytics.track_event("credits_spent", user_id, %{
+            hours: hours
+          })
           updated_credit
 
         {:error, changeset} ->
