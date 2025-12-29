@@ -109,7 +109,8 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
-      - name: Build Tauri App
+      - name: Build Tauri App (macOS)
+        if: matrix.platform == 'macos-latest'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -121,14 +122,26 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows code signing (for .exe)
-          TAURI_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          TAURI_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
           projectPath: client
           includeUpdaterJson: true
           args: ${{ matrix.args }}
           retryAttempts: 3
+
+      # Use direct cargo build for Windows to prevent tauri-action from cleaning up .nsis.zip files
+      - name: Build Tauri App (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          VITE_API_URL: https://clippster-server.fly.dev
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        working-directory: client
+        run: |
+          Write-Host "Building Tauri app for Windows..."
+          cargo tauri build
+          Write-Host "Build complete. Listing bundle directory:"
+          Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse | ForEach-Object { Write-Host $_.FullName }
 
       - name: Upload artifacts to public releases repo (macOS)
         if: matrix.platform == 'macos-latest'
