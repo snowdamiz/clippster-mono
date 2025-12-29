@@ -111,23 +111,29 @@
     }
 
     // MANDATORY UPDATE CHECK - must complete before app continues
-    // Check for updates FIRST before any other initialization
-    try {
-      console.log('[App] Checking for mandatory updates...');
-      const hasUpdate = await checkForUpdates();
-      if (hasUpdate) {
-        console.log('[App] Update required - blocking app until update is installed');
-        updateRequired.value = true;
-        isCheckingForUpdates.value = false;
-        // Stop here - user must update before continuing
-        return;
+    // Skip update check in development environment
+    if (import.meta.env.DEV) {
+      console.log('[App] Skipping update check in development mode');
+      isCheckingForUpdates.value = false;
+    } else {
+      // Check for updates FIRST before any other initialization
+      try {
+        console.log('[App] Checking for mandatory updates...');
+        const hasUpdate = await checkForUpdates();
+        if (hasUpdate) {
+          console.log('[App] Update required - blocking app until update is installed');
+          updateRequired.value = true;
+          isCheckingForUpdates.value = false;
+          // Stop here - user must update before continuing
+          return;
+        }
+        console.log('[App] No update required, continuing with app initialization');
+      } catch (error) {
+        console.error('[App] Failed to check for updates:', error);
+        // On error, allow app to continue (don't block users if update server is down)
       }
-      console.log('[App] No update required, continuing with app initialization');
-    } catch (error) {
-      console.error('[App] Failed to check for updates:', error);
-      // On error, allow app to continue (don't block users if update server is down)
+      isCheckingForUpdates.value = false;
     }
-    isCheckingForUpdates.value = false;
 
     // Continue with normal app initialization only if no update required
     await initializeApp();
