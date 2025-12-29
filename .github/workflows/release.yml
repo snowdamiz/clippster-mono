@@ -204,24 +204,29 @@ jobs:
           BASENAME=$(basename "$APP_TAR")
           NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz"
           
-          # Create latest.json for this platform
+          # Create latest.json for this platform using jq (handles JSON properly)
           mkdir -p /tmp/latest-json
-          cat > /tmp/latest-json/latest.json << EOF
-          {
-            "version": "$VERSION",
-            "notes": "See release notes on GitHub.",
-            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "platforms": {
-              "$PLATFORM_KEY": {
-                "signature": "$SIGNATURE",
-                "url": "https://github.com/$RELEASES_REPO/releases/download/v$VERSION/$NEW_NAME"
-              }
-            }
-          }
-          EOF
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          URL="https://github.com/$RELEASES_REPO/releases/download/v$VERSION/$NEW_NAME"
           
-          # Remove leading whitespace from heredoc (bash heredoc preserves indentation)
-          sed -i 's/^          //' /tmp/latest-json/latest.json
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "See release notes on GitHub." \
+            --arg pub_date "$PUB_DATE" \
+            --arg platform "$PLATFORM_KEY" \
+            --arg signature "$SIGNATURE" \
+            --arg url "$URL" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                ($platform): {
+                  signature: $signature,
+                  url: $url
+                }
+              }
+            }' > /tmp/latest-json/latest.json
           
           echo "Generated latest.json for $PLATFORM_KEY:"
           cat /tmp/latest-json/latest.json
