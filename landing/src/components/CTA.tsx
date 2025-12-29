@@ -1,5 +1,6 @@
 import { Apple, Monitor, ChevronDown, Loader2 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useDownloads, type PlatformDownload } from '../hooks/usePlatform'
 
 export function CTA() {
@@ -36,8 +37,8 @@ export function CTA() {
         </h2>
         
         {/* Subtext */}
-        <p className="text-zinc-400 max-w-lg mx-auto mb-10 text-lg">
-          Join 50,000+ creators already using Clippster. Download free for Mac or Windows.
+        <p className="text-zinc-400 max-w-lg mx-auto mb-6 text-lg">
+          Join 50,000+ creators already using Clippster. Start free with 50 credits/month.
         </p>
         
         {/* Download Buttons */}
@@ -86,6 +87,16 @@ export function CTA() {
               )}
             </div>
           )}
+        </div>
+
+        {/* Pricing link */}
+        <div className="mt-8">
+          <Link
+            to="/pricing"
+            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            View pricing plans →
+          </Link>
         </div>
       </div>
     </section>

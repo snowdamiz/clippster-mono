@@ -3,11 +3,11 @@ import { Menu, X, Apple, Monitor, Loader2 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 
-const navLinks = [
+const navLinks: { href: string; label: string; isPage?: boolean }[] = [
   { href: '#features', label: 'Features' },
+  { href: '#pricing', label: 'Pricing' },
   { href: '#how-it-works', label: 'How it Works' },
   { href: '#testimonials', label: 'Testimonials' },
-  { href: '/pricing', label: 'Pricing', isPage: true },
 ]
 
 export function Header() {
@@ -44,8 +44,8 @@ export function Header() {
   }
 
   return (
-    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${
-      isScrolled ? 'bg-[#09090b]/80 backdrop-blur-lg border-b border-zinc-800/50' : ''
+    <header className={`fixed top-0 left-0 right-0 z-50 transition-all border-b border-zinc-800/0 duration-200 ${
+      isScrolled ? 'bg-[#09090b]/80 backdrop-blur-lg border-b border-zinc-800/40' : ''
     }`}>
       <div className="max-w-6xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">

@@ -1,4 +1,5 @@
 import { Star, ChevronRight, Apple, Monitor, Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 
 export function Hero() {
@@ -12,14 +13,14 @@ export function Hero() {
       
       <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
         {/* Announcement badge */}
-        <a
-          href="#"
+        <Link
+          to="/pricing"
           className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] transition-colors mb-8"
         >
           <span className="text-xs font-medium text-blue-400">New</span>
-          <span className="text-sm text-zinc-400">AI-powered clip detection is here</span>
+          <span className="text-sm text-zinc-400">Flexible subscriptions + credit packs</span>
           <ChevronRight className="w-4 h-4 text-zinc-500" />
-        </a>
+        </Link>
 
         {/* Main headline */}
         <h1 className="font-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white mb-6 leading-[1.1]">
@@ -35,7 +36,7 @@ export function Hero() {
         </p>
 
         {/* Download Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-6">
           {isLoading ? (
             <div className="px-8 py-4 rounded-full bg-white/50 text-zinc-900 font-semibold flex items-center gap-3">
               <Loader2 className="w-5 h-5 animate-spin" />
