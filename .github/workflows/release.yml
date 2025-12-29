@@ -98,16 +98,30 @@ jobs:
         env:
           VITE_API_URL: https://clippster-server.fly.dev
 
+      - name: Check signing key availability
+        shell: bash
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "✓ TAURI_SIGNING_PRIVATE_KEY is set (length: ${#TAURI_SIGNING_PRIVATE_KEY})"
+          else
+            echo "✗ TAURI_SIGNING_PRIVATE_KEY is NOT set - updater artifacts will NOT be created!"
+          fi
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VITE_API_URL: https://clippster-server.fly.dev
+          # Updater signing key - required for creating .nsis.zip and .app.tar.gz
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS notarization
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows code signing (for .exe)
           TAURI_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           TAURI_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
@@ -122,26 +136,45 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ needs.create-release.outputs.version }}
+          ARCH_SUFFIX: ${{ matrix.artifact_suffix }}
         run: |
-          # Find and upload DMG
+          echo "=== Debug: Listing all bundle files ==="
+          find client/src-tauri/target -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.sig" \) 2>/dev/null || true
+          echo "=== End debug listing ==="
+          
+          # Find and upload DMG (should be unique per architecture build)
           DMG_FILE=$(find client/src-tauri/target -name "*.dmg" -type f | head -1)
           if [ -n "$DMG_FILE" ]; then
             echo "Uploading DMG: $DMG_FILE"
             gh release upload "v$VERSION" "$DMG_FILE" --repo $RELEASES_REPO --clobber
+          else
+            echo "WARNING: No DMG file found!"
           fi
           
-          # Find and upload .app.tar.gz (for updater)
+          # Find and upload .app.tar.gz (for updater) - rename to include architecture
           APP_TAR=$(find client/src-tauri/target -name "*.app.tar.gz" -type f | head -1)
           if [ -n "$APP_TAR" ]; then
-            echo "Uploading app tar: $APP_TAR"
-            gh release upload "v$VERSION" "$APP_TAR" --repo $RELEASES_REPO --clobber
+            # Rename to include architecture suffix to avoid overwrites
+            BASENAME=$(basename "$APP_TAR")
+            NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz"
+            cp "$APP_TAR" "/tmp/$NEW_NAME"
+            echo "Uploading app tar as: $NEW_NAME"
+            gh release upload "v$VERSION" "/tmp/$NEW_NAME" --repo $RELEASES_REPO --clobber
+          else
+            echo "WARNING: No .app.tar.gz file found!"
           fi
           
           # Find and upload .app.tar.gz.sig (signature for updater)
           APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
           if [ -n "$APP_SIG" ]; then
-            echo "Uploading app signature: $APP_SIG"
-            gh release upload "v$VERSION" "$APP_SIG" --repo $RELEASES_REPO --clobber
+            # Rename to include architecture suffix
+            BASENAME=$(basename "$APP_SIG")
+            NEW_NAME="${BASENAME%.app.tar.gz.sig}_${ARCH_SUFFIX}.app.tar.gz.sig"
+            cp "$APP_SIG" "/tmp/$NEW_NAME"
+            echo "Uploading app signature as: $NEW_NAME"
+            gh release upload "v$VERSION" "/tmp/$NEW_NAME" --repo $RELEASES_REPO --clobber
+          else
+            echo "WARNING: No .app.tar.gz.sig file found!"
           fi
 
       - name: Upload artifacts to public releases repo (Windows)
@@ -151,11 +184,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
+          Write-Host "=== Debug: Listing all bundle files ==="
+          Get-ChildItem -Path "client/src-tauri/target" -Recurse -Include "*.exe","*.msi","*.zip","*.sig" | ForEach-Object { Write-Host $_.FullName }
+          Write-Host "=== End debug listing ==="
+          
           # Find and upload NSIS installer
           $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*-setup.exe" | Select-Object -First 1
           if ($exeFile) {
             Write-Host "Uploading EXE: $($exeFile.FullName)"
             gh release upload "v$env:VERSION" "$($exeFile.FullName)" --repo $env:RELEASES_REPO --clobber
+          } else {
+            Write-Host "WARNING: No setup.exe file found!"
           }
           
           # Find and upload MSI
@@ -163,20 +202,27 @@ jobs:
           if ($msiFile) {
             Write-Host "Uploading MSI: $($msiFile.FullName)"
             gh release upload "v$env:VERSION" "$($msiFile.FullName)" --repo $env:RELEASES_REPO --clobber
+          } else {
+            Write-Host "WARNING: No MSI file found!"
           }
           
-          # Find and upload nsis.zip (for updater)
-          $nsisZip = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*_x64-setup.nsis.zip" | Select-Object -First 1
+          # Find and upload nsis.zip (for updater) - try multiple patterns
+          $nsisZip = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*.nsis.zip" | Select-Object -First 1
           if ($nsisZip) {
             Write-Host "Uploading NSIS zip: $($nsisZip.FullName)"
             gh release upload "v$env:VERSION" "$($nsisZip.FullName)" --repo $env:RELEASES_REPO --clobber
+          } else {
+            Write-Host "WARNING: No .nsis.zip file found! Auto-updates will NOT work on Windows."
+            Write-Host "This usually means TAURI_SIGNING_PRIVATE_KEY is not set or invalid."
           }
           
           # Find and upload nsis.zip.sig (signature for updater)
-          $nsisSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*_x64-setup.nsis.zip.sig" | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*.nsis.zip.sig" | Select-Object -First 1
           if ($nsisSig) {
             Write-Host "Uploading NSIS signature: $($nsisSig.FullName)"
             gh release upload "v$env:VERSION" "$($nsisSig.FullName)" --repo $env:RELEASES_REPO --clobber
+          } else {
+            Write-Host "WARNING: No .nsis.zip.sig file found!"
           }
 
       - name: Upload latest.json artifact
@@ -199,6 +245,8 @@ jobs:
 
       - name: Find and merge latest.json
         id: merge_json
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           echo "Looking for latest.json files..."
           find . -name "latest.json" -type f
@@ -210,9 +258,6 @@ jobs:
             echo "No latest.json files found"
             exit 0
           fi
-          
-          # Take the first one as base and merge platforms from others
-          FIRST_FILE=$(echo "$JSON_FILES" | head -1)
           
           # Use jq to merge all platforms into one latest.json
           # Each file has structure: { version, notes, pub_date, platforms: {...} }
@@ -232,8 +277,15 @@ jobs:
           done
           
           # Update URLs to point to public releases repo
-          VERSION="${{ needs.create-release.outputs.version }}"
           sed -i "s|snowdamiz/clippster-mono|$RELEASES_REPO|g" merged.json
+          
+          # Fix macOS URLs to use architecture-specific filenames
+          # darwin-aarch64 should point to *_aarch64.app.tar.gz
+          # darwin-x86_64 should point to *_x64.app.tar.gz
+          jq --arg version "$VERSION" '
+            .platforms["darwin-aarch64"].url |= gsub("\\.app\\.tar\\.gz$"; "_aarch64.app.tar.gz") |
+            .platforms["darwin-x86_64"].url |= gsub("\\.app\\.tar\\.gz$"; "_x64.app.tar.gz")
+          ' merged.json > tmp.json && mv tmp.json merged.json
           
           echo "Final merged latest.json:"
           cat merged.json

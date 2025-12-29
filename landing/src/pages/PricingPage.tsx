@@ -279,14 +279,14 @@ export function PricingPage() {
   const [openFAQ, setOpenFAQ] = useState<number | null>(0)
 
   return (
-    <div className="min-h-screen bg-[#09090b]">
+    <div className="min-h-screen bg-[#09090b] overflow-x-hidden">
       {/* Header */}
       <header className="border-b border-zinc-800/50 backdrop-blur-sm sticky top-0 z-50 bg-[#09090b]/80">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="flex items-center gap-3">
-              <img src="/logo-icon.svg" alt="Clippster" className="w-8 h-8" />
-              <img src="/logo.svg" alt="Clippster" className="h-5" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3 sm:gap-6">
+            <Link to="/" className="flex items-center gap-2 sm:gap-3">
+              <img src="/logo-icon.svg" alt="Clippster" className="w-7 h-7 sm:w-8 sm:h-8" />
+              <img src="/logo.svg" alt="Clippster" className="h-4 sm:h-5" />
             </Link>
             <Link 
               to="/" 
@@ -312,11 +312,11 @@ export function PricingPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-12 sm:py-16">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
         {/* Page Header with hero glow */}
-        <div className="text-center mb-12 relative">
-          {/* Hero glow effect */}
-          <div className="absolute top-[-200px] left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-[radial-gradient(ellipse_at_center,rgba(139,92,246,0.08)_0%,transparent_70%)] pointer-events-none" />
+        <div className="text-center mb-12 relative overflow-visible">
+          {/* Hero glow effect - constrained to not cause overflow */}
+          <div className="absolute top-[-200px] left-1/2 -translate-x-1/2 w-full max-w-[600px] h-[400px] bg-[radial-gradient(ellipse_at_center,rgba(139,92,246,0.08)_0%,transparent_70%)] pointer-events-none" />
           
           <p className="text-violet-400 text-sm font-medium tracking-wide uppercase mb-4 relative">
             Pricing
@@ -363,9 +363,9 @@ export function PricingPage() {
                     <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-b from-zinc-600 via-zinc-700 to-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   )}
                   
-                  {/* Subtle glow on hover for non-highlighted cards */}
+                  {/* Subtle glow on hover for non-highlighted cards - hidden on mobile */}
                   {!plan.highlight && (
-                    <div className="absolute -inset-4 rounded-3xl bg-violet-500/5 opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500 pointer-events-none" />
+                    <div className="absolute -inset-4 rounded-3xl bg-violet-500/5 opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500 pointer-events-none hidden sm:block" />
                   )}
                   
                   {/* Popular badge */}
@@ -522,8 +522,8 @@ export function PricingPage() {
                     }`}
                     style={{ animationDelay: `${index * 100}ms` }}
                   >
-                    {/* Glow effect on hover */}
-                    <div className={`absolute -inset-4 rounded-3xl opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500 pointer-events-none ${
+                    {/* Glow effect on hover - hidden on mobile to prevent overflow */}
+                    <div className={`absolute -inset-4 rounded-3xl opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500 pointer-events-none hidden sm:block ${
                       pack.popular ? 'bg-emerald-500/10' : 'bg-violet-500/5'
                     }`} />
                     
@@ -603,30 +603,30 @@ export function PricingPage() {
             </div>
 
             {/* Credit Usage Examples - improved layout */}
-            <div className="mt-12 max-w-3xl mx-auto">
+            <div className="mt-10 sm:mt-12 max-w-3xl mx-auto">
               <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
-                <div className="px-6 py-4 border-b border-zinc-800 bg-zinc-900/80">
+                <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 bg-zinc-900/80">
                   <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-violet-400" />
                     How credits work
                   </h3>
                 </div>
-                <div className="p-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     {creditExamples.map((example, i) => (
                       <div 
                         key={example.action} 
-                        className={`flex items-center justify-between text-sm p-3 rounded-lg ${
+                        className={`flex items-center justify-between text-xs sm:text-sm p-3 rounded-lg gap-2 ${
                           i === 0 ? 'bg-violet-500/10 border border-violet-500/20' : 'bg-zinc-800/30'
                         }`}
                       >
-                        <span className={i === 0 ? 'text-violet-300' : 'text-zinc-400'}>{example.action}</span>
-                        <span className={`font-medium ${i === 0 ? 'text-violet-300' : 'text-zinc-300'}`}>{example.credits}</span>
+                        <span className={`${i === 0 ? 'text-violet-300' : 'text-zinc-400'}`}>{example.action}</span>
+                        <span className={`font-medium whitespace-nowrap ${i === 0 ? 'text-violet-300' : 'text-zinc-300'}`}>{example.credits}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-4 pt-4 border-t border-zinc-800 flex items-center gap-2 text-xs text-zinc-500">
-                    <Clock className="w-3.5 h-3.5" />
+                  <div className="mt-4 pt-4 border-t border-zinc-800 flex items-start sm:items-center gap-2 text-xs text-zinc-500">
+                    <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5 sm:mt-0" />
                     <span>Example: A 30-minute YouTube video uses 30 credits to process, caption, and export</span>
                   </div>
                 </div>
@@ -643,13 +643,50 @@ export function PricingPage() {
               <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4">
                 Clippster vs <span className="text-zinc-500">Opus Clip</span>
               </h2>
-              <p className="text-zinc-500 max-w-lg mx-auto">
+              <p className="text-zinc-500 max-w-lg mx-auto px-4">
                 See how we compare to the leading cloud-based clipping tool
               </p>
             </div>
 
-            {/* Comparison Table */}
-            <div className="rounded-2xl border border-zinc-800 overflow-hidden overflow-x-auto">
+            {/* Mobile Comparison Cards */}
+            <div className="md:hidden space-y-4">
+              {comparisonFeatures.map((category) => (
+                <div key={category.category} className="rounded-xl border border-zinc-800 overflow-hidden">
+                  <div className="bg-zinc-900 px-4 py-3 border-b border-zinc-800">
+                    <span className="text-sm font-semibold text-white">{category.category}</span>
+                  </div>
+                  <div className="divide-y divide-zinc-800/50">
+                    {category.features.map((feature) => (
+                      <div key={feature.name} className="p-4">
+                        <div className="text-sm text-zinc-300 mb-3">{feature.name}</div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className={`rounded-lg p-3 ${feature.winner === 'clippster' ? 'bg-violet-500/10 border border-violet-500/20' : 'bg-zinc-800/50'}`}>
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <img src="/logo-icon.svg" alt="" className="w-3.5 h-3.5" />
+                              <span className="text-[10px] font-medium text-zinc-400">Clippster</span>
+                            </div>
+                            <div className="flex items-center">
+                              <FeatureCell value={feature.clippster} isWinner={feature.winner === 'clippster'} isClippster={true} />
+                            </div>
+                          </div>
+                          <div className={`rounded-lg p-3 ${feature.winner === 'opus' ? 'bg-zinc-700/50' : 'bg-zinc-800/50'}`}>
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <span className="text-[10px] font-medium text-zinc-500">Opus Clip</span>
+                            </div>
+                            <div className="flex items-center">
+                              <FeatureCell value={feature.opus} isWinner={feature.winner === 'opus'} isClippster={false} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Comparison Table */}
+            <div className="hidden md:block rounded-2xl border border-zinc-800 overflow-hidden">
               <table className="w-full">
                 <thead>
                   <tr className="bg-zinc-900 border-b border-zinc-800">
@@ -700,7 +737,7 @@ export function PricingPage() {
 
             {/* Note */}
             <div className="mt-6 text-center">
-              <p className="text-xs text-zinc-600">
+              <p className="text-xs text-zinc-600 px-4">
                 * Opus Clip pricing as of December 2024. Clippster uses a minute-based credit system (1 credit = 1 minute).
               </p>
             </div>
@@ -741,7 +778,7 @@ export function PricingPage() {
 
       {/* Footer */}
       <footer className="border-t border-zinc-800/50">
-        <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img src="/logo-icon.svg" alt="Clippster" className="w-6 h-6 opacity-50" />
             <p className="text-xs text-zinc-600">
