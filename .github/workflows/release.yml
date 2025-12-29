@@ -291,6 +291,7 @@ jobs:
         shell: pwsh
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
+          RUNNER_TEMP: ${{ runner.temp }}
         run: |
           # Find the nsis.zip and signature files
           $nsisZip = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -307,8 +308,9 @@ jobs:
             $nsisZipName = $nsisZip.Name
           }
           
-          # Create latest.json for Windows
-          New-Item -ItemType Directory -Force -Path "$env:TEMP/latest-json" | Out-Null
+          # Create latest.json for Windows - use RUNNER_TEMP to match artifact upload path
+          $outputDir = "$env:RUNNER_TEMP/latest-json"
+          New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
           
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
           
@@ -324,9 +326,10 @@ jobs:
             }
           } | ConvertTo-Json -Depth 10
           
-          $json | Out-File -FilePath "$env:TEMP/latest-json/latest.json" -Encoding utf8
-          Write-Host "Generated latest.json for windows-x86_64:"
-          Get-Content "$env:TEMP/latest-json/latest.json"
+          $outputFile = "$outputDir/latest.json"
+          $json | Out-File -FilePath $outputFile -Encoding utf8
+          Write-Host "Generated latest.json for windows-x86_64 at: $outputFile"
+          Get-Content $outputFile
 
       - name: Upload latest.json artifact (macOS)
         if: matrix.platform == 'macos-latest'
@@ -339,11 +342,9 @@ jobs:
       - name: Upload latest.json artifact (Windows)
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
-        env:
-          TEMP: ${{ runner.temp }}
         with:
           name: latest-json-${{ matrix.artifact_suffix }}
-          path: ${{ runner.temp }}/latest-json/latest.json
+          path: ${{ runner.temp }}\latest-json\latest.json
           if-no-files-found: warn
 
   # Merge latest.json files and publish release
