@@ -49,7 +49,7 @@ defmodule ClippsterServer.Subscriptions.Subscription do
     ])
     |> validate_inclusion(:status, ["active", "expired", "cancelled"])
     |> validate_inclusion(:subscription_tier, ["starter", "creator", "pro"])
-    |> validate_inclusion(:payment_method, ["stripe", "crypto", "trial"])
+    |> validate_inclusion(:payment_method, ["stripe", "crypto", "trial", "admin"])
     |> foreign_key_constraint(:user_id)
   end
 

@@ -265,6 +265,13 @@ defmodule ClippsterServerWeb.Router do
     post "/admin/users/:user_id/promote", AdminController, :promote_user
     put "/admin/users/:user_id/credits", AdminController, :update_user_credits
 
+    # Admin subscription management
+    post "/admin/users/:user_id/subscription", AdminController, :grant_subscription
+    put "/admin/users/:user_id/subscription/extend", AdminController, :extend_subscription
+    put "/admin/users/:user_id/subscription/tier", AdminController, :change_subscription_tier
+    post "/admin/users/:user_id/subscription/cancel", AdminController, :cancel_user_subscription
+    get "/admin/users/:user_id/subscription/history", AdminController, :get_subscription_history
+
     # Admin organization management
     get "/admin/organizations", AdminController, :list_organizations
     get "/admin/organizations/:organization_id/credits", AdminController, :get_org_credits

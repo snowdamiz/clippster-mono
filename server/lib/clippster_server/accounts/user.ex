@@ -201,7 +201,7 @@ defmodule ClippsterServer.Accounts.User do
     ])
     |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
     |> validate_inclusion(:subscription_tier, ["starter", "creator", "pro", nil])
-    |> validate_inclusion(:subscription_renewal_method, ["stripe", "crypto", nil])
+    |> validate_inclusion(:subscription_renewal_method, ["stripe", "crypto", "admin", nil])
   end
 
   defp put_wallet_provider(changeset) do

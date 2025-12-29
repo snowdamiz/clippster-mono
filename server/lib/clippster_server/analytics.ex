@@ -40,11 +40,11 @@ defmodule ClippsterServer.Analytics do
   Returns aggregated counts with date filtering (today, this_week, total).
   """
   def get_event_counts_by_date_range do
-    now = DateTime.utc_now()
+    _now = DateTime.utc_now()
     today_start = DateTime.new!(Date.utc_today(), ~T[00:00:00])
     week_start = DateTime.add(today_start, -7 * 24 * 60 * 60)
 
-    all_events = AnalyticsEvent
+    _all_events = AnalyticsEvent
 
     # Get all event types
     event_types =

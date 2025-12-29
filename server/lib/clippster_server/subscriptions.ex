@@ -451,6 +451,170 @@ defmodule ClippsterServer.Subscriptions do
   end
 
   # ============================================================================
+  # Admin Subscription Management
+  # ============================================================================
+
+  @doc """
+  Admin-initiated subscription grant.
+  Creates a new subscription for a user without payment.
+  Optionally grants monthly credits.
+  """
+  def admin_grant_subscription(user_id, tier, days \\ 30, grant_credits \\ false) do
+    tier_info = get_tier_info(tier)
+
+    unless tier_info do
+      {:error, :invalid_tier}
+    else
+      Repo.transaction(fn ->
+        user = Repo.get!(User, user_id)
+
+        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+        end_date = DateTime.add(start_date, days, :day)
+
+        # Update user subscription fields
+        {:ok, updated_user} = user
+          |> User.subscription_changeset(%{
+            subscription_status: "active",
+            subscription_tier: tier,
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: "admin"
+          })
+          |> Repo.update()
+
+        # Create subscription history record
+        {:ok, subscription} = %Subscription{}
+          |> Subscription.create_changeset(%{
+            user_id: user_id,
+            status: "active",
+            subscription_tier: tier,
+            start_date: start_date,
+            end_date: end_date,
+            hours_included: Decimal.new("0"),
+            credits_granted: if(grant_credits, do: Decimal.new(to_string(tier_info.monthly_credits)), else: Decimal.new("0")),
+            payment_method: "admin",
+            amount_usd: Decimal.new("0")
+          })
+          |> Repo.insert()
+
+        # Optionally grant monthly credits
+        if grant_credits do
+          {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+        end
+
+        IO.puts("[Subscriptions] Admin granted #{tier} subscription to user #{user_id} for #{days} days")
+
+        %{user: updated_user, subscription: subscription}
+      end)
+    end
+  end
+
+  @doc """
+  Admin-initiated subscription extension.
+  Extends the subscription end date by the specified number of days.
+  Optionally grants monthly credits.
+  """
+  def admin_extend_subscription(user_id, days, grant_credits \\ false) do
+    Repo.transaction(fn ->
+      user = Repo.get!(User, user_id)
+      tier = user.subscription_tier
+
+      unless tier do
+        Repo.rollback(:no_tier)
+      end
+
+      tier_info = get_tier_info(tier)
+      unless tier_info do
+        Repo.rollback(:invalid_tier)
+      end
+
+      # Calculate new end date
+      current_end = user.subscription_end_date || DateTime.utc_now()
+      new_end = DateTime.add(current_end, days, :day)
+
+      # Update user subscription end date
+      {:ok, updated_user} = user
+        |> User.subscription_changeset(%{
+          subscription_status: "active",
+          subscription_end_date: new_end
+        })
+        |> Repo.update()
+
+      # Create subscription history record for extension
+      {:ok, subscription} = %Subscription{}
+        |> Subscription.create_changeset(%{
+          user_id: user_id,
+          status: "active",
+          subscription_tier: tier,
+          start_date: current_end,
+          end_date: new_end,
+          hours_included: Decimal.new("0"),
+          credits_granted: if(grant_credits, do: Decimal.new(to_string(tier_info.monthly_credits)), else: Decimal.new("0")),
+          payment_method: "admin",
+          amount_usd: Decimal.new("0")
+        })
+        |> Repo.insert()
+
+      # Optionally grant monthly credits
+      if grant_credits do
+        {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+      end
+
+      IO.puts("[Subscriptions] Admin extended subscription for user #{user_id} by #{days} days")
+
+      %{user: updated_user, subscription: subscription}
+    end)
+  end
+
+  @doc """
+  Admin-initiated tier change.
+  Changes the subscription tier for a user.
+  Optionally grants monthly credits for the new tier.
+  """
+  def admin_change_tier(user_id, new_tier, grant_credits \\ false) do
+    tier_info = get_tier_info(new_tier)
+
+    unless tier_info do
+      {:error, :invalid_tier}
+    else
+      Repo.transaction(fn ->
+        user = Repo.get!(User, user_id)
+
+        # Update user's tier
+        {:ok, updated_user} = user
+          |> User.subscription_changeset(%{
+            subscription_tier: new_tier
+          })
+          |> Repo.update()
+
+        # Optionally grant credits for new tier
+        if grant_credits do
+          {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+
+          # Create subscription history record for tier change
+          {:ok, subscription} = %Subscription{}
+            |> Subscription.create_changeset(%{
+              user_id: user_id,
+              status: user.subscription_status || "active",
+              subscription_tier: new_tier,
+              start_date: user.subscription_start_date,
+              end_date: user.subscription_end_date,
+              hours_included: Decimal.new("0"),
+              credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+              payment_method: "admin",
+              amount_usd: Decimal.new("0")
+            })
+            |> Repo.insert()
+
+          %{user: updated_user, subscription: subscription}
+        else
+          %{user: updated_user, subscription: nil}
+        end
+      end)
+    end
+  end
+
+  # ============================================================================
   # Stripe Customer Management
   # ============================================================================
 
