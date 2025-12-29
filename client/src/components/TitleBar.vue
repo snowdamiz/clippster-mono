@@ -15,7 +15,7 @@
       <div class="titlebar-app-info">
         <img src="/logo-titlebar.svg" alt="Clippster Logo Icon" class="titlebar-logo-icon" />
         <img src="/logo.svg" alt="Clippster Logo" class="titlebar-logo" />
-        <!-- <span class="titlebar-beta-tag">Closed Beta</span> -->
+        <span class="titlebar-beta-tag">Closed Beta</span>
       </div>
     </div>
 
