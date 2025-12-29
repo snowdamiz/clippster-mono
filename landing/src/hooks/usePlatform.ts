@@ -20,11 +20,11 @@ const GITHUB_REPO = 'snowdamiz/clippster-releases'
 const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases/latest`
 const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
 
-// Asset filename patterns (without version - we match by suffix)
-const ASSET_PATTERNS = {
-  'mac-arm64': /_aarch64\.dmg$/,
-  'mac-x64': /_x64\.dmg$/,
-  'windows-x64': /_x64-setup\.exe$/,
+// Asset filename suffixes for pattern matching
+const ASSET_SUFFIXES = {
+  'mac-arm64': '_aarch64.dmg',
+  'mac-x64': '_x64.dmg',
+  'windows-x64': '_x64-setup.exe',
 } as const
 
 interface GitHubAsset {
@@ -46,21 +46,28 @@ async function fetchLatestRelease(): Promise<GitHubRelease | null> {
   
   if (fetchPromise) return fetchPromise
   
-  fetchPromise = fetch(GITHUB_API_URL)
+  fetchPromise = fetch(GITHUB_API_URL, {
+    headers: {
+      'Accept': 'application/vnd.github.v3+json',
+    },
+  })
     .then(res => {
-      if (!res.ok) throw new Error('Failed to fetch release')
+      if (!res.ok) throw new Error(`Failed to fetch release: ${res.status}`)
       return res.json()
     })
     .then((data: GitHubRelease) => {
       releaseCache = data
       return data
     })
-    .catch(() => null)
+    .catch((err) => {
+      console.warn('Failed to fetch GitHub release:', err)
+      return null
+    })
   
   return fetchPromise
 }
 
-function getAssetKey(os: OS, arch: Architecture): keyof typeof ASSET_PATTERNS | null {
+function getAssetKey(os: OS, arch: Architecture): keyof typeof ASSET_SUFFIXES | null {
   if (os === 'mac') {
     return arch === 'arm64' ? 'mac-arm64' : 'mac-x64'
   }
@@ -73,11 +80,24 @@ function getAssetKey(os: OS, arch: Architecture): keyof typeof ASSET_PATTERNS | 
 function findAssetUrl(release: GitHubRelease | null, os: OS, arch: Architecture): { url: string; fileName: string } {
   const assetKey = getAssetKey(os, arch)
   
-  if (release && assetKey) {
-    const pattern = ASSET_PATTERNS[assetKey]
-    const asset = release.assets.find(a => pattern.test(a.name))
-    if (asset) {
-      return { url: asset.browser_download_url, fileName: asset.name }
+  if (assetKey) {
+    const suffix = ASSET_SUFFIXES[assetKey]
+    
+    // Try to find asset from API response
+    if (release) {
+      const asset = release.assets.find(a => a.name.endsWith(suffix))
+      if (asset) {
+        return { url: asset.browser_download_url, fileName: asset.name }
+      }
+    }
+    
+    // Construct direct download URL using tag name if available
+    // This works even if asset list didn't match, as long as we have the release tag
+    if (release?.tag_name) {
+      const version = release.tag_name.replace(/^v/, '')
+      const fileName = `Clippster_${version}${suffix}`
+      const url = `https://github.com/${GITHUB_REPO}/releases/download/${release.tag_name}/${fileName}`
+      return { url, fileName }
     }
   }
   
