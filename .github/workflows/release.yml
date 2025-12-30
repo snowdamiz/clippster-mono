@@ -128,7 +128,7 @@ jobs:
           args: ${{ matrix.args }}
           retryAttempts: 3
 
-      # Use direct cargo build for Windows to prevent tauri-action from cleaning up .nsis.zip files
+      # Use direct cargo build for Windows for more control over the build process
       - name: Install Tauri CLI (Windows)
         if: matrix.platform == 'windows-latest'
         run: cargo install tauri-cli --version "^2"
@@ -298,22 +298,14 @@ jobs:
             Write-Host "WARNING: No MSI file found!"
           }
           
-          # Find and upload nsis.zip (for updater) - use Where-Object for reliable wildcard matching
-          $nsisZip = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.nsis.zip" } | Select-Object -First 1
-          if ($nsisZip) {
-            Write-Host "Uploading NSIS zip: $($nsisZip.FullName)"
-            gh release upload "v$env:VERSION" "$($nsisZip.FullName)" --repo $env:RELEASES_REPO --clobber
+          # For Tauri v2 with createUpdaterArtifacts: true, the updater uses .exe directly
+          # Upload the .exe.sig signature file for verification
+          $exeSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe.sig" } | Select-Object -First 1
+          if ($exeSig) {
+            Write-Host "Uploading EXE signature: $($exeSig.FullName)"
+            gh release upload "v$env:VERSION" "$($exeSig.FullName)" --repo $env:RELEASES_REPO --clobber
           } else {
-            Write-Host "WARNING: No .nsis.zip file found! Auto-updates will NOT work on Windows."
-          }
-          
-          # Find and upload nsis.zip.sig (signature for updater)
-          $nsisSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.nsis.zip.sig" } | Select-Object -First 1
-          if ($nsisSig) {
-            Write-Host "Uploading NSIS signature: $($nsisSig.FullName)"
-            gh release upload "v$env:VERSION" "$($nsisSig.FullName)" --repo $env:RELEASES_REPO --clobber
-          } else {
-            Write-Host "WARNING: No .nsis.zip.sig file found!"
+            Write-Host "WARNING: No .exe.sig file found! Auto-updates will NOT work on Windows."
           }
 
       - name: Generate latest.json for Windows
@@ -323,25 +315,26 @@ jobs:
           VERSION: ${{ needs.create-release.outputs.version }}
           RUNNER_TEMP: ${{ runner.temp }}
         run: |
-          # Find the nsis.zip and signature files using reliable Where-Object matching
-          $nsisZip = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.nsis.zip" } | Select-Object -First 1
-          $nsisSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.nsis.zip.sig" } | Select-Object -First 1
+          # For Tauri v2 with createUpdaterArtifacts: true, Windows uses .exe directly (not .nsis.zip)
+          # Find the setup.exe and its signature file
+          $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe" } | Select-Object -First 1
+          $exeSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe.sig" } | Select-Object -First 1
           
           $signature = ""
-          if ($nsisSig) {
-            Write-Host "Found signature file: $($nsisSig.FullName)"
-            $signature = Get-Content $nsisSig.FullName -Raw
+          if ($exeSig) {
+            Write-Host "Found signature file: $($exeSig.FullName)"
+            $signature = Get-Content $exeSig.FullName -Raw
             $signature = $signature.Trim()
           } else {
-            Write-Host "WARNING: No signature file found for Windows updater"
+            Write-Host "WARNING: No .exe.sig signature file found for Windows updater"
           }
           
-          $nsisZipName = ""
-          if ($nsisZip) {
-            Write-Host "Found nsis.zip: $($nsisZip.FullName)"
-            $nsisZipName = $nsisZip.Name
+          $exeFileName = ""
+          if ($exeFile) {
+            Write-Host "Found setup.exe: $($exeFile.FullName)"
+            $exeFileName = $exeFile.Name
           } else {
-            Write-Host "WARNING: No nsis.zip found for Windows updater"
+            Write-Host "WARNING: No setup.exe found for Windows updater"
           }
           
           # Create latest.json for Windows - use RUNNER_TEMP to match artifact upload path
@@ -357,7 +350,7 @@ jobs:
             platforms = @{
               "windows-x86_64" = @{
                 signature = $signature
-                url = "https://github.com/$env:RELEASES_REPO/releases/download/v$env:VERSION/$nsisZipName"
+                url = "https://github.com/$env:RELEASES_REPO/releases/download/v$env:VERSION/$exeFileName"
               }
             }
           } | ConvertTo-Json -Depth 10
