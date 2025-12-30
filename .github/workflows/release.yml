@@ -10,7 +10,7 @@ env:
   RELEASES_REPO: snowdamiz/clippster-releases
 
 jobs:
-  # First, create a draft release in the public repo
+  # First, create a draft release and build frontend (shared across all platforms)
   create-release:
     runs-on: ubuntu-latest
     outputs:
@@ -30,20 +30,39 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ steps.get_version.outputs.version }}
         run: |
-          # Check if release already exists
           if gh release view "v$VERSION" --repo $RELEASES_REPO > /dev/null 2>&1; then
             echo "Release v$VERSION already exists, deleting it first..."
             gh release delete "v$VERSION" --repo $RELEASES_REPO --yes || true
-            # Also delete the tag
             gh api --method DELETE "/repos/$RELEASES_REPO/git/refs/tags/v$VERSION" || true
           fi
-          
-          # Create new draft release
           gh release create "v$VERSION" \
             --repo $RELEASES_REPO \
             --title "Clippster v$VERSION" \
             --notes "See assets to download and install." \
             --draft
+
+      # Build frontend once and share across all platform builds
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: yarn
+          cache-dependency-path: client/yarn.lock
+
+      - name: Install and build frontend
+        working-directory: client
+        env:
+          VITE_API_URL: https://clippster-server.fly.dev
+        run: |
+          yarn install
+          yarn build:ci
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: client/dist
+          retention-days: 1
 
   # Build for each platform
   build-tauri:
@@ -61,12 +80,18 @@ jobs:
             args: --target x86_64-apple-darwin
             artifact_suffix: x64
           - platform: windows-latest
-            args: ""
+            args: --bundles nsis
             artifact_suffix: windows
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: client/dist
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -84,76 +109,37 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: client/src-tauri -> target
+          shared-key: ${{ matrix.platform }}-${{ matrix.artifact_suffix }}
 
-      - name: Install frontend dependencies
+      - name: Install frontend dependencies (for tauri build)
         run: yarn install
         working-directory: client
 
-      - name: Build frontend with production API URL
-        run: |
-          echo "Building frontend with VITE_API_URL=$VITE_API_URL"
-          yarn build:ci
-        working-directory: client
-        shell: bash
-        env:
-          VITE_API_URL: https://clippster-server.fly.dev
-
-      - name: Check signing key availability
-        shell: bash
-        run: |
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "✓ TAURI_SIGNING_PRIVATE_KEY is set (length: ${#TAURI_SIGNING_PRIVATE_KEY})"
-          else
-            echo "✗ TAURI_SIGNING_PRIVATE_KEY is NOT set - updater artifacts will NOT be created!"
-          fi
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-
+      # Use tauri-action for all platforms (handles CLI installation efficiently)
       - name: Build Tauri App (macOS)
         if: matrix.platform == 'macos-latest'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VITE_API_URL: https://clippster-server.fly.dev
-          # Updater signing key - required for creating .nsis.zip and .app.tar.gz
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS notarization
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: client
-          includeUpdaterJson: true
           args: ${{ matrix.args }}
-          retryAttempts: 3
-
-      # Use direct cargo build for Windows for more control over the build process
-      - name: Install Tauri CLI (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: cargo install tauri-cli --version "^2"
 
       - name: Build Tauri App (Windows)
         if: matrix.platform == 'windows-latest'
-        shell: bash
+        uses: tauri-apps/tauri-action@v0
         env:
-          VITE_API_URL: https://clippster-server.fly.dev
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        working-directory: client
-        run: |
-          # Debug: Check if signing key is set
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "✓ TAURI_SIGNING_PRIVATE_KEY is set (length: ${#TAURI_SIGNING_PRIVATE_KEY})"
-          else
-            echo "✗ TAURI_SIGNING_PRIVATE_KEY is NOT set!"
-          fi
-          
-          echo "Building Tauri app for Windows..."
-          cargo tauri build
-          
-          echo "Build complete. Listing NSIS bundle directory:"
-          ls -la src-tauri/target/release/bundle/nsis/ || echo "NSIS directory not found"
+        with:
+          projectPath: client
+          args: ${{ matrix.args }}
 
       - name: Upload artifacts to public releases repo (macOS)
         if: matrix.platform == 'macos-latest'
@@ -163,44 +149,25 @@ jobs:
           VERSION: ${{ needs.create-release.outputs.version }}
           ARCH_SUFFIX: ${{ matrix.artifact_suffix }}
         run: |
-          echo "=== Debug: Listing all bundle files ==="
-          find client/src-tauri/target -type f \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.sig" \) 2>/dev/null || true
-          echo "=== End debug listing ==="
-          
-          # Find and upload DMG (should be unique per architecture build)
+          # Upload DMG
           DMG_FILE=$(find client/src-tauri/target -name "*.dmg" -type f | head -1)
-          if [ -n "$DMG_FILE" ]; then
-            echo "Uploading DMG: $DMG_FILE"
-            gh release upload "v$VERSION" "$DMG_FILE" --repo $RELEASES_REPO --clobber
-          else
-            echo "WARNING: No DMG file found!"
-          fi
+          [ -n "$DMG_FILE" ] && gh release upload "v$VERSION" "$DMG_FILE" --repo $RELEASES_REPO --clobber
           
-          # Find and upload .app.tar.gz (for updater) - rename to include architecture
+          # Upload .app.tar.gz (for updater) with architecture suffix
           APP_TAR=$(find client/src-tauri/target -name "*.app.tar.gz" -type f | head -1)
           if [ -n "$APP_TAR" ]; then
-            # Rename to include architecture suffix to avoid overwrites
             BASENAME=$(basename "$APP_TAR")
             NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz"
             cp "$APP_TAR" "/tmp/$NEW_NAME"
-            echo "Uploading app tar as: $NEW_NAME"
             gh release upload "v$VERSION" "/tmp/$NEW_NAME" --repo $RELEASES_REPO --clobber
             
-            # Read signature from .sig file for latest.json
+            # Upload signature
             APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
             if [ -n "$APP_SIG" ]; then
-              SIGNATURE=$(cat "$APP_SIG")
-              # Rename and upload signature
               SIG_NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz.sig"
               cp "$APP_SIG" "/tmp/$SIG_NEW_NAME"
-              echo "Uploading app signature as: $SIG_NEW_NAME"
               gh release upload "v$VERSION" "/tmp/$SIG_NEW_NAME" --repo $RELEASES_REPO --clobber
-              
-              # Store signature for later use
-              echo "$SIGNATURE" > /tmp/signature_${ARCH_SUFFIX}.txt
             fi
-          else
-            echo "WARNING: No .app.tar.gz file found!"
           fi
 
       - name: Generate latest.json for macOS
@@ -210,51 +177,23 @@ jobs:
           VERSION: ${{ needs.create-release.outputs.version }}
           ARCH_SUFFIX: ${{ matrix.artifact_suffix }}
         run: |
-          # Determine platform key based on architecture
-          if [ "$ARCH_SUFFIX" = "aarch64" ]; then
-            PLATFORM_KEY="darwin-aarch64"
-          else
-            PLATFORM_KEY="darwin-x86_64"
-          fi
-          
-          # Read signature
+          PLATFORM_KEY=$( [ "$ARCH_SUFFIX" = "aarch64" ] && echo "darwin-aarch64" || echo "darwin-x86_64" )
           APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
-          SIGNATURE=""
-          if [ -n "$APP_SIG" ]; then
-            SIGNATURE=$(cat "$APP_SIG")
-          fi
-          
-          # Get the renamed filename
+          SIGNATURE=$( [ -n "$APP_SIG" ] && cat "$APP_SIG" || echo "" )
           APP_TAR=$(find client/src-tauri/target -name "*.app.tar.gz" -type f | head -1)
           BASENAME=$(basename "$APP_TAR")
           NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz"
           
-          # Create latest.json for this platform using jq (handles JSON properly)
           mkdir -p /tmp/latest-json
-          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          URL="https://github.com/$RELEASES_REPO/releases/download/v$VERSION/$NEW_NAME"
-          
           jq -n \
             --arg version "$VERSION" \
             --arg notes "See release notes on GitHub." \
-            --arg pub_date "$PUB_DATE" \
+            --arg pub_date "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
             --arg platform "$PLATFORM_KEY" \
             --arg signature "$SIGNATURE" \
-            --arg url "$URL" \
-            '{
-              version: $version,
-              notes: $notes,
-              pub_date: $pub_date,
-              platforms: {
-                ($platform): {
-                  signature: $signature,
-                  url: $url
-                }
-              }
-            }' > /tmp/latest-json/latest.json
-          
-          echo "Generated latest.json for $PLATFORM_KEY:"
-          cat /tmp/latest-json/latest.json
+            --arg url "https://github.com/$RELEASES_REPO/releases/download/v$VERSION/$NEW_NAME" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {($platform): {signature: $signature, url: $url}}}' \
+            > /tmp/latest-json/latest.json
 
       - name: Upload artifacts to public releases repo (Windows)
         if: matrix.platform == 'windows-latest'
@@ -263,50 +202,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          Write-Host "=== Debug: Current working directory ==="
-          Write-Host (Get-Location).Path
-          Write-Host "=== Debug: Listing NSIS bundle directory ==="
-          $nsisDir = "client/src-tauri/target/release/bundle/nsis"
-          if (Test-Path $nsisDir) {
-            Write-Host "NSIS directory exists at: $nsisDir"
-            Get-ChildItem -Path $nsisDir | ForEach-Object { Write-Host "  $($_.Name)" }
-          } else {
-            Write-Host "NSIS directory NOT found at: $nsisDir"
-            Write-Host "Searching for nsis directory recursively..."
-            Get-ChildItem -Path "client/src-tauri/target" -Recurse -Directory | Where-Object { $_.Name -eq "nsis" } | ForEach-Object { 
-              Write-Host "Found nsis dir at: $($_.FullName)"
-              Get-ChildItem -Path $_.FullName | ForEach-Object { Write-Host "  $($_.Name)" }
-            }
-          }
-          Write-Host "=== End debug listing ==="
-          
-          # Find and upload NSIS installer - use Where-Object for reliable matching
+          # Upload EXE installer
           $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe" } | Select-Object -First 1
-          if ($exeFile) {
-            Write-Host "Uploading EXE: $($exeFile.FullName)"
-            gh release upload "v$env:VERSION" "$($exeFile.FullName)" --repo $env:RELEASES_REPO --clobber
-          } else {
-            Write-Host "WARNING: No setup.exe file found!"
-          }
+          if ($exeFile) { gh release upload "v$env:VERSION" "$($exeFile.FullName)" --repo $env:RELEASES_REPO --clobber }
           
-          # Find and upload MSI - use Where-Object for reliable matching
-          $msiFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*.msi" } | Select-Object -First 1
-          if ($msiFile) {
-            Write-Host "Uploading MSI: $($msiFile.FullName)"
-            gh release upload "v$env:VERSION" "$($msiFile.FullName)" --repo $env:RELEASES_REPO --clobber
-          } else {
-            Write-Host "WARNING: No MSI file found!"
-          }
-          
-          # For Tauri v2 with createUpdaterArtifacts: true, the updater uses .exe directly
-          # Upload the .exe.sig signature file for verification
+          # Upload signature
           $exeSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe.sig" } | Select-Object -First 1
-          if ($exeSig) {
-            Write-Host "Uploading EXE signature: $($exeSig.FullName)"
-            gh release upload "v$env:VERSION" "$($exeSig.FullName)" --repo $env:RELEASES_REPO --clobber
-          } else {
-            Write-Host "WARNING: No .exe.sig file found! Auto-updates will NOT work on Windows."
-          }
+          if ($exeSig) { gh release upload "v$env:VERSION" "$($exeSig.FullName)" --repo $env:RELEASES_REPO --clobber }
 
       - name: Generate latest.json for Windows
         if: matrix.platform == 'windows-latest'
@@ -315,51 +217,26 @@ jobs:
           VERSION: ${{ needs.create-release.outputs.version }}
           RUNNER_TEMP: ${{ runner.temp }}
         run: |
-          # For Tauri v2 with createUpdaterArtifacts: true, Windows uses .exe directly (not .nsis.zip)
-          # Find the setup.exe and its signature file
           $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe" } | Select-Object -First 1
           $exeSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe.sig" } | Select-Object -First 1
           
-          $signature = ""
-          if ($exeSig) {
-            Write-Host "Found signature file: $($exeSig.FullName)"
-            $signature = Get-Content $exeSig.FullName -Raw
-            $signature = $signature.Trim()
-          } else {
-            Write-Host "WARNING: No .exe.sig signature file found for Windows updater"
-          }
+          $signature = if ($exeSig) { (Get-Content $exeSig.FullName -Raw).Trim() } else { "" }
+          $exeFileName = if ($exeFile) { $exeFile.Name } else { "" }
           
-          $exeFileName = ""
-          if ($exeFile) {
-            Write-Host "Found setup.exe: $($exeFile.FullName)"
-            $exeFileName = $exeFile.Name
-          } else {
-            Write-Host "WARNING: No setup.exe found for Windows updater"
-          }
-          
-          # Create latest.json for Windows - use RUNNER_TEMP to match artifact upload path
           $outputDir = "$env:RUNNER_TEMP/latest-json"
           New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
           
-          $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-          
-          $json = @{
+          @{
             version = $env:VERSION
             notes = "See release notes on GitHub."
-            pub_date = $pubDate
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
             platforms = @{
               "windows-x86_64" = @{
                 signature = $signature
                 url = "https://github.com/$env:RELEASES_REPO/releases/download/v$env:VERSION/$exeFileName"
               }
             }
-          } | ConvertTo-Json -Depth 10
-          
-          $outputFile = "$outputDir/latest.json"
-          $json | Out-File -FilePath $outputFile -Encoding utf8
-          Write-Host "Generated latest.json for windows-x86_64 at: $outputFile"
-          Write-Host "Contents:"
-          Get-Content $outputFile
+          } | ConvertTo-Json -Depth 10 | Out-File -FilePath "$outputDir/latest.json" -Encoding utf8
 
       - name: Upload latest.json artifact (macOS)
         if: matrix.platform == 'macos-latest'
@@ -386,91 +263,35 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: latest-json-*
-          # Don't merge - keep each artifact in its own directory to avoid overwrites
           merge-multiple: false
 
-      - name: Find and merge latest.json
-        id: merge_json
+      - name: Merge latest.json files
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          echo "=== Listing downloaded artifact directories ==="
-          ls -la
-          echo ""
-          echo "=== Looking for latest.json files ==="
-          find . -name "latest.json" -type f
-          echo ""
-          
-          # Find all latest.json files
           JSON_FILES=$(find . -name "latest.json" -type f)
           
           if [ -z "$JSON_FILES" ]; then
-            echo "ERROR: No latest.json files found! OTA updates will not work."
-            echo "Creating a minimal latest.json as fallback..."
-            
-            # Create minimal fallback - this shouldn't happen but prevents complete failure
-            cat > merged.json << EOF
-          {
-            "version": "$VERSION",
-            "notes": "See release notes on GitHub.",
-            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "platforms": {}
-          }
-          EOF
-            sed -i 's/^          //' merged.json
+            echo "ERROR: No latest.json files found!"
+            jq -n --arg v "$VERSION" --arg d "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+              '{version: $v, notes: "See release notes on GitHub.", pub_date: $d, platforms: {}}' > merged.json
             exit 0
           fi
           
-          # Use jq to merge all platforms into one latest.json
-          # Each file has structure: { version, notes, pub_date, platforms: {...} }
           echo '{"platforms":{}}' > merged.json
-          
           for file in $JSON_FILES; do
-            echo "Processing: $file"
-            cat "$file"
-            echo ""
-            
-            # Merge platforms from each file
-            jq -s '
-              {
-                version: (.[1].version // .[0].version),
-                notes: (.[1].notes // .[0].notes),
-                pub_date: (.[1].pub_date // .[0].pub_date),
-                platforms: ((.[0].platforms // {}) + (.[1].platforms // {}))
-              }
-            ' merged.json "$file" > tmp.json && mv tmp.json merged.json
+            jq -s '{version: (.[1].version // .[0].version), notes: (.[1].notes // .[0].notes), pub_date: (.[1].pub_date // .[0].pub_date), platforms: ((.[0].platforms // {}) + (.[1].platforms // {}))}' \
+              merged.json "$file" > tmp.json && mv tmp.json merged.json
           done
           
           echo "Final merged latest.json:"
           cat merged.json
-          
-          # Validate JSON
-          if ! jq empty merged.json 2>/dev/null; then
-            echo "ERROR: Generated invalid JSON!"
-            exit 1
-          fi
-          
-          # Check that we have at least one platform
-          PLATFORM_COUNT=$(jq '.platforms | length' merged.json)
-          echo "Platform count: $PLATFORM_COUNT"
-          if [ "$PLATFORM_COUNT" -eq 0 ]; then
-            echo "WARNING: No platforms in latest.json!"
-          fi
 
-      - name: Upload latest.json to release
+      - name: Upload latest.json and publish release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          if [ -f merged.json ]; then
-            mv merged.json latest.json
-            echo "Uploading latest.json..."
-            gh release upload "v$VERSION" latest.json --repo $RELEASES_REPO --clobber
-          fi
-
-      - name: Publish release (remove draft status)
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
-          VERSION: ${{ needs.create-release.outputs.version }}
-        run: |
+          mv merged.json latest.json
+          gh release upload "v$VERSION" latest.json --repo $RELEASES_REPO --clobber
           gh release edit "v$VERSION" --repo $RELEASES_REPO --draft=false
