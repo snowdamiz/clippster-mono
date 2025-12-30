@@ -34,6 +34,11 @@
     "withGlobalTauri": true
   },
   "plugins": {
+    "core": {
+      "capabilities": [
+        "main-window-permissions"
+      ]
+    },
     "sql": {
       "preload": ["sqlite:clippster_v25.db"]
     },

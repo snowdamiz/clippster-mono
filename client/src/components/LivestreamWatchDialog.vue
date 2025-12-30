@@ -26,8 +26,8 @@
             <!-- Header Bar (hidden in fullscreen unless hovered) -->
             <div
               :class="[
-                'absolute top-0 left-0 right-0 z-30 transition-opacity duration-300',
-                isFullscreen && !showControls ? 'opacity-0 pointer-events-none' : 'opacity-100',
+                'absolute top-0 left-0 right-0 z-30 transition-all duration-300 ease-in-out',
+                showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none',
               ]"
               @click.stop
             >
@@ -232,8 +232,10 @@
               <!-- Controls Overlay -->
               <div
                 :class="[
-                  'absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300',
-                  showControls || !viewer.state.value.isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none',
+                  'absolute bottom-0 left-0 right-0 z-30 transition-all duration-300 ease-in-out',
+                  showControls || !viewer.state.value.isPlaying
+                    ? 'opacity-100 translate-y-0'
+                    : 'opacity-0 translate-y-full pointer-events-none',
                 ]"
                 @click.stop
               >
@@ -404,7 +406,9 @@
     Radio,
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
+  import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
@@ -456,15 +460,14 @@
   const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
   let controlsTimeout: number | null = null;
 
-  // PiP state tracking - keep stream alive when dialog closes for PiP
+  // PiP state tracking
   const isInPipMode = ref(false);
   const closingForPip = ref(false);
   const pipListenersSetup = ref(false);
-  const globalKeyListenerSetup = ref(false);
   const globalShortcutRegistered = ref(false);
   const GLOBAL_SHORTCUT = 'Alt+C';
 
-  // Track clips created during this session
+  // Session tracking
   const sessionProjectId = ref<string | null>(null);
   const clipsCreatedCount = ref(0);
 
@@ -650,20 +653,31 @@
 
   // Event handlers
   function handleMouseMove() {
+    // Always show controls when mouse moves
     showControls.value = true;
+
+    // Clear any existing timeout to reset the timer
+    if (controlsTimeout) {
+      clearTimeout(controlsTimeout);
+    }
+
+    // Set a new timeout to hide controls after a period of inactivity
+    if (viewer.state.value.isPlaying) {
+      controlsTimeout = window.setTimeout(() => {
+        showControls.value = false;
+      }, 3000); // 3 seconds of inactivity
+    }
+  }
+
+  function handleMouseLeave() {
+    // When the mouse leaves, immediately start the timeout to hide controls
     if (controlsTimeout) {
       clearTimeout(controlsTimeout);
     }
     if (viewer.state.value.isPlaying) {
       controlsTimeout = window.setTimeout(() => {
         showControls.value = false;
-      }, 3000);
-    }
-  }
-
-  function handleMouseLeave() {
-    if (viewer.state.value.isPlaying) {
-      showControls.value = false;
+      }, 500); // Hide faster when mouse leaves
     }
   }
 
@@ -862,8 +876,8 @@
       emit('pip-mode-changed', false);
     }
 
-    // Clean up global key listener
-    cleanupGlobalKeyListener();
+    // Cleanup global shortcut
+    await unregisterGlobalShortcut();
 
     // Stop playback locally to avoid lingering audio when switching streams
     viewer.pause();
@@ -908,17 +922,6 @@
         }
 
         await video.requestPictureInPicture();
-        // PiP entered successfully - close dialog but keep stream running
-        isInPipMode.value = true;
-        closingForPip.value = true;
-        emit('pip-mode-changed', true);
-        emit('update:modelValue', false);
-        // Reset flag after emit is processed
-        await nextTick();
-        closingForPip.value = false;
-
-        // Setup global keyboard listener for quick clip
-        setupGlobalKeyListener();
 
         // Ensure video continues playing in PiP
         if (video.paused) {
@@ -932,54 +935,62 @@
 
   // PiP event handlers
   function handlePipEnter() {
+    console.log('[WatchDialog] Entered PiP mode');
     isInPipMode.value = true;
     emit('pip-mode-changed', true);
-    setupGlobalKeyListener();
+    // When entering PiP, close the dialog but keep the stream alive
+    closingForPip.value = true;
+    emit('update:modelValue', false);
+    // Setup global key listener for quick clipping
+    registerGlobalShortcut();
   }
 
-  function handlePipLeave() {
-    // Reopen dialog when user exits PiP
-    isInPipMode.value = false;
-    emit('pip-mode-changed', false);
-    cleanupGlobalKeyListener();
-    // The watch on modelValue will handle resetting isInPipMode and resuming video
+  async function handlePipLeave() {
+    console.log('[WatchDialog] Left PiP mode');
+    // Re-open the dialog when leaving PiP
     emit('update:modelValue', true);
+    
+    // Wait for dialog to open and state to sync before updating external state
+    await nextTick();
+    emit('pip-mode-changed', false);
+    
+    // Cleanup global key listener
+    await unregisterGlobalShortcut();
+
+    // Bring main window to front
+    const win = getCurrentWindow();
+    await win.unminimize();
+    await win.setFocus();
+    await win.requestUserAttention(UserAttentionType.Critical);
   }
 
-  // Global keyboard listener for quick clip when in PiP mode
-  function handleGlobalKeydown(event: KeyboardEvent) {
-    // Only handle if in PiP mode and dialog is not open
-    if (!isInPipMode.value && !props.isPipModeExternal) return;
-    if (props.modelValue) return; // Dialog is open, it handles its own keys
-
-    // Don't handle if user is typing in an input anywhere in the app
-    const target = event.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-      return;
+  // Register the Alt+C global shortcut
+  async function registerGlobalShortcut() {
+    try {
+      if (await isRegistered(GLOBAL_SHORTCUT)) {
+        console.warn(`[WatchDialog] Shortcut ${GLOBAL_SHORTCUT} already registered.`);
+        return;
+      }
+      await register(GLOBAL_SHORTCUT, performQuickClip);
+      globalShortcutRegistered.value = true;
+      console.log(`[WatchDialog] Global shortcut ${GLOBAL_SHORTCUT} registered.`);
+    } catch (err) {
+      console.error(`[WatchDialog] Failed to register global shortcut ${GLOBAL_SHORTCUT}:`, err);
+      showError('Shortcut Failed', `Could not register ${GLOBAL_SHORTCUT}. It might be in use by another application.`);
     }
+  }
 
-    // Handle 'C' for quick clip (30 seconds, no dialog)
-    if (event.key.toLowerCase() === 'c' && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault();
-      event.stopPropagation();
-      console.log('[WatchDialog] Global C key pressed - creating quick clip');
-      // Perform quick clip without showing dialog
-      performQuickClip();
+  // Unregister the global shortcut
+  async function unregisterGlobalShortcut() {
+    try {
+      if (await isRegistered(GLOBAL_SHORTCUT)) {
+        await unregister(GLOBAL_SHORTCUT);
+        console.log(`[WatchDialog] Global shortcut ${GLOBAL_SHORTCUT} unregistered.`);
+      }
+    } catch (err) {
+      console.error(`[WatchDialog] Failed to unregister global shortcut ${GLOBAL_SHORTCUT}:`, err);
     }
-  }
-
-  function setupGlobalKeyListener() {
-    if (globalKeyListenerSetup.value) return;
-    window.addEventListener('keydown', handleGlobalKeydown, true);
-    globalKeyListenerSetup.value = true;
-    console.log('[WatchDialog] Global key listener setup for PiP mode');
-  }
-
-  function cleanupGlobalKeyListener() {
-    if (!globalKeyListenerSetup.value) return;
-    window.removeEventListener('keydown', handleGlobalKeydown, true);
-    globalKeyListenerSetup.value = false;
-    console.log('[WatchDialog] Global key listener cleaned up');
+    globalShortcutRegistered.value = false;
   }
 
   // Setup PiP event listeners on video element
@@ -1056,6 +1067,9 @@
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen) {
+        // Reset closingForPip flag
+        closingForPip.value = false;
+
         // Reset session tracking state when opening dialog (but not if returning from PiP)
         if (!isInPipMode.value) {
           sessionProjectId.value = null;
@@ -1149,7 +1163,7 @@
     });
   }
 
-  onUnmounted(() => {
+  onUnmounted(async () => {
     document.removeEventListener('fullscreenchange', handleFullscreenChange);
     if (controlsTimeout) {
       clearTimeout(controlsTimeout);
@@ -1159,7 +1173,7 @@
       cleanupPipListeners(hlsVideoRef.value);
     }
     // Clean up global key listener and shortcut
-    cleanupGlobalKeyListener();
+    await unregisterGlobalShortcut();
 
     // Exit PiP if active when component unmounts
     if (document.pictureInPictureElement) {
@@ -1176,11 +1190,11 @@
       if (isPip && !isInPipMode.value) {
         // External state says we're in PiP but local state doesn't - sync it
         isInPipMode.value = true;
-        setupGlobalKeyListener();
+        registerGlobalShortcut();
       } else if (!isPip && isInPipMode.value) {
         // External state says we're not in PiP - sync and cleanup
         isInPipMode.value = false;
-        cleanupGlobalKeyListener();
+        unregisterGlobalShortcut();
       }
     }
   );
