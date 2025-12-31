@@ -7,9 +7,9 @@ import { Testimonials } from './components/Testimonials'
 import { CTA } from './components/CTA'
 import { Footer } from './components/Footer'
 import { WaitlistModal } from './components/WaitlistModal'
-import { DownloadProvider, useDownloadContext } from './context/DownloadContext'
+import { useDownloadContext } from './context/DownloadContext'
 
-function AppContent() {
+function App() {
   const { showWaitlistModal, setShowWaitlistModal } = useDownloadContext()
 
   return (
@@ -30,14 +30,6 @@ function AppContent() {
         onClose={() => setShowWaitlistModal(false)} 
       />
     </div>
-  )
-}
-
-function App() {
-  return (
-    <DownloadProvider>
-      <AppContent />
-    </DownloadProvider>
   )
 }
 

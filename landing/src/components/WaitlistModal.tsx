@@ -61,8 +61,12 @@ export function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
 
       if (response.ok && data.success) {
         setStatus('success')
+        // Save to localStorage so we don't show the modal again
+        localStorage.setItem('clippster_waitlist_joined', 'true')
       } else if (response.status === 409 || data.code === 'already_exists') {
         setStatus('exists')
+        // Also save for "already exists" case
+        localStorage.setItem('clippster_waitlist_joined', 'true')
       } else {
         setStatus('error')
         setErrorMessage(data.error || 'Something went wrong. Please try again.')

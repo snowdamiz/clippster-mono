@@ -19,11 +19,14 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     const urlParams = new URLSearchParams(window.location.search)
     const hasAccess = urlParams.get('access') === 'beta'
     
+    // Check if user has already joined the waitlist
+    const hasJoinedWaitlist = localStorage.getItem('clippster_waitlist_joined') === 'true'
+    
     setDownloadsEnabled(hasAccess)
     setHasCheckedBypass(true)
     
-    // Show waitlist modal on load if downloads are not enabled
-    if (!hasAccess) {
+    // Show waitlist modal on load if downloads are not enabled AND user hasn't already joined
+    if (!hasAccess && !hasJoinedWaitlist) {
       // Small delay for better UX
       const timer = setTimeout(() => {
         setShowWaitlistModal(true)
