@@ -112,6 +112,9 @@ defmodule ClippsterServerWeb.Router do
 
     # App release info (for download buttons on landing page)
     get "/releases/latest", ReleaseController, :latest
+
+    # Waitlist signup (public)
+    post "/waitlist", WaitlistController, :create
   end
 
   # Protected routes (require authentication)
@@ -290,6 +293,9 @@ defmodule ClippsterServerWeb.Router do
     # Admin beta codes management
     post "/admin/beta-codes/generate", AdminController, :generate_beta_codes
     get "/admin/beta-codes", AdminController, :list_beta_codes
+
+    # Admin waitlist management
+    get "/admin/waitlist", WaitlistController, :index
   end
 
 

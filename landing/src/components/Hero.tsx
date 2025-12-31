@@ -1,9 +1,11 @@
-import { Star, ChevronRight, Apple, Monitor, Loader2 } from 'lucide-react'
+import { Star, ChevronRight, Apple, Monitor, Loader2, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
+import { useDownloadContext } from '../context/DownloadContext'
 
 export function Hero() {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
+  const { downloadsEnabled, openWaitlistModal } = useDownloadContext()
   const secondaryDownload = otherDownloads[0]
 
   return (
@@ -42,6 +44,14 @@ export function Hero() {
               <Loader2 className="w-5 h-5 animate-spin" />
               Loading...
             </div>
+          ) : !downloadsEnabled ? (
+            <button
+              onClick={openWaitlistModal}
+              className="px-8 py-4 rounded-full bg-white/10 text-white/70 font-semibold text-base border border-white/20 flex items-center gap-3 cursor-pointer hover:bg-white/15 hover:border-white/30 transition-colors"
+            >
+              <Clock className="w-5 h-5" />
+              Coming Soon
+            </button>
           ) : primaryDownload ? (
             <>
               <a

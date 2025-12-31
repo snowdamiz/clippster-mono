@@ -63,6 +63,17 @@
         <Loader2 v-else class="h-4 w-4 animate-spin" />
         Refresh Codes
       </button>
+
+      <button
+        v-if="activeTab === 'waitlist'"
+        @click="fetchWaitlist"
+        :disabled="waitlistLoading"
+        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md flex items-center gap-2 text-sm font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <RefreshCw v-if="!waitlistLoading" class="h-4 w-4" />
+        <Loader2 v-else class="h-4 w-4 animate-spin" />
+        Refresh Waitlist
+      </button>
     </template>
 
     <!-- Tabs Navigation -->
@@ -1112,6 +1123,155 @@
       </div>
     </div>
 
+    <!-- Waitlist Tab -->
+    <div v-if="activeTab === 'waitlist'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <!-- Stats Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center"
+            >
+              <Users class="h-4 w-4 text-violet-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Total Signups</h3>
+          </div>
+          <p class="text-2xl font-bold text-white">{{ waitlistStats.total }}</p>
+        </div>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 flex items-center justify-center"
+            >
+              <Activity class="h-4 w-4 text-green-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Today</h3>
+          </div>
+          <p class="text-2xl font-bold text-green-400">{{ waitlistStats.today }}</p>
+        </div>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30 flex items-center justify-center"
+            >
+              <Activity class="h-4 w-4 text-blue-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">This Week</h3>
+          </div>
+          <p class="text-2xl font-bold text-blue-400">{{ waitlistStats.this_week }}</p>
+        </div>
+      </div>
+
+      <!-- Header -->
+      <div class="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center"
+            >
+              <Users class="h-5 w-5 text-violet-400" />
+            </div>
+            <div>
+              <h2 class="text-lg font-semibold text-white">Waitlist</h2>
+              <p class="text-xs text-zinc-500">Users who signed up for early access</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              v-if="waitlistEntries.length > 0"
+              @click="copyAllWaitlistEmails"
+              class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-all border border-zinc-700"
+            >
+              <Copy class="h-4 w-4" />
+              Copy All Emails
+            </button>
+            <span class="px-3 py-1.5 bg-zinc-800 rounded-lg text-sm text-zinc-300 font-medium whitespace-nowrap">
+              {{ waitlistEntries.length }} email{{ waitlistEntries.length !== 1 ? 's' : '' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Display -->
+      <div v-if="waitlistError" class="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+        <div class="flex items-center gap-2">
+          <AlertTriangle class="h-4 w-4 text-red-400" />
+          <p class="text-red-300 text-sm">{{ waitlistError }}</p>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="waitlistLoading && !waitlistEntries.length" class="flex items-center justify-center py-12">
+        <div class="text-center">
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-violet-400" />
+          <p class="text-zinc-400">Loading waitlist...</p>
+        </div>
+      </div>
+
+      <!-- Waitlist Table -->
+      <div
+        v-else-if="waitlistEntries.length > 0"
+        class="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden"
+      >
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-zinc-900/80">
+              <tr>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">ID</th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  Email
+                </th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  Signed Up
+                </th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-800/50">
+              <tr v-for="entry in waitlistEntries" :key="entry.id" class="hover:bg-zinc-800/30 transition-colors">
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm font-mono text-zinc-500">#{{ entry.id }}</span>
+                </td>
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm text-zinc-200">{{ entry.email }}</span>
+                </td>
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm text-zinc-500">{{ formatDate(entry.created_at) }}</span>
+                </td>
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <button
+                    @click="copyWaitlistEmail(entry.email)"
+                    class="inline-flex items-center px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-medium rounded-lg transition-all border border-zinc-700"
+                  >
+                    <Copy class="h-3 w-3 mr-1.5" />
+                    Copy
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else class="text-center py-12 bg-zinc-900/40 border border-zinc-800 rounded-xl">
+        <div
+          class="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center mx-auto mb-4"
+        >
+          <Users class="h-7 w-7 text-violet-400" />
+        </div>
+        <p class="text-zinc-400 mb-4">No waitlist signups yet</p>
+        <button
+          @click="fetchWaitlist"
+          class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg text-sm font-medium transition-all border border-zinc-700"
+        >
+          Refresh Waitlist
+        </button>
+      </div>
+    </div>
+
     <!-- UI Overrides Tab -->
     <div v-if="activeTab === 'settings'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <!-- Stats Header -->
@@ -2003,6 +2163,7 @@
     { id: 'ai', label: 'AI Usage' },
     { id: 'analytics', label: 'Analytics' },
     { id: 'beta', label: 'Beta Codes' },
+    { id: 'waitlist', label: 'Waitlist' },
     { id: 'settings', label: 'Settings' },
   ];
 
@@ -2069,6 +2230,24 @@
   const generateCodeCount = ref(10);
   const betaCodesError = ref<string | null>(null);
   const copiedCodeId = ref<number | null>(null);
+
+  // Waitlist state
+  interface WaitlistEntry {
+    id: number;
+    email: string;
+    created_at: string;
+  }
+
+  interface WaitlistStats {
+    total: number;
+    today: number;
+    this_week: number;
+  }
+
+  const waitlistEntries = ref<WaitlistEntry[]>([]);
+  const waitlistStats = ref<WaitlistStats>({ total: 0, today: 0, this_week: 0 });
+  const waitlistLoading = ref(false);
+  const waitlistError = ref<string | null>(null);
 
   // User action menu dropdown state
   const openUserActionMenuId = ref<number | null>(null);
@@ -2802,6 +2981,55 @@
     }
   };
 
+  // Waitlist functions
+  const fetchWaitlist = async () => {
+    waitlistLoading.value = true;
+    waitlistError.value = null;
+
+    try {
+      console.log('🔐 Admin - Fetching waitlist entries...');
+      const response = await api.get('/admin/waitlist');
+
+      if (response.data.success) {
+        waitlistEntries.value = response.data.entries;
+        waitlistStats.value = response.data.stats;
+        console.log(`🔐 Admin - Loaded ${response.data.entries.length} waitlist entries`);
+      } else {
+        waitlistError.value = response.data.error || 'Failed to load waitlist';
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error fetching waitlist:', err);
+      waitlistError.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      waitlistLoading.value = false;
+    }
+  };
+
+  const copyWaitlistEmail = async (email: string) => {
+    try {
+      await navigator.clipboard.writeText(email);
+      console.log('Copied email to clipboard:', email);
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+    }
+  };
+
+  const copyAllWaitlistEmails = async () => {
+    const emails = waitlistEntries.value.map((entry) => entry.email).join('\n');
+
+    if (!emails) {
+      waitlistError.value = 'No emails to copy';
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(emails);
+      console.log('Copied all waitlist emails to clipboard');
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+    }
+  };
+
   const getSubscriptionStatusClass = (status: string | undefined) => {
     switch (status) {
       case 'active':
@@ -3099,6 +3327,7 @@
     fetchAiStats();
     fetchAnalyticsStats();
     fetchBetaCodes();
+    fetchWaitlist();
     loadPlatformOverride();
     fetchFeatureFlags();
     document.addEventListener('click', handleUserActionMenuClickOutside);

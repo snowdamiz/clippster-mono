@@ -12,7 +12,7 @@ defmodule ClippsterServer.Emails do
     from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
     app_name = Keyword.get(config, :app_name, "Clippster")
     base_url = Keyword.get(config, :verification_url_base, "http://localhost:4000")
-    
+
     magic_link_url = "#{base_url}/api/auth/email/verify/#{magic_link_token}"
 
     new()
@@ -31,7 +31,7 @@ defmodule ClippsterServer.Emails do
     from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
     app_name = Keyword.get(config, :app_name, "Clippster")
     base_url = Keyword.get(config, :verification_url_base, "http://localhost:4000")
-    
+
     reset_url = "#{base_url}/api/auth/email/reset-password/#{reset_token}"
 
     new()
@@ -62,7 +62,7 @@ defmodule ClippsterServer.Emails do
                   <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">#{app_name}</h1>
                 </td>
               </tr>
-              
+
               <!-- Main Card -->
               <tr>
                 <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
@@ -73,7 +73,7 @@ defmodule ClippsterServer.Emails do
                   <p style="margin: 0 0 32px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
                     Enter this code in the app to verify your account
                   </p>
-                  
+
                   <!-- OTP Code Box -->
                   <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
                     <p style="margin: 0 0 8px 0; font-size: 12px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1px;">
@@ -83,19 +83,19 @@ defmodule ClippsterServer.Emails do
                       #{otp_code}
                     </p>
                   </div>
-                  
+
                   <p style="margin: 0 0 24px 0; font-size: 13px; color: #71717a; text-align: center;">
                     This code expires in <strong style="color: #a1a1aa;">10 minutes</strong>
                   </p>
-                  
+
                   <!-- Divider -->
                   <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 24px 0;"></div>
-                  
+
                   <!-- Magic Link Section -->
                   <p style="margin: 0 0 16px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
                     Or click this button to verify:
                   </p>
-                  
+
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
                       <td align="center">
@@ -107,7 +107,7 @@ defmodule ClippsterServer.Emails do
                   </table>
                 </td>
               </tr>
-              
+
               <!-- Footer -->
               <tr>
                 <td style="padding-top: 32px; text-align: center;">
@@ -159,7 +159,7 @@ defmodule ClippsterServer.Emails do
                   <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">#{app_name}</h1>
                 </td>
               </tr>
-              
+
               <!-- Main Card -->
               <tr>
                 <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
@@ -170,7 +170,7 @@ defmodule ClippsterServer.Emails do
                   <p style="margin: 0 0 32px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
                     Click the button below to set a new password
                   </p>
-                  
+
                   <!-- Reset Button -->
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
@@ -181,13 +181,13 @@ defmodule ClippsterServer.Emails do
                       </td>
                     </tr>
                   </table>
-                  
+
                   <p style="margin: 24px 0 0 0; font-size: 13px; color: #71717a; text-align: center;">
                     This link expires in <strong style="color: #a1a1aa;">1 hour</strong>
                   </p>
                 </td>
               </tr>
-              
+
               <!-- Footer -->
               <tr>
                 <td style="padding-top: 32px; text-align: center;">
@@ -225,7 +225,7 @@ defmodule ClippsterServer.Emails do
     from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
     app_name = Keyword.get(config, :app_name, "Clippster")
     base_url = Keyword.get(config, :verification_url_base, "http://localhost:4000")
-    
+
     invite_url = "#{base_url}/invite/#{invite_token}"
 
     new()
@@ -256,7 +256,7 @@ defmodule ClippsterServer.Emails do
                   <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">#{app_name}</h1>
                 </td>
               </tr>
-              
+
               <!-- Main Card -->
               <tr>
                 <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
@@ -279,18 +279,18 @@ defmodule ClippsterServer.Emails do
                   <p style="margin: 0 0 24px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
                     #{inviter_name} has invited you to join
                   </p>
-                  
+
                   <!-- Organization Name Box -->
                   <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
                     <p style="margin: 0; font-size: 20px; font-weight: 600; color: #ffffff;">
                       #{org_name}
                     </p>
                   </div>
-                  
+
                   <p style="margin: 0 0 24px 0; font-size: 13px; color: #71717a; text-align: center;">
                     Click the button below to accept this invitation and join the team.
                   </p>
-                  
+
                   <!-- Accept Button -->
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
@@ -301,13 +301,13 @@ defmodule ClippsterServer.Emails do
                       </td>
                     </tr>
                   </table>
-                  
+
                   <p style="margin: 24px 0 0 0; font-size: 12px; color: #52525b; text-align: center;">
                     This invitation expires in 7 days.
                   </p>
                 </td>
               </tr>
-              
+
               <!-- Footer -->
               <tr>
                 <td style="padding-top: 32px; text-align: center;">
@@ -338,6 +338,107 @@ defmodule ClippsterServer.Emails do
     If you don't recognize this organization, you can safely ignore this email.
     """
   end
+
+  @doc """
+  Creates a waitlist confirmation email.
+  """
+  def waitlist_confirmation_email(email) do
+    config = Application.get_env(:clippster_server, :email_auth, [])
+    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
+    app_name = Keyword.get(config, :app_name, "Clippster")
+
+    new()
+    |> to(email)
+    |> from({app_name, from_email})
+    |> subject("You're on the #{app_name} waitlist!")
+    |> html_body(waitlist_confirmation_html(app_name))
+    |> text_body(waitlist_confirmation_text(app_name))
+  end
+
+  defp waitlist_confirmation_html(app_name) do
+    """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Welcome to the Waitlist</title>
+    </head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0a;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="min-height: 100vh;">
+        <tr>
+          <td align="center" style="padding: 40px 20px;">
+            <table role="presentation" width="100%" style="max-width: 480px;">
+              <!-- Logo/Header -->
+              <tr>
+                <td align="center" style="padding-bottom: 32px;">
+                  <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">#{app_name}</h1>
+                </td>
+              </tr>
+
+              <!-- Main Card -->
+              <tr>
+                <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
+                  <!-- Icon -->
+                  <div style="text-align: center; margin-bottom: 24px;">
+                    <div style="display: inline-block; background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 12px; padding: 16px;">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </div>
+                  </div>
+
+                  <!-- Title -->
+                  <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #ffffff; text-align: center;">
+                    You're on the list!
+                  </h2>
+                  <p style="margin: 0 0 24px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
+                    Thanks for joining the #{app_name} waitlist.
+                  </p>
+
+                  <!-- Message Box -->
+                  <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+                    <p style="margin: 0; font-size: 14px; color: #d4d4d8; line-height: 1.6;">
+                      We're working hard to bring you the best clip editing experience.
+                      You'll be among the first to know when we launch!
+                    </p>
+                  </div>
+
+                  <p style="margin: 0; font-size: 13px; color: #71717a; text-align: center;">
+                    We'll notify you as soon as #{app_name} is ready for you.
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Footer -->
+              <tr>
+                <td style="padding-top: 32px; text-align: center;">
+                  <p style="margin: 0; font-size: 12px; color: #52525b;">
+                    If you didn't sign up for this waitlist, you can safely ignore this email.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+    """
+  end
+
+  defp waitlist_confirmation_text(app_name) do
+    """
+    #{app_name} - You're on the waitlist!
+
+    Thanks for joining the #{app_name} waitlist.
+
+    We're working hard to bring you the best clip editing experience.
+    You'll be among the first to know when we launch!
+
+    We'll notify you as soon as #{app_name} is ready for you.
+
+    If you didn't sign up for this waitlist, you can safely ignore this email.
+    """
+  end
 end
-
-

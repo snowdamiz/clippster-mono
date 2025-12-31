@@ -6,8 +6,12 @@ import { HowItWorks } from './components/HowItWorks'
 import { Testimonials } from './components/Testimonials'
 import { CTA } from './components/CTA'
 import { Footer } from './components/Footer'
+import { WaitlistModal } from './components/WaitlistModal'
+import { DownloadProvider, useDownloadContext } from './context/DownloadContext'
 
-function App() {
+function AppContent() {
+  const { showWaitlistModal, setShowWaitlistModal } = useDownloadContext()
+
   return (
     <div className="min-h-screen bg-[#09090b]">
       <Header />
@@ -20,7 +24,20 @@ function App() {
         <CTA />
       </main>
       <Footer />
+      
+      <WaitlistModal 
+        isOpen={showWaitlistModal} 
+        onClose={() => setShowWaitlistModal(false)} 
+      />
     </div>
+  )
+}
+
+function App() {
+  return (
+    <DownloadProvider>
+      <AppContent />
+    </DownloadProvider>
   )
 }
 

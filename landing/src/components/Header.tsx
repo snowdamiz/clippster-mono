@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Menu, X, Apple, Monitor, Loader2 } from 'lucide-react'
+import { Menu, X, Apple, Monitor, Loader2, Clock } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
+import { useDownloadContext } from '../context/DownloadContext'
 
 const navLinks: { href: string; label: string; isPage?: boolean }[] = [
   { href: '#features', label: 'Features' },
@@ -14,6 +15,7 @@ export function Header() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
+  const { downloadsEnabled, openWaitlistModal } = useDownloadContext()
   const location = useLocation()
   
   const secondaryDownload = otherDownloads[0]
@@ -96,6 +98,14 @@ export function Header() {
               <div className="px-5 py-2.5 rounded-full bg-white/50 text-zinc-900 font-medium text-sm flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
               </div>
+            ) : !downloadsEnabled ? (
+              <button
+                onClick={openWaitlistModal}
+                className="px-5 py-2.5 rounded-full bg-white/10 text-white/70 font-medium text-sm border border-white/20 flex items-center gap-2 cursor-pointer hover:bg-white/15 hover:border-white/30 transition-colors"
+              >
+                <Clock className="w-4 h-4" />
+                Coming Soon
+              </button>
             ) : primaryDownload ? (
               <>
                 {secondaryDownload && (
@@ -164,36 +174,49 @@ export function Header() {
                 </a>
               )
             ))}
-            {primaryDownload && (
-              <div className="mt-3 pt-3 border-t border-zinc-800 space-y-2">
-                <a
-                  href={primaryDownload.downloadUrl}
-                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-white text-zinc-900 font-medium"
-                  onClick={() => setIsMobileMenuOpen(false)}
+            <div className="mt-3 pt-3 border-t border-zinc-800 space-y-2">
+              {!downloadsEnabled ? (
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false)
+                    openWaitlistModal()
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-white/10 text-white/70 font-medium border border-white/20"
                 >
-                  {primaryDownload.platform.os === 'mac' ? (
-                    <Apple className="w-4 h-4" />
-                  ) : (
-                    <Monitor className="w-4 h-4" />
-                  )}
-                  Download for {primaryDownload.label}
-                </a>
-                {secondaryDownload && (
+                  <Clock className="w-4 h-4" />
+                  Coming Soon
+                </button>
+              ) : primaryDownload && (
+                <>
                   <a
-                    href={secondaryDownload.downloadUrl}
-                    className="flex items-center justify-center gap-2 px-4 py-3 text-zinc-400 hover:text-white rounded-lg"
+                    href={primaryDownload.downloadUrl}
+                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-white text-zinc-900 font-medium"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
-                    {secondaryDownload.platform.os === 'mac' ? (
+                    {primaryDownload.platform.os === 'mac' ? (
                       <Apple className="w-4 h-4" />
                     ) : (
                       <Monitor className="w-4 h-4" />
                     )}
-                    {secondaryDownload.label}
+                    Download for {primaryDownload.label}
                   </a>
-                )}
-              </div>
-            )}
+                  {secondaryDownload && (
+                    <a
+                      href={secondaryDownload.downloadUrl}
+                      className="flex items-center justify-center gap-2 px-4 py-3 text-zinc-400 hover:text-white rounded-lg"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      {secondaryDownload.platform.os === 'mac' ? (
+                        <Apple className="w-4 h-4" />
+                      ) : (
+                        <Monitor className="w-4 h-4" />
+                      )}
+                      {secondaryDownload.label}
+                    </a>
+                  )}
+                </>
+              )}
+            </div>
           </nav>
         </div>
       )}

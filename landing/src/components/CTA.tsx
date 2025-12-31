@@ -1,10 +1,12 @@
-import { Apple, Monitor, ChevronDown, Loader2 } from 'lucide-react'
+import { Apple, Monitor, ChevronDown, Loader2, Clock } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useDownloads, type PlatformDownload } from '../hooks/usePlatform'
+import { useDownloadContext } from '../context/DownloadContext'
 
 export function CTA() {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
+  const { downloadsEnabled, openWaitlistModal } = useDownloadContext()
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -49,6 +51,14 @@ export function CTA() {
               <Loader2 className="w-5 h-5 animate-spin" />
               Loading...
             </div>
+          ) : !downloadsEnabled ? (
+            <button
+              onClick={openWaitlistModal}
+              className="px-8 py-4 rounded-full bg-white/10 text-white/70 font-semibold border border-white/20 flex items-center gap-3 cursor-pointer hover:bg-white/15 hover:border-white/30 transition-colors"
+            >
+              <Clock className="w-5 h-5" />
+              Coming Soon
+            </button>
           ) : primaryDownload ? (
             <a
               href={primaryDownload.downloadUrl}
@@ -59,8 +69,8 @@ export function CTA() {
             </a>
           ) : null}
           
-          {/* Other Versions Dropdown */}
-          {otherDownloads.length > 0 && (
+          {/* Other Versions Dropdown - only show when downloads are enabled */}
+          {downloadsEnabled && otherDownloads.length > 0 && (
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setShowDropdown(!showDropdown)}
