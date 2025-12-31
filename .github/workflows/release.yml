@@ -64,6 +64,38 @@ jobs:
           path: client/dist
           retention-days: 1
 
+  # Deploy server to Fly.io
+  deploy-server:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy Server to Fly.io
+        working-directory: server
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_SERVER_TOKEN }}
+        run: flyctl deploy --remote-only
+
+  # Deploy landing site to Fly.io
+  deploy-landing:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy Landing to Fly.io
+        working-directory: landing
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_LANDING_TOKEN }}
+        run: flyctl deploy --remote-only
+
   # Build for each platform
   build-tauri:
     needs: create-release
@@ -256,7 +288,7 @@ jobs:
 
   # Merge latest.json files and publish release
   finalize-release:
-    needs: [create-release, build-tauri]
+    needs: [create-release, build-tauri, deploy-server, deploy-landing]
     runs-on: ubuntu-latest
     steps:
       - name: Download all latest.json artifacts
