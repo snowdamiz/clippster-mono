@@ -25,7 +25,8 @@ const subscriptionPlans = [
     ],
     limitations: [],
     cta: 'Get Started',
-    highlight: false
+    highlight: false,
+    accentColor: 'blue'
   },
   {
     name: 'Creator',
@@ -46,7 +47,8 @@ const subscriptionPlans = [
     ],
     limitations: [],
     cta: 'Start Creating',
-    highlight: true
+    highlight: true,
+    accentColor: 'violet'
   },
   {
     name: 'Pro',
@@ -68,7 +70,8 @@ const subscriptionPlans = [
     ],
     limitations: [],
     cta: 'Go Pro',
-    highlight: false
+    highlight: false,
+    accentColor: 'emerald'
   },
 ]
 
@@ -255,19 +258,27 @@ function FAQItem({ question, answer, isOpen, onClick, index }: {
 }) {
   return (
     <div 
-      className="group rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden transition-all duration-300 hover:border-zinc-700"
+      className={`group rounded-xl border bg-zinc-900/40 backdrop-blur-sm overflow-hidden transition-all duration-300 ${
+        isOpen ? 'border-zinc-700' : 'border-zinc-800 hover:border-zinc-700'
+      }`}
       style={{ animationDelay: `${index * 50}ms` }}
     >
       <button 
         onClick={onClick}
-        className="w-full flex items-center justify-between p-6 text-left"
+        className="w-full flex items-center justify-between p-5 sm:p-6 text-left"
       >
-        <h3 className="font-medium text-white pr-4">{question}</h3>
-        <ChevronDown className={`w-5 h-5 text-zinc-500 transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+        <h3 className="font-medium text-white pr-4 group-hover:text-zinc-100 transition-colors">{question}</h3>
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all duration-300 ${
+          isOpen ? 'bg-violet-500/20' : 'bg-zinc-800 group-hover:bg-zinc-700'
+        }`}>
+          <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${
+            isOpen ? 'rotate-180 text-violet-400' : 'text-zinc-500'
+          }`} />
+        </div>
       </button>
       <div className={`grid transition-all duration-300 ease-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="overflow-hidden">
-          <p className="text-sm text-zinc-400 leading-relaxed px-6 pb-6">{answer}</p>
+          <p className="text-sm text-zinc-400 leading-relaxed px-5 sm:px-6 pb-5 sm:pb-6">{answer}</p>
         </div>
       </div>
     </div>
@@ -281,7 +292,7 @@ export function PricingPage() {
   return (
     <div className="min-h-screen bg-[#09090b] overflow-x-hidden">
       {/* Header */}
-      <header className="border-b border-zinc-800/50 backdrop-blur-sm sticky top-0 z-50 bg-[#09090b]/80">
+      <header className="border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 bg-[#09090b]/90">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-6">
             <Link to="/" className="flex items-center gap-2 sm:gap-3">
@@ -290,20 +301,20 @@ export function PricingPage() {
             </Link>
             <Link 
               to="/" 
-              className="hidden sm:flex items-center gap-2 text-zinc-500 hover:text-white transition-colors text-sm"
+              className="hidden sm:flex items-center gap-2 text-zinc-500 hover:text-white transition-colors text-sm group"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
               Back to home
             </Link>
           </div>
           {isLoading ? (
-            <div className="px-5 py-2.5 rounded-full bg-white/50 text-zinc-900 font-medium text-sm flex items-center gap-2">
+            <div className="px-5 py-2.5 rounded-full bg-zinc-800 text-zinc-400 font-medium text-sm flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
             </div>
           ) : primaryDownload ? (
             <a
               href={primaryDownload.downloadUrl}
-              className="px-5 py-2.5 rounded-full bg-white text-zinc-900 font-medium text-sm hover:bg-zinc-100 transition-colors flex items-center gap-2 shadow-lg shadow-white/5"
+              className="group px-5 py-2.5 rounded-full bg-white text-zinc-900 font-medium text-sm hover:bg-zinc-100 transition-all duration-300 flex items-center gap-2 shadow-lg shadow-white/5 hover:shadow-white/10"
             >
               {primaryDownload.platform.os === 'mac' ? <Apple className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
               <span className="hidden sm:inline">Download</span>
@@ -313,36 +324,47 @@ export function PricingPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
-        {/* Page Header with hero glow */}
-        <div className="text-center mb-12 relative overflow-visible">
-          {/* Hero glow effect - constrained to not cause overflow */}
-          <div className="absolute top-[-200px] left-1/2 -translate-x-1/2 w-full max-w-[600px] h-[400px] bg-[radial-gradient(ellipse_at_center,rgba(139,92,246,0.08)_0%,transparent_70%)] pointer-events-none" />
+        {/* Page Header */}
+        <div className="text-center mb-16 relative overflow-visible">
+          {/* Background effects */}
+          <div className="absolute top-[-200px] left-1/2 -translate-x-1/2 w-full max-w-[800px] h-[500px] pointer-events-none">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(139,92,246,0.08)_0%,transparent_60%)]" />
+            <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-blue-500/[0.03] rounded-full blur-3xl" />
+            <div className="absolute top-1/3 right-1/4 w-64 h-64 bg-violet-500/[0.03] rounded-full blur-3xl" />
+          </div>
           
-          <p className="text-violet-400 text-sm font-medium tracking-wide uppercase mb-4 relative">
-            Pricing
-          </p>
-          <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold text-white mb-5 relative">
-            Simple, <span className="gradient-text">flexible</span> pricing
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 mb-6 relative">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+            <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Pricing</span>
+          </div>
+          
+          <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-bold text-white mb-5 relative tracking-tight">
+            Simple,{' '}
+            <span className="relative inline-block">
+              <span className="gradient-text">flexible</span>
+              <span className="absolute -bottom-1 left-0 right-0 h-3 bg-gradient-to-r from-blue-500/20 via-violet-500/30 to-pink-500/20 blur-sm" />
+            </span>
+            {' '}pricing
           </h1>
-          <p className="text-zinc-400 max-w-2xl mx-auto text-lg mb-8 relative">
+          
+          <p className="text-zinc-400 max-w-2xl mx-auto text-lg mb-10 relative leading-relaxed">
             Start with 60 free credits, then subscribe for monthly credits. Top up with credit packs anytime.
           </p>
 
           {/* Trust signal */}
-          <div className="flex items-center justify-center gap-6 relative">
-            <div className="flex items-center gap-2">
-              <div className="flex gap-0.5">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Star key={i} className="w-4 h-4 text-amber-400 fill-amber-400" />
-                ))}
-              </div>
-              <span className="text-sm text-zinc-400">4.9/5 from 2,400+ creators</span>
+          <div className="inline-flex items-center gap-4 px-5 py-3 rounded-xl border border-zinc-800/50 bg-zinc-900/30 backdrop-blur-sm relative">
+            <div className="flex gap-0.5">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Star key={i} className="w-4 h-4 text-amber-400 fill-amber-400" />
+              ))}
             </div>
+            <span className="text-sm text-zinc-400">4.9/5 from 2,400+ creators</span>
           </div>
         </div>
 
         {/* Subscription Plans */}
-        <section className="mb-20">
+        <section className="mb-24">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {subscriptionPlans.map((plan, index) => {
               const Icon = plan.icon
@@ -363,17 +385,18 @@ export function PricingPage() {
                     <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-b from-zinc-600 via-zinc-700 to-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   )}
                   
-                  {/* Subtle glow on hover for non-highlighted cards - hidden on mobile */}
-                  {!plan.highlight && (
-                    <div className="absolute -inset-4 rounded-3xl bg-violet-500/5 opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500 pointer-events-none hidden sm:block" />
-                  )}
+                  {/* Subtle glow on hover */}
+                  <div className={`absolute -inset-4 rounded-3xl opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500 pointer-events-none hidden sm:block ${
+                    plan.highlight ? 'bg-violet-500/10' : 'bg-zinc-500/5'
+                  }`} />
                   
                   {/* Popular badge */}
                   {plan.popular && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
                       <div className="relative">
                         <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-pink-500 blur-md opacity-50" />
-                        <div className="relative bg-gradient-to-r from-violet-500 to-pink-500 text-white text-[10px] font-bold tracking-wider uppercase px-4 py-1 rounded-full">
+                        <div className="relative bg-gradient-to-r from-violet-500 to-pink-500 text-white text-[10px] font-bold tracking-wider uppercase px-4 py-1.5 rounded-full flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3" />
                           Most Popular
                         </div>
                       </div>
@@ -393,9 +416,9 @@ export function PricingPage() {
                     <div className="relative p-6">
                       {/* Icon and Plan name */}
                       <div className="flex items-center gap-3 mb-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:scale-110 ${
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 ${
                           plan.highlight 
-                            ? 'bg-gradient-to-br from-violet-500 to-pink-500' 
+                            ? 'bg-gradient-to-br from-violet-500 to-pink-500 shadow-lg shadow-violet-500/20' 
                             : 'bg-zinc-800 group-hover:bg-zinc-700'
                         }`}>
                           <Icon className={`w-5 h-5 ${plan.highlight ? 'text-white' : 'text-zinc-400'}`} />
@@ -426,7 +449,7 @@ export function PricingPage() {
                       <div className={`py-3 px-4 rounded-xl mb-5 ${
                         plan.highlight 
                           ? 'bg-violet-500/10 border border-violet-500/20' 
-                          : 'bg-zinc-800/50'
+                          : 'bg-zinc-800/50 border border-zinc-700/30'
                       }`}>
                         <div className="flex items-center gap-2">
                           <Sparkles className={`w-4 h-4 ${plan.highlight ? 'text-violet-400' : 'text-zinc-500'}`} />
@@ -439,7 +462,7 @@ export function PricingPage() {
                       {/* CTA Button */}
                       <a
                         href={primaryDownload?.downloadUrl || '#'}
-                        className={`relative block w-full py-3 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden group/btn ${
+                        className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden group/btn ${
                           plan.highlight 
                             ? 'text-white shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:scale-[1.02]' 
                             : 'bg-zinc-800 text-white hover:bg-zinc-700'
@@ -468,7 +491,7 @@ export function PricingPage() {
                             }`}>
                               <Check className="w-2.5 h-2.5" />
                             </div>
-                            <span className="text-zinc-400 text-[13px]">
+                            <span className="text-zinc-400 text-[13px] leading-relaxed">
                               {feature}
                             </span>
                           </li>
@@ -493,18 +516,23 @@ export function PricingPage() {
         </section>
 
         {/* Credit Packs Section */}
-        <section className="mb-20 relative">
+        <section className="mb-24 relative">
           <div className="section-divider absolute top-0 left-0 right-0" />
           <div className="pt-20">
             <div className="text-center mb-12">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-4">
-                <Plus className="w-4 h-4 text-emerald-400" />
-                <span className="text-sm font-medium text-emerald-400">One-time purchase</span>
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 mb-6">
+                <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">One-time purchase</span>
               </div>
-              <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4">
-                Top up with Credit Packs
+              
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4 tracking-tight">
+                Top up with{' '}
+                <span className="relative inline-block">
+                  <span className="text-emerald-400">Credit Packs</span>
+                </span>
               </h2>
-              <p className="text-zinc-500 max-w-lg mx-auto">
+              <p className="text-zinc-500 max-w-lg mx-auto leading-relaxed">
                 Buy extra credits whenever you need them. Credits never expire and stack with your subscription.
               </p>
             </div>
@@ -518,11 +546,11 @@ export function PricingPage() {
                     className={`relative group rounded-2xl border overflow-hidden transition-all duration-300 hover:-translate-y-2 ${
                       pack.popular 
                         ? 'border-emerald-500/50 bg-gradient-to-b from-emerald-500/10 to-emerald-500/5' 
-                        : 'border-zinc-800 bg-zinc-900 hover:border-zinc-700'
+                        : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'
                     }`}
                     style={{ animationDelay: `${index * 100}ms` }}
                   >
-                    {/* Glow effect on hover - hidden on mobile to prevent overflow */}
+                    {/* Glow effect on hover */}
                     <div className={`absolute -inset-4 rounded-3xl opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500 pointer-events-none hidden sm:block ${
                       pack.popular ? 'bg-emerald-500/10' : 'bg-violet-500/5'
                     }`} />
@@ -539,9 +567,9 @@ export function PricingPage() {
                     
                     <div className={`relative p-6 ${pack.popular ? 'pt-10' : ''}`}>
                       {/* Icon */}
-                      <div className={`w-12 h-12 rounded-xl mx-auto mb-4 flex items-center justify-center transition-transform duration-300 group-hover:scale-110 ${
+                      <div className={`w-12 h-12 rounded-xl mx-auto mb-4 flex items-center justify-center transition-all duration-300 group-hover:scale-110 ${
                         pack.popular 
-                          ? 'bg-gradient-to-br from-emerald-500 to-teal-500' 
+                          ? 'bg-gradient-to-br from-emerald-500 to-teal-500 shadow-lg shadow-emerald-500/20' 
                           : 'bg-zinc-800 group-hover:bg-zinc-700'
                       }`}>
                         <PackIcon className={`w-6 h-6 ${pack.popular ? 'text-white' : 'text-zinc-400'}`} />
@@ -585,13 +613,13 @@ export function PricingPage() {
                       {/* Savings badge */}
                       {pack.savings ? (
                         <div className="flex justify-center">
-                          <div className="inline-flex px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold border border-emerald-500/20">
+                          <div className="inline-flex px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold border border-emerald-500/20">
                             Save {pack.savings}
                           </div>
                         </div>
                       ) : (
                         <div className="flex justify-center">
-                          <div className="inline-flex px-3 py-1 rounded-full bg-zinc-800 text-zinc-500 text-xs">
+                          <div className="inline-flex px-3 py-1.5 rounded-full bg-zinc-800 text-zinc-500 text-xs border border-zinc-700/50">
                             Starter pack
                           </div>
                         </div>
@@ -602,22 +630,22 @@ export function PricingPage() {
               })}
             </div>
 
-            {/* Credit Usage Examples - improved layout */}
-            <div className="mt-10 sm:mt-12 max-w-3xl mx-auto">
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
-                <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 bg-zinc-900/80">
+            {/* Credit Usage Examples */}
+            <div className="mt-12 max-w-3xl mx-auto">
+              <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 backdrop-blur-sm overflow-hidden">
+                <div className="px-5 sm:px-6 py-4 border-b border-zinc-800/50 bg-zinc-900/60">
                   <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-violet-400" />
                     How credits work
                   </h3>
                 </div>
-                <div className="p-4 sm:p-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <div className="p-5 sm:p-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {creditExamples.map((example, i) => (
                       <div 
                         key={example.action} 
-                        className={`flex items-center justify-between text-xs sm:text-sm p-3 rounded-lg gap-2 ${
-                          i === 0 ? 'bg-violet-500/10 border border-violet-500/20' : 'bg-zinc-800/30'
+                        className={`flex items-center justify-between text-sm p-3.5 rounded-xl gap-2 transition-colors ${
+                          i === 0 ? 'bg-violet-500/10 border border-violet-500/20' : 'bg-zinc-800/30 hover:bg-zinc-800/50'
                         }`}
                       >
                         <span className={`${i === 0 ? 'text-violet-300' : 'text-zinc-400'}`}>{example.action}</span>
@@ -625,8 +653,10 @@ export function PricingPage() {
                       </div>
                     ))}
                   </div>
-                  <div className="mt-4 pt-4 border-t border-zinc-800 flex items-start sm:items-center gap-2 text-xs text-zinc-500">
-                    <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5 sm:mt-0" />
+                  <div className="mt-5 pt-5 border-t border-zinc-800/50 flex items-start sm:items-center gap-2.5 text-xs text-zinc-500">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0">
+                      <Clock className="w-3.5 h-3.5" />
+                    </div>
                     <span>Example: A 30-minute YouTube video uses 30 credits to process, caption, and export</span>
                   </div>
                 </div>
@@ -636,14 +666,20 @@ export function PricingPage() {
         </section>
 
         {/* Comparison Section */}
-        <section className="mb-20 relative">
+        <section className="mb-24 relative">
           <div className="section-divider absolute top-0 left-0 right-0" />
           <div className="pt-20">
             <div className="text-center mb-12">
-              <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4">
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 mb-6">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Comparison</span>
+              </div>
+              
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4 tracking-tight">
                 Clippster vs <span className="text-zinc-500">Opus Clip</span>
               </h2>
-              <p className="text-zinc-500 max-w-lg mx-auto px-4">
+              <p className="text-zinc-500 max-w-lg mx-auto px-4 leading-relaxed">
                 See how we compare to the leading cloud-based clipping tool
               </p>
             </div>
@@ -651,8 +687,8 @@ export function PricingPage() {
             {/* Mobile Comparison Cards */}
             <div className="md:hidden space-y-4">
               {comparisonFeatures.map((category) => (
-                <div key={category.category} className="rounded-xl border border-zinc-800 overflow-hidden">
-                  <div className="bg-zinc-900 px-4 py-3 border-b border-zinc-800">
+                <div key={category.category} className="rounded-xl border border-zinc-800 overflow-hidden bg-zinc-900/40">
+                  <div className="bg-zinc-900/80 px-4 py-3 border-b border-zinc-800">
                     <span className="text-sm font-semibold text-white">{category.category}</span>
                   </div>
                   <div className="divide-y divide-zinc-800/50">
@@ -686,18 +722,18 @@ export function PricingPage() {
             </div>
 
             {/* Desktop Comparison Table */}
-            <div className="hidden md:block rounded-2xl border border-zinc-800 overflow-hidden">
+            <div className="hidden md:block rounded-2xl border border-zinc-800 overflow-hidden bg-zinc-900/40 backdrop-blur-sm">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-zinc-900 border-b border-zinc-800">
-                    <th className="text-left text-sm font-medium text-zinc-500 px-6 py-4 w-1/2">Feature</th>
-                    <th className="text-center px-6 py-4 w-1/4">
+                  <tr className="bg-zinc-900/80 border-b border-zinc-800">
+                    <th className="text-left text-sm font-medium text-zinc-500 px-6 py-5 w-1/2">Feature</th>
+                    <th className="text-center px-6 py-5 w-1/4">
                       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-500/10 border border-violet-500/30">
                         <img src="/logo-icon.svg" alt="" className="w-5 h-5" />
                         <span className="text-sm font-semibold text-white">Clippster</span>
                       </div>
                     </th>
-                    <th className="text-center px-6 py-4 w-1/4">
+                    <th className="text-center px-6 py-5 w-1/4">
                       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-800 border border-zinc-700">
                         <span className="text-sm font-medium text-zinc-400">Opus Clip</span>
                       </div>
@@ -708,8 +744,8 @@ export function PricingPage() {
                   {comparisonFeatures.map((category, catIndex) => (
                     <>
                       {/* Category Header */}
-                      <tr key={`cat-${category.category}`} className="bg-zinc-900/70 border-y border-zinc-800">
-                        <td colSpan={3} className="px-6 py-3">
+                      <tr key={`cat-${category.category}`} className="bg-zinc-900/60 border-y border-zinc-800">
+                        <td colSpan={3} className="px-6 py-3.5">
                           <span className="text-sm font-semibold text-white">{category.category}</span>
                         </td>
                       </tr>
@@ -718,13 +754,13 @@ export function PricingPage() {
                       {category.features.map((feature, idx) => (
                         <tr 
                           key={`${catIndex}-${feature.name}`}
-                          className={`${idx !== category.features.length - 1 ? 'border-b border-zinc-800/30' : ''} hover:bg-zinc-900/50 transition-colors`}
+                          className={`${idx !== category.features.length - 1 ? 'border-b border-zinc-800/30' : ''} hover:bg-zinc-800/30 transition-colors`}
                         >
-                          <td className="text-sm text-zinc-400 px-6 py-3.5">{feature.name}</td>
-                          <td className={`text-center px-6 py-3.5 transition-colors ${feature.winner === 'clippster' ? 'bg-violet-500/10' : ''}`}>
+                          <td className="text-sm text-zinc-400 px-6 py-4">{feature.name}</td>
+                          <td className={`text-center px-6 py-4 transition-colors ${feature.winner === 'clippster' ? 'bg-violet-500/10' : ''}`}>
                             <FeatureCell value={feature.clippster} isWinner={feature.winner === 'clippster'} isClippster={true} />
                           </td>
-                          <td className="text-center px-6 py-3.5">
+                          <td className="text-center px-6 py-4">
                             <FeatureCell value={feature.opus} isWinner={feature.winner === 'opus'} isClippster={false} />
                           </td>
                         </tr>
@@ -744,15 +780,21 @@ export function PricingPage() {
           </div>
         </section>
 
-        {/* FAQ Section - Now with interactive accordion */}
-        <section className="mb-20 relative">
+        {/* FAQ Section */}
+        <section className="mb-24 relative">
           <div className="section-divider absolute top-0 left-0 right-0" />
           <div className="pt-20">
-            <div className="text-center mb-10">
-              <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4">
+            <div className="text-center mb-12">
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 mb-6">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">FAQ</span>
+              </div>
+              
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4 tracking-tight">
                 Common questions
               </h2>
-              <p className="text-zinc-500">
+              <p className="text-zinc-500 leading-relaxed">
                 Everything you need to know about credits and billing
               </p>
             </div>
