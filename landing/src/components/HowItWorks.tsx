@@ -108,18 +108,6 @@ export function HowItWorks() {
             })}
           </div>
         </div>
-
-        {/* Bottom decoration */}
-        <div className="mt-16 flex justify-center">
-          <div className="flex items-center gap-4">
-            <span className="w-12 h-px bg-gradient-to-r from-transparent to-zinc-700" />
-            <div className="flex items-center gap-2 text-sm text-zinc-500">
-              <span className="w-2 h-2 rounded-full bg-emerald-500/50" />
-              <span>Average time: 2 minutes</span>
-            </div>
-            <span className="w-12 h-px bg-gradient-to-l from-transparent to-zinc-700" />
-          </div>
-        </div>
       </div>
     </section>
   )
