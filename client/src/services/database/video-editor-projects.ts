@@ -25,9 +25,16 @@ export interface VideoEditorSource {
   source_duration: number | null; // Original duration of source
   start_time: number; // Position in timeline
   end_time: number; // End position in timeline
-  trim_start: number; // Trim from source start
+  trim_start: number; // Trim from source start (video)
   trim_end: number | null; // Trim from source end (null = use full duration)
+  // J/L Cut support: Independent audio trim points
+  audio_trim_start?: number | null; // Audio trim start (J-cut: earlier than video)
+  audio_trim_end?: number | null; // Audio trim end (L-cut: later than video)
   order_index: number;
+  track_index?: number;
+  is_muted?: boolean;
+  is_locked?: boolean;
+  keyframes_data?: string; // JSON string of Keyframe[]
   created_at: number;
 }
 
@@ -152,6 +159,7 @@ export async function createVideoEditorSource(
     trimStart?: number;
     trimEnd?: number | null;
     orderIndex: number;
+    keyframesData?: string;
   }
 ): Promise<VideoEditorSource> {
   const db = await getDatabase();
@@ -161,8 +169,8 @@ export async function createVideoEditorSource(
   await db.execute(
     `INSERT INTO video_editor_sources 
      (id, project_id, source_type, source_id, source_path, source_name, source_thumbnail, 
-      source_duration, start_time, end_time, trim_start, trim_end, order_index, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      source_duration, start_time, end_time, trim_start, trim_end, order_index, keyframes_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       projectId,
@@ -177,6 +185,7 @@ export async function createVideoEditorSource(
       data.trimStart || 0,
       data.trimEnd || null,
       data.orderIndex,
+      data.keyframesData || null,
       now,
     ]
   );
@@ -195,6 +204,7 @@ export async function createVideoEditorSource(
     trim_start: data.trimStart || 0,
     trim_end: data.trimEnd || null,
     order_index: data.orderIndex,
+    keyframes_data: data.keyframesData,
     created_at: now,
   };
 }
@@ -252,9 +262,13 @@ export async function updateVideoEditorSource(
     end_time: number;
     trim_start: number;
     trim_end: number | null;
+    // J/L Cut support
+    audio_trim_start: number | null;
+    audio_trim_end: number | null;
     order_index: number;
     track_index: number;
     audio_extracted: boolean;
+    keyframes_data: string;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -299,6 +313,14 @@ export async function updateVideoEditorSource(
     updateFields.push('trim_end = ?');
     values.push(updates.trim_end);
   }
+  if (updates.audio_trim_start !== undefined) {
+    updateFields.push('audio_trim_start = ?');
+    values.push(updates.audio_trim_start);
+  }
+  if (updates.audio_trim_end !== undefined) {
+    updateFields.push('audio_trim_end = ?');
+    values.push(updates.audio_trim_end);
+  }
   if (updates.order_index !== undefined) {
     updateFields.push('order_index = ?');
     values.push(updates.order_index);
@@ -310,6 +332,10 @@ export async function updateVideoEditorSource(
   if (updates.audio_extracted !== undefined) {
     updateFields.push('audio_extracted = ?');
     values.push(updates.audio_extracted ? 1 : 0);
+  }
+  if (updates.keyframes_data !== undefined) {
+    updateFields.push('keyframes_data = ?');
+    values.push(updates.keyframes_data);
   }
 
   if (updateFields.length === 0) return;

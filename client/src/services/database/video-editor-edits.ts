@@ -26,6 +26,7 @@ export interface VideoEditorAudioTrackRecord {
   is_muted: number;
   is_solo: number;
   source_id?: string; // ID of the video source this audio was extracted from
+  keyframes_data?: string;
   created_at: number;
 }
 
@@ -42,6 +43,7 @@ export interface VideoEditorTextOverlayRecord {
   preview_height?: number; // Height of preview container for proper font scaling
   animation: string;
   layer?: number; // Visual track layer (0 = bottom, higher = on top)
+  keyframes_data?: string;
   created_at: number;
 }
 
@@ -59,6 +61,7 @@ export interface VideoEditorStickerRecord {
   animation: string;
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
   layer?: number; // Visual track layer (0 = bottom, higher = on top)
+  keyframes_data?: string;
   created_at: number;
 }
 
@@ -76,6 +79,7 @@ export interface VideoEditorWatermarkRecord {
   opacity: number;
   layer?: number; // Visual track layer (0 = bottom, higher = on top)
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
+  keyframes_data?: string;
   created_at: number;
 }
 
@@ -166,8 +170,8 @@ export async function createVideoEditorAudioTrack(
 
   await db.execute(
     `INSERT INTO video_editor_audio_tracks 
-     (id, edit_id, file_path, name, start_time, end_time, volume, fade_in, fade_out, track_order, is_muted, is_solo, source_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, edit_id, file_path, name, start_time, end_time, volume, fade_in, fade_out, track_order, is_muted, is_solo, source_id, keyframes_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       editId,
@@ -182,6 +186,7 @@ export async function createVideoEditorAudioTrack(
       data.is_muted || 0,
       data.is_solo || 0,
       data.source_id || null,
+      data.keyframes_data || null,
       now,
     ]
   );
@@ -200,6 +205,7 @@ export async function createVideoEditorAudioTrack(
     is_muted: data.is_muted || 0,
     is_solo: data.is_solo || 0,
     source_id: data.source_id,
+    keyframes_data: data.keyframes_data,
     created_at: now,
   };
 }
@@ -257,6 +263,10 @@ export async function updateVideoEditorAudioTrack(
   if (data.is_solo !== undefined) {
     updates.push('is_solo = ?');
     values.push(data.is_solo);
+  }
+  if (data.keyframes_data !== undefined) {
+    updates.push('keyframes_data = ?');
+    values.push(data.keyframes_data);
   }
 
   if (updates.length > 0) {
@@ -327,8 +337,8 @@ export async function createVideoEditorTextOverlay(
 
   await db.execute(
     `INSERT INTO video_editor_text_overlays 
-     (id, edit_id, text, start_time, end_time, position_x, position_y, style_data, animation, preview_height, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, edit_id, text, start_time, end_time, position_x, position_y, style_data, animation, preview_height, keyframes_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       editId,
@@ -340,6 +350,7 @@ export async function createVideoEditorTextOverlay(
       data.style_data || '{}',
       data.animation || 'none',
       data.preview_height ?? null,
+      data.keyframes_data || null,
       now,
     ]
   );
@@ -354,6 +365,7 @@ export async function createVideoEditorTextOverlay(
     position_y: data.position_y ?? 50,
     style_data: data.style_data || '{}',
     animation: data.animation || 'none',
+    keyframes_data: data.keyframes_data,
     created_at: now,
   };
 }
@@ -411,6 +423,10 @@ export async function updateVideoEditorTextOverlay(
   if (data.animation !== undefined) {
     updates.push('animation = ?');
     values.push(data.animation);
+  }
+  if (data.keyframes_data !== undefined) {
+    updates.push('keyframes_data = ?');
+    values.push(data.keyframes_data);
   }
 
   if (updates.length > 0) {
@@ -480,8 +496,8 @@ export async function createVideoEditorSticker(
 
   await db.execute(
     `INSERT INTO video_editor_stickers 
-     (id, edit_id, sticker_path, sticker_type, start_time, end_time, position_x, position_y, scale, rotation, animation, per_ratio_configs_data, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, edit_id, sticker_path, sticker_type, start_time, end_time, position_x, position_y, scale, rotation, animation, per_ratio_configs_data, keyframes_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       editId,
@@ -495,6 +511,7 @@ export async function createVideoEditorSticker(
       data.rotation || 0,
       data.animation || 'none',
       data.per_ratio_configs_data || null,
+      data.keyframes_data || null,
       now,
     ]
   );
@@ -512,6 +529,7 @@ export async function createVideoEditorSticker(
     rotation: data.rotation || 0,
     animation: data.animation || 'none',
     per_ratio_configs_data: data.per_ratio_configs_data,
+    keyframes_data: data.keyframes_data,
     created_at: now,
   };
 }
@@ -573,6 +591,10 @@ export async function updateVideoEditorSticker(
   if (data.per_ratio_configs_data !== undefined) {
     updates.push('per_ratio_configs_data = ?');
     values.push(data.per_ratio_configs_data);
+  }
+  if (data.keyframes_data !== undefined) {
+    updates.push('keyframes_data = ?');
+    values.push(data.keyframes_data);
   }
 
   if (updates.length > 0) {
@@ -640,8 +662,8 @@ export async function createVideoEditorWatermark(
 
   await db.execute(
     `INSERT INTO video_editor_watermarks 
-     (id, edit_id, watermark_id, watermark_path, preview_url, start_time, end_time, position_x, position_y, scale, opacity, per_ratio_configs_data, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, edit_id, watermark_id, watermark_path, preview_url, start_time, end_time, position_x, position_y, scale, opacity, per_ratio_configs_data, keyframes_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       editId,
@@ -655,6 +677,7 @@ export async function createVideoEditorWatermark(
       data.scale ?? 15,
       data.opacity ?? 80,
       data.per_ratio_configs_data || null,
+      data.keyframes_data || null,
       now,
     ]
   );
@@ -672,6 +695,7 @@ export async function createVideoEditorWatermark(
     scale: data.scale ?? 15,
     opacity: data.opacity ?? 80,
     per_ratio_configs_data: data.per_ratio_configs_data,
+    keyframes_data: data.keyframes_data,
     created_at: now,
   };
 }
@@ -733,6 +757,10 @@ export async function updateVideoEditorWatermark(
   if (data.per_ratio_configs_data !== undefined) {
     updates.push('per_ratio_configs_data = ?');
     values.push(data.per_ratio_configs_data);
+  }
+  if (data.keyframes_data !== undefined) {
+    updates.push('keyframes_data = ?');
+    values.push(data.keyframes_data);
   }
 
   if (updates.length > 0) {

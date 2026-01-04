@@ -1,5 +1,5 @@
 <template>
-  <div class="flex items-center gap-2 px-4.5 mt-4 -mb-1.5 flex-shrink-0">
+  <div class="flex items-center gap-2 px-4 py-3 flex-shrink-0 z-10 relative">
     <!-- 16:9 Original (always selected) -->
     <button
       @click="selectRatio('16:9')"

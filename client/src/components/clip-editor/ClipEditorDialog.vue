@@ -52,7 +52,7 @@
           <div class="flex min-h-0 border-b border-border flex-[0.55] min-h-[340px]" style="overflow: hidden">
             <!-- Left: Video Preview Section -->
             <div
-              class="w-2/3 min-w-0 border-r border-border flex flex-col bg-gradient-to-br from-black/20 to-transparent"
+              class="w-1/2 min-w-0 border-r border-border flex flex-col bg-gradient-to-br from-black/20 to-transparent"
             >
               <!-- Aspect Ratio Selector (above video) -->
               <AspectRatioSelector
@@ -65,7 +65,7 @@
                 @toggle-ratio-selection="toggleAspectRatio"
               />
 
-              <div class="flex-1 min-h-0 flex flex-col overflow-hidden relative">
+              <div class="flex-1 min-h-0 flex flex-col items-center justify-center overflow-hidden relative">
                 <ClipEditorPreview
                   ref="previewRef"
                   :video-src="effectiveVideoSrc"
@@ -92,6 +92,7 @@
                   :editor-total-duration="editorContentDuration"
                   :active-transition="activeTransition"
                   :video-sources="videoSources"
+                  :tracks="timelineTracks"
                   @time-update="onPreviewTimeUpdate"
                   @toggle-play="togglePlay"
                   @video-element-ready="onVideoElementReady"
@@ -124,7 +125,26 @@
             </div>
 
             <!-- Right: Controls Section -->
-            <div class="w-1/3 min-w-0 flex flex-col flex-1 bg-gradient-to-b from-transparent to-black/10">
+            <div class="w-1/2 min-w-0 flex flex-col flex-1 bg-gradient-to-b from-transparent to-black/10">
+              <!-- Keyframe Inspector (Top of right panel when selected) -->
+              <div v-if="selectedKeyframe" class="p-4 border-b border-white/10 bg-[#121212]">
+                <div class="flex justify-between items-center mb-2">
+                  <h3 class="text-xs font-semibold text-white/70 uppercase tracking-wider">Keyframe Editor</h3>
+                  <button 
+                    @click="selectedKeyframe = null" 
+                    class="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white transition-colors"
+                    title="Close Inspector"
+                  >
+                    <X :size="14" />
+                  </button>
+                </div>
+                <KeyframeInspector
+                  :keyframe="selectedKeyframe.keyframe"
+                  @update="updateKeyframe"
+                  @delete="deleteKeyframe"
+                />
+              </div>
+
               <!-- Toolbar -->
               <ClipEditorToolbar
                 :active-tab="editorMode ? activeEditorTab : activeTab"
@@ -159,11 +179,13 @@
                   :audio-tracks="audioTracks"
                   :original-db="originalDb"
                   :track-db-values="trackDbValues"
+                  :current-time="effectivePreviewTime"
                   @add-track="(filePath, name, duration) => addAudioTrack(filePath, name, duration)"
                   @update-track="updateAudioTrackLocal"
                   @delete-track="deleteAudioTrackLocal"
                   @update-original-db="updateOriginalDb"
                   @update-track-db="updateTrackDb"
+                  @add-keyframe="addKeyframe"
                 />
 
                 <FiltersTab
@@ -310,6 +332,7 @@
             <ClipEditorTimeline
               class="h-full"
               :duration="editorMode ? editorDuration : clipDuration"
+              :tracks="timelineTracks"
               :current-time="editorMode ? previewTime : relativePreviewTime"
               :clip-start="clipStartTime"
               :clip-end="clipEndTime"
@@ -361,6 +384,11 @@
               @transitions-detected="onTransitionsDetected"
               @split-source="splitVideoSource"
               @extracted-audio="onExtractedAudio"
+              @ripple-edit="handleRippleEdit"
+              @roll-edit="handleRollEdit"
+              @slip-edit="handleSlipEdit"
+              @slide-edit="handleSlideEdit"
+              @update-keyframe-time="updateKeyframeTime"
             />
           </div>
         </div>
@@ -409,9 +437,21 @@
     ResizeCommand,
     LayerChangeCommand,
     UpdateOverlayPropertyCommand,
+    RippleEditCommand,
+    RollEditCommand,
+    SlipEditCommand,
+    SlideEditCommand,
   } from '@/services/commands';
+  import { TimelineAdapter } from '@/services/timeline-adapter';
   import type { UpdateOverlayPropertyCommandData } from '@/services/commands';
   import type { ClipSegment } from '@/services/database';
+  import type {
+    VideoEditorAudioTrackRecord,
+    VideoEditorTextOverlayRecord,
+    VideoEditorStickerRecord,
+    VideoEditorWatermarkRecord,
+    VideoEditorEffectRecord,
+  } from '@/services/database';
   import type {
     ClipEditorTab,
     AudioTrack,
@@ -493,9 +533,10 @@
     inheritAttrs: false,
   });
   import ClipEditorPreview from './ClipEditorPreview.vue';
-  import ClipEditorToolbar from './ClipEditorToolbar.vue';
-  import ClipEditorTimeline from './ClipEditorTimeline.vue';
   import AspectRatioSelector from './AspectRatioSelector.vue';
+  import ClipEditorToolbar from './ClipEditorToolbar.vue';
+  import SourcesTab from './tabs/SourcesTab.vue';
+  import IntroOutroTab from './tabs/IntroOutroTab.vue';
   import AudioMixerTab from './tabs/AudioMixerTab.vue';
   import FiltersTab from './tabs/FiltersTab.vue';
   import TextOverlayTab from './tabs/TextOverlayTab.vue';
@@ -505,11 +546,13 @@
   import AspectTab from './tabs/AspectTab.vue';
   import TranscriptTab from './tabs/TranscriptTab.vue';
   import ExportTab from './tabs/ExportTab.vue';
-  import IntroOutroTab from './tabs/IntroOutroTab.vue';
-  import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
-  import SourcesTab from '@/components/video-editor/SourcesTab.vue';
+  import ClipEditorTimeline from './ClipEditorTimeline.vue';
+  import ManualPOIEditor from './ManualPOIEditor.vue';
+  import KeyframeInspector from './KeyframeInspector.vue';
+  import type { ItemType } from '@/types/timeline-model';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
+  import { useUnifiedTracks } from '@/composables/useUnifiedTracks';
   import { invoke } from '@tauri-apps/api/core';
 
   // Helper function to load watermark preview URL
@@ -967,6 +1010,103 @@
 
     // Timeline shows all content + 2 minutes of empty space at the end
     return editorContentDuration.value + PADDING;
+  });
+
+  // Computed: Unified timeline tracks for the timeline component
+  const timelineTracks = computed(() => {
+    if (editorMode.value) {
+      // Map frontend types to database record types for the adapter
+
+      const audioRecords: VideoEditorAudioTrackRecord[] = audioTracksWithStreamingUrls.value.map((t) => ({
+        id: t.id,
+        edit_id: videoEditorEditId.value || '',
+        file_path: t.filePath,
+        name: t.name,
+        start_time: t.startTime,
+        end_time: t.endTime,
+        volume: t.volume,
+        fade_in: t.fadeIn,
+        fade_out: t.fadeOut,
+        track_order: t.trackOrder,
+        is_muted: t.isMuted ? 1 : 0,
+        is_solo: t.isSolo ? 1 : 0,
+        created_at: 0,
+      }));
+
+      const textRecords: VideoEditorTextOverlayRecord[] = textOverlays.value.map((t) => ({
+        id: t.id,
+        edit_id: videoEditorEditId.value || '',
+        text: t.text,
+        start_time: t.startTime,
+        end_time: t.endTime,
+        position_x: t.position.x,
+        position_y: t.position.y,
+        style_data: JSON.stringify(t.style),
+        animation: t.animation,
+        per_ratio_configs_data: t.perRatioConfigs ? JSON.stringify(t.perRatioConfigs) : undefined,
+        preview_height: t.previewHeight,
+        layer: t.layer,
+        created_at: 0,
+      }));
+
+      const stickerRecords: VideoEditorStickerRecord[] = stickers.value.map((s) => ({
+        id: s.id,
+        edit_id: videoEditorEditId.value || '',
+        sticker_path: s.stickerPath,
+        sticker_type: s.stickerType,
+        start_time: s.startTime,
+        end_time: s.endTime,
+        position_x: s.position.x,
+        position_y: s.position.y,
+        scale: s.scale,
+        rotation: s.rotation,
+        animation: s.animation,
+        per_ratio_configs_data: s.perRatioConfigs ? JSON.stringify(s.perRatioConfigs) : undefined,
+        layer: s.layer,
+        created_at: 0,
+      }));
+
+      const watermarkRecords: VideoEditorWatermarkRecord[] = watermarks.value.map((w) => ({
+        id: w.id,
+        edit_id: videoEditorEditId.value || '',
+        watermark_id: w.watermarkId,
+        watermark_path: w.filePath,
+        preview_url: w.previewUrl,
+        start_time: w.startTime,
+        end_time: w.endTime,
+        position_x: w.position.x,
+        position_y: w.position.y,
+        scale: w.scale,
+        opacity: w.opacity,
+        per_ratio_configs_data: w.perRatioConfigs ? JSON.stringify(w.perRatioConfigs) : undefined,
+        layer: w.layer,
+        created_at: 0,
+      }));
+
+      const effectRecords: VideoEditorEffectRecord[] = effects.value.map((e) => ({
+        id: e.id,
+        edit_id: videoEditorEditId.value || '',
+        effect_type: e.type,
+        start_time: e.startTime,
+        end_time: e.endTime,
+        settings: JSON.stringify(e.settings),
+        created_at: 0,
+      }));
+
+      return TimelineAdapter.toTimelineModel({
+        sources: videoSources.value,
+        audioTracks: audioRecords,
+        textOverlays: textRecords,
+        stickers: stickerRecords,
+        watermarks: watermarkRecords,
+        effects: effectRecords,
+        filterSegments: filterSegments.value,
+        duration: editorDuration.value,
+      }).tracks;
+    }
+    
+    // In clip mode, we rely on ClipEditorTimeline's legacy rendering for now
+    return [];
   });
 
   // Calculate total duration of all segments combined
@@ -1815,7 +1955,7 @@
         const resizeCommand = new ResizeCommand({
           type: 'source',
           itemId: sourceId,
-          editId: videoEditorEditId.value,
+          editId: videoEditorEditId.value || undefined,
           originalStartTime: source.start_time,
           originalEndTime: source.end_time,
           originalTrimStart: source.trim_start ?? undefined,
@@ -2046,6 +2186,549 @@
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to create audio track:', error);
+    }
+  }
+
+  // Handle Ripple Edit
+  async function handleRippleEdit(data: {
+    type: 'trim' | 'source' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
+    id: string;
+    newStartTime: number;
+    newEndTime: number;
+    delta: number;
+  }) {
+    console.log('[ClipEditorDialog] Handling ripple edit:', data);
+
+    try {
+      let originalStartTime = 0;
+      let originalEndTime = 0;
+
+      // Get original times based on type
+      if (editorMode.value) {
+        if (data.type === 'source') {
+          const source = videoSources.value.find((s) => s.id === data.id);
+          if (source) {
+            originalStartTime = source.start_time;
+            originalEndTime = source.end_time;
+          }
+        }
+        // Add other types if needed
+      } else {
+        if (data.type === 'trim') {
+          const segment = trimSegments.value.find((s) => s.id === data.id);
+          if (segment) {
+            originalStartTime = segment.startTime;
+            originalEndTime = segment.endTime;
+          }
+        }
+      }
+
+      const reloadCallback = async () => {
+        if (editorMode.value) {
+          if (editorProjectId.value) {
+            const sources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
+            videoSources.value = sources;
+            await recalculateProjectDuration(editorProjectId.value);
+          }
+        } else {
+          // Reload clip segments
+          if (props.clipId) {
+            const segments = await getClipSegmentsByClipId(props.clipId);
+            // We need to map these back to TrimSegments... normally done via getClipWithBuildStatus
+            // For now, we can just trigger a reload of the clip
+            await loadEditData();
+          }
+        }
+      };
+
+      const rippleCommand = new RippleEditCommand(editorMode.value, {
+        type: data.type,
+        itemId: data.id,
+        editId: editorMode.value ? (videoEditorEditId.value || undefined) : undefined,
+        clipId: !editorMode.value ? (props.clipId || undefined) : undefined,
+        projectId: editorProjectId.value || undefined,
+        newStartTime: data.newStartTime,
+        newEndTime: data.newEndTime,
+        delta: data.delta,
+        originalStartTime,
+        originalEndTime,
+        onReload: reloadCallback,
+      });
+
+      await commandHistory.executeCommand(rippleCommand);
+      undoRedoTrigger.value++;
+      
+      // Optimistic update for UI responsiveness
+      if (editorMode.value && data.type === 'source') {
+        const source = videoSources.value.find(s => s.id === data.id);
+        if (source) {
+          source.start_time = data.newStartTime;
+          source.end_time = data.newEndTime;
+          
+          // Shift other sources optimistically
+          // This should match the logic in the command
+          const threshold = Math.min(originalStartTime, originalEndTime);
+          videoSources.value.forEach(s => {
+            if (s.id !== data.id && s.start_time >= threshold) {
+              s.start_time += data.delta;
+              s.end_time += data.delta;
+            }
+          });
+        }
+      }
+
+      await reloadCallback(); // Ensure consistent state
+      triggerAutoSave();
+
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to execute ripple edit:', error);
+    }
+  }
+
+  // Handle Roll Edit
+  async function handleRollEdit(data: {
+    type: 'source' | 'trim'; // We expect source or trim for roll edits
+    leftItemId: string;
+    rightItemId: string;
+    newRollTime: number;
+    originalRollTime: number;
+  }) {
+    console.log('[ClipEditorDialog] Handling roll edit:', data);
+
+    try {
+      let leftSourceSnapshot;
+      let rightSourceSnapshot;
+
+      // Capture snapshots for undo if in editor mode
+      if (editorMode.value && data.type === 'source') {
+        const leftSource = videoSources.value.find((s) => s.id === data.leftItemId);
+        const rightSource = videoSources.value.find((s) => s.id === data.rightItemId);
+        
+        if (leftSource) {
+          leftSourceSnapshot = { end: leftSource.end_time, trimEnd: leftSource.trim_end };
+        }
+        if (rightSource) {
+          rightSourceSnapshot = { start: rightSource.start_time, trimStart: rightSource.trim_start };
+        }
+      }
+
+      const reloadCallback = async () => {
+        if (editorMode.value) {
+          if (editorProjectId.value) {
+            const sources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
+            videoSources.value = sources;
+            await recalculateProjectDuration(editorProjectId.value);
+          }
+        } else {
+          // Reload clip segments
+          if (props.clipId) {
+            await loadEditData();
+          }
+        }
+      };
+
+      const rollCommand = new RollEditCommand(editorMode.value, {
+        type: data.type,
+        leftItemId: data.leftItemId,
+        rightItemId: data.rightItemId,
+        editId: editorMode.value ? (videoEditorEditId.value || undefined) : undefined,
+        clipId: !editorMode.value ? (props.clipId || undefined) : undefined,
+        projectId: editorProjectId.value || undefined,
+        newRollTime: data.newRollTime,
+        originalRollTime: data.originalRollTime,
+        leftSourceSnapshot,
+        rightSourceSnapshot,
+        onReload: reloadCallback,
+      });
+
+      await commandHistory.executeCommand(rollCommand);
+      undoRedoTrigger.value++;
+
+      // Optimistic update
+      if (editorMode.value && data.type === 'source') {
+        const leftSource = videoSources.value.find((s) => s.id === data.leftItemId);
+        const rightSource = videoSources.value.find((s) => s.id === data.rightItemId);
+        const delta = data.newRollTime - data.originalRollTime;
+
+        if (leftSource && rightSource) {
+          // Update Left Source
+          leftSource.end_time = data.newRollTime;
+          // Calculate new trim_end
+          let leftTrimEnd = leftSource.trim_end;
+          if (leftTrimEnd === null || leftTrimEnd === undefined) {
+            // Implicit trim end was start + duration
+            leftTrimEnd = leftSource.trim_start + (data.originalRollTime - leftSource.start_time);
+          }
+          leftSource.trim_end = leftTrimEnd + delta;
+
+          // Update Right Source
+          rightSource.start_time = data.newRollTime;
+          rightSource.trim_start += delta;
+        }
+      }
+
+      await reloadCallback(); // Ensure consistent state
+      triggerAutoSave();
+
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to execute roll edit:', error);
+    }
+  }
+
+  // Handle Slip Edit
+  async function handleSlipEdit(data: {
+    type: 'source' | 'trim';
+    itemId: string;
+    delta: number;
+    originalTrimStart: number;
+    originalTrimEnd: number | null;
+  }) {
+    console.log('[ClipEditorDialog] Handling slip edit:', data);
+
+    try {
+      const reloadCallback = async () => {
+        if (editorMode.value) {
+          if (editorProjectId.value) {
+            const sources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
+            videoSources.value = sources;
+            await recalculateProjectDuration(editorProjectId.value);
+          }
+        } else {
+          if (props.clipId) {
+            await loadEditData();
+          }
+        }
+      };
+
+      const slipCommand = new SlipEditCommand(editorMode.value, {
+        type: data.type,
+        itemId: data.itemId,
+        editId: editorMode.value ? (videoEditorEditId.value || undefined) : undefined,
+        clipId: !editorMode.value ? (props.clipId || undefined) : undefined,
+        delta: data.delta,
+        originalTrimStart: data.originalTrimStart,
+        originalTrimEnd: data.originalTrimEnd,
+        onReload: reloadCallback,
+      });
+
+      await commandHistory.executeCommand(slipCommand);
+      undoRedoTrigger.value++;
+
+      // Optimistic update
+      if (editorMode.value && data.type === 'source') {
+        const source = videoSources.value.find((s) => s.id === data.itemId);
+        if (source) {
+          source.trim_start = Math.max(0, data.originalTrimStart + data.delta);
+          if (source.trim_end !== null && source.trim_end !== undefined) {
+            source.trim_end = data.originalTrimEnd! + data.delta;
+          }
+        }
+      }
+
+      await reloadCallback();
+      triggerAutoSave();
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to execute slip edit:', error);
+    }
+  }
+
+  // Keyframe Selection
+  const selectedKeyframe = ref<{
+    id: string;
+    itemId: string;
+    type: 'source' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
+    keyframe: Keyframe;
+  } | null>(null);
+
+  function handleKeyframeSelect(data: { itemId: string; keyframeId: string; type: ItemType }) {
+    // Find the item and keyframe
+    let item: any;
+    if (data.type === 'text') item = textOverlays.value.find((i) => i.id === data.itemId);
+    else if (data.type === 'sticker') item = stickers.value.find((i) => i.id === data.itemId);
+    else if (data.type === 'watermark') item = watermarks.value.find((i) => i.id === data.itemId);
+    else if (data.type === 'audio') item = audioTracks.value.find((i) => i.id === data.itemId);
+    
+    if (item && item.keyframes) {
+      const keyframe = item.keyframes.find((k: Keyframe) => k.id === data.keyframeId);
+      if (keyframe) {
+        selectedKeyframe.value = {
+          id: data.keyframeId,
+          itemId: data.itemId,
+          type: data.type as any,
+          keyframe: { ...keyframe } // Copy to avoid direct mutation
+        };
+        // Switch to the appropriate tab so the inspector makes sense in context, 
+        // or we can show it as an overlay/side panel.
+        // For now, let's keep the current tab but show the inspector in a dedicated area or replace the tab content?
+        // Better: Set a flag or use a computed property to show inspector INSTEAD of the tab content or alongside it.
+        // Given the layout, maybe we force the tab to the relevant one?
+        if (data.type === 'text') setActiveTab('text');
+        else if (data.type === 'sticker') setActiveTab('stickers');
+        else if (data.type === 'watermark') setActiveTab('watermark');
+        else if (data.type === 'audio') setActiveTab('audio');
+      }
+    }
+  }
+
+  async function updateKeyframe(updates: Partial<Keyframe>) {
+    if (!selectedKeyframe.value) return;
+    
+    const { itemId, type, id } = selectedKeyframe.value;
+    
+    // Update local state first
+    selectedKeyframe.value.keyframe = { ...selectedKeyframe.value.keyframe, ...updates };
+    
+    // Update the item's keyframes
+    if (type === 'text') {
+      const item = textOverlays.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const index = item.keyframes.findIndex((k) => k.id === id);
+        if (index !== -1) {
+          const newKeyframes = [...item.keyframes];
+          newKeyframes[index] = { ...newKeyframes[index], ...updates };
+          await updateTextOverlayLocal(itemId, { keyframes: newKeyframes });
+        }
+      }
+    } else if (type === 'sticker') {
+      const item = stickers.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const index = item.keyframes.findIndex((k) => k.id === id);
+        if (index !== -1) {
+          const newKeyframes = [...item.keyframes];
+          newKeyframes[index] = { ...newKeyframes[index], ...updates };
+          await updateStickerLocal(itemId, { keyframes: newKeyframes });
+        }
+      }
+    } else if (type === 'watermark') {
+      const item = watermarks.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const index = item.keyframes.findIndex((k) => k.id === id);
+        if (index !== -1) {
+          const newKeyframes = [...item.keyframes];
+          newKeyframes[index] = { ...newKeyframes[index], ...updates };
+          await updateWatermarkLocal(itemId, { keyframes: newKeyframes });
+        }
+      }
+    } else if (type === 'audio') {
+      const item = audioTracks.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const index = item.keyframes.findIndex((k) => k.id === id);
+        if (index !== -1) {
+          const newKeyframes = [...item.keyframes];
+          newKeyframes[index] = { ...newKeyframes[index], ...updates };
+          await updateAudioTrackLocal(itemId, { keyframes: newKeyframes });
+        }
+      }
+    }
+  }
+
+  async function deleteKeyframe() {
+    if (!selectedKeyframe.value) return;
+    
+    const { itemId, type, id } = selectedKeyframe.value;
+    
+    if (type === 'text') {
+      const item = textOverlays.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const newKeyframes = item.keyframes.filter((k) => k.id !== id);
+        await updateTextOverlayLocal(itemId, { keyframes: newKeyframes });
+      }
+    } else if (type === 'sticker') {
+      const item = stickers.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const newKeyframes = item.keyframes.filter((k) => k.id !== id);
+        await updateStickerLocal(itemId, { keyframes: newKeyframes });
+      }
+    } else if (type === 'watermark') {
+      const item = watermarks.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const newKeyframes = item.keyframes.filter((k) => k.id !== id);
+        await updateWatermarkLocal(itemId, { keyframes: newKeyframes });
+      }
+    } else if (type === 'audio') {
+      const item = audioTracks.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const newKeyframes = item.keyframes.filter((k) => k.id !== id);
+        await updateAudioTrackLocal(itemId, { keyframes: newKeyframes });
+      }
+    }
+    
+    selectedKeyframe.value = null;
+  }
+
+  // Add a new keyframe to an item
+  async function addKeyframe(data: {
+    itemId: string;
+    type: 'text' | 'sticker' | 'watermark' | 'audio' | 'source';
+    property: import('@/types/timeline-model').AnimationProperty;
+    time: number;
+    value: number;
+  }) {
+    const newKeyframe: import('@/types/timeline-model').Keyframe = {
+      id: `kf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      property: data.property,
+      time: data.time,
+      value: data.value,
+      easing: 'linear',
+    };
+
+    if (data.type === 'text') {
+      const item = textOverlays.value.find((i) => i.id === data.itemId);
+      if (item) {
+        const newKeyframes = [...(item.keyframes || []), newKeyframe];
+        await updateTextOverlayLocal(data.itemId, { keyframes: newKeyframes });
+      }
+    } else if (data.type === 'sticker') {
+      const item = stickers.value.find((i) => i.id === data.itemId);
+      if (item) {
+        const newKeyframes = [...(item.keyframes || []), newKeyframe];
+        await updateStickerLocal(data.itemId, { keyframes: newKeyframes });
+      }
+    } else if (data.type === 'watermark') {
+      const item = watermarks.value.find((i) => i.id === data.itemId);
+      if (item) {
+        const newKeyframes = [...(item.keyframes || []), newKeyframe];
+        await updateWatermarkLocal(data.itemId, { keyframes: newKeyframes });
+      }
+    } else if (data.type === 'audio') {
+      const item = audioTracks.value.find((i) => i.id === data.itemId);
+      if (item) {
+        const newKeyframes = [...(item.keyframes || []), newKeyframe];
+        await updateAudioTrackLocal(data.itemId, { keyframes: newKeyframes });
+      }
+    }
+    
+    triggerAutoSave();
+  }
+
+  // Handle Slide Edit
+  async function handleSlideEdit(data: {
+    type: 'source' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
+    itemId: string;
+    leftNeighborId: string;
+    rightNeighborId: string;
+    delta: number;
+    originalStartTime: number;
+    originalEndTime: number;
+  }) {
+    // Only implemented for video sources for now
+    if (data.type === 'source') {
+      try {
+        const reloadCallback = async () => {
+          if (editorMode.value) {
+            if (editorProjectId.value) {
+              const sources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
+              videoSources.value = sources;
+              await recalculateProjectDuration(editorProjectId.value);
+            }
+          } else {
+            // Slide not fully supported in clip mode yet (requires multiple segments logic)
+            if (props.clipId) {
+              await loadEditData();
+            }
+          }
+        };
+
+        const slideCommand = new SlideEditCommand(editorMode.value, {
+          type: 'source',
+          itemId: data.itemId,
+          leftNeighborId: data.leftNeighborId,
+          rightNeighborId: data.rightNeighborId,
+          editId: editorMode.value ? (videoEditorEditId.value || undefined) : undefined,
+          clipId: !editorMode.value ? (props.clipId || undefined) : undefined,
+          projectId: editorProjectId.value || undefined,
+          delta: data.delta,
+          originalStartTime: data.originalStartTime,
+          originalEndTime: data.originalEndTime,
+          onReload: reloadCallback,
+        });
+
+        await commandHistory.executeCommand(slideCommand);
+        undoRedoTrigger.value++;
+
+        // Optimistic update
+        const source = videoSources.value.find((s) => s.id === data.itemId);
+        const leftNeighbor = videoSources.value.find((s) => s.id === data.leftNeighborId);
+        const rightNeighbor = videoSources.value.find((s) => s.id === data.rightNeighborId);
+
+        if (source && leftNeighbor && rightNeighbor) {
+          // Slide moves the source in time, adjusting neighbors
+          // Specifically, it changes the OUT point of the left clip and the IN point of the right clip
+          // while keeping the middle clip's duration constant but moving its position.
+          // Wait, Standard Slide tool:
+          // "The Slide tool moves a clip in the timeline, but keeps the duration of the clip the same. 
+          // The adjacent clips grow or shrink to accommodate the move."
+          
+          // Update middle clip position
+          source.start_time += data.delta;
+          source.end_time += data.delta;
+          
+          // Update left neighbor end time (and trim_end)
+          leftNeighbor.end_time += data.delta;
+          // Assuming left neighbor trim_end needs adjustment if it's not the last clip
+          // If left neighbor is just extending/shrinking, we adjust its trim_end
+          if (leftNeighbor.trim_end !== null) {
+             leftNeighbor.trim_end += data.delta;
+          } else {
+             // If implicit, we might need to set it explicit or just leave it if it's raw video?
+             // Usually we set it.
+             leftNeighbor.trim_end = (leftNeighbor.source_duration || (leftNeighbor.end_time - leftNeighbor.start_time)) + data.delta;
+          }
+
+          // Update right neighbor start time (and trim_start)
+          rightNeighbor.start_time += data.delta;
+          rightNeighbor.trim_start += data.delta;
+        }
+
+        await reloadCallback();
+        triggerAutoSave();
+      } catch (error) {
+        console.error('[ClipEditorDialog] Failed to execute slide edit:', error);
+      }
+    }
+  }
+
+  async function updateKeyframeTime({
+    itemId,
+    keyframeId,
+    time,
+    type,
+  }: {
+    itemId: string;
+    keyframeId: string;
+    time: number;
+    type: 'source' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
+  }) {
+    if (type === 'text') {
+      const item = textOverlays.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const keyframeIndex = item.keyframes.findIndex((k) => k.id === keyframeId);
+        if (keyframeIndex !== -1) {
+          const updatedKeyframes = [...item.keyframes];
+          updatedKeyframes[keyframeIndex] = { ...updatedKeyframes[keyframeIndex], time };
+          await updateTextOverlayLocal(itemId, { keyframes: updatedKeyframes });
+        }
+      }
+    } else if (type === 'sticker') {
+      const item = stickers.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const keyframeIndex = item.keyframes.findIndex((k) => k.id === keyframeId);
+        if (keyframeIndex !== -1) {
+          const updatedKeyframes = [...item.keyframes];
+          updatedKeyframes[keyframeIndex] = { ...updatedKeyframes[keyframeIndex], time };
+          await updateStickerLocal(itemId, { keyframes: updatedKeyframes });
+        }
+      }
+    } else if (type === 'watermark') {
+      const item = watermarks.value.find((i) => i.id === itemId);
+      if (item && item.keyframes) {
+        const keyframeIndex = item.keyframes.findIndex((k) => k.id === keyframeId);
+        if (keyframeIndex !== -1) {
+          const updatedKeyframes = [...item.keyframes];
+          updatedKeyframes[keyframeIndex] = { ...updatedKeyframes[keyframeIndex], time };
+          await updateWatermarkLocal(itemId, { keyframes: updatedKeyframes });
+        }
+      }
     }
   }
 
@@ -2439,6 +3122,7 @@
           style: JSON.parse(o.style_data || '{}'),
           animation: (o as any).animation || 'none',
           perRatioConfigs: o.per_ratio_configs_data ? JSON.parse(o.per_ratio_configs_data) : undefined,
+          keyframes: (o as any).keyframes_data ? JSON.parse((o as any).keyframes_data) : undefined,
         }));
 
         // Load stickers
@@ -2453,6 +3137,7 @@
           rotation: s.rotation,
           animation: (s as any).animation || 'none',
           perRatioConfigs: s.per_ratio_configs_data ? JSON.parse(s.per_ratio_configs_data) : undefined,
+          keyframes: (s as any).keyframes_data ? JSON.parse((s as any).keyframes_data) : undefined,
         }));
 
         // Load watermarks - convert file paths to data URLs for preview
@@ -2497,6 +3182,7 @@
               opacity: w.opacity,
               layer: w.layer ?? 0, // Visual track layer
               perRatioConfigs: w.per_ratio_configs_data ? JSON.parse(w.per_ratio_configs_data) : undefined,
+              keyframes: (w as any).keyframes_data ? JSON.parse((w as any).keyframes_data) : undefined,
             };
           })
         );
@@ -3769,7 +4455,7 @@
       const resizeCommand = new ResizeCommand({
         type: 'audio',
         itemId: trackId,
-        editId: videoEditorEditId.value,
+        editId: videoEditorEditId.value || undefined,
         originalStartTime: track.startTime,
         originalEndTime: track.endTime,
         newStartTime: updates.startTime ?? track.startTime,
@@ -4052,6 +4738,7 @@
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
       preview_height: currentPreviewHeight,
       animation: updates.animation,
+      keyframes_data: updates.keyframes ? JSON.stringify(updates.keyframes) : undefined,
     };
 
     // Handle layer property for multi-track support
@@ -4140,6 +4827,7 @@
       rotation: updates.rotation,
       animation: updates.animation,
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
+      keyframes_data: updates.keyframes ? JSON.stringify(updates.keyframes) : undefined,
     };
 
     // Handle layer property for multi-track support
@@ -4228,6 +4916,7 @@
       scale: updates.scale,
       opacity: updates.opacity,
       per_ratio_configs_data: updates.perRatioConfigs ? JSON.stringify(updates.perRatioConfigs) : undefined,
+      keyframes_data: updates.keyframes ? JSON.stringify(updates.keyframes) : undefined,
     };
 
     // Handle layer property for multi-track support
@@ -5698,6 +6387,7 @@
         perRatioConfigs: o.per_ratio_configs_data ? JSON.parse(o.per_ratio_configs_data) : undefined,
         previewHeight: o.preview_height ?? undefined,
         animation: o.animation as any,
+        keyframes: (o as any).keyframes_data ? JSON.parse((o as any).keyframes_data) : undefined,
       }));
 
       stickers.value = fullEdit.stickers.map((s) => ({
@@ -5711,6 +6401,7 @@
         rotation: s.rotation,
         animation: s.animation as any,
         perRatioConfigs: s.per_ratio_configs_data ? JSON.parse(s.per_ratio_configs_data) : undefined,
+        keyframes: (s as any).keyframes_data ? JSON.parse((s as any).keyframes_data) : undefined,
       }));
 
       // Load watermarks - convert file paths to data URLs for preview
@@ -5755,6 +6446,7 @@
             opacity: w.opacity,
             layer: w.layer ?? 0, // Visual track layer
             perRatioConfigs: w.per_ratio_configs_data ? JSON.parse(w.per_ratio_configs_data) : undefined,
+            keyframes: (w as any).keyframes_data ? JSON.parse((w as any).keyframes_data) : undefined,
           };
         })
       );

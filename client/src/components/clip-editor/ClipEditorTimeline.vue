@@ -6,12 +6,78 @@
         <div class="flex items-center gap-1.5">
           <!-- Timeline Toolbar -->
           <div class="flex items-center gap-1 bg-[#121212] rounded-md px-2 py-1 border border-white/[0.02]">
+            <!-- Tools -->
+            <button
+              @click="setTool('move')"
+              :class="[
+                'p-1.5 rounded-md transition-colors duration-150',
+                isMoveTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+              ]"
+              title="Move Tool (V)"
+            >
+              <MousePointer2 :size="14" />
+            </button>
+            <button
+              @click="setTool('razor')"
+              :class="[
+                'p-1.5 rounded-md transition-colors duration-150',
+                isRazorTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+              ]"
+              title="Razor Tool (C)"
+            >
+              <Scissors :size="14" />
+            </button>
+            <button
+              @click="setTool('ripple')"
+              :class="[
+                'p-1.5 rounded-md transition-colors duration-150',
+                isRippleTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+              ]"
+              title="Ripple Edit (B)"
+            >
+              <MoveHorizontal :size="14" />
+            </button>
+            <button
+              @click="setTool('roll')"
+              :class="[
+                'p-1.5 rounded-md transition-colors duration-150',
+                isRollTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+              ]"
+              title="Roll Edit (N)"
+            >
+              <Columns :size="14" />
+            </button>
+            <button
+              @click="setTool('slip')"
+              :class="[
+                'p-1.5 rounded-md transition-colors duration-150',
+                isSlipTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+              ]"
+              title="Slip Tool (Y)"
+            >
+              <ArrowLeftRight :size="14" />
+            </button>
+            <button
+              @click="setTool('slide')"
+              :class="[
+                'p-1.5 rounded-md transition-colors duration-150',
+                isSlideTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+              ]"
+              title="Slide Tool (U)"
+            >
+              <BoxSelect :size="14" />
+            </button>
+
+            <div class="w-px h-5 bg-white/10 mx-1"></div>
+
+            <!-- Actions -->
             <button
               @click="performCutAtPlayhead"
               class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-orange-300 hover:bg-orange-500/10"
-              title="Split at playhead (X key)"
+              title="Split at playhead (Ctrl+K)"
             >
-              <Scissors :size="14" />
+              <Scissors :size="14" class="opacity-50" />
+              <span class="sr-only">Split</span>
             </button>
             <div class="w-px h-5 bg-white/10 mx-1"></div>
             <button
@@ -109,6 +175,7 @@
       <div
         ref="timelineScrollContainer"
         class="bg-[#0c0c0c] rounded-md relative overflow-y-auto overflow-x-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#333] scrollbar-track-[#0c0c0c]"
+        :style="{ cursor: getTimelineCursor() }"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
         @click="onTimelineContainerClick"
@@ -233,7 +300,7 @@
                     :ref="(el) => setSegmentRef(el, 'source', overlayItem.item.id)"
                     class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group border-2 border-cyan-500"
                     :class="getSegmentClasses('source', overlayItem.item.id)"
-                    :style="getVideoSourceStyle(overlayItem.item, sourcePreview)"
+                    :style="getVideoSourceStyle(overlayItem.item, dragPreview)"
                     @mousedown="(e) => onSourceMouseDown(e, overlayItem.item)"
                     @click.stop="selectItem('source', overlayItem.item.id)"
                   >
@@ -243,6 +310,34 @@
                     >
                       {{ overlayItem.item.source_name || 'Video' }}
                     </span>
+                    <!-- Keyframes -->
+                    <KeyframeMarker
+                      v-for="kf in overlayItem.item.keyframes"
+                      :key="kf.id"
+                      :property="kf.property"
+                      :value="kf.value"
+                      :is-selected="selectedKeyframeId === kf.id"
+                      :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
+                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'source', overlayItem.item.endTime - overlayItem.item.startTime)"
+                    />
+                    <!-- Left resize handle -->
+                    <div
+                      class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-cyan-500/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-cyan-500/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'source', overlayItem.item.id, 'left', overlayItem.item)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                    <!-- Right resize handle -->
+                    <div
+                      class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-cyan-500/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-cyan-500/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+                      @mousedown.stop="
+                        (e) => onResizeMouseDown(e, 'source', overlayItem.item.id, 'right', overlayItem.item)
+                      "
+                    >
+                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
                   </div>
 
                   <!-- Sticker -->
@@ -272,6 +367,16 @@
                     >
                       Sticker
                     </span>
+                    <!-- Keyframes -->
+                    <KeyframeMarker
+                      v-for="kf in overlayItem.item.keyframes"
+                      :key="kf.id"
+                      :property="kf.property"
+                      :value="kf.value"
+                      :is-selected="selectedKeyframeId === kf.id"
+                      :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
+                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'sticker', overlayItem.item.endTime - overlayItem.item.startTime)"
+                    />
                     <!-- Left resize handle -->
                     <div
                       class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
@@ -313,6 +418,16 @@
                     <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
                       {{ overlayItem.item.text }}
                     </span>
+                    <!-- Keyframes -->
+                    <KeyframeMarker
+                      v-for="kf in overlayItem.item.keyframes"
+                      :key="kf.id"
+                      :property="kf.property"
+                      :value="kf.value"
+                      :is-selected="selectedKeyframeId === kf.id"
+                      :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
+                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'text', overlayItem.item.endTime - overlayItem.item.startTime)"
+                    />
                     <!-- Left resize handle -->
                     <div
                       class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
@@ -354,6 +469,16 @@
                     <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
                       Watermark
                     </span>
+                    <!-- Keyframes -->
+                    <KeyframeMarker
+                      v-for="kf in overlayItem.item.keyframes"
+                      :key="kf.id"
+                      :property="kf.property"
+                      :value="kf.value"
+                      :is-selected="selectedKeyframeId === kf.id"
+                      :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
+                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'watermark', overlayItem.item.endTime - overlayItem.item.startTime)"
+                    />
                     <!-- Left resize handle -->
                     <div
                       class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
@@ -405,6 +530,16 @@
                   <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
                     {{ overlay.text }}
                   </span>
+                  <!-- Keyframes -->
+                  <KeyframeMarker
+                    v-for="kf in overlay.keyframes"
+                    :key="kf.id"
+                    :property="kf.property"
+                    :value="kf.value"
+                    :is-selected="selectedKeyframeId === kf.id"
+                    :style="{ left: `${(kf.time / (overlay.endTime - overlay.startTime)) * 100}%` }"
+                    @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlay.id, 'text', overlay.endTime - overlay.startTime)"
+                  />
                   <!-- Left resize handle -->
                   <div
                     class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto"
@@ -583,7 +718,7 @@
                           ? 'cursor-crosshair z-62 border-cyan-500'
                           : 'cursor-pointer border-cyan-500',
                     ]"
-                    :style="getVideoSourceStyle(source, sourcePreview)"
+                    :style="getVideoSourceStyle(source, dragPreview)"
                     @mouseenter="isCutToolActive && onSourceHoverForCut($event, source)"
                     @mousemove="isCutToolActive && onSourceHoverForCut($event, source)"
                     @mouseleave="isCutToolActive && (cutHoverInfo = null)"
@@ -908,6 +1043,32 @@
           <span>{{ isExtractingAudio ? 'Extracting...' : 'Extract Audio' }}</span>
         </button>
         <div class="h-px bg-white/10 my-1"></div>
+        <!-- J/L Cut Options -->
+        <button
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          @click="applyJCut"
+          title="Audio from next clip starts before video"
+        >
+          <ArrowLeftToLine :size="14" />
+          <span>J-Cut (Audio Lead)</span>
+        </button>
+        <button
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          @click="applyLCut"
+          title="Audio continues into next clip's video"
+        >
+          <ArrowRightToLine :size="14" />
+          <span>L-Cut (Audio Extend)</span>
+        </button>
+        <button
+          v-if="hasAudioOffset(sourceContextMenu.source)"
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          @click="resetAudioTrim"
+        >
+          <RotateCcw :size="14" />
+          <span>Reset Audio Sync</span>
+        </button>
+        <div class="h-px bg-white/10 my-1"></div>
         <button
           class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
           @click="deleteSourceFromContextMenu"
@@ -955,10 +1116,21 @@
     Volume2,
     VolumeX,
     Settings,
+    MousePointer2,
+    MoveHorizontal,
+    ArrowLeftRight,
+    Columns,
+    BoxSelect,
+    ArrowLeftToLine,
+    ArrowRightToLine,
+    RotateCcw,
   } from 'lucide-vue-next';
   import { useAudioWaveform, type WaveformData } from '@/composables/useAudioWaveform';
+  import { useTimelineTools, type TimelineTool } from '@/composables/useTimelineTools';
   import { invoke } from '@tauri-apps/api/core';
+  import type { Track, Keyframe, ItemType } from '@/types/timeline-model';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
+  import KeyframeMarker from './KeyframeMarker.vue';
   import type {
     TrimSegment,
     AudioTrack,
@@ -973,8 +1145,6 @@
   } from '@/types';
   import { detectSourceTransitions } from '@/types';
   import { SEEK_CONFIG } from '@/constants/timelineConstants';
-
-  type ItemType = 'trim' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter' | 'source';
 
   interface DragInfo {
     type: ItemType;
@@ -1054,6 +1224,7 @@
       // Video editor mode props
       editorMode?: boolean;
       videoSources?: VideoEditorSource[];
+      tracks?: Track[];
       // Undo/Redo props
       canUndo?: boolean;
       canRedo?: boolean;
@@ -1078,6 +1249,26 @@
       selectedMarkerId: null,
     }
   );
+
+  const {
+    activeTool,
+    setTool,
+    isMoveTool,
+    isRazorTool,
+    isRippleTool,
+    isRollTool,
+    isSlipTool,
+    isSlideTool,
+  } = useTimelineTools();
+
+  function getTimelineCursor() {
+    if (isRazorTool.value) return 'text'; // Razor often looks like a I-beam or specialized cursor
+    if (isRippleTool.value) return 'col-resize';
+    if (isRollTool.value) return 'ew-resize';
+    if (isSlipTool.value) return 'move';
+    if (isSlideTool.value) return 'copy';
+    return 'default';
+  }
 
   const emit = defineEmits<{
     (e: 'seek', time: number): void;
@@ -1139,7 +1330,30 @@
         sourceName: string | null;
       }
     ): void;
+    (e: 'rippleEdit', data: { type: ItemType; id: string; newStartTime: number; newEndTime: number; delta: number }): void;
+    (e: 'rollEdit', data: { type: ItemType; leftItemId: string; rightItemId: string; newRollTime: number; originalRollTime: number }): void;
+    (e: 'slipEdit', data: { type: ItemType; itemId: string; delta: number; originalTrimStart: number; originalTrimEnd: number | null }): void;
+    (e: 'slideEdit', data: { type: ItemType; itemId: string; leftNeighborId: string; rightNeighborId: string; delta: number; originalStartTime: number; originalEndTime: number }): void;
+    (e: 'updateKeyframeTime', data: { itemId: string; keyframeId: string; time: number; type: ItemType }): void;
+    (e: 'keyframe-select', data: { itemId: string; keyframeId: string; type: ItemType }): void;
   }>();
+
+  // Computed: Organized tracks for rendering (Unified Model)
+  const unifiedVideoTracks = computed(() => {
+    if (!props.tracks) return [];
+    // Filter video tracks and sort by orderIndex descending (highest index on top)
+    return props.tracks
+      .filter(t => t.type === 'video')
+      .sort((a, b) => b.orderIndex - a.orderIndex);
+  });
+
+  const unifiedAudioTracks = computed(() => {
+    if (!props.tracks) return [];
+    // Filter audio tracks and sort by orderIndex ascending (usually audio tracks stack downwards)
+    return props.tracks
+      .filter(t => t.type === 'audio')
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+  });
 
   // Computed: detect transitions between overlapping sources in editor mode
   const sourceTransitions = computed<VideoEditorTransition[]>(() => {
@@ -1277,6 +1491,78 @@
 
   // Selection state
   const selectedItemKey = ref<string | null>(null);
+  const selectedKeyframeId = ref<string | null>(null);
+
+  function selectKeyframe(keyframeId: string, event: MouseEvent, itemId?: string, type?: ItemType) {
+    selectedKeyframeId.value = keyframeId;
+    if (itemId && type) {
+      emit('keyframe-select', { keyframeId, itemId, type });
+    }
+  }
+
+  // Clear keyframe selection when item selection changes if the new item is null
+  watch(selectedItemKey, (newValue) => {
+    if (!newValue) {
+      selectedKeyframeId.value = null;
+    }
+  });
+
+  // Keyframe Drag State
+  const keyframeDragState = ref<{
+    id: string;
+    itemId: string; // The item containing the keyframe
+    itemType: ItemType;
+    startX: number;
+    originalTime: number;
+    itemDuration: number;
+  } | null>(null);
+
+  function startKeyframeDrag(e: MouseEvent, keyframe: Keyframe, itemId: string, itemType: ItemType, itemDuration: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    keyframeDragState.value = {
+      id: keyframe.id,
+      itemId,
+      itemType,
+      startX: e.clientX,
+      originalTime: keyframe.time,
+      itemDuration
+    };
+    
+    // Select the keyframe on drag start
+    selectKeyframe(keyframe.id, e);
+    
+    document.addEventListener('mousemove', onKeyframeDragMove);
+    document.addEventListener('mouseup', onKeyframeDragEnd);
+  }
+
+  function onKeyframeDragMove(e: MouseEvent) {
+    if (!keyframeDragState.value) return;
+    
+    const { startX, originalTime, itemDuration, itemId, id } = keyframeDragState.value;
+    const deltaX = e.clientX - startX;
+    
+    // Calculate track width for pixel-to-time conversion
+    const trackContentWidth = getTrackContentWidth();
+    
+    // Calculate delta time based on global timeline scale
+    const deltaTime = (deltaX / trackContentWidth) * props.duration;
+    
+    let newTime = originalTime + deltaTime;
+    
+    // Clamp to item duration (0 to itemDuration)
+    newTime = Math.max(0, Math.min(itemDuration, newTime));
+    
+    // Emit update event
+    emit('updateKeyframeTime', { itemId, keyframeId: id, time: newTime });
+  }
+
+  function onKeyframeDragEnd() {
+    keyframeDragState.value = null;
+    document.removeEventListener('mousemove', onKeyframeDragMove);
+    document.removeEventListener('mouseup', onKeyframeDragEnd);
+  }
 
   // Drag state
   const isDragging = ref(false);
@@ -1287,10 +1573,52 @@
   const resizeInfo = ref<ResizeInfo | null>(null);
 
   // Preview state for optimistic updates (local-only during drag/resize)
-  const dragPreview = ref<{ type: ItemType; id: string; startTime: number; endTime: number } | null>(null);
+  const dragPreview = ref<{
+    type: ItemType;
+    id: string;
+    startTime: number;
+    endTime: number;
+    trimStart?: number;
+    trimEnd?: number;
+  } | null>(null);
 
-  // Preview state for video source drag/resize (local-only during drag/resize)
-  const sourcePreview = ref<{ sourceId: string; startTime: number; endTime: number } | null>(null);
+  // Ripple Edit State
+  const rippleState = ref<{
+    type: ItemType;
+    id: string;
+    delta: number;
+    originalEdgeTime: number;
+  } | null>(null);
+
+  // Roll Edit State
+  const rollState = ref<{
+    type: ItemType;
+    leftItemId: string;
+    rightItemId: string;
+    originalRollTime: number;
+    newRollTime: number;
+    activeHandle: 'left' | 'right';
+  } | null>(null);
+
+  // Slip Edit State
+  const slipState = ref<{
+    type: ItemType;
+    id: string;
+    delta: number;
+    originalTrimStart: number;
+    originalTrimEnd: number | null;
+  } | null>(null);
+
+  // Slide Edit State
+  const slideState = ref<{
+    type: ItemType;
+    id: string;
+    leftNeighborId: string;
+    rightNeighborId: string;
+    delta: number;
+    originalStartTime: number;
+    originalEndTime: number;
+  } | null>(null);
 
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
@@ -1427,6 +1755,55 @@
   }
 
   const visualLayers = computed<VisualLayer[]>(() => {
+    // Priority: Unified Tracks (Editor Mode 2.0)
+    if (unifiedVideoTracks.value.length > 0) {
+      return unifiedVideoTracks.value
+        .filter((t) => t.orderIndex > 0) // Skip main track (index 0)
+        .sort((a, b) => b.orderIndex - a.orderIndex) // Highest layer first (render on top)
+        .map((track) => ({
+          layer: track.orderIndex - 1, // Map Track 1 to Layer 0
+          items: track.items.map((tItem) => {
+            const baseItem = tItem.originalData || {};
+            // Map unified TimelineItem back to component-specific item structure
+            // This handles the bridge between snake_case DB records and camelCase props used in template
+            let type: LayerItem['type'] = 'source';
+            const item: any = { ...baseItem };
+            item.keyframes = tItem.keyframes;
+
+            if (tItem.type === 'video') {
+              // Could be source or watermark
+              if ('watermark_id' in baseItem) {
+                type = 'watermark';
+                item.startTime = tItem.startTime;
+                item.endTime = tItem.startTime + tItem.duration;
+              } else {
+                type = 'source';
+                // Sources use snake_case start_time which is already in baseItem
+                // Also map to camelCase for generic handler compatibility
+                item.startTime = tItem.startTime;
+                item.endTime = tItem.startTime + tItem.duration;
+                item.trimStart = tItem.trimStart;
+                item.trimEnd = tItem.trimEnd;
+              }
+            } else if (tItem.type === 'text') {
+              type = 'text';
+              item.startTime = tItem.startTime;
+              item.endTime = tItem.startTime + tItem.duration;
+              item.text = baseItem.text;
+            } else if (tItem.type === 'sticker') {
+              type = 'sticker';
+              item.startTime = tItem.startTime;
+              item.endTime = tItem.startTime + tItem.duration;
+              item.stickerPath = baseItem.sticker_path;
+              item.stickerType = baseItem.sticker_type;
+            }
+
+            return { type, item };
+          }),
+        }));
+    }
+
+    // Fallback: Legacy / Manual Layer construction
     const layerMap = new Map<number, LayerItem[]>();
 
     // Add video sources with track_index > 0 (these go to layers above Source)
@@ -2250,7 +2627,7 @@
 
   function getTrackContentWidth(): number {
     if (rulerContentRef.value) {
-      return rulerContentRef.value.getBoundingClientRect().width;
+      return rulerContentRef.value.clientWidth;
     }
     if (videoTrackContentRef.value) {
       return videoTrackContentRef.value.getBoundingClientRect().width;
@@ -2285,9 +2662,10 @@
         if (source.id === excludeId) continue;
 
         // Use preview position if this source is being dragged/resized
-        const preview = sourcePreview.value;
-        const startTime = preview && preview.sourceId === source.id ? preview.startTime : source.start_time;
-        const endTime = preview && preview.sourceId === source.id ? preview.endTime : source.end_time;
+        const preview = dragPreview.value;
+        const isPreviewing = preview && preview.type === 'source' && preview.id === source.id;
+        const startTime = isPreviewing ? preview.startTime : source.start_time;
+        const endTime = isPreviewing ? preview.endTime : source.end_time;
 
         targets.push({ time: startTime, type: 'segment-start' });
         targets.push({ time: endTime, type: 'segment-end' });
@@ -2813,28 +3191,63 @@
   // Video source functions (editor mode)
   function getVideoSourceStyle(
     source: VideoEditorSource,
-    _preview?: { sourceId: string; startTime: number; endTime: number } | null
+    _preview?: { type: ItemType; id: string; startTime: number; endTime: number } | null
   ): Record<string, string> {
-    const colors = colorMap.violet;
     const isSelected = selectedItemKey.value === `source_${source.id}`;
-    const duration = totalDuration.value;
+    
+    // Check for drag/resize preview
+    let startTime = source.start_time;
+    let endTime = source.end_time;
+    
+    if (_preview && _preview.type === 'source' && _preview.id === source.id) {
+      startTime = _preview.startTime;
+      endTime = _preview.endTime;
+    }
 
-    // Use preview position during drag/resize for smooth updates
-    // Note: _preview param is passed to ensure Vue reactivity tracks sourcePreview changes
-    const preview = sourcePreview.value;
-    const startTime = preview && preview.sourceId === source.id ? preview.startTime : source.start_time;
-    const endTime = preview && preview.sourceId === source.id ? preview.endTime : source.end_time;
+    // Apply Ripple Shift
+    if (rippleState.value && rippleState.value.type === 'source' && source.id !== rippleState.value.id) {
+      // Shift if this source starts after the ripple edge
+      // Using a small epsilon to catch adjacent clips
+      if (source.start_time >= rippleState.value.originalEdgeTime - 0.001) {
+        startTime += rippleState.value.delta;
+        endTime += rippleState.value.delta;
+      }
+    }
 
-    const left = (startTime / duration) * 100;
-    const width = ((endTime - startTime) / duration) * 100;
+    // Apply Roll Adjustment
+    if (rollState.value && rollState.value.type === 'source') {
+      if (source.id === rollState.value.leftItemId && rollState.value.activeHandle === 'left') {
+        // We are dragging the right item's left handle, so left item's end needs to follow
+        endTime = rollState.value.newRollTime;
+      } else if (source.id === rollState.value.rightItemId && rollState.value.activeHandle === 'right') {
+        // We are dragging the left item's right handle, so right item's start needs to follow
+        startTime = rollState.value.newRollTime;
+      }
+    }
+
+    // Apply Slide Adjustment (Visual)
+    if (slideState.value && slideState.value.type === 'source') {
+        if (source.id === slideState.value.id) {
+            // Target moves by delta (handled by _preview check normally, but be explicit)
+            startTime = slideState.value.originalStartTime + slideState.value.delta;
+            endTime = slideState.value.originalEndTime + slideState.value.delta;
+        } else if (source.id === slideState.value.leftNeighborId) {
+            // Left neighbor end changes
+            endTime += slideState.value.delta;
+        } else if (source.id === slideState.value.rightNeighborId) {
+            // Right neighbor start changes
+            startTime += slideState.value.delta;
+        }
+    }
+
+    const duration = props.duration || 300;
+    const leftPercent = (startTime / duration) * 100;
+    const widthPercent = ((endTime - startTime) / duration) * 100;
 
     return {
-      left: `${left}%`,
-      width: `${Math.max(width, 1)}%`,
-      background: `linear-gradient(to right, ${colors.bg})`,
-      borderColor: isSelected ? '#3b82f6' : colors.border,
-      borderWidth: '1px',
-      borderStyle: 'solid',
+      left: `${leftPercent}%`,
+      width: `${widthPercent}%`,
+      borderColor: isSelected ? '#06b6d4' : 'transparent', // Cyan-500
     };
   }
 
@@ -3012,8 +3425,9 @@
     }
 
     // Update local preview state (no database call) for smooth dragging
-    sourcePreview.value = {
-      sourceId: dragSourceInfo.value.sourceId,
+    dragPreview.value = {
+      type: 'source',
+      id: dragSourceInfo.value.sourceId,
       startTime: newStartTime,
       endTime: newEndTime,
     };
@@ -3021,9 +3435,9 @@
 
   function onSourceDragEnd() {
     // Commit the final position to database only on drag end
-    if (sourcePreview.value && dragSourceInfo.value) {
-      let finalStartTime = sourcePreview.value.startTime;
-      let finalEndTime = sourcePreview.value.endTime;
+    if (dragPreview.value && dragPreview.value.type === 'source' && dragSourceInfo.value) {
+      let finalStartTime = dragPreview.value.startTime;
+      let finalEndTime = dragPreview.value.endTime;
 
       console.log(
         '[onSourceDragEnd] Initial position:',
@@ -3104,7 +3518,7 @@
 
     isDraggingSource.value = false;
     dragSourceInfo.value = null;
-    sourcePreview.value = null;
+    dragPreview.value = null;
     activeSnapTime.value = null;
     document.removeEventListener('mousemove', onSourceDragMove);
     document.removeEventListener('mouseup', onSourceDragEnd);
@@ -3203,6 +3617,62 @@
     closeSourceContextMenu();
 
     emit('deleteSource', sourceId);
+  }
+
+  // J/L Cut functions
+  function hasAudioOffset(source: VideoEditorSource | null): boolean {
+    if (!source) return false;
+    return (source.audio_trim_start !== undefined && source.audio_trim_start !== null) ||
+           (source.audio_trim_end !== undefined && source.audio_trim_end !== null);
+  }
+
+  function applyJCut() {
+    if (!sourceContextMenu.source) return;
+    
+    const source = sourceContextMenu.source;
+    closeSourceContextMenu();
+    
+    // J-cut: Audio from this clip starts 0.5s earlier than video
+    // This means audio_trim_start is less than trim_start
+    const jCutOffset = 0.5; // Default 0.5 second audio lead
+    const newAudioTrimStart = Math.max(0, (source.trim_start || 0) - jCutOffset);
+    
+    emit('updateSource', source.id, {
+      audio_trim_start: newAudioTrimStart,
+      audio_trim_end: source.trim_end, // Keep video trim end for audio
+    });
+  }
+
+  function applyLCut() {
+    if (!sourceContextMenu.source) return;
+    
+    const source = sourceContextMenu.source;
+    closeSourceContextMenu();
+    
+    // L-cut: Audio from this clip extends 0.5s beyond video
+    // This means audio_trim_end is greater than trim_end
+    const lCutOffset = 0.5; // Default 0.5 second audio extension
+    const sourceDuration = source.source_duration || (source.end_time - source.start_time);
+    const currentTrimEnd = source.trim_end ?? sourceDuration;
+    const newAudioTrimEnd = Math.min(sourceDuration, currentTrimEnd + lCutOffset);
+    
+    emit('updateSource', source.id, {
+      audio_trim_start: source.trim_start, // Keep video trim start for audio
+      audio_trim_end: newAudioTrimEnd,
+    });
+  }
+
+  function resetAudioTrim() {
+    if (!sourceContextMenu.source) return;
+    
+    const source = sourceContextMenu.source;
+    closeSourceContextMenu();
+    
+    // Reset audio trim to match video trim (sync audio with video)
+    emit('updateSource', source.id, {
+      audio_trim_start: null,
+      audio_trim_end: null,
+    });
   }
 
   function onTimelineDragOver(_e: DragEvent) {
@@ -3389,6 +3859,83 @@
       dragInfo.value.targetTrackIndex = Math.max(0, targetTrackIndex);
     }
 
+    // SLIP TOOL LOGIC
+    if (isSlipTool.value && dragInfo.value.type === 'source') {
+        const item = dragInfo.value.item as VideoEditorSource;
+        const deltaX = e.clientX - dragInfo.value.startX;
+        // Slip delta is inverted: dragging right slips content left (earlier in source), so we subtract delta
+        // But typically dragging content: drag right -> see earlier content -> start_time decreases.
+        // Wait, standard NLE:
+        // Drag rect right -> clip stays, content moves right? No, usually "Slip" moves the "window" over the content.
+        // Dragging right: Window moves right relative to content?
+        // Let's stick to: Drag right -> delta positive.
+        // Content time = Time - start + trim_start.
+        // If we slip by +delta (right):
+        // new_trim_start = old_trim_start - delta?
+        // Let's visualize:
+        // [   Source Content   ]
+        //     [ Segment ]
+        // Drag Segment Mouse Right -> We want to see "earlier" content?
+        // Usually, dragging the clip visual representation with slip tool:
+        // Drag Right -> The content shifts right. Meaning we see earlier frames at the start.
+        // So trim_start decreases.
+        // So delta is negative of drag delta?
+        // Let's use: delta = -(pixelDelta / pixelsPerSecond).
+        
+        const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+        const slipDelta = -deltaTime;
+
+        slipState.value = {
+            type: 'source',
+            id: dragInfo.value.id,
+            delta: slipDelta,
+            originalTrimStart: item.trim_start,
+            originalTrimEnd: item.trim_end
+        };
+        
+        // Position doesn't change for slip
+        return;
+    }
+
+    // SLIDE TOOL LOGIC
+    if (isSlideTool.value && dragInfo.value.type === 'source' && props.videoSources) {
+        const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+        
+        // Identify neighbors
+        // This relies on sorting.
+        const sortedSources = [...props.videoSources].sort((a, b) => a.start_time - b.start_time);
+        const currentIndex = sortedSources.findIndex(s => s.id === dragInfo.value?.id);
+        
+        let leftNeighborId = '';
+        let rightNeighborId = '';
+        
+        if (currentIndex > 0) leftNeighborId = sortedSources[currentIndex - 1].id;
+        if (currentIndex < sortedSources.length - 1) rightNeighborId = sortedSources[currentIndex + 1].id;
+        
+        if (leftNeighborId && rightNeighborId) {
+             slideState.value = {
+                type: 'source',
+                id: dragInfo.value.id,
+                leftNeighborId,
+                rightNeighborId,
+                delta: deltaTime,
+                originalStartTime: dragInfo.value.originalStartTime,
+                originalEndTime: dragInfo.value.originalEndTime
+             };
+             
+             // Update preview position
+             const newStartTime = dragInfo.value.originalStartTime + deltaTime;
+             const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
+             dragPreview.value = {
+                type: 'source',
+                id: dragInfo.value.id,
+                startTime: newStartTime,
+                endTime: newStartTime + itemDuration
+             };
+             return;
+        }
+    }
+
     // For visual overlays, detect which layer the mouse is over
     if (['text', 'sticker', 'watermark'].includes(dragInfo.value.type) && dragInfo.value.originalLayer !== undefined) {
       const TRACK_HEIGHT = 40; // 10 * 4px (h-10 in Tailwind)
@@ -3502,7 +4049,48 @@
 
   function onDragEnd() {
     // Commit the final position to database with undo/redo support
-    if (dragPreview.value && dragInfo.value) {
+    if (dragInfo.value) {
+      
+      // Handle Slip Edit End
+      if (isSlipTool.value && slipState.value) {
+          emit('slipEdit', {
+              type: slipState.value.type,
+              itemId: slipState.value.id,
+              delta: slipState.value.delta,
+              originalTrimStart: slipState.value.originalTrimStart,
+              originalTrimEnd: slipState.value.originalTrimEnd
+          });
+          
+          isDragging.value = false;
+          dragInfo.value = null;
+          slipState.value = null;
+          document.removeEventListener('mousemove', onDragMove);
+          document.removeEventListener('mouseup', onDragEnd);
+          return;
+      }
+
+      // Handle Slide Edit End
+      if (isSlideTool.value && slideState.value) {
+          emit('slideEdit', {
+              type: slideState.value.type,
+              itemId: slideState.value.id,
+              leftNeighborId: slideState.value.leftNeighborId,
+              rightNeighborId: slideState.value.rightNeighborId,
+              delta: slideState.value.delta,
+              originalStartTime: slideState.value.originalStartTime,
+              originalEndTime: slideState.value.originalEndTime
+          });
+
+          isDragging.value = false;
+          dragInfo.value = null;
+          slideState.value = null;
+          dragPreview.value = null; // Clear preview
+          document.removeEventListener('mousemove', onDragMove);
+          document.removeEventListener('mouseup', onDragEnd);
+          return;
+      }
+
+      if (dragPreview.value) {
       const type = dragPreview.value.type;
 
       // For video sources with cross-track dragging
@@ -3564,6 +4152,7 @@
         );
       }
     }
+    }
 
     isDragging.value = false;
     dragInfo.value = null;
@@ -3607,6 +4196,8 @@
 
     let newStartTime = resizeInfo.value.originalStartTime;
     let newEndTime = resizeInfo.value.originalEndTime;
+    let newTrimStart: number | undefined;
+    let newTrimEnd: number | undefined;
 
     // For trim segments and audio, use linear calculation
     if (resizeInfo.value.type === 'trim') {
@@ -3679,6 +4270,86 @@
           activeSnapTime.value = null;
         }
       }
+    } else if (resizeInfo.value.type === 'source') {
+      const source = resizeInfo.value.item;
+      const deltaX = e.clientX - resizeInfo.value.startX;
+      const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * props.duration;
+      const originalTrimStart = source.trim_start ?? 0;
+      const originalTrimEnd = source.trim_end ?? (originalTrimStart + (source.end_time - source.start_time));
+      const sourceDuration = source.source_duration || Infinity;
+
+      if (resizeInfo.value.handle === 'left') {
+        newStartTime = Math.max(0, resizeInfo.value.originalStartTime + deltaTime);
+        newTrimStart = originalTrimStart + (newStartTime - resizeInfo.value.originalStartTime);
+
+        // Constrain trim_start >= 0
+        if (newTrimStart !== undefined && newTrimStart < 0) {
+          newTrimStart = 0;
+          newStartTime = resizeInfo.value.originalStartTime - originalTrimStart;
+        }
+
+        // Apply snapping to the left edge
+        const snapResult = applySnapToTime(newStartTime, resizeInfo.value.id);
+        if (snapResult.didSnap && snapResult.time >= 0) {
+          const snappedDelta = snapResult.time - resizeInfo.value.originalStartTime;
+          const snappedTrimStart = originalTrimStart + snappedDelta;
+          
+          if (snappedTrimStart >= 0) {
+            newStartTime = snapResult.time;
+            newTrimStart = snappedTrimStart;
+            activeSnapTime.value = snapResult.time;
+          } else {
+             activeSnapTime.value = null;
+          }
+        } else {
+          activeSnapTime.value = null;
+        }
+
+        // Min duration check
+        if (newEndTime - newStartTime < minDuration) {
+          newStartTime = newEndTime - minDuration;
+          newTrimStart = originalTrimStart + (newStartTime - resizeInfo.value.originalStartTime);
+          activeSnapTime.value = null;
+        }
+        
+        newTrimEnd = originalTrimEnd;
+      } else {
+        // Right handle
+        newEndTime = Math.min(props.duration, resizeInfo.value.originalEndTime + deltaTime);
+        newTrimEnd = originalTrimEnd + (newEndTime - resizeInfo.value.originalEndTime);
+
+        // Constrain trim_end <= sourceDuration
+        if (newTrimEnd !== undefined && newTrimEnd > sourceDuration) {
+            newTrimEnd = sourceDuration;
+            newEndTime = resizeInfo.value.originalEndTime + (newTrimEnd - originalTrimEnd);
+        }
+
+        // Apply snapping to the right edge
+        const snapResult = applySnapToTime(newEndTime, resizeInfo.value.id);
+        if (snapResult.didSnap && snapResult.time <= props.duration) {
+             const snappedDelta = snapResult.time - resizeInfo.value.originalEndTime;
+             const snappedTrimEnd = originalTrimEnd + snappedDelta;
+             
+             if (snappedTrimEnd <= sourceDuration) {
+                 newEndTime = snapResult.time;
+                 newTrimEnd = snappedTrimEnd;
+                 activeSnapTime.value = snapResult.time;
+             } else {
+                 activeSnapTime.value = null;
+             }
+        } else {
+             activeSnapTime.value = null;
+        }
+
+        // Min duration check
+        if (newEndTime - newStartTime < minDuration) {
+          newEndTime = newStartTime + minDuration;
+          newTrimEnd = originalTrimStart + (newEndTime - newStartTime);
+          activeSnapTime.value = null;
+        }
+        
+        newTrimStart = originalTrimStart;
+      }
     } else {
       // For text, sticker, effect, filter - use gap-aware positioning
       if (resizeInfo.value.handle === 'left') {
@@ -3730,18 +4401,120 @@
       id: resizeInfo.value.id,
       startTime: newStartTime,
       endTime: newEndTime,
+      trimStart: newTrimStart,
+      trimEnd: newTrimEnd,
     };
+
+    // Update Ripple State
+    if (isRippleTool.value) {
+      let delta = 0;
+      let originalEdgeTime = 0;
+      
+      if (resizeInfo.value.handle === 'left') {
+        delta = newStartTime - resizeInfo.value.originalStartTime;
+        originalEdgeTime = resizeInfo.value.originalStartTime;
+      } else {
+        delta = newEndTime - resizeInfo.value.originalEndTime;
+        originalEdgeTime = resizeInfo.value.originalEndTime;
+      }
+
+      rippleState.value = {
+        type: resizeInfo.value.type,
+        id: resizeInfo.value.id,
+        delta,
+        originalEdgeTime
+      };
+    }
+
+    // Update Roll State
+    if (isRollTool.value && resizeInfo.value.type === 'source' && props.videoSources) {
+      // Identify neighbors if we haven't already (or update time)
+      const handle = resizeInfo.value.handle;
+      const itemId = resizeInfo.value.id;
+      let leftId = '';
+      let rightId = '';
+      let originalRollTime = 0;
+      let newRollTime = 0;
+
+      if (handle === 'right') {
+        // Dragging the boundary between Item (Left) and Neighbor (Right)
+        leftId = itemId;
+        originalRollTime = resizeInfo.value.originalEndTime;
+        newRollTime = newEndTime;
+        
+        // Find right neighbor
+        const neighbor = props.videoSources.find(s => Math.abs(s.start_time - originalRollTime) < 0.01 && s.id !== itemId);
+        if (neighbor) rightId = neighbor.id;
+        
+      } else {
+        // Dragging the boundary between Neighbor (Left) and Item (Right)
+        rightId = itemId;
+        originalRollTime = resizeInfo.value.originalStartTime;
+        newRollTime = newStartTime;
+
+        // Find left neighbor
+        const neighbor = props.videoSources.find(s => Math.abs(s.end_time - originalRollTime) < 0.01 && s.id !== itemId);
+        if (neighbor) leftId = neighbor.id;
+      }
+
+      if (leftId && rightId) {
+        rollState.value = {
+          type: 'source',
+          leftItemId: leftId,
+          rightItemId: rightId,
+          originalRollTime,
+          newRollTime,
+          activeHandle: handle
+        };
+      }
+    }
   }
 
   function onResizeEnd() {
     // Commit the final position to database
     if (dragPreview.value) {
-      emitUpdate(dragPreview.value.type, dragPreview.value.id, dragPreview.value.startTime, dragPreview.value.endTime);
+      if (isRippleTool.value && rippleState.value) {
+        // Emit Ripple Edit event
+        emit('rippleEdit', {
+          type: dragPreview.value.type,
+          id: dragPreview.value.id,
+          newStartTime: dragPreview.value.startTime,
+          newEndTime: dragPreview.value.endTime,
+          delta: rippleState.value.delta
+        });
+      } else if (isRollTool.value && rollState.value) {
+        // Emit Roll Edit event
+        emit('rollEdit', {
+          type: rollState.value.type,
+          leftItemId: rollState.value.leftItemId,
+          rightItemId: rollState.value.rightItemId,
+          newRollTime: rollState.value.newRollTime,
+          originalRollTime: rollState.value.originalRollTime
+        });
+      } else if (dragPreview.value.type === 'source') {
+        // Source Resize with trims
+        emit('updateSource', dragPreview.value.id, {
+          start_time: dragPreview.value.startTime,
+          end_time: dragPreview.value.endTime,
+          trim_start: dragPreview.value.trimStart,
+          trim_end: dragPreview.value.trimEnd
+        });
+      } else {
+        // Standard Resize
+        emitUpdate(
+          dragPreview.value.type, 
+          dragPreview.value.id, 
+          dragPreview.value.startTime, 
+          dragPreview.value.endTime
+        );
+      }
     }
 
     isResizing.value = false;
     resizeInfo.value = null;
     dragPreview.value = null;
+    rippleState.value = null;
+    rollState.value = null;
     activeSnapTime.value = null;
 
     document.removeEventListener('mousemove', onResizeMove);
@@ -4012,15 +4785,17 @@
         // Old multi-resolution format - extract highest resolution available
         const resolutionOrder = ['maximum', 'extreme', 'ultra', 'high', 'medium', 'low'];
         for (const level of resolutionOrder) {
-          if (parsed[level]?.peaks) {
-            peaks = parsed[level].peaks.map((p: any) => ({ min: p.min, max: p.max }));
+          const resolutionData = parsed[level];
+          if (resolutionData && resolutionData.peaks) {
+            peaks = resolutionData.peaks.map((p: any) => ({ min: p.min, max: p.max }));
             break;
           }
         }
         if (peaks.length === 0) {
           const firstKey = Object.keys(parsed)[0];
-          if (firstKey && parsed[firstKey]?.peaks) {
-            peaks = parsed[firstKey].peaks.map((p: any) => ({ min: p.min, max: p.max }));
+          const firstData = parsed[firstKey];
+          if (firstData && firstData.peaks) {
+            peaks = firstData.peaks.map((p: any) => ({ min: p.min, max: p.max }));
           }
         }
       }
@@ -5004,17 +5779,46 @@
       return;
     }
 
-    // Perform cut at playhead with X key
-    if (event.key === 'x' || event.key === 'X') {
+    // Perform cut at playhead with X key or Ctrl+K
+    if ((event.key === 'x' || event.key === 'X') || ((event.ctrlKey || event.metaKey) && (event.key === 'k' || event.key === 'K'))) {
       event.preventDefault();
       performCutAtPlayhead();
     }
 
+    // Tool Shortcuts
+    if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+      switch (event.key.toLowerCase()) {
+        case 'v':
+          setTool('move');
+          break;
+        case 'c':
+          setTool('razor');
+          // Also toggle the internal legacy state if needed, or rely on watchers
+          isCutToolActive.value = true;
+          break;
+        case 'b':
+          setTool('ripple');
+          break;
+        case 'n':
+          setTool('roll');
+          break;
+        case 'y':
+          setTool('slip');
+          break;
+        case 'u':
+          setTool('slide');
+          break;
+      }
+    }
+
     // Deactivate cut tool with Escape key
-    if (event.key === 'Escape' && isCutToolActive.value) {
-      event.preventDefault();
-      isCutToolActive.value = false;
-      cutHoverInfo.value = null;
+    if (event.key === 'Escape') {
+      if (isCutToolActive.value || activeTool.value !== 'move') {
+        event.preventDefault();
+        isCutToolActive.value = false;
+        setTool('move');
+        cutHoverInfo.value = null;
+      }
     }
 
     // Handle arrow keys for seeking

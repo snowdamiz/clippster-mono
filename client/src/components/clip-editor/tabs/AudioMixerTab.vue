@@ -107,6 +107,13 @@
               <Headphones :size="12" :class="track.isSolo ? 'text-amber-400' : 'text-white/50'" />
             </button>
             <button
+              @click="addVolumeKeyframe(track)"
+              class="p-1 rounded hover:bg-white/10 transition-colors"
+              title="Add Volume Keyframe at Playhead"
+            >
+              <Diamond :size="12" class="text-violet-400" />
+            </button>
+            <button
               @click="emit('deleteTrack', track.id)"
               class="p-1 rounded hover:bg-white/10 transition-colors"
               title="Remove"
@@ -188,6 +195,100 @@
             </div>
           </div>
         </div>
+
+        <!-- EQ Controls (collapsible) -->
+        <details class="mt-2">
+          <summary class="text-[10px] text-white/50 cursor-pointer hover:text-white/70 px-1">
+            EQ & Dynamics
+          </summary>
+          <div class="mt-2 space-y-2 px-1">
+            <!-- 3-Band EQ -->
+            <div class="grid grid-cols-3 gap-2">
+              <div class="flex flex-col items-center">
+                <label class="text-[9px] text-white/40 mb-1">Bass</label>
+                <input
+                  type="range"
+                  min="-12"
+                  max="12"
+                  step="1"
+                  :value="getTrackEQ(track.id, 'bass')"
+                  @input="(e) => updateTrackEQ(track, 'bass', e)"
+                  class="w-full h-12 accent-emerald-500 vertical-slider"
+                  orient="vertical"
+                />
+                <span class="text-[9px] text-white/40 mt-1">{{ getTrackEQ(track.id, 'bass') > 0 ? '+' : '' }}{{ getTrackEQ(track.id, 'bass') }}</span>
+              </div>
+              <div class="flex flex-col items-center">
+                <label class="text-[9px] text-white/40 mb-1">Mid</label>
+                <input
+                  type="range"
+                  min="-12"
+                  max="12"
+                  step="1"
+                  :value="getTrackEQ(track.id, 'mid')"
+                  @input="(e) => updateTrackEQ(track, 'mid', e)"
+                  class="w-full h-12 accent-emerald-500 vertical-slider"
+                  orient="vertical"
+                />
+                <span class="text-[9px] text-white/40 mt-1">{{ getTrackEQ(track.id, 'mid') > 0 ? '+' : '' }}{{ getTrackEQ(track.id, 'mid') }}</span>
+              </div>
+              <div class="flex flex-col items-center">
+                <label class="text-[9px] text-white/40 mb-1">Treble</label>
+                <input
+                  type="range"
+                  min="-12"
+                  max="12"
+                  step="1"
+                  :value="getTrackEQ(track.id, 'treble')"
+                  @input="(e) => updateTrackEQ(track, 'treble', e)"
+                  class="w-full h-12 accent-emerald-500 vertical-slider"
+                  orient="vertical"
+                />
+                <span class="text-[9px] text-white/40 mt-1">{{ getTrackEQ(track.id, 'treble') > 0 ? '+' : '' }}{{ getTrackEQ(track.id, 'treble') }}</span>
+              </div>
+            </div>
+
+            <!-- Compressor -->
+            <div class="pt-2 border-t border-white/5">
+              <div class="flex items-center justify-between mb-2">
+                <label class="text-[9px] text-white/40">Compressor</label>
+                <button
+                  @click="toggleCompressor(track)"
+                  class="text-[9px] px-1.5 py-0.5 rounded transition-colors"
+                  :class="getCompressorEnabled(track.id) ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-white/40'"
+                >
+                  {{ getCompressorEnabled(track.id) ? 'ON' : 'OFF' }}
+                </button>
+              </div>
+              <div v-if="getCompressorEnabled(track.id)" class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-[8px] text-white/30">Threshold</label>
+                  <input
+                    type="range"
+                    min="-60"
+                    max="0"
+                    step="1"
+                    :value="getCompressorValue(track.id, 'threshold')"
+                    @input="(e) => updateCompressor(track, 'threshold', e)"
+                    class="w-full accent-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label class="text-[8px] text-white/30">Ratio</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="20"
+                    step="0.5"
+                    :value="getCompressorValue(track.id, 'ratio')"
+                    @input="(e) => updateCompressor(track, 'ratio', e)"
+                    class="w-full accent-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -343,6 +444,7 @@
     Search,
     Loader2,
     Building2,
+    Diamond,
   } from 'lucide-vue-next';
   import type { AudioTrack } from '@/types';
   import { getAllAudioAssets, type AudioAsset } from '@/services/database';
@@ -367,6 +469,7 @@
     audioTracks: AudioTrack[];
     originalDb: number;
     trackDbValues: Record<string, number>;
+    currentTime: number;
   }>();
 
   const emit = defineEmits<{
@@ -375,6 +478,7 @@
     (e: 'deleteTrack', trackId: string): void;
     (e: 'updateOriginalDb', db: number): void;
     (e: 'updateTrackDb', trackId: string, db: number): void;
+    (e: 'addKeyframe', data: { itemId: string; type: 'audio'; property: 'volume'; time: number; value: number }): void;
   }>();
 
   const isOriginalMuted = ref(false);
@@ -519,6 +623,92 @@
   function updateTrackDb(track: AudioTrack, e: Event) {
     const target = e.target as HTMLInputElement;
     emit('updateTrackDb', track.id, parseFloat(target.value));
+  }
+
+  function updateTrackFadeIn(track: AudioTrack, e: Event) {
+    const target = e.target as HTMLInputElement;
+    emit('updateTrack', track.id, { fadeIn: parseFloat(target.value) || 0 });
+  }
+
+  function updateTrackFadeOut(track: AudioTrack, e: Event) {
+    const target = e.target as HTMLInputElement;
+    emit('updateTrack', track.id, { fadeOut: parseFloat(target.value) || 0 });
+  }
+
+  function addVolumeKeyframe(track: AudioTrack) {
+    // Calculate time relative to the track's start
+    const relativeTime = props.currentTime - track.startTime;
+    
+    // Only add keyframe if playhead is within the track's time range
+    if (relativeTime < 0 || relativeTime > (track.endTime - track.startTime)) {
+      console.warn('[AudioMixerTab] Playhead is outside track time range');
+      return;
+    }
+    
+    // Use current volume as the keyframe value (normalized 0-1)
+    const currentVolume = track.volume ?? 1;
+    
+    emit('addKeyframe', {
+      itemId: track.id,
+      type: 'audio',
+      property: 'volume',
+      time: relativeTime,
+      value: currentVolume,
+    });
+  }
+
+  // EQ state stored per track (in-memory, would need persistence for production)
+  const trackEQSettings = ref<Record<string, { bass: number; mid: number; treble: number }>>({});
+  const trackCompressorSettings = ref<Record<string, { enabled: boolean; threshold: number; ratio: number }>>({});
+
+  function getTrackEQ(trackId: string, band: 'bass' | 'mid' | 'treble'): number {
+    return trackEQSettings.value[trackId]?.[band] ?? 0;
+  }
+
+  function updateTrackEQ(track: AudioTrack, band: 'bass' | 'mid' | 'treble', e: Event) {
+    const target = e.target as HTMLInputElement;
+    const value = parseInt(target.value);
+    
+    if (!trackEQSettings.value[track.id]) {
+      trackEQSettings.value[track.id] = { bass: 0, mid: 0, treble: 0 };
+    }
+    trackEQSettings.value[track.id][band] = value;
+    
+    // Note: In production, this would emit an event to persist EQ settings
+    console.log(`[AudioMixerTab] EQ ${band} for track ${track.id}: ${value}dB`);
+  }
+
+  function getCompressorEnabled(trackId: string): boolean {
+    return trackCompressorSettings.value[trackId]?.enabled ?? false;
+  }
+
+  function getCompressorValue(trackId: string, param: 'threshold' | 'ratio'): number {
+    const settings = trackCompressorSettings.value[trackId];
+    if (!settings) {
+      return param === 'threshold' ? -20 : 4;
+    }
+    return settings[param];
+  }
+
+  function toggleCompressor(track: AudioTrack) {
+    if (!trackCompressorSettings.value[track.id]) {
+      trackCompressorSettings.value[track.id] = { enabled: false, threshold: -20, ratio: 4 };
+    }
+    trackCompressorSettings.value[track.id].enabled = !trackCompressorSettings.value[track.id].enabled;
+    
+    console.log(`[AudioMixerTab] Compressor for track ${track.id}: ${trackCompressorSettings.value[track.id].enabled ? 'ON' : 'OFF'}`);
+  }
+
+  function updateCompressor(track: AudioTrack, param: 'threshold' | 'ratio', e: Event) {
+    const target = e.target as HTMLInputElement;
+    const value = parseFloat(target.value);
+    
+    if (!trackCompressorSettings.value[track.id]) {
+      trackCompressorSettings.value[track.id] = { enabled: true, threshold: -20, ratio: 4 };
+    }
+    trackCompressorSettings.value[track.id][param] = value;
+    
+    console.log(`[AudioMixerTab] Compressor ${param} for track ${track.id}: ${value}`);
   }
 
   // Watch for external dB changes

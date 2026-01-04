@@ -26,6 +26,14 @@ export {
   createResizeCommand,
   createLayerChangeCommand,
   createUpdateOverlayPropertyCommand,
+  RippleEditCommand,
+  createRippleEditCommand,
+  RollEditCommand,
+  createRollEditCommand,
+  SlipEditCommand,
+  createSlipEditCommand,
+  SlideEditCommand,
+  createSlideEditCommand,
 } from './ClipEditorCommands';
 export type {
   ExtractAudioCommandData,
@@ -33,4 +41,8 @@ export type {
   ResizeCommandData,
   LayerChangeCommandData,
   UpdateOverlayPropertyCommandData,
+  RippleEditCommandData,
+  RollEditCommandData,
+  SlipEditCommandData,
+  SlideEditCommandData,
 } from './ClipEditorCommands';

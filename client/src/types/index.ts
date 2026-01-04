@@ -718,6 +718,7 @@ export interface AudioTrack {
   isSolo: boolean;
   isLocked?: boolean;
   isHidden?: boolean;
+  keyframes?: Keyframe[];
 }
 
 // Per-aspect-ratio configuration for text overlays
@@ -726,6 +727,8 @@ export interface TextOverlayRatioConfig {
   style: TextOverlayStyle;
   // Future: could add scale, rotation, etc.
 }
+
+import type { Keyframe } from './timeline-model';
 
 // Text overlay configuration
 export interface TextOverlay {
@@ -736,6 +739,7 @@ export interface TextOverlay {
   position: { x: number; y: number }; // 0-100 percentage - default/fallback position
   style: TextOverlayStyle; // Default/fallback style
   animation: TextAnimation;
+  keyframes?: Keyframe[];
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, TextOverlayRatioConfig>;
   previewWidth?: number;
@@ -827,6 +831,7 @@ export interface Sticker {
   scale: number; // 0.1-3 - default/fallback scale
   rotation: number; // Degrees - default/fallback rotation
   animation: StickerAnimation;
+  keyframes?: Keyframe[];
   // UI-only motion preset for editor preview (does not affect export)
   motionPreset?: 'none' | 'fade' | 'slide-up' | 'pop';
   motionDuration?: number; // seconds
@@ -858,6 +863,7 @@ export interface ClipWatermark {
   opacity: number; // 0-100 - default/fallback opacity
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, ClipWatermarkRatioConfig>;
+  keyframes?: Keyframe[];
   layer?: number; // Visual track layer (0 = bottom, higher = on top)
 }
 
@@ -879,7 +885,9 @@ export type EffectType =
   | 'blur'
   | 'freeze'
   | 'flash'
-  | 'shake';
+  | 'shake'
+  | 'adjustment_layer'
+  | 'chroma';
 
 export interface EffectSettings {
   // Filter settings
@@ -906,6 +914,22 @@ export interface EffectSettings {
   // Flash/Shake settings
   intensity?: number;
   frequency?: number;
+
+  // Chroma Key (Green Screen) settings
+  keyColor?: string; // Hex color to key out (default: #00ff00)
+  tolerance?: number; // 0-1, how much color variation to include
+  softness?: number; // 0-1, edge softness
+
+  // Adjustment Layer settings (inherits filter settings)
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  hue?: number;
+  temperature?: number;
+  vignette?: number;
+  sharpen?: number;
+  fade?: number;
+  blendMode?: 'normal' | 'screen' | 'multiply' | 'overlay' | 'soft-light' | 'hard-light' | 'difference';
 
   // Generic settings for future effects
   [key: string]: any;
@@ -1081,8 +1105,12 @@ export interface VideoEditorSource {
   source_duration: number | null; // Original duration of source
   start_time: number; // Position in timeline
   end_time: number; // End position in timeline
-  trim_start: number; // Trim from source start
+  trim_start: number; // Trim from source start (video)
   trim_end: number | null; // Trim from source end (null = use full duration)
+  // J/L Cut support: Independent audio trim points
+  // When null, audio uses the same trim as video (default behavior)
+  audio_trim_start?: number | null; // Audio trim start (J-cut: earlier than video)
+  audio_trim_end?: number | null; // Audio trim end (L-cut: later than video)
   order_index: number;
   track_index?: number; // Video track index (0 = main track, 1+ = additional tracks)
   created_at: number;
@@ -1321,3 +1349,5 @@ export function calculateCrossfadeOpacity(
   const state = calculateTransitionState(currentTime, transition);
   return { opacityA: state.opacityA, opacityB: state.opacityB };
 }
+
+export * from './timeline-model';
