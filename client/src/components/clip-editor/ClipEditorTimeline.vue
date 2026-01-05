@@ -474,6 +474,18 @@
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
                 <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                
+                <!-- Extended timeline area indicator (beyond source videos) -->
+                <div
+                  v-if="sourcesEndTime > 0 && totalDuration > sourcesEndTime"
+                  class="absolute top-0 bottom-0 bg-gradient-to-r from-transparent to-white/[0.03] pointer-events-none"
+                  :style="{
+                    left: `${(sourcesEndTime / totalDuration) * 100}%`,
+                    right: '0',
+                  }"
+                >
+                  <div class="absolute left-0 top-0 bottom-0 w-px bg-white/10"></div>
+                </div>
 
                 <!-- Render all items in this layer -->
                 <template v-for="overlayItem in layerGroup.items" :key="`${overlayItem.type}-${overlayItem.item.id}`">
@@ -876,8 +888,21 @@
                   @dragover.prevent="onTimelineDragOver"
                   @drop.prevent="onTimelineDrop"
                 >
-                  <!-- Background -->
+                  <!-- Background - split into source area and extended area -->
                   <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                  
+                  <!-- Extended timeline area indicator (beyond source videos) -->
+                  <div
+                    v-if="sourcesEndTime > 0 && totalDuration > sourcesEndTime"
+                    class="absolute top-0 bottom-0 bg-gradient-to-r from-transparent via-white/[0.02] to-white/[0.04] pointer-events-none"
+                    :style="{
+                      left: `${(sourcesEndTime / totalDuration) * 100}%`,
+                      right: '0',
+                    }"
+                  >
+                    <!-- Vertical line marking end of source content -->
+                    <div class="absolute left-0 top-0 bottom-0 w-px bg-white/20"></div>
+                  </div>
 
                   <!-- Empty state drop zone -->
                   <div
@@ -2957,27 +2982,74 @@
     return sortedTrimSegments.value.reduce((sum, seg) => sum + (seg.endTime - seg.startTime), 0);
   });
 
+  // Compute the end time of all video sources (primary track content)
+  const sourcesEndTime = computed(() => {
+    if (!props.videoSources || props.videoSources.length === 0) return 0;
+    return props.videoSources.reduce((max, s) => Math.max(max, s.end_time), 0);
+  });
+
+  // CapCut-style dynamic timeline duration - includes ALL item types
+  // Timeline grows automatically when any item extends beyond current duration
   const totalDuration = computed(() => {
+    let maxEndTime = 0;
+    
     if (props.editorMode) {
-      if (!props.videoSources || props.videoSources.length === 0) {
-        return 300; // Default to 5 minutes if no sources
+      // Start with video sources end time
+      if (props.videoSources && props.videoSources.length > 0) {
+        maxEndTime = sourcesEndTime.value;
+        // For single source, also consider the full source duration (for extension)
+        if (props.videoSources.length === 1) {
+          maxEndTime = Math.max(maxEndTime, props.videoSources[0].source_duration || 0);
+        }
       }
-      const maxEndTime = props.videoSources.reduce((max, s) => Math.max(max, s.end_time), 0);
-      if (props.videoSources.length === 1) {
-        return Math.max(maxEndTime, props.videoSources[0].source_duration || 0);
+      
+      // Include audio tracks
+      if (props.audioTracks && props.audioTracks.length > 0) {
+        const maxAudioEnd = props.audioTracks.reduce((max, track) => Math.max(max, track.endTime), 0);
+        maxEndTime = Math.max(maxEndTime, maxAudioEnd);
       }
-      return maxEndTime;
+      
+      // Include text overlays
+      if (props.textOverlays && props.textOverlays.length > 0) {
+        const maxTextEnd = props.textOverlays.reduce((max, overlay) => Math.max(max, overlay.endTime), 0);
+        maxEndTime = Math.max(maxEndTime, maxTextEnd);
+      }
+      
+      // Include stickers
+      if (props.stickers && props.stickers.length > 0) {
+        const maxStickerEnd = props.stickers.reduce((max, sticker) => Math.max(max, sticker.endTime), 0);
+        maxEndTime = Math.max(maxEndTime, maxStickerEnd);
+      }
+      
+      // Include watermarks
+      if (props.watermarks && props.watermarks.length > 0) {
+        const maxWatermarkEnd = props.watermarks.reduce((max, wm) => Math.max(max, wm.endTime), 0);
+        maxEndTime = Math.max(maxEndTime, maxWatermarkEnd);
+      }
+      
+      // Include effects
+      if (props.effects && props.effects.length > 0) {
+        const maxEffectEnd = props.effects.reduce((max, effect) => Math.max(max, effect.endTime), 0);
+        maxEndTime = Math.max(maxEndTime, maxEffectEnd);
+      }
+      
+      // Minimum 5 minutes if nothing exists, or add 10% padding for extension room
+      if (maxEndTime === 0) {
+        return 300;
+      }
+      // Add 10% padding to allow easy extension
+      return maxEndTime * 1.1;
     }
 
+    // Clip mode (non-editor)
     const clipSpan = (props.clipEnd ?? 0) - (props.clipStart ?? 0);
     const segmentDuration = videoSegmentDuration.value;
     const maxAudioDuration = props.audioTracks.reduce((max, track) => {
-      const trackDuration = track.endTime - track.startTime;
-      return Math.max(max, trackDuration);
+      return Math.max(max, track.endTime);
     }, 0);
     const requestedDuration = props.duration || 0;
-    const maxDuration = Math.max(segmentDuration, maxAudioDuration, clipSpan, requestedDuration);
-    return maxDuration > 0 ? maxDuration : props.duration;
+    maxEndTime = Math.max(segmentDuration, maxAudioDuration, clipSpan, requestedDuration);
+    return maxEndTime > 0 ? maxEndTime : props.duration;
   });
 
   // Primary video sources (track_index = 0 or undefined) - shown in Source track
@@ -6361,29 +6433,28 @@
         activeSnapTrackType.value = null;
       }
     } else {
-      // For text, sticker, effect, filter - use gap-aware positioning
+      // For text, sticker, effect, filter - CapCut-style free positioning
+      // These overlay items can extend beyond the source video duration
       // Calculate original visual position and new visual position
       const originalStartPercent = effectiveTimeToVisualPercent(dragInfo.value.originalStartTime);
-      const newStartPercent = Math.max(0, Math.min(100, originalStartPercent + deltaPercent));
+      const newStartPercent = Math.max(0, originalStartPercent + deltaPercent);
 
       // Convert new visual position back to effective time
       newStartTime = visualPercentToEffectiveTime(newStartPercent);
       newEndTime = newStartTime + itemDuration;
 
-      // Constrain to timeline bounds
+      // Only constrain to not go before 0 - NO upper bound constraint (CapCut-style)
       if (newStartTime < 0) {
         newStartTime = 0;
         newEndTime = itemDuration;
       }
-      if (newEndTime > totalDuration.value) {
-        newEndTime = totalDuration.value;
-        newStartTime = totalDuration.value - itemDuration;
-      }
+      // Note: No upper bound - items can extend beyond source duration
+      // The totalDuration computed will automatically grow to accommodate
 
       // Apply snapping for overlay items
       const snapResult = applySnapToSegment(newStartTime, newEndTime, dragInfo.value.id);
       if (snapResult.didSnap) {
-        if (snapResult.startTime >= 0 && snapResult.endTime <= totalDuration.value) {
+        if (snapResult.startTime >= 0) {
           newStartTime = snapResult.startTime;
           newEndTime = snapResult.endTime;
         }
@@ -6756,13 +6827,15 @@
           activeSnapTrackType.value = null;
         }
       } else {
+        // Right handle - CapCut-style: NO upper bound constraint for overlays
         const originalEndPercent = effectiveTimeToVisualPercent(resizeInfo.value.originalEndTime);
-        const newEndPercent = Math.min(100, originalEndPercent + deltaPercent);
-        newEndTime = visualPercentToEffectiveTime(newEndPercent);
+        // Remove the Math.min(100, ...) constraint - allow extending beyond 100%
+        const newEndPercent = originalEndPercent + deltaPercent;
+        newEndTime = visualPercentToEffectiveTime(Math.max(0, newEndPercent));
 
-        // Apply snapping to the right edge
+        // Apply snapping to the right edge (no upper bound check)
         const snapResult = applySnapToTime(newEndTime, resizeInfo.value.id);
-        if (snapResult.didSnap && snapResult.time <= totalDuration.value) {
+        if (snapResult.didSnap) {
           newEndTime = snapResult.time;
           activeSnapTime.value = snapResult.time;
           activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
@@ -6776,10 +6849,8 @@
           activeSnapTime.value = null;
           activeSnapTrackType.value = null;
         }
-        // Constrain to total duration
-        if (newEndTime > totalDuration.value) {
-          newEndTime = totalDuration.value;
-        }
+        // Note: No upper bound constraint - overlays can extend beyond source duration
+        // The totalDuration computed will automatically grow to accommodate
       }
     }
 
