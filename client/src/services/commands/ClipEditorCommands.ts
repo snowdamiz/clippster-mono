@@ -36,6 +36,10 @@ import {
   createVideoEditorWatermark,
   deleteVideoEditorWatermark,
 } from '@/services/database/video-editor-edits';
+import {
+  createAudioTrack as createClipAudioTrack,
+  deleteAudioTrack as deleteClipAudioTrack,
+} from '@/services/database/clip-edits';
 
 /**
  * Split Command Data Interface
@@ -716,35 +720,57 @@ export interface ExtractAudioCommandData {
 export class ExtractAudioCommand extends BaseCommand {
   private data: ExtractAudioCommandData;
 
-  constructor(data: ExtractAudioCommandData) {
-    super(true, `Extract audio from source`);
+  constructor(editorMode: boolean, data: ExtractAudioCommandData) {
+    super(editorMode, `Extract audio from source`);
     this.data = data;
   }
 
   async execute(): Promise<void> {
     console.log('[ExtractAudioCommand] Creating audio track');
     
-    // Create the audio track
-    const newTrack = await createVideoEditorAudioTrack(this.data.editId, {
-      file_path: this.data.filePath,
-      name: this.data.name,
-      start_time: this.data.startTime,
-      end_time: this.data.endTime,
-      volume: 1.0,
-      fade_in: 0,
-      fade_out: 0,
-      track_order: this.data.trackOrder,
-      is_muted: 0,
-      is_solo: 0,
-      source_id: this.data.sourceId,
-    });
+    let createdId: string;
+
+    if (this.editorMode) {
+      // Editor Mode
+      const newTrack = await createVideoEditorAudioTrack(this.data.editId, {
+        file_path: this.data.filePath,
+        name: this.data.name,
+        start_time: this.data.startTime,
+        end_time: this.data.endTime,
+        volume: 1.0,
+        fade_in: 0,
+        fade_out: 0,
+        track_order: this.data.trackOrder,
+        is_muted: 0,
+        is_solo: 0,
+        source_id: this.data.sourceId,
+      });
+      createdId = newTrack.id;
+    } else {
+      // Clip Mode
+      const newTrack = await createClipAudioTrack(this.data.editId, {
+        file_path: this.data.filePath,
+        name: this.data.name,
+        start_time: this.data.startTime,
+        end_time: this.data.endTime,
+        volume: 1.0,
+        fade_in: 0,
+        fade_out: 0,
+        track_order: this.data.trackOrder,
+        is_muted: 0,
+        is_solo: 0,
+      });
+      createdId = newTrack.id;
+    }
     
-    this.data.createdAudioTrackId = newTrack.id;
+    this.data.createdAudioTrackId = createdId;
     
-    // Mark the source as having audio extracted
-    await updateVideoEditorSource(this.data.sourceId, { audio_extracted: true });
+    // Mark the source as having audio extracted (only if it's a real source ID, not 'main' from clip mode)
+    if (this.data.sourceId !== 'main') {
+      await updateVideoEditorSource(this.data.sourceId, { audio_extracted: true });
+    }
     
-    console.log('[ExtractAudioCommand] Audio track created:', newTrack.id);
+    console.log('[ExtractAudioCommand] Audio track created:', createdId);
     
     if (this.data.onReload) {
       await this.data.onReload();
@@ -759,10 +785,16 @@ export class ExtractAudioCommand extends BaseCommand {
     console.log('[ExtractAudioCommand] Undoing - deleting audio track:', this.data.createdAudioTrackId);
     
     // Delete the audio track
-    await deleteVideoEditorAudioTrack(this.data.createdAudioTrackId);
+    if (this.editorMode) {
+      await deleteVideoEditorAudioTrack(this.data.createdAudioTrackId);
+    } else {
+      await deleteClipAudioTrack(this.data.createdAudioTrackId);
+    }
     
-    // Unmark the source
-    await updateVideoEditorSource(this.data.sourceId, { audio_extracted: false });
+    // Unmark the source (only if it's a real source ID)
+    if (this.data.sourceId !== 'main') {
+      await updateVideoEditorSource(this.data.sourceId, { audio_extracted: false });
+    }
     
     console.log('[ExtractAudioCommand] Undo complete');
     
@@ -1631,8 +1663,8 @@ export function createMoveCommand(data: MoveCommandData): MoveCommand {
   return new MoveCommand(data);
 }
 
-export function createExtractAudioCommand(data: ExtractAudioCommandData): ExtractAudioCommand {
-  return new ExtractAudioCommand(data);
+export function createExtractAudioCommand(editorMode: boolean, data: ExtractAudioCommandData): ExtractAudioCommand {
+  return new ExtractAudioCommand(editorMode, data);
 }
 
 export function createAddItemCommand(data: AddItemCommandData): AddItemCommand {

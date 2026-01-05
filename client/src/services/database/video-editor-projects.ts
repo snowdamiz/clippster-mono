@@ -35,6 +35,7 @@ export interface VideoEditorSource {
   is_muted?: boolean;
   is_locked?: boolean;
   keyframes_data?: string; // JSON string of Keyframe[]
+  speed?: number; // Playback speed multiplier (1.0 = normal, 0.5 = half speed, 2.0 = double speed)
   created_at: number;
 }
 

@@ -719,6 +719,7 @@ export interface AudioTrack {
   isLocked?: boolean;
   isHidden?: boolean;
   keyframes?: Keyframe[];
+  linkedSourceId?: string; // ID of linked video source (for extracted audio)
 }
 
 // Per-aspect-ratio configuration for text overlays
@@ -1118,6 +1119,25 @@ export interface VideoEditorSource {
   isLocked?: boolean;
   isHidden?: boolean;
   audioExtracted?: boolean; // True if audio has been extracted to a separate track
+  speed?: number; // Playback speed multiplier (1.0 = normal, 0.5 = half speed, 2.0 = double speed)
+  speedKeyframes?: SpeedKeyframe[]; // Keyframes for speed ramping/time remapping
+  freezePoints?: FreezePoint[]; // Time freeze points within the segment
+}
+
+// Speed keyframe for time remapping
+export interface SpeedKeyframe {
+  id: string;
+  time: number; // Time within the segment (relative to trim_start)
+  speed: number; // Speed at this point (0.25 - 4.0, negative for reverse)
+  easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bezier';
+  controlPoints?: { x1: number; y1: number; x2: number; y2: number }; // For bezier easing
+}
+
+// Time freeze point - pauses playback at a specific moment
+export interface FreezePoint {
+  id: string;
+  time: number; // Time within the segment to freeze
+  duration: number; // How long to freeze (in seconds)
 }
 
 // Project with all sources loaded

@@ -344,6 +344,7 @@
               :effects="effects"
               :filter-segments="filterSegments"
               :video-src="videoSrc ?? undefined"
+              :video-path="effectiveVideoPath"
               :audio-gain-db="effectiveAudioGainDb"
               :track-db-values="trackDbValues"
               :is-playing="isPlaying"
@@ -389,8 +390,57 @@
               @slip-edit="handleSlipEdit"
               @slide-edit="handleSlideEdit"
               @update-keyframe-time="updateKeyframeTime"
+              @paste-items-in-place="performPasteInPlace"
+              @freeze-frame="handleFreezeFrame"
+              @add-speed-keyframe="handleAddSpeedKeyframe"
+              @update-speed-keyframe="handleUpdateSpeedKeyframe"
+              @delete-speed-keyframe="handleDeleteSpeedKeyframe"
+              @open-speed-curve-editor="handleOpenSpeedCurveEditor"
+              @copy-items="handleCopyItems"
+              @paste-items="handlePasteItems"
+              @paste-items-to-track="handlePasteItemsToTrack"
+              @duplicate-items="handleDuplicateItems"
+              @group-items="handleGroupItems"
+              @ungroup-items="handleUngroupItems"
+              @reorder-track="handleReorderTrack"
+              @toggle-track-collapse="handleToggleTrackCollapse"
+              @toggle-audio-lock="handleToggleAudioLock"
+              @toggle-audio-mute="handleToggleAudioMute"
+              @toggle-audio-solo="handleToggleAudioSolo"
+              @toggle-audio-hidden="handleToggleAudioHidden"
+              @set-in-point="handleSetInPoint"
+              @set-out-point="handleSetOutPoint"
+              @clear-in-out-points="handleClearInOutPoints"
+              @go-to-in-point="handleGoToInPoint"
+              @go-to-out-point="handleGoToOutPoint"
+              @add-region="handleAddRegion"
+              @update-region="handleUpdateRegion"
+              @delete-region="handleDeleteRegion"
+              @detect-beat-markers="handleDetectBeatMarkers"
+              @clear-beat-markers="handleClearBeatMarkers"
+              :regions="regions"
+              :beat-markers="beatMarkers"
+              :in-point="inPoint"
+              :out-point="outPoint"
             />
           </div>
+        </div>
+      </div>
+
+      <!-- Speed Curve Editor Dialog -->
+      <div v-if="showSpeedCurveEditor" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeSpeedCurveEditor">
+        <div class="bg-[#1a1a1a] rounded-lg border border-white/10 shadow-2xl w-[600px] max-w-[90vw]">
+          <SpeedCurveEditor
+            v-if="speedCurveEditorSourceId"
+            :source-id="speedCurveEditorSourceId"
+            :duration="getSpeedCurveDuration()"
+            :speed-keyframes="speedCurveKeyframes"
+            @close="closeSpeedCurveEditor"
+            @add-keyframe="handleAddSpeedKeyframe"
+            @update-keyframe="handleUpdateSpeedKeyframe"
+            @delete-keyframe="handleDeleteSpeedKeyframe"
+            @apply-preset="handleApplySpeedPreset"
+          />
         </div>
       </div>
 
@@ -432,6 +482,7 @@
     SplitCommand,
     DeleteCommand,
     PasteCommand,
+    MoveCommand,
     ExtractAudioCommand,
     AddItemCommand,
     ResizeCommand,
@@ -548,11 +599,13 @@
   import ExportTab from './tabs/ExportTab.vue';
   import ClipEditorTimeline from './ClipEditorTimeline.vue';
   import ManualPOIEditor from './ManualPOIEditor.vue';
+  import SpeedCurveEditor from './SpeedCurveEditor.vue';
   import KeyframeInspector from './KeyframeInspector.vue';
   import type { ItemType } from '@/types/timeline-model';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { useUnifiedTracks } from '@/composables/useUnifiedTracks';
+  import { useAudioWorker } from '@/composables/useAudioWorker';
   import { invoke } from '@tauri-apps/api/core';
 
   // Helper function to load watermark preview URL
@@ -892,6 +945,11 @@
   // Manual POI editor state
   const showManualPOIEditor = ref(false);
   const editingAspectRatio = ref<string>('9:16');
+
+  // Speed Curve Editor state
+  const showSpeedCurveEditor = ref(false);
+  const speedCurveEditorSourceId = ref<string | null>(null);
+  const speedCurveKeyframes = ref<any[]>([]); // Will hold the keyframes for the active source
 
   // Project ID for transcript loading (fetched from clip)
   const projectId = ref<string | null>(null);
@@ -2140,7 +2198,8 @@
       // Create reload callback for undo/redo
       const reloadCallback = async () => {
         // Reload audio tracks from database
-        if (videoEditorEditId.value) {
+        if (editorMode.value && videoEditorEditId.value) {
+          // Editor Mode: Reload from video_editor_edits
           const { getVideoEditorAudioTracksByEditId } = await import('@/services/database/video-editor-edits');
           const tracks = await getVideoEditorAudioTracksByEditId(videoEditorEditId.value);
           audioTracks.value = tracks.map((t) => ({
@@ -2155,17 +2214,36 @@
             trackOrder: t.track_order,
             isMuted: t.is_muted === 1,
             isSolo: t.is_solo === 1,
+            linkedSourceId: t.source_id, // Link to video source for linked selection
           }));
-        }
-        // Reload video sources to update audioExtracted flag
-        if (editorProjectId.value) {
-          const sources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
-          videoSources.value = sources;
+
+          // Reload video sources to update audioExtracted flag
+          if (editorProjectId.value) {
+            const sources = await getVideoEditorSourcesByProjectId(editorProjectId.value);
+            videoSources.value = sources;
+          }
+        } else if (!editorMode.value && clipEditId.value) {
+          // Clip Mode: Reload from clip_edits
+          const { getAudioTracksByEditId } = await import('@/services/database/clip-edits');
+          const tracks = await getAudioTracksByEditId(clipEditId.value);
+          audioTracks.value = tracks.map((t) => ({
+            id: t.id,
+            filePath: t.file_path,
+            name: t.name,
+            startTime: t.start_time,
+            endTime: t.end_time,
+            volume: t.volume,
+            fadeIn: t.fade_in,
+            fadeOut: t.fade_out,
+            trackOrder: t.track_order,
+            isMuted: t.is_muted === 1,
+            isSolo: t.is_solo === 1,
+          }));
         }
       };
 
       // Create and execute the command
-      const extractAudioCommand = new ExtractAudioCommand({
+      const extractAudioCommand = new ExtractAudioCommand(editorMode.value, {
         editId,
         sourceId: data.sourceId,
         filePath: data.filePath,
@@ -3110,6 +3188,7 @@
           trackOrder: t.track_order,
           isMuted: !!t.is_muted,
           isSolo: !!t.is_solo,
+          linkedSourceId: t.source_id,
         }));
 
         // Load text overlays
@@ -4448,6 +4527,7 @@
             trackOrder: t.track_order,
             isMuted: t.is_muted === 1,
             isSolo: t.is_solo === 1,
+            linkedSourceId: t.source_id,
           }));
         }
       };
@@ -6375,6 +6455,7 @@
         trackOrder: t.track_order,
         isMuted: !!t.is_muted,
         isSolo: !!t.is_solo,
+        linkedSourceId: (t as any).source_id, // Only present in editor mode
       }));
 
       textOverlays.value = fullEdit.textOverlays.map((o) => ({
@@ -6793,6 +6874,150 @@
     }
   }
 
+  /**
+   * Paste in place - paste at the original position of the copied segment
+   */
+  async function performPasteInPlace() {
+    if (!copiedSegment.value) {
+      console.warn('[ClipEditorDialog] No segment in clipboard to paste');
+      alert('No segment copied. Press Ctrl+C to copy a segment first.');
+      return;
+    }
+
+    if (!editorMode.value && props.clipId) {
+      try {
+        // Use the original start time from the copied segment
+        const originalStartTime = copiedSegment.value.start_time - props.clipStartTime;
+
+        // Create reload callback
+        const reloadCallback = async () => {
+          const dbSegments = await getClipSegmentsByClipId(props.clipId!);
+          if (dbSegments && dbSegments.length > 0) {
+            trimSegments.value = dbSegments.map((seg, index) => ({
+              id: `segment-${index}`,
+              startTime: seg.start_time - props.clipStartTime,
+              endTime: seg.end_time - props.clipStartTime,
+              isDeleted: false,
+            }));
+          }
+          emit('save', props.clipId!);
+        };
+
+        // Create and execute paste command at original position
+        const pasteCommand = new PasteCommand(false, {
+          clipId: props.clipId,
+          clipStartTime: props.clipStartTime,
+          pasteAtTime: originalStartTime,
+          copiedSegment: copiedSegment.value,
+          onReload: reloadCallback,
+        });
+
+        await commandHistory.executeCommand(pasteCommand);
+        undoRedoTrigger.value++;
+
+        console.log('[ClipEditorDialog] ✅ Paste in place successful - segment added at original position');
+      } catch (error) {
+        console.error('[ClipEditorDialog] Paste in place failed:', error);
+        alert(`Could not paste segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // TODO: Implement for editor mode
+      console.log('[ClipEditorDialog] Paste in place not yet implemented for editor mode');
+    }
+  }
+
+  // ============================================================================
+  // PHASE 2 FEATURE HANDLERS
+  // ============================================================================
+
+  // Freeze Frame
+  function handleFreezeFrame(data: { sourceId: string; time: number; duration: number }) {
+    // In editor mode, create a freeze frame segment
+    if (editorMode.value) {
+      console.log('[ClipEditorDialog] Adding freeze frame:', data);
+      // Implementation logic would go here: create new source with freeze flag or extract frame
+      // For now, we'll just log it as the core logic is in the timeline component
+    }
+  }
+
+  // Speed Ramping
+  function handleAddSpeedKeyframe(sourceId: string, time: number, speed: number) {
+    if (!editorMode.value) return;
+    const source = videoSources.value.find(s => s.id === sourceId);
+    if (!source) return;
+
+    // Add keyframe to source data (would be persisted to DB)
+    console.log('[ClipEditorDialog] Adding speed keyframe:', { sourceId, time, speed });
+    // updateVideoEditorSource(sourceId, { speed_keyframes: ... });
+  }
+
+  function handleUpdateSpeedKeyframe(sourceId: string, keyframeId: string, updates: any) {
+    console.log('[ClipEditorDialog] Updating speed keyframe:', { sourceId, keyframeId, updates });
+  }
+
+  function handleDeleteSpeedKeyframe(sourceId: string, keyframeId: string) {
+    console.log('[ClipEditorDialog] Deleting speed keyframe:', { sourceId, keyframeId });
+  }
+
+  function handleOpenSpeedCurveEditor(sourceId: string) {
+    const source = videoSources.value.find(s => s.id === sourceId);
+    if (!source) return;
+    
+    speedCurveEditorSourceId.value = sourceId;
+    // Load keyframes for this source
+    // speedCurveKeyframes.value = source.speed_keyframes || [];
+    showSpeedCurveEditor.value = true;
+  }
+
+  function closeSpeedCurveEditor() {
+    showSpeedCurveEditor.value = false;
+    speedCurveEditorSourceId.value = null;
+  }
+
+  function getSpeedCurveDuration(): number {
+    if (!speedCurveEditorSourceId.value) return 0;
+    const source = videoSources.value.find(s => s.id === speedCurveEditorSourceId.value);
+    return source ? (source.end_time - source.start_time) : 0;
+  }
+
+  function handleApplySpeedPreset(keyframes: any[]) {
+    if (!speedCurveEditorSourceId.value) return;
+    console.log('[ClipEditorDialog] Applying speed preset:', keyframes);
+    // Apply keyframes to source
+  }
+
+  // Copy/Paste/Duplicate Handlers
+  function handleCopyItems(itemKeys: string[]) {
+    // Logic to copy items to clipboard state
+    console.log('[ClipEditorDialog] Copying items:', itemKeys);
+    // Store in local clipboard or store
+  }
+
+  function handlePasteItems(position: number) {
+    console.log('[ClipEditorDialog] Pasting items at position:', position);
+    // Logic to retrieve from clipboard and create new items
+  }
+
+  function handlePasteItemsToTrack(data: { position: number; targetTrackType: string; targetTrackId?: string }) {
+    console.log('[ClipEditorDialog] Pasting to track:', data);
+  }
+
+  function handleDuplicateItems(itemKeys: string[]) {
+    console.log('[ClipEditorDialog] Duplicating items:', itemKeys);
+    // Logic to clone items immediately
+  }
+
+  // Grouping Handlers
+  function handleGroupItems(itemKeys: string[]) {
+    console.log('[ClipEditorDialog] Grouping items:', itemKeys);
+    // Logic to create a group
+  }
+
+  function handleUngroupItems(groupId: string) {
+    console.log('[ClipEditorDialog] Ungrouping group:', groupId);
+    // Logic to disband a group
+  }
+
   // ============================================================================
   // MULTI-SELECT HANDLERS
   // ============================================================================
@@ -6901,6 +7126,232 @@
       selectedMarkerId.value = markerId;
       console.log('[ClipEditorDialog] Jumped to marker at', marker.time, 'seconds');
     }
+  }
+
+  // ============================================================================
+  // PHASE 3 FEATURE HANDLERS (Track Mgmt, Regions, In/Out Points)
+  // ============================================================================
+
+  // In/Out Points
+  const inPoint = ref<number | null>(null);
+  const outPoint = ref<number | null>(null);
+
+  function handleSetInPoint(time: number) {
+    inPoint.value = time;
+    console.log('[ClipEditorDialog] Set In Point:', time);
+    // If out point exists and is before in point, clear it or move it?
+    if (outPoint.value !== null && outPoint.value <= time) {
+      outPoint.value = null;
+    }
+  }
+
+  function handleSetOutPoint(time: number) {
+    if (inPoint.value !== null && time <= inPoint.value) {
+      console.warn('[ClipEditorDialog] Out point must be after In point');
+      return;
+    }
+    outPoint.value = time;
+    console.log('[ClipEditorDialog] Set Out Point:', time);
+  }
+
+  function handleClearInOutPoints() {
+    inPoint.value = null;
+    outPoint.value = null;
+    console.log('[ClipEditorDialog] Cleared In/Out Points');
+  }
+
+  function handleGoToInPoint() {
+    if (inPoint.value !== null) {
+      seekTo(inPoint.value);
+    }
+  }
+
+  function handleGoToOutPoint() {
+    if (outPoint.value !== null) {
+      seekTo(outPoint.value);
+    }
+  }
+
+  // Regions
+  const regions = ref<Array<{ id: string; startTime: number; endTime: number; label?: string; color?: string }>>([]);
+
+  function handleAddRegion(startTime: number, endTime: number, label?: string, color?: string) {
+    const newRegion = {
+      id: `region-${Date.now()}`,
+      startTime,
+      endTime,
+      label: label || 'Region',
+      color: color || '#4F9DFF' // Default blue
+    };
+    regions.value.push(newRegion);
+    console.log('[ClipEditorDialog] Added region:', newRegion);
+  }
+
+  function handleUpdateRegion(regionId: string, updates: any) {
+    const index = regions.value.findIndex(r => r.id === regionId);
+    if (index !== -1) {
+      regions.value[index] = { ...regions.value[index], ...updates };
+      console.log('[ClipEditorDialog] Updated region:', regions.value[index]);
+    }
+  }
+
+  function handleDeleteRegion(regionId: string) {
+    const index = regions.value.findIndex(r => r.id === regionId);
+    if (index !== -1) {
+      regions.value.splice(index, 1);
+      console.log('[ClipEditorDialog] Deleted region:', regionId);
+    }
+  }
+
+  // Track Management
+  function handleReorderTrack(trackType: 'audio' | 'overlay', trackId: string, newOrder: number) {
+    console.log('[ClipEditorDialog] Reorder track:', { trackType, trackId, newOrder });
+    
+    if (trackType === 'audio') {
+      const track = audioTracks.value.find(t => t.id === trackId);
+      if (!track) return;
+      
+      const oldOrder = track.trackOrder;
+      if (oldOrder === newOrder) return; // No change
+      
+      // Clamp newOrder to valid range
+      const maxOrder = audioTracks.value.length - 1;
+      const clampedNewOrder = Math.max(0, Math.min(maxOrder, newOrder));
+      
+      // Shift other tracks to make room
+      // If moving down (oldOrder < newOrder): shift tracks in between up
+      // If moving up (oldOrder > newOrder): shift tracks in between down
+      const updates: { id: string; trackOrder: number }[] = [];
+      
+      for (const t of audioTracks.value) {
+        if (t.id === trackId) {
+          // The track being moved
+          t.trackOrder = clampedNewOrder;
+          updates.push({ id: t.id, trackOrder: clampedNewOrder });
+        } else if (oldOrder < clampedNewOrder) {
+          // Moving down: shift tracks between old and new positions up by 1
+          if (t.trackOrder > oldOrder && t.trackOrder <= clampedNewOrder) {
+            t.trackOrder -= 1;
+            updates.push({ id: t.id, trackOrder: t.trackOrder });
+          }
+        } else if (oldOrder > clampedNewOrder) {
+          // Moving up: shift tracks between new and old positions down by 1
+          if (t.trackOrder >= clampedNewOrder && t.trackOrder < oldOrder) {
+            t.trackOrder += 1;
+            updates.push({ id: t.id, trackOrder: t.trackOrder });
+          }
+        }
+      }
+      
+      // Sort audioTracks by trackOrder for consistent rendering
+      audioTracks.value.sort((a, b) => a.trackOrder - b.trackOrder);
+      
+      // Persist all changes to DB
+      for (const update of updates) {
+        updateAudioTrack(update.id, { track_order: update.trackOrder });
+      }
+    }
+    // Overlay tracks (text, stickers, watermarks) use layer property instead of trackOrder
+    // They are rendered in a single overlay track, so reordering is handled via layer changes
+  }
+
+  function handleToggleTrackCollapse(trackType: string, trackId?: string) {
+    console.log('[ClipEditorDialog] Toggle track collapse:', { trackType, trackId });
+    // This state is mostly local to the timeline, but if we need to persist it:
+    // const key = trackId ? `${trackType}_${trackId}` : trackType;
+    // Save to user preferences
+  }
+
+  function handleToggleAudioLock(trackId: string) {
+    const track = audioTracks.value.find(t => t.id === trackId);
+    if (track) {
+      const newLockedState = !track.isLocked;
+      updateAudioTrackLocal(trackId, { isLocked: newLockedState });
+    }
+  }
+
+  function handleToggleAudioMute(trackId: string) {
+    const track = audioTracks.value.find(t => t.id === trackId);
+    if (track) {
+      const newMutedState = !track.isMuted;
+      updateAudioTrackLocal(trackId, { isMuted: newMutedState });
+    }
+  }
+
+  function handleToggleAudioSolo(trackId: string) {
+    const track = audioTracks.value.find(t => t.id === trackId);
+    if (track) {
+      const newSoloState = !track.isSolo;
+      updateAudioTrackLocal(trackId, { isSolo: newSoloState });
+    }
+  }
+
+  function handleToggleAudioHidden(trackId: string) {
+    const track = audioTracks.value.find(t => t.id === trackId);
+    if (track) {
+      const newHiddenState = !track.isHidden;
+      updateAudioTrackLocal(trackId, { isHidden: newHiddenState });
+    }
+  }
+
+  // Beat Detection
+  const { detectBeats, isProcessing: isAudioProcessing } = useAudioWorker();
+  const beatMarkers = ref<Array<{ id: string; time: number; confidence?: number }>>([]);
+
+  async function handleDetectBeatMarkers(audioTrackId?: string) {
+    console.log('[ClipEditorDialog] Detecting beat markers for:', audioTrackId || 'main video');
+    
+    let url = '';
+    
+    if (audioTrackId) {
+      const track = audioTracksWithStreamingUrls.value.find(t => t.id === audioTrackId);
+      if (track) {
+        url = track.filePath;
+      }
+    } else {
+      // Use main video audio
+      url = effectiveVideoSrc.value || '';
+    }
+    
+    if (!url) {
+      console.warn('[ClipEditorDialog] No audio source found for beat detection');
+      return;
+    }
+
+    try {
+      // Create offline context to decode audio
+      // We assume standard sample rate, or use the context's default
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      console.log('[ClipEditorDialog] Fetching audio for analysis:', url);
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      
+      console.log('[ClipEditorDialog] Decoding audio data...');
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      const channelData = audioBuffer.getChannelData(0); // Use first channel
+      const sampleRate = audioBuffer.sampleRate;
+      
+      console.log('[ClipEditorDialog] Sending to worker for beat detection...');
+      const beats = await detectBeats(channelData, sampleRate, 0.5); // 0.5 sensitivity
+      
+      console.log('[ClipEditorDialog] Beat detection complete. Found beats:', beats.length);
+      
+      // Convert to markers
+      beatMarkers.value = beats.map((b, index) => ({
+        id: `beat-${Date.now()}-${index}`,
+        time: b.time,
+        confidence: b.confidence
+      }));
+      
+    } catch (error) {
+      console.error('[ClipEditorDialog] Beat detection failed:', error);
+    }
+  }
+
+  function handleClearBeatMarkers() {
+    beatMarkers.value = [];
   }
 
   // ============================================================================

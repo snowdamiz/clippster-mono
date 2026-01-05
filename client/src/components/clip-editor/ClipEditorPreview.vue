@@ -1,15 +1,15 @@
 <template>
   <div
     ref="fullscreenContainerRef"
-    class="flex-1 flex flex-col min-h-0 relative"
+    class="flex-1 flex flex-col min-h-0 relative items-center justify-center"
     :class="isFullscreen ? 'p-0 bg-black' : 'p-0'"
   >
-    <!-- Video Container - constrained to 16:9 aspect ratio -->
+    <!-- Video Container - constrained to aspect ratio -->
     <div
       ref="videoContainerRef"
-      class="flex items-center justify-center bg-black overflow-hidden relative w-full"
+      class="flex items-center justify-center bg-black overflow-hidden relative max-w-full max-h-full"
       :class="isFullscreen ? 'rounded-none' : 'rounded-lg'"
-      :style="{ aspectRatio: '16/9', maxHeight: '100%' }"
+      :style="{ aspectRatio: previewAspectRatio.replace(':', '/'), width: 'auto', height: 'auto' }"
     >
       <!-- Single region mode: Main video with CSS transforms applied directly (no extra decoding) -->
       <div

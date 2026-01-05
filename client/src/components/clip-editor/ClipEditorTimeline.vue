@@ -131,7 +131,7 @@
             </button>
           </div>
           <!-- Zoom Controls -->
-          <div class="flex items-center gap-1 bg-[#121212] rounded-md px-2 py-1 border border-white/[0.02]">
+          <div class="flex items-center gap-1 bg-[#121212] rounded-md px-2 py-1 border border-white/[0.02] relative group/zoom">
             <button
               @click="zoomOut"
               :disabled="zoomLevel <= MIN_ZOOM"
@@ -140,9 +140,41 @@
             >
               <Minus :size="13" />
             </button>
-            <span class="text-[11px] text-white/60 font-mono tabular-nums min-w-[46px] text-center select-none px-1">
+            <button
+              @click="zoomMenuOpen = !zoomMenuOpen"
+              class="text-[11px] text-white/60 font-mono tabular-nums min-w-[46px] text-center select-none px-1 hover:text-white transition-colors cursor-pointer"
+              title="Select zoom level"
+            >
               {{ getZoomDisplayText() }}
-            </span>
+            </button>
+            
+            <!-- Zoom Presets Dropdown -->
+            <div
+              v-if="zoomMenuOpen"
+              class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] z-[100]"
+              @mouseleave="zoomMenuOpen = false"
+            >
+              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider">Zoom Presets</div>
+              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10 flex items-center justify-between" @click="() => { zoomToFit(); zoomMenuOpen = false; }">
+                <span>Fit to Screen</span>
+                <span class="text-white/30 text-xs">Z</span>
+              </button>
+              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10 flex items-center justify-between" @click="() => { zoomToSelection(); zoomMenuOpen = false; }">
+                <span>Fit Selection</span>
+                <span class="text-white/30 text-xs">⇧Z</span>
+              </button>
+              <div class="h-px bg-white/10 my-1"></div>
+              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10" @click="() => { zoomLevel = 1.0; zoomMenuOpen = false; }">
+                <span>100% (Baseline)</span>
+              </button>
+              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10" @click="() => { zoomLevel = 2.0; zoomMenuOpen = false; }">
+                <span>200%</span>
+              </button>
+              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10" @click="() => { zoomLevel = 5.0; zoomMenuOpen = false; }">
+                <span>500%</span>
+              </button>
+            </div>
+
             <button
               @click="zoomIn"
               class="p-1 rounded-md transition-colors duration-150 text-white/60 hover:text-white hover:bg-white/10"
@@ -153,12 +185,58 @@
           </div>
         </div>
         <div class="flex items-center gap-1.5">
-          <label
-            class="flex items-center gap-1.5 text-[11px] text-white/60 bg-white/[0.04] px-2 py-1 rounded-md border border-white/10"
-          >
-            <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3 w-3" />
-            <span>Snap</span>
-          </label>
+          <!-- Snap Settings Dropdown -->
+          <div class="relative group/snap">
+            <button
+              class="flex items-center gap-1.5 text-[11px] bg-white/[0.04] px-2 py-1 rounded-md border border-white/10 hover:bg-white/[0.08] transition-colors"
+              :class="snapEnabled ? 'text-violet-300' : 'text-white/60'"
+              @click="snapMenuOpen = !snapMenuOpen"
+            >
+              <Magnet :size="12" :class="snapEnabled ? 'text-violet-400' : 'text-white/40'" />
+              <span>Snap</span>
+              <ChevronDown :size="10" class="text-white/40" />
+            </button>
+            <!-- Snap options dropdown -->
+            <div
+              v-if="snapMenuOpen"
+              class="absolute right-0 top-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px] z-[100]"
+              @mouseleave="snapMenuOpen = false"
+            >
+              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider">Snap Settings</div>
+              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer">
+                <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3 w-3" />
+                <span class="text-sm text-white/80">Enable Snapping</span>
+              </label>
+              <div class="h-px bg-white/10 my-1"></div>
+              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider">Snap To</div>
+              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
+                <input type="checkbox" v-model="snapPreferences.playhead" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
+                <span class="text-sm text-white/80">Playhead</span>
+              </label>
+              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
+                <input type="checkbox" v-model="snapPreferences.segmentEdges" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
+                <span class="text-sm text-white/80">Segment Edges</span>
+              </label>
+              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
+                <input type="checkbox" v-model="snapPreferences.markers" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
+                <span class="text-sm text-white/80">Markers</span>
+              </label>
+              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
+                <input type="checkbox" v-model="snapPreferences.grid" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
+                <span class="text-sm text-white/80">Grid (1s intervals)</span>
+              </label>
+              <div class="h-px bg-white/10 my-1"></div>
+              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider">Behavior</div>
+              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
+                <input type="checkbox" v-model="snapPreferences.magnetic" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
+                <span class="text-sm text-white/80">Magnetic Timeline</span>
+              </label>
+              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer">
+                <input type="checkbox" v-model="frameSnapEnabled" class="accent-violet-500 h-3 w-3" />
+                <span class="text-sm text-white/80">Snap to Frames</span>
+              </label>
+            </div>
+          </div>
           <span
             v-if="sortedTrimSegments.length > 1"
             class="text-[11px] text-violet-300/80 bg-violet-500/10 px-2.5 py-1 rounded-md"
@@ -171,6 +249,62 @@
         </div>
       </div>
 
+      <!-- Timeline Minimap (shows when zoomed in) -->
+      <div
+        v-if="zoomLevel > 1.5 && totalDuration > 0"
+        class="h-6 bg-[#0a0a0a] border-b border-white/[0.06] relative cursor-pointer mx-2 rounded-sm overflow-hidden"
+        @click="onMinimapClick"
+        @mousedown="onMinimapDragStart"
+        title="Click to navigate, drag to scroll"
+      >
+        <!-- Minimap segments -->
+        <div class="absolute inset-0 flex items-center">
+          <template v-if="editorMode">
+            <div
+              v-for="source in primaryVideoSources"
+              :key="'mini-' + source.id"
+              class="absolute h-3 bg-cyan-600/60 rounded-sm"
+              :style="{
+                left: `${(source.start_time / totalDuration) * 100}%`,
+                width: `${((source.end_time - source.start_time) / totalDuration) * 100}%`,
+              }"
+            ></div>
+          </template>
+          <template v-else>
+            <div
+              v-for="segment in sortedTrimSegments"
+              :key="'mini-' + segment.id"
+              class="absolute h-3 bg-violet-600/60 rounded-sm"
+              :style="{
+                left: `${(segment.startTime / totalDuration) * 100}%`,
+                width: `${((segment.endTime - segment.startTime) / totalDuration) * 100}%`,
+              }"
+            ></div>
+          </template>
+          <!-- Audio tracks in minimap -->
+          <div
+            v-for="track in audioTracks"
+            :key="'mini-audio-' + track.id"
+            class="absolute h-2 bg-emerald-600/40 rounded-sm"
+            :style="{
+              left: `${(track.startTime / totalDuration) * 100}%`,
+              width: `${((track.endTime - track.startTime) / totalDuration) * 100}%`,
+              top: '60%',
+            }"
+          ></div>
+        </div>
+        <!-- Viewport indicator -->
+        <div
+          class="absolute top-0 bottom-0 bg-white/10 border border-white/30 rounded-sm"
+          :style="minimapViewportStyle"
+        ></div>
+        <!-- Playhead indicator -->
+        <div
+          class="absolute top-0 bottom-0 w-0.5 bg-red-500"
+          :style="{ left: `${(currentTime / totalDuration) * 100}%` }"
+        ></div>
+      </div>
+
       <!-- Timeline Tracks Container -->
       <div
         ref="timelineScrollContainer"
@@ -179,7 +313,14 @@
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
         @click="onTimelineContainerClick"
+        @wheel="onTimelineWheel"
       >
+        <!-- Marquee Selection Rectangle -->
+        <div
+          v-if="marqueeStyle"
+          class="absolute border-2 border-blue-500 bg-blue-500/20 pointer-events-none z-[100]"
+          :style="marqueeStyle"
+        ></div>
         <!-- Horizontal scroller for ruler + tracks -->
         <div class="pb-1">
           <!-- Timeline Content Wrapper - handles zoom width -->
@@ -235,14 +376,14 @@
                   @click.stop="emit('markerClick', marker.id)"
                   :title="marker.label || 'Marker'"
                 >
-                  <!-- Marker flag icon -->
+                  <!-- Marker flag icon with dynamic color -->
                   <div
                     class="w-6 h-6 flex items-center justify-center rounded-full transition-all duration-150"
-                    :class="
-                      props.selectedMarkerId === marker.id
-                        ? 'bg-yellow-500 shadow-lg shadow-yellow-500/50'
-                        : 'bg-yellow-500/80 group-hover:bg-yellow-500'
-                    "
+                    :style="{
+                      backgroundColor: marker.color || '#eab308',
+                      boxShadow: props.selectedMarkerId === marker.id ? `0 4px 6px -1px ${marker.color || '#eab308'}80` : 'none',
+                      opacity: props.selectedMarkerId === marker.id ? 1 : 0.8,
+                    }"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -256,15 +397,57 @@
                       <line x1="4" y1="22" x2="4" y2="15" stroke="white" stroke-width="2" />
                     </svg>
                   </div>
-                  <!-- Marker line -->
+                  <!-- Marker line with dynamic color -->
                   <div
                     class="w-0.5 h-full transition-all duration-150"
-                    :class="
-                      props.selectedMarkerId === marker.id
-                        ? 'bg-yellow-500'
-                        : 'bg-yellow-500/60 group-hover:bg-yellow-500/80'
-                    "
+                    :style="{
+                      backgroundColor: marker.color || '#eab308',
+                      opacity: props.selectedMarkerId === marker.id ? 1 : 0.6,
+                    }"
                   ></div>
+                </div>
+
+                <!-- Beat Markers (auto-detected from audio) -->
+                <div
+                  v-for="beatMarker in visibleBeatMarkers"
+                  :key="`beat-${beatMarker.id}`"
+                  class="absolute top-0 bottom-0 flex flex-col items-center z-[55] pointer-events-none"
+                  :style="{ left: `${beatMarker.leftPercent}%`, transform: 'translateX(-50%)' }"
+                  :title="`Beat (${Math.round((beatMarker.confidence || 0) * 100)}% confidence)`"
+                >
+                  <!-- Beat marker tick -->
+                  <div
+                    class="w-1 h-3 rounded-full"
+                    :style="{
+                      backgroundColor: `rgba(236, 72, 153, ${0.4 + (beatMarker.confidence || 0.5) * 0.6})`,
+                    }"
+                  ></div>
+                  <!-- Beat marker line -->
+                  <div
+                    class="w-px h-full"
+                    :style="{
+                      backgroundColor: `rgba(236, 72, 153, ${0.2 + (beatMarker.confidence || 0.5) * 0.3})`,
+                    }"
+                  ></div>
+                </div>
+
+                <!-- Chapter Markers (for export metadata) -->
+                <div
+                  v-for="chapterMarker in visibleChapterMarkers"
+                  :key="`chapter-${chapterMarker.id}`"
+                  class="absolute top-0 bottom-0 flex flex-col items-center cursor-pointer z-[58] group"
+                  :style="{ left: `${chapterMarker.leftPercent}%`, transform: 'translateX(-50%)' }"
+                  :title="chapterMarker.title"
+                  @click.stop="emit('chapterMarkerClick', chapterMarker.id)"
+                >
+                  <!-- Chapter marker flag -->
+                  <div
+                    class="w-5 h-5 flex items-center justify-center rounded bg-indigo-500 text-white text-[9px] font-bold shadow-md"
+                  >
+                    CH
+                  </div>
+                  <!-- Chapter marker line -->
+                  <div class="w-0.5 h-full bg-indigo-500/60"></div>
                 </div>
               </div>
             </div>
@@ -689,6 +872,7 @@
                   ref="videoTrackContentRef"
                   class="flex-1 h-full relative"
                   @click="onTrackContentClick"
+                  @mousedown="onTimelineMarqueeStart"
                   @dragover.prevent="onTimelineDragOver"
                   @drop.prevent="onTimelineDrop"
                 >
@@ -704,12 +888,23 @@
                     <span class="text-xs text-white/30">Drop sources here</span>
                   </div>
 
+                  <!-- Ghost preview showing original position during drag -->
+                  <div
+                    v-if="dragPreview && dragPreview.type === 'source' && isDraggingSource"
+                    class="absolute top-0 bottom-0 rounded-md border-2 border-dashed border-cyan-500/40 bg-cyan-500/10 pointer-events-none z-10"
+                    :style="getGhostPreviewStyle('source')"
+                  ></div>
+
                   <!-- Primary video source segments -->
                   <div
                     v-for="source in primaryVideoSources"
                     :key="source.id"
                     :ref="(el) => setSegmentRef(el, 'source', source.id)"
-                    class="clip-segment absolute top-0 bottom-0 overflow-hidden group border-2"
+                    role="button"
+                    tabindex="0"
+                    :aria-label="`Video clip: ${source.source_name || 'Untitled'}, duration ${formatTime(source.end_time - source.start_time)}, starts at ${formatTime(source.start_time)}`"
+                    :aria-selected="selectedItemKey === `source_${source.id}`"
+                    class="clip-segment absolute top-0 bottom-0 overflow-hidden group border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus:ring-offset-black"
                     :class="[
                       getSegmentClasses('source', source.id),
                       isCutToolActive && cutHoverInfo?.segmentId === source.id
@@ -717,8 +912,15 @@
                         : isCutToolActive
                           ? 'cursor-crosshair z-62 border-cyan-500'
                           : 'cursor-pointer border-cyan-500',
+                      // Multi-select visual feedback
+                      props.selectedSourceIds?.has(source.id)
+                        ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-black shadow-lg shadow-blue-400/30'
+                        : '',
                     ]"
                     :style="getVideoSourceStyle(source, dragPreview)"
+                    @keydown.enter="selectItem('source', source.id)"
+                    @keydown.delete="deleteSelectedItem"
+                    @keydown.space.prevent="selectItem('source', source.id)"
                     @mouseenter="isCutToolActive && onSourceHoverForCut($event, source)"
                     @mousemove="isCutToolActive && onSourceHoverForCut($event, source)"
                     @mouseleave="isCutToolActive && (cutHoverInfo = null)"
@@ -728,8 +930,31 @@
                     @click.stop="!isCutToolActive && onSourceClick($event, source)"
                     @contextmenu.prevent="onSourceContextMenu($event, source)"
                   >
-                    <!-- Video thumbnails background -->
-                    <div class="absolute inset-0 bg-[#1a1a1a] flex overflow-hidden"></div>
+                    <!-- Video thumbnails background (filmstrip style) -->
+                    <div class="absolute inset-0 bg-[#1a1a1a] flex overflow-hidden">
+                      <!-- Loading placeholder skeleton -->
+                      <div
+                        v-if="!source.source_thumbnail"
+                        class="absolute inset-0 flex items-center justify-center"
+                      >
+                        <div class="flex gap-1">
+                          <div class="w-8 h-full bg-white/5 animate-pulse"></div>
+                          <div class="w-8 h-full bg-white/5 animate-pulse delay-75"></div>
+                          <div class="w-8 h-full bg-white/5 animate-pulse delay-150"></div>
+                        </div>
+                      </div>
+                      <!-- Actual filmstrip thumbnails -->
+                      <div
+                        v-for="(thumb, idx) in getFilmstripThumbnails(source)"
+                        :key="idx"
+                        class="h-full flex-shrink-0 bg-cover bg-center border-r border-black/30"
+                        :style="{
+                          width: `${thumb.width}px`,
+                          backgroundImage: source.source_thumbnail ? `url(${source.source_thumbnail})` : 'none',
+                          backgroundPosition: `${thumb.bgPosition}% center`,
+                        }"
+                      ></div>
+                    </div>
 
                     <!-- Remaining duration overlay -->
                     <div
@@ -827,6 +1052,7 @@
                           : onSegmentMouseDown($event, 'trim', segmentLayout.segment.id, segmentLayout.segment)
                       "
                       @click.stop="!isCutToolActive && onSegmentClick($event, segmentLayout.segment)"
+                      @contextmenu.prevent="!isCutToolActive && onSegmentContextMenu($event, segmentLayout.segment)"
                     >
                       <div class="absolute inset-0 bg-black flex overflow-hidden">
                         <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
@@ -845,7 +1071,7 @@
 
             <!-- Audio Tracks (BELOW primary video) -->
             <div
-              v-for="track in audioTracks"
+              v-for="(track, trackIndex) in audioTracks"
               :key="track.id"
               class="flex items-center h-12 relative"
               :class="{
@@ -858,6 +1084,22 @@
               >
                 <!-- Track controls row -->
                 <div class="flex items-center gap-1 text-white/50 mb-1">
+                  <!-- Drag handle for track reordering -->
+                  <div
+                    class="p-0.5 cursor-grab hover:text-white active:cursor-grabbing"
+                    title="Drag to reorder track"
+                    @mousedown="(e) => onTrackReorderStart(e, 'audio', track.id, track.trackOrder ?? trackIndex)"
+                  >
+                    <GripVertical :size="13" />
+                  </div>
+                  <button
+                    @click.stop="toggleTrackCollapse('audio', track.id)"
+                    class="p-0.5 hover:text-white"
+                    :title="isTrackCollapsed('audio', track.id) ? 'Expand' : 'Collapse'"
+                  >
+                    <ChevronRight v-if="isTrackCollapsed('audio', track.id)" :size="13" />
+                    <ChevronDown v-else :size="13" />
+                  </button>
                   <button
                     @click.stop="emit('toggleAudioLock', track.id)"
                     class="p-0.5 hover:text-white"
@@ -885,6 +1127,14 @@
                     <VolumeX v-if="track.isMuted" :size="13" />
                     <Volume2 v-else :size="13" />
                   </button>
+                  <button
+                    @click.stop="emit('toggleAudioSolo', track.id)"
+                    class="p-0.5 hover:text-white"
+                    :title="track.isSolo ? 'Unsolo' : 'Solo'"
+                    :class="{ 'text-amber-400': track.isSolo }"
+                  >
+                    <Headphones :size="13" />
+                  </button>
                 </div>
                 <!-- Track label -->
                 <span class="text-[11px] text-white/60 truncate">{{ track.name }}</span>
@@ -903,11 +1153,18 @@
                 >
                   <!-- Audio visual segment -->
                   <div
-                    class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer"
+                    role="button"
+                    tabindex="0"
+                    :aria-label="`Audio track: ${track.name}, duration ${formatTime(track.endTime - track.startTime)}, starts at ${formatTime(track.startTime)}`"
+                    :aria-selected="selectedItemKey === `audio_${track.id}`"
+                    class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 focus:ring-offset-black"
                     :class="getSegmentClasses('audio', track.id)"
                     :style="getAudioVisualSegmentStyle(track, visualSeg)"
                     @mousedown="(e) => onSegmentMouseDown(e, 'audio', track.id, track)"
                     @click.stop="selectItem('audio', track.id)"
+                    @keydown.enter="selectItem('audio', track.id)"
+                    @keydown.delete="deleteSelectedItem"
+                    @keydown.space.prevent="selectItem('audio', track.id)"
                   >
                     <!-- Audio track background gradient -->
                     <div class="absolute inset-0 bg-gradient-to-r from-emerald-900/30 to-teal-900/20"></div>
@@ -946,6 +1203,62 @@
                       @mousedown.stop="(e) => onResizeMouseDown(e, 'audio', track.id, 'right', track)"
                     >
                       <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
+                    </div>
+                    
+                    <!-- Fade In overlay and handle (CapCut style - bottom corner triangle) -->
+                    <div
+                      v-if="visualSeg.isFirst && track.fadeIn > 0"
+                      class="absolute top-0 bottom-0 left-0 pointer-events-none z-15"
+                      :style="{ width: `${(track.fadeIn / (track.endTime - track.startTime)) * 100}%` }"
+                    >
+                      <!-- Diagonal fade line from bottom-left to top of fade end -->
+                      <svg class="absolute inset-0 w-full h-full" preserveAspectRatio="none">
+                        <polygon points="0,100% 100%,0 100%,100%" fill="rgba(0,0,0,0.5)" />
+                        <line x1="0" y1="100%" x2="100%" y2="0" stroke="rgba(16,185,129,0.8)" stroke-width="2" />
+                      </svg>
+                    </div>
+                    <!-- Fade In corner handle (bottom-left, drag right to increase) -->
+                    <div
+                      v-if="visualSeg.isFirst"
+                      class="fade-handle absolute bottom-0 left-0 w-4 h-4 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-25"
+                      :style="{ left: `calc(${(track.fadeIn / (track.endTime - track.startTime)) * 100}% - 8px)` }"
+                      @mousedown.stop="(e) => onFadeHandleMouseDown(e, track.id, 'fadeIn', track)"
+                      title="Drag to adjust fade in"
+                    >
+                      <!-- Triangle handle pointing right -->
+                      <div class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center">
+                        <svg width="8" height="8" viewBox="0 0 8 8" fill="white">
+                          <polygon points="2,1 6,4 2,7" />
+                        </svg>
+                      </div>
+                    </div>
+                    
+                    <!-- Fade Out overlay and handle (CapCut style - bottom corner triangle) -->
+                    <div
+                      v-if="visualSeg.isLast && track.fadeOut > 0"
+                      class="absolute top-0 bottom-0 right-0 pointer-events-none z-15"
+                      :style="{ width: `${(track.fadeOut / (track.endTime - track.startTime)) * 100}%` }"
+                    >
+                      <!-- Diagonal fade line from top of fade start to bottom-right -->
+                      <svg class="absolute inset-0 w-full h-full" preserveAspectRatio="none">
+                        <polygon points="0,0 0,100% 100%,100%" fill="rgba(0,0,0,0.5)" />
+                        <line x1="0" y1="0" x2="100%" y2="100%" stroke="rgba(16,185,129,0.8)" stroke-width="2" />
+                      </svg>
+                    </div>
+                    <!-- Fade Out corner handle (bottom-right, drag left to increase) -->
+                    <div
+                      v-if="visualSeg.isLast"
+                      class="fade-handle absolute bottom-0 right-0 w-4 h-4 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-25"
+                      :style="{ right: `calc(${(track.fadeOut / (track.endTime - track.startTime)) * 100}% - 8px)` }"
+                      @mousedown.stop="(e) => onFadeHandleMouseDown(e, track.id, 'fadeOut', track)"
+                      title="Drag to adjust fade out"
+                    >
+                      <!-- Triangle handle pointing left -->
+                      <div class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center">
+                        <svg width="8" height="8" viewBox="0 0 8 8" fill="white">
+                          <polygon points="6,1 2,4 6,7" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
                 </template>
@@ -996,6 +1309,7 @@
             </div>
 
             <!-- Snap Indicator Line (shows when segment edge is snapping to another edge) -->
+            <!-- Color indicates which track type the snap target is from (cross-track snapping) -->
             <div
               v-if="snapIndicatorPosition !== null"
               class="snap-indicator-line absolute top-0 bottom-0 z-[55] pointer-events-none"
@@ -1003,7 +1317,28 @@
                 '--snap-position': snapIndicatorPosition,
               }"
             >
-              <div class="absolute inset-0 w-0.5 bg-blue-400 shadow-lg shadow-blue-400/50"></div>
+              <div 
+                class="absolute inset-0 w-0.5 shadow-lg"
+                :class="snapIndicatorColorClass"
+              ></div>
+            </div>
+            
+            <!-- Trim Preview Tooltip - shows time during resize -->
+            <div
+              v-if="trimPreviewInfo"
+              class="absolute z-[70] pointer-events-none"
+              :style="{
+                left: `${trimPreviewInfo.leftPercent}%`,
+                top: '-28px',
+                transform: 'translateX(-50%)',
+              }"
+            >
+              <div class="bg-black/90 text-white text-xs px-2 py-1 rounded shadow-lg border border-green-500/50 whitespace-nowrap">
+                <span class="text-green-400 font-mono">{{ trimPreviewInfo.formattedTime }}</span>
+                <span class="text-white/60 ml-1 text-[10px]">{{ trimPreviewInfo.handle === 'left' ? 'IN' : 'OUT' }}</span>
+              </div>
+              <!-- Arrow pointing down -->
+              <div class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-green-500/50"></div>
             </div>
           </div>
           <!-- end contentWrapper -->
@@ -1030,61 +1365,196 @@
     <Teleport to="body">
       <div
         v-if="sourceContextMenu.visible"
-        class="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px]"
+        class="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[220px]"
         :style="{ left: `${sourceContextMenu.x}px`, top: `${sourceContextMenu.y}px` }"
         @click.stop
       >
+        <!-- Recent Actions Section -->
+        <template v-if="recentActions.length > 0">
+          <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider">Recent</div>
+          <button
+            v-for="action in recentActions.slice(0, 3)"
+            :key="action.id"
+            class="w-full px-3 py-1.5 text-left text-sm text-white/70 hover:bg-white/10 flex items-center gap-2"
+            @click="executeRecentAction(action.id)"
+          >
+            <span class="text-white/50">↺</span>
+            <span>{{ action.label }}</span>
+          </button>
+          <div class="h-px bg-white/10 my-1"></div>
+        </template>
         <button
-          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
           @click="extractAudioFromSource"
           :disabled="isExtractingAudio"
         >
-          <Music :size="14" />
-          <span>{{ isExtractingAudio ? 'Extracting...' : 'Extract Audio' }}</span>
+          <span class="flex items-center gap-2">
+            <Music :size="14" />
+            <span>{{ isExtractingAudio ? 'Extracting...' : 'Extract Audio' }}</span>
+          </span>
+        </button>
+        <div class="h-px bg-white/10 my-1"></div>
+        <!-- Edit Operations with Shortcuts -->
+        <button
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
+          @click="() => { closeSourceContextMenu(); copySelectedItems(); }"
+        >
+          <span class="flex items-center gap-2">
+            <span>Copy</span>
+          </span>
+          <span class="text-white/40 text-xs">Ctrl+C</span>
+        </button>
+        <button
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
+          @click="() => { closeSourceContextMenu(); duplicateSelectedItems(); }"
+        >
+          <span class="flex items-center gap-2">
+            <span>Duplicate</span>
+          </span>
+          <span class="text-white/40 text-xs">Ctrl+D</span>
         </button>
         <div class="h-px bg-white/10 my-1"></div>
         <!-- J/L Cut Options -->
         <button
-          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
           @click="applyJCut"
           title="Audio from next clip starts before video"
         >
-          <ArrowLeftToLine :size="14" />
-          <span>J-Cut (Audio Lead)</span>
+          <span class="flex items-center gap-2">
+            <ArrowLeftToLine :size="14" />
+            <span>J-Cut (Audio Lead)</span>
+          </span>
         </button>
         <button
-          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
           @click="applyLCut"
           title="Audio continues into next clip's video"
         >
-          <ArrowRightToLine :size="14" />
-          <span>L-Cut (Audio Extend)</span>
+          <span class="flex items-center gap-2">
+            <ArrowRightToLine :size="14" />
+            <span>L-Cut (Audio Extend)</span>
+          </span>
         </button>
         <button
           v-if="hasAudioOffset(sourceContextMenu.source)"
-          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
           @click="resetAudioTrim"
         >
-          <RotateCcw :size="14" />
-          <span>Reset Audio Sync</span>
+          <span class="flex items-center gap-2">
+            <RotateCcw :size="14" />
+            <span>Reset Audio Sync</span>
+          </span>
         </button>
         <div class="h-px bg-white/10 my-1"></div>
+        <!-- Freeze Frame Option -->
         <button
-          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
+          @click="addFreezeFrame"
+          title="Create a still image from current playhead position"
+        >
+          <span class="flex items-center gap-2">
+            <Film :size="14" />
+            <span>Add Freeze Frame</span>
+          </span>
+        </button>
+        <!-- Split/Cut Option -->
+        <button
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
+          @click="() => { closeSourceContextMenu(); performCutAtPlayhead(); }"
+        >
+          <span class="flex items-center gap-2">
+            <Scissors :size="14" />
+            <span>Split at Playhead</span>
+          </span>
+          <span class="text-white/40 text-xs">X</span>
+        </button>
+        <div class="h-px bg-white/10 my-1"></div>
+        <!-- Speed Ramping Submenu -->
+        <div class="relative group/speed">
+          <button
+            class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
+          >
+            <span class="flex items-center gap-2">
+              <Gauge :size="14" />
+              <span>Speed</span>
+            </span>
+            <span class="text-white/40 text-xs">{{ getSourceSpeed(sourceContextMenu.source) }}x</span>
+          </button>
+          <!-- Speed submenu -->
+          <div class="absolute left-full top-0 ml-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] hidden group-hover/speed:block max-h-[300px] overflow-y-auto">
+            <!-- Reverse speeds -->
+            <div class="px-2 py-1 text-[10px] text-white/40 uppercase tracking-wider">Reverse</div>
+            <button
+              v-for="speed in [-4, -2, -1, -0.5]"
+              :key="'rev-' + speed"
+              class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10 flex items-center justify-between"
+              :class="getSourceSpeed(sourceContextMenu.source) === speed ? 'text-orange-400' : 'text-white/80'"
+              @click="setSourceSpeed(speed)"
+            >
+              <span>{{ speed }}x</span>
+              <span v-if="getSourceSpeed(sourceContextMenu.source) === speed" class="text-orange-400">✓</span>
+            </button>
+            <div class="h-px bg-white/10 my-1"></div>
+            <!-- Forward speeds -->
+            <div class="px-2 py-1 text-[10px] text-white/40 uppercase tracking-wider">Forward</div>
+            <button
+              v-for="speed in [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4]"
+              :key="'fwd-' + speed"
+              class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10 flex items-center justify-between"
+              :class="getSourceSpeed(sourceContextMenu.source) === speed ? 'text-blue-400' : 'text-white/80'"
+              @click="setSourceSpeed(speed)"
+            >
+              <span>{{ speed }}x</span>
+              <span v-if="getSourceSpeed(sourceContextMenu.source) === speed" class="text-blue-400">✓</span>
+            </button>
+            <div class="h-px bg-white/10 my-1"></div>
+            <!-- Speed Curve Editor -->
+            <button
+              class="w-full px-3 py-1.5 text-left text-sm text-orange-400 hover:bg-white/10 flex items-center gap-2"
+              @click="openSpeedCurveEditor"
+            >
+              <TrendingUp :size="12" />
+              <span>Speed Curve Editor...</span>
+            </button>
+          </div>
+        </div>
+        <div class="h-px bg-white/10 my-1"></div>
+        <button
+          class="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/10 flex items-center justify-between"
           @click="deleteSourceFromContextMenu"
         >
-          <X :size="14" />
-          <span>Delete</span>
+          <span class="flex items-center gap-2">
+            <X :size="14" />
+            <span>Delete</span>
+          </span>
+          <span class="text-white/40 text-xs">Del</span>
+        </button>
+      </div>
+
+      <!-- Segment Context Menu (Clip Mode) -->
+      <div
+        v-if="segmentContextMenu.visible"
+        class="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px]"
+        :style="{ left: `${segmentContextMenu.x}px`, top: `${segmentContextMenu.y}px` }"
+        @click.stop
+      >
+        <button
+          class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+          @click="extractAudioFromSegment"
+          :disabled="isExtractingAudio || !props.videoPath"
+        >
+          <Music :size="14" />
+          <span>{{ isExtractingAudio ? 'Extracting...' : 'Extract Audio' }}</span>
         </button>
       </div>
     </Teleport>
 
     <!-- Click outside to close context menu -->
     <div
-      v-if="sourceContextMenu.visible"
+      v-if="sourceContextMenu.visible || segmentContextMenu.visible"
       class="fixed inset-0 z-[9998]"
-      @click="closeSourceContextMenu"
-      @contextmenu.prevent="closeSourceContextMenu"
+      @click="() => { closeSourceContextMenu(); closeSegmentContextMenu(); }"
+      @contextmenu.prevent="() => { closeSourceContextMenu(); closeSegmentContextMenu(); }"
     ></div>
   </div>
   <!-- end outer bg container -->
@@ -1124,6 +1594,13 @@
     ArrowLeftToLine,
     ArrowRightToLine,
     RotateCcw,
+    ChevronDown,
+    ChevronRight,
+    Gauge,
+    Magnet,
+    GripVertical,
+    TrendingUp,
+    Headphones,
   } from 'lucide-vue-next';
   import { useAudioWaveform, type WaveformData } from '@/composables/useAudioWaveform';
   import { useTimelineTools, type TimelineTool } from '@/composables/useTimelineTools';
@@ -1218,6 +1695,7 @@
       effects: Effect[];
       filterSegments: FilterSegment[];
       videoSrc?: string;
+      videoPath?: string | null;
       audioGainDb?: number; // dB gain (-20 to +20) to apply to main video waveform visualization
       trackDbValues?: Record<string, number>; // Per-track dB values for audio track waveforms
       isPlaying?: boolean; // Whether video is currently playing (for smooth playhead animation)
@@ -1230,9 +1708,16 @@
       canRedo?: boolean;
       // Multi-select props
       selectedSegmentIds?: Set<string>;
+      selectedSourceIds?: Set<string>; // For editor mode multi-select
       // Marker props
-      markers?: Array<{ id: string; time: number; label?: string }>;
+      markers?: Array<{ id: string; time: number; label?: string; color?: string }>;
       selectedMarkerId?: string | null;
+      // Chapter marker props (for export metadata)
+      chapterMarkers?: Array<{ id: string; time: number; title: string }>;
+      // Beat marker props (auto-detected from audio)
+      beatMarkers?: Array<{ id: string; time: number; confidence?: number }>;
+      // Region/range props (work areas with start/end)
+      regions?: Array<{ id: string; startTime: number; endTime: number; label?: string; color?: string }>;
     }>(),
     {
       audioGainDb: 0,
@@ -1245,8 +1730,12 @@
       canUndo: false,
       canRedo: false,
       selectedSegmentIds: () => new Set(),
+      selectedSourceIds: () => new Set(),
       markers: () => [],
       selectedMarkerId: null,
+      chapterMarkers: () => [],
+      beatMarkers: () => [],
+      regions: () => [],
     }
   );
 
@@ -1278,7 +1767,9 @@
     (e: 'undo'): void;
     (e: 'redo'): void;
     (e: 'segmentSelect', segmentId: string, modifiers: { shift: boolean; ctrl: boolean }): void;
+    (e: 'sourceSelect', sourceId: string, modifiers: { shift: boolean; ctrl: boolean }): void;
     (e: 'markerClick', markerId: string): void;
+    (e: 'chapterMarkerClick', markerId: string): void;
     (e: 'updateAudioTrack', trackId: string, updates: Partial<AudioTrack>): void;
     (e: 'deleteAudioTrack', trackId: string): void;
     (e: 'splitAudioTrack', trackId: string, cutTime: number): void;
@@ -1310,8 +1801,11 @@
     (e: 'toggleVideoLock', id: string): void;
     (e: 'toggleVideoHidden', id: string): void;
     (e: 'toggleAudioMute', id: string): void;
+    (e: 'toggleAudioSolo', id: string): void;
     (e: 'toggleAudioLock', id: string): void;
     (e: 'toggleAudioHidden', id: string): void;
+    // Track collapse events
+    (e: 'toggleTrackCollapse', trackType: 'video' | 'audio' | 'overlay', trackId?: string): void;
     // Video editor mode events
     (e: 'updateSource', sourceId: string, updates: Partial<VideoEditorSource>): void;
     (e: 'deleteSource', sourceId: string): void;
@@ -1336,6 +1830,63 @@
     (e: 'slideEdit', data: { type: ItemType; itemId: string; leftNeighborId: string; rightNeighborId: string; delta: number; originalStartTime: number; originalEndTime: number }): void;
     (e: 'updateKeyframeTime', data: { itemId: string; keyframeId: string; time: number; type: ItemType }): void;
     (e: 'keyframe-select', data: { itemId: string; keyframeId: string; type: ItemType }): void;
+    // J-K-L playback control events
+    (e: 'togglePlayback'): void;
+    (e: 'setPlaybackSpeed', speed: number): void;
+    // Freeze frame event
+    (e: 'freezeFrame', data: { sourceId: string; time: number; duration: number }): void;
+    // Copy/paste/duplicate events
+    (e: 'copyItems', itemKeys: string[]): void; // Format: "type_id"
+    (e: 'pasteItems', position: number): void; // Paste at playhead position
+    (e: 'pasteItemsInPlace'): void; // Paste at original position
+    (e: 'pasteItemsToTrack', data: { position: number; targetTrackType: string; targetTrackId?: string }): void; // Cross-track paste
+    (e: 'duplicateItems', itemKeys: string[]): void; // Duplicate selected items
+    // Marker events
+    (e: 'addMarker', time: number, label?: string, color?: string): void;
+    (e: 'deleteMarker', markerId: string): void;
+    (e: 'updateMarker', markerId: string, updates: { time?: number; label?: string; color?: string }): void;
+    // Chapter marker events (for export metadata)
+    (e: 'addChapterMarker', time: number, title: string): void;
+    (e: 'updateChapterMarker', markerId: string, updates: { time?: number; title?: string }): void;
+    (e: 'deleteChapterMarker', markerId: string): void;
+    // Beat marker events (auto-detected from audio)
+    (e: 'detectBeatMarkers', audioTrackId?: string): void;
+    (e: 'clearBeatMarkers'): void;
+    // Region/range events (work area with start/end)
+    (e: 'addRegion', startTime: number, endTime: number, label?: string, color?: string): void;
+    (e: 'updateRegion', regionId: string, updates: { startTime?: number; endTime?: number; label?: string; color?: string }): void;
+    (e: 'deleteRegion', regionId: string): void;
+    // In/Out point events (work area)
+    (e: 'setInPoint', time: number): void;
+    (e: 'setOutPoint', time: number): void;
+    (e: 'clearInOutPoints'): void;
+    (e: 'goToInPoint'): void;
+    (e: 'goToOutPoint'): void;
+    // Audio fade events
+    (e: 'updateAudioFade', trackId: string, fadeType: 'fadeIn' | 'fadeOut', duration: number): void;
+    // Audio ducking events (auto-lower music under speech)
+    (e: 'enableAudioDucking', trackId: string, options: { threshold: number; reduction: number; attack: number; release: number }): void;
+    (e: 'disableAudioDucking', trackId: string): void;
+    // Audio normalization events
+    (e: 'normalizeAudio', trackId: string, targetLevel: number): void;
+    (e: 'normalizeAllAudio', targetLevel: number): void;
+    // Noise reduction events
+    (e: 'applyNoiseReduction', trackId: string, options: { strength: number; sensitivity: number }): void;
+    // Group/Ungroup events
+    (e: 'groupItems', itemKeys: string[]): void; // Group selected items
+    (e: 'ungroupItems', groupId: string): void; // Ungroup a group
+    // Track reordering events
+    (e: 'reorderTrack', trackType: 'audio' | 'overlay', trackId: string, newOrder: number): void;
+    // Speed keyframe events
+    (e: 'addSpeedKeyframe', sourceId: string, time: number, speed: number): void;
+    (e: 'updateSpeedKeyframe', sourceId: string, keyframeId: string, updates: { time?: number; speed?: number; easing?: string }): void;
+    (e: 'deleteSpeedKeyframe', sourceId: string, keyframeId: string): void;
+    // Freeze point events
+    (e: 'addFreezePoint', sourceId: string, time: number, duration: number): void;
+    (e: 'updateFreezePoint', sourceId: string, freezeId: string, updates: { time?: number; duration?: number }): void;
+    (e: 'deleteFreezePoint', sourceId: string, freezeId: string): void;
+    // Speed curve editor event
+    (e: 'openSpeedCurveEditor', sourceId: string): void;
   }>();
 
   // Computed: Organized tracks for rendering (Unified Model)
@@ -1406,6 +1957,7 @@
   const MIN_ZOOM = ref(1.0); // Will be calculated based on viewport width
   const baselineZoom = ref(1.0); // The fit-to-width zoom level (1.0 = 100% of container)
   const zoomLevel = ref(1.0); // Start at baseline (fit-to-width)
+  const zoomMenuOpen = ref(false);
 
   // Calculate dynamic zoom step based on current zoom level
   // Smaller steps for fine control near baseline
@@ -1451,6 +2003,84 @@
     zoomLevel.value = fitZoom; // Start at 0% (fit-to-width)
   }
 
+  // Zoom to fit all content in view
+  function zoomToFit() {
+    const fitZoom = calculateFitToWidthZoom();
+    baselineZoom.value = fitZoom;
+    MIN_ZOOM.value = fitZoom;
+    zoomLevel.value = fitZoom;
+    
+    // Reset scroll to start
+    nextTick(() => {
+      const scrollContainer = timelineScrollContainer.value;
+      if (scrollContainer) {
+        scrollContainer.scrollLeft = 0;
+      }
+    });
+  }
+
+  // Zoom to focus on selected segment(s)
+  function zoomToSelection() {
+    if (!selectedItemKey.value) return;
+    
+    const [type, id] = selectedItemKey.value.split('_');
+    let startTime = 0;
+    let endTime = 0;
+    
+    // Find the selected item's time range
+    if (type === 'source') {
+      const source = props.videoSources?.find(s => s.id === id);
+      if (source) {
+        startTime = source.start_time;
+        endTime = source.end_time;
+      }
+    } else if (type === 'trim') {
+      const segment = props.trimSegments.find(s => s.id === id);
+      if (segment) {
+        startTime = segment.startTime;
+        endTime = segment.endTime;
+      }
+    } else if (type === 'audio') {
+      const track = props.audioTracks.find(t => t.id === id);
+      if (track) {
+        startTime = track.startTime;
+        endTime = track.endTime;
+      }
+    } else if (type === 'text') {
+      const overlay = props.textOverlays.find(t => t.id === id);
+      if (overlay) {
+        startTime = overlay.startTime;
+        endTime = overlay.endTime;
+      }
+    }
+    
+    if (endTime <= startTime) return;
+    
+    const duration = endTime - startTime;
+    const totalDur = props.editorMode ? props.duration : totalDuration.value;
+    if (totalDur <= 0) return;
+    
+    // Calculate zoom to show selection with some padding (20% on each side)
+    const paddedDuration = duration * 1.4;
+    const targetZoom = totalDur / paddedDuration;
+    
+    zoomLevel.value = Math.max(MIN_ZOOM.value, targetZoom);
+    
+    // Scroll to center the selection
+    nextTick(() => {
+      const scrollContainer = timelineScrollContainer.value;
+      const contentWrapper = contentWrapperRef.value;
+      if (!scrollContainer || !contentWrapper) return;
+      
+      const contentWidth = contentWrapper.offsetWidth;
+      const containerWidth = scrollContainer.clientWidth;
+      const selectionCenter = ((startTime + endTime) / 2) / totalDur;
+      const targetScrollLeft = (selectionCenter * contentWidth) - (containerWidth / 2);
+      
+      scrollContainer.scrollLeft = Math.max(0, targetScrollLeft);
+    });
+  }
+
   // Get zoom display text (0% = fit-to-width, positive % = zoomed in)
   function getZoomDisplayText(): string {
     if (Math.abs(zoomLevel.value - baselineZoom.value) < 0.01) {
@@ -1488,6 +2118,78 @@
     source: null as VideoEditorSource | null,
   });
   const isExtractingAudio = ref(false);
+
+  // Recent actions tracking for context menu quick access
+  interface RecentAction {
+    id: string;
+    label: string;
+    icon?: string;
+    timestamp: number;
+  }
+  const recentActions = ref<RecentAction[]>([]);
+  const MAX_RECENT_ACTIONS = 5;
+
+  /**
+   * Track a recent action for quick access in context menus
+   */
+  function trackRecentAction(id: string, label: string, icon?: string) {
+    // Remove if already exists
+    recentActions.value = recentActions.value.filter(a => a.id !== id);
+    
+    // Add to front
+    recentActions.value.unshift({
+      id,
+      label,
+      icon,
+      timestamp: Date.now(),
+    });
+    
+    // Limit to max
+    if (recentActions.value.length > MAX_RECENT_ACTIONS) {
+      recentActions.value = recentActions.value.slice(0, MAX_RECENT_ACTIONS);
+    }
+  }
+
+  /**
+   * Get recent actions for display in context menu
+   */
+  function getRecentActions(): RecentAction[] {
+    return recentActions.value;
+  }
+
+  /**
+   * Execute a recent action by its ID
+   */
+  function executeRecentAction(actionId: string) {
+    closeSourceContextMenu();
+    closeSegmentContextMenu();
+    
+    switch (actionId) {
+      case 'copy':
+        copySelectedItems();
+        break;
+      case 'duplicate':
+        duplicateSelectedItems();
+        break;
+      case 'cut':
+        performCutAtPlayhead();
+        break;
+      case 'delete':
+        deleteSelectedItem();
+        break;
+      case 'extract-audio':
+        extractAudioFromSource();
+        break;
+      case 'freeze-frame':
+        addFreezeFrame();
+        break;
+      case 'speed-curve':
+        openSpeedCurveEditor();
+        break;
+      default:
+        console.warn('[executeRecentAction] Unknown action:', actionId);
+    }
+  }
 
   // Selection state
   const selectedItemKey = ref<string | null>(null);
@@ -1540,7 +2242,7 @@
   function onKeyframeDragMove(e: MouseEvent) {
     if (!keyframeDragState.value) return;
     
-    const { startX, originalTime, itemDuration, itemId, id } = keyframeDragState.value;
+    const { startX, originalTime, itemDuration, itemId, id, itemType } = keyframeDragState.value;
     const deltaX = e.clientX - startX;
     
     // Calculate track width for pixel-to-time conversion
@@ -1555,7 +2257,7 @@
     newTime = Math.max(0, Math.min(itemDuration, newTime));
     
     // Emit update event
-    emit('updateKeyframeTime', { itemId, keyframeId: id, time: newTime });
+    emit('updateKeyframeTime', { itemId, keyframeId: id, time: newTime, type: itemType });
   }
 
   function onKeyframeDragEnd() {
@@ -1590,6 +2292,119 @@
     originalEdgeTime: number;
   } | null>(null);
 
+  // Track reordering state
+  const trackReorderState = ref<{
+    trackType: 'audio' | 'overlay';
+    trackId: string;
+    originalOrder: number;
+    startY: number;
+  } | null>(null);
+
+  // Trim preview state - shows frame time during resize
+  const trimPreviewInfo = computed(() => {
+    if (!isResizing.value || !resizeInfo.value || !dragPreview.value) return null;
+    
+    const handle = resizeInfo.value.handle;
+    const time = handle === 'left' ? dragPreview.value.startTime : dragPreview.value.endTime;
+    
+    // Calculate position for the preview tooltip
+    const percent = (time / totalDuration.value) * 100;
+    
+    return {
+      time,
+      formattedTime: formatTime(time),
+      handle,
+      leftPercent: percent,
+      type: resizeInfo.value.type,
+    };
+  });
+
+  // Computed: IDs of segments that will be affected by ripple edit
+  const rippleAffectedIds = computed(() => {
+    if (!rippleState.value) return new Set<string>();
+    
+    const affected = new Set<string>();
+    const edgeTime = rippleState.value.originalEdgeTime;
+    
+    if (props.editorMode) {
+      // Editor mode: check video sources
+      for (const source of props.videoSources) {
+        if (source.id !== rippleState.value.id && source.start_time >= edgeTime - 0.001) {
+          affected.add(source.id);
+        }
+      }
+    } else {
+      // Clip mode: check trim segments
+      for (const segment of sortedTrimSegments.value) {
+        if (segment.id !== rippleState.value.id && segment.startTime >= edgeTime - 0.001) {
+          affected.add(segment.id);
+        }
+      }
+    }
+    
+    return affected;
+  });
+
+  // Computed: IDs of segments that are overlapping/colliding with other segments
+  const collidingSegmentIds = computed(() => {
+    const colliding = new Set<string>();
+    
+    if (props.editorMode) {
+      // Editor mode: check video sources for overlaps
+      const sources = props.videoSources;
+      for (let i = 0; i < sources.length; i++) {
+        for (let j = i + 1; j < sources.length; j++) {
+          const a = sources[i];
+          const b = sources[j];
+          // Check if segments overlap (not just touch)
+          if (a.start_time < b.end_time && a.end_time > b.start_time) {
+            colliding.add(a.id);
+            colliding.add(b.id);
+          }
+        }
+      }
+    } else {
+      // Clip mode: check trim segments for overlaps
+      const segments = sortedTrimSegments.value;
+      for (let i = 0; i < segments.length; i++) {
+        for (let j = i + 1; j < segments.length; j++) {
+          const a = segments[i];
+          const b = segments[j];
+          // Check if segments overlap (not just touch)
+          if (a.startTime < b.endTime && a.endTime > b.startTime) {
+            colliding.add(a.id);
+            colliding.add(b.id);
+          }
+        }
+      }
+    }
+    
+    // Also check audio tracks for overlaps within the same track order
+    const audioByOrder = new Map<number, typeof props.audioTracks>();
+    for (const track of props.audioTracks) {
+      const order = track.trackOrder ?? 0;
+      if (!audioByOrder.has(order)) {
+        audioByOrder.set(order, []);
+      }
+      audioByOrder.get(order)!.push(track);
+    }
+    
+    for (const [, tracks] of audioByOrder) {
+      for (let i = 0; i < tracks.length; i++) {
+        for (let j = i + 1; j < tracks.length; j++) {
+          const a = tracks[i];
+          const b = tracks[j];
+          if (a.startTime < b.endTime && a.endTime > b.startTime) {
+            colliding.add(a.id);
+            colliding.add(b.id);
+          }
+        }
+      }
+    }
+    
+    return colliding;
+  });
+
   // Roll Edit State
   const rollState = ref<{
     type: ItemType;
@@ -1620,8 +2435,174 @@
     originalEndTime: number;
   } | null>(null);
 
+  // Performance: Debounce utility for reducing re-renders
+  function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    return ((...args: Parameters<T>) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => fn(...args), delay);
+    }) as T;
+  }
+
+  // Performance: Throttle utility for limiting function calls
+  function throttle<T extends (...args: any[]) => void>(fn: T, limit: number): T {
+    let lastCall = 0;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    return ((...args: Parameters<T>) => {
+      const now = Date.now();
+      const remaining = limit - (now - lastCall);
+      if (remaining <= 0) {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        lastCall = now;
+        fn(...args);
+      } else if (!timeoutId) {
+        timeoutId = setTimeout(() => {
+          lastCall = Date.now();
+          timeoutId = null;
+          fn(...args);
+        }, remaining);
+      }
+    }) as T;
+  }
+
+  // Debounced waveform rendering (16ms = ~60fps)
+  const debouncedRenderWaveforms = debounce(() => {
+    renderAllAudioWaveforms();
+    renderAllSourceWaveforms();
+  }, 16);
+
+  // Throttled seek during drag (limit to 60fps)
+  const throttledSeek = throttle((time: number) => {
+    emit('seek', time);
+  }, 16);
+
+  // Virtual scrolling state - only render visible track portions
+  const virtualScrollState = ref({
+    visibleStartTime: 0,
+    visibleEndTime: 0,
+    bufferTime: 5, // Extra seconds to render on each side for smooth scrolling
+  });
+
+  /**
+   * Calculate which items are visible based on scroll position
+   * Returns true if an item overlaps with the visible viewport
+   */
+  function isItemVisible(startTime: number, endTime: number): boolean {
+    const { visibleStartTime, visibleEndTime, bufferTime } = virtualScrollState.value;
+    const bufferedStart = visibleStartTime - bufferTime;
+    const bufferedEnd = visibleEndTime + bufferTime;
+    
+    // Item is visible if it overlaps with the buffered viewport
+    return endTime >= bufferedStart && startTime <= bufferedEnd;
+  }
+
+  /**
+   * Update visible time range based on scroll position
+   */
+  function updateVisibleTimeRange() {
+    if (!timelineScrollContainer.value) return;
+    
+    const container = timelineScrollContainer.value;
+    const scrollLeft = container.scrollLeft;
+    const viewportWidth = container.clientWidth;
+    const contentWidth = container.scrollWidth;
+    
+    if (contentWidth <= 0) return;
+    
+    const totalDur = props.editorMode ? props.duration : totalDuration.value;
+    const scrollPercent = scrollLeft / contentWidth;
+    const viewportPercent = viewportWidth / contentWidth;
+    
+    virtualScrollState.value.visibleStartTime = scrollPercent * totalDur;
+    virtualScrollState.value.visibleEndTime = (scrollPercent + viewportPercent) * totalDur;
+  }
+
+  // Screen reader announcements for accessibility
+  const screenReaderAnnouncement = ref('');
+  
+  /**
+   * Announce a message to screen readers using ARIA live region
+   */
+  function announceToScreenReader(message: string, priority: 'polite' | 'assertive' = 'polite') {
+    screenReaderAnnouncement.value = '';
+    // Use nextTick to ensure the change is detected
+    nextTick(() => {
+      screenReaderAnnouncement.value = message;
+    });
+  }
+
+  /**
+   * Announce selection changes to screen readers
+   */
+  function announceSelection(type: string, name: string) {
+    announceToScreenReader(`Selected ${type}: ${name}`);
+  }
+
+  /**
+   * Announce playback state changes
+   */
+  function announcePlaybackState(isPlaying: boolean) {
+    announceToScreenReader(isPlaying ? 'Playback started' : 'Playback paused');
+  }
+
+  /**
+   * Announce time position changes (throttled)
+   */
+  const announceTimePosition = throttle((time: number) => {
+    announceToScreenReader(`Time: ${formatTime(time)}`, 'polite');
+  }, 1000);
+
+  // High contrast mode for accessibility
+  const highContrastMode = ref(false);
+  
+  /**
+   * Toggle high contrast mode for better visibility
+   */
+  function toggleHighContrastMode() {
+    highContrastMode.value = !highContrastMode.value;
+    announceToScreenReader(highContrastMode.value ? 'High contrast mode enabled' : 'High contrast mode disabled');
+  }
+
+  /**
+   * Get high contrast color variant
+   */
+  function getHighContrastColor(normalColor: string, highContrastColor: string): string {
+    return highContrastMode.value ? highContrastColor : normalColor;
+  }
+
+  // Audio Fade Handle State
+  const fadeHandleState = ref<{
+    trackId: string;
+    fadeType: 'fadeIn' | 'fadeOut';
+    startX: number;
+    originalFade: number;
+    trackDuration: number;
+    trackElement: HTMLElement | null;
+  } | null>(null);
+
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
+  
+  // Inertial scrolling state for playhead
+  const playheadVelocity = ref(0);
+  const lastPlayheadDragTime = ref(0);
+  const lastPlayheadDragX = ref(0);
+  let inertialAnimationId: number | null = null;
+
+  // Frame-accurate scrubbing state
+  const frameRate = 30; // Assume 30fps, could be made configurable
+  const frameSnapEnabled = ref(true);
+
+  // Audio scrubbing state - play audio preview while dragging playhead
+  const audioScrubEnabled = ref(true);
+  let scrubAudioContext: AudioContext | null = null;
+  let scrubAudioBuffer: AudioBuffer | null = null;
+  let scrubSourceNode: AudioBufferSourceNode | null = null;
+  let lastScrubTime = 0;
+  const SCRUB_SNIPPET_DURATION = 0.08; // Duration of audio snippet to play (80ms)
 
   // Cut tool state
   const isCutToolActive = ref(false);
@@ -1629,6 +2610,257 @@
 
   // Smooth playhead animation state
   const smoothPlayheadPosition = ref(0);
+  
+  // J-K-L playback speed state (industry standard shuttle control)
+  // -4 to 4: negative = reverse, 0 = stopped, positive = forward
+  const jklPlaybackSpeed = ref(0);
+  
+  // Track collapse state (local UI state)
+  const collapsedTracks = ref<Set<string>>(new Set()); // Set of "trackType_trackId" keys
+
+  // Track height adjustment state (local UI state)
+  const trackHeights = ref<Map<string, number>>(new Map()); // Map of "trackType_trackId" -> height in pixels
+  const DEFAULT_VIDEO_TRACK_HEIGHT = 96;
+  const DEFAULT_AUDIO_TRACK_HEIGHT = 64;
+  const DEFAULT_OVERLAY_TRACK_HEIGHT = 40;
+  const MIN_TRACK_HEIGHT = 32;
+  const MAX_TRACK_HEIGHT = 200;
+
+  // Track colors state (local UI state)
+  const trackColors = ref<Map<string, string>>(new Map()); // Map of "trackType_trackId" -> color hex
+  const DEFAULT_TRACK_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#f43f5e'];
+
+  /**
+   * Get the height for a specific track
+   */
+  function getTrackHeight(trackType: string, trackId?: string): number {
+    const key = trackId ? `${trackType}_${trackId}` : trackType;
+    const customHeight = trackHeights.value.get(key);
+    if (customHeight) return customHeight;
+    
+    // Return default based on track type
+    switch (trackType) {
+      case 'video': return DEFAULT_VIDEO_TRACK_HEIGHT;
+      case 'audio': return DEFAULT_AUDIO_TRACK_HEIGHT;
+      default: return DEFAULT_OVERLAY_TRACK_HEIGHT;
+    }
+  }
+
+  /**
+   * Set custom height for a track
+   */
+  function setTrackHeight(trackType: string, trackId: string | undefined, height: number) {
+    const key = trackId ? `${trackType}_${trackId}` : trackType;
+    const clampedHeight = Math.max(MIN_TRACK_HEIGHT, Math.min(MAX_TRACK_HEIGHT, height));
+    trackHeights.value.set(key, clampedHeight);
+  }
+
+  /**
+   * Get the color for a specific track
+   */
+  function getTrackColor(trackType: string, trackId?: string, index: number = 0): string {
+    const key = trackId ? `${trackType}_${trackId}` : trackType;
+    const customColor = trackColors.value.get(key);
+    if (customColor) return customColor;
+    
+    // Return default color based on index
+    return DEFAULT_TRACK_COLORS[index % DEFAULT_TRACK_COLORS.length];
+  }
+
+  /**
+   * Set custom color for a track
+   */
+  function setTrackColor(trackType: string, trackId: string | undefined, color: string) {
+    const key = trackId ? `${trackType}_${trackId}` : trackType;
+    trackColors.value.set(key, color);
+  }
+
+  // Waveform display options
+  const waveformDisplayMode = ref<'mono' | 'stereo'>('mono'); // Stereo shows L/R channels
+  const waveformVerticalZoom = ref(1.0); // 0.5 to 3.0 for vertical scaling
+  const waveformViewMode = ref<'waveform' | 'spectral'>('waveform'); // Spectral view option
+  const MIN_WAVEFORM_ZOOM = 0.5;
+  const MAX_WAVEFORM_ZOOM = 3.0;
+
+  /**
+   * Toggle stereo waveform display
+   */
+  function toggleStereoWaveform() {
+    waveformDisplayMode.value = waveformDisplayMode.value === 'mono' ? 'stereo' : 'mono';
+  }
+
+  /**
+   * Set waveform vertical zoom level
+   */
+  function setWaveformVerticalZoom(zoom: number) {
+    waveformVerticalZoom.value = Math.max(MIN_WAVEFORM_ZOOM, Math.min(MAX_WAVEFORM_ZOOM, zoom));
+  }
+
+  /**
+   * Toggle between waveform and spectral view
+   */
+  function toggleSpectralView() {
+    waveformViewMode.value = waveformViewMode.value === 'waveform' ? 'spectral' : 'waveform';
+  }
+
+  // Track height resize state
+  const isResizingTrackHeight = ref(false);
+  const trackHeightResizeInfo = ref<{
+    trackType: string;
+    trackId?: string;
+    startY: number;
+    startHeight: number;
+  } | null>(null);
+
+  /**
+   * Start resizing track height
+   */
+  function onTrackHeightResizeStart(e: MouseEvent, trackType: string, trackId?: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    isResizingTrackHeight.value = true;
+    trackHeightResizeInfo.value = {
+      trackType,
+      trackId,
+      startY: e.clientY,
+      startHeight: getTrackHeight(trackType, trackId),
+    };
+    
+    document.addEventListener('mousemove', onTrackHeightResizeMove);
+    document.addEventListener('mouseup', onTrackHeightResizeEnd);
+  }
+
+  function onTrackHeightResizeMove(e: MouseEvent) {
+    if (!isResizingTrackHeight.value || !trackHeightResizeInfo.value) return;
+    
+    const deltaY = e.clientY - trackHeightResizeInfo.value.startY;
+    const newHeight = trackHeightResizeInfo.value.startHeight + deltaY;
+    
+    setTrackHeight(
+      trackHeightResizeInfo.value.trackType,
+      trackHeightResizeInfo.value.trackId,
+      newHeight
+    );
+  }
+
+  function onTrackHeightResizeEnd() {
+    isResizingTrackHeight.value = false;
+    trackHeightResizeInfo.value = null;
+    document.removeEventListener('mousemove', onTrackHeightResizeMove);
+    document.removeEventListener('mouseup', onTrackHeightResizeEnd);
+  }
+
+  // Marquee selection state
+  const marqueeSelection = ref<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+
+  // Computed marquee rectangle style
+  const marqueeStyle = computed(() => {
+    if (!marqueeSelection.value || !marqueeSelection.value.active) return null;
+    
+    const { startX, startY, currentX, currentY } = marqueeSelection.value;
+    const left = Math.min(startX, currentX);
+    const top = Math.min(startY, currentY);
+    const width = Math.abs(currentX - startX);
+    const height = Math.abs(currentY - startY);
+    
+    return {
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${width}px`,
+      height: `${height}px`,
+    };
+  });
+
+  // Computed minimap viewport style (shows visible area in minimap)
+  const minimapViewportStyle = computed(() => {
+    if (!timelineScrollContainer.value || totalDuration.value <= 0) {
+      return { left: '0%', width: '100%' };
+    }
+    
+    const container = timelineScrollContainer.value;
+    const contentWidth = container.scrollWidth;
+    const viewportWidth = container.clientWidth;
+    const scrollLeft = container.scrollLeft;
+    
+    if (contentWidth <= 0) return { left: '0%', width: '100%' };
+    
+    const leftPercent = (scrollLeft / contentWidth) * 100;
+    const widthPercent = (viewportWidth / contentWidth) * 100;
+    
+    return {
+      left: `${leftPercent}%`,
+      width: `${Math.min(100, widthPercent)}%`,
+    };
+  });
+  
+  /**
+   * Handle click on minimap to navigate to that position
+   */
+  function onMinimapClick(e: MouseEvent) {
+    if (!timelineScrollContainer.value) return;
+    
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const clickPercent = (e.clientX - rect.left) / rect.width;
+    
+    // Scroll to center the clicked position
+    const container = timelineScrollContainer.value;
+    const contentWidth = container.scrollWidth;
+    const viewportWidth = container.clientWidth;
+    
+    const targetScroll = (clickPercent * contentWidth) - (viewportWidth / 2);
+    container.scrollLeft = Math.max(0, Math.min(contentWidth - viewportWidth, targetScroll));
+  }
+
+  /**
+   * Start dragging on minimap to scroll timeline
+   */
+  function onMinimapDragStart(e: MouseEvent) {
+    e.preventDefault();
+    
+    const onMove = (moveEvent: MouseEvent) => {
+      if (!timelineScrollContainer.value) return;
+      
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const clickPercent = Math.max(0, Math.min(1, (moveEvent.clientX - rect.left) / rect.width));
+      
+      const container = timelineScrollContainer.value;
+      const contentWidth = container.scrollWidth;
+      const viewportWidth = container.clientWidth;
+      
+      const targetScroll = (clickPercent * contentWidth) - (viewportWidth / 2);
+      container.scrollLeft = Math.max(0, Math.min(contentWidth - viewportWidth, targetScroll));
+    };
+    
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  function isTrackCollapsed(trackType: string, trackId?: string): boolean {
+    const key = trackId ? `${trackType}_${trackId}` : trackType;
+    return collapsedTracks.value.has(key);
+  }
+  
+  function toggleTrackCollapse(trackType: 'video' | 'audio' | 'overlay', trackId?: string) {
+    const key = trackId ? `${trackType}_${trackId}` : trackType;
+    if (collapsedTracks.value.has(key)) {
+      collapsedTracks.value.delete(key);
+    } else {
+      collapsedTracks.value.add(key);
+    }
+    emit('toggleTrackCollapse', trackType, trackId);
+  }
   // Hover line state
   const showHoverLine = ref(false);
   const hoverLinePosition = ref(0);
@@ -1640,9 +2872,21 @@
   // Snap configuration
   const SNAP_THRESHOLD_PX = 8; // Pixels distance to trigger snapping
   const snapEnabled = ref(true);
+  const snapMenuOpen = ref(false);
+  const snapPreferences = ref({
+    playhead: true,
+    segmentEdges: true,
+    markers: true,
+    grid: false,
+    magnetic: true, // Magnetic timeline - segments attract to nearby edges with larger threshold
+  });
+
+  // Magnetic timeline threshold (larger than regular snap for attraction effect)
+  const MAGNETIC_THRESHOLD_PX = 20; // Pixels distance for magnetic attraction
 
   // Snap state for visual indicator
   const activeSnapTime = ref<number | null>(null); // Time position where snap is occurring
+  const activeSnapTrackType = ref<string | null>(null); // Track type for cross-track snap indicator styling
 
   // Auto-scroll configuration for keeping playhead visible during playback
   // Stepping approach: scroll when playhead reaches threshold, jump to target position
@@ -1874,6 +3118,46 @@
     const visibleDuration = visibleEnd - visibleStart;
 
     return props.markers
+      .filter((marker) => marker.time >= visibleStart && marker.time <= visibleEnd)
+      .map((marker) => {
+        const relativeTime = marker.time - visibleStart;
+        const leftPercent = (relativeTime / visibleDuration) * 100;
+        return {
+          ...marker,
+          leftPercent,
+        };
+      });
+  });
+
+  // Calculate visible beat markers with correct positioning
+  const visibleBeatMarkers = computed(() => {
+    if (!props.beatMarkers || props.beatMarkers.length === 0) return [];
+
+    const visibleStart = props.clipStart;
+    const visibleEnd = props.clipEnd;
+    const visibleDuration = visibleEnd - visibleStart;
+
+    return props.beatMarkers
+      .filter((marker) => marker.time >= visibleStart && marker.time <= visibleEnd)
+      .map((marker) => {
+        const relativeTime = marker.time - visibleStart;
+        const leftPercent = (relativeTime / visibleDuration) * 100;
+        return {
+          ...marker,
+          leftPercent,
+        };
+      });
+  });
+
+  // Calculate visible chapter markers with correct positioning
+  const visibleChapterMarkers = computed(() => {
+    if (!props.chapterMarkers || props.chapterMarkers.length === 0) return [];
+
+    const visibleStart = props.clipStart;
+    const visibleEnd = props.clipEnd;
+    const visibleDuration = visibleEnd - visibleStart;
+
+    return props.chapterMarkers
       .filter((marker) => marker.time >= visibleStart && marker.time <= visibleEnd)
       .map((marker) => {
         const relativeTime = marker.time - visibleStart;
@@ -2339,6 +3623,36 @@
     }
   }
 
+  /**
+   * Get style for ghost preview showing original position during drag
+   */
+  function getGhostPreviewStyle(type: string): Record<string, string> {
+    // Get the original position from dragSourceInfo or dragInfo
+    let originalStartTime = 0;
+    let originalEndTime = 0;
+    
+    if (type === 'source' && dragSourceInfo.value) {
+      originalStartTime = dragSourceInfo.value.originalStartTime;
+      originalEndTime = dragSourceInfo.value.originalEndTime;
+    } else if (dragInfo.value) {
+      originalStartTime = dragInfo.value.originalStartTime;
+      originalEndTime = dragInfo.value.originalEndTime;
+    } else {
+      return { display: 'none' };
+    }
+    
+    const duration = props.editorMode ? props.duration : totalDuration.value;
+    if (duration <= 0) return { display: 'none' };
+    
+    const left = (originalStartTime / duration) * 100;
+    const width = ((originalEndTime - originalStartTime) / duration) * 100;
+    
+    return {
+      left: `${left}%`,
+      width: `${Math.max(width, 0.5)}%`,
+    };
+  }
+
   function getAudioVisualSegmentStyle(track: AudioTrack, visualSeg: AudioVisualSegment): Record<string, string> {
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${track.id}`;
@@ -2396,8 +3710,29 @@
     };
   }
 
-  function selectItem(type: ItemType, id: string) {
+  function selectItem(type: ItemType, id: string, autoSelectLinked: boolean = true) {
     selectedItemKey.value = `${type}_${id}`;
+    
+    // Linked selection: auto-select linked audio when selecting video source
+    if (autoSelectLinked && type === 'source' && props.editorMode) {
+      // Find any audio tracks linked to this source
+      const linkedAudio = props.audioTracks.filter(track => track.linkedSourceId === id);
+      if (linkedAudio.length > 0) {
+        // Emit selection for linked audio tracks (add to selection)
+        linkedAudio.forEach(track => {
+          emit('sourceSelect', track.id, { shift: false, ctrl: true });
+        });
+      }
+    }
+    
+    // Reverse: when selecting audio, also select linked video source
+    if (autoSelectLinked && type === 'audio') {
+      const audioTrack = props.audioTracks.find(t => t.id === id);
+      if (audioTrack?.linkedSourceId) {
+        // Also select the linked video source
+        emit('sourceSelect', audioTrack.linkedSourceId, { shift: false, ctrl: true });
+      }
+    }
   }
 
   // Check if a track type has an active/selected item (may be used in future)
@@ -2429,6 +3764,16 @@
 
     if (selectedItemKey.value === key) {
       classes.push('selected-segment');
+    }
+
+    // Ripple preview: highlight segments that will be affected by ripple edit
+    if (rippleAffectedIds.value.has(id)) {
+      classes.push('ring-2', 'ring-orange-400/60', 'ring-offset-1', 'ring-offset-black', 'ripple-affected');
+    }
+
+    // Collision indicator: highlight segments that overlap with other segments
+    if (collidingSegmentIds.value.has(id)) {
+      classes.push('ring-2', 'ring-red-500/70', 'ring-offset-1', 'ring-offset-black', 'collision-warning');
     }
 
     return classes;
@@ -2639,9 +3984,14 @@
   }
 
   // Snap-to-edge utility functions
+  type SnapEdgeType = 'segment-start' | 'segment-end' | 'playhead' | 'marker' | 'grid';
+  type SnapTrackType = 'video' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter' | 'system';
+  
   interface SnapTarget {
     time: number;
-    type: 'segment-start' | 'segment-end' | 'playhead';
+    type: SnapEdgeType;
+    trackType?: SnapTrackType; // Track type for cross-track snapping visual feedback
+    itemId?: string; // ID of the item this snap target belongs to
   }
 
   interface SnapResult {
@@ -2651,50 +4001,144 @@
   }
 
   /**
-   * Get all snap targets (segment edges) excluding the segment being dragged/resized
+   * Get all snap targets (segment edges) from ALL tracks for cross-track snapping
+   * This enables CapCut-style snapping where items snap to edges on any layer
    */
   function getSnapTargets(excludeId?: string): SnapTarget[] {
     const targets: SnapTarget[] = [];
+    const preview = dragPreview.value;
 
     if (props.editorMode) {
       // Editor mode: collect video source edges
       for (const source of props.videoSources) {
         if (source.id === excludeId) continue;
 
-        // Use preview position if this source is being dragged/resized
-        const preview = dragPreview.value;
         const isPreviewing = preview && preview.type === 'source' && preview.id === source.id;
         const startTime = isPreviewing ? preview.startTime : source.start_time;
         const endTime = isPreviewing ? preview.endTime : source.end_time;
 
-        targets.push({ time: startTime, type: 'segment-start' });
-        targets.push({ time: endTime, type: 'segment-end' });
+        targets.push({ time: startTime, type: 'segment-start', trackType: 'video', itemId: source.id });
+        targets.push({ time: endTime, type: 'segment-end', trackType: 'video', itemId: source.id });
       }
     } else {
       // Clip mode: collect trim segment edges
       for (const segment of sortedTrimSegments.value) {
         if (segment.id === excludeId) continue;
 
-        // Use preview position if this segment is being dragged/resized
-        const preview = dragPreview.value;
         const startTime =
           preview && preview.type === 'trim' && preview.id === segment.id ? preview.startTime : segment.startTime;
         const endTime =
           preview && preview.type === 'trim' && preview.id === segment.id ? preview.endTime : segment.endTime;
 
-        targets.push({ time: startTime, type: 'segment-start' });
-        targets.push({ time: endTime, type: 'segment-end' });
+        targets.push({ time: startTime, type: 'segment-start', trackType: 'video', itemId: segment.id });
+        targets.push({ time: endTime, type: 'segment-end', trackType: 'video', itemId: segment.id });
       }
     }
 
-    // Always add playhead as a snap target
-    targets.push({ time: props.currentTime, type: 'playhead' });
+    // Cross-track snapping: Collect edges from audio tracks
+    for (const track of props.audioTracks) {
+      if (track.id === excludeId) continue;
+      
+      const isPreviewing = preview && preview.type === 'audio' && preview.id === track.id;
+      const startTime = isPreviewing ? preview.startTime : track.startTime;
+      const endTime = isPreviewing ? preview.endTime : track.endTime;
 
-    // Add timeline boundaries
-    targets.push({ time: 0, type: 'segment-start' });
-    const maxDuration = props.editorMode ? props.duration : totalDuration.value;
-    if (maxDuration > 0) {
-      targets.push({ time: maxDuration, type: 'segment-end' });
+      targets.push({ time: startTime, type: 'segment-start', trackType: 'audio', itemId: track.id });
+      targets.push({ time: endTime, type: 'segment-end', trackType: 'audio', itemId: track.id });
+    }
+
+    // Cross-track snapping: Collect edges from text overlays
+    for (const overlay of props.textOverlays) {
+      if (overlay.id === excludeId) continue;
+      
+      const isPreviewing = preview && preview.type === 'text' && preview.id === overlay.id;
+      const startTime = isPreviewing ? preview.startTime : overlay.startTime;
+      const endTime = isPreviewing ? preview.endTime : overlay.endTime;
+
+      targets.push({ time: startTime, type: 'segment-start', trackType: 'text', itemId: overlay.id });
+      targets.push({ time: endTime, type: 'segment-end', trackType: 'text', itemId: overlay.id });
+    }
+
+    // Cross-track snapping: Collect edges from stickers
+    for (const sticker of props.stickers) {
+      if (sticker.id === excludeId) continue;
+      
+      const isPreviewing = preview && preview.type === 'sticker' && preview.id === sticker.id;
+      const startTime = isPreviewing ? preview.startTime : sticker.startTime;
+      const endTime = isPreviewing ? preview.endTime : sticker.endTime;
+
+      targets.push({ time: startTime, type: 'segment-start', trackType: 'sticker', itemId: sticker.id });
+      targets.push({ time: endTime, type: 'segment-end', trackType: 'sticker', itemId: sticker.id });
+    }
+
+    // Cross-track snapping: Collect edges from watermarks
+    for (const watermark of props.watermarks) {
+      if (watermark.id === excludeId) continue;
+      
+      const isPreviewing = preview && preview.type === 'watermark' && preview.id === watermark.id;
+      const startTime = isPreviewing ? preview.startTime : watermark.startTime;
+      const endTime = isPreviewing ? preview.endTime : watermark.endTime;
+
+      targets.push({ time: startTime, type: 'segment-start', trackType: 'watermark', itemId: watermark.id });
+      targets.push({ time: endTime, type: 'segment-end', trackType: 'watermark', itemId: watermark.id });
+    }
+
+    // Cross-track snapping: Collect edges from effects
+    for (const effect of props.effects) {
+      if (effect.id === excludeId) continue;
+      
+      const isPreviewing = preview && preview.type === 'effect' && preview.id === effect.id;
+      const startTime = isPreviewing ? preview.startTime : effect.startTime;
+      const endTime = isPreviewing ? preview.endTime : effect.endTime;
+
+      targets.push({ time: startTime, type: 'segment-start', trackType: 'effect', itemId: effect.id });
+      targets.push({ time: endTime, type: 'segment-end', trackType: 'effect', itemId: effect.id });
+    }
+
+    // Cross-track snapping: Collect edges from filter segments
+    for (const filter of props.filterSegments) {
+      if (filter.id === excludeId) continue;
+      
+      const isPreviewing = preview && preview.type === 'filter' && preview.id === filter.id;
+      const startTime = isPreviewing ? preview.startTime : filter.startTime;
+      const endTime = isPreviewing ? preview.endTime : filter.endTime;
+
+      targets.push({ time: startTime, type: 'segment-start', trackType: 'filter', itemId: filter.id });
+      targets.push({ time: endTime, type: 'segment-end', trackType: 'filter', itemId: filter.id });
+    }
+
+    // Snap to markers if available and enabled
+    if (snapPreferences.value.markers && props.markers && props.markers.length > 0) {
+      for (const marker of props.markers) {
+        targets.push({ time: marker.time, type: 'marker', trackType: 'system', itemId: marker.id });
+      }
+    }
+
+    // Add playhead as a snap target if enabled
+    if (snapPreferences.value.playhead) {
+      targets.push({ time: props.currentTime, type: 'playhead', trackType: 'system' });
+    }
+
+    // Add grid snap targets if enabled (1 second intervals)
+    if (snapPreferences.value.grid) {
+      const maxDuration = props.editorMode ? props.duration : totalDuration.value;
+      for (let t = 0; t <= maxDuration; t += 1) {
+        targets.push({ time: t, type: 'grid', trackType: 'system' });
+      }
+    }
+
+    // Add timeline boundaries (always included with segment edges)
+    if (snapPreferences.value.segmentEdges) {
+      targets.push({ time: 0, type: 'segment-start', trackType: 'system' });
+      const maxDuration = props.editorMode ? props.duration : totalDuration.value;
+      if (maxDuration > 0) {
+        targets.push({ time: maxDuration, type: 'segment-end', trackType: 'system' });
+      }
+    }
+
+    // Filter out segment edges if not enabled
+    if (!snapPreferences.value.segmentEdges) {
+      return targets.filter(t => t.type !== 'segment-start' && t.type !== 'segment-end');
     }
 
     return targets;
@@ -2712,6 +4156,7 @@
 
   /**
    * Check if a time should snap to any target and return the snapped time
+   * Uses magnetic threshold (larger) when magnetic mode is enabled for attraction effect
    */
   function applySnapToTime(targetTime: number, excludeId?: string): SnapResult {
     if (!snapEnabled.value) {
@@ -2721,6 +4166,9 @@
     const targets = getSnapTargets(excludeId);
     const targetPixel = timeToPixelPosition(targetTime);
 
+    // Use magnetic threshold if enabled, otherwise use regular snap threshold
+    const threshold = snapPreferences.value.magnetic ? MAGNETIC_THRESHOLD_PX : SNAP_THRESHOLD_PX;
+
     let closestTarget: SnapTarget | null = null;
     let closestDistance = Infinity;
 
@@ -2728,7 +4176,7 @@
       const targetTimePixel = timeToPixelPosition(target.time);
       const distance = Math.abs(targetPixel - targetTimePixel);
 
-      if (distance <= SNAP_THRESHOLD_PX && distance < closestDistance) {
+      if (distance <= threshold && distance < closestDistance) {
         closestTarget = target;
         closestDistance = distance;
       }
@@ -2748,14 +4196,15 @@
   /**
    * Apply snapping to both edges of a segment during drag operations
    * Returns snapped start/end times while preserving segment duration
+   * Also returns snapTrackType for cross-track snap visual feedback
    */
   function applySnapToSegment(
     startTime: number,
     endTime: number,
     excludeId?: string
-  ): { startTime: number; endTime: number; didSnap: boolean; snapTime: number | null } {
+  ): { startTime: number; endTime: number; didSnap: boolean; snapTime: number | null; snapTrackType: string | null } {
     if (!snapEnabled.value) {
-      return { startTime, endTime, didSnap: false, snapTime: null };
+      return { startTime, endTime, didSnap: false, snapTime: null, snapTrackType: null };
     }
 
     const duration = endTime - startTime;
@@ -2768,6 +4217,7 @@
         endTime: startSnap.time + duration,
         didSnap: true,
         snapTime: startSnap.time,
+        snapTrackType: startSnap.snapTarget?.trackType || null,
       };
     }
 
@@ -2779,10 +4229,11 @@
         endTime: endSnap.time,
         didSnap: true,
         snapTime: endSnap.time,
+        snapTrackType: endSnap.snapTarget?.trackType || null,
       };
     }
 
-    return { startTime, endTime, didSnap: false, snapTime: null };
+    return { startTime, endTime, didSnap: false, snapTime: null, snapTrackType: null };
   }
 
   // Convert click position to source time
@@ -2926,6 +4377,399 @@
 
     // Clear selection after deletion
     selectedItemKey.value = null;
+  }
+
+  /**
+   * Copy selected items to clipboard (emits event for parent to handle)
+   */
+  function copySelectedItems() {
+    const itemKeys: string[] = [];
+    
+    // Collect selected items from both modes
+    if (props.editorMode && props.selectedSourceIds && props.selectedSourceIds.size > 0) {
+      // Editor mode: collect selected sources
+      for (const sourceId of props.selectedSourceIds) {
+        itemKeys.push(`source_${sourceId}`);
+      }
+    } else if (!props.editorMode && props.selectedSegmentIds && props.selectedSegmentIds.size > 0) {
+      // Clip mode: collect selected segments
+      for (const segmentId of props.selectedSegmentIds) {
+        itemKeys.push(`trim_${segmentId}`);
+      }
+    } else if (selectedItemKey.value) {
+      // Single selection fallback
+      itemKeys.push(selectedItemKey.value);
+    }
+    
+    if (itemKeys.length > 0) {
+      emit('copyItems', itemKeys);
+    }
+  }
+
+  /**
+   * Paste items at current playhead position
+   */
+  function pasteItems() {
+    emit('pasteItems', props.currentTime);
+  }
+
+  /**
+   * Paste items at their original position (paste in place)
+   */
+  function pasteItemsInPlace() {
+    emit('pasteItemsInPlace');
+  }
+
+  /**
+   * Paste items to a specific track (cross-track paste)
+   */
+  function pasteItemsToTrack(targetTrackType: string, targetTrackId?: string) {
+    emit('pasteItemsToTrack', {
+      position: props.currentTime,
+      targetTrackType,
+      targetTrackId,
+    });
+  }
+
+  /**
+   * Duplicate selected items (copy + paste in place)
+   */
+  function duplicateSelectedItems() {
+    const itemKeys: string[] = [];
+    
+    // Collect selected items from both modes
+    if (props.editorMode && props.selectedSourceIds && props.selectedSourceIds.size > 0) {
+      for (const sourceId of props.selectedSourceIds) {
+        itemKeys.push(`source_${sourceId}`);
+      }
+    } else if (!props.editorMode && props.selectedSegmentIds && props.selectedSegmentIds.size > 0) {
+      for (const segmentId of props.selectedSegmentIds) {
+        itemKeys.push(`trim_${segmentId}`);
+      }
+    } else if (selectedItemKey.value) {
+      itemKeys.push(selectedItemKey.value);
+    }
+    
+    if (itemKeys.length > 0) {
+      emit('duplicateItems', itemKeys);
+    }
+  }
+
+  /**
+   * Add a marker at the current playhead position
+   */
+  function addMarkerAtPlayhead() {
+    emit('addMarker', props.currentTime);
+  }
+
+  /**
+   * Group selected items together
+   */
+  function groupSelectedItems() {
+    const itemKeys: string[] = [];
+    
+    if (props.editorMode && props.selectedSourceIds && props.selectedSourceIds.size > 1) {
+      for (const sourceId of props.selectedSourceIds) {
+        itemKeys.push(`source_${sourceId}`);
+      }
+    } else if (!props.editorMode && props.selectedSegmentIds && props.selectedSegmentIds.size > 1) {
+      for (const segmentId of props.selectedSegmentIds) {
+        itemKeys.push(`trim_${segmentId}`);
+      }
+    }
+    
+    if (itemKeys.length > 1) {
+      emit('groupItems', itemKeys);
+    }
+  }
+
+  /**
+   * Ungroup the currently selected group
+   */
+  function ungroupSelectedItems() {
+    // If the selected item is a group, ungroup it
+    if (selectedItemKey.value && selectedItemKey.value.startsWith('group_')) {
+      const groupId = selectedItemKey.value.replace('group_', '');
+      emit('ungroupItems', groupId);
+    }
+  }
+
+  /**
+   * Add a speed keyframe to a video source at the current playhead position
+   */
+  function addSpeedKeyframeAtPlayhead(sourceId: string, speed: number = 1.0) {
+    const source = props.videoSources.find(s => s.id === sourceId);
+    if (!source) return;
+    
+    // Calculate time relative to source start
+    const relativeTime = props.currentTime - source.start_time;
+    if (relativeTime < 0 || relativeTime > (source.end_time - source.start_time)) return;
+    
+    emit('addSpeedKeyframe', sourceId, relativeTime, speed);
+  }
+
+  /**
+   * Add a freeze point at the current playhead position
+   */
+  function addFreezePointAtPlayhead(sourceId: string, duration: number = 1.0) {
+    const source = props.videoSources.find(s => s.id === sourceId);
+    if (!source) return;
+    
+    // Calculate time relative to source start
+    const relativeTime = props.currentTime - source.start_time;
+    if (relativeTime < 0 || relativeTime > (source.end_time - source.start_time)) return;
+    
+    emit('addFreezePoint', sourceId, relativeTime, duration);
+  }
+
+  /**
+   * Start track reordering drag
+   */
+  function onTrackReorderStart(e: MouseEvent, trackType: 'audio' | 'overlay', trackId: string, currentOrder: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    trackReorderState.value = {
+      trackType,
+      trackId,
+      originalOrder: currentOrder,
+      startY: e.clientY,
+    };
+    
+    document.addEventListener('mousemove', onTrackReorderMove);
+    document.addEventListener('mouseup', onTrackReorderEnd);
+  }
+
+  /**
+   * Handle track reordering drag movement
+   */
+  function onTrackReorderMove(e: MouseEvent) {
+    if (!trackReorderState.value) return;
+    
+    // Calculate how many track positions to move based on Y delta
+    const deltaY = e.clientY - trackReorderState.value.startY;
+    const trackHeight = 48; // Approximate track height
+    const positionDelta = Math.round(deltaY / trackHeight);
+    
+    if (positionDelta !== 0) {
+      const newOrder = trackReorderState.value.originalOrder + positionDelta;
+      // Emit reorder event for live preview
+      emit('reorderTrack', trackReorderState.value.trackType, trackReorderState.value.trackId, newOrder);
+      // Update start position for next delta calculation
+      trackReorderState.value.startY = e.clientY;
+      trackReorderState.value.originalOrder = newOrder;
+    }
+  }
+
+  /**
+   * End track reordering drag
+   */
+  function onTrackReorderEnd() {
+    trackReorderState.value = null;
+    document.removeEventListener('mousemove', onTrackReorderMove);
+    document.removeEventListener('mouseup', onTrackReorderEnd);
+  }
+
+  /**
+   * Start marquee selection on empty timeline area
+   */
+  function onTimelineMarqueeStart(e: MouseEvent) {
+    // Only start marquee if clicking on empty area (not on a segment)
+    if ((e.target as HTMLElement).closest('.clip-segment')) return;
+    if (!timelineScrollContainer.value) return;
+    
+    const rect = timelineScrollContainer.value.getBoundingClientRect();
+    const x = e.clientX - rect.left + timelineScrollContainer.value.scrollLeft;
+    const y = e.clientY - rect.top + timelineScrollContainer.value.scrollTop;
+    
+    marqueeSelection.value = {
+      active: true,
+      startX: x,
+      startY: y,
+      currentX: x,
+      currentY: y,
+    };
+    
+    document.addEventListener('mousemove', onTimelineMarqueeMove);
+    document.addEventListener('mouseup', onTimelineMarqueeEnd);
+  }
+
+  /**
+   * Update marquee selection rectangle during drag
+   */
+  function onTimelineMarqueeMove(e: MouseEvent) {
+    if (!marqueeSelection.value || !timelineScrollContainer.value) return;
+    
+    const rect = timelineScrollContainer.value.getBoundingClientRect();
+    const x = e.clientX - rect.left + timelineScrollContainer.value.scrollLeft;
+    const y = e.clientY - rect.top + timelineScrollContainer.value.scrollTop;
+    
+    marqueeSelection.value.currentX = x;
+    marqueeSelection.value.currentY = y;
+  }
+
+  /**
+   * End marquee selection and select items within rectangle
+   */
+  function onTimelineMarqueeEnd() {
+    if (!marqueeSelection.value || !timelineScrollContainer.value) {
+      marqueeSelection.value = null;
+      document.removeEventListener('mousemove', onTimelineMarqueeMove);
+      document.removeEventListener('mouseup', onTimelineMarqueeEnd);
+      return;
+    }
+    
+    const { startX, startY, currentX, currentY } = marqueeSelection.value;
+    const left = Math.min(startX, currentX);
+    const right = Math.max(startX, currentX);
+    const top = Math.min(startY, currentY);
+    const bottom = Math.max(startY, currentY);
+    
+    // Only process if marquee is larger than 10px (avoid accidental clicks)
+    if (right - left > 10 && bottom - top > 10) {
+      const selectedIds: string[] = [];
+      
+      // Check each source segment for intersection with marquee
+      if (props.editorMode) {
+        for (const source of primaryVideoSources.value) {
+          const segmentEl = segmentRefs.value.get(`source_${source.id}`);
+          if (segmentEl) {
+            const segRect = segmentEl.getBoundingClientRect();
+            const containerRect = timelineScrollContainer.value!.getBoundingClientRect();
+            
+            // Convert segment rect to container-relative coordinates
+            const segLeft = segRect.left - containerRect.left + timelineScrollContainer.value!.scrollLeft;
+            const segRight = segRect.right - containerRect.left + timelineScrollContainer.value!.scrollLeft;
+            const segTop = segRect.top - containerRect.top + timelineScrollContainer.value!.scrollTop;
+            const segBottom = segRect.bottom - containerRect.top + timelineScrollContainer.value!.scrollTop;
+            
+            // Check intersection
+            if (segLeft < right && segRight > left && segTop < bottom && segBottom > top) {
+              selectedIds.push(source.id);
+            }
+          }
+        }
+        
+        // Emit multi-select events for each selected source
+        if (selectedIds.length > 0) {
+          // First source without modifier, rest with ctrl to add to selection
+          selectedIds.forEach((id, index) => {
+            emit('sourceSelect', id, { shift: false, ctrl: index > 0 });
+          });
+        }
+      }
+    }
+    
+    marqueeSelection.value = null;
+    document.removeEventListener('mousemove', onTimelineMarqueeMove);
+    document.removeEventListener('mouseup', onTimelineMarqueeEnd);
+  }
+
+  /**
+   * Handle fade handle mouse down - start dragging fade duration
+   */
+  function onFadeHandleMouseDown(e: MouseEvent, trackId: string, fadeType: 'fadeIn' | 'fadeOut', track: AudioTrack) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const trackDuration = track.endTime - track.startTime;
+    const originalFade = fadeType === 'fadeIn' ? track.fadeIn : track.fadeOut;
+    
+    fadeHandleState.value = {
+      trackId,
+      fadeType,
+      startX: e.clientX,
+      originalFade,
+      trackDuration,
+      trackElement: e.currentTarget as HTMLElement,
+    };
+    
+    document.addEventListener('mousemove', onFadeHandleMouseMove);
+    document.addEventListener('mouseup', onFadeHandleMouseUp);
+  }
+
+  function onFadeHandleMouseMove(e: MouseEvent) {
+    if (!fadeHandleState.value) return;
+    
+    const { trackId, fadeType, startX, originalFade, trackDuration, trackElement } = fadeHandleState.value;
+    
+    // Get the parent track element to calculate width
+    const parentEl = trackElement?.closest('.clip-segment') as HTMLElement;
+    if (!parentEl) return;
+    
+    const trackWidth = parentEl.offsetWidth;
+    const deltaX = e.clientX - startX;
+    
+    // Convert pixel delta to time delta
+    const timeDelta = (deltaX / trackWidth) * trackDuration;
+    
+    // Calculate new fade duration
+    let newFade: number;
+    if (fadeType === 'fadeIn') {
+      // Dragging right increases fade in
+      newFade = Math.max(0, Math.min(trackDuration * 0.5, originalFade + timeDelta));
+    } else {
+      // Dragging left increases fade out (negative delta)
+      newFade = Math.max(0, Math.min(trackDuration * 0.5, originalFade - timeDelta));
+    }
+    
+    // Emit the update
+    emit('updateAudioFade', trackId, fadeType, newFade);
+  }
+
+  function onFadeHandleMouseUp() {
+    fadeHandleState.value = null;
+    document.removeEventListener('mousemove', onFadeHandleMouseMove);
+    document.removeEventListener('mouseup', onFadeHandleMouseUp);
+  }
+
+  /**
+   * Enable audio ducking for a track (auto-lower music under speech)
+   */
+  function enableAudioDucking(trackId: string, options?: { threshold?: number; reduction?: number; attack?: number; release?: number }) {
+    const defaultOptions = {
+      threshold: -20, // dB threshold for ducking trigger
+      reduction: -12, // dB reduction when ducking
+      attack: 0.1, // seconds to duck down
+      release: 0.5, // seconds to recover
+    };
+    emit('enableAudioDucking', trackId, { ...defaultOptions, ...options });
+    trackRecentAction('audio-ducking', 'Enable Audio Ducking');
+  }
+
+  /**
+   * Disable audio ducking for a track
+   */
+  function disableAudioDucking(trackId: string) {
+    emit('disableAudioDucking', trackId);
+  }
+
+  /**
+   * Normalize audio level for a track
+   */
+  function normalizeAudio(trackId: string, targetLevel: number = -3) {
+    emit('normalizeAudio', trackId, targetLevel);
+    trackRecentAction('normalize-audio', 'Normalize Audio');
+  }
+
+  /**
+   * Normalize all audio tracks to match levels
+   */
+  function normalizeAllAudio(targetLevel: number = -3) {
+    emit('normalizeAllAudio', targetLevel);
+    trackRecentAction('normalize-all', 'Normalize All Audio');
+  }
+
+  /**
+   * Apply noise reduction to a track
+   */
+  function applyNoiseReduction(trackId: string, options?: { strength?: number; sensitivity?: number }) {
+    const defaultOptions = {
+      strength: 0.5, // 0-1 strength of noise reduction
+      sensitivity: 0.3, // 0-1 sensitivity to noise detection
+    };
+    emit('applyNoiseReduction', trackId, { ...defaultOptions, ...options });
+    trackRecentAction('noise-reduction', 'Apply Noise Reduction');
   }
 
   // Cut at playhead (CapCut style)
@@ -3126,21 +4970,40 @@
     emit('splitSource', source.id, cutTimelinePosition, cutHoverInfo.value.cutTime);
 
     // Keep cut tool active (like CapCut) - just clear hover info for next cut
-    // User can press X again to deactivate when done
     cutHoverInfo.value = null;
   }
 
-  // Playhead dragging
   function onPlayheadMouseDown(e: MouseEvent) {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
 
     isDraggingPlayhead.value = true;
+    
+    // Initialize velocity tracking for inertial scrolling
+    playheadVelocity.value = 0;
+    lastPlayheadDragTime.value = performance.now();
+    lastPlayheadDragX.value = e.clientX;
+    
+    // Cancel any ongoing inertial animation
+    if (inertialAnimationId) {
+      cancelAnimationFrame(inertialAnimationId);
+      inertialAnimationId = null;
+    }
+    
+    // Initialize audio scrubbing if enabled
+    if (audioScrubEnabled.value) {
+      initAudioScrubbing();
+    }
 
     document.addEventListener('mousemove', onPlayheadDragMove);
     document.addEventListener('mouseup', onPlayheadDragEnd);
   }
+
+  // Auto-scroll configuration for playhead dragging
+  const DRAG_SCROLL_EDGE_SIZE = 50; // Pixels from edge to trigger auto-scroll
+  const DRAG_SCROLL_SPEED = 8; // Pixels per frame to scroll
+  let dragScrollAnimationId: number | null = null;
 
   function onPlayheadDragMove(e: MouseEvent) {
     if (!isDraggingPlayhead.value || totalDuration.value <= 0) return;
@@ -3162,6 +5025,21 @@
     // Cursor position in viewport coords
     const cursorX = e.clientX;
 
+    // Auto-scroll when dragging near edges
+    const distanceFromLeft = cursorX - visibleTrackLeft;
+    const distanceFromRight = visibleTrackRight - cursorX;
+
+    if (distanceFromLeft < DRAG_SCROLL_EDGE_SIZE && distanceFromLeft > 0) {
+      // Near left edge - scroll left
+      const scrollAmount = -DRAG_SCROLL_SPEED * (1 - distanceFromLeft / DRAG_SCROLL_EDGE_SIZE);
+      scrollContainer.scrollLeft = Math.max(0, scrollContainer.scrollLeft + scrollAmount);
+    } else if (distanceFromRight < DRAG_SCROLL_EDGE_SIZE && distanceFromRight > 0) {
+      // Near right edge - scroll right
+      const scrollAmount = DRAG_SCROLL_SPEED * (1 - distanceFromRight / DRAG_SCROLL_EDGE_SIZE);
+      const maxScroll = scrollContainer.scrollWidth - scrollContainer.clientWidth;
+      scrollContainer.scrollLeft = Math.min(maxScroll, scrollContainer.scrollLeft + scrollAmount);
+    }
+
     // Handle cursor in label area (left of track content) - seek to 0
     if (cursorX < visibleTrackLeft) {
       emit('seek', 0);
@@ -3177,7 +5055,31 @@
     // Cursor is within the visible track area - calculate position
     const x = cursorX - timelineLeft;
     const percent = Math.max(0, Math.min(1, x / timelineWidth));
-    const time = clickPositionToTime(percent);
+    let time = clickPositionToTime(percent);
+    
+    // Frame-accurate scrubbing: snap to nearest frame when enabled
+    if (frameSnapEnabled.value) {
+      const frameDuration = 1 / frameRate;
+      time = Math.round(time / frameDuration) * frameDuration;
+    }
+    
+    // Track velocity for inertial scrolling
+    const now = performance.now();
+    const dt = now - lastPlayheadDragTime.value;
+    if (dt > 0 && dt < 100) { // Only track if reasonable time delta
+      const dx = cursorX - lastPlayheadDragX.value;
+      // Convert pixel velocity to time velocity
+      const pixelVelocity = dx / dt; // pixels per ms
+      const timeVelocity = (pixelVelocity / timelineWidth) * totalDuration.value * 1000; // time units per second
+      // Smooth velocity with exponential moving average
+      playheadVelocity.value = playheadVelocity.value * 0.7 + timeVelocity * 0.3;
+    }
+    lastPlayheadDragTime.value = now;
+    lastPlayheadDragX.value = cursorX;
+    
+    // Play audio scrub preview at the current position
+    playScrubAudio(time);
+    
     emit('seek', Math.max(0, time));
   }
 
@@ -3186,6 +5088,143 @@
 
     document.removeEventListener('mousemove', onPlayheadDragMove);
     document.removeEventListener('mouseup', onPlayheadDragEnd);
+    
+    // Stop audio scrubbing
+    stopAudioScrubbing();
+    
+    // Apply inertial scrolling if velocity is significant
+    const velocity = playheadVelocity.value;
+    if (Math.abs(velocity) > 0.5) { // Minimum velocity threshold
+      applyInertialScrolling(velocity);
+    }
+  }
+  
+  /**
+   * Apply inertial scrolling with smooth deceleration
+   */
+  function applyInertialScrolling(initialVelocity: number) {
+    const friction = 0.92; // Deceleration factor (lower = faster stop)
+    const minVelocity = 0.1; // Stop when velocity drops below this
+    let velocity = initialVelocity;
+    let lastTime = performance.now();
+    
+    function animate() {
+      const now = performance.now();
+      const dt = (now - lastTime) / 1000; // Convert to seconds
+      lastTime = now;
+      
+      // Apply velocity to current time
+      const newTime = Math.max(0, Math.min(totalDuration.value, props.currentTime + velocity * dt));
+      emit('seek', newTime);
+      
+      // Apply friction
+      velocity *= friction;
+      
+      // Continue animation if velocity is still significant
+      if (Math.abs(velocity) > minVelocity && newTime > 0 && newTime < totalDuration.value) {
+        inertialAnimationId = requestAnimationFrame(animate);
+      } else {
+        inertialAnimationId = null;
+      }
+    }
+    
+    inertialAnimationId = requestAnimationFrame(animate);
+  }
+
+  /**
+   * Initialize audio scrubbing context and load audio buffer from video source
+   */
+  async function initAudioScrubbing() {
+    if (scrubAudioContext) return; // Already initialized
+    
+    try {
+      scrubAudioContext = new AudioContext();
+      
+      // Try to load audio from the video source
+      const videoSrc = props.videoSrc || props.videoPath;
+      if (!videoSrc) return;
+      
+      let audioUrl = videoSrc;
+      
+      // Convert local file path to streaming URL if needed
+      if (!videoSrc.startsWith('http') && !videoSrc.startsWith('data:')) {
+        const port = await invoke<number>('get_video_server_port');
+        const encodedPath = btoa(unescape(encodeURIComponent(videoSrc)));
+        audioUrl = `http://localhost:${port}/video/${encodedPath}`;
+      }
+      
+      const response = await fetch(audioUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      scrubAudioBuffer = await scrubAudioContext.decodeAudioData(arrayBuffer);
+      console.log('[AudioScrub] Audio buffer loaded, duration:', scrubAudioBuffer.duration);
+    } catch (err) {
+      console.warn('[AudioScrub] Failed to initialize audio scrubbing:', err);
+      scrubAudioBuffer = null;
+    }
+  }
+
+  /**
+   * Play a short audio snippet at the given time position for scrubbing preview
+   */
+  function playScrubAudio(time: number) {
+    if (!audioScrubEnabled.value || !scrubAudioContext || !scrubAudioBuffer) return;
+    
+    // Throttle audio playback to avoid overlapping snippets
+    const now = performance.now();
+    if (now - lastScrubTime < SCRUB_SNIPPET_DURATION * 800) return; // 80% of snippet duration
+    lastScrubTime = now;
+    
+    // Stop any currently playing scrub audio
+    if (scrubSourceNode) {
+      try {
+        scrubSourceNode.stop();
+      } catch (_e) {
+        // Ignore errors from already stopped nodes
+      }
+      scrubSourceNode = null;
+    }
+    
+    // Clamp time to valid range
+    const startTime = Math.max(0, Math.min(time, scrubAudioBuffer.duration - SCRUB_SNIPPET_DURATION));
+    if (startTime < 0 || startTime >= scrubAudioBuffer.duration) return;
+    
+    try {
+      // Create a new source node for this snippet
+      scrubSourceNode = scrubAudioContext.createBufferSource();
+      scrubSourceNode.buffer = scrubAudioBuffer;
+      scrubSourceNode.connect(scrubAudioContext.destination);
+      
+      // Play a short snippet starting at the scrub position
+      scrubSourceNode.start(0, startTime, SCRUB_SNIPPET_DURATION);
+    } catch (err) {
+      console.warn('[AudioScrub] Failed to play scrub audio:', err);
+    }
+  }
+
+  /**
+   * Stop and cleanup audio scrubbing
+   */
+  function stopAudioScrubbing() {
+    if (scrubSourceNode) {
+      try {
+        scrubSourceNode.stop();
+      } catch (_e) {
+        // Ignore errors
+      }
+      scrubSourceNode = null;
+    }
+  }
+
+  /**
+   * Cleanup audio scrubbing context on unmount
+   */
+  function cleanupAudioScrubbing() {
+    stopAudioScrubbing();
+    if (scrubAudioContext) {
+      scrubAudioContext.close();
+      scrubAudioContext = null;
+    }
+    scrubAudioBuffer = null;
   }
 
   // Video source functions (editor mode)
@@ -3265,8 +5304,14 @@
   }
 
   function onSourceClick(e: MouseEvent, source: VideoEditorSource) {
-    // Select the source
+    // Select the source (with multi-select support via modifier keys)
     selectItem('source', source.id);
+    
+    // Emit multi-select event with modifier keys for parent to handle
+    emit('sourceSelect', source.id, {
+      shift: e.shiftKey,
+      ctrl: e.ctrlKey || e.metaKey,
+    });
 
     // Calculate the clicked position within the source and seek there
     const sourceEl = e.currentTarget as HTMLElement;
@@ -3283,6 +5328,12 @@
 
   function onSourceMouseDown(e: MouseEvent, source: VideoEditorSource) {
     if (e.button !== 0) return;
+    
+    // Prevent editing if track is locked
+    if (videoTrackState.isLocked) {
+      return;
+    }
+    
     e.preventDefault();
 
     selectItem('source', source.id);
@@ -3374,10 +5425,11 @@
         newStartTime = snapResult.startTime;
         newEndTime = snapResult.endTime;
         activeSnapTime.value = snapResult.snapTime;
+        activeSnapTrackType.value = snapResult.snapTrackType;
       } else {
         // If no snap found, find the closest segment edge and snap to it
         const targets = getSnapTargets(dragSourceInfo.value.sourceId);
-        let closestTarget: { time: number; distance: number } | null = null;
+        let closestTarget: { time: number; distance: number; trackType?: string } | null = null;
 
         // Check both start and end edges
         for (const target of targets) {
@@ -3386,10 +5438,10 @@
             const distanceToEnd = Math.abs(newEndTime - target.time);
 
             if (!closestTarget || distanceToStart < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToStart };
+              closestTarget = { time: target.time, distance: distanceToStart, trackType: target.trackType };
             }
             if (distanceToEnd < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToEnd };
+              closestTarget = { time: target.time, distance: distanceToEnd, trackType: target.trackType };
             }
           }
         }
@@ -3410,6 +5462,7 @@
             newStartTime = newEndTime - duration;
           }
           activeSnapTime.value = closestTarget.time;
+          activeSnapTrackType.value = closestTarget.trackType || null;
         }
       }
     } else {
@@ -3419,8 +5472,10 @@
         newStartTime = snapResult.startTime;
         newEndTime = snapResult.endTime;
         activeSnapTime.value = snapResult.snapTime;
+        activeSnapTrackType.value = snapResult.snapTrackType;
       } else {
         activeSnapTime.value = null;
+        activeSnapTrackType.value = null;
       }
     }
 
@@ -3520,8 +5575,83 @@
     dragSourceInfo.value = null;
     dragPreview.value = null;
     activeSnapTime.value = null;
+    activeSnapTrackType.value = null;
     document.removeEventListener('mousemove', onSourceDragMove);
     document.removeEventListener('mouseup', onSourceDragEnd);
+  }
+
+  // Segment context menu state (for Clip Mode)
+  const segmentContextMenu = reactive({
+    visible: false,
+    x: 0,
+    y: 0,
+    segment: null as TrimSegment | null,
+  });
+
+  function onSegmentContextMenu(e: MouseEvent, segment: TrimSegment) {
+    segmentContextMenu.visible = true;
+    segmentContextMenu.x = e.clientX;
+    segmentContextMenu.y = e.clientY;
+    segmentContextMenu.segment = segment;
+  }
+
+  function closeSegmentContextMenu() {
+    segmentContextMenu.visible = false;
+    segmentContextMenu.segment = null;
+  }
+
+  async function extractAudioFromSegment() {
+    if (!segmentContextMenu.segment || !props.videoPath) return;
+
+    const segment = segmentContextMenu.segment;
+    closeSegmentContextMenu();
+
+    isExtractingAudio.value = true;
+
+    try {
+      console.log('[ClipEditorTimeline] Extracting audio from segment:', segment.id);
+
+      // Calculate the trim parameters based on the segment's position relative to clip start
+      // segment.startTime is relative to clipStart
+      // So absolute start time in video = props.clipStart + segment.startTime
+      const trimStart = props.clipStart + segment.startTime;
+      const segmentDuration = segment.endTime - segment.startTime;
+
+      console.log('[ClipEditorTimeline] Extraction params:', {
+        clipStart: props.clipStart,
+        segmentStartTime: segment.startTime,
+        calculatedTrimStart: trimStart,
+        segmentDuration,
+      });
+
+      // Call Rust command to extract audio
+      const result = await invoke<{ file_path: string; filename: string; duration: number }>('extract_audio_to_file', {
+        videoPath: props.videoPath,
+        sourceId: 'main', // Use generic ID for clip mode
+        trimStart: trimStart,
+        trimDuration: segmentDuration,
+      });
+
+      console.log('[ClipEditorTimeline] Audio extraction complete:', result);
+
+      // Audio track should start at the segment's start time on the timeline
+      const audioStartTime = segment.startTime;
+      const audioEndTime = audioStartTime + result.duration;
+
+      emit('extractedAudio', {
+        sourceId: 'main',
+        filePath: result.file_path,
+        filename: result.filename,
+        duration: result.duration,
+        startTime: audioStartTime,
+        endTime: audioEndTime,
+        sourceName: 'Extracted Audio',
+      });
+    } catch (error) {
+      console.error('[ClipEditorTimeline] Failed to extract audio:', error);
+    } finally {
+      isExtractingAudio.value = false;
+    }
   }
 
   // Source context menu handlers
@@ -3675,6 +5805,156 @@
     });
   }
 
+  /**
+   * Add a freeze frame at the current playhead position
+   * Creates a still image segment from the current video frame
+   */
+  // Thumbnail cache for filmstrip thumbnails (sourceId -> cached thumbnail data)
+  const thumbnailCache = ref<Map<string, { thumbnails: { width: number; bgPosition: number }[]; zoomLevel: number; containerWidth: number }>>(new Map());
+  
+  // Thumbnail loading state (sourceId -> loading status)
+  const thumbnailLoadingState = ref<Map<string, boolean>>(new Map());
+
+  /**
+   * Get adaptive thumbnail density based on zoom level
+   * Higher zoom = more thumbnails for detail, lower zoom = fewer for performance
+   */
+  function getAdaptiveThumbnailWidth(): number {
+    const baseWidth = 60;
+    if (zoomLevel.value < 1) return baseWidth * 1.5; // Fewer thumbnails when zoomed out
+    if (zoomLevel.value < 2) return baseWidth;
+    if (zoomLevel.value < 5) return baseWidth * 0.8; // More thumbnails when zoomed in
+    return baseWidth * 0.6; // Maximum density at high zoom
+  }
+
+  /**
+   * Check if thumbnail is loading for a source
+   */
+  function isThumbnailLoading(sourceId: string): boolean {
+    return thumbnailLoadingState.value.get(sourceId) ?? false;
+  }
+
+  /**
+   * Generate filmstrip thumbnail positions for a video source
+   * Uses caching and adaptive density based on zoom level
+   */
+  function getFilmstripThumbnails(source: VideoEditorSource): { width: number; bgPosition: number }[] {
+    const THUMB_WIDTH = getAdaptiveThumbnailWidth(); // Adaptive density based on zoom
+    const duration = source.end_time - source.start_time;
+    const totalDur = props.editorMode ? props.duration : totalDuration.value;
+    
+    if (totalDur <= 0 || duration <= 0) return [];
+    
+    // Calculate the pixel width of this source segment
+    const segmentWidthPercent = (duration / totalDur) * 100;
+    const containerWidth = contentWrapperRef.value?.offsetWidth || 1000;
+    const segmentWidth = (segmentWidthPercent / 100) * containerWidth * zoomLevel.value;
+    
+    // Check cache - invalidate if zoom level or container width changed significantly
+    const cacheKey = source.id;
+    const cached = thumbnailCache.value.get(cacheKey);
+    if (cached && 
+        Math.abs(cached.zoomLevel - zoomLevel.value) < 0.1 && 
+        Math.abs(cached.containerWidth - containerWidth) < 50) {
+      return cached.thumbnails;
+    }
+    
+    // Calculate number of thumbnails needed
+    const numThumbs = Math.max(1, Math.ceil(segmentWidth / THUMB_WIDTH));
+    const actualThumbWidth = segmentWidth / numThumbs;
+    
+    // Generate thumbnail data
+    const thumbnails: { width: number; bgPosition: number }[] = [];
+    const sourceDuration = source.source_duration || duration;
+    const trimStart = source.trim_start || 0;
+    
+    for (let i = 0; i < numThumbs; i++) {
+      // Calculate the time position within the source for this thumbnail
+      const timeOffset = (i / numThumbs) * duration;
+      const sourceTime = trimStart + timeOffset;
+      // Convert to percentage position in the thumbnail image (0-100)
+      const bgPosition = sourceDuration > 0 ? (sourceTime / sourceDuration) * 100 : 0;
+      
+      thumbnails.push({
+        width: actualThumbWidth,
+        bgPosition: Math.min(100, Math.max(0, bgPosition)),
+      });
+    }
+    
+    // Cache the result
+    thumbnailCache.value.set(cacheKey, {
+      thumbnails,
+      zoomLevel: zoomLevel.value,
+      containerWidth,
+    });
+    
+    return thumbnails;
+  }
+
+  /**
+   * Get the speed of a video source (defaults to 1.0)
+   */
+  function getSourceSpeed(source: VideoEditorSource | null): number {
+    return source?.speed ?? 1;
+  }
+
+  /**
+   * Set the playback speed of the currently selected source
+   */
+  function setSourceSpeed(speed: number) {
+    if (!sourceContextMenu.source) return;
+    
+    const source = sourceContextMenu.source;
+    closeSourceContextMenu();
+    
+    // Emit update to change the source speed
+    emit('updateSource', source.id, { speed });
+  }
+
+  /**
+   * Open the speed curve editor for the currently selected source
+   */
+  function openSpeedCurveEditor() {
+    if (!sourceContextMenu.source) return;
+    
+    const source = sourceContextMenu.source;
+    closeSourceContextMenu();
+    
+    // Emit event to open speed curve editor in parent component
+    emit('openSpeedCurveEditor', source.id);
+  }
+
+  function addFreezeFrame() {
+    if (!sourceContextMenu.source) return;
+    
+    const source = sourceContextMenu.source;
+    closeSourceContextMenu();
+    
+    // Calculate the time within the source where the playhead is
+    const playheadTime = props.currentTime;
+    
+    // Check if playhead is within this source's time range
+    if (playheadTime < source.start_time || playheadTime > source.end_time) {
+      // Playhead is not within this source - use the source's start time
+      const sourceTime = source.trim_start ?? 0;
+      emit('freezeFrame', {
+        sourceId: source.id,
+        time: sourceTime,
+        duration: 2.0, // Default 2 second freeze frame
+      });
+    } else {
+      // Calculate the corresponding time in the source video
+      const offsetInTimeline = playheadTime - source.start_time;
+      const sourceTime = (source.trim_start ?? 0) + offsetInTimeline;
+      
+      emit('freezeFrame', {
+        sourceId: source.id,
+        time: sourceTime,
+        duration: 2.0, // Default 2 second freeze frame
+      });
+    }
+  }
+
   function onTimelineDragOver(_e: DragEvent) {
     isDragOverTimeline.value = true;
   }
@@ -3756,10 +6036,12 @@
     const rulerRect = rulerContent.getBoundingClientRect();
     const cursorXInRuler = event.clientX - rulerRect.left;
 
-    // Seek playhead to cursor position if cursor is over the ruler content area
-    // Offset slightly to the left so the playhead doesn't block further scroll events
-    const playheadOffset = 15; // pixels to the left of cursor
-    if (cursorXInRuler >= 0 && cursorXInRuler <= rulerRect.width) {
+    // Detect pinch-to-zoom gesture (trackpad pinch sets ctrlKey)
+    const isPinchGesture = event.ctrlKey;
+    
+    // For regular scroll (not pinch), seek playhead to cursor position
+    if (!isPinchGesture && cursorXInRuler >= 0 && cursorXInRuler <= rulerRect.width) {
+      const playheadOffset = 15; // pixels to the left of cursor
       const offsetX = Math.max(0, cursorXInRuler - playheadOffset);
       const percent = offsetX / rulerRect.width;
       const time = clickPositionToTime(percent);
@@ -3782,7 +6064,19 @@
     // Apply zoom with dynamic step based on current zoom level
     const oldZoom = zoomLevel.value;
     const step = getZoomStep();
-    const delta = event.deltaY > 0 ? -step : step;
+    
+    // For pinch gestures, use deltaY directly for smoother zoom
+    // Pinch out (spread fingers) = negative deltaY = zoom in
+    // Pinch in (pinch fingers) = positive deltaY = zoom out
+    let delta: number;
+    if (isPinchGesture) {
+      // Pinch gesture: use smaller, smoother steps
+      delta = -event.deltaY * 0.01; // Invert and scale for natural pinch behavior
+    } else {
+      // Regular scroll wheel
+      delta = event.deltaY > 0 ? -step : step;
+    }
+    
     const newZoom = Math.max(MIN_ZOOM.value, oldZoom + delta);
 
     if (newZoom === oldZoom) return;
@@ -3798,10 +6092,67 @@
       scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
     });
   }
+  
+  /**
+   * Handle wheel events on the timeline container for pinch-to-zoom
+   * This allows pinch gestures anywhere on the timeline, not just the ruler
+   */
+  function onTimelineWheel(event: WheelEvent) {
+    // Only handle pinch-to-zoom gestures (ctrlKey is set by trackpad pinch)
+    if (!event.ctrlKey) return;
+    
+    event.preventDefault();
+    
+    if (!timelineScrollContainer.value) return;
+    
+    const scrollContainer = timelineScrollContainer.value;
+    const containerRect = scrollContainer.getBoundingClientRect();
+    
+    // Cursor position relative to the scroll container's viewport
+    const cursorXInContainer = event.clientX - containerRect.left;
+    
+    // Current scroll position and content width
+    const scrollLeft = scrollContainer.scrollLeft;
+    const contentWidth = scrollContainer.scrollWidth;
+    
+    // Position in the full content (scroll + cursor offset)
+    const contentX = scrollLeft + cursorXInContainer;
+    
+    // Calculate the "logical" position (0-1 range, independent of zoom)
+    const logicalPosition = contentX / contentWidth;
+    
+    // Apply zoom - pinch out = zoom in, pinch in = zoom out
+    const oldZoom = zoomLevel.value;
+    const delta = -event.deltaY * 0.01; // Invert and scale for natural pinch behavior
+    const newZoom = Math.max(MIN_ZOOM.value, oldZoom + delta);
+    
+    if (newZoom === oldZoom) return;
+    
+    zoomLevel.value = newZoom;
+    
+    // After zoom, adjust scroll to keep cursor position stable
+    nextTick(() => {
+      const newContentWidth = scrollContainer.scrollWidth;
+      const newContentX = logicalPosition * newContentWidth;
+      const newScrollLeft = newContentX - cursorXInContainer;
+      
+      scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
+    });
+  }
 
   // Segment dragging
   function onSegmentMouseDown(e: MouseEvent, type: ItemType, id: string, item: any) {
     if (e.button !== 0) return;
+    
+    // Check if track is locked - prevent editing
+    if (type === 'trim' || type === 'source') {
+      if (videoTrackState.isLocked) return;
+    } else if (type === 'audio') {
+      // Check if this specific audio track is locked
+      const audioTrack = props.audioTracks.find(t => t.id === id);
+      if (audioTrack?.isLocked) return;
+    }
+    
     e.preventDefault();
     e.stopPropagation();
 
@@ -3980,8 +6331,10 @@
           newEndTime = snapResult.endTime;
         }
         activeSnapTime.value = snapResult.snapTime;
+        activeSnapTrackType.value = snapResult.snapTrackType;
       } else {
         activeSnapTime.value = null;
+        activeSnapTrackType.value = null;
       }
     } else if (dragInfo.value.type === 'audio') {
       // Audio uses simple linear positioning
@@ -4002,8 +6355,10 @@
           newEndTime = snapResult.endTime;
         }
         activeSnapTime.value = snapResult.snapTime;
+        activeSnapTrackType.value = snapResult.snapTrackType;
       } else {
         activeSnapTime.value = null;
+        activeSnapTrackType.value = null;
       }
     } else {
       // For text, sticker, effect, filter - use gap-aware positioning
@@ -4033,8 +6388,10 @@
           newEndTime = snapResult.endTime;
         }
         activeSnapTime.value = snapResult.snapTime;
+        activeSnapTrackType.value = snapResult.snapTrackType;
       } else {
         activeSnapTime.value = null;
+        activeSnapTrackType.value = null;
       }
     }
 
@@ -4158,6 +6515,7 @@
     dragInfo.value = null;
     dragPreview.value = null;
     activeSnapTime.value = null;
+    activeSnapTrackType.value = null;
 
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
@@ -4210,13 +6568,16 @@
         if (snapResult.didSnap && snapResult.time >= 0) {
           newStartTime = snapResult.time;
           activeSnapTime.value = snapResult.time;
+          activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
         } else {
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
 
         if (newEndTime - newStartTime < minDuration) {
           newStartTime = newEndTime - minDuration;
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
       } else {
         newEndTime = Math.min(props.duration, resizeInfo.value.originalEndTime + deltaTime);
@@ -4226,13 +6587,16 @@
         if (snapResult.didSnap && snapResult.time <= props.duration) {
           newEndTime = snapResult.time;
           activeSnapTime.value = snapResult.time;
+          activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
         } else {
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
 
         if (newEndTime - newStartTime < minDuration) {
           newEndTime = newStartTime + minDuration;
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
       }
     } else if (resizeInfo.value.type === 'audio') {
@@ -4245,13 +6609,16 @@
         if (snapResult.didSnap && snapResult.time >= 0) {
           newStartTime = snapResult.time;
           activeSnapTime.value = snapResult.time;
+          activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
         } else {
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
 
         if (newEndTime - newStartTime < minDuration) {
           newStartTime = newEndTime - minDuration;
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
       } else {
         newEndTime = resizeInfo.value.originalEndTime + deltaTime;
@@ -4261,13 +6628,16 @@
         if (snapResult.didSnap) {
           newEndTime = snapResult.time;
           activeSnapTime.value = snapResult.time;
+          activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
         } else {
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
 
         if (newEndTime - newStartTime < minDuration) {
           newEndTime = newStartTime + minDuration;
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
       }
     } else if (resizeInfo.value.type === 'source') {
@@ -4298,11 +6668,14 @@
             newStartTime = snapResult.time;
             newTrimStart = snappedTrimStart;
             activeSnapTime.value = snapResult.time;
+            activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
           } else {
              activeSnapTime.value = null;
+             activeSnapTrackType.value = null;
           }
         } else {
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
 
         // Min duration check
@@ -4310,35 +6683,43 @@
           newStartTime = newEndTime - minDuration;
           newTrimStart = originalTrimStart + (newStartTime - resizeInfo.value.originalStartTime);
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
         
         newTrimEnd = originalTrimEnd;
       } else {
         // Right handle
         newEndTime = Math.min(props.duration, resizeInfo.value.originalEndTime + deltaTime);
-        newTrimEnd = originalTrimEnd + (newEndTime - resizeInfo.value.originalEndTime);
+        // Calculate newTrimEnd, handling potentially undefined originalTrimEnd
+        const baseTrimEnd = originalTrimEnd ?? sourceDuration;
+        newTrimEnd = baseTrimEnd + (newEndTime - resizeInfo.value.originalEndTime);
 
         // Constrain trim_end <= sourceDuration
-        if (newTrimEnd !== undefined && newTrimEnd > sourceDuration) {
+        if (newTrimEnd > sourceDuration) {
             newTrimEnd = sourceDuration;
-            newEndTime = resizeInfo.value.originalEndTime + (newTrimEnd - originalTrimEnd);
+            newEndTime = resizeInfo.value.originalEndTime + (sourceDuration - baseTrimEnd);
         }
 
         // Apply snapping to the right edge
         const snapResult = applySnapToTime(newEndTime, resizeInfo.value.id);
         if (snapResult.didSnap && snapResult.time <= props.duration) {
              const snappedDelta = snapResult.time - resizeInfo.value.originalEndTime;
-             const snappedTrimEnd = originalTrimEnd + snappedDelta;
+             // Ensure we have a valid base for snapped calculation
+             const baseTrimEnd = originalTrimEnd ?? sourceDuration;
+             const snappedTrimEnd = baseTrimEnd + snappedDelta;
              
              if (snappedTrimEnd <= sourceDuration) {
                  newEndTime = snapResult.time;
                  newTrimEnd = snappedTrimEnd;
                  activeSnapTime.value = snapResult.time;
+                 activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
              } else {
                  activeSnapTime.value = null;
+                 activeSnapTrackType.value = null;
              }
         } else {
              activeSnapTime.value = null;
+             activeSnapTrackType.value = null;
         }
 
         // Min duration check
@@ -4346,6 +6727,7 @@
           newEndTime = newStartTime + minDuration;
           newTrimEnd = originalTrimStart + (newEndTime - newStartTime);
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
         
         newTrimStart = originalTrimStart;
@@ -4362,13 +6744,16 @@
         if (snapResult.didSnap && snapResult.time >= 0) {
           newStartTime = snapResult.time;
           activeSnapTime.value = snapResult.time;
+          activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
         } else {
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
 
         if (newEndTime - newStartTime < minDuration) {
           newStartTime = newEndTime - minDuration;
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
       } else {
         const originalEndPercent = effectiveTimeToVisualPercent(resizeInfo.value.originalEndTime);
@@ -4380,13 +6765,16 @@
         if (snapResult.didSnap && snapResult.time <= totalDuration.value) {
           newEndTime = snapResult.time;
           activeSnapTime.value = snapResult.time;
+          activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
         } else {
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
 
         if (newEndTime - newStartTime < minDuration) {
           newEndTime = newStartTime + minDuration;
           activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
         // Constrain to total duration
         if (newEndTime > totalDuration.value) {
@@ -4516,6 +6904,7 @@
     rippleState.value = null;
     rollState.value = null;
     activeSnapTime.value = null;
+    activeSnapTrackType.value = null;
 
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onResizeEnd);
@@ -4627,17 +7016,8 @@
         }
       }
 
-      // Normalize peaks to use full available height (find max peak value)
-      let maxPeakValue = 0;
-      displayPeaks.forEach((peak: any) => {
-        const absMax = Math.abs(peak.max);
-        const absMin = Math.abs(peak.min);
-        if (absMax > maxPeakValue) maxPeakValue = absMax;
-        if (absMin > maxPeakValue) maxPeakValue = absMin;
-      });
-
-      // Normalize peaks if they're not already at full scale
-      const normalizer = maxPeakValue > 0 ? maxPeakValue : 1;
+      // Use fixed normalizer to preserve relative volume dynamics
+      const normalizer = 1.0;
       const normalizedPeaks = displayPeaks.map((peak: any) => ({
         min: peak.min / normalizer,
         max: peak.max / normalizer,
@@ -4660,7 +7040,7 @@
         segmentEndTime: segment.endTime,
         barWidth,
         barSpacing,
-        amplitude: 0.7,
+        amplitude: 1.0, // Use full available height (scaled by 0.9 internally)
       });
     } catch (error) {
       console.error('[ClipEditorTimeline] Error rendering waveform:', error);
@@ -4687,11 +7067,14 @@
 
     const { width, height, peaks, currentTime, segmentStartTime, segmentEndTime, barWidth, barSpacing, amplitude } =
       options;
-    const barW = Math.max(1, barWidth * 0.7); // thinner bars
-    const barS = Math.max(0.5, barSpacing * 0.6); // tighter spacing
-    const totalBarWidth = barW + barS;
-    const maxBarHeight = height * (amplitude * 0.9); // slightly shorter to avoid touching top
-    const baselineY = height - 1; // keep a small gap at bottom
+    
+    // Use pixel-based iteration logic
+    const barW = 3; // Fixed visual width in pixels
+    const gap = 1;
+    const step = barW + gap;
+    const numBars = Math.ceil(width / step);
+    const maxBarHeight = height * (amplitude * 0.9);
+    const baselineY = height - 1;
 
     // Calculate playhead position within segment
     const isWithinSegment = currentTime >= segmentStartTime && currentTime <= segmentEndTime;
@@ -4709,25 +7092,45 @@
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1.0;
 
-    peaks.forEach((peak, index) => {
-      const x = index * totalBarWidth;
-      if (x >= width) return;
+    // Use fixed normalizer of 1.0 since peaks are already processed by caller
+    const normalizer = 1.0;
 
-      const barCenter = x + barW / 2;
-      const isBeforePlayhead = barCenter < playheadPixel;
-      const color = '#e5e7eb';
+    // Peak threshold for clipping warning (0.95 = 95% of max)
+    const PEAK_WARNING_THRESHOLD = 0.85;
+    const PEAK_CLIPPING_THRESHOLD = 0.95;
 
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 1.0;
+    for (let i = 0; i < numBars; i++) {
+      const x = i * step;
+      
+      // Map current bar position to index in peaks array
+      const percent = i / numBars;
+      const peakIndex = Math.min(
+        Math.floor(percent * peaks.length),
+        peaks.length - 1
+      );
+      
+      const peak = peaks[peakIndex];
+      if (!peak) continue;
 
-      const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
+      // Apply normalization (fixed to 1.0)
+      const normMin = peak.min / normalizer;
+      const normMax = peak.max / normalizer;
+      
+      const magnitude = Math.max(Math.abs(normMax), Math.abs(normMin));
       const barHeight = Math.max(1, magnitude * maxBarHeight);
-      const actualBarWidth = Math.max(1, Math.min(barW, width - x));
-
-      if (barHeight > 0 && actualBarWidth > 0) {
-        ctx.fillRect(x, baselineY - barHeight, actualBarWidth, barHeight);
+      
+      // Color based on peak level (clipping indicator)
+      if (magnitude >= PEAK_CLIPPING_THRESHOLD) {
+        ctx.fillStyle = '#ef4444'; // Red for clipping
+      } else if (magnitude >= PEAK_WARNING_THRESHOLD) {
+        ctx.fillStyle = '#f59e0b'; // Orange/amber for warning
+      } else {
+        ctx.fillStyle = '#e5e7eb'; // Default gray
       }
-    });
+      
+      // Draw bar
+      ctx.fillRect(x, baselineY - barHeight, barW, barHeight);
+    }
 
     ctx.globalAlpha = 1.0;
   }
@@ -4876,118 +7279,20 @@
       const rect = canvas.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
 
-      // Get the trim range for this source (portion of the original video being shown)
-      // trim_start is where in the source video this segment starts
-      // trim_end is where in the source video this segment ends
-      // If trim_end is null, calculate it from trim_start + segment duration on timeline
+      // Get the trim range for this source
       const trimStart = source.trim_start ?? 0;
       const segmentDuration = source.end_time - source.start_time;
       const trimEnd = source.trim_end ?? trimStart + segmentDuration;
 
-      // Get the waveform peaks (now using simplified single-resolution structure)
+      // Get the waveform peaks
       const { duration, peaks } = data;
-
-      console.log('[renderSourceWaveform] Source:', sourceId, {
-        trimStart,
-        trimEnd,
-        sourceDuration: source.source_duration,
-        waveformDuration: duration,
-        peaksLength: peaks.length,
-        sourceStartTime: source.start_time,
-        sourceEndTime: source.end_time,
-      });
 
       if (duration <= 0 || peaks.length === 0) return;
 
-      // Extract peaks for this segment's time range
-      const startRatio = trimStart / duration;
-      const endRatio = trimEnd / duration;
-      const startIndex = Math.floor(startRatio * peaks.length);
-      const endIndex = Math.ceil(endRatio * peaks.length);
-      const segmentPeaks = peaks.slice(startIndex, endIndex);
-
-      console.log('[renderSourceWaveform] Peak extraction:', {
-        startRatio,
-        endRatio,
-        startIndex,
-        endIndex,
-        segmentPeaksLength: segmentPeaks.length,
-      });
-
-      if (segmentPeaks.length === 0) return;
-
       // Calculate how to best display the peaks across the canvas width
-      const canvasWidth = rect.width;
-      const numPeaks = segmentPeaks.length;
-
-      let displayPeaks = segmentPeaks;
-      let barWidth: number;
-      let barSpacing: number;
-
-      // Target a specific number of bars for consistent appearance
-      const targetBars = Math.min(numPeaks, Math.floor(canvasWidth / 3)); // ~3px per bar slot
-
-      if (numPeaks > targetBars) {
-        // Downsample to target number of bars
-        const step = numPeaks / targetBars;
-        displayPeaks = [];
-        for (let i = 0; i < targetBars; i++) {
-          const idx = Math.floor(i * step);
-          if (idx < numPeaks) {
-            displayPeaks.push(segmentPeaks[idx]);
-          }
-        }
-      }
-
-      // Calculate bar dimensions for visible vertical bars
-      const numBars = displayPeaks.length;
-      const totalWidth = canvasWidth / numBars;
-      barWidth = Math.max(2, Math.floor(totalWidth * 0.6));
-      barSpacing = totalWidth - barWidth;
-
-      // Normalize peaks to use full available height (find max peak value)
-      let maxPeakValue = 0;
-      displayPeaks.forEach((peak: any) => {
-        const absMax = Math.abs(peak.max);
-        const absMin = Math.abs(peak.min);
-        if (absMax > maxPeakValue) maxPeakValue = absMax;
-        if (absMin > maxPeakValue) maxPeakValue = absMin;
-      });
-
-      // Normalize peaks if they're not already at full scale
-      const normalizer = maxPeakValue > 0 ? maxPeakValue : 1;
-      const normalizedPeaks = displayPeaks.map((peak: any) => ({
-        min: peak.min / normalizer,
-        max: peak.max / normalizer,
-      }));
-
-      // Apply audio gain to peaks
-      const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
-      const gainedPeaks = normalizedPeaks.map((peak: any) => ({
-        min: Math.max(-1, peak.min * gainMultiplier),
-        max: Math.min(1, peak.max * gainMultiplier),
-      }));
-
-      // Render directly (same as renderSegmentWaveform but without resetting canvas)
       const width = rect.width;
       const height = rect.height;
       const amplitude = 0.7;
-      // Use the full slot width to ensure bars fill the entire canvas
-      const totalBarWidth = canvasWidth / numBars;
-      const barW = Math.max(1, totalBarWidth * 0.6);
-      const maxBarHeight = height * amplitude;
-      const baselineY = height;
-
-      // Calculate playhead position within segment
-      const segmentStartTime = source.start_time;
-      const segmentEndTime = source.end_time;
-      const isWithinSegment = props.currentTime >= segmentStartTime && props.currentTime <= segmentEndTime;
-      const playheadRatio = isWithinSegment
-        ? (props.currentTime - segmentStartTime) / (segmentEndTime - segmentStartTime)
-        : props.currentTime < segmentStartTime
-          ? 0
-          : 1;
-      const playheadPixel = playheadRatio * width;
 
       // Set canvas size and clear
       canvas.width = width;
@@ -5000,26 +7305,71 @@
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1.0;
 
-      // Draw waveform bars
-      gainedPeaks.forEach((peak: any, index: number) => {
-        const x = index * totalBarWidth;
-        if (x >= width) return;
+      // Calculate peak extraction range
+      const startRatio = Math.max(0, trimStart / duration);
+      const endRatio = Math.min(1, trimEnd / duration);
+      const startIndex = Math.floor(startRatio * peaks.length);
+      const endIndex = Math.ceil(endRatio * peaks.length);
 
-        const barCenter = x + barW / 2;
-        const isBeforePlayhead = barCenter < playheadPixel;
-        const color = '#e5e7eb';
+      // Safety check for valid range
+      if (startIndex >= peaks.length || endIndex <= startIndex) return;
 
-        ctx.fillStyle = color;
-        ctx.globalAlpha = 1.0;
+      const segmentPeaks = peaks.slice(startIndex, endIndex);
+      if (segmentPeaks.length === 0) return;
 
-        const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
+      // Use fixed normalizer of 1.0 to respect actual volume levels
+      const normalizer = 1.0;
+      const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
+
+      // Render using pixel-based iteration to guarantee full width coverage
+      const barWidth = 3; // Fixed visual width in pixels
+      const gap = 1;
+      const step = barWidth + gap;
+      const numBars = Math.ceil(width / step);
+      const baselineY = height;
+      const maxBarHeight = height * 0.9; // Use 90% of height for max amplitude
+
+      const segmentStartTime = source.start_time;
+      const segmentEndTime = source.end_time;
+
+      // Calculate playhead pixel position for coloring
+      let playheadPixel = -1;
+      if (props.currentTime >= segmentStartTime && props.currentTime <= segmentEndTime) {
+        const playheadRatio = (props.currentTime - segmentStartTime) / (segmentEndTime - segmentStartTime);
+        playheadPixel = playheadRatio * width;
+      } else if (props.currentTime > segmentEndTime) {
+        playheadPixel = width + 1; // All past
+      }
+
+      ctx.fillStyle = '#e5e7eb'; // Default color
+
+      for (let i = 0; i < numBars; i++) {
+        const x = i * step;
+
+        // Map current bar position to index in segmentPeaks
+        const percent = i / numBars;
+        const peakIndex = Math.min(
+          Math.floor(percent * segmentPeaks.length),
+          segmentPeaks.length - 1
+        );
+
+        const peak = segmentPeaks[peakIndex];
+        if (!peak) continue;
+
+        // Apply normalization and gain
+        const normMin = Math.max(-1, (peak.min / normalizer) * gainMultiplier);
+        const normMax = Math.min(1, (peak.max / normalizer) * gainMultiplier);
+
+        const magnitude = Math.max(Math.abs(normMax), Math.abs(normMin));
         const barHeight = Math.max(1, magnitude * maxBarHeight);
-        const actualBarWidth = Math.max(1, Math.min(barW, width - x));
 
-        if (barHeight > 0 && actualBarWidth > 0) {
-          ctx.fillRect(x, baselineY - barHeight, actualBarWidth, barHeight);
-        }
-      });
+        // Determine color based on playhead
+        const barCenter = x + barWidth / 2;
+        // Using same color for now as per original design, but structure allows change
+        ctx.fillStyle = '#e5e7eb';
+
+        ctx.fillRect(x, baselineY - barHeight, barWidth, barHeight);
+      }
 
       ctx.globalAlpha = 1.0;
     } catch (err) {
@@ -5204,7 +7554,7 @@
       const { peaks } = data;
       const width = rect.width;
       const height = rect.height;
-      const amplitude = 0.7;
+      const amplitude = 0.9;
       const maxBarHeight = height * amplitude;
       const baselineY = height; // Bars grow upward from bottom
 
@@ -5219,13 +7569,8 @@
 
       if (segmentPeaks.length === 0) return;
 
-      // Normalize peaks
-      let maxPeakValue = 0;
-      segmentPeaks.forEach((peak) => {
-        if (Math.abs(peak.max) > maxPeakValue) maxPeakValue = Math.abs(peak.max);
-        if (Math.abs(peak.min) > maxPeakValue) maxPeakValue = Math.abs(peak.min);
-      });
-      const normalizer = maxPeakValue > 0 ? maxPeakValue : 1;
+      // Use fixed normalizer of 1.0 to respect actual volume levels
+      const normalizer = 1.0;
 
       // Apply per-track volume and dB gain (matching audio playback behavior)
       const trackDbGain = props.trackDbValues?.[trackId] ?? 0;
@@ -5674,6 +8019,31 @@
     return activeSnapTime.value / duration;
   });
 
+  // Computed color class for snap indicator based on track type (cross-track snapping visual feedback)
+  const snapIndicatorColorClass = computed(() => {
+    const trackType = activeSnapTrackType.value;
+    switch (trackType) {
+      case 'video':
+        return 'bg-blue-400 shadow-blue-400/50';
+      case 'audio':
+        return 'bg-green-400 shadow-green-400/50';
+      case 'text':
+        return 'bg-purple-400 shadow-purple-400/50';
+      case 'sticker':
+        return 'bg-pink-400 shadow-pink-400/50';
+      case 'watermark':
+        return 'bg-cyan-400 shadow-cyan-400/50';
+      case 'effect':
+        return 'bg-orange-400 shadow-orange-400/50';
+      case 'filter':
+        return 'bg-yellow-400 shadow-yellow-400/50';
+      case 'system':
+        return 'bg-amber-400 shadow-amber-400/50'; // Playhead, markers, boundaries
+      default:
+        return 'bg-blue-400 shadow-blue-400/50';
+    }
+  });
+
   // Watch for playback state changes
   watch(
     () => props.isPlaying,
@@ -5779,13 +8149,54 @@
       return;
     }
 
+    // Copy/Paste/Duplicate/Group shortcuts (Ctrl/Cmd + C/V/D/G)
+    if (event.ctrlKey || event.metaKey) {
+      switch (event.key.toLowerCase()) {
+        case 'c':
+          // Copy selected items
+          if (!event.shiftKey) {
+            event.preventDefault();
+            copySelectedItems();
+            return;
+          }
+          break;
+        case 'v':
+          // Paste at playhead or in place
+          event.preventDefault();
+          if (event.shiftKey) {
+            // Ctrl+Shift+V = Paste in place (original position)
+            pasteItemsInPlace();
+          } else {
+            // Ctrl+V = Paste at playhead
+            pasteItems();
+          }
+          return;
+        case 'd':
+          // Duplicate selected items
+          event.preventDefault();
+          duplicateSelectedItems();
+          return;
+        case 'g':
+          // Group/Ungroup selected items
+          event.preventDefault();
+          if (event.shiftKey) {
+            // Ctrl+Shift+G = Ungroup
+            ungroupSelectedItems();
+          } else {
+            // Ctrl+G = Group
+            groupSelectedItems();
+          }
+          return;
+      }
+    }
+
     // Perform cut at playhead with X key or Ctrl+K
     if ((event.key === 'x' || event.key === 'X') || ((event.ctrlKey || event.metaKey) && (event.key === 'k' || event.key === 'K'))) {
       event.preventDefault();
       performCutAtPlayhead();
     }
 
-    // Tool Shortcuts
+    // Tool Shortcuts and J-K-L Playback Control
     if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
       switch (event.key.toLowerCase()) {
         case 'v':
@@ -5808,6 +8219,87 @@
         case 'u':
           setTool('slide');
           break;
+        // J-K-L Playback Control (industry standard)
+        case 'j':
+          // J = Play backward / decrease speed
+          event.preventDefault();
+          if (jklPlaybackSpeed.value > 0) {
+            // If playing forward, stop first
+            jklPlaybackSpeed.value = -1;
+          } else if (jklPlaybackSpeed.value === 0) {
+            // If stopped, start reverse at 1x
+            jklPlaybackSpeed.value = -1;
+          } else {
+            // Already playing backward, increase reverse speed
+            jklPlaybackSpeed.value = Math.max(-4, jklPlaybackSpeed.value - 1);
+          }
+          emit('setPlaybackSpeed', jklPlaybackSpeed.value);
+          break;
+        case 'k':
+          // K = Stop/Pause
+          event.preventDefault();
+          jklPlaybackSpeed.value = 0;
+          emit('togglePlayback');
+          break;
+        case 'l':
+          // L = Play forward / increase speed
+          event.preventDefault();
+          if (jklPlaybackSpeed.value < 0) {
+            // If playing backward, stop first
+            jklPlaybackSpeed.value = 1;
+          } else if (jklPlaybackSpeed.value === 0) {
+            // If stopped, start forward at 1x
+            jklPlaybackSpeed.value = 1;
+          } else {
+            // Already playing forward, increase speed
+            jklPlaybackSpeed.value = Math.min(4, jklPlaybackSpeed.value + 1);
+          }
+          emit('setPlaybackSpeed', jklPlaybackSpeed.value);
+          break;
+        // Space bar for play/pause toggle
+        case ' ':
+          event.preventDefault();
+          emit('togglePlayback');
+          break;
+        // M key to add marker at current playhead position
+        case 'm':
+          event.preventDefault();
+          addMarkerAtPlayhead();
+          break;
+        // Zoom shortcuts (without modifiers)
+        case '=':
+        case '+':
+          event.preventDefault();
+          zoomIn();
+          break;
+        case '-':
+          event.preventDefault();
+          zoomOut();
+          break;
+        // Z key for zoom to fit (Shift+Z for zoom to selection)
+        case 'z':
+          event.preventDefault();
+          zoomToFit();
+          break;
+        // I key for set in point
+        case 'i':
+          event.preventDefault();
+          emit('setInPoint', props.currentTime);
+          break;
+        // O key for set out point
+        case 'o':
+          event.preventDefault();
+          emit('setOutPoint', props.currentTime);
+          break;
+      }
+    }
+    
+    // Shift+Z for zoom to selection
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        zoomToSelection();
+        return;
       }
     }
 
@@ -5821,15 +8313,92 @@
       }
     }
 
-    // Handle arrow keys for seeking
+    // Handle arrow keys for frame-by-frame seeking (precise millisecond navigation)
     const maxDuration = props.editorMode ? props.duration : totalDuration.value;
+    const frameTime = 1 / 30; // Assume 30fps for frame-accurate stepping
+    
     if (!isCutToolActive.value && maxDuration > 0) {
-      if (event.key === 'ArrowLeft' && !isSeeking.value) {
+      if (event.key === 'ArrowLeft') {
         event.preventDefault();
-        startContinuousSeeking('reverse');
-      } else if (event.key === 'ArrowRight' && !isSeeking.value) {
+        if (event.shiftKey) {
+          // Shift+ArrowLeft = 10 frames back (for faster navigation)
+          emit('seek', Math.max(0, props.currentTime - frameTime * 10));
+        } else if (event.altKey) {
+          // Alt+ArrowLeft = 1 second back
+          emit('seek', Math.max(0, props.currentTime - 1));
+        } else {
+          // ArrowLeft = 1 frame back (precise frame-by-frame)
+          emit('seek', Math.max(0, props.currentTime - frameTime));
+        }
+      } else if (event.key === 'ArrowRight') {
         event.preventDefault();
-        startContinuousSeeking('forward');
+        if (event.shiftKey) {
+          // Shift+ArrowRight = 10 frames forward (for faster navigation)
+          emit('seek', Math.min(maxDuration, props.currentTime + frameTime * 10));
+        } else if (event.altKey) {
+          // Alt+ArrowRight = 1 second forward
+          emit('seek', Math.min(maxDuration, props.currentTime + 1));
+        } else {
+          // ArrowRight = 1 frame forward (precise frame-by-frame)
+          emit('seek', Math.min(maxDuration, props.currentTime + frameTime));
+        }
+      }
+    }
+
+    // Numpad navigation for frame-by-frame control
+    // Numpad 4/6 = frame back/forward, Numpad 1/3 = 10 frames, Numpad 7/9 = 1 second
+    if (!event.ctrlKey && !event.metaKey) {
+      switch (event.code) {
+        case 'Numpad4':
+          // Numpad 4 = 1 frame back
+          event.preventDefault();
+          emit('seek', Math.max(0, props.currentTime - frameTime));
+          break;
+        case 'Numpad6':
+          // Numpad 6 = 1 frame forward
+          event.preventDefault();
+          emit('seek', Math.min(maxDuration, props.currentTime + frameTime));
+          break;
+        case 'Numpad1':
+          // Numpad 1 = 10 frames back
+          event.preventDefault();
+          emit('seek', Math.max(0, props.currentTime - frameTime * 10));
+          break;
+        case 'Numpad3':
+          // Numpad 3 = 10 frames forward
+          event.preventDefault();
+          emit('seek', Math.min(maxDuration, props.currentTime + frameTime * 10));
+          break;
+        case 'Numpad7':
+          // Numpad 7 = 1 second back
+          event.preventDefault();
+          emit('seek', Math.max(0, props.currentTime - 1));
+          break;
+        case 'Numpad9':
+          // Numpad 9 = 1 second forward
+          event.preventDefault();
+          emit('seek', Math.min(maxDuration, props.currentTime + 1));
+          break;
+        case 'Numpad5':
+          // Numpad 5 = Go to start
+          event.preventDefault();
+          emit('seek', 0);
+          break;
+        case 'Numpad0':
+          // Numpad 0 = Go to end
+          event.preventDefault();
+          emit('seek', maxDuration);
+          break;
+        case 'Numpad2':
+          // Numpad 2 = Go to in point
+          event.preventDefault();
+          emit('goToInPoint');
+          break;
+        case 'Numpad8':
+          // Numpad 8 = Go to out point
+          event.preventDefault();
+          emit('goToOutPoint');
+          break;
       }
     }
   }
@@ -5841,11 +8410,8 @@
       return;
     }
 
-    // Stop continuous seeking when arrow keys are released
-    if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && isSeeking.value) {
-      event.preventDefault();
-      stopContinuousSeeking();
-    }
+    // Arrow keys now use single-frame stepping, no continuous seeking to stop
+    // Keep this handler for potential future use with other keys
   }
 
   // Lifecycle
@@ -5873,6 +8439,8 @@
     stopPlayheadAnimation();
     // Clean up continuous seeking
     stopContinuousSeeking();
+    // Clean up audio scrubbing
+    cleanupAudioScrubbing();
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
     document.removeEventListener('mousemove', onResizeMove);
