@@ -20,6 +20,7 @@ export interface VideoEditorAudioTrackRecord {
   start_time: number;
   end_time: number;
   volume: number;
+  pan: number;
   fade_in: number;
   fade_out: number;
   track_order: number;
@@ -170,8 +171,8 @@ export async function createVideoEditorAudioTrack(
 
   await db.execute(
     `INSERT INTO video_editor_audio_tracks 
-     (id, edit_id, file_path, name, start_time, end_time, volume, fade_in, fade_out, track_order, is_muted, is_solo, source_id, keyframes_data, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, edit_id, file_path, name, start_time, end_time, volume, pan, fade_in, fade_out, track_order, is_muted, is_solo, source_id, keyframes_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       editId,
@@ -180,6 +181,7 @@ export async function createVideoEditorAudioTrack(
       data.start_time || 0,
       data.end_time || 0,
       data.volume ?? 1.0,
+      data.pan ?? 0,
       data.fade_in || 0,
       data.fade_out || 0,
       data.track_order || 0,
@@ -199,6 +201,7 @@ export async function createVideoEditorAudioTrack(
     start_time: data.start_time || 0,
     end_time: data.end_time || 0,
     volume: data.volume ?? 1.0,
+    pan: data.pan ?? 0,
     fade_in: data.fade_in || 0,
     fade_out: data.fade_out || 0,
     track_order: data.track_order || 0,
@@ -243,6 +246,10 @@ export async function updateVideoEditorAudioTrack(
   if (data.volume !== undefined) {
     updates.push('volume = ?');
     values.push(data.volume);
+  }
+  if (data.pan !== undefined) {
+    updates.push('pan = ?');
+    values.push(data.pan);
   }
   if (data.fade_in !== undefined) {
     updates.push('fade_in = ?');

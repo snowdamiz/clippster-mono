@@ -711,6 +711,7 @@ export interface AudioTrack {
   startTime: number; // When audio starts in clip timeline
   endTime: number;
   volume: number; // 0-1
+  pan?: number; // -1 (left) to 1 (right), 0 is center
   fadeIn: number; // Duration in seconds
   fadeOut: number; // Duration in seconds
   trackOrder: number;
@@ -983,16 +984,13 @@ export interface ClipEditorDialogProps {
 
 // Editor tab types
 export type ClipEditorTab =
-  | 'sources'
-  | 'intro-outro'
+  | 'media'
   | 'audio'
-  | 'filters'
-  | 'text'
-  | 'stickers'
+  | 'overlays'
   | 'watermark'
-  | 'subtitles'
+  | 'captions'
   | 'aspect'
-  | 'transcript'
+  | 'effects'
   | 'export';
 
 // Timeline track types for clip editor
@@ -1145,18 +1143,15 @@ export interface VideoEditorProjectWithSources extends VideoEditorProject {
   sources: VideoEditorSource[];
 }
 
-// Editor tab types for standalone video editor (includes 'sources' tab)
+// Editor tab types for standalone video editor
 export type VideoEditorTab =
-  | 'sources'
-  | 'intro-outro'
+  | 'media'
   | 'audio'
-  | 'filters'
-  | 'text'
-  | 'stickers'
+  | 'overlays'
   | 'watermark'
-  | 'subtitles'
+  | 'captions'
   | 'aspect'
-  | 'transcript'
+  | 'effects'
   | 'export';
 
 // Source item displayed in the Sources tab (unified format for clips and raw videos)
@@ -1371,3 +1366,333 @@ export function calculateCrossfadeOpacity(
 }
 
 export * from './timeline-model';
+
+// ==========================================
+// Effects & Transitions Types
+// ==========================================
+
+// Transition Categories
+export type TransitionCategory = 'basic' | 'wipe' | 'slide' | 'zoom' | 'stylized' | 'shape' | 'directional';
+
+// Effect Categories
+export type EffectCategory = 'basic' | 'color' | 'stylized' | 'distortion' | 'motion' | 'overlay';
+
+// Transition Preset (built-in library)
+export interface TransitionPreset {
+  id: string;
+  name: string;
+  type: string;
+  category: TransitionCategory;
+  description?: string;
+  parametersSchema?: Record<string, unknown>;
+  defaultParameters?: Record<string, unknown>;
+  previewUrl?: string;
+  ffmpegFilter?: string;
+  cssAnimation?: string;
+  isBuiltin: boolean;
+  sortOrder: number;
+}
+
+// Effect Preset (built-in library)
+export interface EffectPreset {
+  id: string;
+  name: string;
+  type: string;
+  category: EffectCategory;
+  description?: string;
+  parametersSchema?: Record<string, unknown>;
+  defaultParameters?: Record<string, unknown>;
+  previewUrl?: string;
+  ffmpegFilter?: string;
+  cssFilter?: string;
+  isBuiltin: boolean;
+  sortOrder: number;
+}
+
+// Applied Transition (clip mode)
+export interface ClipTransition {
+  id: string;
+  clipEditId: string;
+  presetId?: string;
+  transitionType: string;
+  positionIndex: number; // Position between segments
+  duration: number;
+  parameters?: Record<string, unknown>;
+  easing: string;
+  createdAt: number;
+}
+
+// Applied Effect (clip mode)
+export interface ClipEffect {
+  id: string;
+  clipEditId: string;
+  presetId?: string;
+  effectType: string;
+  startTime: number;
+  endTime: number;
+  intensity: number; // 0-1
+  parameters?: Record<string, unknown>;
+  keyframes?: EffectKeyframe[];
+  blendMode: string;
+  layer: number;
+  isEnabled: boolean;
+  createdAt: number;
+}
+
+// Effect Keyframe for animated parameters
+export interface EffectKeyframe {
+  time: number;
+  parameter: string;
+  value: number;
+  easing?: string;
+}
+
+// Applied Transition (video editor mode)
+export interface VideoEditorTransitionEffect {
+  id: string;
+  editId: string;
+  presetId?: string;
+  transitionType: string;
+  fromSourceId?: string;
+  toSourceId?: string;
+  duration: number;
+  parameters?: Record<string, unknown>;
+  easing: string;
+  createdAt: number;
+}
+
+// Applied Effect (video editor mode)
+export interface VideoEditorEffect {
+  id: string;
+  editId: string;
+  presetId?: string;
+  effectType: string;
+  targetSourceId?: string;
+  startTime: number;
+  endTime: number;
+  intensity: number;
+  parameters?: Record<string, unknown>;
+  keyframes?: EffectKeyframe[];
+  blendMode: string;
+  layer: number;
+  isEnabled: boolean;
+  createdAt: number;
+}
+
+// Effect Parameters by Type
+export interface BlurEffectParams {
+  radius: number;
+  type?: 'gaussian' | 'motion' | 'radial';
+  angle?: number; // For motion blur
+  centerX?: number; // For radial blur
+  centerY?: number;
+}
+
+export interface ColorEffectParams {
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  hue?: number;
+  temperature?: number;
+  tint?: number;
+  vibrance?: number;
+}
+
+export interface GlitchEffectParams {
+  intensity: number;
+  frequency: number;
+  colorShift?: boolean;
+  scanlines?: boolean;
+}
+
+export interface VHSEffectParams {
+  tracking: number;
+  noise: number;
+  colorBleed: number;
+  scanlines: boolean;
+}
+
+export interface ShakeEffectParams {
+  intensity: number;
+  speed: number;
+  rotationAmount?: number;
+}
+
+// Transition Parameters
+export interface TransitionParams {
+  direction?: 'left' | 'right' | 'up' | 'down';
+  color?: string; // For dip to color
+  softness?: number; // Edge softness for wipes
+  angle?: number; // For diagonal wipes
+  segments?: number; // For kaleidoscope/blinds
+}
+
+// ============================================
+// Audio Effects Types
+// ============================================
+
+export type AudioEffectCategory =
+  | 'volume'
+  | 'eq'
+  | 'spatial'
+  | 'time'
+  | 'pitch'
+  | 'voice'
+  | 'enhancement'
+  | 'creative'
+  | 'fades';
+
+// Audio Effect Preset (built-in library)
+export interface AudioEffectPreset {
+  id: string;
+  name: string;
+  effectType: string;
+  category: AudioEffectCategory;
+  description?: string;
+  icon?: string;
+  ffmpegFilter: string;
+  webAudioConfig?: WebAudioConfig;
+  defaultParameters?: Record<string, unknown>;
+  parameterSchema?: AudioEffectParameterSchema[];
+  isBuiltIn: boolean;
+  createdAt: number;
+}
+
+// Web Audio API configuration for preview
+export interface WebAudioConfig {
+  nodeType: 'gain' | 'biquad' | 'delay' | 'convolver' | 'dynamics' | 'panner' | 'waveshaper' | 'worklet' | 'chain';
+  nodes?: WebAudioNodeConfig[];
+  params?: Record<string, number | string>;
+}
+
+export interface WebAudioNodeConfig {
+  type: string;
+  params: Record<string, number | string>;
+}
+
+// Parameter schema for UI generation
+export interface AudioEffectParameterSchema {
+  name: string;
+  label: string;
+  type: 'number' | 'select' | 'boolean';
+  min?: number;
+  max?: number;
+  step?: number;
+  default: number | string | boolean;
+  unit?: string;
+  options?: { value: string | number; label: string }[];
+}
+
+// Applied Audio Effect (per track)
+export interface AudioTrackEffect {
+  id: string;
+  trackId: string;
+  clipEditId?: string;
+  videoEditorProjectId?: string;
+  effectType: string;
+  presetId?: string;
+  startTime: number;
+  endTime: number;
+  intensity: number; // 0-1
+  parameters?: Record<string, unknown>;
+  isEnabled: boolean;
+  orderIndex: number;
+  createdAt: number;
+}
+
+// Audio Effect Keyframe for automation
+export interface AudioEffectKeyframe {
+  id: string;
+  effectId: string;
+  parameterName: string;
+  time: number;
+  value: number;
+  easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
+  createdAt: number;
+}
+
+// Audio Effect Parameter Types
+export interface GainParams {
+  gain: number; // dB, -60 to +24
+}
+
+export interface EQParams {
+  frequency: number; // Hz
+  gain?: number; // dB
+  q?: number; // Quality factor
+  type?: 'lowpass' | 'highpass' | 'bandpass' | 'lowshelf' | 'highshelf' | 'peaking' | 'notch';
+}
+
+export interface CompressorParams {
+  threshold: number; // dB
+  ratio: number;
+  attack: number; // ms
+  release: number; // ms
+  knee?: number; // dB
+  makeupGain?: number; // dB
+}
+
+export interface ReverbParams {
+  decay: number; // seconds
+  wetDry: number; // 0-1 mix
+  preDelay?: number; // ms
+  roomSize?: 'small' | 'medium' | 'large' | 'hall';
+}
+
+export interface DelayParams {
+  time: number; // ms
+  feedback: number; // 0-1
+  wetDry: number; // 0-1 mix
+  pingPong?: boolean;
+}
+
+export interface PitchShiftParams {
+  semitones: number; // -12 to +12
+  cents?: number; // -100 to +100
+  preserveFormants?: boolean;
+}
+
+export interface PanParams {
+  pan: number; // -1 (left) to +1 (right)
+}
+
+export interface FadeParams {
+  type: 'in' | 'out';
+  duration: number; // seconds
+  curve?: 'linear' | 'exponential' | 'logarithmic';
+}
+
+export interface NoiseReductionParams {
+  amount: number; // 0-1
+  sensitivity?: number;
+}
+
+export interface VoiceEffectParams {
+  preset: string; // chipmunk, deep, echo, etc.
+  intensity?: number;
+}
+
+export interface DistortionParams {
+  amount: number; // 0-1
+  type?: 'soft' | 'hard' | 'fuzz';
+}
+
+export interface ChorusParams {
+  rate: number; // Hz
+  depth: number; // 0-1
+  mix: number; // 0-1
+}
+
+export interface FlangerParams {
+  rate: number; // Hz
+  depth: number; // 0-1
+  feedback: number; // 0-1
+  mix: number; // 0-1
+}
+
+export interface PhaserParams {
+  rate: number; // Hz
+  depth: number; // 0-1
+  stages?: number;
+  feedback?: number;
+}

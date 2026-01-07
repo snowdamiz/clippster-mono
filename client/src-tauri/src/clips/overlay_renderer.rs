@@ -326,9 +326,9 @@ pub fn get_overlay_input_files(
 pub fn build_subtitle_filter(
     subtitle_settings: &SubtitleSettings,
     whisper_segments: &[WhisperSegment],
-    video_width: u32,
+    _video_width: u32,
     video_height: u32,
-    aspect_ratio: &str,
+    _aspect_ratio: &str,
 ) -> Result<Option<String>, String> {
     if !subtitle_settings.enabled {
         return Ok(None);

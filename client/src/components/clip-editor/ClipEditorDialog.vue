@@ -156,24 +156,22 @@
               <div
                 class="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent"
               >
-                <!-- Sources Tab (Available in both modes) -->
-                <SourcesTab
-                  v-if="editorMode ? activeEditorTab === 'sources' : activeTab === 'sources'"
-                  @add-source="onAddSource"
-                  @import-file="onImportFile"
-                />
-
-                <!-- Intro/Outro Tab (Available in both modes) -->
-                <IntroOutroTab
-                  v-if="editorMode ? activeEditorTab === 'intro-outro' : activeTab === 'intro-outro'"
+                <!-- Media Tab (Sources + Intro/Outro + Project Media) -->
+                <MediaTab
+                  v-if="editorMode ? activeEditorTab === 'media' : activeTab === 'media'"
+                  :project-id="editorProjectId"
                   :current-intro="currentIntro"
                   :current-outro="currentOutro"
+                  @add-source="onAddSource"
+                  @import-file="onImportFile"
+                  @add-project-media="onAddProjectMedia"
                   @add-intro="onAddIntro"
                   @add-outro="onAddOutro"
                   @remove-intro="onRemoveIntro"
                   @remove-outro="onRemoveOutro"
                 />
 
+                <!-- Audio Tab -->
                 <AudioMixerTab
                   v-if="editorMode ? activeEditorTab === 'audio' : activeTab === 'audio'"
                   :audio-tracks="audioTracks"
@@ -185,35 +183,14 @@
                   @delete-track="deleteAudioTrackLocal"
                   @update-original-db="updateOriginalDb"
                   @update-track-db="updateTrackDb"
+                  @update-track-pan="updateTrackPan"
                   @add-keyframe="addKeyframe"
                 />
 
-                <FiltersTab
-                  v-if="editorMode ? activeEditorTab === 'filters' : activeTab === 'filters'"
-                  :filter-segments="filterSegments"
-                  :current-time="effectivePreviewTime"
-                  :duration="totalSegmentDuration"
-                  @add-filter="addFilterSegment"
-                  @update-filter="updateFilterSegment"
-                  @delete-filter="deleteFilterSegment"
-                />
-
-                <TextOverlayTab
-                  v-if="editorMode ? activeEditorTab === 'text' : activeTab === 'text'"
+                <!-- Overlays Tab (Text + Stickers) -->
+                <OverlaysTab
+                  v-if="editorMode ? activeEditorTab === 'overlays' : activeTab === 'overlays'"
                   :text-overlays="textOverlays"
-                  :current-time="effectivePreviewTime"
-                  :duration="totalSegmentDuration"
-                  :preview-aspect-ratio="previewAspectRatio"
-                  :selected-aspect-ratios="selectedAspectRatios"
-                  :framing-configs="framingConfigs"
-                  @add-text="addTextOverlay"
-                  @update-text="updateTextOverlayLocal"
-                  @delete-text="deleteTextOverlayLocal"
-                  @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
-                />
-
-                <StickersTab
-                  v-if="editorMode ? activeEditorTab === 'stickers' : activeTab === 'stickers'"
                   :stickers="stickers"
                   :current-time="effectivePreviewTime"
                   :duration="totalSegmentDuration"
@@ -221,12 +198,16 @@
                   :selected-aspect-ratios="selectedAspectRatios"
                   :framing-configs="framingConfigs"
                   :video-dimensions="videoDimensions"
+                  @add-text="addTextOverlay"
+                  @update-text="updateTextOverlayLocal"
+                  @delete-text="deleteTextOverlayLocal"
                   @add-sticker="addStickerLocal"
                   @update-sticker="updateStickerLocal"
                   @delete-sticker="deleteStickerLocal"
-                  @update:preview-aspect-ratio="previewAspectRatio = $event"
+                  @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
                 />
 
+                <!-- Watermark Tab (kept separate) -->
                 <WatermarkTab
                   v-if="editorMode ? activeEditorTab === 'watermark' : activeTab === 'watermark'"
                   :watermarks="watermarks"
@@ -241,32 +222,30 @@
                   @update:preview-aspect-ratio="previewAspectRatio = $event"
                 />
 
-                <SubtitlesTab
-                  v-if="editorMode ? activeEditorTab === 'subtitles' : activeTab === 'subtitles'"
+                <!-- Captions Tab (Subtitles + Transcript) -->
+                <CaptionsTab
+                  v-if="editorMode ? activeEditorTab === 'captions' : activeTab === 'captions'"
                   :settings="subtitleSettings"
+                  :project-id="projectId"
+                  :current-time="editorMode ? subtitleSourceTime : effectivePreviewTime"
+                  :clip-start-time="editorMode ? sourceVideoMinTime : props.clipStartTime"
+                  :clip-end-time="editorMode ? sourceVideoMaxTime : props.clipEndTime"
+                  :duration="totalSegmentDuration"
                   :preview-aspect-ratio="previewAspectRatio"
                   :selected-aspect-ratios="selectedAspectRatios"
                   :framing-configs="framingConfigs"
+                  :source-time-ranges="editorMode ? sourceVideoTimeRanges : []"
                   @settings-changed="updateSubtitleSettings"
                   @update:preview-aspect-ratio="previewAspectRatio = $event"
+                  @seek-video="seekToAbsoluteTime"
                 />
 
-                <!-- EffectsTab - TODO: Create this component when effects feature is implemented
-                <EffectsTab
-                  v-if="activeTab === 'effects'"
-                  :effects="effects"
-                  :current-time="previewTime"
-                  :duration="clipDuration"
-                  @add-effect="addEffectLocal"
-                  @update-effect="updateEffectLocal"
-                  @delete-effect="deleteEffectLocal"
-                /> -->
-
-                <AspectTab
+                <!-- Aspect Ratios Tab -->
+                <StyleTab
                   v-if="editorMode ? activeEditorTab === 'aspect' : activeTab === 'aspect'"
                   :framing-configs="framingConfigs"
                   :selected-aspect-ratios="selectedAspectRatios"
-                  :framing-mode-value="framingMode"
+                  :framing-mode="framingMode"
                   :thumbnail-url="effectiveThumbnailUrl"
                   :video-path="effectiveVideoPath"
                   :clip-start-time="editorMode ? sourceVideoMinTime : props.clipStartTime"
@@ -278,15 +257,20 @@
                   @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
                 />
 
-                <TranscriptTab
-                  v-if="editorMode ? activeEditorTab === 'transcript' : activeTab === 'transcript'"
-                  :project-id="projectId"
-                  :current-time="editorMode ? subtitleSourceTime : effectivePreviewTime"
-                  :clip-start-time="editorMode ? sourceVideoMinTime : props.clipStartTime"
-                  :clip-end-time="editorMode ? sourceVideoMaxTime : props.clipEndTime"
+                <!-- Effects Tab (Transitions + Effects) -->
+                <EffectsTab
+                  v-if="editorMode ? activeEditorTab === 'effects' : activeTab === 'effects'"
+                  :applied-transitions="clipTransitions"
+                  :applied-effects="clipEffects"
+                  :current-time="effectivePreviewTime"
                   :duration="totalSegmentDuration"
-                  :source-time-ranges="editorMode ? sourceVideoTimeRanges : []"
-                  @seek-video="seekToAbsoluteTime"
+                  :selected-segment-index="selectedSegmentIndex"
+                  @add-transition="onAddTransition"
+                  @update-transition="onUpdateTransition"
+                  @delete-transition="onDeleteTransition"
+                  @add-effect="onAddEffect"
+                  @update-effect="onUpdateEffect"
+                  @delete-effect="onDeleteEffect"
                 />
 
                 <ExportTab
@@ -355,6 +339,8 @@
               :selected-segment-ids="selectedSegmentIds"
               :markers="markers"
               :selected-marker-id="selectedMarkerId"
+              :clip-transitions="clipTransitions"
+              :clip-effects="clipEffects"
               @seek="seekTo"
               @undo="performUndo"
               @redo="performRedo"
@@ -576,7 +562,7 @@
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { ensureAssetDownloaded } from '@/services/orgAssetSync';
-  import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro } from '@/types';
+  import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro, ClipTransition, ClipEffect } from '@/types';
   import { calculateCrossfadeOpacity } from '@/types';
 
   // Disable attribute inheritance since this component renders a Teleport root
@@ -586,16 +572,13 @@
   import ClipEditorPreview from './ClipEditorPreview.vue';
   import AspectRatioSelector from './AspectRatioSelector.vue';
   import ClipEditorToolbar from './ClipEditorToolbar.vue';
-  import SourcesTab from './tabs/SourcesTab.vue';
-  import IntroOutroTab from './tabs/IntroOutroTab.vue';
+  import MediaTab from './tabs/MediaTab.vue';
   import AudioMixerTab from './tabs/AudioMixerTab.vue';
-  import FiltersTab from './tabs/FiltersTab.vue';
-  import TextOverlayTab from './tabs/TextOverlayTab.vue';
-  import StickersTab from './tabs/StickersTab.vue';
+  import OverlaysTab from './tabs/OverlaysTab.vue';
   import WatermarkTab from './tabs/WatermarkTab.vue';
-  import SubtitlesTab from './tabs/SubtitlesTab.vue';
-  import AspectTab from './tabs/AspectTab.vue';
-  import TranscriptTab from './tabs/TranscriptTab.vue';
+  import CaptionsTab from './tabs/CaptionsTab.vue';
+  import StyleTab from './tabs/StyleTab.vue';
+  import EffectsTab from './tabs/EffectsTab.vue';
   import ExportTab from './tabs/ExportTab.vue';
   import ClipEditorTimeline from './ClipEditorTimeline.vue';
   import ManualPOIEditor from './ManualPOIEditor.vue';
@@ -791,8 +774,8 @@
   let isInitialLoad = ref(true); // Prevent auto-save during initial data load
 
   // Editor state
-  const activeTab = ref<ClipEditorTab>('audio');
-  const activeEditorTab = ref<VideoEditorTab>('sources'); // For editor mode
+  const activeTab = ref<ClipEditorTab>('media');
+  const activeEditorTab = ref<VideoEditorTab>('media'); // For editor mode
   const isPlaying = ref(false);
   const previewTime = ref(0);
 
@@ -855,6 +838,11 @@
   const effects = ref<Effect[]>([]);
   const watermarks = ref<ClipWatermark[]>([]);
   const filterSegments = ref<FilterSegment[]>([]);
+  
+  // Effects & Transitions
+  const clipTransitions = ref<ClipTransition[]>([]);
+  const clipEffects = ref<ClipEffect[]>([]);
+  const selectedSegmentIndex = ref<number | undefined>(undefined);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
 
@@ -1707,6 +1695,29 @@
     }
   }
 
+  // Handle adding project media (from MediaTab)
+  async function onAddProjectMedia(media: { id: string; media_type: string; file_path: string; file_name: string; duration: number | null }) {
+    if (media.media_type === 'video') {
+      // Add video to timeline as a source
+      await onAddSource({
+        id: media.id,
+        type: 'raw_video',
+        name: media.file_name,
+        path: media.file_path,
+        thumbnailPath: null,
+        duration: media.duration,
+        projectId: editorProjectId.value,
+        projectName: null,
+      });
+    } else if (media.media_type === 'audio') {
+      // Add audio as an audio track
+      await addAudioTrack(media.file_path, media.file_name, media.duration || 0);
+    } else if (media.media_type === 'image') {
+      // Add image as a sticker
+      await addStickerLocal(media.file_path, 'image');
+    }
+  }
+
   // Migrate existing clip edits to the video editor project
   // This recreates text overlays, audio tracks, stickers, and watermarks in the video_editor_* tables
   async function migrateClipEditsToVideoProject(newVideoEditorEditId: string) {
@@ -1913,7 +1924,7 @@
       promotedProjectId.value = newProjectId;
       promotedProjectName.value = projectName;
       isPromotedToEditorMode.value = true;
-      activeEditorTab.value = 'sources';
+      activeEditorTab.value = 'media';
 
       // Recalculate project duration
       await recalculateProjectDuration(newProjectId);
@@ -2540,8 +2551,8 @@
         // For now, let's keep the current tab but show the inspector in a dedicated area or replace the tab content?
         // Better: Set a flag or use a computed property to show inspector INSTEAD of the tab content or alongside it.
         // Given the layout, maybe we force the tab to the relevant one?
-        if (data.type === 'text') setActiveTab('text');
-        else if (data.type === 'sticker') setActiveTab('stickers');
+        if (data.type === 'text') setActiveTab('overlays');
+        else if (data.type === 'sticker') setActiveTab('overlays');
         else if (data.type === 'watermark') setActiveTab('watermark');
         else if (data.type === 'audio') setActiveTab('audio');
       }
@@ -3183,6 +3194,7 @@
           startTime: t.start_time,
           endTime: t.end_time,
           volume: t.volume,
+          pan: t.pan,
           fadeIn: t.fade_in,
           fadeOut: t.fade_out,
           trackOrder: t.track_order,
@@ -4555,6 +4567,7 @@
         start_time: updates.startTime,
         end_time: updates.endTime,
         volume: updates.volume,
+        pan: updates.pan,
         fade_in: updates.fadeIn,
         fade_out: updates.fadeOut,
         track_order: updates.trackOrder,
@@ -4613,6 +4626,10 @@
     updateAudioGain(trackId);
   }
 
+  function updateTrackPan(trackId: string, pan: number) {
+    updateAudioTrackLocal(trackId, { pan });
+  }
+
   // Filter segment operations
   function addFilterSegment(settings: FilterSettings) {
     const effectiveStartTime = effectivePreviewTime.value;
@@ -4637,6 +4654,78 @@
 
   function deleteFilterSegment(segmentId: string) {
     filterSegments.value = filterSegments.value.filter((s) => s.id !== segmentId);
+  }
+
+  // Transition operations
+  function onAddTransition(
+    type: string,
+    positionIndex: number,
+    duration: number,
+    parameters?: Record<string, unknown>
+  ) {
+    const newTransition: ClipTransition = {
+      id: `transition-${Date.now()}`,
+      clipEditId: props.clipId || '',
+      transitionType: type,
+      positionIndex,
+      duration,
+      parameters,
+      easing: 'ease-in-out',
+      createdAt: Date.now(),
+    };
+    clipTransitions.value.push(newTransition);
+    console.log('[ClipEditorDialog] Added transition:', newTransition);
+  }
+
+  function onUpdateTransition(id: string, updates: Partial<ClipTransition>) {
+    const transition = clipTransitions.value.find((t) => t.id === id);
+    if (transition) {
+      Object.assign(transition, updates);
+      console.log('[ClipEditorDialog] Updated transition:', id, updates);
+    }
+  }
+
+  function onDeleteTransition(id: string) {
+    clipTransitions.value = clipTransitions.value.filter((t) => t.id !== id);
+    console.log('[ClipEditorDialog] Deleted transition:', id);
+  }
+
+  // Effect operations
+  function onAddEffect(
+    type: string,
+    startTime: number,
+    endTime: number,
+    intensity: number,
+    parameters?: Record<string, unknown>
+  ) {
+    const newEffect: ClipEffect = {
+      id: `effect-${Date.now()}`,
+      clipEditId: props.clipId || '',
+      effectType: type,
+      startTime,
+      endTime,
+      intensity,
+      parameters,
+      blendMode: 'normal',
+      layer: clipEffects.value.length,
+      isEnabled: true,
+      createdAt: Date.now(),
+    };
+    clipEffects.value.push(newEffect);
+    console.log('[ClipEditorDialog] Added effect:', newEffect);
+  }
+
+  function onUpdateEffect(id: string, updates: Partial<ClipEffect>) {
+    const effect = clipEffects.value.find((e) => e.id === id);
+    if (effect) {
+      Object.assign(effect, updates);
+      console.log('[ClipEditorDialog] Updated effect:', id, updates);
+    }
+  }
+
+  function onDeleteEffect(id: string) {
+    clipEffects.value = clipEffects.value.filter((e) => e.id !== id);
+    console.log('[ClipEditorDialog] Deleted effect:', id);
   }
 
   // Aspect ratio framing operations
@@ -6450,6 +6539,7 @@
         startTime: t.start_time,
         endTime: t.end_time,
         volume: t.volume,
+        pan: t.pan,
         fadeIn: t.fade_in,
         fadeOut: t.fade_out,
         trackOrder: t.track_order,
@@ -7580,7 +7670,7 @@
           await loadEditorProject();
           await loadProjectId(); // Load project ID for transcript/subtitles
           previewTime.value = 0;
-          activeEditorTab.value = 'sources';
+          activeEditorTab.value = 'media';
 
           // Auto-apply creator watermark if available (from props or video sources)
           await applyCreatorWatermark();

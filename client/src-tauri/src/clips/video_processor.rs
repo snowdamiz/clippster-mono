@@ -193,6 +193,11 @@ fn build_audio_processing_config(audio_settings: Option<&AudioSettings>, _clip_d
         if track.gain_db != 0.0 {
             track_filters.push(format!("volume={}dB", track.gain_db));
         }
+
+        // Apply pan
+        if track.pan != 0.0 {
+            track_filters.push(format!("stereotools=balance_out={}", track.pan));
+        }
         
         // Apply fade in (if > 0)
         if track.fade_in > 0.0 {

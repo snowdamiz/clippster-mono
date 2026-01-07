@@ -164,6 +164,8 @@ pub struct WatermarkSettings {
 pub struct MusicTrackSettings {
     pub file_path: String,   // Path to audio file
     pub gain_db: f64,        // dB gain (-20 to +20)
+    #[serde(default)]
+    pub pan: f64,            // Pan -1.0 to 1.0 (0.0 is center)
     pub fade_in: f64,        // Fade in duration in seconds
     pub fade_out: f64,       // Fade out duration in seconds
     pub start_time: f64,     // When audio starts in clip timeline

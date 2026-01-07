@@ -20,6 +20,7 @@ export interface ClipAudioTrackRecord {
   start_time: number;
   end_time: number;
   volume: number;
+  pan: number;
   fade_in: number;
   fade_out: number;
   track_order: number;
@@ -161,8 +162,8 @@ export async function createAudioTrack(
 
   await db.execute(
     `INSERT INTO clip_audio_tracks 
-     (id, clip_edit_id, file_path, name, start_time, end_time, volume, fade_in, fade_out, track_order, is_muted, is_solo, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, clip_edit_id, file_path, name, start_time, end_time, volume, pan, fade_in, fade_out, track_order, is_muted, is_solo, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipEditId,
@@ -171,6 +172,7 @@ export async function createAudioTrack(
       data.start_time || 0,
       data.end_time || 0,
       data.volume ?? 1.0,
+      data.pan ?? 0,
       data.fade_in || 0,
       data.fade_out || 0,
       data.track_order || 0,
@@ -188,6 +190,7 @@ export async function createAudioTrack(
     start_time: data.start_time || 0,
     end_time: data.end_time || 0,
     volume: data.volume ?? 1.0,
+    pan: data.pan ?? 0,
     fade_in: data.fade_in || 0,
     fade_out: data.fade_out || 0,
     track_order: data.track_order || 0,
@@ -248,6 +251,10 @@ export async function updateAudioTrack(
   if (data.is_solo !== undefined) {
     updates.push('is_solo = ?');
     values.push(data.is_solo);
+  }
+  if (data.pan !== undefined) {
+    updates.push('pan = ?');
+    values.push(data.pan);
   }
 
   if (updates.length > 0) {

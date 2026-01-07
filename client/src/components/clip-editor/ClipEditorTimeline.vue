@@ -1743,6 +1743,9 @@
       beatMarkers?: Array<{ id: string; time: number; confidence?: number }>;
       // Region/range props (work areas with start/end)
       regions?: Array<{ id: string; startTime: number; endTime: number; label?: string; color?: string }>;
+      // Clip transitions and effects (from EffectsTab)
+      clipTransitions?: Array<{ id: string; transitionType: string; positionIndex: number; duration: number }>;
+      clipEffects?: Array<{ id: string; effectType: string; startTime: number; endTime: number; intensity: number; isEnabled: boolean }>;
     }>(),
     {
       audioGainDb: 0,
@@ -1761,6 +1764,8 @@
       chapterMarkers: () => [],
       beatMarkers: () => [],
       regions: () => [],
+      clipTransitions: () => [],
+      clipEffects: () => [],
     }
   );
 
@@ -6761,12 +6766,12 @@
       } else {
         // Right handle
         newEndTime = Math.min(props.duration, resizeInfo.value.originalEndTime + deltaTime);
-        // Calculate newTrimEnd, handling potentially undefined originalTrimEnd
+                // Calculate newTrimEnd
         const baseTrimEnd = originalTrimEnd ?? sourceDuration;
         newTrimEnd = baseTrimEnd + (newEndTime - resizeInfo.value.originalEndTime);
 
         // Constrain trim_end <= sourceDuration
-        if (newTrimEnd > sourceDuration) {
+        if (newTrimEnd !== undefined && newTrimEnd > sourceDuration) {
             newTrimEnd = sourceDuration;
             newEndTime = resizeInfo.value.originalEndTime + (sourceDuration - baseTrimEnd);
         }
