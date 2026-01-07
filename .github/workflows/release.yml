@@ -151,6 +151,42 @@ jobs:
         run: yarn install
         working-directory: client/src-tauri/pumpfun-service
 
+      # Sign native .node binaries for macOS notarization
+      - name: Sign native node modules (macOS)
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Import Apple certificate into a temporary keychain
+          CERTIFICATE_PATH=$RUNNER_TEMP/native_signing_cert.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/native-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o $CERTIFICATE_PATH
+          
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $CERTIFICATE_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          
+          # Add to search list (prepend to existing keychains)
+          EXISTING_KEYCHAINS=$(security list-keychains -d user | tr -d '"' | tr '\n' ' ')
+          security list-keychains -d user -s $KEYCHAIN_PATH $EXISTING_KEYCHAINS
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Find signing identity
+          IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          echo "Using identity: $IDENTITY"
+          
+          # Sign all .node files in pumpfun-service/node_modules
+          find client/src-tauri/pumpfun-service/node_modules -name "*.node" -type f | while read file; do
+            echo "Signing: $file"
+            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$file"
+          done
+          
+          echo "Native modules signed successfully"
+
       # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
       - name: Skip frontend rebuild (macOS)
         if: matrix.platform == 'macos-latest'
