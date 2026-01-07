@@ -1,7 +1,9 @@
 import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Star, Clock, Package, TrendingUp, Trophy } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
+import { useDownloadContext } from '../context/DownloadContext'
 import { CTA } from '../components/CTA'
+import { WaitlistModal } from '../components/WaitlistModal'
 import { useState } from 'react'
 
 // Subscription plans (actual pricing from server)
@@ -287,6 +289,7 @@ function FAQItem({ question, answer, isOpen, onClick, index }: {
 
 export function PricingPage() {
   const { primaryDownload, isLoading } = useDownloads()
+  const { downloadsEnabled, showWaitlistModal, setShowWaitlistModal, openWaitlistModal } = useDownloadContext()
   const [openFAQ, setOpenFAQ] = useState<number | null>(0)
 
   return (
@@ -311,6 +314,14 @@ export function PricingPage() {
             <div className="px-5 py-2.5 rounded-full bg-zinc-800 text-zinc-400 font-medium text-sm flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
             </div>
+          ) : !downloadsEnabled ? (
+            <button
+              onClick={openWaitlistModal}
+              className="px-5 py-2.5 rounded-full bg-white/10 text-white/70 font-medium text-sm border border-white/20 flex items-center gap-2 cursor-pointer hover:bg-white/15 hover:border-white/30 transition-colors"
+            >
+              <Clock className="w-4 h-4" />
+              <span className="hidden sm:inline">Coming Soon</span>
+            </button>
           ) : primaryDownload ? (
             <a
               href={primaryDownload.downloadUrl}
@@ -460,22 +471,38 @@ export function PricingPage() {
                       </div>
                       
                       {/* CTA Button */}
-                      <a
-                        href={primaryDownload?.downloadUrl || '#'}
-                        className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden group/btn ${
-                          plan.highlight 
-                            ? 'text-white shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:scale-[1.02]' 
-                            : 'bg-zinc-800 text-white hover:bg-zinc-700'
-                        }`}
-                      >
-                        {plan.highlight && (
-                          <>
-                            <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-fuchsia-500 to-pink-500" />
-                            <div className="absolute inset-0 bg-gradient-to-r from-violet-500 via-fuchsia-400 to-pink-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300" />
-                          </>
-                        )}
-                        <span className="relative">{plan.cta}</span>
-                      </a>
+                      {!downloadsEnabled ? (
+                        <button
+                          onClick={openWaitlistModal}
+                          className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden cursor-pointer ${
+                            plan.highlight 
+                              ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white' 
+                              : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
+                          }`}
+                        >
+                          <span className="relative flex items-center justify-center gap-2">
+                            <Clock className="w-4 h-4" />
+                            Coming Soon
+                          </span>
+                        </button>
+                      ) : (
+                        <a
+                          href={primaryDownload?.downloadUrl || '#'}
+                          className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden group/btn ${
+                            plan.highlight 
+                              ? 'text-white shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:scale-[1.02]' 
+                              : 'bg-zinc-800 text-white hover:bg-zinc-700'
+                          }`}
+                        >
+                          {plan.highlight && (
+                            <>
+                              <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-fuchsia-500 to-pink-500" />
+                              <div className="absolute inset-0 bg-gradient-to-r from-violet-500 via-fuchsia-400 to-pink-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                            </>
+                          )}
+                          <span className="relative">{plan.cta}</span>
+                        </a>
+                      )}
                       
                       {/* Divider */}
                       <div className={`h-px mb-5 ${plan.highlight ? 'bg-gradient-to-r from-transparent via-zinc-700 to-transparent' : 'bg-zinc-800'}`} />
@@ -834,6 +861,12 @@ export function PricingPage() {
           </div>
         </div>
       </footer>
+
+      {/* Waitlist Modal */}
+      <WaitlistModal 
+        isOpen={showWaitlistModal} 
+        onClose={() => setShowWaitlistModal(false)} 
+      />
     </div>
   )
 }

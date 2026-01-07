@@ -1,115 +1,163 @@
 <template>
-  <Dialog :open="open" @update:open="$emit('close')">
-    <DialogContent class="sm:max-w-[500px]">
-      <DialogHeader>
-        <DialogTitle class="flex items-center gap-2">
-          <Instagram class="h-5 w-5 text-pink-500" />
-          Manage Access - @{{ account.username }}
-        </DialogTitle>
-        <DialogDescription>Assign members who can use this account to publish posts</DialogDescription>
-      </DialogHeader>
-
-      <div class="py-4">
-        <!-- Search/Filter -->
-        <div class="relative mb-4">
-          <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input v-model="searchQuery" placeholder="Search members..." class="pl-9" />
-        </div>
-
-        <!-- Members List -->
-        <div class="space-y-2 max-h-[300px] overflow-y-auto">
+  <Teleport to="body">
+    <Transition name="modal">
+      <div
+        v-if="open"
+        class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+        @click.self="$emit('close')"
+      >
+        <Transition name="dialog" appear>
           <div
-            v-for="member in filteredMembers"
-            :key="member.user_id"
-            class="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/30 transition-colors cursor-pointer"
-            :class="{ 'opacity-50 pointer-events-none': saving }"
-            @click="toggleAssignment(member.user_id, !isAssigned(member.user_id))"
+            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-lg w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
           >
-            <!-- Checkbox -->
+            <!-- Decorative top accent -->
+            <div class="h-1 w-full bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 flex-shrink-0" />
+
+            <!-- Header -->
             <div
-              class="w-4 h-4 rounded-sm border flex items-center justify-center flex-shrink-0 transition-all"
-              :class="
-                isAssigned(member.user_id) ? 'bg-primary border-primary text-primary-foreground' : 'border-primary'
-              "
+              class="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-zinc-800 bg-zinc-900/50 flex-shrink-0"
             >
-              <Check v-if="isAssigned(member.user_id)" class="h-3 w-3" />
-            </div>
-
-            <!-- Member Avatar -->
-            <div class="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-              <img
-                v-if="member.user.avatar_url"
-                :src="member.user.avatar_url"
-                :alt="member.user.name || member.user.email"
-                class="w-8 h-8 rounded-full object-cover"
-              />
-              <span v-else class="text-xs font-medium text-muted-foreground">
-                {{ getInitials(member.user.name || member.user.email) }}
-              </span>
-            </div>
-
-            <!-- Member Info -->
-            <div class="flex-1 min-w-0">
-              <div class="font-medium text-sm text-foreground truncate">
-                {{ member.user.name || member.user.email }}
+              <div class="flex items-center gap-3">
+                <div
+                  class="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-pink-500/30"
+                >
+                  <Instagram class="h-5 w-5 text-pink-400" />
+                </div>
+                <div>
+                  <h2 class="text-lg font-semibold text-white">Manage Access</h2>
+                  <p class="text-zinc-400 text-xs">@{{ account.username }}</p>
+                </div>
               </div>
-              <div v-if="member.user.name" class="text-xs text-muted-foreground truncate">
-                {{ member.user.email }}
+              <button
+                @click="$emit('close')"
+                class="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors border border-zinc-800"
+              >
+                <X class="w-5 h-5" />
+              </button>
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 p-5 sm:p-6 overflow-y-auto custom-scrollbar">
+              <!-- Description -->
+              <p class="text-zinc-400 text-sm mb-4">Assign members who can use this account to publish posts</p>
+
+              <!-- Search/Filter -->
+              <div class="relative mb-4">
+                <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                <input
+                  v-model="searchQuery"
+                  type="text"
+                  placeholder="Search members..."
+                  class="w-full pl-10 pr-4 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all text-sm"
+                />
+              </div>
+
+              <!-- Members List -->
+              <div class="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                <div
+                  v-for="member in filteredMembers"
+                  :key="member.user_id"
+                  class="flex items-center gap-3 p-3 rounded-xl border border-zinc-800 hover:bg-zinc-800/50 hover:border-zinc-700 transition-colors cursor-pointer"
+                  :class="{ 'opacity-50 pointer-events-none': saving }"
+                  @click="toggleAssignment(member.user_id, !isAssigned(member.user_id))"
+                >
+                  <!-- Checkbox -->
+                  <div
+                    class="w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all"
+                    :class="
+                      isAssigned(member.user_id)
+                        ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent'
+                        : 'border-zinc-600 hover:border-zinc-500'
+                    "
+                  >
+                    <Check v-if="isAssigned(member.user_id)" class="h-3 w-3 text-white" />
+                  </div>
+
+                  <!-- Member Avatar -->
+                  <div
+                    class="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0 border border-zinc-700"
+                  >
+                    <img
+                      v-if="member.user.avatar_url"
+                      :src="member.user.avatar_url"
+                      :alt="member.user.name || member.user.email"
+                      class="w-9 h-9 rounded-full object-cover"
+                    />
+                    <span v-else class="text-xs font-medium text-zinc-400">
+                      {{ getInitials(member.user.name || member.user.email) }}
+                    </span>
+                  </div>
+
+                  <!-- Member Info -->
+                  <div class="flex-1 min-w-0">
+                    <div class="font-medium text-sm text-white truncate">
+                      {{ member.user.name || member.user.email }}
+                    </div>
+                    <div v-if="member.user.name" class="text-xs text-zinc-500 truncate">
+                      {{ member.user.email }}
+                    </div>
+                  </div>
+
+                  <!-- Role Badge -->
+                  <span
+                    :class="[
+                      'px-2.5 py-1 rounded-lg text-xs font-medium border',
+                      member.role === 'owner'
+                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                        : member.role === 'admin'
+                          ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700',
+                    ]"
+                  >
+                    {{ member.role }}
+                  </span>
+                </div>
+
+                <!-- Empty Search State -->
+                <div v-if="filteredMembers.length === 0 && searchQuery" class="text-center py-8">
+                  <div class="w-12 h-12 rounded-full bg-zinc-800/50 flex items-center justify-center mx-auto mb-3">
+                    <Search class="h-5 w-5 text-zinc-500" />
+                  </div>
+                  <p class="text-zinc-500 text-sm">No members match your search</p>
+                </div>
+
+                <!-- Empty State -->
+                <div v-if="members.length === 0" class="text-center py-8">
+                  <div class="w-12 h-12 rounded-full bg-zinc-800/50 flex items-center justify-center mx-auto mb-3">
+                    <Users class="h-5 w-5 text-zinc-500" />
+                  </div>
+                  <p class="text-zinc-500 text-sm">No members in this organization</p>
+                </div>
               </div>
             </div>
 
-            <!-- Role Badge -->
-            <span
-              :class="[
-                'px-2 py-0.5 rounded text-xs font-medium',
-                member.role === 'owner'
-                  ? 'bg-amber-500/20 text-amber-500'
-                  : member.role === 'admin'
-                    ? 'bg-primary/20 text-primary'
-                    : 'bg-muted text-muted-foreground',
-              ]"
+            <!-- Footer -->
+            <div
+              class="flex items-center justify-between px-5 sm:px-6 py-4 border-t border-zinc-800 bg-zinc-900/50 flex-shrink-0"
             >
-              {{ member.role }}
-            </span>
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-pink-500"></div>
+                <span class="text-sm text-zinc-400">
+                  {{ assignedCount }} member{{ assignedCount !== 1 ? 's' : '' }} assigned
+                </span>
+              </div>
+              <button
+                @click="$emit('close')"
+                class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 hover:border-zinc-600 text-sm"
+              >
+                Done
+              </button>
+            </div>
           </div>
-
-          <!-- Empty Search State -->
-          <div v-if="filteredMembers.length === 0 && searchQuery" class="text-center py-8 text-muted-foreground">
-            No members match your search
-          </div>
-
-          <!-- Empty State -->
-          <div v-if="members.length === 0" class="text-center py-8 text-muted-foreground">
-            No members in this organization
-          </div>
-        </div>
+        </Transition>
       </div>
-
-      <DialogFooter>
-        <div class="flex items-center justify-between w-full">
-          <span class="text-sm text-muted-foreground">
-            {{ assignedCount }} member{{ assignedCount !== 1 ? 's' : '' }} can use this account
-          </span>
-          <Button variant="outline" @click="$emit('close')">Done</Button>
-        </div>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-  } from '@/components/ui/dialog';
-  import { Button } from '@/components/ui/button';
-  import { Input } from '@/components/ui/input';
-  import { Instagram, Search, Check } from 'lucide-vue-next';
+  import { Instagram, Search, Check, X, Users } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import { assignSocialAccount, unassignSocialAccount, type SocialAccount } from '@/services/socialAccountsApi';
 
@@ -213,3 +261,53 @@
       .toUpperCase();
   }
 </script>
+
+<style scoped>
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  /* Custom scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgb(63 63 70);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgb(82 82 91);
+  }
+</style>

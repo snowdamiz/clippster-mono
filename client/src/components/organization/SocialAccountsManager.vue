@@ -139,24 +139,65 @@
     />
 
     <!-- Delete Confirmation Dialog -->
-    <Dialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
-      <DialogContent class="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle class="flex items-center gap-2">
-            <Trash2 class="h-5 w-5 text-destructive" />
-            Disconnect Account
-          </DialogTitle>
-          <DialogDescription>
-            Are you sure you want to disconnect @{{ accountToDelete?.username }}? This will remove all member
-            assignments and any posts will remain but won't be synced.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter class="gap-2 sm:gap-0">
-          <Button variant="outline" @click="showDeleteDialog = false">Cancel</Button>
-          <Button variant="destructive" @click="deleteAccount">Disconnect</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showDeleteDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="showDeleteDialog = false"
+        >
+          <Transition name="dialog" appear>
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
+            >
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-red-500 via-pink-500 to-rose-500" />
+
+              <div class="p-5 sm:p-6 lg:p-8">
+                <!-- Header -->
+                <div class="mb-4 sm:mb-6 text-center">
+                  <div
+                    class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-red-500/20 to-pink-500/20 border border-red-500/30 mb-3 sm:mb-4"
+                  >
+                    <Trash2 class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-red-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">Disconnect Account</h2>
+                  <p class="text-zinc-400 text-xs sm:text-sm mt-1">@{{ accountToDelete?.username }}</p>
+                </div>
+
+                <!-- Warning message -->
+                <div class="p-3 sm:p-4 bg-red-500/10 border border-red-500/30 rounded-lg sm:rounded-xl mb-4 sm:mb-6">
+                  <p class="text-red-300 text-sm">
+                    This will remove all member assignments. Any existing posts will remain but won't be synced.
+                  </p>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    @click="showDeleteDialog = false"
+                    class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 hover:border-zinc-600 text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    @click="deleteAccount"
+                    class="flex-1 px-4 py-2.5 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white rounded-xl font-semibold transition-all relative overflow-hidden group text-sm"
+                  >
+                    <div
+                      class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                    />
+                    <span class="relative">Disconnect</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -170,14 +211,6 @@
     DropdownMenuSeparator,
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
-  import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-  } from '@/components/ui/dialog';
   import { Instagram, Plus, Users, MoreVertical, RefreshCw, XCircle, CheckCircle, Trash2 } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import SocialAccountAssignments from './SocialAccountAssignments.vue';
@@ -359,3 +392,35 @@
     return date.toLocaleDateString();
   }
 </script>
+
+<style scoped>
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+</style>
