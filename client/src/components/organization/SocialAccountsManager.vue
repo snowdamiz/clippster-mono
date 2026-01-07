@@ -184,7 +184,6 @@
   import {
     listSocialAccounts,
     startInstagramOAuthPopup,
-    onInstagramAuthComplete,
     updateSocialAccount,
     deleteSocialAccount,
     refreshAccountToken,
@@ -228,9 +227,6 @@
 
   onMounted(() => {
     loadAccounts();
-
-    // Set up listener for Instagram OAuth completion events (from Tauri)
-    cleanupAuthListener = onInstagramAuthComplete(handleAuthResult);
   });
 
   // Clean up listener on unmount

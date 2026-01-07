@@ -21,15 +21,12 @@
           <div
             v-for="member in filteredMembers"
             :key="member.user_id"
-            class="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/30 transition-colors"
+            class="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/30 transition-colors cursor-pointer"
+            :class="{ 'opacity-50 pointer-events-none': saving }"
+            @click="toggleAssignment(member.user_id, !isAssigned(member.user_id))"
           >
             <!-- Checkbox -->
-            <Checkbox
-              :id="`member-${member.user_id}`"
-              :checked="isAssigned(member.user_id)"
-              :disabled="saving"
-              @update:checked="(checked: boolean) => toggleAssignment(member.user_id, checked)"
-            />
+            <Checkbox :checked="isAssigned(member.user_id)" class="pointer-events-none" />
 
             <!-- Member Avatar -->
             <div class="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
@@ -45,14 +42,14 @@
             </div>
 
             <!-- Member Info -->
-            <label :for="`member-${member.user_id}`" class="flex-1 min-w-0 cursor-pointer">
+            <div class="flex-1 min-w-0">
               <div class="font-medium text-sm text-foreground truncate">
                 {{ member.user.name || member.user.email }}
               </div>
               <div v-if="member.user.name" class="text-xs text-muted-foreground truncate">
                 {{ member.user.email }}
               </div>
-            </label>
+            </div>
 
             <!-- Role Badge -->
             <span

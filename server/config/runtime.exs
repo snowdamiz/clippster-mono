@@ -90,9 +90,9 @@ config :clippster_server, :instagram,
   app_secret: System.get_env("INSTAGRAM_APP_SECRET"),
   redirect_uri: instagram_redirect_uri
 
-# Social token encryption key
-config :clippster_server, :social,
-  token_encryption_key: System.get_env("SOCIAL_TOKEN_ENCRYPTION_KEY")
+# Social token encryption key (must be base64-encoded 32-byte key)
+config :clippster_server,
+  social_token_encryption_key: System.get_env("SOCIAL_TOKEN_ENCRYPTION_KEY")
 
 # Cloudflare R2 storage configuration (for organization assets)
 r2_account_id = System.get_env("R2_ACCOUNT_ID")

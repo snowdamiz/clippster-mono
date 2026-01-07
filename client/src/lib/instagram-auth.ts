@@ -125,8 +125,19 @@ export async function startInstagramOAuth(
   pollInterval = 500,
   timeout = 5 * 60 * 1000
 ): Promise<() => void> {
+  // Track if result has been delivered to prevent duplicate callbacks
+  let resultDelivered = false;
+
+  const deliverResult = (result: InstagramAuthResult) => {
+    if (resultDelivered) return;
+    resultDelivered = true;
+    cancelled = true;
+    cleanupListener();
+    onResult(result);
+  };
+
   // Set up event listener
-  const cleanupListener = onInstagramAuthComplete(onResult);
+  const cleanupListener = onInstagramAuthComplete(deliverResult);
 
   // Open the auth window
   await openInstagramAuth(organizationId, apiBase, authToken);
@@ -136,16 +147,16 @@ export async function startInstagramOAuth(
   const startTime = Date.now();
 
   const poll = async () => {
-    if (cancelled) return;
+    if (cancelled || resultDelivered) return;
 
     if (Date.now() - startTime > timeout) {
-      onResult({ success: false, error: 'Authentication timed out' });
+      deliverResult({ success: false, error: 'Authentication timed out' });
       return;
     }
 
     const result = await pollInstagramAuthResult();
     if (result) {
-      onResult(result);
+      deliverResult(result);
       return;
     }
 
