@@ -19,22 +19,22 @@ defmodule ClippsterServerWeb.KickController do
     case Req.get(url, headers: headers) do
       {:ok, %Req.Response{status: 200, body: body}} ->
         limit_int = String.to_integer(limit)
-        
+
         # Inspect body to see what we actually got
         Logger.info("Kick API Response Body structure: #{inspect(body)}")
 
         # RapidAPI response might be wrapped in "data" or just be the array directly
         # Based on screenshots: { "data": [...] } or just [...]
-        videos_list = 
+        videos_list =
           case body do
             %{"data" => data} when is_list(data) -> data
             list when is_list(list) -> list
-            _ -> 
+            _ ->
               Logger.warning("Kick API response body format unexpected: #{inspect(body)}")
               []
           end
 
-        clips = 
+        clips =
           videos_list
           |> Enum.take(limit_int)
           |> Enum.map(fn video ->
@@ -66,8 +66,8 @@ defmodule ClippsterServerWeb.KickController do
         # Log the first few chars of the key to verify it's not the placeholder
         key_preview = if String.length(rapid_api_key) > 4, do: String.slice(rapid_api_key, 0, 4) <> "...", else: "TooShort"
         Logger.error("Kick API returned #{status}. Key used starts with: #{key_preview}. Body: #{inspect(body)}")
-        
-        error_msg = 
+
+        error_msg =
           case body do
             %{"message" => msg} -> msg
             %{"error" => err} -> err
@@ -84,5 +84,10 @@ defmodule ClippsterServerWeb.KickController do
         |> put_status(:internal_server_error)
         |> json(%{success: false, error: "Kick API request failed"})
     end
+  end
+
+  # Fallback clause when limit is not provided - use default of 20
+  def get_clips(conn, %{"channel_slug" => channel_slug}) do
+    get_clips(conn, %{"channel_slug" => channel_slug, "limit" => "20"})
   end
 end

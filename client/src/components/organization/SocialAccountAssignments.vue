@@ -75,13 +75,15 @@
 
                   <!-- Member Avatar -->
                   <div
-                    class="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0 border border-zinc-700"
+                    class="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0 border border-zinc-700 overflow-hidden"
                   >
                     <img
-                      v-if="member.user.avatar_url"
+                      v-if="member.user.avatar_url && !failedAvatars.has(member.user_id)"
                       :src="member.user.avatar_url"
                       :alt="member.user.name || member.user.email"
                       class="w-9 h-9 rounded-full object-cover"
+                      referrerpolicy="no-referrer"
+                      @error="handleAvatarError($event, member.user_id)"
                     />
                     <span v-else class="text-xs font-medium text-zinc-400">
                       {{ getInitials(member.user.name || member.user.email) }}
@@ -190,6 +192,7 @@
   const searchQuery = ref('');
   const saving = ref(false);
   const assignedUserIds = ref<Set<number>>(new Set());
+  const failedAvatars = ref<Set<number>>(new Set());
 
   // Initialize assigned users from account data
   watch(
@@ -259,6 +262,12 @@
       .slice(0, 2)
       .join('')
       .toUpperCase();
+  }
+
+  function handleAvatarError(event: Event, userId: number) {
+    const img = event.target as HTMLImageElement;
+    img.style.display = 'none';
+    failedAvatars.value.add(userId);
   }
 </script>
 

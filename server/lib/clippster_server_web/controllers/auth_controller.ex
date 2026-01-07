@@ -14,13 +14,51 @@ defmodule ClippsterServerWeb.AuthController do
   """
 
   # Handle OPTIONS requests for CORS preflight
+  # This supplements CORSPlug and ensures credentials are properly handled
   def options(conn, _params) do
+    origin = get_req_header(conn, "origin") |> List.first()
+
+    # Only allow specific origins (matching CORSPlug config in router.ex)
+    allowed_origin = if origin && allowed_origin?(origin), do: origin, else: nil
+
     conn
-    |> put_resp_header("access-control-allow-origin", get_req_header(conn, "origin") |> List.first() || "*")
-    |> put_resp_header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS")
+    |> maybe_put_origin_header(allowed_origin)
+    |> put_resp_header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
     |> put_resp_header("access-control-allow-headers", "Authorization, Content-Type, Accept, Origin, X-Requested-With")
+    |> put_resp_header("access-control-allow-credentials", "true")
     |> put_resp_header("access-control-max-age", "86400")
-    |> send_resp(200, "")
+    |> send_resp(204, "")
+  end
+
+  # Check if origin is in the allowed list (mirrors CORSPlug config)
+  defp allowed_origin?(origin) do
+    allowed_origins = [
+      "tauri://localhost",
+      "https://tauri.localhost",
+      "http://tauri.localhost",
+      "http://localhost:5173",
+      "http://localhost:1420",
+      "http://localhost:4000",
+      "https://clippster.app",
+      "https://www.clippster.app"
+    ]
+
+    # Check explicit matches first
+    if origin in allowed_origins do
+      true
+    else
+      # Check regex patterns
+      Enum.any?([
+        ~r/^http:\/\/localhost:\d+$/,
+        ~r/^tauri:\/\//,
+        ~r/^https?:\/\/tauri\./
+      ], fn pattern -> Regex.match?(pattern, origin) end)
+    end
+  end
+
+  defp maybe_put_origin_header(conn, nil), do: conn
+  defp maybe_put_origin_header(conn, origin) do
+    put_resp_header(conn, "access-control-allow-origin", origin)
   end
 
   def request_challenge(conn, %{"client_id" => client_id}) do
