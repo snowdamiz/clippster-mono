@@ -147,6 +147,10 @@ jobs:
         run: yarn install
         working-directory: client
 
+      - name: Install pumpfun-service dependencies
+        run: yarn install
+        working-directory: client/src-tauri/pumpfun-service
+
       # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
       - name: Skip frontend rebuild (macOS)
         if: matrix.platform == 'macos-latest'
