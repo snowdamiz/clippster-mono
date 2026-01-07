@@ -42,10 +42,10 @@ export function Hero() {
 
         {/* Main headline - enhanced */}
         <h1 className="font-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white mb-6 leading-[1.1]">
-          Turn your streams into
+          The all-in-one
           <br />
           <span className="relative inline-block">
-            <span className="gradient-text">viral content</span>
+            <span className="gradient-text">clipping studio</span>
             {/* Animated underline glow */}
             <span className="absolute -bottom-2 left-0 right-0 h-4 bg-gradient-to-r from-blue-500/30 via-violet-500/40 to-pink-500/30 blur-lg" />
           </span>
@@ -53,8 +53,8 @@ export function Hero() {
 
         {/* Subheadline */}
         <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-          AI finds your best moments, edits them automatically, and exports to every platform. 
-          Create a week of content in minutes, not hours.
+          Clip in real-time or let AI find the highlights. Edit with pro tools, add captions, 
+          organize your library, and export everywhere—all from one powerful desktop app.
         </p>
 
         {/* Download Buttons - enhanced */}
@@ -154,11 +154,11 @@ export function Hero() {
         <div className="mt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-zinc-500">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/70" />
-            <span>No credit card required</span>
+            <span>Live clipping + AI detection</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/70" />
-            <span>Works with Twitch, YouTube, Kick</span>
+            <span>Pro editor with auto-captions</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/70" />
