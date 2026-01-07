@@ -147,6 +147,20 @@ jobs:
         run: yarn install
         working-directory: client
 
+      # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
+      - name: Skip frontend rebuild (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          jq '.build.beforeBuildCommand = ""' client/src-tauri/tauri.conf.json > tmp.json && mv tmp.json client/src-tauri/tauri.conf.json
+
+      - name: Skip frontend rebuild (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $config = Get-Content client/src-tauri/tauri.conf.json | ConvertFrom-Json
+          $config.build.beforeBuildCommand = ""
+          $config | ConvertTo-Json -Depth 10 | Set-Content client/src-tauri/tauri.conf.json
+
       # Use tauri-action for all platforms (handles CLI installation efficiently)
       - name: Build Tauri App (macOS)
         if: matrix.platform == 'macos-latest'
