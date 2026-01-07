@@ -26,7 +26,14 @@
             @click="toggleAssignment(member.user_id, !isAssigned(member.user_id))"
           >
             <!-- Checkbox -->
-            <Checkbox :checked="isAssigned(member.user_id)" class="pointer-events-none" />
+            <div
+              class="w-4 h-4 rounded-sm border flex items-center justify-center flex-shrink-0 transition-all"
+              :class="
+                isAssigned(member.user_id) ? 'bg-primary border-primary text-primary-foreground' : 'border-primary'
+              "
+            >
+              <Check v-if="isAssigned(member.user_id)" class="h-3 w-3" />
+            </div>
 
             <!-- Member Avatar -->
             <div class="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
@@ -102,8 +109,7 @@
   } from '@/components/ui/dialog';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
-  import { Checkbox } from '@/components/ui/checkbox';
-  import { Instagram, Search } from 'lucide-vue-next';
+  import { Instagram, Search, Check } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import { assignSocialAccount, unassignSocialAccount, type SocialAccount } from '@/services/socialAccountsApi';
 
