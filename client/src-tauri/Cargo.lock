@@ -573,7 +573,7 @@ dependencies = [
 
 [[package]]
 name = "clippster-ui"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
