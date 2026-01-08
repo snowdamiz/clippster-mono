@@ -569,6 +569,7 @@ pub fn run() {
             waveform::extract_audio_waveform,
             waveform::get_cached_waveform,
             waveform::save_waveform_to_cache,
+            waveform::clear_waveform_cache,
 
             // Storage commands
             storage::get_storage_paths,

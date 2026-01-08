@@ -1318,18 +1318,10 @@
               }"
               @mousedown="onPlayheadMouseDown"
             >
-              <!-- Top handle (CapCut style - small rectangle) -->
-              <div
-                class="sticky -top-[1px] z-10 flex-shrink-0 w-3 h-3 bg-amber-500 rounded-sm shadow-md playhead-child"
-              ></div>
               <!-- The line (CapCut style - thin amber/orange line) -->
               <div
-                class="flex-1 bg-amber-500 group-hover:bg-amber-400 playhead-line-inner playhead-child"
+                class="flex-1 bg-amber-500 group-hover:bg-amber-400 playhead-line-inner playhead-child shadow-[0_0_4px_rgba(245,158,11,0.5)]"
                 style="width: 2px"
-              ></div>
-              <!-- Bottom handle (matches top handle) -->
-              <div
-                class="sticky -bottom-[1px] z-10 flex-shrink-0 w-3 h-3 bg-amber-500 rounded-sm shadow-md playhead-child"
               ></div>
             </div>
 
@@ -1629,7 +1621,9 @@
   } from 'lucide-vue-next';
   import { useAudioWaveform, type WaveformData } from '@/composables/useAudioWaveform';
   import { useTimelineTools, type TimelineTool } from '@/composables/useTimelineTools';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+  import { renderCapcutStyleBar, DB_COLORS, AMPLITUDE_THRESHOLDS } from '@/utils/audioDbUtils';
+  import { extractWaveformFromUrl } from '@/utils/webAudioWaveform';
   import type { Track, Keyframe, ItemType } from '@/types/timeline-model';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
   import KeyframeMarker from './KeyframeMarker.vue';
@@ -3640,30 +3634,18 @@
 
   // Methods
   function formatTime(seconds: number): string {
-    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00.00';
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const secs = seconds - mins * 60;
+    const secsWithHundredths = secs.toFixed(2); // always show hundredths
 
-    // Calculate visible duration to determine precision needed
-    const visibleDuration = totalDuration.value / zoomLevel.value;
-
-    // For very zoomed in states, show high precision (useful for precise editing)
-    if (visibleDuration < 2) {
-      // Show 2 decimal places for frame-level precision
-      if (mins === 0) {
-        return secs.toFixed(2) + 's';
-      }
-      return `${mins}:${secs.toFixed(2).padStart(5, '0')}`;
-    } else if (visibleDuration < 10) {
-      // Show 1 decimal place
-      if (mins === 0 && secs < 10) {
-        return secs.toFixed(1) + 's';
-      }
-      return `${mins}:${secs.toFixed(1).padStart(4, '0')}`;
+    if (mins === 0) {
+      return `${secsWithHundredths}s`;
     }
 
-    // Standard format: M:SS
-    return `${mins}:${Math.floor(secs).toString().padStart(2, '0')}`;
+    // Pad seconds to include leading zero and hundredths (e.g., 01:05.23)
+    const [wholeSecs, hundredths] = secsWithHundredths.split('.');
+    return `${mins}:${wholeSecs.padStart(2, '0')}.${hundredths}`;
   }
 
   function setSegmentRef(el: any, type: ItemType, id: string) {
@@ -7042,6 +7024,19 @@
       // For segments, we need more peaks because we're showing a smaller portion of the video
       const { duration, peaks } = waveformData.value;
 
+      // DEBUG: Log waveform mapping details
+      console.log('[ClipEditorTimeline] Waveform mapping debug:', {
+        clipStart: props.clipStart,
+        segmentStartTime: segment.startTime,
+        segmentEndTime: segment.endTime,
+        absoluteStartTime,
+        absoluteEndTime,
+        waveformDuration: duration,
+        totalPeaks: peaks?.length,
+        // Sample some peaks to see if they have data
+        samplePeaks: peaks?.slice(0, 5).map((p: any) => ({ min: p.min.toFixed(4), max: p.max.toFixed(4) })),
+      });
+
       if (!peaks || peaks.length === 0) return;
 
       // Extract peaks for this segment's time range
@@ -7050,6 +7045,16 @@
       const startIndex = Math.floor(startRatio * peaks.length);
       const endIndex = Math.ceil(endRatio * peaks.length);
       const segmentPeaks = peaks.slice(startIndex, endIndex);
+      
+      console.log('[ClipEditorTimeline] Peak extraction:', {
+        startRatio: startRatio.toFixed(4),
+        endRatio: endRatio.toFixed(4),
+        startIndex,
+        endIndex,
+        segmentPeaksCount: segmentPeaks.length,
+        // Sample extracted peaks
+        sampleExtractedPeaks: segmentPeaks.slice(0, 5).map((p: any) => ({ min: p.min.toFixed(4), max: p.max.toFixed(4) })),
+      });
 
       if (segmentPeaks.length === 0) return;
 
@@ -7144,13 +7149,14 @@
     const { width, height, peaks, currentTime, segmentStartTime, segmentEndTime, barWidth, barSpacing, amplitude } =
       options;
     
-    // Use pixel-based iteration logic
-    const barW = 3; // Fixed visual width in pixels
+    // Use pixel-based iteration logic - CapCut style with thin bars
+    const barW = 1; // Thin bars like CapCut
     const gap = 1;
     const step = barW + gap;
     const numBars = Math.ceil(width / step);
     const maxBarHeight = height * (amplitude * 0.9);
-    const baselineY = height - 1;
+    // Bars grow upward from bottom baseline
+    const baselineY = height;
 
     // Calculate playhead position within segment
     const isWithinSegment = currentTime >= segmentStartTime && currentTime <= segmentEndTime;
@@ -7168,12 +7174,7 @@
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1.0;
 
-    // Use fixed normalizer of 1.0 since peaks are already processed by caller
-    const normalizer = 1.0;
-
-    // Peak threshold for clipping warning (0.95 = 95% of max)
-    const PEAK_WARNING_THRESHOLD = 0.85;
-    const PEAK_CLIPPING_THRESHOLD = 0.95;
+    // CapCut-style waveform: base color with yellow/orange/red gradient at TOP when loud
 
     for (let i = 0; i < numBars; i++) {
       const x = i * step;
@@ -7188,24 +7189,11 @@
       const peak = peaks[peakIndex];
       if (!peak) continue;
 
-      // Apply normalization (fixed to 1.0)
-      const normMin = peak.min / normalizer;
-      const normMax = peak.max / normalizer;
-      
-      const magnitude = Math.max(Math.abs(normMax), Math.abs(normMin));
+      const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
       const barHeight = Math.max(1, magnitude * maxBarHeight);
       
-      // Color based on peak level (clipping indicator)
-      if (magnitude >= PEAK_CLIPPING_THRESHOLD) {
-        ctx.fillStyle = '#ef4444'; // Red for clipping
-      } else if (magnitude >= PEAK_WARNING_THRESHOLD) {
-        ctx.fillStyle = '#f59e0b'; // Orange/amber for warning
-      } else {
-        ctx.fillStyle = '#e5e7eb'; // Default gray
-      }
-      
-      // Draw bar
-      ctx.fillRect(x, baselineY - barHeight, barW, barHeight);
+      // Render bar growing upward from baseline
+      renderCapcutStyleBar(ctx, x, baselineY, barW, barHeight, magnitude);
     }
 
     ctx.globalAlpha = 1.0;
@@ -7300,35 +7288,29 @@
     sourceWaveformLoading.value.add(sourceId);
 
     try {
-      const cacheKey = getSourceCacheKey(sourcePath);
-
-      // Check database cache first
-      const cachedData = await getCachedSourceWaveform(cacheKey);
-      if (cachedData) {
-        console.log('[ClipEditorTimeline] Using cached waveform for source:', sourceId);
-        sourceWaveformData.value.set(sourceId, cachedData);
-        nextTick(() => {
-          renderSourceWaveform(sourceId);
-        });
-        return;
-      }
-
-      console.log('[ClipEditorTimeline] No cached waveform, extracting for source:', sourceId);
-
-      // Call Rust function to extract real audio waveform from the source file
-      const rustWaveform = await invoke<any>('extract_audio_waveform', {
-        videoPath: sourcePath,
+      // Use Web Audio API for extraction - guarantees perfect sync with video playback
+      // since it uses the browser's native audio decoder (same as video element)
+      console.log('[ClipEditorTimeline] Extracting waveform using Web Audio API for source:', sourceId);
+      
+      // Pass raw local path so WebAudio extractor can read via Tauri fs (no asset.localhost fetch)
+      const videoUrl = sourcePath;
+      console.log('[ClipEditorTimeline] Video path for Web Audio:', videoUrl);
+      
+      const webAudioData = await extractWaveformFromUrl(videoUrl);
+      
+      console.log('[ClipEditorTimeline] Received waveform from Web Audio API:', {
+        sampleCount: webAudioData.channelData.length,
+        duration: webAudioData.duration,
+        sampleRate: webAudioData.sampleRate,
       });
 
-      // Convert Rust data structure to our TypeScript interface (simplified single-resolution)
+      // Convert to our WaveformData interface
       const data: WaveformData = {
-        sampleRate: rustWaveform.sample_rate,
-        duration: rustWaveform.duration,
-        peaks: rustWaveform.peaks.map((peak: any) => ({
-          min: peak.min,
-          max: peak.max,
-        })),
-        peakCount: rustWaveform.peak_count,
+        sampleRate: webAudioData.sampleRate,
+        duration: webAudioData.duration,
+        channelData: webAudioData.channelData,
+        peaks: [], // Raw mode doesn't use pre-computed peaks
+        peakCount: webAudioData.channelData.length,
       };
 
       sourceWaveformData.value.set(sourceId, data);
@@ -7338,7 +7320,7 @@
         renderSourceWaveform(sourceId);
       });
     } catch (err) {
-      console.error('[ClipEditorTimeline] Failed to load waveform for source:', sourceId, err);
+      console.error('[ClipEditorTimeline] Failed to load waveform for source (no fallback):', sourceId, err);
     } finally {
       sourceWaveformLoading.value.delete(sourceId);
     }
@@ -7360,16 +7342,16 @@
       const segmentDuration = source.end_time - source.start_time;
       const trimEnd = source.trim_end ?? trimStart + segmentDuration;
 
-      // Get the waveform peaks
-      const { duration, peaks } = data;
+      // Get the waveform data
+      const { duration, channelData, peaks, sampleRate } = data;
 
-      if (duration <= 0 || peaks.length === 0) return;
+      if (duration <= 0) return;
+      if ((!channelData || channelData.length === 0) && (!peaks || peaks.length === 0)) return;
 
       // Calculate how to best display the peaks across the canvas width
       const width = rect.width;
       const height = rect.height;
-      const amplitude = 0.7;
-
+      
       // Set canvas size and clear
       canvas.width = width;
       canvas.height = height;
@@ -7381,71 +7363,145 @@
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1.0;
 
-      // Calculate peak extraction range
-      const startRatio = Math.max(0, trimStart / duration);
-      const endRatio = Math.min(1, trimEnd / duration);
-      const startIndex = Math.floor(startRatio * peaks.length);
-      const endIndex = Math.ceil(endRatio * peaks.length);
-
-      // Safety check for valid range
-      if (startIndex >= peaks.length || endIndex <= startIndex) return;
-
-      const segmentPeaks = peaks.slice(startIndex, endIndex);
-      if (segmentPeaks.length === 0) return;
-
+      // COMPREHENSIVE DEBUG LOGGING
+      // Use zero offset now that Web Audio decode is raw and direct
+      const AUDIO_OFFSET_SECONDS = 0.0; 
+      
       // Use fixed normalizer of 1.0 to respect actual volume levels
       const normalizer = 1.0;
       const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
 
       // Render using pixel-based iteration to guarantee full width coverage
-      const barWidth = 3; // Fixed visual width in pixels
+      // CapCut style: thin bars growing upward from bottom
+      const barWidth = 1; 
       const gap = 1;
       const step = barWidth + gap;
       const numBars = Math.ceil(width / step);
-      const baselineY = height;
-      const maxBarHeight = height * 0.9; // Use 90% of height for max amplitude
+      const baselineY = height; 
+      const maxBarHeight = height * 0.9; 
 
       const segmentStartTime = source.start_time;
       const segmentEndTime = source.end_time;
+      
+      // Setup loop variables
+      let maxBarHeightDrawn = 0;
+      let barsDrawn = 0;
 
-      // Calculate playhead pixel position for coloring
-      let playheadPixel = -1;
-      if (props.currentTime >= segmentStartTime && props.currentTime <= segmentEndTime) {
-        const playheadRatio = (props.currentTime - segmentStartTime) / (segmentEndTime - segmentStartTime);
-        playheadPixel = playheadRatio * width;
-      } else if (props.currentTime > segmentEndTime) {
-        playheadPixel = width + 1; // All past
+      // MODE 1: High Fidelity (Raw Data)
+      if (channelData && channelData.length > 0) {
+        console.log('=== WAVEFORM RENDER: RAW DATA (INFINITE ZOOM) ===');
+        
+        for (let i = 0; i < numBars; i++) {
+          const x = i * step;
+
+          // 1. Map pixel position to time in the segment
+          const percentStart = i / numBars;
+          const percentEnd = (i + 1) / numBars;
+          
+          const timeStart = trimStart + (percentStart * segmentDuration);
+          const timeEnd = trimStart + (percentEnd * segmentDuration);
+          
+          // 2. Map time to sample indices
+          const sampleStart = Math.floor((timeStart + AUDIO_OFFSET_SECONDS) * sampleRate);
+          const sampleEnd = Math.floor((timeEnd + AUDIO_OFFSET_SECONDS) * sampleRate);
+          
+          // Safety bounds
+          const safeStart = Math.max(0, Math.min(sampleStart, channelData.length - 1));
+          const safeEnd = Math.max(0, Math.min(sampleEnd, channelData.length));
+          
+          // 3. Max Pooling
+          let maxMagnitude = 0;
+          let hasData = false;
+          
+          if (safeEnd <= safeStart) {
+             if (safeStart < channelData.length) {
+              const val = channelData[safeStart];
+              const normVal = (val / normalizer) * gainMultiplier;
+              maxMagnitude = Math.abs(normVal);
+              hasData = true;
+            }
+          } else {
+            for (let j = safeStart; j < safeEnd; j++) {
+              const val = channelData[j];
+              const normVal = (val / normalizer) * gainMultiplier;
+              const mag = Math.abs(normVal);
+              if (mag > maxMagnitude) maxMagnitude = mag;
+              hasData = true;
+            }
+          }
+
+          if (!hasData) continue;
+
+          // Apply clamping
+          const magnitude = Math.min(1, maxMagnitude);
+          const barHeight = Math.max(1, magnitude * maxBarHeight);
+
+          if (barHeight > maxBarHeightDrawn) maxBarHeightDrawn = barHeight;
+          barsDrawn++;
+
+          renderCapcutStyleBar(ctx, x, baselineY, barWidth, barHeight, magnitude);
+        }
+      } 
+      // MODE 2: Legacy/Fallback (Pre-computed Peaks)
+      else if (peaks && peaks.length > 0) {
+        console.log('=== WAVEFORM RENDER: LEGACY PEAKS (FALLBACK) ===');
+        
+        const peaksPerSecond = peaks.length / duration;
+        const offsetPeaks = Math.floor(AUDIO_OFFSET_SECONDS * peaksPerSecond);
+
+        for (let i = 0; i < numBars; i++) {
+          const x = i * step;
+          
+          const percentStart = i / numBars;
+          const percentEnd = (i + 1) / numBars;
+
+          const timeStart = trimStart + (percentStart * segmentDuration);
+          const timeEnd = trimStart + (percentEnd * segmentDuration);
+          
+          // Map to peak indices
+          const idxStart = Math.floor(timeStart * peaksPerSecond) + offsetPeaks;
+          const idxEnd = Math.floor(timeEnd * peaksPerSecond) + offsetPeaks;
+          
+          const safeStart = Math.max(0, Math.min(idxStart, peaks.length - 1));
+          const safeEnd = Math.max(0, Math.min(idxEnd, peaks.length));
+          
+          let maxMagnitude = 0;
+          let hasData = false;
+          
+           if (safeEnd <= safeStart) {
+             if (safeStart < peaks.length) {
+              const p = peaks[safeStart];
+              const mag = Math.max(Math.abs(p.min), Math.abs(p.max)) * gainMultiplier;
+              maxMagnitude = mag;
+              hasData = true;
+            }
+          } else {
+            for (let j = safeStart; j < safeEnd; j++) {
+              const p = peaks[j];
+              const mag = Math.max(Math.abs(p.min), Math.abs(p.max)) * gainMultiplier;
+              if (mag > maxMagnitude) maxMagnitude = mag;
+              hasData = true;
+            }
+          }
+
+          if (!hasData) continue;
+
+          const magnitude = Math.min(1, maxMagnitude);
+          const barHeight = Math.max(1, magnitude * maxBarHeight);
+          
+          if (barHeight > maxBarHeightDrawn) maxBarHeightDrawn = barHeight;
+          barsDrawn++;
+
+          renderCapcutStyleBar(ctx, x, baselineY, barWidth, barHeight, magnitude);
+        }
       }
-
-      ctx.fillStyle = '#e5e7eb'; // Default color
-
-      for (let i = 0; i < numBars; i++) {
-        const x = i * step;
-
-        // Map current bar position to index in segmentPeaks
-        const percent = i / numBars;
-        const peakIndex = Math.min(
-          Math.floor(percent * segmentPeaks.length),
-          segmentPeaks.length - 1
-        );
-
-        const peak = segmentPeaks[peakIndex];
-        if (!peak) continue;
-
-        // Apply normalization and gain
-        const normMin = Math.max(-1, (peak.min / normalizer) * gainMultiplier);
-        const normMax = Math.min(1, (peak.max / normalizer) * gainMultiplier);
-
-        const magnitude = Math.max(Math.abs(normMax), Math.abs(normMin));
-        const barHeight = Math.max(1, magnitude * maxBarHeight);
-
-        // Determine color based on playhead
-        const barCenter = x + barWidth / 2;
-        // Using same color for now as per original design, but structure allows change
-        ctx.fillStyle = '#e5e7eb';
-
-        ctx.fillRect(x, baselineY - barHeight, barWidth, barHeight);
-      }
+      
+      console.log('[renderSourceWaveform] Drawing complete:', {
+        barsDrawn,
+        maxBarHeightDrawn,
+        maxBarHeight,
+        mode: channelData ? 'RAW' : 'PEAKS'
+      });
 
       ctx.globalAlpha = 1.0;
     } catch (err) {
@@ -7728,15 +7784,15 @@
 
       ctx.clearRect(0, 0, width, height);
 
+      // Use dB-based color coding for professional audio metering
+      // Green: Safe levels (below -12 dB)
+      // Yellow: Caution (-12 to -6 dB)
+      // Orange: Warning (-6 to -3 dB)
+      // Red: Clipping danger (above -3 dB)
+
       displayPeaks.forEach((peak, index) => {
         const x = index * totalBarWidth;
         if (x >= width) return;
-
-        const barCenter = x + barWidth / 2;
-        const isBeforePlayhead = barCenter < playheadPixel;
-        const color = isBeforePlayhead ? '#e4e4e7' : '#34d399'; // Gray for played, emerald for remaining
-
-        ctx.fillStyle = color;
 
         // Apply gain and clamp to prevent overdrive - use magnitude for vertical bars
         const magnitude = Math.max(Math.abs(peak.max / normalizer), Math.abs(peak.min / normalizer));
@@ -7745,8 +7801,8 @@
         const actualBarWidth = Math.min(barWidth, width - x);
 
         if (barHeight > 0 && actualBarWidth > 0) {
-          // Draw vertical bar from bottom
-          ctx.fillRect(x, baselineY - barHeight, actualBarWidth, barHeight);
+          // Render bar growing upward from baseline
+          renderCapcutStyleBar(ctx, x, baselineY, actualBarWidth, barHeight, gainedMagnitude);
         }
       });
     } catch (error) {
@@ -7822,6 +7878,8 @@
     () => props.videoSrc,
     async (newVideoSrc) => {
       if (newVideoSrc) {
+        console.log('[ClipEditorTimeline] Loading waveform for video:', newVideoSrc);
+        // Cache is disabled in useAudioWaveform - always extracts fresh data from Rust
         await loadWaveformFromVideo(newVideoSrc);
       }
     },
@@ -8390,7 +8448,11 @@
     }
 
     // Handle arrow keys for frame-by-frame seeking (precise millisecond navigation)
-    const maxDuration = props.editorMode ? props.duration : totalDuration.value;
+    // In editor mode, use props.duration (editor timeline duration)
+    // In clip mode, use the clip duration from clipEnd - clipStart
+    const maxDuration = props.editorMode 
+      ? (props.duration || totalDuration.value) 
+      : (props.clipEnd && props.clipStart !== undefined ? props.clipEnd - props.clipStart : totalDuration.value);
     const frameTime = 1 / 30; // Assume 30fps for frame-accurate stepping
     
     if (!isCutToolActive.value && maxDuration > 0) {

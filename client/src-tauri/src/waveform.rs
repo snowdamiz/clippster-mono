@@ -190,33 +190,83 @@ pub async fn save_waveform_to_cache(
 }
 
 #[tauri::command]
+pub async fn clear_waveform_cache(
+    video_path: String,
+) -> Result<(), String> {
+    println!("[Rust] Clearing waveform cache for: {}", video_path);
+
+    // Generate hash
+    let video_path_hash = generate_video_path_hash(&video_path);
+
+    // Delete file cache
+    let cache_file_path = get_waveform_cache_file_path(&video_path_hash)?;
+    
+    if cache_file_path.exists() {
+        std::fs::remove_file(&cache_file_path)
+            .map_err(|e| format!("Failed to delete cache file: {}", e))?;
+        println!("[Rust] Deleted waveform cache file: {:?}", cache_file_path);
+    } else {
+        println!("[Rust] No cache file found to delete");
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn extract_audio_waveform(
     app: tauri::AppHandle,
-    video_path: String,
-    _target_samples: Option<u32>
+    #[allow(non_snake_case)]
+    videoPath: String,
+    #[allow(non_snake_case)]
+    _targetSamples: Option<u32>,
+    #[allow(non_snake_case)]
+    forceRegenerate: Option<bool>
 ) -> Result<WaveformData, String> {
     use tauri_plugin_shell::ShellExt;
+
+    let video_path = videoPath;
+    let force = forceRegenerate.unwrap_or(false);
 
     println!("[Rust] extract_audio_waveform called with:");
     println!("[Rust]   video_path: {}", video_path);
     println!("[Rust]   target_peaks: {} (fixed)", TARGET_PEAKS);
+    println!("[Rust]   force_regenerate: {}", force);
 
-    // Check cache first
-    match get_cached_waveform(video_path.clone()).await {
-        Ok(Some(cached_waveform)) => {
-            println!("[Rust] Returning cached waveform data");
-            return Ok(cached_waveform);
+    // Check cache first (unless force regenerate is requested)
+    if !force {
+        match get_cached_waveform(video_path.clone()).await {
+            Ok(Some(cached_waveform)) => {
+                println!("[Rust] Returning cached waveform data");
+                return Ok(cached_waveform);
+            }
+            Ok(None) => {
+                println!("[Rust] No cached waveform found, proceeding with generation");
+            }
+            Err(e) => {
+                println!("[Rust] Error checking cache: {}, proceeding with generation", e);
+            }
         }
-        Ok(None) => {
-            println!("[Rust] No cached waveform found, proceeding with generation");
-        }
-        Err(e) => {
-            println!("[Rust] Error checking cache: {}, proceeding with generation", e);
+    } else {
+        println!("[Rust] Force regenerate requested, skipping cache check");
+        // Clear existing cache file
+        let video_path_hash = generate_video_path_hash(&video_path);
+        if let Ok(cache_file_path) = get_waveform_cache_file_path(&video_path_hash) {
+            if cache_file_path.exists() {
+                let _ = std::fs::remove_file(&cache_file_path);
+                println!("[Rust] Deleted existing cache file");
+            }
         }
     }
 
     // Generate a hash for the video path for consistent lookup
     let video_path_hash = generate_video_path_hash(&video_path);
+
+    // CRITICAL: Extract local file path from URL for FFmpeg
+    // FFmpeg needs the actual file path, not the HTTP URL
+    let local_video_path = extract_local_path_from_url(&video_path)
+        .map_err(|e| format!("Failed to extract local path from video URL: {}", e))?;
+    
+    println!("[Rust] Local video path for FFmpeg: {}", local_video_path);
 
     // Get storage paths for temporary files
     let paths = storage::init_storage_dirs()
@@ -238,10 +288,11 @@ pub async fn extract_audio_waveform(
     println!("[Rust] Extracting audio directly to {}Hz WAV: {}", WAVEFORM_SAMPLE_RATE, temp_wav_path.display());
 
     // Extract audio directly to low-bitrate WAV (16kHz mono) - single FFmpeg call
+    // Use local_video_path instead of video_path (which is HTTP URL)
     let extract_output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
-            "-i", &video_path,
+            "-i", &local_video_path,
             "-vn",                    // No video
             "-acodec", "pcm_s16le",   // 16-bit PCM
             "-ar", &WAVEFORM_SAMPLE_RATE.to_string(), // 16kHz sample rate (sufficient for waveform)
@@ -265,7 +316,7 @@ pub async fn extract_audio_waveform(
     let duration_output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
-            "-i", &video_path,
+            "-i", &local_video_path,
             "-f", "null",
             "-"
         ])
@@ -383,6 +434,9 @@ fn process_wav_file(
         .map_err(|e| format!("Failed to read audio data: {}", e))?;
 
     println!("[Rust] Read {} bytes of audio data", audio_data.len());
+    
+    // DEBUG: Print first 20 bytes of raw audio data
+    println!("[Rust] First 20 bytes of audio data: {:?}", &audio_data[..20.min(audio_data.len())]);
 
     // Convert bytes to 16-bit samples (little-endian)
     let mut samples = Vec::new();
@@ -394,6 +448,24 @@ fn process_wav_file(
     }
 
     println!("[Rust] Converted to {} audio samples", samples.len());
+    
+    // DEBUG: Print first 10 raw i16 samples and their normalized values
+    println!("[Rust] First 10 samples (raw i16 -> normalized f64):");
+    for i in 0..10.min(audio_data.len() / 2) {
+        let raw_i16 = i16::from_le_bytes([audio_data[i*2], audio_data[i*2 + 1]]);
+        let normalized = raw_i16 as f64 / i16::MAX as f64;
+        println!("[Rust]   Sample {}: raw={}, normalized={:.6}", i, raw_i16, normalized);
+    }
+    
+    // DEBUG: Find the maximum absolute sample value in raw data
+    let mut max_raw: i16 = 0;
+    let mut min_raw: i16 = 0;
+    for chunk in audio_data.chunks_exact(2) {
+        let raw = i16::from_le_bytes([chunk[0], chunk[1]]);
+        if raw > max_raw { max_raw = raw; }
+        if raw < min_raw { min_raw = raw; }
+    }
+    println!("[Rust] Raw sample range: min={}, max={} (i16 range is -32768 to 32767)", min_raw, max_raw);
 
     // Calculate actual audio duration from samples
     let audio_duration_from_samples = samples.len() as f64 / sample_rate as f64;
@@ -409,12 +481,46 @@ fn process_wav_file(
     if samples.is_empty() {
         return Err("No audio samples found".to_string());
     }
+    
+    // DEBUG: Analyze the raw audio samples to verify they're correct
+    let mut max_sample = 0.0f64;
+    let mut min_sample = 0.0f64;
+    let mut non_zero_count = 0usize;
+    for sample in &samples {
+        if *sample > max_sample { max_sample = *sample; }
+        if *sample < min_sample { min_sample = *sample; }
+        if sample.abs() > 0.001 { non_zero_count += 1; }
+    }
+    println!("[Rust] Raw audio stats: min={:.4}, max={:.4}, non-zero samples: {} ({:.1}%)", 
+             min_sample, max_sample, non_zero_count, 
+             (non_zero_count as f64 / samples.len() as f64) * 100.0);
+    
+    // DEBUG: Print samples at specific time points to verify timing
+    let samples_per_second = sample_rate as usize;
+    println!("[Rust] Checking audio at specific time points (sample_rate={}):", sample_rate);
+    for time_sec in [0, 2, 3, 4, 5, 10, 30, 60, 120, 180, 240] {
+        if time_sec < audio_duration_from_samples as usize {
+            let sample_idx = time_sec * samples_per_second;
+            if sample_idx < samples.len() {
+                // Get min/max of 1000 samples at this point (like PowerShell test)
+                let end_idx = (sample_idx + 1000).min(samples.len());
+                let mut min_val = 0.0f64;
+                let mut max_val = 0.0f64;
+                for i in sample_idx..end_idx {
+                    if samples[i] < min_val { min_val = samples[i]; }
+                    if samples[i] > max_val { max_val = samples[i]; }
+                }
+                println!("[Rust]   At {}s (sample_idx={}): min={:.4}, max={:.4}", time_sec, sample_idx, min_val, max_val);
+            }
+        }
+    }
 
-    // Generate peaks - ensure we cover the entire audio duration
+    // Generate peaks using absolute min/max peak detection
+    // This is what waveform visualizers actually use - shows the actual amplitude envelope
     let num_samples = samples.len();
     let actual_peaks = (target_peaks as usize).min(num_samples);
     
-    println!("[Rust] Generating {} peaks from {} samples", actual_peaks, num_samples);
+    println!("[Rust] Generating {} absolute peaks from {} samples", actual_peaks, num_samples);
 
     let mut peaks = Vec::with_capacity(actual_peaks);
 
@@ -423,23 +529,49 @@ fn process_wav_file(
         let start_idx = (i as f64 * num_samples as f64 / actual_peaks as f64) as usize;
         let end_idx = ((i + 1) as f64 * num_samples as f64 / actual_peaks as f64) as usize;
 
-        let mut min = 0.0f64;
-        let mut max = 0.0f64;
+        // Find the actual min and max sample values in this window
+        // This gives us the true amplitude envelope of the audio
+        let mut min_val = 0.0f64;
+        let mut max_val = 0.0f64;
 
-        // Find min and max in this chunk
         for j in start_idx..end_idx {
             if j < num_samples {
                 let sample = samples[j];
-                if sample < min { min = sample; }
-                if sample > max { max = sample; }
+                if sample < min_val { min_val = sample; }
+                if sample > max_val { max_val = sample; }
             }
         }
 
-        peaks.push(WaveformPeak { min, max });
+        // Store actual min/max values - this shows the true waveform shape
+        peaks.push(WaveformPeak { min: min_val, max: max_val });
     }
 
     let peak_count = peaks.len() as u32;
     println!("[Rust] Generated {} peaks covering {} samples", peak_count, num_samples);
+    
+    // Find the actual max peak value across all peaks
+    let mut global_max: f64 = 0.0;
+    let mut max_peak_idx: usize = 0;
+    for (i, peak) in peaks.iter().enumerate() {
+        let peak_mag = peak.max.abs().max(peak.min.abs());
+        if peak_mag > global_max {
+            global_max = peak_mag;
+            max_peak_idx = i;
+        }
+    }
+    let max_peak_time = (max_peak_idx as f64 / actual_peaks as f64) * duration;
+    println!("[Rust] Global max peak: {:.4} at index {} (time: {:.1}s)", global_max, max_peak_idx, max_peak_time);
+    
+    // Debug: Print peaks at specific time points where we know there's audio
+    let peaks_per_second = actual_peaks as f64 / duration;
+    println!("[Rust] Peaks at specific times (peaks_per_second={:.1}):", peaks_per_second);
+    for time_sec in [2, 3, 4, 5, 60, 120, 240] {
+        let peak_idx = (time_sec as f64 * peaks_per_second) as usize;
+        if peak_idx < peaks.len() {
+            let p = &peaks[peak_idx];
+            println!("[Rust]   At {}s (peak {}): min={:.4}, max={:.4}", time_sec, peak_idx, p.min, p.max);
+        }
+    }
 
     Ok(WaveformData {
         sample_rate,

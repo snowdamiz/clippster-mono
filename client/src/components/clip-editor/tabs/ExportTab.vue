@@ -591,6 +591,7 @@
             .map((t) => ({
               filePath: t.filePath,
               gainDb: props.trackDbValues?.[t.id] ?? 0,
+              pan: t.pan ?? 0,
               fadeIn: t.fadeIn ?? 0,
               fadeOut: t.fadeOut ?? 0,
               startTime: t.startTime,

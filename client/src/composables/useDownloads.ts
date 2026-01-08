@@ -260,6 +260,23 @@ export function useDownloads() {
 
               download.rawVideoId = rawVideoId;
 
+              // Pre-generate waveform in background for instant loading when user opens editor
+              // This runs async and doesn't block the download completion
+              try {
+                const { invoke } = await import('@tauri-apps/api/core');
+                console.log('[Downloads] Pre-generating waveform for:', event.payload.file_path);
+                // Fire and forget - don't await, let it run in background
+                invoke('extract_audio_waveform', {
+                  videoPath: event.payload.file_path,
+                }).then(() => {
+                  console.log('[Downloads] Waveform pre-generation complete for:', download.title);
+                }).catch((err) => {
+                  console.warn('[Downloads] Waveform pre-generation failed (non-critical):', err);
+                });
+              } catch (e) {
+                console.warn('[Downloads] Failed to start waveform pre-generation:', e);
+              }
+
               // Notify all listeners about completion
               completionCallbacks.forEach((callback) => {
                 try {

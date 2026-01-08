@@ -167,6 +167,9 @@ export async function createVideoEditorSource(
   const id = generateId();
   const now = timestamp();
 
+  // Ensure keyframes_data column exists before inserting
+  await ensureKeyframesDataColumn();
+
   await db.execute(
     `INSERT INTO video_editor_sources 
      (id, project_id, source_type, source_id, source_path, source_name, source_thumbnail, 
@@ -248,6 +251,29 @@ async function ensureTrackIndexColumn() {
       console.log('[video-editor-projects] Successfully added track_index column');
     } catch (alterError) {
       console.error('[video-editor-projects] Failed to add track_index column:', alterError);
+    }
+  }
+}
+
+// Check if keyframes_data column exists, if not add it
+let keyframesDataColumnExists = false;
+async function ensureKeyframesDataColumn() {
+  if (keyframesDataColumnExists) return;
+  
+  const db = await getDatabase();
+  try {
+    // Try to query the column - if it fails, it doesn't exist
+    await db.execute('SELECT keyframes_data FROM video_editor_sources LIMIT 1', []);
+    keyframesDataColumnExists = true;
+  } catch (error) {
+    // Column doesn't exist, add it
+    console.log('[video-editor-projects] Adding keyframes_data column to video_editor_sources');
+    try {
+      await db.execute('ALTER TABLE video_editor_sources ADD COLUMN keyframes_data TEXT DEFAULT NULL', []);
+      keyframesDataColumnExists = true;
+      console.log('[video-editor-projects] Successfully added keyframes_data column');
+    } catch (alterError) {
+      console.error('[video-editor-projects] Failed to add keyframes_data column:', alterError);
     }
   }
 }

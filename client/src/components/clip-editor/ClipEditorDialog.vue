@@ -3729,10 +3729,17 @@
       'currentVideoSourceId:',
       currentVideoSourceId.value,
       'previewTime:',
-      previewTime.value
+      previewTime.value,
+      'editorMode:',
+      editorMode.value
     );
 
-    if (!editorMode.value) return;
+    // In clip mode (non-editor), just stop playback when video ends
+    if (!editorMode.value) {
+      console.log('[onVideoEnded] Clip mode - stopping playback');
+      isPlaying.value = false;
+      return;
+    }
 
     // If we're currently in a crossfade transition (or just started one), complete it
     // The outgoing video has reached its end during the crossfade
