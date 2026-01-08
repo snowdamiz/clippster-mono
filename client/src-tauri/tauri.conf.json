@@ -64,6 +64,9 @@
       "binaries/ffmpeg",
       "binaries/node"
     ],
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    },
     "windows": {
       "nsis": {},
       "wix": {
