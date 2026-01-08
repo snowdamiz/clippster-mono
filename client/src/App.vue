@@ -9,6 +9,7 @@
   import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
   import MandatoryUpdateDialog from '@/components/MandatoryUpdateDialog.vue';
   import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
+  import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -201,6 +202,14 @@
       console.error('[App] Failed to initialize window close handler:', error);
     }
 
+    // Initialize global clip build event handler
+    // This ensures database is always updated when builds complete, regardless of which view is active
+    try {
+      await initClipBuildEventHandler();
+    } catch (error) {
+      console.error('[App] Failed to initialize clip build event handler:', error);
+    }
+
     // Hide loading screen after initialization
     isLoading.value = false;
   }
@@ -213,6 +222,9 @@
     });
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
+    
+    // Cleanup global clip build event handler
+    cleanupClipBuildEventHandler();
   });
 </script>
 
