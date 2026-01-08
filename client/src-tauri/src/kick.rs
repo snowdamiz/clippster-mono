@@ -28,6 +28,7 @@ struct KickSegmentReadyPayload {
     streamer_id: String,
     session_id: String,
     channel_slug: String,
+    mint_id: String, // For Kick, this is the same as channel_slug
     segment: u32,
     path: String,
     duration: f64,
@@ -650,6 +651,7 @@ async fn run_kick_recorder(
                                     streamer_id: streamer_id.clone(),
                                     session_id: session_id.clone(),
                                     channel_slug: channel_slug.clone(),
+                                    mint_id: channel_slug.clone(), // For Kick, mintId = channel_slug
                                     segment: seg,
                                     path: seg_path.to_string_lossy().to_string(),
                                     duration: hls_segment_seconds as f64,
