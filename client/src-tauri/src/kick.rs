@@ -255,9 +255,31 @@ pub async fn get_kick_stream_url(channel: String) -> Result<String, String> {
     }
 }
 
-/// Resolve the yt-dlp binary path
-/// Uses bundled binary which is a standalone executable (no Python required)
-fn resolve_ytdlp_binary() -> Result<String, String> {
+/// Get the target triple for the current platform (matches Tauri's sidecar naming)
+fn get_target_triple() -> &'static str {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    return "x86_64-pc-windows-msvc";
+    
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    return "aarch64-pc-windows-msvc";
+    
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return "x86_64-unknown-linux-gnu";
+    
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    return "aarch64-unknown-linux-gnu";
+    
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    return "x86_64-apple-darwin";
+    
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    return "aarch64-apple-darwin";
+}
+
+/// Resolve a sidecar binary path using Tauri's naming convention.
+/// Tauri places sidecars next to the executable with -{target_triple} suffix.
+/// In dev mode, they're in src-tauri/binaries/ with the same naming.
+fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
     let exe_path = std::env::current_exe()
         .map_err(|e| format!("Failed to get executable path: {}", e))?;
     
@@ -265,49 +287,47 @@ fn resolve_ytdlp_binary() -> Result<String, String> {
         .parent()
         .ok_or("Failed to get parent directory")?;
 
-    // Platform-specific binary names with Tauri target triple suffix
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    let binary_name = "yt-dlp-x86_64-pc-windows-msvc.exe";
+    let target_triple = get_target_triple();
     
-    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
-    let binary_name = "yt-dlp-aarch64-pc-windows-msvc.exe";
+    #[cfg(target_os = "windows")]
+    let binary_name = format!("{}-{}.exe", base_name, target_triple);
     
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    let binary_name = "yt-dlp-x86_64-unknown-linux-gnu";
-    
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    let binary_name = "yt-dlp-aarch64-unknown-linux-gnu";
-    
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    let binary_name = "yt-dlp-x86_64-apple-darwin";
-    
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    let binary_name = "yt-dlp-aarch64-apple-darwin";
+    #[cfg(not(target_os = "windows"))]
+    let binary_name = format!("{}-{}", base_name, target_triple);
 
-    // Try various paths for bundled binary
-    let candidate_paths = vec![
-        exe_dir.join(binary_name),
-        exe_dir.join("binaries").join(binary_name),
-        exe_dir.parent().and_then(|p| Some(p.join("binaries").join(binary_name))).unwrap_or_default(),
-    ];
+    // Production: sidecar is next to the executable
+    let prod_path = exe_dir.join(&binary_name);
+    if prod_path.exists() {
+        println!("[Kick] Found {} at (prod): {}", base_name, prod_path.display());
+        return Ok(prod_path.to_string_lossy().to_string());
+    }
 
-    for path in candidate_paths {
-        if path.exists() && path.file_name().is_some() {
-            println!("[Kick] Found yt-dlp at: {}", path.display());
-            return Ok(path.to_string_lossy().to_string());
+    // Development mode: check src-tauri/binaries/
+    // In dev, exe is in target/debug/, binaries are in src-tauri/binaries/
+    if let Some(target_dir) = exe_dir.parent() {
+        if let Some(target_parent) = target_dir.parent() {
+            let dev_path = target_parent.join("binaries").join(&binary_name);
+            if dev_path.exists() {
+                println!("[Kick] Found {} at (dev): {}", base_name, dev_path.display());
+                return Ok(dev_path.to_string_lossy().to_string());
+            }
         }
     }
 
     // Fallback to system PATH
     #[cfg(target_os = "windows")]
-    {
-        return Ok("yt-dlp.exe".to_string());
-    }
+    let fallback = format!("{}.exe", base_name);
     
     #[cfg(not(target_os = "windows"))]
-    {
-        return Ok("yt-dlp".to_string());
-    }
+    let fallback = base_name.to_string();
+    
+    println!("[Kick] {} not found in bundle, falling back to PATH: {}", base_name, fallback);
+    Ok(fallback)
+}
+
+/// Resolve the yt-dlp binary path
+fn resolve_ytdlp_binary() -> Result<String, String> {
+    resolve_sidecar_binary("yt-dlp")
 }
 
 /// Check if yt-dlp is available on the system
@@ -484,35 +504,7 @@ pub async fn get_kick_session_output_dir(session_id: String) -> Result<String, S
 
 /// Resolve FFmpeg binary path
 fn resolve_ffmpeg_binary() -> Result<String, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?;
-    
-    let exe_dir = exe_path
-        .parent()
-        .ok_or("Failed to get parent directory")?;
-
-    #[cfg(target_os = "windows")]
-    let binary_name = "ffmpeg-x86_64-pc-windows-msvc.exe";
-    
-    #[cfg(target_os = "linux")]
-    let binary_name = "ffmpeg";
-    
-    #[cfg(target_os = "macos")]
-    let binary_name = "ffmpeg";
-
-    let candidate_paths = vec![
-        exe_dir.join(binary_name),
-        exe_dir.join("binaries").join(binary_name),
-    ];
-
-    for path in candidate_paths {
-        if path.exists() {
-            return Ok(path.to_string_lossy().to_string());
-        }
-    }
-
-    // Fallback to system PATH
-    Ok("ffmpeg".to_string())
+    resolve_sidecar_binary("ffmpeg")
 }
 
 /// Run the yt-dlp recorder process with HLS output via FFmpeg
@@ -546,16 +538,18 @@ async fn run_kick_recorder(
 
     // Spawn yt-dlp to output stream to stdout
     // yt-dlp <url> -o - outputs raw video to stdout
+    // Pass full path to ffmpeg binary (yt-dlp accepts either directory or full binary path)
     let mut ytdlp_cmd = tokio::process::Command::new(&ytdlp_path);
     ytdlp_cmd
         .arg(&kick_url)
         .arg("-o").arg("-")  // Output to stdout
         .arg("--quiet")      // Suppress progress output
         .arg("--no-part")    // Don't use .part files
+        .arg("--ffmpeg-location").arg(&ffmpeg_path)  // Full path to ffmpeg binary
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    println!("[KickRecorder] Starting yt-dlp: {} {}", ytdlp_path, kick_url);
+    println!("[KickRecorder] Starting yt-dlp: {} {} --ffmpeg-location {}", ytdlp_path, kick_url, ffmpeg_path);
 
     let mut ytdlp_child = ytdlp_cmd.spawn()
         .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
