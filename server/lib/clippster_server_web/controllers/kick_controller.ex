@@ -38,13 +38,21 @@ defmodule ClippsterServerWeb.KickController do
           videos_list
           |> Enum.take(limit_int)
           |> Enum.map(fn video ->
+            # Try multiple thumbnail field paths (API response format may vary)
+            thumbnail_url =
+              get_in(video, ["thumbnail", "src"]) ||
+              get_in(video, ["thumbnail", "url"]) ||
+              get_in(video, ["thumbnail", "responsive"]) ||
+              video["thumbnail_url"] ||
+              video["thumbnailUrl"]
+
             # Map fields safely, handle nil
             %{
               clipId: to_string(video["id"]),
               sessionId: video["slug"],
               title: video["session_title"] || video["sessionTitle"], # Handle different casing
               duration: (video["duration"] || 0) |> div(1000), # ms to seconds
-              thumbnailUrl: get_in(video, ["thumbnail", "src"]) || get_in(video, ["thumbnail", "url"]),
+              thumbnailUrl: thumbnail_url,
               playlistUrl: video["source"],
               mp4Url: nil,
               clipType: "COMPLETE",

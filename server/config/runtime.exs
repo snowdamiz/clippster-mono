@@ -153,6 +153,16 @@ if config_env() == :prod do
       For example: ecto://USER:PASS@HOST/DATABASE
       """
 
+  # Ensure we connect to the primary for read-write operations (Fly MPG)
+  # This prevents "read_only_sql_transaction" errors when connecting to replicas
+  database_url =
+    if String.contains?(database_url, "target_session_attrs") do
+      database_url
+    else
+      separator = if String.contains?(database_url, "?"), do: "&", else: "?"
+      database_url <> separator <> "target_session_attrs=read-write"
+    end
+
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
   config :clippster_server, ClippsterServer.Repo,

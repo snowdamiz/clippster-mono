@@ -19,12 +19,15 @@ async function fetchClips(mintId, limit = 20) {
       // Generate a title if not present
       const title = clip.title || `Stream ${index + 1}`;
       
+      // Try multiple possible thumbnail field names
+      const thumbnailUrl = clip.thumbnailUrl || clip.thumbnail_url || clip.thumbnail || null;
+      
       return {
         clipId: clip.clipId || clip.clip_id || clip.id,
         sessionId: clip.sessionId || clip.session_id,
         title: title,
         duration: clip.duration || 0,
-        thumbnailUrl: clip.thumbnailUrl || clip.thumbnail_url || clip.thumbnailUrl,
+        thumbnailUrl: thumbnailUrl,
         playlistUrl: clip.playlistUrl || clip.playlist_url || clip.url,
         mp4Url: clip.mp4Url || clip.mp4_url,
         clipType: clip.clipType || clip.clip_type || 'COMPLETE',
