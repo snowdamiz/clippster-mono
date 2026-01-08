@@ -1,33 +1,37 @@
 <template>
-  <div class="h-full w-full bg-black rounded-xl overflow-hidden select-none flex flex-col">
-    <!-- Video Container -->
-    <div 
-      class="flex-1 relative bg-black cursor-move"
+  <div 
+    class="h-full w-full bg-black overflow-hidden select-none relative"
+    @mouseenter="showControls = true"
+    @mouseleave="showControls = false"
+  >
+    <!-- Video fills entire container -->
+    <video
+      ref="videoRef"
+      class="w-full h-full object-contain"
+      autoplay
+      playsinline
+      :muted="isMuted"
       @mousedown="startDrag"
       @dblclick="closeWindow"
-    >
-      <video
-        ref="videoRef"
-        class="w-full h-full object-contain"
-        autoplay
-        playsinline
-        :muted="isMuted"
-      />
-      
-      <!-- Live Badge -->
-      <div class="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-red-600/90 rounded text-white text-xs font-medium">
-        <div class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-        LIVE
-      </div>
-
-      <!-- Streamer Name -->
-      <div class="absolute top-2 right-2 px-2 py-1 bg-black/60 rounded text-white text-xs font-medium truncate max-w-[150px]">
-        {{ streamerName }}
-      </div>
+    />
+    
+    <!-- Live Badge - always visible -->
+    <div class="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-red-600/90 rounded text-white text-xs font-medium pointer-events-none">
+      <div class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+      LIVE
     </div>
 
-    <!-- Controls Bar -->
-    <div class="flex items-center gap-1 p-2 bg-zinc-900/95">
+    <!-- Streamer Name - always visible -->
+    <div class="absolute top-2 right-2 px-2 py-1 bg-black/60 rounded text-white text-xs font-medium truncate max-w-[150px] pointer-events-none">
+      {{ streamerName }}
+    </div>
+
+    <!-- Controls Overlay - appears on hover -->
+    <div 
+      class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent pt-8 pb-2 px-2 transition-opacity duration-200"
+      :class="showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'"
+    >
+      <div class="flex items-center gap-1">
       <!-- Play/Pause Button -->
       <button
         @click="togglePlayPause"
@@ -79,18 +83,20 @@
       >
         <X class="w-4 h-4" />
       </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue';
-import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, emitTo, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Play, Pause, Volume2, Volume1, VolumeX, Scissors, X } from 'lucide-vue-next';
 import Hls from 'hls.js';
 
 const videoRef = ref<HTMLVideoElement | null>(null);
+const showControls = ref(false);
 
 // State synced from main window
 const streamerName = ref('Stream');
@@ -104,6 +110,8 @@ let hls: Hls | null = null;
 let unlistenFns: UnlistenFn[] = [];
 
 onMounted(async () => {
+  console.log('[PIP] Component mounted, setting up listeners...');
+  
   // Listen for state updates from main window
   unlistenFns.push(
     await listen<{ 
@@ -116,6 +124,7 @@ onMounted(async () => {
     }>(
       'pip-state-update',
       (event) => {
+        console.log('[PIP] Received state update:', event.payload);
         streamerName.value = event.payload.streamerName;
         isPlaying.value = event.payload.isPlaying;
         volume.value = event.payload.volume;
@@ -124,15 +133,19 @@ onMounted(async () => {
         
         // Initialize HLS if URL provided and changed
         if (event.payload.hlsUrl && event.payload.hlsUrl !== hlsUrl.value) {
+          console.log('[PIP] New HLS URL received:', event.payload.hlsUrl);
           hlsUrl.value = event.payload.hlsUrl;
           initHls(event.payload.hlsUrl);
+        } else if (!event.payload.hlsUrl) {
+          console.warn('[PIP] No HLS URL in state update');
         }
       }
     )
   );
 
-  // Request initial state
-  await emit('pip-request-state');
+  // Request initial state from main window
+  console.log('[PIP] Requesting initial state...');
+  await emitTo('main', 'pip-request-state');
 });
 
 onUnmounted(() => {
@@ -163,14 +176,21 @@ watch(isPlaying, (playing) => {
 });
 
 function initHls(url: string) {
-  if (!videoRef.value) return;
+  console.log('[PIP] initHls called with URL:', url);
+  
+  if (!videoRef.value) {
+    console.error('[PIP] No video element ref');
+    return;
+  }
 
   // Destroy existing HLS instance
   if (hls) {
+    console.log('[PIP] Destroying existing HLS instance');
     hls.destroy();
   }
 
   if (Hls.isSupported()) {
+    console.log('[PIP] HLS.js is supported, initializing...');
     hls = new Hls({
       enableWorker: true,
       lowLatencyMode: true,
@@ -181,22 +201,24 @@ function initHls(url: string) {
     hls.attachMedia(videoRef.value);
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      console.log('[PIP] HLS manifest parsed, starting playback');
       if (videoRef.value && isPlaying.value) {
-        videoRef.value.play().catch(() => {});
+        videoRef.value.play().catch((e) => console.error('[PIP] Play error:', e));
       }
     });
 
     hls.on(Hls.Events.ERROR, (_, data) => {
-      if (data.fatal) {
-        console.error('[PIP] HLS fatal error:', data);
-      }
+      console.error('[PIP] HLS error:', data.type, data.details, data);
     });
   } else if (videoRef.value.canPlayType('application/vnd.apple.mpegurl')) {
     // Safari native HLS
+    console.log('[PIP] Using native HLS');
     videoRef.value.src = url;
     if (isPlaying.value) {
-      videoRef.value.play().catch(() => {});
+      videoRef.value.play().catch((e) => console.error('[PIP] Play error:', e));
     }
+  } else {
+    console.error('[PIP] HLS not supported');
   }
 
   // Apply initial volume
@@ -213,24 +235,24 @@ function startDrag(event: MouseEvent) {
 }
 
 function togglePlayPause() {
-  emit('pip-toggle-play-pause');
+  emitTo('main', 'pip-toggle-play-pause');
 }
 
 function toggleMute() {
-  emit('pip-toggle-mute');
+  emitTo('main', 'pip-toggle-mute');
 }
 
 function handleVolumeChange(event: Event) {
   const target = event.target as HTMLInputElement;
-  emit('pip-volume-change', parseFloat(target.value));
+  emitTo('main', 'pip-volume-change', parseFloat(target.value));
 }
 
 function createClip() {
-  emit('pip-create-clip');
+  emitTo('main', 'pip-create-clip');
 }
 
 async function closeWindow() {
-  await emit('pip-close');
+  await emitTo('main', 'pip-close');
   getCurrentWindow().close();
 }
 </script>

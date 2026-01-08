@@ -382,78 +382,6 @@
       </div>
     </Transition>
 
-    <!-- Floating PIP Control Panel - appears when in native PIP mode -->
-    <Transition name="pip-controls">
-      <div
-        v-if="isInPipMode && !modelValue"
-        class="fixed bottom-4 right-4 z-[9999] bg-zinc-900/95 backdrop-blur-md rounded-xl border border-white/10 shadow-2xl p-3"
-      >
-        <div class="flex items-center gap-2">
-          <!-- Stream Info -->
-          <div class="flex items-center gap-2 pr-2 border-r border-white/10">
-            <div class="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            <span class="text-white text-sm font-medium truncate max-w-[100px]">{{ displayName }}</span>
-          </div>
-
-          <!-- Play/Pause Button -->
-          <button
-            @click="viewer.togglePlayPause"
-            class="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
-            :title="viewer.state.value.isPlaying ? 'Pause' : 'Play'"
-          >
-            <Pause v-if="viewer.state.value.isPlaying" class="w-4 h-4" />
-            <Play v-else class="w-4 h-4" />
-          </button>
-
-          <!-- Volume Control -->
-          <div class="flex items-center gap-1 group">
-            <button
-              @click="viewer.toggleMute"
-              class="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
-              :title="viewer.state.value.isMuted ? 'Unmute' : 'Mute'"
-            >
-              <VolumeX v-if="viewer.state.value.isMuted || viewer.state.value.volume === 0" class="w-4 h-4" />
-              <Volume1 v-else-if="viewer.state.value.volume < 0.5" class="w-4 h-4" />
-              <Volume2 v-else class="w-4 h-4" />
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              :value="viewer.state.value.volume"
-              @input="handleVolumeChange"
-              class="w-16 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer"
-              :style="{ '--value': `${viewer.state.value.volume * 100}%` }"
-            />
-          </div>
-
-          <!-- Clip Button -->
-          <button
-            @click="openClipModal"
-            :disabled="viewer.state.value.totalRecordedDuration < 5 || viewer.state.value.availableSegments.length === 0"
-            class="p-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white transition-colors"
-            title="Create Clip (Alt+C)"
-          >
-            <Scissors class="w-4 h-4" />
-          </button>
-
-          <!-- Exit PIP Button -->
-          <button
-            @click="exitPipMode"
-            class="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
-            title="Exit Picture-in-Picture"
-          >
-            <Maximize class="w-4 h-4" />
-          </button>
-        </div>
-
-        <!-- Keyboard Shortcut Hint -->
-        <div class="mt-2 text-[10px] text-zinc-500 text-center">
-          Press <kbd class="px-1 py-0.5 bg-zinc-800 rounded text-zinc-400">Alt+C</kbd> to clip
-        </div>
-      </div>
-    </Transition>
   </Teleport>
 </template>
 
@@ -480,7 +408,7 @@
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window';
-  import { listen, emit as tauriEmit, type UnlistenFn } from '@tauri-apps/api/event';
+  import { listen, emitTo, type UnlistenFn } from '@tauri-apps/api/event';
   import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
   import { useToast } from '@/composables/useToast';
@@ -1056,20 +984,31 @@
 
   function sendPipStateUpdate() {
     // Build HLS URL from output directory
+    // The video server expects base64-encoded directory path (URL_SAFE_NO_PAD)
     let hlsUrl: string | undefined;
+    console.log('[WatchDialog] sendPipStateUpdate - hlsOutputDir:', viewer.hlsOutputDir.value);
+    
     if (viewer.hlsOutputDir.value) {
-      // The local video server serves HLS playlists
-      hlsUrl = `http://localhost:48276/hls/${encodeURIComponent(viewer.hlsOutputDir.value)}/playlist.m3u8`;
+      // Base64 encode the directory path - use standard base64 as server expects
+      // Note: btoa produces standard base64, we need to URL-encode it for the path
+      const base64Dir = btoa(viewer.hlsOutputDir.value);
+      hlsUrl = `http://localhost:48276/hls/${base64Dir}/playlist.m3u8`;
+      console.log('[WatchDialog] Built HLS URL:', hlsUrl, 'from dir:', viewer.hlsOutputDir.value);
+    } else {
+      console.warn('[WatchDialog] No hlsOutputDir available for PIP');
     }
 
-    tauriEmit('pip-state-update', {
+    const payload = {
       streamerName: props.displayName,
       isPlaying: viewer.state.value.isPlaying,
       volume: viewer.state.value.volume,
       isMuted: viewer.state.value.isMuted,
       canClip: viewer.state.value.totalRecordedDuration >= 5 && viewer.state.value.availableSegments.length > 0,
       hlsUrl,
-    });
+    };
+    console.log('[WatchDialog] Sending PIP state update:', payload);
+    // Send to the PIP window specifically
+    emitTo('pip-controls', 'pip-state-update', payload);
   }
 
   // PiP event handlers
@@ -1082,6 +1021,12 @@
     emit('update:modelValue', false);
     // Setup global key listener for quick clipping
     registerGlobalShortcut();
+
+    // Mute the main window's video element directly to prevent audio echo
+    // Don't pause - HLS needs to keep running to maintain live position
+    if (hlsVideoRef.value) {
+      hlsVideoRef.value.muted = true;
+    }
 
     // Open the always-on-top PIP control window
     try {
@@ -1110,6 +1055,16 @@
 
   async function handlePipLeave() {
     console.log('[WatchDialog] Left PiP mode');
+    
+    // Update state
+    isInPipMode.value = false;
+    closingForPip.value = false;
+    
+    // Restore the main window's video element mute state from viewer state
+    if (hlsVideoRef.value) {
+      hlsVideoRef.value.muted = viewer.state.value.isMuted;
+    }
+    
     // Re-open the dialog when leaving PiP
     emit('update:modelValue', true);
     
@@ -1119,14 +1074,6 @@
     
     // Cleanup global key listener
     await unregisterGlobalShortcut();
-
-    // Close the PIP control window and cleanup event listeners
-    cleanupPipEventListeners();
-    try {
-      await invoke('close_pip_control_window');
-    } catch (error) {
-      console.warn('[WatchDialog] Failed to close PIP control window:', error);
-    }
 
     // Bring main window to front
     const win = getCurrentWindow();
@@ -1399,19 +1346,6 @@
     opacity: 0;
   }
 
-  /* PIP controls panel transition */
-  .pip-controls-enter-active,
-  .pip-controls-leave-active {
-    transition: all 0.3s ease;
-  }
-  .pip-controls-enter-from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  .pip-controls-leave-to {
-    transform: translateY(20px);
-    opacity: 0;
-  }
 
   /* Volume slider styling */
   input[type='range'] {

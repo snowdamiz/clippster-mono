@@ -405,7 +405,11 @@ pub async fn start_video_server_impl() {
         .and_then(|encoded_dir: String| async move {
             use base64::{Engine as _, engine::general_purpose};
             
-            let decoded = match general_purpose::STANDARD.decode(&encoded_dir) {
+            // Try multiple base64 variants: STANDARD, STANDARD_NO_PAD, URL_SAFE_NO_PAD
+            let decoded = general_purpose::STANDARD.decode(&encoded_dir)
+                .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_dir))
+                .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(&encoded_dir));
+            let decoded = match decoded {
                 Ok(d) => d,
                 Err(_) => {
                     return Ok::<_, warp::Rejection>(warp::reply::with_status(
@@ -549,7 +553,11 @@ pub async fn start_video_server_impl() {
                 ).into_response());
             }
 
-            let decoded = match general_purpose::STANDARD.decode(&encoded_dir) {
+            // Try multiple base64 variants: STANDARD, STANDARD_NO_PAD, URL_SAFE_NO_PAD
+            let decoded = general_purpose::STANDARD.decode(&encoded_dir)
+                .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_dir))
+                .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(&encoded_dir));
+            let decoded = match decoded {
                 Ok(d) => d,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
