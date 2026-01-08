@@ -17,7 +17,9 @@ defmodule ClippsterServer.Organizations do
     OrganizationAsset,
     OrganizationCreatorProfile,
     OrganizationCreatorPlatformLink,
-    OrganizationProfileAssignment
+    OrganizationProfileAssignment,
+    OrganizationSharedClip,
+    SharedClipRecipient
   }
   alias ClippsterServer.{Emails, Mailer}
   alias ClippsterServer.Storage
@@ -1328,6 +1330,315 @@ defmodule ClippsterServer.Organizations do
           user_id: user_id
         )
         assignment != nil
+    end
+  end
+
+  # ============================================================================
+  # Shared Clips
+  # ============================================================================
+
+  @doc """
+  Creates a new shared clip for an organization.
+  Uploads the video to R2 storage and creates recipient records.
+  """
+  def create_shared_clip(organization_id, user_id, attrs, file_binary, filename, opts \\ []) do
+    content_type = Keyword.get(opts, :content_type, "video/mp4")
+    thumbnail_binary = Keyword.get(opts, :thumbnail_binary)
+    recipient_user_ids = Keyword.get(opts, :recipient_user_ids, [])
+
+    # Generate storage key and upload to R2
+    key = Storage.generate_key(organization_id, "shared-clips", filename)
+
+    with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
+         {:ok, thumbnail_url} <- maybe_upload_shared_clip_thumbnail(organization_id, filename, thumbnail_binary) do
+
+      Repo.transaction(fn ->
+        # Create the shared clip record
+        clip_attrs = attrs
+          |> Map.put(:organization_id, organization_id)
+          |> Map.put(:uploaded_by_user_id, user_id)
+          |> Map.put(:url, url)
+          |> Map.put(:thumbnail_url, thumbnail_url)
+          |> Map.put(:file_size, byte_size(file_binary))
+
+        {:ok, clip} = %OrganizationSharedClip{}
+          |> OrganizationSharedClip.create_changeset(clip_attrs)
+          |> Repo.insert()
+
+        # Create recipient records
+        share_with_all = Map.get(attrs, :share_with_all, true)
+
+        if share_with_all do
+          # Create recipients for all org members
+          create_recipients_for_all_members(clip.id, organization_id)
+        else
+          # Create recipients for specific users
+          create_recipients_for_users(clip.id, recipient_user_ids)
+        end
+
+        clip
+      end)
+    end
+  end
+
+  defp maybe_upload_shared_clip_thumbnail(_org_id, _filename, nil), do: {:ok, nil}
+  defp maybe_upload_shared_clip_thumbnail(organization_id, filename, thumbnail_binary) do
+    key = Storage.generate_thumbnail_key(organization_id, "shared-clips", filename)
+    case Storage.upload_file(thumbnail_binary, key, content_type: "image/jpeg") do
+      {:ok, url} -> {:ok, url}
+      {:error, _} -> {:ok, nil}
+    end
+  end
+
+  defp create_recipients_for_all_members(clip_id, organization_id) do
+    members = list_members(organization_id)
+
+    Enum.each(members, fn member ->
+      %SharedClipRecipient{}
+      |> SharedClipRecipient.create_changeset(%{
+        shared_clip_id: clip_id,
+        user_id: member.user_id
+      })
+      |> Repo.insert()
+    end)
+  end
+
+  defp create_recipients_for_users(clip_id, user_ids) do
+    Enum.each(user_ids, fn user_id ->
+      %SharedClipRecipient{}
+      |> SharedClipRecipient.create_changeset(%{
+        shared_clip_id: clip_id,
+        user_id: user_id
+      })
+      |> Repo.insert()
+    end)
+  end
+
+  @doc """
+  Gets a shared clip by ID.
+  """
+  def get_shared_clip(clip_id) do
+    Repo.get(OrganizationSharedClip, clip_id)
+  end
+
+  @doc """
+  Gets a shared clip by ID with preloaded associations.
+  """
+  def get_shared_clip_with_recipients(clip_id) do
+    OrganizationSharedClip
+    |> where([c], c.id == ^clip_id)
+    |> preload([recipients: :user, uploaded_by: []])
+    |> Repo.one()
+  end
+
+  @doc """
+  Gets a shared clip for a specific organization.
+  """
+  def get_shared_clip_for_org(organization_id, clip_id) do
+    OrganizationSharedClip
+    |> where([c], c.id == ^clip_id and c.organization_id == ^organization_id)
+    |> preload([recipients: :user, uploaded_by: []])
+    |> Repo.one()
+  end
+
+  @doc """
+  Lists all active (non-expired) shared clips for an organization.
+  """
+  def list_shared_clips(organization_id) do
+    now = DateTime.utc_now()
+
+    OrganizationSharedClip
+    |> where([c], c.organization_id == ^organization_id and c.expires_at > ^now)
+    |> order_by([c], desc: c.inserted_at)
+    |> preload([:uploaded_by, :recipients])
+    |> Repo.all()
+  end
+
+  @doc """
+  Lists all shared clips available to a specific user across all their organizations.
+  Only returns clips where the user is a recipient and the clip hasn't expired.
+  """
+  def list_shared_clips_for_user(user_id) do
+    now = DateTime.utc_now()
+
+    OrganizationSharedClip
+    |> join(:inner, [c], r in SharedClipRecipient, on: r.shared_clip_id == c.id)
+    |> where([c, r], r.user_id == ^user_id and c.expires_at > ^now)
+    |> order_by([c], desc: c.inserted_at)
+    |> preload([:organization, :uploaded_by])
+    |> select([c, r], %{clip: c, recipient: r})
+    |> Repo.all()
+  end
+
+  @doc """
+  Updates branding configuration for a shared clip.
+  """
+  def update_shared_clip_branding(clip_id, branding_config, branding_required, %User{} = user) do
+    with clip when not is_nil(clip) <- get_shared_clip(clip_id),
+         true <- is_admin?(clip.organization_id, user.id) do
+      clip
+      |> OrganizationSharedClip.update_branding_changeset(%{
+        branding_config: branding_config,
+        branding_required: branding_required
+      })
+      |> Repo.update()
+    else
+      nil -> {:error, :not_found}
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Deletes a shared clip and its R2 files.
+  """
+  def delete_shared_clip(clip_id, %User{} = user) do
+    with clip when not is_nil(clip) <- get_shared_clip(clip_id),
+         true <- is_admin?(clip.organization_id, user.id) do
+      # Delete from R2
+      if clip.url, do: Storage.delete_file_by_url(clip.url)
+      if clip.thumbnail_url, do: Storage.delete_file_by_url(clip.thumbnail_url)
+
+      # Delete from database (cascades to recipients)
+      Repo.delete(clip)
+    else
+      nil -> {:error, :not_found}
+      false -> {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Marks a shared clip as viewed by a user.
+  """
+  def mark_shared_clip_viewed(clip_id, user_id) do
+    case get_or_create_recipient(clip_id, user_id) do
+      {:ok, recipient} ->
+        recipient
+        |> SharedClipRecipient.mark_viewed_changeset()
+        |> Repo.update()
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Marks a shared clip as downloaded by a user.
+  """
+  def mark_shared_clip_downloaded(clip_id, user_id) do
+    case get_or_create_recipient(clip_id, user_id) do
+      {:ok, recipient} ->
+        recipient
+        |> SharedClipRecipient.mark_downloaded_changeset()
+        |> Repo.update()
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Marks a shared clip as posted by a user.
+  """
+  def mark_shared_clip_posted(clip_id, user_id) do
+    case get_or_create_recipient(clip_id, user_id) do
+      {:ok, recipient} ->
+        recipient
+        |> SharedClipRecipient.mark_posted_changeset()
+        |> Repo.update()
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp get_or_create_recipient(clip_id, user_id) do
+    case Repo.get_by(SharedClipRecipient, shared_clip_id: clip_id, user_id: user_id) do
+      nil ->
+        # Check if clip exists and user has access
+        clip = get_shared_clip(clip_id)
+        cond do
+          is_nil(clip) ->
+            {:error, :clip_not_found}
+
+          OrganizationSharedClip.expired?(clip) ->
+            {:error, :clip_expired}
+
+          not is_member?(clip.organization_id, user_id) ->
+            {:error, :not_a_member}
+
+          true ->
+            # Create recipient record
+            %SharedClipRecipient{}
+            |> SharedClipRecipient.create_changeset(%{shared_clip_id: clip_id, user_id: user_id})
+            |> Repo.insert()
+        end
+
+      recipient ->
+        {:ok, recipient}
+    end
+  end
+
+  @doc """
+  Gets access statistics for a shared clip.
+  Returns counts of viewed, downloaded, and posted.
+  """
+  def get_shared_clip_stats(clip_id) do
+    query = from r in SharedClipRecipient,
+      where: r.shared_clip_id == ^clip_id,
+      select: %{
+        total: count(r.id),
+        viewed: count(r.viewed_at),
+        downloaded: count(r.downloaded_at),
+        posted: count(r.posted_at)
+      }
+
+    Repo.one(query) || %{total: 0, viewed: 0, downloaded: 0, posted: 0}
+  end
+
+  @doc """
+  Deletes all expired shared clips and their R2 files.
+  Called by the cleanup worker.
+  """
+  def cleanup_expired_shared_clips do
+    now = DateTime.utc_now()
+
+    expired_clips = OrganizationSharedClip
+      |> where([c], c.expires_at < ^now)
+      |> Repo.all()
+
+    Enum.each(expired_clips, fn clip ->
+      # Delete from R2
+      if clip.url, do: Storage.delete_file_by_url(clip.url)
+      if clip.thumbnail_url, do: Storage.delete_file_by_url(clip.thumbnail_url)
+
+      # Delete from database
+      Repo.delete(clip)
+    end)
+
+    {:ok, length(expired_clips)}
+  end
+
+  @doc """
+  Checks if a user has access to a shared clip.
+  User has access if they are a recipient or an admin of the organization.
+  """
+  def has_shared_clip_access?(clip_id, user_id) do
+    clip = get_shared_clip(clip_id)
+
+    cond do
+      is_nil(clip) ->
+        false
+
+      OrganizationSharedClip.expired?(clip) ->
+        false
+
+      is_admin?(clip.organization_id, user_id) ->
+        true
+
+      true ->
+        # Check if recipient
+        recipient = Repo.get_by(SharedClipRecipient, shared_clip_id: clip_id, user_id: user_id)
+        recipient != nil
     end
   end
 end

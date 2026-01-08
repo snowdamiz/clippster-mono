@@ -2,6 +2,81 @@ defmodule ClippsterServerWeb.KickController do
   use ClippsterServerWeb, :controller
   require Logger
 
+  @rapid_api_host "kick-com-api.p.rapidapi.com"
+
+  defp get_rapid_api_key do
+    System.get_env("RAPID_API_KEY") || "1bf3ae18ffmshb1e5abbe9798a55p1246dfjsn389ea6e0de67"
+  end
+
+  defp rapid_api_headers do
+    [
+      {"x-rapidapi-key", get_rapid_api_key()},
+      {"x-rapidapi-host", @rapid_api_host}
+    ]
+  end
+
+  # Get channel live status
+  def get_channel(conn, %{"channel_slug" => channel_slug}) do
+    url = "https://#{@rapid_api_host}/channels/#{channel_slug}"
+
+    case Req.get(url, headers: rapid_api_headers()) do
+      {:ok, %Req.Response{status: 200, body: body}} ->
+        # RapidAPI wraps response in "data" key
+        data = body["data"] || body
+        
+        # Extract live status from channel data
+        livestream = data["livestream"]
+        user = data["user"]
+        
+        # Check multiple possible field names for is_live
+        is_live = case livestream do
+          nil -> false
+          %{"is_live" => true} -> true
+          %{"isLive" => true} -> true
+          # Also check if livestream exists and has an id (sometimes is_live field is missing)
+          %{"id" => id} when not is_nil(id) -> true
+          _ -> false
+        end
+        
+        Logger.info("Kick channel #{channel_slug} is_live: #{is_live}")
+
+        response = %{
+          isLive: is_live,
+          channelId: data["id"],
+          channelSlug: data["slug"] || channel_slug,
+          username: (user && user["username"]) || nil,
+          profileImageUrl: (user && user["profile_pic"]) || nil,
+          streamTitle: (livestream && (livestream["session_title"] || livestream["sessionTitle"])) || nil,
+          viewerCount: (livestream && (livestream["viewer_count"] || livestream["viewerCount"] || livestream["viewers"])) || nil,
+          thumbnailUrl: get_in(livestream || %{}, ["thumbnail", "url"]) || get_in(livestream || %{}, ["thumbnail", "src"]),
+          playbackUrl: data["playbackUrl"] || data["playback_url"],
+          startedAt: (livestream && (livestream["created_at"] || livestream["createdAt"])) || nil
+        }
+
+        json(conn, response)
+
+      {:ok, %Req.Response{status: 404}} ->
+        json(conn, %{
+          isLive: false,
+          channelSlug: channel_slug,
+          error: "Channel not found"
+        })
+
+      {:ok, %Req.Response{status: status, body: body}} ->
+        Logger.error("Kick API returned #{status} for channel #{channel_slug}. Body: #{inspect(body)}")
+        
+        conn
+        |> put_status(:bad_gateway)
+        |> json(%{isLive: false, error: "Kick API returned #{status}"})
+
+      {:error, exception} ->
+        Logger.error("Kick API request failed: #{inspect(exception)}")
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{isLive: false, error: "Kick API request failed"})
+    end
+  end
+
   def get_clips(conn, %{"channel_slug" => channel_slug, "limit" => limit}) do
     # RapidAPI credentials
     # Using the key provided by the user

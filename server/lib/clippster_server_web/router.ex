@@ -96,6 +96,7 @@ defmodule ClippsterServerWeb.Router do
     get "/metadata/:mint_id", MetadataController, :fetch
 
     # Kick routes
+    get "/kick/channels/:channel_slug", KickController, :get_channel
     get "/kick/channels/:channel_slug/videos", KickController, :get_clips
 
     # Organization invitation (public - for viewing invitation details)
@@ -183,6 +184,20 @@ defmodule ClippsterServerWeb.Router do
 
     # User's organization assets (for sync)
     get "/user/organization-assets", OrganizationAssetController, :user_assets
+
+    # Organization shared clips (admin endpoints)
+    get "/organizations/:organization_id/shared-clips", SharedClipController, :index
+    get "/organizations/:organization_id/shared-clips/:id", SharedClipController, :show
+    post "/organizations/:organization_id/shared-clips", SharedClipController, :create
+    put "/organizations/:organization_id/shared-clips/:id/branding", SharedClipController, :update_branding
+    delete "/organizations/:organization_id/shared-clips/:id", SharedClipController, :delete
+    get "/organizations/:organization_id/shared-clips/:id/stats", SharedClipController, :stats
+
+    # User's shared clips (member endpoints)
+    get "/user/shared-clips", SharedClipController, :user_clips
+    post "/shared-clips/:id/mark-viewed", SharedClipController, :mark_viewed
+    post "/shared-clips/:id/mark-downloaded", SharedClipController, :mark_downloaded
+    post "/shared-clips/:id/post", SharedClipController, :mark_posted
 
     # Organization creator profiles
     get "/organizations/:organization_id/creator-profiles", OrganizationCreatorProfileController, :index

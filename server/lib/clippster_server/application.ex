@@ -65,6 +65,8 @@ defmodule ClippsterServer.Application do
       ClippsterServer.Social.AnalyticsSyncWorker,
       # Social media token refresh worker
       ClippsterServer.Social.TokenRefreshWorker,
+      # Shared clips cleanup worker (deletes expired clips daily)
+      ClippsterServer.Organizations.SharedClipCleanupWorker,
       # Start to serve requests, typically the last entry
       ClippsterServerWeb.Endpoint
     ]
