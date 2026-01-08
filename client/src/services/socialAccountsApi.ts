@@ -599,6 +599,93 @@ export async function getAnalyticsSummary(
 }
 
 // ============================================
+// Creator Profile API Functions
+// ============================================
+
+export interface AssignedCreatorProfile {
+  id: number;
+  organization_id: number;
+  name: string;
+  description: string | null;
+  profile_image_url: string | null;
+  intro_id: number | null;
+  outro_id: number | null;
+  watermark_id: number | null;
+  watermark_settings: string | null;
+  inserted_at: string;
+  updated_at: string;
+}
+
+export interface AssignedCreatorProfilesResponse {
+  success: boolean;
+  profiles: AssignedCreatorProfile[];
+  error?: string;
+}
+
+/**
+ * Get all creator profiles assigned to the current user across all their organizations.
+ * Used by members to see which profiles they can use when publishing.
+ */
+export async function getMyAssignedCreatorProfiles(): Promise<AssignedCreatorProfilesResponse> {
+  try {
+    const response = await api.get<AssignedCreatorProfilesResponse>(
+      '/user/assigned-creator-profiles'
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to get assigned creator profiles:', error);
+    return {
+      success: false,
+      profiles: [],
+      error:
+        error.response?.data?.error || error.message || 'Failed to get assigned creator profiles',
+    };
+  }
+}
+
+export interface UploadMediaResponse {
+  success: boolean;
+  media_url?: string;
+  thumbnail_url?: string;
+  error?: string;
+}
+
+/**
+ * Upload media for social post publishing.
+ * Uploads the video/image to R2 storage and returns the public URL.
+ */
+export async function uploadMediaForPost(
+  organizationId: string | number,
+  file: File,
+  thumbnail?: File
+): Promise<UploadMediaResponse> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (thumbnail) {
+      formData.append('thumbnail', thumbnail);
+    }
+
+    const response = await api.post<UploadMediaResponse>(
+      `/organizations/${organizationId}/posts/upload-media`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[SocialAccountsApi] Failed to upload media:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to upload media',
+    };
+  }
+}
+
+// ============================================
 // Instagram Connection via Business Login (Tauri OAuth)
 // ============================================
 

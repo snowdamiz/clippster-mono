@@ -80,7 +80,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   @doc """
   Publish a clip to a social platform.
   POST /organizations/:organization_id/posts/publish
-  
+
   Body:
   {
     "social_account_id": 1,
@@ -289,6 +289,85 @@ defmodule ClippsterServerWeb.PostSubmissionController do
           total_impressions: summary.total_impressions || 0
         }
       })
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not a member of this organization"})
+    end
+  end
+
+  @doc """
+  Upload media for a post submission.
+  POST /organizations/:organization_id/posts/upload-media
+
+  Accepts multipart form data with:
+  - file: The video/image file
+  - thumbnail: Optional thumbnail file
+
+  Returns the uploaded media URL(s) for use with publish.
+  """
+  def upload_media(conn, %{"organization_id" => org_id} = params) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_member?(org_id, user.id) do
+      case params do
+        %{"file" => %Plug.Upload{} = upload} ->
+          # Generate unique key for the file
+          ext = Path.extname(upload.filename) |> String.downcase()
+          timestamp = DateTime.utc_now() |> DateTime.to_unix()
+          unique_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+          key = "social-media/#{org_id}/#{timestamp}_#{unique_id}#{ext}"
+
+          # Determine content type
+          content_type = case ext do
+            ".mp4" -> "video/mp4"
+            ".mov" -> "video/quicktime"
+            ".webm" -> "video/webm"
+            ".jpg" -> "image/jpeg"
+            ".jpeg" -> "image/jpeg"
+            ".png" -> "image/png"
+            ".gif" -> "image/gif"
+            _ -> "application/octet-stream"
+          end
+
+          case ClippsterServer.Storage.upload_file_from_path(upload.path, key, content_type: content_type) do
+            {:ok, url} ->
+              # Handle optional thumbnail upload
+              thumbnail_url = case params["thumbnail"] do
+                %Plug.Upload{} = thumb ->
+                  thumb_ext = Path.extname(thumb.filename) |> String.downcase()
+                  thumb_key = "social-media/#{org_id}/#{timestamp}_#{unique_id}_thumb#{thumb_ext}"
+                  thumb_content_type = case thumb_ext do
+                    ".jpg" -> "image/jpeg"
+                    ".jpeg" -> "image/jpeg"
+                    ".png" -> "image/png"
+                    _ -> "image/jpeg"
+                  end
+
+                  case ClippsterServer.Storage.upload_file_from_path(thumb.path, thumb_key, content_type: thumb_content_type) do
+                    {:ok, thumb_url} -> thumb_url
+                    {:error, _} -> nil
+                  end
+                _ -> nil
+              end
+
+              json(conn, %{
+                success: true,
+                media_url: url,
+                thumbnail_url: thumbnail_url
+              })
+
+            {:error, reason} ->
+              conn
+              |> put_status(500)
+              |> json(%{success: false, error: "Failed to upload media: #{inspect(reason)}"})
+          end
+
+        _ ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "No file provided"})
+      end
     else
       conn
       |> put_status(403)

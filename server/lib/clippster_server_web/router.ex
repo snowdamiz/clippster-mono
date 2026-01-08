@@ -249,6 +249,7 @@ defmodule ClippsterServerWeb.Router do
     get "/organizations/:organization_id/posts", PostSubmissionController, :index
     get "/organizations/:organization_id/posts/analytics", PostSubmissionController, :analytics_summary
     get "/organizations/:organization_id/posts/:id", PostSubmissionController, :show
+    post "/organizations/:organization_id/posts/upload-media", PostSubmissionController, :upload_media
     post "/organizations/:organization_id/posts/publish", PostSubmissionController, :publish
     put "/organizations/:organization_id/posts/:id", PostSubmissionController, :update
     post "/organizations/:organization_id/posts/:id/sync", PostSubmissionController, :sync_analytics
