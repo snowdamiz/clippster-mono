@@ -1,20 +1,70 @@
 <script setup lang="ts">
-  import { onMounted, onUnmounted, ref } from 'vue';
+  import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
   import Toast from '@/components/Toast.vue';
   import AppCloseDialog from '@/components/AppCloseDialog.vue';
   import TitleBar from '@/components/TitleBar.vue';
   import LoadingScreen from '@/components/LoadingScreen.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import BetaActivationDialog from '@/components/BetaActivationDialog.vue';
+  import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
+  import MandatoryUpdateDialog from '@/components/MandatoryUpdateDialog.vue';
   import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
+  import { useLivestreamStore } from '@/stores/livestream';
+  import { useFeatureFlags } from '@/composables/useFeatureFlags';
+  import { useAppUpdater } from '@/composables/useAppUpdater';
   import { invoke } from '@tauri-apps/api/core';
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
+  const livestreamStore = useLivestreamStore();
+  const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
+  const { state: updateState, checkForUpdates } = useAppUpdater();
+
+  // Update check must complete before app continues
+  const isCheckingForUpdates = ref(true);
+  const updateRequired = ref(false);
+
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
+
+  // Show beta activation dialog when:
+  // - User is authenticated
+  // - Beta mode is enabled
+  // - User is not an admin (admins bypass beta requirement)
+  // - User has not activated their beta access
+  const showBetaActivationDialog = computed(() => {
+    return (
+      authStore.isAuthenticated &&
+      isBetaModeEnabled.value &&
+      !authStore.user?.is_admin &&
+      !authStore.user?.beta_activated
+    );
+  });
+
+  // Handle beta activation success
+  const handleBetaActivated = async () => {
+    // Refresh user data to get updated beta_activated status
+    await authStore.checkAuth();
+  };
+
+  // Handle logout from beta dialog
+  const handleBetaLogout = async () => {
+    await authStore.logout();
+  };
+
+  // Handle clip created from global livestream dialog
+  function handleClipCreated(clipPath: string, projectId: string) {
+    console.log('[App] Clip created:', { clipPath, projectId });
+    // Dispatch event so LiveClip page can react if open
+    window.dispatchEvent(
+      new CustomEvent('livestream-clip-created', {
+        detail: { clipPath, projectId },
+      })
+    );
+  }
 
   // Key for router-view to force re-render on auth changes
   const routerKey = ref(0);
@@ -53,11 +103,56 @@
     // Load platform override from localStorage
     loadPlatformOverride();
 
+    // Show the main window early so users can see the update check
+    try {
+      await invoke('show_main_window');
+    } catch (error) {
+      console.error('[App] Failed to show main window:', error);
+    }
+
+    // MANDATORY UPDATE CHECK - must complete before app continues
+    // Skip update check in development environment
+    if (import.meta.env.DEV) {
+      console.log('[App] Skipping update check in development mode');
+      isCheckingForUpdates.value = false;
+    } else {
+      // Check for updates FIRST before any other initialization
+      try {
+        console.log('[App] Checking for mandatory updates...');
+        const hasUpdate = await checkForUpdates();
+        if (hasUpdate) {
+          console.log('[App] Update required - blocking app until update is installed');
+          updateRequired.value = true;
+          isCheckingForUpdates.value = false;
+          // Stop here - user must update before continuing
+          return;
+        }
+        console.log('[App] No update required, continuing with app initialization');
+      } catch (error) {
+        console.error('[App] Failed to check for updates:', error);
+        // On error, allow app to continue (don't block users if update server is down)
+      }
+      isCheckingForUpdates.value = false;
+    }
+
+    // Continue with normal app initialization only if no update required
+    await initializeApp();
+  });
+
+  // Separate function for app initialization (called after update check passes)
+  async function initializeApp() {
     // Check authentication status on app start
     try {
       await authStore.checkAuth();
     } catch (error) {
       console.error('[App] Failed to check authentication:', error);
+    }
+
+    // Fetch feature flags (including beta mode status)
+    try {
+      await fetchFeatureFlags();
+    } catch (error) {
+      console.error('[App] Failed to fetch feature flags:', error);
     }
 
     // Listen for auth-required events (e.g., when token expires)
@@ -94,16 +189,9 @@
       console.error('[App] Failed to initialize window close handler:', error);
     }
 
-    // Hide loading screen after initialization and show main window
+    // Hide loading screen after initialization
     isLoading.value = false;
-
-    // Show the main window now that everything is loaded
-    try {
-      await invoke('show_main_window');
-    } catch (error) {
-      console.error('[App] Failed to show main window:', error);
-    }
-  });
+  }
 
   // Cleanup auth event listener on unmount
   onUnmounted(() => {
@@ -117,10 +205,21 @@
 </script>
 
 <template>
-  <!-- Loading screen -->
-  <LoadingScreen v-if="isLoading" />
+  <!-- Mandatory Update Dialog - blocks entire app when update is required -->
+  <MandatoryUpdateDialog
+    v-if="
+      isCheckingForUpdates ||
+      updateRequired ||
+      updateState.status === 'available' ||
+      updateState.status === 'downloading' ||
+      updateState.status === 'installing'
+    "
+  />
 
-  <!-- Main app (hidden while loading) -->
+  <!-- Loading screen (only shown after update check passes) -->
+  <LoadingScreen v-else-if="isLoading" />
+
+  <!-- Main app (hidden while loading or updating) -->
   <div v-else class="app-container">
     <!-- Custom titlebar -->
     <TitleBar :dark-mode="true" :platform-override="titleBarPlatformOverride" />
@@ -135,6 +234,27 @@
       <AppCloseDialog />
       <!-- Authentication Modal -->
       <AuthModal v-model="showAuthModal" />
+
+      <!-- Beta Activation Dialog -->
+      <BetaActivationDialog
+        :show="showBetaActivationDialog"
+        @activated="handleBetaActivated"
+        @logout="handleBetaLogout"
+      />
+
+      <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
+      <LivestreamWatchDialog
+        v-if="livestreamStore.currentStreamer.mintId"
+        v-model="livestreamStore.watchState.isOpen"
+        :mint-id="livestreamStore.currentStreamer.mintId"
+        :streamer-id="livestreamStore.currentStreamer.streamerId"
+        :display-name="livestreamStore.currentStreamer.displayName"
+        :profile-image-url="livestreamStore.currentStreamer.profileImageUrl"
+        :is-pip-mode-external="livestreamStore.isInPipMode"
+        @clip-created="handleClipCreated"
+        @pip-mode-changed="(isPip: boolean) => (isPip ? livestreamStore.enterPipMode() : livestreamStore.exitPipMode())"
+        @closed="livestreamStore.reset()"
+      />
     </div>
   </div>
 </template>

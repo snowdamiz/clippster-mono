@@ -9,11 +9,21 @@ defmodule ClippsterServerWeb.AuthPlug do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    conn
-    |> get_req_header("authorization")
-    |> case do
-      ["Bearer " <> token] -> verify_token(conn, token)
-      _ ->
+    auth_header = get_req_header(conn, "authorization")
+    path = conn.request_path
+
+    case auth_header do
+      ["Bearer " <> token] ->
+        IO.puts("[AuthPlug] #{path} - Token received (#{String.length(token)} chars)")
+        verify_token(conn, token)
+      [] ->
+        IO.puts("[AuthPlug] #{path} - No Authorization header!")
+        conn
+        |> put_status(401)
+        |> Phoenix.Controller.json(%{error: "Authentication required"})
+        |> halt()
+      other ->
+        IO.puts("[AuthPlug] #{path} - Invalid header format: #{inspect(other)}")
         conn
         |> put_status(401)
         |> Phoenix.Controller.json(%{error: "Authentication required"})
@@ -25,7 +35,7 @@ defmodule ClippsterServerWeb.AuthPlug do
     case TokenGenerator.verify_token(token) do
       {:ok, claims} ->
         user_id = claims["user_id"]
-        
+
         # Load the full user record
         case Accounts.get_user(user_id) do
           nil ->
@@ -34,7 +44,7 @@ defmodule ClippsterServerWeb.AuthPlug do
             |> put_status(401)
             |> Phoenix.Controller.json(%{error: "User not found"})
             |> halt()
-          
+
           user ->
             # Add user info to conn assigns
             conn

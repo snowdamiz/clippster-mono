@@ -618,6 +618,213 @@ pub async fn get_video_duration(app: tauri::AppHandle, video_path: String) -> Re
     Err("Could not determine video duration".to_string())
 }
 
+/// Response structure for get_video_metadata
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VideoMetadata {
+    pub duration: f64,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Tauri command to get video metadata (duration, width, height) using FFmpeg
+#[tauri::command]
+pub async fn get_video_metadata(app: tauri::AppHandle, video_path: String) -> Result<VideoMetadata, String> {
+    use tauri_plugin_shell::ShellExt;
+    use std::path::Path;
+
+    let path = Path::new(&video_path);
+    if !path.exists() {
+        return Err("Video file does not exist".to_string());
+    }
+
+    let output = app.shell().sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
+        .args(["-i", &video_path, "-f", "null", "-"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    let mut duration: Option<f64> = None;
+    let mut width: Option<u32> = None;
+    let mut height: Option<u32> = None;
+
+    for line in stderr.lines() {
+        // Parse duration
+        if line.contains("Duration:") {
+            if let Some(duration_part) = line.split("Duration:").nth(1) {
+                if let Some(duration_str) = duration_part.split(',').next() {
+                    let duration_str = duration_str.trim();
+                    let parts: Vec<&str> = duration_str.split(':').collect();
+                    if parts.len() >= 3 {
+                        if let (Ok(hours), Ok(minutes), Ok(seconds_ms)) = (
+                            parts[0].parse::<f64>(),
+                            parts[1].parse::<f64>(),
+                            parts[2].parse::<f64>(),
+                        ) {
+                            duration = Some(hours * 3600.0 + minutes * 60.0 + seconds_ms);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Parse video stream for resolution (e.g., "Stream #0:0: Video: h264, 1920x1080")
+        if line.contains("Video:") && line.contains("x") {
+            // Look for resolution pattern like "1920x1080" or "1280x720"
+            let re = regex::Regex::new(r"(\d{2,5})x(\d{2,5})").ok();
+            if let Some(re) = re {
+                if let Some(caps) = re.captures(line) {
+                    if let (Some(w), Some(h)) = (caps.get(1), caps.get(2)) {
+                        width = w.as_str().parse().ok();
+                        height = h.as_str().parse().ok();
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(VideoMetadata {
+        duration: duration.unwrap_or(0.0),
+        width: width.unwrap_or(0),
+        height: height.unwrap_or(0),
+    })
+}
+
+/// Response structure for get_audio_metadata
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AudioMetadata {
+    pub duration: f64,
+    pub sample_rate: Option<u32>,
+    pub channels: Option<u32>,
+}
+
+/// Tauri command to get audio metadata using FFmpeg
+#[tauri::command]
+pub async fn get_audio_metadata(app: tauri::AppHandle, audio_path: String) -> Result<AudioMetadata, String> {
+    use tauri_plugin_shell::ShellExt;
+    use std::path::Path;
+
+    let path = Path::new(&audio_path);
+    if !path.exists() {
+        return Err("Audio file does not exist".to_string());
+    }
+
+    let output = app.shell().sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
+        .args(["-i", &audio_path, "-f", "null", "-"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    let mut duration: Option<f64> = None;
+    let mut sample_rate: Option<u32> = None;
+    let mut channels: Option<u32> = None;
+
+    for line in stderr.lines() {
+        // Parse duration
+        if line.contains("Duration:") {
+            if let Some(duration_part) = line.split("Duration:").nth(1) {
+                if let Some(duration_str) = duration_part.split(',').next() {
+                    let duration_str = duration_str.trim();
+                    let parts: Vec<&str> = duration_str.split(':').collect();
+                    if parts.len() >= 3 {
+                        if let (Ok(hours), Ok(minutes), Ok(seconds_ms)) = (
+                            parts[0].parse::<f64>(),
+                            parts[1].parse::<f64>(),
+                            parts[2].parse::<f64>(),
+                        ) {
+                            duration = Some(hours * 3600.0 + minutes * 60.0 + seconds_ms);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Parse audio stream for sample rate and channels (e.g., "Audio: aac, 44100 Hz, stereo")
+        if line.contains("Audio:") {
+            // Parse sample rate (e.g., "44100 Hz")
+            let hz_re = regex::Regex::new(r"(\d+)\s*Hz").ok();
+            if let Some(re) = hz_re {
+                if let Some(caps) = re.captures(line) {
+                    if let Some(sr) = caps.get(1) {
+                        sample_rate = sr.as_str().parse().ok();
+                    }
+                }
+            }
+            
+            // Parse channels
+            if line.contains("stereo") {
+                channels = Some(2);
+            } else if line.contains("mono") {
+                channels = Some(1);
+            } else if line.contains("5.1") {
+                channels = Some(6);
+            }
+        }
+    }
+
+    Ok(AudioMetadata {
+        duration: duration.unwrap_or(0.0),
+        sample_rate,
+        channels,
+    })
+}
+
+/// Response structure for get_image_metadata
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImageMetadata {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Tauri command to get image metadata (width, height) using FFmpeg
+#[tauri::command]
+pub async fn get_image_metadata(app: tauri::AppHandle, image_path: String) -> Result<ImageMetadata, String> {
+    use tauri_plugin_shell::ShellExt;
+    use std::path::Path;
+
+    let path = Path::new(&image_path);
+    if !path.exists() {
+        return Err("Image file does not exist".to_string());
+    }
+
+    let output = app.shell().sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
+        .args(["-i", &image_path, "-f", "null", "-"])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    let mut width: Option<u32> = None;
+    let mut height: Option<u32> = None;
+
+    for line in stderr.lines() {
+        // Parse video/image stream for resolution (e.g., "Stream #0:0: Video: png, rgba, 1920x1080")
+        if line.contains("Video:") && line.contains("x") {
+            let re = regex::Regex::new(r"(\d{2,5})x(\d{2,5})").ok();
+            if let Some(re) = re {
+                if let Some(caps) = re.captures(line) {
+                    if let (Some(w), Some(h)) = (caps.get(1), caps.get(2)) {
+                        width = w.as_str().parse().ok();
+                        height = h.as_str().parse().ok();
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ImageMetadata {
+        width: width.unwrap_or(0),
+        height: height.unwrap_or(0),
+    })
+}
+
 /// Tauri command to copy a clip file to a user-specified destination
 /// This is used when the user wants to "download" (export) a clip to a custom location
 #[tauri::command]

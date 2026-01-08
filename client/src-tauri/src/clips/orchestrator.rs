@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings};
+use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings, ManualFramingConfig, SegmentFramingConfigs};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::{generate_ass_file, generate_text_overlay_ass_file, merge_text_overlays_into_ass};
 use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video, apply_clip_watermarks_to_video};
@@ -111,6 +111,123 @@ fn get_or_create_clip_folder(
     Ok(clip_folder)
 }
 
+/// Concatenate multiple video files into one, optionally adding intro/outro
+async fn concatenate_videos(
+    app: &tauri::AppHandle,
+    segment_paths: &[std::path::PathBuf],
+    output_path: &std::path::Path,
+    intro_path: Option<&str>,
+    outro_path: Option<&str>,
+) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    
+    // Create a concat list file
+    let concat_list_path = output_path.with_extension("concat.txt");
+    let mut concat_content = String::new();
+    
+    // Add intro if present
+    if let Some(intro) = intro_path {
+        concat_content.push_str(&format!("file '{}'\n", intro.replace("\\", "/")));
+    }
+    
+    // Add all segments
+    for segment_path in segment_paths {
+        let path_str = segment_path.to_string_lossy().replace("\\", "/");
+        concat_content.push_str(&format!("file '{}'\n", path_str));
+    }
+    
+    // Add outro if present
+    if let Some(outro) = outro_path {
+        concat_content.push_str(&format!("file '{}'\n", outro.replace("\\", "/")));
+    }
+    
+    std::fs::write(&concat_list_path, concat_content)
+        .map_err(|e| format!("Failed to write concat list: {}", e))?;
+    
+    // Run FFmpeg concat
+    let output = app.shell()
+        .sidecar("ffmpeg")
+        .unwrap()
+        .args(["-f", "concat", "-safe", "0", "-i", &concat_list_path.to_string_lossy(), "-c", "copy", "-y", &output_path.to_string_lossy()])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg concat failed: {}", stderr));
+    }
+    
+    // Clean up concat list
+    let _ = std::fs::remove_file(&concat_list_path);
+    
+    Ok(())
+}
+
+/// Apply subtitles to a video file
+async fn apply_subtitles_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    output_path: &std::path::Path,
+    subtitle_path: &std::path::Path,
+) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    
+    let subtitle_filter = format!("ass={}", subtitle_path.to_string_lossy().replace("\\", "/").replace(":", "\\\\:"));
+    
+    let output = app.shell()
+        .sidecar("ffmpeg")
+        .unwrap()
+        .args(["-i", &input_path.to_string_lossy(), "-vf", &subtitle_filter, "-c:a", "copy", "-y", &output_path.to_string_lossy()])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg subtitle application failed: {}", stderr));
+    }
+    
+    Ok(())
+}
+
+/// Helper function to get framing config for a specific segment
+/// Checks segment-specific configs first, then falls back to global config
+fn get_framing_for_segment(
+    segment: &serde_json::Value,
+    aspect_ratio: &str,
+    segment_framing_configs: &Option<SegmentFramingConfigs>,
+    manual_framing_configs: &Option<std::collections::HashMap<String, ManualFramingConfig>>,
+    video_width: u32,
+    video_height: u32,
+) -> Option<FramingStrategy> {
+    // Try to get segment ID from the segment JSON
+    let segment_id = segment.get("id").and_then(|v| v.as_str());
+    
+    // Check for segment-specific framing config
+    if let (Some(seg_id), Some(seg_configs)) = (segment_id, segment_framing_configs) {
+        if let Some(configs_for_ratio) = seg_configs.get(aspect_ratio) {
+            // Find config that applies to this segment
+            for seg_config in configs_for_ratio {
+                if seg_config.segment_ids.contains(&seg_id.to_string()) {
+                    println!("[Rust] Using segment-specific framing for segment {} in {}", seg_id, aspect_ratio);
+                    return Some(seg_config.config.to_framing_strategy(video_width, video_height));
+                }
+            }
+        }
+    }
+    
+    // Fallback to global manual config
+    if let Some(configs) = manual_framing_configs {
+        if let Some(config) = configs.get(aspect_ratio) {
+            println!("[Rust] Using global manual framing config for {}", aspect_ratio);
+            return Some(config.to_framing_strategy(video_width, video_height));
+        }
+    }
+    
+    None
+}
+
 // Simplified internal clip building implementation (without progress callbacks)
 pub async fn build_clip_internal_simple(
     app: &tauri::AppHandle,
@@ -138,6 +255,8 @@ pub async fn build_clip_internal_simple(
     watermark_settings: Option<WatermarkSettings>,
     audio_settings: Option<AudioSettings>,
     framing_strategy: Option<FramingStrategy>,
+    manual_framing_configs: Option<std::collections::HashMap<String, ManualFramingConfig>>,
+    segment_framing_configs: Option<SegmentFramingConfigs>,
     video_filter_segments: Option<Vec<VideoFilterSegment>>,
     text_overlays: Option<Vec<TextOverlaySettings>>,
     stickers: Option<Vec<StickerSettings>>,
@@ -232,6 +351,8 @@ pub async fn build_clip_internal_simple(
         let watermark_settings = watermark_settings.clone();
         let audio_settings = audio_settings.clone();
         let framing_strategy = framing_strategy.clone();
+        let manual_framing_configs = manual_framing_configs.clone();
+        let segment_framing_configs = segment_framing_configs.clone();
         let video_filter_segments = video_filter_segments.clone();
         let text_overlays = text_overlays.clone();
         let stickers = stickers.clone();
@@ -362,23 +483,28 @@ pub async fn build_clip_internal_simple(
             }
 
             // Build clip based on segments with aspect ratio cropping
-            // Check if this is a portrait/square clip (9:16, 4:5, 1:1) with a framing strategy
-            // These aspect ratios benefit from speaker-aware framing (split screen, etc.)
-            let is_portrait_or_square = aspect_ratio_str == "9:16" || aspect_ratio_str == "4:5" || aspect_ratio_str == "1:1";
-            let use_framing_strategy = is_portrait_or_square && framing_strategy.is_some();
+            // Check if we have segment-specific or global framing configs
             
-            if use_framing_strategy {
-                // Use speaker-aware framing for portrait clips
-                let strategy = framing_strategy.as_ref().unwrap();
+            // For single-segment clips, check if there's a framing config
+            if segments.len() == 1 {
+                // Get framing for this single segment (checks segment-specific first, then global)
+                let effective_framing_strategy = get_framing_for_segment(
+                    &segments[0],
+                    &aspect_ratio_str,
+                    &segment_framing_configs,
+                    &manual_framing_configs,
+                    video_info.width,
+                    video_info.height,
+                ).or_else(|| framing_strategy.clone());
                 
-                if segments.len() == 1 {
+                if let Some(strategy) = effective_framing_strategy {
                     println!("[Rust] Building single-segment clip for {} with framing strategy: {:?}", aspect_ratio_str, strategy.mode);
                     build_clip_with_framing_strategy(
                         &app,
                         &video_path,
                         &output_path,
                         &segments[0],
-                        strategy,
+                        &strategy,
                         &aspect_ratio_str,  // Pass the current aspect ratio being built
                         &quality,
                         frame_rate,
@@ -391,18 +517,18 @@ pub async fn build_clip_internal_simple(
                         video_filter_segments.as_ref()
                     ).await?;
                 } else {
-                    println!("[Rust] Building multi-segment clip for {} with {} segments and framing strategy: {:?}", 
-                             aspect_ratio_str, segments.len(), strategy.mode);
-                    build_multi_segment_clip_with_framing_strategy(
+                    // No framing for single segment
+                    println!("[Rust] Building single-segment clip for {}", aspect_ratio_str);
+                    build_single_segment_clip_with_settings(
                         &app,
                         &video_path,
                         &output_path,
-                        &segments,
-                        strategy,
-                        &aspect_ratio_str,  // Pass the current aspect ratio being built
+                        &segments[0],
+                        final_subtitle_file.as_deref(),
+                        &aspect_ratio,
                         &quality,
                         frame_rate,
-                        final_subtitle_file.as_deref(),
+                        &output_format,
                         intro_path.as_deref(),
                         outro_path.as_deref(),
                         intro_outro_cache.clone(),
@@ -411,44 +537,168 @@ pub async fn build_clip_internal_simple(
                         video_filter_segments.as_ref()
                     ).await?;
                 }
-            } else if segments.len() == 1 {
-                println!("[Rust] Building single-segment clip for {}", aspect_ratio_str);
-                build_single_segment_clip_with_settings(
-                    &app,
-                    &video_path,
-                    &output_path,
-                    &segments[0],
-                    final_subtitle_file.as_deref(),
-                    &aspect_ratio,
-                    &quality,
-                    frame_rate,
-                    &output_format,
-                    intro_path.as_deref(),
-                    outro_path.as_deref(),
-                    intro_outro_cache.clone(),
-                    watermark_settings.as_ref(),
-                    audio_settings.as_ref(),
-                    video_filter_segments.as_ref()
-                ).await?;
             } else {
-                println!("[Rust] Building multi-segment clip for {} with {} segments", aspect_ratio_str, segments.len());
-                build_multi_segment_clip_with_settings(
-                    &app,
-                    &video_path,
-                    &output_path,
-                    &segments,
-                    final_subtitle_file.as_deref(),
-                    &aspect_ratio,
-                    &quality,
-                    frame_rate,
-                    &output_format,
-                    intro_path.as_deref(),
-                    outro_path.as_deref(),
-                    intro_outro_cache.clone(),
-                    watermark_settings.as_ref(),
-                    audio_settings.as_ref(),
-                    video_filter_segments.as_ref()
-                ).await?;
+                // Multi-segment clip
+                // Check if all segments have the same framing config
+                let mut all_same_framing = true;
+                let first_segment_framing = get_framing_for_segment(
+                    &segments[0],
+                    &aspect_ratio_str,
+                    &segment_framing_configs,
+                    &manual_framing_configs,
+                    video_info.width,
+                    video_info.height,
+                );
+                
+                // Check if all segments have the same framing
+                for segment in &segments[1..] {
+                    let segment_framing = get_framing_for_segment(
+                        segment,
+                        &aspect_ratio_str,
+                        &segment_framing_configs,
+                        &manual_framing_configs,
+                        video_info.width,
+                        video_info.height,
+                    );
+                    
+                    // Compare framing strategies (simplified - just check if both are Some or both are None)
+                    match (&first_segment_framing, &segment_framing) {
+                        (Some(_), None) | (None, Some(_)) => {
+                            all_same_framing = false;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                
+                if all_same_framing && first_segment_framing.is_some() {
+                    // All segments have the same framing - use multi-segment builder with single strategy
+                    let strategy = first_segment_framing.or_else(|| framing_strategy.clone());
+                    if let Some(strat) = strategy {
+                        println!("[Rust] Building multi-segment clip for {} with {} segments and uniform framing: {:?}", 
+                                 aspect_ratio_str, segments.len(), strat.mode);
+                        build_multi_segment_clip_with_framing_strategy(
+                            &app,
+                            &video_path,
+                            &output_path,
+                            &segments,
+                            &strat,
+                            &aspect_ratio_str,
+                            &quality,
+                            frame_rate,
+                            final_subtitle_file.as_deref(),
+                            intro_path.as_deref(),
+                            outro_path.as_deref(),
+                            intro_outro_cache.clone(),
+                            watermark_settings.as_ref(),
+                            audio_settings.as_ref(),
+                            video_filter_segments.as_ref()
+                        ).await?;
+                    } else {
+                        // No framing
+                        println!("[Rust] Building multi-segment clip for {} with {} segments", aspect_ratio_str, segments.len());
+                        build_multi_segment_clip_with_settings(
+                            &app,
+                            &video_path,
+                            &output_path,
+                            &segments,
+                            final_subtitle_file.as_deref(),
+                            &aspect_ratio,
+                            &quality,
+                            frame_rate,
+                            &output_format,
+                            intro_path.as_deref(),
+                            outro_path.as_deref(),
+                            intro_outro_cache.clone(),
+                            watermark_settings.as_ref(),
+                            audio_settings.as_ref(),
+                            video_filter_segments.as_ref()
+                        ).await?;
+                    }
+                } else {
+                    // Segments have different framing - build each segment separately and concatenate
+                    println!("[Rust] Building multi-segment clip for {} with {} segments (per-segment framing)", 
+                             aspect_ratio_str, segments.len());
+                    
+                    // Create temp directory for individual segment outputs
+                    let temp_dir = clip_base_dir.join(format!("temp_segments_{}", ratio_suffix));
+                    std::fs::create_dir_all(&temp_dir)
+                        .map_err(|e| format!("Failed to create temp segments directory: {}", e))?;
+                    
+                    let mut segment_paths: Vec<std::path::PathBuf> = Vec::new();
+                    
+                    // Build each segment individually with its specific framing
+                    for (seg_idx, segment) in segments.iter().enumerate() {
+                        let segment_framing = get_framing_for_segment(
+                            segment,
+                            &aspect_ratio_str,
+                            &segment_framing_configs,
+                            &manual_framing_configs,
+                            video_info.width,
+                            video_info.height,
+                        ).or_else(|| framing_strategy.clone());
+                        
+                        let segment_output = temp_dir.join(format!("segment_{:03}.{}", seg_idx, output_format));
+                        
+                        if let Some(strategy) = segment_framing {
+                            println!("[Rust] Building segment {} with framing: {:?}", seg_idx, strategy.mode);
+                            build_clip_with_framing_strategy(
+                                &app,
+                                &video_path,
+                                &segment_output,
+                                segment,
+                                &strategy,
+                                &aspect_ratio_str,
+                                &quality,
+                                frame_rate,
+                                None, // No subtitles for individual segments
+                                None, // No intro for individual segments
+                                None, // No outro for individual segments
+                                intro_outro_cache.clone(),
+                                watermark_settings.as_ref(),
+                                audio_settings.as_ref(),
+                                video_filter_segments.as_ref()
+                            ).await?;
+                        } else {
+                            println!("[Rust] Building segment {} without framing", seg_idx);
+                            build_single_segment_clip_with_settings(
+                                &app,
+                                &video_path,
+                                &segment_output,
+                                segment,
+                                None, // No subtitles for individual segments
+                                &aspect_ratio,
+                                &quality,
+                                frame_rate,
+                                &output_format,
+                                None, // No intro for individual segments
+                                None, // No outro for individual segments
+                                intro_outro_cache.clone(),
+                                watermark_settings.as_ref(),
+                                audio_settings.as_ref(),
+                                video_filter_segments.as_ref()
+                            ).await?;
+                        }
+                        
+                        segment_paths.push(segment_output);
+                    }
+                    
+                    // Concatenate all segments
+                    println!("[Rust] Concatenating {} segments for {}", segment_paths.len(), aspect_ratio_str);
+                    concatenate_videos(&app, &segment_paths, &output_path, intro_path.as_deref(), outro_path.as_deref()).await?;
+                    
+                    // Apply subtitles to the final concatenated video if needed
+                    if let Some(subtitle_path) = final_subtitle_file.as_deref() {
+                        println!("[Rust] Applying subtitles to concatenated video");
+                        let temp_output = output_path.with_extension("temp.mp4");
+                        apply_subtitles_to_video(&app, &output_path, &temp_output, subtitle_path).await?;
+                        std::fs::rename(&temp_output, &output_path)
+                            .map_err(|e| format!("Failed to replace video with subtitled version: {}", e))?;
+                    }
+                    
+                    // Clean up temp directory
+                    let _ = std::fs::remove_dir_all(&temp_dir);
+                }
             }
 
             // Apply stickers if present

@@ -207,24 +207,8 @@ export function useDownloads() {
                 }
               }
 
-              // Pre-generate waveform data before adding to database
-              // This ensures waveform is ready when opening projects
-              try {
-                console.log(
-                  '[Downloads] Pre-generating waveform data for:',
-                  event.payload.file_path
-                );
-                await invoke('extract_audio_waveform', {
-                  videoPath: event.payload.file_path,
-                  targetSamples: 2000,
-                });
-                console.log('[Downloads] Waveform pre-generation complete');
-              } catch (waveformError) {
-                // Non-blocking - waveform can be generated later if needed
-                console.warn('[Downloads] Failed to pre-generate waveform:', waveformError);
-              }
-
               // Video is valid, create database record
+              // Note: Waveform generation is deferred until the user opens the workspace
               const rawVideoId = await createRawVideo(event.payload.file_path, {
                 projectId: finalProjectId,
                 originalFilename: download.title,
@@ -275,6 +259,23 @@ export function useDownloads() {
               }
 
               download.rawVideoId = rawVideoId;
+
+              // Pre-generate waveform in background for instant loading when user opens editor
+              // This runs async and doesn't block the download completion
+              try {
+                const { invoke } = await import('@tauri-apps/api/core');
+                console.log('[Downloads] Pre-generating waveform for:', event.payload.file_path);
+                // Fire and forget - don't await, let it run in background
+                invoke('extract_audio_waveform', {
+                  videoPath: event.payload.file_path,
+                }).then(() => {
+                  console.log('[Downloads] Waveform pre-generation complete for:', download.title);
+                }).catch((err) => {
+                  console.warn('[Downloads] Waveform pre-generation failed (non-critical):', err);
+                });
+              } catch (e) {
+                console.warn('[Downloads] Failed to start waveform pre-generation:', e);
+              }
 
               // Notify all listeners about completion
               completionCallbacks.forEach((callback) => {

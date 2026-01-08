@@ -37,6 +37,13 @@
               <Trash2 class="h-4 w-4" />
               Delete ({{ selectedProjects.size }})
             </button>
+            <button
+              v-if="paginatedProjects.length > 0 && selectedProjects.size < paginatedProjects.length"
+              @click="selectAllCurrentPage"
+              class="text-xs text-primary hover:text-primary/80 font-semibold"
+            >
+              Select all on page
+            </button>
             <span class="text-sm text-muted-foreground">{{ selectedProjects.size }} selected</span>
             <button @click="clearSelection" class="text-xs text-muted-foreground hover:text-foreground font-medium">
               Clear
@@ -1341,7 +1348,6 @@
     deleteClip,
     getCreatorProfileByProjectId,
     getIntroOutroById,
-    getWatermarkImage,
     getWatermarkByServerId,
     type Project,
     type RawVideo,
@@ -1349,6 +1355,7 @@
     type IntroOutro,
     type WatermarkSettings,
   } from '@/services/database';
+  import { getWatermarkImage } from '@/services/database/watermarks';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
   import { useToast } from '@/composables/useToast';
@@ -2850,7 +2857,7 @@
       // Prepare watermark settings if enabled
       let watermarkSettings = null;
       if (settings.watermark && settings.watermark.enabled && settings.watermark.watermarkId) {
-        const { getWatermarkImage } = await import('@/services/database');
+        const { getWatermarkImage } = await import('@/services/database/watermarks');
         const watermarkImage = await getWatermarkImage(settings.watermark.watermarkId);
         if (watermarkImage) {
           watermarkSettings = {
@@ -3610,6 +3617,11 @@
   function clearSelection() {
     selectedProjects.value.clear();
     selectedProjects.value = new Set(selectedProjects.value);
+  }
+
+  function selectAllCurrentPage() {
+    const ids = paginatedProjects.value.map((p) => p.id);
+    selectedProjects.value = new Set(ids);
   }
 
   function confirmBulkDelete() {

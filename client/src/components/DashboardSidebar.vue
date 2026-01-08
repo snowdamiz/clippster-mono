@@ -101,7 +101,6 @@
             </div>
 
             <div v-if="!loadingBalance" class="credit-right">
-              <!-- Authenticated user: show balance -->
               <div v-if="authStore.isAuthenticated">
                 <div v-if="typeof hoursRemaining === 'string'" class="credit-value-wrapper">
                   <span class="credit-value unlimited">∞</span>
@@ -113,7 +112,6 @@
                   <span class="credit-unit">{{ hoursRemaining === 1 ? 'hr' : 'hrs' }}</span>
                 </div>
               </div>
-              <!-- Unauthenticated user: show sign in prompt -->
               <div v-else class="credit-sign-in-prompt">
                 <span class="credit-sign-in-text">Sign in</span>
               </div>

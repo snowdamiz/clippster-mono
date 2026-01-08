@@ -260,3 +260,5 @@ For reference when implementing Kick, these are the key PumpFun files to study:
 | `client/src/composables/useLivestreamMonitoring.ts` | Stream monitoring & auto-detection |
 | `client/src/pages/LiveClip.vue` | Main live clipping UI |
 
+
+

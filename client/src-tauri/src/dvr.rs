@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
+use tauri_plugin_shell::ShellExt;
 
 /// Get the DVR temp directory for a specific mint
 fn get_dvr_dir(app: &AppHandle, mint_id: &str) -> Result<PathBuf, String> {
@@ -430,5 +431,147 @@ pub async fn read_dvr_cluster(
     // For chunks > 0, the file already contains only cluster data
     println!("[DVR] Reading chunk {} cluster data ({} bytes)", chunk_index, chunk_data.len());
     Ok(chunk_data)
+}
+
+/// Build a VOD (MP4) from DVR chunks and save to project directory
+/// This is called when the user stops watching a stream after creating clips
+#[tauri::command]
+pub async fn build_vod_from_dvr(
+    app: AppHandle,
+    mint_id: String,
+    project_id: String,
+    display_name: String,
+) -> Result<String, String> {
+    let dvr_dir = get_dvr_dir(&app, &mint_id)?;
+    
+    if !dvr_dir.exists() {
+        return Err(format!("DVR directory not found for {}", mint_id));
+    }
+    
+    // List all chunk files
+    let mut chunk_files: Vec<(u32, PathBuf)> = vec![];
+    
+    let entries = fs::read_dir(&dvr_dir)
+        .map_err(|e| format!("Failed to read DVR directory: {}", e))?;
+    
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let path = entry.path();
+        
+        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+            if filename.starts_with("chunk_") && filename.ends_with(".webm") {
+                if let Some(index_str) = filename.strip_prefix("chunk_").and_then(|s| s.strip_suffix(".webm")) {
+                    if let Ok(index) = index_str.parse::<u32>() {
+                        chunk_files.push((index, path));
+                    }
+                }
+            }
+        }
+    }
+    
+    // Sort by index
+    chunk_files.sort_by_key(|(idx, _)| *idx);
+    
+    if chunk_files.is_empty() {
+        return Err(format!("No DVR chunks found for {}", mint_id));
+    }
+    
+    println!("[DVR] Building VOD from {} chunks", chunk_files.len());
+    
+    // Get storage paths
+    let storage_paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    
+    // Create output directory for this project (in videos folder)
+    let output_dir = storage_paths.videos.join(&project_id);
+    fs::create_dir_all(&output_dir)
+        .map_err(|e| format!("Failed to create output directory: {}", e))?;
+    
+    // Create temp directory for concat file
+    let temp_dir = storage_paths.temp.join("dvr_vod");
+    fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    
+    // Create concat list file for FFmpeg
+    let concat_list_path = temp_dir.join(format!("concat_{}.txt", uuid::Uuid::new_v4()));
+    let mut concat_content = String::new();
+    
+    for (_, path) in &chunk_files {
+        let escaped_path = path.to_string_lossy().replace('\\', "/").replace("'", "'\\''");
+        concat_content.push_str(&format!("file '{}'\n", escaped_path));
+    }
+    
+    fs::write(&concat_list_path, &concat_content)
+        .map_err(|e| format!("Failed to write concat list: {}", e))?;
+    
+    // Generate output filename
+    let safe_name = sanitize_filename(&display_name);
+    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+    let output_filename = format!("{}_VOD_{}.mp4", safe_name, timestamp);
+    let output_path = output_dir.join(&output_filename);
+    
+    // Detect hardware encoder
+    let encoder = crate::clips::encoder::detect_hardware_encoder(&app, "medium").await;
+    
+    // Build FFmpeg args for concatenation and conversion
+    let mut args = vec![
+        "-f".to_string(), "concat".to_string(),
+        "-safe".to_string(), "0".to_string(),
+        "-i".to_string(), concat_list_path.to_string_lossy().to_string(),
+        "-c:v".to_string(), encoder.codec.clone(),
+    ];
+    
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+    
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    // Add common parameters
+    args.extend_from_slice(&[
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "192k".to_string(),
+        "-pix_fmt".to_string(), "yuv420p".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        "-y".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ]);
+    
+    println!("[DVR] Running FFmpeg to build VOD...");
+    
+    let shell = app.shell();
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    
+    // Cleanup concat list
+    let _ = fs::remove_file(&concat_list_path);
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg VOD build failed: {}", stderr));
+    }
+    
+    println!("[DVR] VOD built successfully: {}", output_path.display());
+    
+    Ok(output_path.to_string_lossy().to_string())
+}
+
+/// Sanitize filename to remove invalid characters
+fn sanitize_filename(name: &str) -> String {
+    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    let mut result = name.to_string();
+    for c in invalid_chars {
+        result = result.replace(c, "_");
+    }
+    // Trim whitespace and limit length
+    result.trim().chars().take(100).collect()
 }
 

@@ -18,9 +18,10 @@ import {
   getRawVideo,
   type CreatorProfileWithLinks,
 } from '@/services/database';
+import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
 import type { LiveStatus, LiveSession, SegmentEventPayload } from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
-import { useDvrRecording, type DvrChunk } from './useDvrRecording';
+import { useHlsPlayback } from './useHlsPlayback';
 
 // PumpFun LiveKit API endpoints
 const PUMPFUN_LIVESTREAM_API = 'https://livestream-api.pump.fun';
@@ -35,9 +36,9 @@ export type ViewerConnectionState =
   | 'failed';
 
 // Playback modes
-export type PlaybackMode = 'live' | 'dvr';
+export type PlaybackMode = 'webrtc' | 'hls';
 
-// Segment info for DVR playback
+// Segment info for clipping
 export interface SegmentInfo {
   segmentNumber: number;
   filePath: string;
@@ -61,29 +62,31 @@ export interface LivestreamViewerState {
   streamQuality: string | null;
   latencyMs: number | null;
 
-  // DVR Timeline (all times are relative to DVR start, not stream start)
-  recordingStartTime: number | null; // Unix timestamp when stream originally started (for reference)
-  dvrStartTime: number | null; // Unix timestamp when DVR recording started (this is the timeline origin)
+  // Recording timeline (for clipping - all times relative to DVR start)
+  recordingStartTime: number | null; // Unix timestamp in ms when stream originally started
+  dvrStartTime: number | null; // Unix timestamp in ms when DVR recording started
   liveEdgeTime: number; // Current live edge in seconds from DVR start
-  playbackPosition: number; // Current playback position in seconds from DVR start
-  isAtLiveEdge: boolean;
+  playbackPosition: number; // Current playback position in seconds
   availableSegments: SegmentInfo[];
   totalRecordedDuration: number; // Total seconds of recorded content
 
-  // Playback
-  playbackMode: PlaybackMode;
+  // Playback state
   isPlaying: boolean;
   isBuffering: boolean;
   isMuted: boolean;
   volume: number;
-  playbackSpeed: number;
+  isAtLiveEdge: boolean; // Whether playback is at the live edge
+  playbackMode: PlaybackMode; // 'webrtc' for live, 'hls' for DVR
+
+  // Buffered ranges for seek bar
+  bufferedRanges: Array<{ start: number; end: number }>;
 
   // Session (for persistent recording)
   sessionId: string | null;
   projectId: string | null;
 
   // Temp Recording (for watch-only DVR)
-  isTempRecording: boolean; // True if using temp recording (no persistent project)
+  isTempRecording: boolean;
   tempSessionId: string | null;
 
   // Watermark
@@ -106,19 +109,14 @@ const MUTED_STORAGE_KEY = 'livestream-viewer-muted';
 
 export function useLivestreamViewer() {
   // Get the monitoring composable to access active sessions
-  const {
-    activeSessions,
-    monitoredStreamers,
-    startMonitoring,
-    stopMonitoring,
-    dvrSessions,
-    dvrRecording,
-  } = useLivestreamMonitoring();
+  const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, dvrSessions } =
+    useLivestreamMonitoring();
 
-  // DVR recording composable is now accessed through monitoring (singleton pattern)
+  // HLS Playback composable for reliable live streaming with DVR
+  const hlsPlayback = useHlsPlayback();
 
-  // Constants
-  const LIVE_EDGE_THRESHOLD = 6; // seconds - increased to avoid buffering gaps between chunks
+  // Track the HLS recording output directory
+  const hlsOutputDir = ref<string | null>(null);
 
   // Core state
   const state = ref<LivestreamViewerState>({
@@ -135,15 +133,15 @@ export function useLivestreamViewer() {
     dvrStartTime: null,
     liveEdgeTime: 0,
     playbackPosition: 0,
-    isAtLiveEdge: true,
     availableSegments: [],
     totalRecordedDuration: 0,
-    playbackMode: 'live',
     isPlaying: false,
-    isBuffering: false,
+    isBuffering: true,
     isMuted: loadMutedPreference(),
     volume: loadVolumePreference(),
-    playbackSpeed: 1,
+    isAtLiveEdge: true,
+    playbackMode: 'hls', // Always use HLS for consistent timeline/seek behavior
+    bufferedRanges: [],
     sessionId: null,
     projectId: null,
     isTempRecording: false,
@@ -153,65 +151,52 @@ export function useLivestreamViewer() {
     watermarkSettings: null,
   });
 
-  // LiveKit room instance
+  // Track if HLS is ready for playback (has at least one segment)
+  const isHlsReady = ref(false);
+  let lastDurationUpdate = 0;
+  let lastDurationValue = 0;
+  let displayDuration = 0; // Smoothed duration to avoid UI jumps when new segments arrive
+  let lastDisplayUpdate = Date.now();
+  const DURATION_SMOOTH_RATE = 1.0; // seconds of display growth per real second
+
+  // LiveKit room instance (for WebRTC playback and viewer tracking)
   let room: Room | null = null;
 
-  // Video/Audio elements
+  // Video element references
   const videoElement = ref<HTMLVideoElement | null>(null);
-  const liveVideoTrack = ref<RemoteVideoTrack | null>(null);
-  const liveAudioTrack = ref<RemoteAudioTrack | null>(null);
+  const hlsVideoElement = ref<HTMLVideoElement | null>(null); // Separate element for HLS playback
 
-  // DVR video element (single element with blob-based playback)
-  const dvrVideoElement = ref<HTMLVideoElement | null>(null);
-
-  // DVR blob state for seamless playback
-  let currentDvrBlobUrl: string | null = null;
-  let loadedChunkCount: number = 0;
-  let isReloadingBlob = false;
+  // WebRTC track references
+  let remoteVideoTrack: RemoteVideoTrack | null = null;
+  let remoteAudioTrack: RemoteAudioTrack | null = null;
+  let videoAttachCleanup: (() => void) | null = null;
+  let audioAttachCleanup: (() => void) | null = null;
+  let standaloneAudioElement: HTMLAudioElement | null = null; // For audio-only streams
+  let audioAlreadyAttached = false; // Prevent multiple audio attachments
 
   // Reconnection state
   let reconnectAttempts = 0;
   const MAX_RECONNECT_ATTEMPTS = 5;
   let reconnectTimeout: number | null = null;
+  let isIntentionalDisconnect = false; // Flag to prevent reconnects on intentional disconnect
 
   // Update timers
   let liveEdgeUpdateInterval: number | null = null;
   let segmentPollInterval: number | null = null;
-
-  // DVR chunk transition state
-  let waitingForNextChunk = false;
-  let waitingForChunkInterval: number | null = null;
+  let playbackSyncInterval: number | null = null;
 
   // Event listeners
   const unlistenFunctions: UnlistenFn[] = [];
 
   // Computed values
   const isConnected = computed(() => state.value.connectionState === 'connected');
-  const isLive = computed(() => state.value.playbackMode === 'live' && state.value.isAtLiveEdge);
-  const behindLiveSeconds = computed(() => {
-    if (state.value.isAtLiveEdge) return 0;
-    return Math.max(0, state.value.liveEdgeTime - state.value.playbackPosition);
-  });
-  const behindLiveFormatted = computed(() => {
-    const seconds = behindLiveSeconds.value;
-    if (seconds < 60) return `${Math.floor(seconds)}s behind`;
-    const minutes = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    if (minutes < 60) return `${minutes}m ${secs}s behind`;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m behind`;
-  });
-  // Can only seek backward if there's DVR content and we're not at position 0
-  const canSeekBackward = computed(() => {
-    const hasDvrContent = state.value.availableSegments.length > 0;
-    return hasDvrContent && state.value.playbackPosition > 0;
-  });
-  const canSeekForward = computed(() => !state.value.isAtLiveEdge);
-  // How much recorded DVR content is available to rewind through
-  const availableDvrDuration = computed(() => state.value.totalRecordedDuration);
-  // Current position represents how much content we can clip from
-  const availableClipDuration = computed(() => state.value.playbackPosition);
+  const isLive = computed(() => state.value.connectionState === 'connected');
+
+  // How much recorded DVR content is available for clipping
+  const availableClipDuration = computed(() => state.value.totalRecordedDuration);
+
+  // Is playback at the live edge
+  const isAtLiveEdge = computed(() => state.value.isAtLiveEdge);
 
   // Helper functions
   function loadVolumePreference(): number {
@@ -295,7 +280,6 @@ export function useLivestreamViewer() {
           );
           const regionUrl = sorted[0]?.url;
           if (regionUrl) {
-            console.log('[LiveViewer] Got preferred region:', regionUrl);
             return regionUrl;
           }
         }
@@ -308,18 +292,199 @@ export function useLivestreamViewer() {
 
   // Load creator profile and watermark settings
   async function loadCreatorProfile(mintId: string) {
+    console.log('[LiveViewer] loadCreatorProfile called for mintId:', mintId);
     try {
-      const profile = await getCreatorProfileByPlatformId('pumpfun', mintId);
+      let profile = await getCreatorProfileByPlatformId('pumpfun', mintId);
+      console.log('[LiveViewer] Profile lookup result:', profile ? `Found: ${profile.name}` : 'Not found');
+
+      // Fallback: some stream IDs include a trailing "pump" suffix; try without it
+      if (!profile && mintId.toLowerCase().endsWith('pump')) {
+        const trimmedMint = mintId.slice(0, -4);
+        console.log('[LiveViewer] Retry profile lookup without pump suffix:', trimmedMint);
+        profile = await getCreatorProfileByPlatformId('pumpfun', trimmedMint);
+        console.log('[LiveViewer] Fallback lookup result:', profile ? `Found: ${profile.name}` : 'Not found');
+      }
+
+      // Last-resort: check org-assigned creator profiles (server-side) for the current user
+      if (!profile) {
+        try {
+          const assigned = await getUserAssignedCreatorProfiles();
+          if (assigned.success && assigned.profiles?.length) {
+            const normalize = (val: string | null | undefined) => val?.trim().toLowerCase() || '';
+            const stripPump = (val: string) =>
+              val.toLowerCase().endsWith('pump') ? val.slice(0, -4) : val;
+            const candidates = Array.from(
+              new Set([normalize(mintId), normalize(stripPump(mintId))])
+            ).filter(Boolean);
+
+            const orgMatch = assigned.profiles.find((p) =>
+              p.platform_links?.some((link) => {
+                const linkNorm = normalize(link.platform_id);
+                const linkNormStripped = normalize(stripPump(link.platform_id));
+                return (
+                  candidates.includes(linkNorm) ||
+                  candidates.includes(linkNormStripped) ||
+                  linkNorm === candidates[0] ||
+                  linkNormStripped === candidates[0]
+                );
+              })
+            );
+
+            if (orgMatch) {
+              console.log('[LiveViewer] Found org-assigned creator profile:', orgMatch.name);
+
+              // Adapt org profile shape to local expectations and prefix org watermark IDs
+              const settingsObj = orgMatch.watermark_settings || null;
+              const perRatioRaw =
+                settingsObj && typeof settingsObj === 'object'
+                  ? (settingsObj as Record<string, any>)
+                  : null;
+
+              // Prefix all per-ratio watermarkIds with org-asset-
+              let perRatio: Record<string, any> | null = null;
+              if (perRatioRaw) {
+                perRatio = {};
+                for (const [ratio, cfg] of Object.entries(perRatioRaw)) {
+                  if (cfg && typeof cfg === 'object') {
+                    const ratioCfg = cfg as { watermarkId?: number | string; position?: any };
+                    perRatio[ratio] = {
+                      ...ratioCfg,
+                      watermarkId:
+                        ratioCfg.watermarkId != null
+                          ? `org-asset-${ratioCfg.watermarkId}`
+                          : null,
+                    };
+                  } else {
+                    perRatio[ratio] = cfg;
+                  }
+                }
+              }
+
+              const ratio16 = perRatio?.['16:9'];
+              const ratioWatermarkId =
+                ratio16?.watermarkId != null ? String(ratio16.watermarkId) : null;
+
+              profile = {
+                // Minimal fields needed downstream
+                id: String(orgMatch.id),
+                name: orgMatch.name,
+                description: orgMatch.description || null,
+                profile_image_path: null,
+                intro_id: null,
+                outro_id: null,
+                watermark_id:
+                  ratioWatermarkId ||
+                  (orgMatch.watermark_id != null ? `org-asset-${orgMatch.watermark_id}` : null),
+                watermark_settings: perRatio ? JSON.stringify(perRatio) : null,
+                user_id: null,
+                created_at: Date.now(),
+                updated_at: Date.now(),
+                platform_links:
+                  orgMatch.platform_links?.map((l) => ({
+                    ...l,
+                    id: String(l.id ?? l.platform_id ?? Math.random()),
+                    creator_profile_id: String(orgMatch.id),
+                    platform_id: l.platform_id,
+                    platform: l.platform as any,
+                    display_name: l.display_name || null,
+                    profile_image_url: l.profile_image_url || null,
+                    is_primary: l.is_primary ?? false,
+                    created_at: Date.now(),
+                    updated_at: Date.now(),
+                  })) || [],
+              } as unknown as CreatorProfileWithLinks;
+            }
+          }
+        } catch (err) {
+          console.warn('[LiveViewer] Failed to query org-assigned profiles', err);
+        }
+      }
+      
       if (profile) {
         state.value.creatorProfile = profile;
-        state.value.watermarkId = profile.watermark_id;
+        
+        console.log('[LiveViewer] Profile watermark data:', {
+          watermark_id: profile.watermark_id,
+          watermark_settings: profile.watermark_settings,
+        });
+        
+        // Parse watermark settings - stored per-aspect-ratio
         if (profile.watermark_settings) {
           try {
-            state.value.watermarkSettings = JSON.parse(profile.watermark_settings);
-          } catch {
-            state.value.watermarkSettings = null;
+            const perRatioSettings = JSON.parse(profile.watermark_settings);
+            console.log('[LiveViewer] Parsed per-ratio settings:', perRatioSettings);
+
+            // Get 16:9 settings for livestream display
+            const settings16x9 = perRatioSettings?.['16:9'];
+            console.log('[LiveViewer] 16:9 settings:', settings16x9);
+
+            if (settings16x9) {
+              // Use the watermarkId from the 16:9 settings, falling back to top-level watermark_id
+              state.value.watermarkId = settings16x9.watermarkId || profile.watermark_id;
+
+              // Flatten the position settings for the viewer component
+              // The viewer expects { position: { x, y }, scale, opacity }
+              // Support isFullFrameOverlay either at the ratio level or nested in position
+              const isFullFrameOverlay =
+                settings16x9.isFullFrameOverlay ??
+                settings16x9.position?.isFullFrameOverlay ??
+                false;
+
+              if (settings16x9.position) {
+                state.value.watermarkSettings = {
+                  position: {
+                    x: settings16x9.position.x ?? 50,
+                    y: settings16x9.position.y ?? 50,
+                  },
+                  scale: settings16x9.position.scale ?? 20,
+                  opacity: settings16x9.position.opacity ?? 80,
+                  isFullFrameOverlay,
+                };
+              } else {
+                // No position settings, use defaults
+                state.value.watermarkSettings = {
+                  position: { x: 12, y: 92 },
+                  scale: 20,
+                  opacity: 80,
+                  isFullFrameOverlay: false,
+                };
+              }
+            } else {
+              // No 16:9 settings - watermark disabled for this aspect ratio
+              console.log('[LiveViewer] No 16:9 settings found, watermark disabled');
+              state.value.watermarkId = null;
+              state.value.watermarkSettings = null;
+            }
+          } catch (parseError) {
+            console.warn('[LiveViewer] Failed to parse watermark_settings:', parseError);
+            state.value.watermarkId = profile.watermark_id;
+            state.value.watermarkSettings = profile.watermark_id
+              ? {
+                  position: { x: 12, y: 92 },
+                  scale: 20,
+                  opacity: 80,
+                }
+              : null;
           }
+        } else {
+          // No watermark_settings at all, use top-level watermark_id
+          console.log('[LiveViewer] No watermark_settings, using top-level watermark_id:', profile.watermark_id);
+          state.value.watermarkId = profile.watermark_id;
+          state.value.watermarkSettings = profile.watermark_id
+            ? {
+                position: { x: 12, y: 92 },
+                scale: 20,
+                opacity: 80,
+              }
+            : null;
         }
+        
+        console.log('[LiveViewer] Final watermark state:', {
+          watermarkId: state.value.watermarkId,
+          watermarkSettings: state.value.watermarkSettings,
+        });
+      } else {
+        console.log('[LiveViewer] No creator profile found for this stream');
       }
     } catch (error) {
       console.warn('[LiveViewer] Failed to load creator profile', error);
@@ -334,8 +499,6 @@ export function useLivestreamViewer() {
     profileImageUrl?: string,
     autoStartRecording: boolean = true
   ) {
-    console.log('[LiveViewer] connect() called with:', { mintId, streamerId, displayName });
-
     if (!mintId) {
       console.error('[LiveViewer] No mintId provided!');
       state.value.connectionState = 'failed';
@@ -344,23 +507,23 @@ export function useLivestreamViewer() {
     }
 
     if (state.value.connectionState === 'connecting') {
-      console.log('[LiveViewer] Already connecting, skipping...');
       return;
     }
 
-    console.log('[LiveViewer] Setting state to connecting...');
+    // Reset intentional disconnect flag when starting a new connection
+    isIntentionalDisconnect = false;
+
     state.value.connectionState = 'connecting';
     state.value.connectionError = null;
     state.value.mintId = mintId;
     state.value.streamerId = streamerId;
     state.value.displayName = displayName;
     state.value.profileImageUrl = profileImageUrl || null;
+    state.value.isBuffering = true;
 
     try {
       // Check if stream is live
-      console.log('[LiveViewer] Checking live status for mint:', mintId);
       const liveStatus = await fetchLiveStatus(mintId);
-      console.log('[LiveViewer] Live status:', liveStatus);
 
       if (!liveStatus.isLive) {
         state.value.connectionState = 'failed';
@@ -369,17 +532,14 @@ export function useLivestreamViewer() {
       }
 
       state.value.viewerCount = liveStatus.numParticipants || 0;
-      state.value.recordingStartTime = liveStatus.streamStartTimestamp
-        ? Math.floor(liveStatus.streamStartTimestamp / 1000)
-        : Math.floor(Date.now() / 1000);
+      // Store recording start time in milliseconds for consistency with Date.now()
+      state.value.recordingStartTime = liveStatus.streamStartTimestamp || Date.now();
 
       // Load creator profile for watermark
       await loadCreatorProfile(mintId);
 
-      // Get join token
-      console.log('[LiveViewer] Joining livestream...');
+      // Get join token for LiveKit (for viewer count tracking)
       const joinData = await joinLivestream(mintId);
-      console.log('[LiveViewer] Join response:', joinData);
       const token = joinData.token;
 
       if (!token) {
@@ -388,96 +548,73 @@ export function useLivestreamViewer() {
 
       // Get preferred region
       let livekitUrl = joinData.serverUrl || joinData.url || joinData.wsUrl;
-      console.log('[LiveViewer] Server URL from join:', livekitUrl);
 
       if (!livekitUrl) {
         livekitUrl = await getPreferredRegion(token);
-        console.log('[LiveViewer] Using preferred region URL:', livekitUrl);
       }
 
       // Ensure we're using wss:// protocol for WebSocket connection
       if (livekitUrl && livekitUrl.startsWith('https://')) {
         livekitUrl = livekitUrl.replace('https://', 'wss://');
-        console.log('[LiveViewer] Converted to WebSocket URL:', livekitUrl);
       } else if (
         livekitUrl &&
         !livekitUrl.startsWith('wss://') &&
         !livekitUrl.startsWith('ws://')
       ) {
         livekitUrl = 'wss://' + livekitUrl;
-        console.log('[LiveViewer] Added wss:// protocol:', livekitUrl);
       }
 
-      // Create and connect to LiveKit room
-      console.log('[LiveViewer] Creating LiveKit room...');
+      // Create and connect to LiveKit room (for WebRTC playback AND viewer tracking)
       room = new Room({
         adaptiveStream: true,
         dynacast: true,
+        videoCaptureDefaults: {
+          resolution: { width: 1280, height: 720 },
+        },
       });
 
-      // Set up room event handlers
+      // Set up room event handlers (for WebRTC playback, viewer count, and connection status)
       setupRoomEventHandlers(room);
 
-      // Connect to room
-      console.log('[LiveViewer] Connecting to LiveKit room at:', livekitUrl);
+      // Connect to room with auto-subscribe for WebRTC playback
       await room.connect(livekitUrl, token, { autoSubscribe: true });
-      console.log('[LiveViewer] Connected! Room state:', room.state);
+
+      // Attach any existing tracks (streamer may already be publishing)
+      attachExistingTracks();
 
       state.value.connectionState = 'connected';
       reconnectAttempts = 0;
 
-      // Log room participants info
-      console.log('[LiveViewer] Remote participants count:', room.remoteParticipants.size);
-
-      // Handle existing participants' tracks (they may already be publishing)
-      room.remoteParticipants.forEach((participant) => {
-        console.log(
-          '[LiveViewer] Participant:',
-          participant.identity,
-          'tracks:',
-          participant.trackPublications.size
-        );
-        participant.trackPublications.forEach((publication) => {
-          console.log(
-            '[LiveViewer] Track publication:',
-            publication.trackSid,
-            'kind:',
-            publication.kind,
-            'subscribed:',
-            publication.isSubscribed,
-            'track:',
-            !!publication.track
-          );
-          if (publication.track && publication.isSubscribed) {
-            handleTrackSubscribed(
-              publication.track as RemoteTrack,
-              publication as RemoteTrackPublication,
-              participant
-            );
-          } else if (!publication.isSubscribed && publication.kind === 'video') {
-            // Try to subscribe manually if not auto-subscribed
-            console.log(
-              '[LiveViewer] Attempting to subscribe to video track:',
-              publication.trackSid
-            );
-            publication.setSubscribed(true);
+      // Video tracks sometimes arrive after initial connection - retry check after delay
+      if (!remoteVideoTrack) {
+        setTimeout(() => {
+          if (!remoteVideoTrack && room?.state === 'connected') {
+            attachExistingTracks();
           }
-        });
-      });
+        }, 2000);
+      }
 
-      // Start DVR if enabled (for clipping/seeking capability)
+      // Start HLS recording for playback and clipping
       if (autoStartRecording) {
-        await ensureDvrAvailable(streamerId, mintId, displayName, profileImageUrl);
+        await ensureHlsRecordingAvailable(streamerId, mintId, displayName, profileImageUrl);
       }
 
       // Start live edge update timer
       startLiveEdgeUpdates();
 
-      // Start segment polling for DVR
+      // Start segment polling for HLS
       startSegmentPolling();
+
+      // Immediately fetch segments (don't wait for poll interval)
+      await updateHlsSegments();
 
       // Listen for segment events
       await setupSegmentEventListeners();
+
+      // Start playback sync interval
+      startPlaybackSync();
+
+      // Note: HLS playback initialization is handled by the hlsOutputDir watcher
     } catch (error) {
       console.error('[LiveViewer] Connection failed:', error);
       state.value.connectionState = 'failed';
@@ -487,7 +624,6 @@ export function useLivestreamViewer() {
       let errorMessage = 'Connection failed';
       if (error instanceof Error) {
         errorMessage = error.message;
-        // Check for common errors
         if (error.message.includes('CORS') || error.message.includes('cors')) {
           errorMessage = 'Connection blocked by browser security (CORS)';
         } else if (error.message.includes('network') || error.message.includes('Network')) {
@@ -498,12 +634,6 @@ export function useLivestreamViewer() {
       }
       state.value.connectionError = errorMessage;
 
-      console.error('[LiveViewer] Error details:', {
-        message: errorMessage,
-        originalError: error,
-        mintId,
-      });
-
       // Attempt reconnect (but not for auth errors)
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !errorMessage.includes('Authentication')) {
         scheduleReconnect(mintId, streamerId, displayName, profileImageUrl);
@@ -512,122 +642,175 @@ export function useLivestreamViewer() {
   }
 
   function setupRoomEventHandlers(room: Room) {
+    // Track subscription events for WebRTC playback
     room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
     room.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-    room.on(RoomEvent.TrackPublished, (publication, participant) => {
-      console.log(
-        '[LiveViewer] Track published:',
-        publication.trackSid,
-        'kind:',
-        publication.kind,
-        'by:',
-        participant.identity
-      );
+
+    // Track published - video might arrive after audio, need to handle this
+    room.on(RoomEvent.TrackPublished, (publication) => {
+      // If track isn't subscribed yet and we need it, subscribe manually
+      if (!publication.isSubscribed && publication.kind === Track.Kind.Video && !remoteVideoTrack) {
+        publication.setSubscribed(true);
+      }
     });
+
+    // Connection events
     room.on(RoomEvent.Disconnected, handleDisconnected);
     room.on(RoomEvent.Reconnecting, handleReconnecting);
     room.on(RoomEvent.Reconnected, handleReconnected);
     room.on(RoomEvent.ParticipantConnected, (participant) => {
-      console.log('[LiveViewer] Participant connected:', participant.identity);
       updateViewerCount();
+
+      // Check if the participant has tracks we need
+      participant.trackPublications.forEach((publication) => {
+        if (publication.kind === Track.Kind.Video && !publication.isSubscribed && !remoteVideoTrack) {
+          publication.setSubscribed(true);
+        }
+      });
     });
-    room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-      console.log('[LiveViewer] Participant disconnected:', participant.identity);
+    room.on(RoomEvent.ParticipantDisconnected, () => {
       updateViewerCount();
     });
     room.on(RoomEvent.ConnectionStateChanged, handleConnectionStateChanged);
     room.on(RoomEvent.ConnectionQualityChanged, handleConnectionQualityChanged);
-    room.on(RoomEvent.MediaDevicesError, (error) => {
-      console.error('[LiveViewer] Media devices error:', error);
-    });
-    room.on(RoomEvent.SignalConnected, () => {
-      console.log('[LiveViewer] Signal connected');
-    });
   }
 
+  // Handle track subscription for WebRTC playback
   function handleTrackSubscribed(
     track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
+    _publication: RemoteTrackPublication,
+    _participant: RemoteParticipant
   ) {
-    console.log(
-      '[LiveViewer] Track subscribed:',
-      track.kind,
-      'from participant:',
-      participant.identity
-    );
-
     if (track.kind === Track.Kind.Video) {
-      liveVideoTrack.value = track as RemoteVideoTrack;
-
-      // Attach to video element if available and in live mode
-      if (videoElement.value && state.value.playbackMode === 'live') {
-        console.log('[LiveViewer] Attaching video track to element');
-        track.attach(videoElement.value);
-        state.value.isPlaying = true;
-        state.value.isBuffering = false;
-
-        // Get video quality info
-        const settings = (track as RemoteVideoTrack).mediaStreamTrack?.getSettings?.();
-        const height = settings?.height;
-        const width = settings?.width;
-        if (typeof height === 'number') {
-          state.value.streamQuality =
-            height >= 1080 ? '1080p' : height >= 720 ? '720p' : height >= 480 ? '480p' : '360p';
-          console.log('[LiveViewer] Video settings:', width, 'x', height);
-        }
-
-        // Try to play the video
-        videoElement.value.play().catch((err) => {
-          console.log('[LiveViewer] Video autoplay blocked:', err);
-        });
-      }
+      remoteVideoTrack = track as RemoteVideoTrack;
+      attachVideoTrack();
     } else if (track.kind === Track.Kind.Audio) {
-      liveAudioTrack.value = track as RemoteAudioTrack;
-
-      // Attach audio if in live mode
-      if (videoElement.value && state.value.playbackMode === 'live') {
-        console.log('[LiveViewer] Attaching audio track to element');
-        track.attach(videoElement.value);
-        applyAudioSettings();
-      }
+      remoteAudioTrack = track as RemoteAudioTrack;
+      attachAudioTrack();
     }
   }
 
   function handleTrackUnsubscribed(
     track: RemoteTrack,
-    publication: RemoteTrackPublication,
-    participant: RemoteParticipant
+    _publication: RemoteTrackPublication,
+    _participant: RemoteParticipant
   ) {
-    console.log('[LiveViewer] Track unsubscribed:', track.kind);
-
     if (track.kind === Track.Kind.Video) {
-      if (liveVideoTrack.value) {
-        try {
-          liveVideoTrack.value.detach();
-        } catch (e) {
-          console.warn('[LiveViewer] Error detaching video track:', e);
-        }
-      }
-      liveVideoTrack.value = null;
+      detachVideoTrack();
+      remoteVideoTrack = null;
     } else if (track.kind === Track.Kind.Audio) {
-      if (liveAudioTrack.value) {
-        try {
-          liveAudioTrack.value.detach();
-        } catch (e) {
-          console.warn('[LiveViewer] Error detaching audio track:', e);
-        }
-      }
-      liveAudioTrack.value = null;
+      detachAudioTrack();
+      remoteAudioTrack = null;
     }
   }
 
+  // Attach existing tracks when joining a room where streamer is already publishing
+  function attachExistingTracks() {
+    if (!room) return;
+
+    room.remoteParticipants.forEach((participant) => {
+      participant.trackPublications.forEach((publication) => {
+        if (publication.track && publication.isSubscribed) {
+          if (publication.track.kind === Track.Kind.Video) {
+            remoteVideoTrack = publication.track as RemoteVideoTrack;
+            attachVideoTrack();
+          } else if (publication.track.kind === Track.Kind.Audio) {
+            remoteAudioTrack = publication.track as RemoteAudioTrack;
+            attachAudioTrack();
+          }
+        } else if (publication.kind === Track.Kind.Video && !publication.isSubscribed) {
+          publication.setSubscribed(true);
+        }
+      });
+    });
+  }
+
+  // NOTE: WebRTC video track is received but NOT displayed to user
+  // We use HLS-only playback for consistent timeline/seek behavior
+  function attachVideoTrack() {
+    if (!remoteVideoTrack) return;
+
+    // Get video quality info from track settings
+    const settings = remoteVideoTrack.mediaStreamTrack?.getSettings();
+    if (settings?.width && settings?.height) {
+      state.value.streamQuality = `${settings.width}x${settings.height}`;
+    }
+  }
+
+  // NOTE: WebRTC audio track is received but NOT played directly to user
+  // Audio comes through HLS playback for consistent DVR experience
+  function attachAudioTrack() {
+    if (!remoteAudioTrack) return;
+    audioAlreadyAttached = true;
+  }
+
+  // Detach WebRTC video track
+  function detachVideoTrack() {
+    if (videoAttachCleanup) {
+      videoAttachCleanup();
+      videoAttachCleanup = null;
+    }
+  }
+
+  // Detach WebRTC audio track
+  function detachAudioTrack() {
+    if (audioAttachCleanup) {
+      audioAttachCleanup();
+      audioAttachCleanup = null;
+    }
+    standaloneAudioElement = null;
+    audioAlreadyAttached = false;
+  }
+
+  // NOTE: switchToWebRTC is deprecated - we always use HLS for playback
+  async function switchToWebRTC() {
+    await seekToLiveEdgeHls();
+  }
+
+  // Ensure HLS is initialized and playing
+  async function ensureHlsPlaying(seekPosition?: number) {
+    // Initialize HLS if not already done
+    if (hlsVideoElement.value && hlsOutputDir.value && !hlsPlayback.state.value.isInitialized) {
+      await hlsPlayback.initialize(hlsVideoElement.value, hlsOutputDir.value);
+    }
+
+    // Refresh playlist and seek if position provided
+    if (seekPosition !== undefined) {
+      hlsPlayback.refreshPlaylist(seekPosition);
+    }
+
+    // Play HLS
+    await hlsPlayback.play();
+  }
+
+  // Seek to the live edge of HLS (end of recorded content)
+  async function seekToLiveEdgeHls() {
+    if (!hlsPlayback.state.value.isInitialized) return;
+
+    const duration = hlsPlayback.state.value.duration;
+    if (duration > 0) {
+      const liveEdgePosition = Math.max(0, duration - 1);
+      hlsPlayback.refreshPlaylist(liveEdgePosition);
+      await hlsPlayback.seek(liveEdgePosition);
+      state.value.isAtLiveEdge = true;
+    }
+  }
+
+  // Switch to HLS playback mode (this is now the only mode)
+  async function switchToHLS(seekPosition?: number) {
+    state.value.playbackMode = 'hls';
+    await ensureHlsPlaying(seekPosition);
+  }
+
   function handleDisconnected() {
-    console.log('[LiveViewer] Disconnected from room');
     state.value.connectionState = 'disconnected';
 
-    // Attempt reconnect if it wasn't intentional
-    if (state.value.mintId && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+    // Attempt reconnect only if it wasn't intentional
+    if (
+      !isIntentionalDisconnect &&
+      state.value.mintId &&
+      reconnectAttempts < MAX_RECONNECT_ATTEMPTS
+    ) {
       scheduleReconnect(
         state.value.mintId,
         state.value.streamerId || '',
@@ -638,19 +821,15 @@ export function useLivestreamViewer() {
   }
 
   function handleReconnecting() {
-    console.log('[LiveViewer] Reconnecting...');
     state.value.connectionState = 'reconnecting';
   }
 
   function handleReconnected() {
-    console.log('[LiveViewer] Reconnected');
     state.value.connectionState = 'connected';
     reconnectAttempts = 0;
   }
 
   function handleConnectionStateChanged(connectionState: ConnectionState) {
-    console.log('[LiveViewer] Connection state changed:', connectionState);
-
     if (connectionState === ConnectionState.Connected) {
       state.value.connectionState = 'connected';
     } else if (connectionState === ConnectionState.Reconnecting) {
@@ -693,20 +872,17 @@ export function useLivestreamViewer() {
     reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential backoff, max 30s
 
-    console.log(`[LiveViewer] Scheduling reconnect attempt ${reconnectAttempts} in ${delay}ms`);
-
     reconnectTimeout = window.setTimeout(() => {
       connect(mintId, streamerId, displayName, profileImageUrl, false);
     }, delay);
   }
 
-  // Ensure DVR is available for clipping/DVR capability
-  // DVR is now browser-based (MediaRecorder), not FFmpeg-based
-  async function ensureDvrAvailable(
+  // Ensure HLS recording is available for playback and clipping
+  async function ensureHlsRecordingAvailable(
     streamerId: string,
     mintId: string,
     displayName: string,
-    profileImageUrl?: string
+    _profileImageUrl?: string
   ) {
     // Check if already has a persistent recording session
     const session = activeSessions.value.get(streamerId);
@@ -714,117 +890,248 @@ export function useLivestreamViewer() {
       state.value.sessionId = session.sessionId;
       state.value.projectId = session.projectId;
       state.value.isTempRecording = false;
-      console.log('[LiveViewer] Using existing persistent recording session:', session.sessionId);
+
+      // Get the output directory for HLS playback
+      try {
+        const outputDir = await invoke<string>('get_recording_output_dir', {
+          sessionId: session.sessionId,
+        });
+        hlsOutputDir.value = outputDir;
+      } catch (e) {
+        console.warn('[LiveViewer] Could not get recording output dir:', e);
+      }
       return;
     }
 
-    // Check if DVR session already exists (started by monitoring)
-    if (dvrRecording.isDvrSessionActive(mintId)) {
-      state.value.isTempRecording = true;
-      state.value.projectId = null;
-
-      // Update available DVR chunks
-      updateDvrChunksFromSession(mintId);
-
-      console.log('[LiveViewer] Using existing DVR session for:', mintId);
-      return;
-    }
-
-    // Start DVR recording for watch-only mode
-    // This creates a background LiveKit connection with MediaRecorder
+    // Start HLS recording via Tauri (Node.js recorder)
     try {
-      await dvrRecording.startDvrSession(mintId, streamerId, displayName);
+      const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
+        mintId,
+        streamerId,
+        displayName,
+      });
+
+      state.value.sessionId = result.sessionId;
       state.value.isTempRecording = true;
       state.value.projectId = null;
-      console.log('[LiveViewer] Started DVR session for:', mintId);
+      hlsOutputDir.value = result.outputDir;
+      state.value.dvrStartTime = Date.now();
     } catch (error) {
-      console.warn('[LiveViewer] Failed to start DVR session:', error);
-      // Even if DVR fails, we can still watch live (just no DVR/seeking capability)
+      console.warn('[LiveViewer] Failed to start HLS recording:', error);
+      state.value.connectionError = 'Failed to start recording';
     }
   }
 
-  // Update available segments from DVR session
-  // All times are relative to DVR start (not stream start)
-  function updateDvrChunksFromSession(mintId: string) {
-    const dvrSession = dvrRecording.getDvrSession(mintId);
-    const chunks = dvrRecording.getChunks(mintId);
+  // Track if HLS is already initializing to prevent duplicate calls
+  let isHlsInitializing = false;
 
-    // Debug logging
-    if (!dvrSession) {
-      console.log('[LiveViewer] No DVR session found for:', mintId);
-    }
+  // Initialize HLS playback (for DVR mode - uses separate video element)
+  async function initializeHlsPlayback() {
+    // Use hlsVideoElement if available, otherwise fall back to main videoElement
+    const hlsElement = hlsVideoElement.value || videoElement.value;
 
-    // Set DVR start time if we have a session
-    if (dvrSession && !state.value.dvrStartTime) {
-      state.value.dvrStartTime = dvrSession.startedAt;
-      console.log('[LiveViewer] DVR start time set:', new Date(dvrSession.startedAt).toISOString());
-    }
+    if (!hlsElement || !hlsOutputDir.value) return;
 
-    if (chunks.length > 0) {
-      // Chunks are already relative to DVR start, use them directly
-      state.value.availableSegments = chunks.map((chunk) => ({
-        segmentNumber: chunk.index,
-        filePath: chunk.path,
-        startTime: chunk.startTime,
-        duration: chunk.duration,
-        endTime: chunk.endTime,
-      }));
+    // Prevent duplicate initialization
+    if (isHlsInitializing || hlsPlayback.state.value.isInitialized) return;
 
-      state.value.totalRecordedDuration = dvrRecording.getTotalDuration(mintId);
+    isHlsInitializing = true;
 
-      // Only log when chunks change
-      if (state.value.availableSegments.length !== chunks.length) {
-        console.log(
-          `[LiveViewer] DVR chunks updated: ${chunks.length} chunks, ${state.value.totalRecordedDuration}s total`
-        );
+    // Apply audio settings before initializing
+    hlsPlayback.setVolume(state.value.volume);
+    hlsPlayback.setMuted(state.value.isMuted);
+
+    try {
+      const success = await hlsPlayback.initialize(hlsElement, hlsOutputDir.value);
+
+      if (success) {
+        if (state.value.playbackMode === 'webrtc') {
+          hlsPlayback.pause();
+        }
+      } else {
+        // Only set error if explicitly in HLS mode AND WebRTC isn't working
+        if (state.value.playbackMode === 'hls' && !remoteVideoTrack) {
+          state.value.connectionError =
+            hlsPlayback.state.value.error || 'DVR playback not available';
+        }
       }
+    } finally {
+      isHlsInitializing = false;
+    }
+  }
+
+  // Update available segments from HLS recording
+  async function updateHlsSegments() {
+    if (!hlsOutputDir.value) {
+      console.debug('[LiveViewer] updateHlsSegments: No hlsOutputDir set');
+      return;
+    }
+
+    try {
+      // Get segment info from the HLS playlist
+      const segments = await invoke<SegmentInfo[]>('get_hls_segments', {
+        outputDir: hlsOutputDir.value,
+      });
+
+      if (segments && segments.length > 0) {
+        state.value.availableSegments = segments;
+        state.value.totalRecordedDuration = segments[segments.length - 1].endTime;
+        
+        // Log segment update only when count changes
+        if (segments.length !== state.value.availableSegments.length) {
+          console.log('[LiveViewer] Segments updated:', segments.length, 
+            'Duration:', segments[segments.length - 1].endTime.toFixed(1) + 's');
+        }
+      } else {
+        console.debug('[LiveViewer] No segments returned from get_hls_segments');
+      }
+    } catch (error) {
+      // Silently fail - segments may not be ready yet
+      console.debug('[LiveViewer] Could not get HLS segments:', error);
     }
   }
 
   // Live edge update timer
-  // Timeline is relative to DVR start, not stream start
   function startLiveEdgeUpdates() {
     if (liveEdgeUpdateInterval) {
       clearInterval(liveEdgeUpdateInterval);
     }
 
     liveEdgeUpdateInterval = window.setInterval(() => {
-      // Use DVR start time if available, otherwise fall back to recording start time
-      const referenceTime =
-        state.value.dvrStartTime ||
-        (state.value.recordingStartTime ? state.value.recordingStartTime * 1000 : null);
-
-      if (referenceTime) {
-        const now = Date.now();
-        state.value.liveEdgeTime = Math.floor((now - referenceTime) / 1000);
-
-        // Update playback position if at live edge
-        if (state.value.isAtLiveEdge && state.value.playbackMode === 'live') {
-          state.value.playbackPosition = state.value.liveEdgeTime;
-        }
-      }
+      // NOTE: In HLS-only mode, the actual timeline comes from HLS duration
+      // This interval now only serves as a fallback while HLS is loading
     }, 1000);
   }
 
-  // Segment polling for DVR
+  // Sync playback state from HLS (always HLS-only mode now)
+  function startPlaybackSync() {
+    if (playbackSyncInterval) {
+      clearInterval(playbackSyncInterval);
+    }
+
+    playbackSyncInterval = window.setInterval(() => {
+      // Always sync from HLS playback
+      const ps = hlsPlayback.state.value;
+      state.value.isPlaying = ps.isPlaying;
+      state.value.isBuffering = ps.isBuffering || !isHlsReady.value;
+      
+      // Clamp UI playback position to displayed duration to avoid end-jumps when new segments append
+      const safeDuration = Math.max(displayDuration, 0.001);
+      
+      // Don't overwrite playback position while actively seeking - let the seek target stick
+      if (!isSeekingActive) {
+        const clampedPosition = Math.min(ps.currentTime, Math.max(0, safeDuration - 0.25));
+        state.value.playbackPosition = clampedPosition;
+      }
+
+      // Clamp buffered ranges to displayed duration to keep the bar stable
+      state.value.bufferedRanges = ps.bufferedRanges.map((r) => ({
+        start: Math.max(0, Math.min(r.start, safeDuration)),
+        end: Math.max(0, Math.min(r.end, safeDuration)),
+      }));
+      
+      // Latency is the delay from real-time (HLS segments are ~5s behind WebRTC)
+      state.value.latencyMs = 5000 + (ps.latency * 1000);
+
+      // Timeline always reflects actual HLS content duration
+      const actualHlsDuration = ps.duration > 0 ? ps.duration : 0;
+      const nowTs = Date.now();
+      const dtSeconds = Math.max(0, (nowTs - lastDisplayUpdate) / 1000);
+      lastDisplayUpdate = nowTs;
+      
+      // Smoothly advance displayed duration to avoid playhead jump when new segments are appended
+      // BUT if we're far behind actual (e.g., reconnecting), snap immediately to avoid slow catch-up
+      const durationGap = actualHlsDuration - displayDuration;
+      if (durationGap > 10) {
+        // We're more than 10 seconds behind - snap to actual (reconnecting scenario)
+        displayDuration = actualHlsDuration;
+      } else if (actualHlsDuration >= displayDuration) {
+        // Normal case - grow smoothly to avoid jumps when new segments append
+        const growth = dtSeconds * DURATION_SMOOTH_RATE;
+        displayDuration = Math.min(actualHlsDuration, displayDuration + growth);
+      } else {
+        // If actual shrinks (shouldn't), snap down
+        displayDuration = actualHlsDuration;
+      }
+      
+      // Start playback only after we have a safer initial buffer (>= 12s)
+      const MIN_BUFFER_DURATION = 12;
+      
+      if (actualHlsDuration >= MIN_BUFFER_DURATION) {
+        // HLS has enough content for smooth playback
+        state.value.liveEdgeTime = displayDuration;
+        state.value.totalRecordedDuration = displayDuration;
+        
+        // Mark HLS as ready once we have enough buffer
+        if (!isHlsReady.value) {
+          isHlsReady.value = true;
+          state.value.isBuffering = false;
+          hlsPlayback.play();
+        }
+        
+        // Don't override isAtLiveEdge while actively seeking
+        if (!isSeekingActive) {
+          // Check if at live edge (within 2 seconds of end)
+          state.value.isAtLiveEdge = ps.isAtLiveEdge || (ps.currentTime >= ps.duration - 2);
+        }
+      } else if (actualHlsDuration > 0) {
+        // HLS has some content but not enough for smooth playback
+        state.value.liveEdgeTime = displayDuration;
+        state.value.totalRecordedDuration = displayDuration;
+        state.value.isBuffering = true;
+        
+        // Keep paused while buffering up the initial window to avoid start-stop
+        if (!isHlsReady.value && state.value.isPlaying) {
+          hlsPlayback.pause();
+          state.value.isPlaying = false;
+        }
+
+        // Check for stuck buffering (if duration doesn't increase for > 10s)
+        const now = Date.now();
+        if (!lastDurationUpdate) {
+          lastDurationUpdate = now;
+          lastDurationValue = actualHlsDuration;
+        } else if (actualHlsDuration > lastDurationValue) {
+          lastDurationUpdate = now;
+          lastDurationValue = actualHlsDuration;
+        } else if (now - lastDurationUpdate > 10000) {
+          hlsPlayback.refreshPlaylist(state.value.playbackPosition);
+          lastDurationUpdate = now;
+        }
+      } else if (state.value.dvrStartTime) {
+        // HLS not ready yet - show buffering state
+        state.value.liveEdgeTime = displayDuration;
+        state.value.totalRecordedDuration = displayDuration;
+        state.value.isAtLiveEdge = true;
+        state.value.isBuffering = true;
+      }
+
+      // Sync error state
+      if (ps.error && !state.value.connectionError) {
+        state.value.connectionError = ps.error;
+      }
+    }, 100);
+  }
+
+  // Segment polling for HLS
   function startSegmentPolling() {
     if (segmentPollInterval) {
       clearInterval(segmentPollInterval);
     }
 
-    // Poll for segments every 10 seconds
+    // Poll to update available segments info (for clipping)
     segmentPollInterval = window.setInterval(async () => {
       await updateAvailableSegments();
-    }, 10000);
+    }, 2000);
 
     // Initial poll
     updateAvailableSegments();
   }
 
   async function updateAvailableSegments() {
-    // For DVR (browser-based recording), get chunks from the DVR composable
-    if (state.value.isTempRecording && state.value.mintId) {
-      updateDvrChunksFromSession(state.value.mintId);
+    // For HLS recordings, update from the recording directory
+    if (hlsOutputDir.value) {
+      await updateHlsSegments();
       return;
     }
 
@@ -897,27 +1204,30 @@ export function useLivestreamViewer() {
       }
     });
 
-    // For DVR mode, poll the DVR session for new chunks (since MediaRecorder runs in same process)
-    // DVR chunks are added directly to the session state, we just need to sync them
-    const dvrUpdateInterval = window.setInterval(() => {
-      if (state.value.isTempRecording && state.value.mintId) {
-        updateDvrChunksFromSession(state.value.mintId);
+    // For HLS mode, poll for new segments
+    const hlsUpdateInterval = window.setInterval(() => {
+      if (hlsOutputDir.value) {
+        updateHlsSegments();
       }
-    }, 2000); // Check for new chunks every 2 seconds
+    }, 2000);
 
     // Store cleanup function
-    const cleanupDvrInterval = () => {
-      clearInterval(dvrUpdateInterval);
+    const cleanupHlsInterval = () => {
+      clearInterval(hlsUpdateInterval);
     };
 
-    unlistenFunctions.push(unlisten, cleanupDvrInterval as any);
+    unlistenFunctions.push(unlisten, cleanupHlsInterval as any);
   }
 
   // Disconnect from livestream
   async function disconnect() {
-    console.log('[LiveViewer] Disconnecting...');
+    // Prevent multiple disconnects
+    if (isIntentionalDisconnect) return;
 
-    // Clear timers
+    // Mark as intentional disconnect to prevent reconnect attempts
+    isIntentionalDisconnect = true;
+
+    // Clear timers first
     if (liveEdgeUpdateInterval) {
       clearInterval(liveEdgeUpdateInterval);
       liveEdgeUpdateInterval = null;
@@ -928,13 +1238,15 @@ export function useLivestreamViewer() {
       segmentPollInterval = null;
     }
 
+    if (playbackSyncInterval) {
+      clearInterval(playbackSyncInterval);
+      playbackSyncInterval = null;
+    }
+
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout);
       reconnectTimeout = null;
     }
-
-    // Stop waiting for next chunk if active
-    stopWaitingForChunk();
 
     // Clean up event listeners
     for (const unlisten of unlistenFunctions) {
@@ -942,68 +1254,36 @@ export function useLivestreamViewer() {
     }
     unlistenFunctions.length = 0;
 
-    // Stop and clear video elements first
-    if (videoElement.value) {
-      videoElement.value.pause();
-      videoElement.value.srcObject = null;
-      videoElement.value.src = '';
-      videoElement.value.load(); // Reset the video element
-    }
+    // Detach WebRTC tracks first
+    detachVideoTrack();
+    detachAudioTrack();
+    remoteVideoTrack = null;
+    remoteAudioTrack = null;
 
-    // Clean up DVR blob resources
-    cleanupDvrBlob();
+    // Clean up HLS playback
+    await hlsPlayback.cleanup();
 
-    if (dvrVideoElement.value) {
-      dvrVideoElement.value.pause();
-      dvrVideoElement.value.src = '';
-      dvrVideoElement.value.load();
-    }
+    // Reset HLS output directory
+    hlsOutputDir.value = null;
 
-    // Cancel any pending seek
-    if (seekAbortController) {
-      seekAbortController.abort();
-      seekAbortController = null;
-    }
-
-    // Detach tracks from any elements they might be attached to
-    if (liveVideoTrack.value) {
-      try {
-        liveVideoTrack.value.detach();
-      } catch (e) {
-        console.warn('[LiveViewer] Error detaching video track:', e);
-      }
-      liveVideoTrack.value = null;
-    }
-
-    if (liveAudioTrack.value) {
-      try {
-        liveAudioTrack.value.detach();
-      } catch (e) {
-        console.warn('[LiveViewer] Error detaching audio track:', e);
-      }
-      liveAudioTrack.value = null;
-    }
+    // Clear video element refs before room disconnect
+    videoElement.value = null;
+    hlsVideoElement.value = null;
 
     // Disconnect room
     if (room) {
       try {
-        await room.disconnect(true); // true = stop all tracks
-        console.log('[LiveViewer] Room disconnected');
+        await room.disconnect(true);
       } catch (e) {
         console.warn('[LiveViewer] Error disconnecting room:', e);
       }
       room = null;
     }
 
-    // Clear video element refs
-    videoElement.value = null;
-    dvrVideoElement.value = null;
-
     // Reset state
     state.value.connectionState = 'disconnected';
     state.value.isPlaying = false;
-    state.value.playbackMode = 'live';
-    state.value.isAtLiveEdge = true;
+    state.value.playbackMode = 'hls';
     state.value.mintId = null;
     state.value.streamerId = null;
     state.value.isTempRecording = false;
@@ -1015,371 +1295,72 @@ export function useLivestreamViewer() {
     state.value.dvrStartTime = null;
     state.value.liveEdgeTime = 0;
     state.value.playbackPosition = 0;
-
-    console.log('[LiveViewer] Disconnect complete');
+    state.value.bufferedRanges = [];
+    state.value.isAtLiveEdge = true;
+    
+    // Reset HLS ready state and seeking flag
+    isHlsReady.value = false;
+    isSeekingActive = false;
   }
 
-  // Set video element reference
+  // Set video element reference (legacy - not used in HLS-only mode)
   function setVideoElement(element: HTMLVideoElement | null) {
     videoElement.value = element;
-
-    if (element && liveVideoTrack.value && state.value.playbackMode === 'live') {
-      console.log('[LiveViewer] Attaching existing video track to video element');
-      liveVideoTrack.value.attach(element);
-      state.value.isPlaying = true;
-      state.value.isBuffering = false;
-
-      // Get video quality info
-      const settings = liveVideoTrack.value.mediaStreamTrack?.getSettings?.();
-      const height = settings?.height;
-      if (typeof height === 'number') {
-        state.value.streamQuality =
-          height >= 1080 ? '1080p' : height >= 720 ? '720p' : height >= 480 ? '480p' : '360p';
-      }
-
-      if (liveAudioTrack.value) {
-        liveAudioTrack.value.attach(element);
-      }
-      applyAudioSettings();
-    }
   }
 
-  // Set DVR video element reference (single element for blob-based playback)
-  function setDvrVideoElement(
-    element1: HTMLVideoElement | null,
-    _element2: HTMLVideoElement | null = null // Kept for API compatibility, ignored
-  ) {
-    dvrVideoElement.value = element1;
+  // Set HLS video element reference (for DVR playback)
+  function setHlsVideoElement(element: HTMLVideoElement | null) {
+    hlsVideoElement.value = element;
 
-    if (element1) {
-      // Set up event listeners for DVR playback
-      element1.addEventListener('timeupdate', handleDvrTimeUpdate);
-      element1.addEventListener('waiting', () => {
-        state.value.isBuffering = true;
-      });
-      element1.addEventListener('playing', () => {
-        state.value.isBuffering = false;
-      });
-      element1.addEventListener('canplay', () => {
-        state.value.isBuffering = false;
-      });
-      element1.addEventListener('ended', handleDvrEnded);
-      element1.addEventListener('error', handleDvrError);
+    // If we're already connected and have HLS output, initialize playback (but don't start it)
+    if (element && state.value.connectionState === 'connected' && hlsOutputDir.value) {
+      // Initialize HLS in background for DVR, but don't play yet
+      initializeHlsPlayback();
     }
-  }
-
-  // Handle DVR video ended event
-  async function handleDvrEnded() {
-    if (state.value.playbackMode !== 'dvr') return;
-
-    console.log('[LiveViewer] DVR playback ended');
-
-    // Check if more chunks are available that we haven't loaded
-    const currentChunkCount = state.value.availableSegments.length;
-    if (currentChunkCount > loadedChunkCount) {
-      console.log('[LiveViewer] More chunks available, reloading blob');
-      await checkAndReloadDvrBlob();
-      return;
-    }
-
-    // Check if stream is still live (more content coming)
-    if (state.value.mintId && !dvrRecording.hasStreamEnded(state.value.mintId)) {
-      console.log('[LiveViewer] Stream still live, waiting for more chunks');
-      waitForNextChunk();
-      return;
-    }
-
-    // Stream has ended and we've played everything - switch to live (which will show ended state)
-    console.log('[LiveViewer] DVR content exhausted, going to live');
-    goToLive();
-  }
-
-  // Handle DVR video error event
-  async function handleDvrError(e: Event) {
-    const video = e.target as HTMLVideoElement;
-    const errorMessage = video.error?.message || 'Unknown error';
-    console.error('[LiveViewer] DVR video error:', errorMessage);
-
-    if (state.value.playbackMode !== 'dvr') return;
-
-    // Check if this is a decode error near the end of the video
-    const isNearEnd = video.duration > 0 && video.currentTime >= video.duration - 2;
-    const isDecodeError =
-      errorMessage.includes('decode') || errorMessage.includes('PIPELINE_ERROR');
-
-    if (isDecodeError) {
-      console.log('[LiveViewer] Decode error detected, attempting recovery');
-
-      // Check if more chunks are available
-      const currentChunkCount = state.value.availableSegments.length;
-      if (currentChunkCount > loadedChunkCount) {
-        console.log('[LiveViewer] More chunks available, reloading blob to recover');
-        await checkAndReloadDvrBlob();
-        return;
-      }
-
-      // If near end and stream is still live, wait for more chunks
-      if (isNearEnd && state.value.mintId && !dvrRecording.hasStreamEnded(state.value.mintId)) {
-        console.log('[LiveViewer] Near end with active stream, waiting for more chunks');
-        waitForNextChunk();
-        return;
-      }
-
-      // Otherwise switch to live
-      console.log('[LiveViewer] Cannot recover from decode error, switching to live');
-      goToLive();
-    }
-  }
-
-  // Clean up DVR blob resources
-  function cleanupDvrBlob() {
-    if (currentDvrBlobUrl) {
-      URL.revokeObjectURL(currentDvrBlobUrl);
-      currentDvrBlobUrl = null;
-    }
-    loadedChunkCount = 0;
-    isReloadingBlob = false;
-  }
-
-  // Load all DVR chunks as a single blob for playback
-  async function loadDvrBlob(): Promise<boolean> {
-    if (!state.value.mintId) {
-      console.error('[LiveViewer] No mint ID for DVR blob loading');
-      return false;
-    }
-
-    const currentChunkCount = state.value.availableSegments.length;
-
-    // If we already have a blob with all current chunks, no need to reload
-    if (currentDvrBlobUrl && loadedChunkCount === currentChunkCount) {
-      return true;
-    }
-
-    try {
-      console.log('[LiveViewer] Loading all DVR chunks as blob...');
-
-      // Use read_all_dvr_chunks which concatenates all chunks properly
-      const allData = await invoke<number[]>('read_all_dvr_chunks', {
-        mintId: state.value.mintId,
-      });
-
-      const uint8Array = new Uint8Array(allData);
-      console.log('[LiveViewer] DVR blob size:', uint8Array.length, 'bytes');
-
-      // Clean up old blob
-      cleanupDvrBlob();
-
-      // Create new blob URL
-      const blob = new Blob([uint8Array], { type: 'video/webm' });
-      currentDvrBlobUrl = URL.createObjectURL(blob);
-      loadedChunkCount = currentChunkCount;
-
-      return true;
-    } catch (error) {
-      console.error('[LiveViewer] Failed to load DVR blob:', error);
-      return false;
-    }
-  }
-
-  function handleDvrTimeUpdate() {
-    const video = dvrVideoElement.value;
-    if (!video || state.value.playbackMode !== 'dvr') return;
-
-    // Update playback position
-    state.value.playbackPosition = video.currentTime;
-
-    // Check if we should switch to live
-    const timeBehindLive = state.value.liveEdgeTime - video.currentTime;
-    if (timeBehindLive <= LIVE_EDGE_THRESHOLD) {
-      // Check if we've reached the end of the video
-      if (video.currentTime >= video.duration - 0.5) {
-        console.log('[LiveViewer] Reached end of DVR content near live edge, switching to live');
-        goToLive();
-        return;
-      }
-    }
-
-    // Proactively reload when approaching the end of loaded content
-    // This prevents hitting decode errors at the end of the blob
-    const timeUntilEnd = video.duration - video.currentTime;
-    const currentChunkCount = state.value.availableSegments.length;
-
-    if (timeUntilEnd < 3 && currentChunkCount > loadedChunkCount && !isReloadingBlob) {
-      console.log('[LiveViewer] Approaching end of loaded content, proactively reloading');
-      isReloadingBlob = true;
-      checkAndReloadDvrBlob().finally(() => {
-        isReloadingBlob = false;
-      });
-    }
-  }
-
-  // Monitor for new chunks and reload blob if needed
-  async function checkAndReloadDvrBlob() {
-    if (state.value.playbackMode !== 'dvr' || !dvrVideoElement.value) return;
-
-    const currentChunkCount = state.value.availableSegments.length;
-
-    // If new chunks are available, reload the blob
-    if (currentChunkCount > loadedChunkCount) {
-      console.log('[LiveViewer] New chunks available, reloading DVR blob');
-      const currentTime = dvrVideoElement.value.currentTime;
-      const wasPlaying = !dvrVideoElement.value.paused;
-
-      const success = await loadDvrBlob();
-      if (success && dvrVideoElement.value) {
-        dvrVideoElement.value.src = currentDvrBlobUrl!;
-
-        // Wait for video to be ready
-        await new Promise<void>((resolve) => {
-          const onCanPlay = () => {
-            dvrVideoElement.value?.removeEventListener('canplay', onCanPlay);
-            resolve();
-          };
-          dvrVideoElement.value?.addEventListener('canplay', onCanPlay);
-          dvrVideoElement.value?.load();
-        });
-
-        // Restore position and play state
-        dvrVideoElement.value.currentTime = currentTime;
-        if (wasPlaying) {
-          try {
-            await dvrVideoElement.value.play();
-          } catch (e) {
-            console.warn('[LiveViewer] Resume play after reload failed:', e);
-          }
-        }
-      }
-    }
-  }
-
-  function waitForNextChunk() {
-    if (waitingForNextChunk) return;
-
-    waitingForNextChunk = true;
-    state.value.isBuffering = true;
-
-    const currentPosition = state.value.playbackPosition;
-    const previousChunkCount = state.value.availableSegments.length;
-
-    console.log(
-      '[LiveViewer] Waiting for new chunks, current position:',
-      currentPosition,
-      'chunks:',
-      previousChunkCount
-    );
-
-    // Poll for new chunks every 500ms
-    waitingForChunkInterval = window.setInterval(async () => {
-      // Update available segments from DVR session
-      if (state.value.mintId && state.value.isTempRecording) {
-        updateDvrChunksFromSession(state.value.mintId);
-      }
-
-      // Check if new chunks are available
-      const newChunkCount = state.value.availableSegments.length;
-
-      if (newChunkCount > previousChunkCount) {
-        // New chunk is available - reload the DVR blob
-        console.log('[LiveViewer] New chunks available:', newChunkCount, 'vs', previousChunkCount);
-        stopWaitingForChunk();
-
-        // Reload the DVR blob with new chunks
-        await checkAndReloadDvrBlob();
-        state.value.isBuffering = false;
-      } else {
-        // Check if stream has ended
-        if (state.value.mintId && dvrRecording.hasStreamEnded(state.value.mintId)) {
-          // Stream ended and no more chunks - go to last available position
-          console.log('[LiveViewer] Stream ended, no more chunks available');
-          stopWaitingForChunk();
-          state.value.isBuffering = false;
-
-          // Check if we should go to live (stream just ended)
-          const timeBehindLive = state.value.liveEdgeTime - state.value.playbackPosition;
-          if (timeBehindLive <= LIVE_EDGE_THRESHOLD) {
-            goToLive();
-          }
-        }
-      }
-    }, 500);
-  }
-
-  function stopWaitingForChunk() {
-    waitingForNextChunk = false;
-    if (waitingForChunkInterval) {
-      clearInterval(waitingForChunkInterval);
-      waitingForChunkInterval = null;
-    }
-  }
-
-  function getCurrentDvrSegment(): SegmentInfo | null {
-    // Find the segment that contains the current playback position
-    return (
-      state.value.availableSegments.find(
-        (seg) =>
-          state.value.playbackPosition >= seg.startTime &&
-          state.value.playbackPosition < seg.endTime
-      ) || null
-    );
-  }
-
-  function getNextDvrSegment(): SegmentInfo | null {
-    const current = getCurrentDvrSegment();
-    if (!current) return state.value.availableSegments[0] || null;
-
-    const nextIndex =
-      state.value.availableSegments.findIndex((s) => s.segmentNumber === current.segmentNumber) + 1;
-    return state.value.availableSegments[nextIndex] || null;
   }
 
   // Playback controls
-  function play() {
-    console.log(
-      '[LiveViewer] play() called, mode:',
-      state.value.playbackMode,
-      'hasVideoEl:',
-      !!videoElement.value,
-      'hasTrack:',
-      !!liveVideoTrack.value
-    );
-    if (state.value.playbackMode === 'live' && videoElement.value) {
-      videoElement.value
-        .play()
-        .then(() => {
-          console.log('[LiveViewer] Video playing');
-          state.value.isPlaying = true;
-        })
-        .catch((err) => {
-          console.error('[LiveViewer] Play failed:', err);
-        });
-    } else if (state.value.playbackMode === 'dvr' && dvrVideoElement.value) {
-      dvrVideoElement.value
-        .play()
-        .then(() => {
-          console.log('[LiveViewer] DVR video playing');
-          state.value.isPlaying = true;
-        })
-        .catch((err) => {
-          console.error('[LiveViewer] DVR play failed:', err);
-        });
+  async function play() {
+    if (state.value.playbackMode === 'webrtc') {
+      if (videoElement.value) {
+        try {
+          await videoElement.value.play();
+        } catch (e) {
+          // Ignore play errors
+        }
+      }
+
+      if (standaloneAudioElement && standaloneAudioElement.paused) {
+        try {
+          await standaloneAudioElement.play();
+        } catch (e) {
+          // Ignore play errors
+        }
+      }
+
+      state.value.isPlaying = true;
     } else {
-      console.log('[LiveViewer] Cannot play - no video element or wrong mode');
+      await hlsPlayback.play();
     }
   }
 
   function pause() {
-    console.log('[LiveViewer] pause() called');
-    if (state.value.playbackMode === 'live' && videoElement.value) {
-      videoElement.value.pause();
+    if (state.value.playbackMode === 'webrtc') {
+      if (videoElement.value) {
+        videoElement.value.pause();
+      }
+
+      if (standaloneAudioElement) {
+        standaloneAudioElement.pause();
+      }
+
       state.value.isPlaying = false;
-    } else if (state.value.playbackMode === 'dvr' && dvrVideoElement.value) {
-      dvrVideoElement.value.pause();
-      state.value.isPlaying = false;
+    } else {
+      hlsPlayback.pause();
     }
   }
 
   function togglePlayPause() {
-    console.log('[LiveViewer] togglePlayPause() called, isPlaying:', state.value.isPlaying);
     if (state.value.isPlaying) {
       pause();
     } else {
@@ -1387,329 +1368,80 @@ export function useLivestreamViewer() {
     }
   }
 
-  // Volume controls
+  // Track when we're actively seeking to prevent sync interval from overwriting position
+  let isSeekingActive = false;
+
+  // Seek to a specific time (always uses HLS)
+  async function seek(time: number) {
+    const hlsDuration = hlsPlayback.state.value.duration;
+
+    if (!hlsPlayback.state.value.isInitialized) return;
+
+    // Check if seeking to near the live edge (within 2 seconds of end)
+    const isSeekingToLiveEdge = hlsDuration > 0 && time >= hlsDuration - 2;
+
+    if (isSeekingToLiveEdge) {
+      await seekToLive();
+    } else {
+      // Clamp to valid range
+      const clampedTime = Math.max(0, Math.min(time, hlsDuration > 0 ? hlsDuration - 0.5 : time));
+      
+      // Set seeking flag to prevent sync interval from overwriting position
+      isSeekingActive = true;
+      
+      // Immediately update UI state to reflect seek target
+      state.value.playbackPosition = clampedTime;
+      state.value.isAtLiveEdge = false;
+      
+      await ensureHlsPlaying();
+      await hlsPlayback.seek(clampedTime);
+      
+      // Keep the seek flag active briefly to let the video element catch up
+      setTimeout(() => {
+        isSeekingActive = false;
+      }, 500);
+    }
+  }
+
+  // Seek to live edge - position a few segments behind the actual end for buffer
+  async function seekToLive() {
+    if (!hlsPlayback.state.value.isInitialized) return;
+
+    // Position at 2 segments (8s) from end for optimal live viewing
+    const duration = hlsPlayback.state.value.duration;
+    const livePosition = Math.max(0, duration - 8);
+    
+    // Set seeking flag to prevent sync interval from overwriting position
+    isSeekingActive = true;
+    
+    // Immediately update UI state
+    state.value.playbackPosition = livePosition;
+    state.value.isAtLiveEdge = true;
+    
+    await hlsPlayback.seek(livePosition);
+    
+    // Keep the seek flag active briefly to let the video element catch up
+    setTimeout(() => {
+      isSeekingActive = false;
+    }, 500);
+  }
+
+  // Volume controls (HLS-only mode - audio comes from HLS)
   function setVolume(volume: number) {
-    console.log('[LiveViewer] setVolume called:', volume);
     state.value.volume = Math.max(0, Math.min(1, volume));
     saveVolumePreference(state.value.volume);
-    applyAudioSettings();
+    hlsPlayback.setVolume(state.value.volume);
   }
 
   function setMuted(muted: boolean) {
-    console.log('[LiveViewer] setMuted called:', muted);
     state.value.isMuted = muted;
     saveMutedPreference(muted);
-    applyAudioSettings();
+    hlsPlayback.setMuted(muted);
   }
 
   function toggleMute() {
-    console.log('[LiveViewer] toggleMute called, current:', state.value.isMuted);
     setMuted(!state.value.isMuted);
   }
-
-  function applyAudioSettings() {
-    console.log('[LiveViewer] applyAudioSettings:', {
-      mode: state.value.playbackMode,
-      volume: state.value.volume,
-      isMuted: state.value.isMuted,
-      hasLiveElement: !!videoElement.value,
-      hasDvrElement: !!dvrVideoElement.value,
-    });
-
-    // Apply to both elements - settings should be synced
-    if (videoElement.value) {
-      // Remove the HTML muted attribute if unmuting (it can interfere)
-      if (!state.value.isMuted) {
-        videoElement.value.removeAttribute('muted');
-      }
-      videoElement.value.volume = state.value.volume;
-      videoElement.value.muted = state.value.isMuted;
-      console.log('[LiveViewer] Applied to live element:', {
-        actualVolume: videoElement.value.volume,
-        actualMuted: videoElement.value.muted,
-        hasMutedAttr: videoElement.value.hasAttribute('muted'),
-      });
-    }
-
-    if (dvrVideoElement.value) {
-      // Remove the HTML muted attribute if unmuting
-      if (!state.value.isMuted) {
-        dvrVideoElement.value.removeAttribute('muted');
-      }
-      dvrVideoElement.value.volume = state.value.volume;
-      dvrVideoElement.value.muted = state.value.isMuted;
-    }
-  }
-
-  // Pause live playback (for DVR mode) - keeps tracks so we can return to live
-  function stopLivePlayback() {
-    console.log('[LiveViewer] Pausing live playback for DVR mode');
-
-    // Detach live tracks from the video element
-    if (liveVideoTrack.value && videoElement.value) {
-      liveVideoTrack.value.detach(videoElement.value);
-    }
-    if (liveAudioTrack.value && videoElement.value) {
-      liveAudioTrack.value.detach(videoElement.value);
-    }
-
-    // Completely silence and pause the live video element
-    if (videoElement.value) {
-      videoElement.value.pause();
-      videoElement.value.muted = true;
-      videoElement.value.volume = 0;
-      // Clear srcObject but don't stop the tracks (we need them for returning to live)
-      videoElement.value.srcObject = null;
-      videoElement.value.src = '';
-      videoElement.value.load(); // Reset the element
-    }
-  }
-
-  // Playback speed (DVR only)
-  // Supported speeds for UI
-  const SUPPORTED_PLAYBACK_SPEEDS = [0.5, 1, 1.25, 1.5, 2] as const;
-
-  function setPlaybackSpeed(speed: number) {
-    // Only allow speed changes in DVR mode (live mode is always 1x - real-time)
-    if (state.value.playbackMode === 'dvr') {
-      // Clamp to valid speeds
-      const validSpeed = Math.max(0.5, Math.min(2, speed));
-      state.value.playbackSpeed = validSpeed;
-
-      if (dvrVideoElement.value) {
-        dvrVideoElement.value.playbackRate = validSpeed;
-      }
-    }
-  }
-
-  // Cycle through playback speeds (useful for keyboard shortcuts)
-  function cyclePlaybackSpeed() {
-    if (state.value.playbackMode !== 'dvr') return;
-
-    const currentIndex = SUPPORTED_PLAYBACK_SPEEDS.indexOf(state.value.playbackSpeed as any);
-    const nextIndex = (currentIndex + 1) % SUPPORTED_PLAYBACK_SPEEDS.length;
-    setPlaybackSpeed(SUPPORTED_PLAYBACK_SPEEDS[nextIndex]);
-  }
-
-  // Seeking (all positions are relative to DVR start)
-  let lastSeekTime = 0;
-  let lastSeekPosition = -1;
-
-  async function seek(positionSeconds: number) {
-    // During the first seconds of playback, liveEdgeTime may still be 0.
-    // Allow seeking within recorded duration to avoid an “unmovable” playhead.
-    const seekMax = Math.max(state.value.liveEdgeTime, state.value.totalRecordedDuration);
-    const targetPosition = Math.max(0, Math.min(positionSeconds, seekMax));
-
-    // Debounce rapid seeks to the same position
-    const now = Date.now();
-    if (Math.abs(targetPosition - lastSeekPosition) < 0.5 && now - lastSeekTime < 100) {
-      console.log('[LiveViewer] Debouncing rapid seek to same position');
-      return;
-    }
-    lastSeekTime = now;
-    lastSeekPosition = targetPosition;
-
-    const timeBehindLive = state.value.liveEdgeTime - targetPosition;
-
-    // Check if seeking near live edge (within threshold)
-    // Only force live if we are strictly BEHIND the live edge threshold AND we don't have enough content to justify being there
-    // If we have DVR content, allow seeking into the last few seconds of it.
-    if (timeBehindLive <= LIVE_EDGE_THRESHOLD && state.value.playbackMode === 'live') {
-      // Already live, stay live
-      return;
-    }
-
-    if (timeBehindLive <= LIVE_EDGE_THRESHOLD && targetPosition >= state.value.liveEdgeTime) {
-      // Seeking past live edge
-      await goToLive();
-      return;
-    }
-
-    // Check if seeking before DVR start (position 0)
-    if (targetPosition < 0) {
-      await seek(0);
-      return;
-    }
-
-    // Check if we have ANY DVR content at all
-    if (state.value.availableSegments.length === 0) {
-      console.log('[LiveViewer] No DVR content available yet, staying at live');
-      await goToLive();
-      return;
-    }
-
-    // Switch to DVR mode
-    await switchToDvrMode(targetPosition);
-  }
-
-  async function seekRelative(deltaSeconds: number) {
-    await seek(state.value.playbackPosition + deltaSeconds);
-  }
-
-  // Convenience seeking functions
-  async function seekForward(seconds: number = 10) {
-    await seek(state.value.playbackPosition + seconds);
-  }
-
-  async function seekBackward(seconds: number = 10) {
-    await seek(Math.max(0, state.value.playbackPosition - seconds));
-  }
-
-  async function goToLive() {
-    console.log('[LiveViewer] Going to live');
-
-    // Cancel any pending seek
-    if (seekAbortController) {
-      seekAbortController.abort();
-      seekAbortController = null;
-    }
-
-    state.value.isAtLiveEdge = true;
-    state.value.playbackMode = 'live';
-    state.value.playbackPosition = state.value.liveEdgeTime;
-    state.value.playbackSpeed = 1;
-
-    // Clean up DVR blob playback
-    if (dvrVideoElement.value) {
-      dvrVideoElement.value.pause();
-      dvrVideoElement.value.src = '';
-      dvrVideoElement.value.load();
-    }
-    cleanupDvrBlob();
-
-    // Re-attach live tracks and resume playback
-    if (videoElement.value && liveVideoTrack.value) {
-      // Restore volume first (it was set to 0 in stopLivePlayback)
-      videoElement.value.volume = state.value.volume;
-
-      liveVideoTrack.value.attach(videoElement.value);
-      if (liveAudioTrack.value) {
-        liveAudioTrack.value.attach(videoElement.value);
-      }
-      // Restore audio settings (this will unmute if user preference is not muted)
-      applyAudioSettings();
-      // Ensure element is playing
-      try {
-        await videoElement.value.play();
-      } catch (e) {
-        console.log('[LiveViewer] Play error (might be normal for LiveKit):', e);
-      }
-      state.value.isPlaying = true;
-    }
-  }
-
-  async function switchToDvrMode(targetPosition: number) {
-    console.log('[LiveViewer] Switching to DVR mode at position:', targetPosition);
-    console.log(
-      '[LiveViewer] Available segments:',
-      state.value.availableSegments.length,
-      'Total recorded:',
-      state.value.totalRecordedDuration
-    );
-
-    // First, check if we have ANY segments available
-    if (state.value.availableSegments.length === 0) {
-      console.warn('[LiveViewer] No DVR segments available, staying at live');
-      await goToLive();
-      return;
-    }
-
-    // Find the segment containing the target position
-    const targetSegment = state.value.availableSegments.find(
-      (seg) => targetPosition >= seg.startTime && targetPosition < seg.endTime
-    );
-
-    let seekPosition = targetPosition;
-
-    if (!targetSegment) {
-      // No segment for this position - find nearest available
-      console.warn('[LiveViewer] No segment found for position:', targetPosition);
-
-      // Find the closest segment
-      let closestSegment = state.value.availableSegments[0];
-      let closestDistance = Math.abs(targetPosition - closestSegment.startTime);
-
-      for (const seg of state.value.availableSegments) {
-        const distStart = Math.abs(targetPosition - seg.startTime);
-        const distEnd = Math.abs(targetPosition - seg.endTime);
-        const dist = Math.min(distStart, distEnd);
-
-        if (dist < closestDistance) {
-          closestDistance = dist;
-          closestSegment = seg;
-        }
-      }
-
-      // If target is before all segments, go to earliest
-      if (targetPosition < closestSegment.startTime) {
-        console.log(
-          '[LiveViewer] Seeking to earliest available segment at:',
-          closestSegment.startTime
-        );
-        seekPosition = closestSegment.startTime;
-      } else {
-        // Target is after all recorded content - go to live
-        console.log('[LiveViewer] Target position is after all recorded content, going to live');
-        await goToLive();
-        return;
-      }
-    }
-
-    // Update state for DVR mode
-    state.value.isAtLiveEdge = false;
-    state.value.playbackMode = 'dvr';
-    state.value.playbackPosition = seekPosition;
-    state.value.isBuffering = true;
-
-    // Completely stop live playback
-    stopLivePlayback();
-
-    // Load all DVR chunks as a single blob
-    const success = await loadDvrBlob();
-    if (!success) {
-      console.error('[LiveViewer] Failed to load DVR blob, falling back to live');
-      await goToLive();
-      return;
-    }
-
-    // Set the blob as the video source
-    if (dvrVideoElement.value && currentDvrBlobUrl) {
-      dvrVideoElement.value.src = currentDvrBlobUrl;
-
-      // Wait for video to be ready
-      await new Promise<void>((resolve) => {
-        const onCanPlay = () => {
-          dvrVideoElement.value?.removeEventListener('canplay', onCanPlay);
-          resolve();
-        };
-        const onLoadedMetadata = () => {
-          // Also resolve on loadedmetadata in case canplay doesn't fire
-          setTimeout(resolve, 100);
-        };
-        dvrVideoElement.value?.addEventListener('canplay', onCanPlay, { once: true });
-        dvrVideoElement.value?.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
-        dvrVideoElement.value?.load();
-      });
-
-      // Seek to target position
-      dvrVideoElement.value.currentTime = seekPosition;
-      dvrVideoElement.value.playbackRate = state.value.playbackSpeed;
-      applyAudioSettings();
-
-      try {
-        await dvrVideoElement.value.play();
-        state.value.isPlaying = true;
-        state.value.isBuffering = false;
-      } catch (error) {
-        console.error('[LiveViewer] Failed to start DVR playback:', error);
-        state.value.isBuffering = false;
-      }
-    }
-  }
-
-  // Seek abort controller for cancelling pending operations
-  let seekAbortController: AbortController | null = null;
 
   // Cleanup on unmount
   onUnmounted(() => {
@@ -1719,10 +1451,42 @@ export function useLivestreamViewer() {
   // Watch for session updates from monitoring
   watch(
     () => activeSessions.value.get(state.value.streamerId || ''),
-    (session) => {
+    async (session) => {
       if (session) {
         state.value.sessionId = session.sessionId;
         state.value.projectId = session.projectId;
+
+        // Get the output directory for HLS playback if available
+        try {
+          const outputDir = await invoke<string>('get_recording_output_dir', {
+            sessionId: session.sessionId,
+          });
+          if (outputDir && !hlsOutputDir.value) {
+            hlsOutputDir.value = outputDir;
+          }
+        } catch (e) {
+          // Ignore - may not have this command yet
+        }
+      }
+    }
+  );
+
+  // Watch for HLS output directory to be ready
+  // Note: initializeHlsPlayback() has guards against duplicate initialization
+  watch(
+    () => hlsOutputDir.value,
+    async (outputDir, oldOutputDir) => {
+      // Only initialize if this is a new output dir (not just reconnecting to same stream)
+      if (
+        outputDir &&
+        outputDir !== oldOutputDir &&
+        videoElement.value &&
+        state.value.connectionState === 'connected' &&
+        !hlsPlayback.state.value.isInitialized
+      ) {
+        // Small delay to let FFmpeg start creating files
+        await new Promise((r) => setTimeout(r, 500));
+        await initializeHlsPlayback();
       }
     }
   );
@@ -1734,16 +1498,12 @@ export function useLivestreamViewer() {
     // Computed
     isConnected,
     isLive,
-    behindLiveSeconds,
-    behindLiveFormatted,
-    canSeekBackward,
-    canSeekForward,
     availableClipDuration,
-    availableDvrDuration,
+    isAtLiveEdge,
 
     // Video elements
     videoElement,
-    dvrVideoElement,
+    hlsVideoElement,
 
     // Connection
     connect,
@@ -1751,25 +1511,21 @@ export function useLivestreamViewer() {
 
     // Element setup
     setVideoElement,
-    setDvrVideoElement,
+    setHlsVideoElement,
 
     // Playback controls
     play,
     pause,
     togglePlayPause,
+    seek,
+    seekToLive,
     setVolume,
     setMuted,
     toggleMute,
-    setPlaybackSpeed,
-    cyclePlaybackSpeed,
-    SUPPORTED_PLAYBACK_SPEEDS,
 
-    // Seeking
-    seek,
-    seekRelative,
-    seekForward,
-    seekBackward,
-    goToLive,
+    // Mode switching
+    switchToWebRTC,
+    switchToHLS,
 
     // Utility
     updateAvailableSegments,

@@ -11,6 +11,7 @@ export interface AuthUser {
   owned_organization_id?: string | null
   created_by_organization_id?: number | null
   ai_allowed?: boolean
+  beta_activated?: boolean
 }
 
 export interface AuthState {

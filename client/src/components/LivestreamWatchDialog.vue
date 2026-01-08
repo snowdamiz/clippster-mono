@@ -1,9 +1,14 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
+      <!-- Keep component alive during PiP mode to maintain video element -->
       <div
-        v-if="modelValue"
-        class="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50"
+        v-if="modelValue || isInPipMode || props.isPipModeExternal"
+        :class="[
+          'fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50',
+          // Hide dialog visually when in PiP mode but keep video element alive
+          (isInPipMode || props.isPipModeExternal) && !modelValue ? 'opacity-0 pointer-events-none' : '',
+        ]"
         @keydown="handleKeydown"
         tabindex="0"
         ref="dialogRef"
@@ -21,9 +26,10 @@
             <!-- Header Bar (hidden in fullscreen unless hovered) -->
             <div
               :class="[
-                'absolute top-0 left-0 right-0 z-30 transition-opacity duration-300',
-                isFullscreen && !showControls ? 'opacity-0 pointer-events-none' : 'opacity-100',
+                'absolute top-0 left-0 right-0 z-30 transition-all duration-300 ease-in-out',
+                showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none',
               ]"
+              @click.stop
             >
               <div class="bg-gradient-to-b from-black/80 to-transparent p-4">
                 <div class="flex items-center justify-between">
@@ -56,13 +62,21 @@
                           {{ viewer.state.value.viewerCount }}
                         </span>
                         <span v-if="viewer.isLive.value" class="text-red-400 font-medium">LIVE</span>
-                        <span v-else class="text-yellow-400">{{ viewer.behindLiveFormatted.value }}</span>
                       </div>
                     </div>
                   </div>
 
                   <!-- Right side actions -->
                   <div class="flex items-center gap-2">
+                    <!-- HLS Latency Badge -->
+                    <div
+                      v-if="viewer.state.value.connectionState === 'connected'"
+                      class="px-2 py-1 rounded bg-zinc-800/80 text-xs text-zinc-300 flex items-center gap-1"
+                    >
+                      <Clock class="w-3 h-3" />
+                      ~{{ estimatedDelay }}s delay
+                    </div>
+
                     <!-- Quality Badge -->
                     <button
                       v-if="viewer.state.value.streamQuality"
@@ -94,16 +108,24 @@
                   <span class="text-white">{{ viewer.state.value.streamQuality || 'Unknown' }}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-zinc-400">Latency</span>
-                  <span class="text-white">~{{ viewer.state.value.latencyMs || '?' }}ms</span>
+                  <span class="text-zinc-400">Playback Mode</span>
+                  <span :class="viewer.state.value.playbackMode === 'webrtc' ? 'text-green-400' : 'text-white'">
+                    {{ playbackModeDisplay }}
+                  </span>
                 </div>
                 <div class="flex justify-between">
                   <span class="text-zinc-400">Connection</span>
                   <span :class="connectionStatusTextColor">{{ connectionStatusText }}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-zinc-400">Playback Mode</span>
-                  <span class="text-white capitalize">{{ viewer.state.value.playbackMode }}</span>
+                  <span class="text-zinc-400">Recorded</span>
+                  <span class="text-white">{{ formatTime(viewer.state.value.totalRecordedDuration) }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">At Live Edge</span>
+                  <span :class="viewer.state.value.isAtLiveEdge ? 'text-green-400' : 'text-yellow-400'">
+                    {{ viewer.state.value.isAtLiveEdge ? 'Yes' : 'No' }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -114,46 +136,41 @@
               class="relative bg-black aspect-video w-full"
               @mousemove="handleMouseMove"
               @mouseleave="handleMouseLeave"
+              @click="handleVideoClick"
             >
-              <!-- Live Video (LiveKit) -->
+              <!-- HLS Video Playback (always visible - HLS-only mode) -->
               <video
-                ref="liveVideoRef"
-                :class="[
-                  'w-full h-full object-contain transition-opacity duration-200',
-                  viewer.state.value.playbackMode === 'live' ? 'opacity-100' : 'opacity-0 absolute inset-0',
-                ]"
-                autoplay
+                ref="hlsVideoRef"
+                class="w-full h-full object-contain"
                 playsinline
-                muted
+                :muted="viewer.state.value.isMuted"
               />
 
-              <!-- DVR Video (MSE Playback - single element) -->
-              <video
-                ref="dvrVideoRef"
-                :class="[
-                  'w-full h-full object-contain transition-opacity duration-200 absolute inset-0',
-                  viewer.state.value.playbackMode === 'dvr' ? 'opacity-100 z-10' : 'opacity-0 z-0',
-                ]"
-                playsinline
-              />
+              <!-- Hidden WebRTC video element (needed for track reception, not displayed) -->
+              <video ref="liveVideoRef" class="hidden" playsinline autoplay muted />
 
               <!-- Watermark Overlay -->
               <div
                 v-if="showWatermark && watermarkUrl"
-                class="absolute inset-0 pointer-events-none z-10"
+                class="absolute inset-0 pointer-events-none z-30"
                 :style="watermarkStyle"
               >
                 <img :src="watermarkUrl" alt="Watermark" class="w-full h-full object-contain" />
               </div>
 
-              <!-- Buffering Indicator -->
+              <!-- Buffering Indicator (HLS loading or buffering) -->
               <div
-                v-if="viewer.state.value.isBuffering"
-                class="absolute inset-0 flex items-center justify-center bg-black/40 z-20"
+                v-if="viewer.state.value.isBuffering && viewer.state.value.connectionState === 'connected'"
+                class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
-                  <Loader2 class="w-12 h-12 text-white animate-spin" />
-                  <span class="text-white text-sm">Loading...</span>
+                  <Loader2 class="w-12 h-12 text-violet-500 animate-spin" />
+                  <span class="text-white text-sm font-medium">
+                    {{ viewer.state.value.totalRecordedDuration < 12 ? 'Building buffer...' : 'Buffering...' }}
+                  </span>
+                  <span v-if="viewer.state.value.totalRecordedDuration < 12" class="text-zinc-400 text-xs">
+                    {{ Math.round(viewer.state.value.totalRecordedDuration) }}s / 12s for smooth playback
+                  </span>
                 </div>
               </div>
 
@@ -197,23 +214,41 @@
                 </div>
               </div>
 
+              <!-- Play overlay when paused -->
+              <div
+                v-if="
+                  !viewer.state.value.isPlaying &&
+                  viewer.state.value.connectionState === 'connected' &&
+                  !viewer.state.value.isBuffering
+                "
+                class="absolute inset-0 flex items-center justify-center bg-black/40 z-15 cursor-pointer"
+                @click.stop="viewer.play"
+              >
+                <div class="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <Play class="w-10 h-10 text-white ml-1" />
+                </div>
+              </div>
+
               <!-- Controls Overlay -->
               <div
                 :class="[
-                  'absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300',
-                  showControls || !viewer.state.value.isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none',
+                  'absolute bottom-0 left-0 right-0 z-30 transition-all duration-300 ease-in-out',
+                  showControls || !viewer.state.value.isPlaying
+                    ? 'opacity-100 translate-y-0'
+                    : 'opacity-0 translate-y-full pointer-events-none',
                 ]"
+                @click.stop
               >
                 <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-16 pb-4 px-4">
-                  <!-- DVR Timeline -->
-                  <LivestreamTimeline
-                    :playback-position="viewer.state.value.playbackPosition"
+                  <!-- Seek Bar -->
+                  <LivestreamSeekBar
+                    :current-time="viewer.state.value.playbackPosition"
+                    :duration="viewer.state.value.totalRecordedDuration"
                     :live-edge-time="viewer.state.value.liveEdgeTime"
-                    :total-recorded-duration="viewer.state.value.totalRecordedDuration"
+                    :buffered-ranges="viewer.state.value.bufferedRanges"
                     :is-at-live-edge="viewer.state.value.isAtLiveEdge"
-                    :available-segments="viewer.state.value.availableSegments"
                     @seek="handleSeek"
-                    @go-live="handleGoLive"
+                    @seek-to-live="handleSeekToLive"
                   />
 
                   <!-- Control Bar -->
@@ -250,66 +285,50 @@
                             step="0.01"
                             :value="viewer.state.value.volume"
                             @input="handleVolumeChange"
-                            class="w-24 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
+                            :style="volumeGradient"
+                            class="w-24 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer accent-transparent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
                           />
                         </div>
                       </div>
 
-                      <!-- Time Display -->
-                      <div class="text-white text-sm font-mono">
-                        {{ formatTime(viewer.state.value.playbackPosition) }}
-                        /
-                        {{ formatTime(viewer.state.value.liveEdgeTime) }}
-                      </div>
-
-                      <!-- Behind Live Indicator -->
+                      <!-- Live Indicator / Go Live Button -->
                       <button
-                        v-if="!viewer.state.value.isAtLiveEdge"
-                        @click="handleGoLive"
-                        class="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-medium rounded-full transition-colors flex items-center gap-1"
+                        v-if="viewer.state.value.playbackMode === 'webrtc'"
+                        class="flex items-center gap-2 px-3 py-1 bg-red-600/90 text-white text-xs font-medium rounded-full cursor-default"
+                      >
+                        <div class="relative w-2 h-2">
+                          <div class="absolute inset-0 bg-white rounded-full" />
+                          <div class="absolute inset-0 bg-white rounded-full animate-ping opacity-75" />
+                        </div>
+                        <span>LIVE</span>
+                      </button>
+                      <button
+                        v-else
+                        @click="handleSeekToLive"
+                        class="flex items-center gap-2 px-3 py-1 bg-zinc-700 hover:bg-red-600/90 text-white text-xs font-medium rounded-full transition-colors"
+                        title="Switch to real-time WebRTC playback"
                       >
                         <Radio class="w-3 h-3" />
-                        Go Live
+                        <span>Go Live</span>
                       </button>
                     </div>
 
                     <!-- Right Controls -->
                     <div class="flex items-center gap-2">
-                      <!-- Playback Speed (DVR only) -->
-                      <div v-if="!viewer.state.value.isAtLiveEdge" class="relative">
-                        <button
-                          @click="showSpeedMenu = !showSpeedMenu"
-                          class="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
-                        >
-                          {{ viewer.state.value.playbackSpeed }}x
-                        </button>
-                        <div
-                          v-if="showSpeedMenu"
-                          class="absolute bottom-full mb-2 right-0 bg-zinc-900 border border-zinc-700 rounded-lg py-1 min-w-[80px]"
-                        >
-                          <button
-                            v-for="speed in [1, 1.25, 1.5, 2]"
-                            :key="speed"
-                            @click="setPlaybackSpeed(speed)"
-                            :class="[
-                              'w-full px-3 py-1 text-sm text-left hover:bg-zinc-700 transition-colors',
-                              viewer.state.value.playbackSpeed === speed ? 'text-violet-400' : 'text-white',
-                            ]"
-                          >
-                            {{ speed }}x
-                          </button>
-                        </div>
-                      </div>
-
                       <!-- Clip Button -->
                       <button
                         @click="openClipModal"
                         class="px-3 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
-                        :disabled="viewer.state.value.totalRecordedDuration < 5"
+                        :disabled="
+                          viewer.state.value.totalRecordedDuration < 5 ||
+                          viewer.state.value.availableSegments.length === 0
+                        "
                         :title="
-                          viewer.state.value.totalRecordedDuration < 5
-                            ? 'Wait for more content to be recorded'
-                            : 'Create clip (C)'
+                          viewer.state.value.availableSegments.length === 0
+                            ? 'Waiting for segments to load...'
+                            : viewer.state.value.totalRecordedDuration < 5
+                              ? 'Wait for more content to be recorded'
+                              : 'Create clip (C)'
                         "
                       >
                         <Scissors class="w-4 h-4" />
@@ -345,7 +364,7 @@
             <ClipDurationModal
               v-if="showClipModal"
               :available-duration="viewer.availableClipDuration.value"
-              :project-id="viewer.state.value.projectId"
+              :project-id="sessionProjectId || viewer.state.value.projectId"
               :session-id="viewer.state.value.sessionId"
               :temp-session-id="viewer.state.value.tempSessionId"
               :playback-position="viewer.state.value.playbackPosition"
@@ -379,17 +398,26 @@
     Volume2,
     Volume1,
     VolumeX,
-    Radio,
     Scissors,
     PictureInPicture2,
     Maximize,
     Minimize,
+    Clock,
+    Radio,
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
+  import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
-  import LivestreamTimeline from './LivestreamTimeline.vue';
+  import { useToast } from '@/composables/useToast';
+  import LivestreamSeekBar from './LivestreamSeekBar.vue';
   import ClipDurationModal from './ClipDurationModal.vue';
-  import { getWatermarkImage, resolveWatermarkById } from '@/services/database';
+  import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
+  import { getWatermarkImage, resolveWatermarkById } from '@/services/database/watermarks';
+  import { createClipVersion } from '@/services/database/clip-versions';
+  import { updateClip } from '@/services/database/clips';
+  import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
 
   interface Props {
     modelValue: boolean;
@@ -397,22 +425,28 @@
     streamerId: string;
     displayName: string;
     profileImageUrl?: string;
+    /** External PIP mode state from global store */
+    isPipModeExternal?: boolean;
   }
 
   interface Emits {
     (e: 'update:modelValue', value: boolean): void;
-    (e: 'clip-created', clipPath: string): void;
+    (e: 'clip-created', clipPath: string, projectId: string): void;
+    (e: 'pip-mode-changed', isPip: boolean): void;
+    (e: 'closed'): void; // Emitted when user explicitly closes (not PIP)
   }
 
-  const props = defineProps<Props>();
+  const props = withDefaults(defineProps<Props>(), {
+    isPipModeExternal: false,
+  });
   const emit = defineEmits<Emits>();
 
   // Refs
   const dialogRef = ref<HTMLDivElement | null>(null);
   const containerRef = ref<HTMLDivElement | null>(null);
   const videoContainerRef = ref<HTMLDivElement | null>(null);
-  const liveVideoRef = ref<HTMLVideoElement | null>(null);
-  const dvrVideoRef = ref<HTMLVideoElement | null>(null);
+  const liveVideoRef = ref<HTMLVideoElement | null>(null); // WebRTC video element
+  const hlsVideoRef = ref<HTMLVideoElement | null>(null); // HLS video element for DVR
 
   // Composable
   const viewer = useLivestreamViewer();
@@ -421,10 +455,25 @@
   const isFullscreen = ref(false);
   const showControls = ref(true);
   const showStatsPopup = ref(false);
-  const showSpeedMenu = ref(false);
   const showClipModal = ref(false);
   const watermarkUrl = ref<string | null>(null);
+  const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
   let controlsTimeout: number | null = null;
+
+  // PiP state tracking
+  const isInPipMode = ref(false);
+  const closingForPip = ref(false);
+  const pipListenersSetup = ref(false);
+  const globalShortcutRegistered = ref(false);
+  const GLOBAL_SHORTCUT = 'Alt+C';
+
+  // Session tracking
+  const sessionProjectId = ref<string | null>(null);
+  const clipsCreatedCount = ref(0);
+
+  // Quick clip state
+  const isCreatingQuickClip = ref(false);
+  const { success: showSuccess, error: showError } = useToast();
 
   // Computed
   const streamerInfo = computed(() => ({
@@ -472,15 +521,43 @@
     const settings = viewer.state.value.watermarkSettings;
     if (!settings) return {};
 
-    // Use settings to position watermark
+    const opacityRaw = settings.opacity ?? 100;
+    const opacity = Math.max(0, Math.min(100, opacityRaw));
+
+    const dims = watermarkDimensions.value;
+    const is16x9 = !!dims && dims.height > 0 ? Math.abs(dims.width / dims.height - 16 / 9) < 0.02 : false;
+    const isHd = !!dims && dims.width >= 1600 && dims.height >= 900;
+    const isAutoFullFrame = is16x9 && isHd;
+
+    // Full-frame overlay (corner to corner), either explicit flag or auto-detected HD 16:9
+    if (settings.isFullFrameOverlay || isAutoFullFrame) {
+      return {
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        transform: 'none',
+        opacity: opacity / 100,
+      };
+    }
+
     const position = settings.position || { x: 50, y: 50 };
-    const scale = settings.scale || 100;
-    const opacity = settings.opacity ?? 100;
+    const clamp01 = (val: number | undefined, fallback: number) => {
+      const n = Number.isFinite(val) ? (val as number) : fallback;
+      return Math.min(100, Math.max(0, n));
+    };
+
+    const x = clamp01(position.x, 50);
+    const y = clamp01(position.y, 50);
+
+    // Ensure scale/opacity are sane for visibility
+    const scaleRaw = settings.scale ?? 100;
+    const scale = Math.max(5, Math.min(200, scaleRaw));
 
     return {
       position: 'absolute',
-      left: `${position.x}%`,
-      top: `${position.y}%`,
+      left: `${x}%`,
+      top: `${y}%`,
       transform: 'translate(-50%, -50%)',
       width: `${scale}%`,
       maxWidth: '100%',
@@ -492,10 +569,40 @@
     return document.pictureInPictureEnabled;
   });
 
+  // Estimated delay from real-time (HLS-only mode has ~5-10 second latency)
+  const estimatedDelay = computed(() => {
+    // HLS playback with 4-second segments is typically ~5-10 seconds behind real-time
+    if (viewer.state.value.isAtLiveEdge) {
+      return '5-10';
+    }
+
+    // If seeking back, show how far behind we are
+    const behindLive = Math.round(viewer.state.value.liveEdgeTime - viewer.state.value.playbackPosition);
+    return behindLive > 0 ? behindLive : '5-10';
+  });
+
+  // Playback mode display (always HLS now, but show "Live" when at live edge)
+  const playbackModeDisplay = computed(() => {
+    return viewer.state.value.isAtLiveEdge ? 'Live' : 'DVR';
+  });
+
+  const volumeGradient = computed(() => {
+    const pct = Math.min(100, Math.max(0, viewer.state.value.volume * 100));
+    // Violet fill to current value, neutral gray beyond
+    return {
+      background: `linear-gradient(to right, #a855f7 0%, #a855f7 ${pct}%, #3f3f46 ${pct}%, #3f3f46 100%)`,
+    };
+  });
+
   // Load watermark image
   async function loadWatermark() {
     const watermarkId = viewer.state.value.watermarkId;
+    const watermarkSettings = viewer.state.value.watermarkSettings;
+
+    console.log('[WatchDialog] loadWatermark called:', { watermarkId, watermarkSettings });
+
     if (!watermarkId) {
+      console.log('[WatchDialog] No watermarkId, skipping watermark load');
       watermarkUrl.value = null;
       return;
     }
@@ -503,15 +610,27 @@
     try {
       // Check if this is an org-asset watermark
       if (watermarkId.startsWith('org-asset-')) {
+        console.log('[WatchDialog] Loading org-asset watermark:', watermarkId);
         const resolved = await resolveWatermarkById(watermarkId);
         if (resolved?.filePath) {
-          watermarkUrl.value = await invoke<string>('read_file_as_data_url', { filePath: resolved.filePath });
+          const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: resolved.filePath });
+          watermarkUrl.value = dataUrl;
+          await loadWatermarkDimensions(dataUrl);
+          console.log('[WatchDialog] Org-asset watermark loaded successfully');
+        } else {
+          console.warn('[WatchDialog] Failed to resolve org-asset watermark');
         }
       } else {
         // Regular watermark lookup by ID
+        console.log('[WatchDialog] Loading regular watermark:', watermarkId);
         const watermark = await getWatermarkImage(watermarkId);
         if (watermark) {
-          watermarkUrl.value = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
+          const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: watermark.file_path });
+          watermarkUrl.value = dataUrl;
+          await loadWatermarkDimensions(dataUrl);
+          console.log('[WatchDialog] Regular watermark loaded successfully');
+        } else {
+          console.warn('[WatchDialog] Watermark not found in database:', watermarkId);
         }
       }
     } catch (error) {
@@ -534,20 +653,38 @@
 
   // Event handlers
   function handleMouseMove() {
+    // Always show controls when mouse moves
     showControls.value = true;
+
+    // Clear any existing timeout to reset the timer
+    if (controlsTimeout) {
+      clearTimeout(controlsTimeout);
+    }
+
+    // Set a new timeout to hide controls after a period of inactivity
+    if (viewer.state.value.isPlaying) {
+      controlsTimeout = window.setTimeout(() => {
+        showControls.value = false;
+      }, 3000); // 3 seconds of inactivity
+    }
+  }
+
+  function handleMouseLeave() {
+    // When the mouse leaves, immediately start the timeout to hide controls
     if (controlsTimeout) {
       clearTimeout(controlsTimeout);
     }
     if (viewer.state.value.isPlaying) {
       controlsTimeout = window.setTimeout(() => {
         showControls.value = false;
-      }, 3000);
+      }, 500); // Hide faster when mouse leaves
     }
   }
 
-  function handleMouseLeave() {
-    if (viewer.state.value.isPlaying) {
-      showControls.value = false;
+  function handleVideoClick() {
+    // Toggle play/pause when clicking on video
+    if (viewer.state.value.connectionState === 'connected') {
+      viewer.togglePlayPause();
     }
   }
 
@@ -556,31 +693,202 @@
     viewer.setVolume(parseFloat(target.value));
   }
 
-  function handleSeek(position: number) {
-    viewer.seek(position);
+  function handleSeek(time: number) {
+    viewer.seek(time);
   }
 
-  function handleGoLive() {
-    viewer.goToLive();
-  }
-
-  function setPlaybackSpeed(speed: number) {
-    viewer.setPlaybackSpeed(speed);
-    showSpeedMenu.value = false;
+  function handleSeekToLive() {
+    viewer.seekToLive();
   }
 
   function openClipModal() {
+    // Prevent opening if already open
+    if (showClipModal.value) return;
     showClipModal.value = true;
   }
 
-  function handleClipCreated(clipPath: string) {
-    showClipModal.value = false;
-    emit('clip-created', clipPath);
+  // Quick clip: Create a 30-second clip without any dialog
+  async function performQuickClip() {
+    const QUICK_CLIP_DURATION = 30;
+
+    // Prevent multiple quick clips at once
+    if (isCreatingQuickClip.value) {
+      console.log('[WatchDialog] Quick clip already in progress');
+      return;
+    }
+
+    // Check if we have enough recorded duration
+    if (viewer.state.value.totalRecordedDuration < QUICK_CLIP_DURATION) {
+      showError(
+        'Not Enough Content',
+        `Need at least ${QUICK_CLIP_DURATION}s recorded. Currently: ${Math.floor(viewer.state.value.totalRecordedDuration)}s`
+      );
+      return;
+    }
+
+    // Check if we have segments
+    if (!viewer.state.value.availableSegments || viewer.state.value.availableSegments.length === 0) {
+      showError('No Segments', 'No recorded segments available yet. Please wait a moment.');
+      return;
+    }
+
+    // Determine effective session ID
+    const effectiveSessionId = viewer.state.value.sessionId || viewer.state.value.tempSessionId || props.mintId;
+    if (!effectiveSessionId) {
+      showError('Session Error', 'No active session. Please try again.');
+      return;
+    }
+
+    isCreatingQuickClip.value = true;
+    console.log('[WatchDialog] Starting quick clip (30s)');
+
+    let progressUnlisten: UnlistenFn | null = null;
+
+    try {
+      // Setup progress listener (optional - for logging)
+      progressUnlisten = await listen<{ progress: number; message: string }>('clip-extraction-progress', (event) => {
+        console.log(`[QuickClip] ${event.payload.progress}% - ${event.payload.message}`);
+      });
+
+      // Determine project ID - use existing or create new
+      let effectiveProjectId = sessionProjectId.value || viewer.state.value.projectId;
+
+      if (!effectiveProjectId && props.displayName && props.mintId) {
+        // Create a new project for this clip
+        try {
+          effectiveProjectId = await createLivestreamClipProject(props.displayName, props.mintId);
+          sessionProjectId.value = effectiveProjectId;
+          console.log('[WatchDialog] Created project for quick clip:', effectiveProjectId);
+        } catch (err) {
+          console.error('[WatchDialog] Failed to create project:', err);
+          showError('Project Error', 'Failed to create project folder.');
+          return;
+        }
+      }
+
+      if (!effectiveProjectId) {
+        showError('Project Error', 'Unable to determine project for clip.');
+        return;
+      }
+
+      // Generate clip name
+      const timestamp = new Date()
+        .toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        })
+        .replace(/:/g, '-');
+      const clipName = `Quick Clip - ${timestamp}`;
+      const clipEndTime = viewer.state.value.playbackPosition;
+      const clipStartTime = clipEndTime - QUICK_CLIP_DURATION;
+
+      console.log('[WatchDialog] Extracting quick clip:', {
+        sessionId: effectiveSessionId,
+        clipStartTime,
+        clipEndTime,
+        duration: QUICK_CLIP_DURATION,
+        segmentsCount: viewer.state.value.availableSegments.length,
+        projectId: effectiveProjectId,
+      });
+
+      // Extract the clip
+      const result = await invoke<string>('extract_livestream_clip', {
+        sessionId: effectiveSessionId,
+        clipEndTime: clipEndTime,
+        clipDuration: QUICK_CLIP_DURATION,
+        clipName: clipName,
+        segments: viewer.state.value.availableSegments,
+        projectId: effectiveProjectId,
+        watermarkId: null,
+        watermarkSettings: null,
+      });
+
+      console.log('[WatchDialog] Quick clip extracted:', result);
+
+      // Save clip to database
+      try {
+        const clipId = await createClipRecord(effectiveProjectId, result, {
+          name: clipName,
+          duration: QUICK_CLIP_DURATION,
+          startTime: clipStartTime,
+          endTime: clipEndTime,
+        });
+
+        const manualSessionId = await getOrCreateManualSession(effectiveProjectId);
+        const versionId = await createClipVersion(
+          clipId,
+          manualSessionId,
+          1,
+          {
+            name: clipName,
+            startTime: clipStartTime,
+            endTime: clipEndTime,
+          },
+          'detected'
+        );
+        await updateClip(clipId, { current_version_id: versionId });
+        console.log('[WatchDialog] Quick clip saved to database');
+      } catch (dbErr) {
+        console.warn('[WatchDialog] Failed to save clip to database:', dbErr);
+      }
+
+      clipsCreatedCount.value++;
+      showSuccess('Quick Clip Created', `${QUICK_CLIP_DURATION}s clip saved!`);
+      emit('clip-created', result, effectiveProjectId);
+    } catch (err) {
+      console.error('[WatchDialog] Quick clip failed:', err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      showError('Clip Failed', errorMessage);
+    } finally {
+      isCreatingQuickClip.value = false;
+      if (progressUnlisten) {
+        progressUnlisten();
+      }
+    }
   }
 
-  function handleClose() {
-    viewer.disconnect();
+  function handleClipCreated(clipPath: string, projectId: string) {
+    showClipModal.value = false;
+
+    // Track the project and clip count for this session
+    if (projectId) {
+      sessionProjectId.value = projectId;
+      clipsCreatedCount.value++;
+    }
+
+    emit('clip-created', clipPath, projectId);
+  }
+
+  async function handleClose() {
+    // Do NOT stop temp HLS recording on close; keep it running so users can return and rewind.
+    // Recording will be cleaned up when streamer goes offline or by backend retention.
+
+    // If in PiP mode, exit PiP first, then close properly
+    if (document.pictureInPictureElement) {
+      try {
+        await document.exitPictureInPicture();
+      } catch (error) {
+        console.warn('[WatchDialog] Error exiting PiP:', error);
+      }
+      isInPipMode.value = false;
+      emit('pip-mode-changed', false);
+    }
+
+    // Cleanup global shortcut
+    await unregisterGlobalShortcut();
+
+    // Stop playback locally to avoid lingering audio when switching streams
+    viewer.pause();
+
+    // Reset session tracking state
+    sessionProjectId.value = null;
+    clipsCreatedCount.value = 0;
+
+    await viewer.disconnect();
     emit('update:modelValue', false);
+    emit('closed'); // Signal that dialog was explicitly closed (not for PIP)
   }
 
   async function reconnect() {
@@ -600,18 +908,103 @@
   }
 
   async function togglePip() {
-    const video = viewer.state.value.playbackMode === 'live' ? liveVideoRef.value : dvrVideoRef.value;
+    // Use HLS video element for PiP (HLS-only mode)
+    const video = hlsVideoRef.value;
     if (!video) return;
 
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
       } else {
+        // Ensure video is playing before entering PiP
+        if (video.paused) {
+          await video.play().catch(() => {});
+        }
+
         await video.requestPictureInPicture();
+
+        // Ensure video continues playing in PiP
+        if (video.paused) {
+          await video.play().catch(() => {});
+        }
       }
     } catch (error) {
       console.warn('[WatchDialog] PiP error:', error);
     }
+  }
+
+  // PiP event handlers
+  function handlePipEnter() {
+    console.log('[WatchDialog] Entered PiP mode');
+    isInPipMode.value = true;
+    emit('pip-mode-changed', true);
+    // When entering PiP, close the dialog but keep the stream alive
+    closingForPip.value = true;
+    emit('update:modelValue', false);
+    // Setup global key listener for quick clipping
+    registerGlobalShortcut();
+  }
+
+  async function handlePipLeave() {
+    console.log('[WatchDialog] Left PiP mode');
+    // Re-open the dialog when leaving PiP
+    emit('update:modelValue', true);
+    
+    // Wait for dialog to open and state to sync before updating external state
+    await nextTick();
+    emit('pip-mode-changed', false);
+    
+    // Cleanup global key listener
+    await unregisterGlobalShortcut();
+
+    // Bring main window to front
+    const win = getCurrentWindow();
+    await win.unminimize();
+    await win.setFocus();
+    await win.requestUserAttention(UserAttentionType.Critical);
+  }
+
+  // Register the Alt+C global shortcut
+  async function registerGlobalShortcut() {
+    try {
+      if (await isRegistered(GLOBAL_SHORTCUT)) {
+        console.warn(`[WatchDialog] Shortcut ${GLOBAL_SHORTCUT} already registered.`);
+        return;
+      }
+      await register(GLOBAL_SHORTCUT, performQuickClip);
+      globalShortcutRegistered.value = true;
+      console.log(`[WatchDialog] Global shortcut ${GLOBAL_SHORTCUT} registered.`);
+    } catch (err) {
+      console.error(`[WatchDialog] Failed to register global shortcut ${GLOBAL_SHORTCUT}:`, err);
+      showError('Shortcut Failed', `Could not register ${GLOBAL_SHORTCUT}. It might be in use by another application.`);
+    }
+  }
+
+  // Unregister the global shortcut
+  async function unregisterGlobalShortcut() {
+    try {
+      if (await isRegistered(GLOBAL_SHORTCUT)) {
+        await unregister(GLOBAL_SHORTCUT);
+        console.log(`[WatchDialog] Global shortcut ${GLOBAL_SHORTCUT} unregistered.`);
+      }
+    } catch (err) {
+      console.error(`[WatchDialog] Failed to unregister global shortcut ${GLOBAL_SHORTCUT}:`, err);
+    }
+    globalShortcutRegistered.value = false;
+  }
+
+  // Setup PiP event listeners on video element
+  function setupPipListeners(video: HTMLVideoElement) {
+    if (pipListenersSetup.value) return; // Prevent duplicate listeners
+    video.addEventListener('enterpictureinpicture', handlePipEnter);
+    video.addEventListener('leavepictureinpicture', handlePipLeave);
+    pipListenersSetup.value = true;
+  }
+
+  function cleanupPipListeners(video: HTMLVideoElement) {
+    video.removeEventListener('enterpictureinpicture', handlePipEnter);
+    video.removeEventListener('leavepictureinpicture', handlePipLeave);
+    pipListenersSetup.value = false;
   }
 
   // Keyboard handling
@@ -623,22 +1016,6 @@
       case ' ':
         event.preventDefault();
         viewer.togglePlayPause();
-        break;
-      case 'arrowleft':
-        event.preventDefault();
-        viewer.seekRelative(-10);
-        break;
-      case 'arrowright':
-        event.preventDefault();
-        viewer.seekRelative(10);
-        break;
-      case 'j':
-        event.preventDefault();
-        viewer.seekRelative(-30);
-        break;
-      case 'l':
-        event.preventDefault();
-        viewer.seekRelative(30);
         break;
       case 'm':
         event.preventDefault();
@@ -654,21 +1031,20 @@
         break;
       case 'c':
         event.preventDefault();
-        if (event.shiftKey) {
-          // Shift+C opens full modal
-          openClipModal();
-        } else {
-          // Quick 30s clip
-          quickClip();
-        }
+        // Quick clip (30s) without dialog
+        performQuickClip();
         break;
-      case 'home':
+      case 'l':
         event.preventDefault();
-        viewer.seek(0);
+        handleSeekToLive();
         break;
-      case 'end':
+      case 'arrowleft':
         event.preventDefault();
-        handleGoLive();
+        viewer.seek(Math.max(0, viewer.state.value.playbackPosition - 10));
+        break;
+      case 'arrowright':
+        event.preventDefault();
+        viewer.seek(Math.min(viewer.state.value.totalRecordedDuration, viewer.state.value.playbackPosition + 10));
         break;
       case 'escape':
         event.preventDefault();
@@ -678,43 +1054,6 @@
           handleClose();
         }
         break;
-      case '<':
-      case ',':
-        event.preventDefault();
-        decreaseSpeed();
-        break;
-      case '>':
-      case '.':
-        event.preventDefault();
-        increaseSpeed();
-        break;
-    }
-  }
-
-  function quickClip() {
-    // Create a 30-second clip immediately
-    if (viewer.state.value.totalRecordedDuration >= 30) {
-      // Emit event or call clip creation directly
-      // For now, just open modal with 30s preset
-      showClipModal.value = true;
-    }
-  }
-
-  function decreaseSpeed() {
-    const speeds = [1, 1.25, 1.5, 2];
-    const current = viewer.state.value.playbackSpeed;
-    const index = speeds.indexOf(current);
-    if (index > 0) {
-      setPlaybackSpeed(speeds[index - 1]);
-    }
-  }
-
-  function increaseSpeed() {
-    const speeds = [1, 1.25, 1.5, 2];
-    const current = viewer.state.value.playbackSpeed;
-    const index = speeds.indexOf(current);
-    if (index < speeds.length - 1) {
-      setPlaybackSpeed(speeds[index + 1]);
     }
   }
 
@@ -727,50 +1066,69 @@
   watch(
     () => props.modelValue,
     async (isOpen) => {
-      console.log('[WatchDialog] modelValue changed:', isOpen, 'mintId:', props.mintId);
       if (isOpen) {
-        // Connect when dialog opens
-        await nextTick();
+        // Reset closingForPip flag
+        closingForPip.value = false;
 
-        console.log('[WatchDialog] Setting video elements...');
-        console.log('[WatchDialog] liveVideoRef:', !!liveVideoRef.value);
-        console.log('[WatchDialog] dvrVideoRef:', !!dvrVideoRef.value);
+        // Reset session tracking state when opening dialog (but not if returning from PiP)
+        if (!isInPipMode.value) {
+          sessionProjectId.value = null;
+          clipsCreatedCount.value = 0;
+        }
+
+        // Connect when dialog opens (skip if already connected from PiP mode)
+        await nextTick();
 
         // Set video elements first
         if (liveVideoRef.value) {
           viewer.setVideoElement(liveVideoRef.value);
         }
-        if (dvrVideoRef.value) {
-          viewer.setDvrVideoElement(dvrVideoRef.value);
+        if (hlsVideoRef.value) {
+          viewer.setHlsVideoElement(hlsVideoRef.value);
+          // Setup PiP listeners
+          setupPipListeners(hlsVideoRef.value);
         }
 
-        // Connect to livestream
-        console.log('[WatchDialog] Calling viewer.connect...');
-        try {
-          await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
-          console.log('[WatchDialog] Connect completed, state:', viewer.state.value.connectionState);
-        } catch (error) {
-          console.error('[WatchDialog] Connect failed:', error);
-        }
+        // Only connect if not already connected (e.g., returning from PiP)
+        if (viewer.state.value.connectionState !== 'connected') {
+          // Connect to livestream
+          try {
+            await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
 
-        // After connection, re-attach video element in case tracks arrived during connect
-        await nextTick();
-        if (liveVideoRef.value) {
-          viewer.setVideoElement(liveVideoRef.value);
-          // Try to unmute and play
-          liveVideoRef.value.muted = viewer.state.value.isMuted;
-          liveVideoRef.value.volume = viewer.state.value.volume;
-          liveVideoRef.value.play().catch(() => {
-            // Autoplay blocked - user will need to click play
-            console.log('[WatchDialog] Autoplay blocked, user needs to click play');
-          });
+            // Load watermark from creator profile after connection
+            await loadWatermark();
+          } catch (error) {
+            console.error('[WatchDialog] Connect failed:', error);
+          }
+
+          // After connection, ensure video elements are set
+          await nextTick();
+          if (liveVideoRef.value) {
+            viewer.setVideoElement(liveVideoRef.value);
+          }
+          if (hlsVideoRef.value) {
+            viewer.setHlsVideoElement(hlsVideoRef.value);
+          }
         }
 
         // Focus dialog for keyboard events
         dialogRef.value?.focus();
+
+        // If returning from PiP, ensure video continues playing
+        if (isInPipMode.value) {
+          const video = hlsVideoRef.value;
+          if (video && video.paused) {
+            video.play().catch(() => {});
+          }
+        }
+
+        // Reset PiP mode flag after dialog reopens
+        isInPipMode.value = false;
       } else {
-        // Disconnect when dialog closes
-        viewer.disconnect();
+        // Don't disconnect if closing for PiP mode - keep stream running
+        if (!closingForPip.value && !isInPipMode.value) {
+          viewer.disconnect();
+        }
       }
     },
     { immediate: true }
@@ -781,7 +1139,8 @@
     () => viewer.state.value.watermarkId,
     () => {
       loadWatermark();
-    }
+    },
+    { immediate: true }
   );
 
   // Lifecycle
@@ -789,14 +1148,56 @@
     document.addEventListener('fullscreenchange', handleFullscreenChange);
   });
 
-  onUnmounted(() => {
+  async function loadWatermarkDimensions(dataUrl: string) {
+    return new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        watermarkDimensions.value = { width: img.naturalWidth, height: img.naturalHeight };
+        resolve();
+      };
+      img.onerror = () => {
+        watermarkDimensions.value = null;
+        resolve();
+      };
+      img.src = dataUrl;
+    });
+  }
+
+  onUnmounted(async () => {
     document.removeEventListener('fullscreenchange', handleFullscreenChange);
     if (controlsTimeout) {
       clearTimeout(controlsTimeout);
     }
+    // Clean up PiP listeners
+    if (hlsVideoRef.value) {
+      cleanupPipListeners(hlsVideoRef.value);
+    }
+    // Clean up global key listener and shortcut
+    await unregisterGlobalShortcut();
+
+    // Exit PiP if active when component unmounts
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(() => {});
+    }
     // Ensure we disconnect when component unmounts
     viewer.disconnect();
   });
+
+  // Watch for external PiP mode changes (from global store)
+  watch(
+    () => props.isPipModeExternal,
+    (isPip) => {
+      if (isPip && !isInPipMode.value) {
+        // External state says we're in PiP but local state doesn't - sync it
+        isInPipMode.value = true;
+        registerGlobalShortcut();
+      } else if (!isPip && isInPipMode.value) {
+        // External state says we're not in PiP - sync and cleanup
+        isInPipMode.value = false;
+        unregisterGlobalShortcut();
+      }
+    }
+  );
 </script>
 
 <style scoped>
@@ -830,6 +1231,7 @@
   /* Volume slider styling */
   input[type='range'] {
     -webkit-appearance: none;
+    appearance: none;
     background: transparent;
   }
 

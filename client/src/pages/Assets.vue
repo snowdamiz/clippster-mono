@@ -464,14 +464,13 @@
   import { ref, onMounted, onUnmounted, computed, watch, Teleport, Transition } from 'vue';
   import {
     getAllIntroOutros,
-    getAllWatermarkImages,
     getAllAudioAssets,
     getAllImageAssets,
     type IntroOutro,
-    type WatermarkImage,
     type AudioAsset,
     type ImageAsset,
   } from '@/services/database';
+  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
   import {
     Archive,

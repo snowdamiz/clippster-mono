@@ -6,20 +6,63 @@ on:
       - release
   workflow_dispatch:
 
+env:
+  RELEASES_REPO: snowdamiz/clippster-releases
+
 jobs:
-  publish-tauri:
+  # First, create a draft release in the public repo
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from tauri.conf.json
+        id: get_version
+        run: |
+          VERSION=$(jq -r '.version' client/src-tauri/tauri.conf.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Create Release in Public Repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          # Check if release already exists
+          if gh release view "v$VERSION" --repo $RELEASES_REPO > /dev/null 2>&1; then
+            echo "Release v$VERSION already exists, deleting it first..."
+            gh release delete "v$VERSION" --repo $RELEASES_REPO --yes || true
+            # Also delete the tag
+            gh api --method DELETE "/repos/$RELEASES_REPO/git/refs/tags/v$VERSION" || true
+          fi
+          
+          # Create new draft release
+          gh release create "v$VERSION" \
+            --repo $RELEASES_REPO \
+            --title "Clippster v$VERSION" \
+            --notes "See assets to download and install." \
+            --draft
+
+  # Build for each platform
+  build-tauri:
+    needs: create-release
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
+            artifact_suffix: aarch64
           - platform: macos-latest
             args: --target x86_64-apple-darwin
+            artifact_suffix: x64
           - platform: windows-latest
             args: ""
+            artifact_suffix: windows
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -46,25 +89,169 @@ jobs:
         run: yarn install
         working-directory: client
 
-      - name: Build and Release
+      - name: Build frontend with production API URL
+        run: |
+          echo "Building frontend with VITE_API_URL=$VITE_API_URL"
+          yarn build:ci
+        working-directory: client
+        shell: bash
+        env:
+          VITE_API_URL: https://clippster-server.fly.dev
+
+      - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Tauri update signing (required for OTA)
+          VITE_API_URL: https://clippster-server.fly.dev
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS notarization (optional - requires Apple Developer account)
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows code signing (optional)
           TAURI_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           TAURI_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
           projectPath: client
-          tagName: v__VERSION__
-          releaseName: "Clippster v__VERSION__"
-          releaseBody: "See assets to download and install."
-          releaseDraft: true
-          prerelease: false
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
+          retryAttempts: 3
+
+      - name: Upload artifacts to public releases repo (macOS)
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          # Find and upload DMG
+          DMG_FILE=$(find client/src-tauri/target -name "*.dmg" -type f | head -1)
+          if [ -n "$DMG_FILE" ]; then
+            echo "Uploading DMG: $DMG_FILE"
+            gh release upload "v$VERSION" "$DMG_FILE" --repo $RELEASES_REPO --clobber
+          fi
+          
+          # Find and upload .app.tar.gz (for updater)
+          APP_TAR=$(find client/src-tauri/target -name "*.app.tar.gz" -type f | head -1)
+          if [ -n "$APP_TAR" ]; then
+            echo "Uploading app tar: $APP_TAR"
+            gh release upload "v$VERSION" "$APP_TAR" --repo $RELEASES_REPO --clobber
+          fi
+          
+          # Find and upload .app.tar.gz.sig (signature for updater)
+          APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
+          if [ -n "$APP_SIG" ]; then
+            echo "Uploading app signature: $APP_SIG"
+            gh release upload "v$VERSION" "$APP_SIG" --repo $RELEASES_REPO --clobber
+          fi
+
+      - name: Upload artifacts to public releases repo (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          # Find and upload NSIS installer
+          $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*-setup.exe" | Select-Object -First 1
+          if ($exeFile) {
+            Write-Host "Uploading EXE: $($exeFile.FullName)"
+            gh release upload "v$env:VERSION" "$($exeFile.FullName)" --repo $env:RELEASES_REPO --clobber
+          }
+          
+          # Find and upload MSI
+          $msiFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*.msi" | Select-Object -First 1
+          if ($msiFile) {
+            Write-Host "Uploading MSI: $($msiFile.FullName)"
+            gh release upload "v$env:VERSION" "$($msiFile.FullName)" --repo $env:RELEASES_REPO --clobber
+          }
+          
+          # Find and upload nsis.zip (for updater)
+          $nsisZip = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*_x64-setup.nsis.zip" | Select-Object -First 1
+          if ($nsisZip) {
+            Write-Host "Uploading NSIS zip: $($nsisZip.FullName)"
+            gh release upload "v$env:VERSION" "$($nsisZip.FullName)" --repo $env:RELEASES_REPO --clobber
+          }
+          
+          # Find and upload nsis.zip.sig (signature for updater)
+          $nsisSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*_x64-setup.nsis.zip.sig" | Select-Object -First 1
+          if ($nsisSig) {
+            Write-Host "Uploading NSIS signature: $($nsisSig.FullName)"
+            gh release upload "v$env:VERSION" "$($nsisSig.FullName)" --repo $env:RELEASES_REPO --clobber
+          }
+
+      - name: Upload latest.json artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-json-${{ matrix.artifact_suffix }}
+          path: client/src-tauri/target/**/latest.json
+          if-no-files-found: ignore
+
+  # Merge latest.json files and publish release
+  finalize-release:
+    needs: [create-release, build-tauri]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all latest.json artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: latest-json-*
+          merge-multiple: true
+
+      - name: Find and merge latest.json
+        id: merge_json
+        run: |
+          echo "Looking for latest.json files..."
+          find . -name "latest.json" -type f
+          
+          # Find all latest.json files
+          JSON_FILES=$(find . -name "latest.json" -type f)
+          
+          if [ -z "$JSON_FILES" ]; then
+            echo "No latest.json files found"
+            exit 0
+          fi
+          
+          # Take the first one as base and merge platforms from others
+          FIRST_FILE=$(echo "$JSON_FILES" | head -1)
+          
+          # Use jq to merge all platforms into one latest.json
+          # Each file has structure: { version, notes, pub_date, platforms: {...} }
+          echo '{}' > merged.json
+          
+          for file in $JSON_FILES; do
+            echo "Processing: $file"
+            cat "$file"
+            echo ""
+            
+            # Merge platforms
+            jq -s '.[0] * {platforms: (.[0].platforms + .[1].platforms)} | 
+                   if .[1].version then .version = .[1].version else . end |
+                   if .[1].notes then .notes = .[1].notes else . end |
+                   if .[1].pub_date then .pub_date = .[1].pub_date else . end' \
+                   merged.json "$file" > tmp.json && mv tmp.json merged.json
+          done
+          
+          # Update URLs to point to public releases repo
+          VERSION="${{ needs.create-release.outputs.version }}"
+          sed -i "s|snowdamiz/clippster-mono|$RELEASES_REPO|g" merged.json
+          
+          echo "Final merged latest.json:"
+          cat merged.json
+
+      - name: Upload latest.json to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          if [ -f merged.json ]; then
+            mv merged.json latest.json
+            echo "Uploading latest.json..."
+            gh release upload "v$VERSION" latest.json --repo $RELEASES_REPO --clobber
+          fi
+
+      - name: Publish release (remove draft status)
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          gh release edit "v$VERSION" --repo $RELEASES_REPO --draft=false

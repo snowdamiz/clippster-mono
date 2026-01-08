@@ -110,6 +110,8 @@ export interface Clip {
   built_at: number | null;
   built_file_size: number | null;
   built_duration: number | null;
+  // Version tracking
+  current_version_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -502,6 +504,7 @@ export interface CreatorProfile {
   outro_id: string | null;
   watermark_id: string | null;
   watermark_settings: string | null; // JSON string of WatermarkSettings
+  auto_dvr_enabled?: number | boolean; // Auto DVR toggle (default off)
   user_id: string | null;
   created_at: number;
   updated_at: number;

@@ -1618,6 +1618,16 @@
   // Guard to prevent double submissions (e.g., from double-clicks)
   const isSubmitting = ref(false);
 
+  // Reset isSubmitting when dialog opens so subsequent builds work
+  watch(
+    () => props.modelValue,
+    (isOpen) => {
+      if (isOpen) {
+        isSubmitting.value = false;
+      }
+    }
+  );
+
   function confirmBuild() {
     // Prevent double submissions
     if (isSubmitting.value) return;

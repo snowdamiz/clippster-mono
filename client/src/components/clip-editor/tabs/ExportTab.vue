@@ -291,13 +291,8 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { save } from '@tauri-apps/plugin-dialog';
-  import {
-    getClipBuilds,
-    deleteClipBuild,
-    resolveWatermarkById,
-    type ClipBuild,
-    type VideoEditorSource,
-  } from '@/services/database';
+  import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource } from '@/services/database';
+  import { resolveWatermarkById } from '@/services/database/watermarks';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
 
   /**
@@ -416,6 +411,7 @@
     subtitleSettings?: any | null;
     framingMode?: 'auto' | 'manual';
     framingConfigs?: any;
+    segmentFramingConfigs?: any;
     filterSegments?: any[];
     textOverlays?: any[];
     stickers?: any[];
@@ -486,6 +482,11 @@
     return ratios;
   });
 
+  // Effective clip ID - use editorProjectId in editor mode, clipId otherwise
+  const effectiveClipId = computed(() => {
+    return props.editorMode ? props.editorProjectId : props.clipId;
+  });
+
   // Builds state
   const builds = ref<ClipBuild[]>([]);
   const loadingBuilds = ref(false);
@@ -521,11 +522,11 @@
   }
 
   async function loadBuilds() {
-    if (!props.clipId) return;
+    if (!effectiveClipId.value) return;
 
     loadingBuilds.value = true;
     try {
-      builds.value = await getClipBuilds(props.clipId);
+      builds.value = await getClipBuilds(effectiveClipId.value);
 
       // Load thumbnails for builds
       for (const build of builds.value) {
@@ -570,7 +571,7 @@
       }
 
       // Create build record (use clipId for clip mode, editorProjectId for editor mode)
-      const buildRecordId = props.editorMode ? props.editorProjectId! : props.clipId;
+      const buildRecordId = effectiveClipId.value!;
       const buildId = await createClipBuild(buildRecordId, {
         aspectRatios: effectiveAspectRatios.value,
         quality: quality.value,
@@ -590,6 +591,7 @@
             .map((t) => ({
               filePath: t.filePath,
               gainDb: props.trackDbValues?.[t.id] ?? 0,
+              pan: t.pan ?? 0,
               fadeIn: t.fadeIn ?? 0,
               fadeOut: t.fadeOut ?? 0,
               startTime: t.startTime,
@@ -836,6 +838,7 @@
       audioSettings: audioSettings,
       framingStrategy: framingStrategy,
       manualFramingConfigs: props.framingConfigs || null,
+      segmentFramingConfigs: props.segmentFramingConfigs || null,
       videoFilterSegments: videoFilterSegments,
       textOverlays: textOverlaysForExport,
       stickers: stickersForExport,
@@ -894,6 +897,7 @@
         end_time: source.trim_end ?? source.trim_start + (source.end_time - source.start_time),
         duration: (source.trim_end ?? source.trim_start + (source.end_time - source.start_time)) - source.trim_start,
         transcript: null,
+        mute_audio: (source as any).audio_extracted === true, // Mute audio if it has been extracted to a separate track
       }));
 
       // Get intro/outro paths
@@ -946,6 +950,7 @@
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
+        segmentFramingConfigs: props.segmentFramingConfigs || null,
         videoFilterSegments: videoFilterSegments,
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
@@ -1021,6 +1026,7 @@
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
+        segmentFramingConfigs: props.segmentFramingConfigs || null,
         videoFilterSegments: videoFilterSegments,
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
@@ -1028,6 +1034,23 @@
       });
     } else {
       throw new Error('No video sources to export');
+    }
+  }
+
+  async function cancelBuild() {
+    if (!effectiveClipId.value) return;
+    try {
+      await invoke('cancel_clip_build', { clipId: effectiveClipId.value });
+
+      // Update database status to pending/cancelled
+      const { updateClipBuildStatus } = await import('@/services/database');
+      await updateClipBuildStatus(effectiveClipId.value, 'pending', { error: 'Cancelled by user' });
+
+      // Local state update
+      isBuilding.value = false;
+      buildProgress.value = 0;
+    } catch (error) {
+      console.error('[ExportTab] Failed to cancel build:', error);
     }
   }
 
@@ -1102,7 +1125,7 @@
         // Support both camelCase and snake_case
         const eventClipId = event.payload.clipId || event.payload.clip_id;
 
-        if (eventClipId === props.clipId) {
+        if (eventClipId === effectiveClipId.value) {
           console.log('[ExportTab] Progress update:', event.payload.progress, '%');
           buildProgress.value = event.payload.progress;
         }
@@ -1114,27 +1137,27 @@
       'clip-build-complete',
       (event) => {
         console.log('[ExportTab] Received clip-build-complete event:', event.payload);
-        console.log('[ExportTab] Current clipId prop:', props.clipId);
+        console.log('[ExportTab] Current effectiveClipId:', effectiveClipId.value);
 
         // Support both camelCase and snake_case
         const eventClipId = event.payload.clipId || event.payload.clip_id;
         const eventBuildId = event.payload.buildId || event.payload.build_id;
 
-        if (eventClipId === props.clipId) {
+        if (eventClipId === effectiveClipId.value) {
           console.log('[ExportTab] ClipId matches! Setting build complete.');
           isBuilding.value = false;
           buildProgress.value = 100;
           loadBuilds();
           emit('buildCompleted', eventBuildId || '');
         } else {
-          console.log('[ExportTab] ClipId mismatch:', eventClipId, '!==', props.clipId);
+          console.log('[ExportTab] ClipId mismatch:', eventClipId, '!==', effectiveClipId.value);
         }
       }
     );
 
     // Listen for build errors
     unlistenError = await listen<{ clipId: string; error: string }>('clip-build-error', (event) => {
-      if (event.payload.clipId === props.clipId) {
+      if (event.payload.clipId === effectiveClipId.value) {
         isBuilding.value = false;
         buildProgress.value = 0;
         loadBuilds();
@@ -1145,7 +1168,7 @@
 
   // Watch for clipId changes
   watch(
-    () => props.clipId,
+    effectiveClipId,
     (newId) => {
       if (newId) {
         loadBuilds();

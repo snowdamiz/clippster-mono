@@ -7,16 +7,98 @@ export interface WaveformPeak {
   max: number;
 }
 
-export interface WaveformResolution {
-  peaks: WaveformPeak[];
-  peakCount: number;
-  samplesPerPeak: number;
-}
-
+// Simplified single-resolution waveform data structure
+// Frontend will downsample as needed for different zoom levels
 export interface WaveformData {
   sampleRate: number;
   duration: number;
-  resolutions: Record<string, WaveformResolution>;
+  channelData?: Float32Array; // Raw data for infinite zoom fidelity (optional)
+  peaks?: WaveformPeak[]; // Legacy: kept for compatibility with cached JSON
+  peakCount: number;
+}
+
+// Downsample peaks for lower zoom levels
+// Aggregates peaks in range by taking min of mins and max of maxes
+function downsamplePeaks(peaks: WaveformPeak[], targetCount: number): WaveformPeak[] {
+  if (peaks.length <= targetCount || targetCount <= 0) {
+    return peaks;
+  }
+
+  const ratio = peaks.length / targetCount;
+  const result: WaveformPeak[] = [];
+
+  for (let i = 0; i < targetCount; i++) {
+    const startIdx = Math.floor(i * ratio);
+    const endIdx = Math.floor((i + 1) * ratio);
+
+    // Aggregate peaks in range (take min of mins, max of maxes)
+    let min = 0;
+    let max = 0;
+    for (let j = startIdx; j < endIdx && j < peaks.length; j++) {
+      min = Math.min(min, peaks[j].min);
+      max = Math.max(max, peaks[j].max);
+    }
+    result.push({ min, max });
+  }
+  return result;
+}
+
+// Calculate peaks from raw channel data for a target pixel count
+function calculatePeaksFromRaw(
+  data: Float32Array, 
+  targetCount: number,
+  startTime: number = 0,
+  duration: number
+): WaveformPeak[] {
+  if (!data || data.length === 0 || targetCount <= 0) return [];
+  
+  const sampleRate = data.length / duration;
+  const startSample = Math.floor(startTime * sampleRate);
+  
+  // Safety check
+  if (startSample >= data.length) return [];
+  
+  // If we want more peaks than samples available, just return all samples
+  const samplesAvailable = data.length - startSample;
+  if (targetCount >= samplesAvailable) {
+    const result: WaveformPeak[] = [];
+    for (let i = 0; i < samplesAvailable; i++) {
+      const val = data[startSample + i];
+      result.push({ min: val, max: val });
+    }
+    return result;
+  }
+  
+  const step = samplesAvailable / targetCount;
+  const result: WaveformPeak[] = [];
+  
+  for (let i = 0; i < targetCount; i++) {
+    const start = startSample + Math.floor(i * step);
+    const end = startSample + Math.floor((i + 1) * step);
+    
+    // Max pooling for audio visualization
+    // We want the most prominent feature in this window
+    let min = 0;
+    let max = 0;
+    
+    // Scan the window
+    for (let j = start; j < end && j < data.length; j++) {
+      const val = data[j];
+      if (val < min) min = val;
+      if (val > max) max = val;
+    }
+    
+    // If we found nothing (e.g. window < 1 sample), take the nearest sample
+    if (min === 0 && max === 0 && end > start) {
+      const val = data[start];
+      min = val;
+      max = val;
+    }
+    
+    result.push({ min, max });
+  }
+  
+  return result;
 }
 
 export function useAudioWaveform() {
@@ -81,17 +163,62 @@ export function useAudioWaveform() {
         cached.duration
       );
 
-      // Parse resolutions JSON
-      const resolutions = JSON.parse(cached.resolutions);
+      // Parse peaks from JSON - handle both old multi-resolution and new single-array format
+      const parsed = JSON.parse(cached.resolutions);
 
-      const waveformData: WaveformData = {
-        sampleRate: cached.sample_rate,
-        duration: cached.duration,
-        resolutions,
-      };
+      let waveform: WaveformData;
 
-      console.log('[useAudioWaveform] Successfully loaded waveform from database cache');
-      return waveformData;
+      // Check if it's old format (has resolutions object) or new format (has peaks array)
+      if (Array.isArray(parsed)) {
+        // New format: direct peaks array
+        waveform = {
+          sampleRate: cached.sample_rate,
+          duration: cached.duration,
+          peaks: parsed,
+          peakCount: parsed.length,
+        };
+      } else if (parsed.peaks && Array.isArray(parsed.peaks)) {
+        // New format with wrapper object
+        waveform = {
+          sampleRate: cached.sample_rate,
+          duration: cached.duration,
+          peaks: parsed.peaks,
+          peakCount: parsed.peakCount || parsed.peaks.length,
+        };
+      } else {
+        // Old multi-resolution format - extract highest resolution available
+        const resolutionOrder = ['maximum', 'extreme', 'ultra', 'high', 'medium', 'low'];
+        let bestPeaks: WaveformPeak[] = [];
+
+        for (const level of resolutionOrder) {
+          if (parsed[level]?.peaks) {
+            bestPeaks = parsed[level].peaks.map((p: any) => ({ min: p.min, max: p.max }));
+            console.log(`[useAudioWaveform] Using ${level} resolution from old cache format`);
+            break;
+          }
+        }
+
+        if (bestPeaks.length === 0) {
+          // Fallback: use first available resolution
+          const firstKey = Object.keys(parsed)[0];
+          if (firstKey && parsed[firstKey]?.peaks) {
+            bestPeaks = parsed[firstKey].peaks.map((p: any) => ({ min: p.min, max: p.max }));
+          }
+        }
+
+        waveform = {
+          sampleRate: cached.sample_rate,
+          duration: cached.duration,
+          peaks: bestPeaks,
+          peakCount: bestPeaks.length,
+        };
+      }
+
+      console.log(
+        '[useAudioWaveform] Successfully loaded waveform from database cache, peaks:',
+        waveform.peakCount
+      );
+      return waveform;
     } catch (err) {
       console.error('[useAudioWaveform] Error loading from cache:', err);
       return null;
@@ -144,7 +271,7 @@ export function useAudioWaveform() {
         return; // Exit early to prevent NOT NULL constraint error
       }
 
-      // Save to database
+      // Save to database - store peaks directly as JSON
       await db.execute(
         `INSERT OR REPLACE INTO waveform_data (
           id, raw_video_id, video_path_hash, sample_rate, duration,
@@ -152,11 +279,11 @@ export function useAudioWaveform() {
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
         [
           `waveform_${videoPathHash}`,
-          rawVideoId, // raw_video_id - can be null for fallback caching
+          rawVideoId,
           videoPathHash,
           data.sampleRate,
           data.duration,
-          JSON.stringify(data.resolutions),
+          JSON.stringify({ peaks: data.peaks, peakCount: data.peakCount }),
           0, // file_size - will be updated later
           now, // file_modified_time
           now,
@@ -174,7 +301,7 @@ export function useAudioWaveform() {
   }
 
   // Load and process audio from video file
-  async function loadWaveformFromVideo(videoSrc: string | null): Promise<void> {
+  async function loadWaveformFromVideo(videoSrc: string | null, skipCache: boolean = false): Promise<void> {
     if (!videoSrc) {
       waveformData.value = null;
       return;
@@ -191,18 +318,16 @@ export function useAudioWaveform() {
     error.value = null;
 
     try {
-      // Check database cache first
-      console.log('[useAudioWaveform] Checking database cache...');
-      const cached = await getCachedWaveform(cacheKey);
-      if (cached) {
-        console.log('[useAudioWaveform] Found cached waveform, using it');
-        waveformData.value = cached;
-        return;
-      }
+      // IMPORTANT: Skip frontend database cache entirely
+      // The database cache has been causing waveform accuracy issues because:
+      // 1. Old incorrect waveforms were cached before the FFmpeg path fix
+      // 2. The cache key doesn't match between frontend and Rust backend
+      // 
+      // The Rust backend has its own file-based cache that is reliable.
+      // Let Rust handle all caching - it will return cached data if available.
+      console.log('[useAudioWaveform] Requesting waveform from Rust backend (Rust handles caching)...');
 
-      console.log('[useAudioWaveform] No cached waveform found, generating...');
-
-      // Try Rust backend for real audio analysis
+      // Use Rust backend for real audio analysis - it has its own cache
       await loadWaveformWithRust(videoSrc, cacheKey);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load waveform';
@@ -219,217 +344,190 @@ export function useAudioWaveform() {
       console.log('[useAudioWaveform] Loading waveform using Rust backend');
 
       // Call Rust function to extract real audio waveform
+      // Force regenerate to bypass any stale Rust file cache
       const rustWaveform = await invoke<any>('extract_audio_waveform', {
         videoPath: videoSrc,
-        targetSamples: 2000, // Optimal for timeline visualization
+        forceRegenerate: true, // Always regenerate to ensure accuracy
       });
 
-      console.log('[useAudioWaveform] Received multi-resolution waveform data from Rust:', {
-        resolutionCount: Object.keys(rustWaveform.resolutions || {}).length,
+      console.log('[useAudioWaveform] Received waveform data from Rust:', {
+        peakCount: rustWaveform.peak_count,
         sampleRate: rustWaveform.sample_rate,
         duration: rustWaveform.duration,
-        availableResolutions: Object.keys(rustWaveform.resolutions || {}),
       });
 
-      // Convert Rust multi-resolution data structure to our TypeScript interface
-      const resolutions: Record<string, WaveformResolution> = {};
-
-      if (rustWaveform.resolutions) {
-        for (const [level, rustResolution] of Object.entries(rustWaveform.resolutions)) {
-          resolutions[level] = {
-            peaks: (rustResolution as any).peaks.map((peak: any) => ({
-              min: peak.min,
-              max: peak.max,
-            })),
-            peakCount: (rustResolution as any).peak_count,
-            samplesPerPeak: (rustResolution as any).samples_per_peak,
-          };
-        }
-      }
-
+      // Convert Rust data structure to our TypeScript interface
       const data: WaveformData = {
         sampleRate: rustWaveform.sample_rate,
         duration: rustWaveform.duration,
-        resolutions,
+        peaks: rustWaveform.peaks.map((peak: any) => ({
+          min: peak.min,
+          max: peak.max,
+        })),
+        peakCount: rustWaveform.peak_count,
       };
 
-      // Cache the result to database
+      // Skip frontend database caching - Rust backend handles its own file cache
+      // This avoids cache key mismatches and stale data issues
+      waveformData.value = data;
+
+      console.log('[useAudioWaveform] Real waveform loaded successfully from Rust backend');
+    } catch (err) {
+      // Don't use fake fallback - just report the error
+      // Fake waveforms cause more confusion than showing nothing
+      console.error('[useAudioWaveform] Rust backend failed to extract waveform:', err);
+      error.value = `Failed to extract audio waveform: ${err instanceof Error ? err.message : 'Unknown error'}`;
+      throw err;
+    }
+  }
+
+  // Clear cached waveform data for a video (forces regeneration)
+  async function clearCachedWaveform(videoSrc: string): Promise<void> {
+    const cacheKey = getCacheKey(videoSrc);
+    if (!cacheKey) return;
+
+    try {
+      console.log('[useAudioWaveform] Clearing cached waveform for:', videoSrc);
+      const db = await getDatabase();
+      
+      // Delete from database cache
+      await db.execute(
+        `DELETE FROM waveform_data WHERE video_path_hash = ?1`,
+        [cacheKey]
+      );
+      
+      // Also try to clear Rust file cache
+      try {
+        await invoke('clear_waveform_cache', { videoPath: videoSrc });
+      } catch (e) {
+        // Rust cache clear is optional, ignore errors
+        console.log('[useAudioWaveform] Rust cache clear not available or failed:', e);
+      }
+      
+      console.log('[useAudioWaveform] Cache cleared successfully');
+    } catch (err) {
+      console.error('[useAudioWaveform] Error clearing cache:', err);
+    }
+  }
+
+  // Clear ALL cached waveforms from database
+  async function clearAllCachedWaveforms(): Promise<void> {
+    try {
+      console.log('[useAudioWaveform] Clearing ALL cached waveforms from database');
+      const db = await getDatabase();
+      
+      // Delete all waveform data from database
+      await db.execute(`DELETE FROM waveform_data`);
+      
+      console.log('[useAudioWaveform] All waveform caches cleared successfully');
+    } catch (err) {
+      console.error('[useAudioWaveform] Error clearing all caches:', err);
+    }
+  }
+
+  // Force regenerate waveform (clears cache and reloads)
+  async function forceRegenerateWaveform(videoSrc: string | null): Promise<void> {
+    if (!videoSrc) return;
+    
+    // Clear existing cache from both database and Rust file cache
+    await clearCachedWaveform(videoSrc);
+    
+    // Reset state
+    waveformData.value = null;
+    isLoading.value = true;
+    error.value = null;
+    
+    try {
+      // Call Rust directly, bypassing all caches
+      console.log('[useAudioWaveform] Force regenerating waveform from Rust backend');
+      
+      // First clear the Rust file cache
+      try {
+        await invoke('clear_waveform_cache', { videoPath: videoSrc });
+      } catch (e) {
+        console.log('[useAudioWaveform] Rust cache clear failed:', e);
+      }
+      
+      // Now extract fresh waveform with force_regenerate flag
+      const rustWaveform = await invoke<any>('extract_audio_waveform', {
+        videoPath: videoSrc,
+        forceRegenerate: true,
+      });
+
+      console.log('[useAudioWaveform] Fresh waveform data from Rust:', {
+        peakCount: rustWaveform.peak_count,
+        sampleRate: rustWaveform.sample_rate,
+        duration: rustWaveform.duration,
+      });
+
+      // Convert Rust data structure to our TypeScript interface
+      const data: WaveformData = {
+        sampleRate: rustWaveform.sample_rate,
+        duration: rustWaveform.duration,
+        peaks: rustWaveform.peaks.map((peak: any) => ({
+          min: peak.min,
+          max: peak.max,
+        })),
+        peakCount: rustWaveform.peak_count,
+      };
+
+      // Cache the fresh result to database
       await setCachedWaveform(videoSrc, data);
       waveformData.value = data;
 
-      console.log('[useAudioWaveform] Real waveform loaded and cached successfully');
+      console.log('[useAudioWaveform] Fresh waveform loaded and cached successfully');
     } catch (err) {
-      console.warn('[useAudioWaveform] Rust backend failed, using Web Audio API fallback:', err);
-      // Fallback to Web Audio API simulation if Rust fails
-      await loadWaveformWithWebAudio(videoSrc, cacheKey);
+      console.error('[useAudioWaveform] Force regeneration failed:', err);
+      error.value = `Failed to regenerate waveform: ${err instanceof Error ? err.message : 'Unknown error'}`;
+    } finally {
+      isLoading.value = false;
     }
   }
 
-  // Load audio using Web Audio API (fallback approach)
-  async function loadWaveformWithWebAudio(videoSrc: string, cacheKey: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const audio = new Audio();
-      audio.crossOrigin = 'anonymous';
-
-      audio.onloadedmetadata = async () => {
-        try {
-          // Create audio context
-          const audioContext = new AudioContext();
-
-          // Create media element source
-          const source = audioContext.createMediaElementSource(audio);
-
-          // Create script processor for analyzing audio
-          const bufferSize = 4096;
-          const analyser = audioContext.createAnalyser();
-          analyser.fftSize = bufferSize;
-
-          // Connect nodes
-          source.connect(analyser);
-          analyser.connect(audioContext.destination);
-
-          // Get audio duration
-          const duration = audio.duration;
-
-          // For fallback, generate multi-resolution simulated waveforms
-          const resolutionLevels = [
-            { name: 'low', samples: 500 },
-            { name: 'medium', samples: 1000 },
-            { name: 'high', samples: 2000 },
-            { name: 'ultra', samples: 4000 },
-            { name: 'extreme', samples: 8000 },
-            { name: 'maximum', samples: 16000 },
-            { name: 'insane', samples: 32000 },
-            { name: 'godlike', samples: 64000 },
-          ];
-
-          const resolutions: Record<string, WaveformResolution> = {};
-
-          for (const { name, samples } of resolutionLevels) {
-            const actualSamples = Math.min(samples, Math.floor(duration * 60)); // 60 samples per second max
-            const peaks: WaveformPeak[] = [];
-
-            // Generate simulated peaks for demonstration
-            for (let i = 0; i < actualSamples; i++) {
-              // Create realistic-looking waveform pattern
-              const t = i / actualSamples;
-              const baseAmplitude = 0.3 + Math.random() * 0.2;
-              const variation = Math.sin(t * Math.PI * 8) * 0.2 + Math.random() * 0.1;
-
-              peaks.push({
-                min: -(baseAmplitude + Math.abs(variation)),
-                max: baseAmplitude + Math.abs(variation),
-              });
-            }
-
-            resolutions[name] = {
-              peaks,
-              peakCount: peaks.length,
-              samplesPerPeak: Math.floor((duration * 44100) / actualSamples),
-            };
-          }
-
-          const data: WaveformData = {
-            sampleRate: 44100,
-            duration,
-            resolutions,
-          };
-
-          // Cache the result
-          setCachedWaveform(cacheKey, data);
-          waveformData.value = data;
-
-          // Clean up
-          audio.pause();
-          source.disconnect();
-          analyser.disconnect();
-
-          console.log('[useAudioWaveform] Fallback waveform generated successfully');
-          resolve();
-        } catch (err) {
-          reject(err);
-        }
-      };
-
-      audio.onerror = () => {
-        reject(new Error(`Failed to load audio: ${audio.error?.message || 'Unknown error'}`));
-      };
-
-      audio.src = videoSrc;
-    });
-  }
-
-  // Get optimal resolution level based on zoom and width
-  function getOptimalResolution(zoomLevel: number, width: number): string {
-    if (!waveformData.value || !hasWaveform.value) {
-      return 'high'; // Default fallback
-    }
-
-    const effectiveWidth = width * zoomLevel;
-    const duration = waveformData.value.duration;
-
-    // Calculate samples per pixel at current zoom
-    const samplesPerPixel = (duration * 44100) / effectiveWidth;
-
-    // Select resolution based on zoom level (matching Rust logic)
-    if (samplesPerPixel > 5000) {
-      return 'low'; // 500 peaks - very zoomed out
-    } else if (samplesPerPixel > 2000) {
-      return 'medium'; // 1000 peaks - zoomed out
-    } else if (samplesPerPixel > 800) {
-      return 'high'; // 2000 peaks - normal
-    } else if (samplesPerPixel > 300) {
-      return 'ultra'; // 4000 peaks - zoomed in
-    } else if (samplesPerPixel > 120) {
-      return 'extreme'; // 8000 peaks - very zoomed in
-    } else if (samplesPerPixel > 50) {
-      return 'maximum'; // 16000 peaks - maximum zoom
-    } else if (samplesPerPixel > 20) {
-      return 'insane'; // 32000 peaks - extreme detail
-    } else {
-      return 'godlike'; // 64000 peaks - sample-level precision
-    }
-  }
-
-  // Get waveform peaks for rendering in a specific time range using optimal resolution
+  // Get waveform peaks for rendering in a specific time range
   function getWaveformForTimeRange(
     startTime: number,
     endTime: number,
     width: number,
-    zoomLevel: number = 1
+    _zoomLevel: number = 1
   ): WaveformPeak[] {
     if (!waveformData.value || !hasWaveform.value) {
       return [];
     }
 
-    const { duration, resolutions } = waveformData.value;
-    const resolution = getOptimalResolution(zoomLevel, width);
-    const resolutionData = resolutions[resolution];
+    const { duration, peaks, channelData } = waveformData.value;
 
-    if (!resolutionData || !resolutionData.peaks) {
-      // Fallback to any available resolution
-      const fallbackResolution = Object.values(resolutions)[0];
-      if (!fallbackResolution) return [];
-
-      const peaks = fallbackResolution.peaks;
-      const startRatio = startTime / duration;
-      const endRatio = endTime / duration;
-      const startIndex = Math.floor(startRatio * peaks.length);
-      const endIndex = Math.ceil(endRatio * peaks.length);
-      return peaks.slice(startIndex, endIndex);
+    // Prefer raw channel data for highest fidelity
+    if (channelData && channelData.length > 0) {
+      const startSample = Math.floor((startTime / duration) * channelData.length);
+      // Ensure we have at least some width to calculate
+      const targetWidth = Math.max(1, Math.floor(width));
+      return calculatePeaksFromRaw(channelData, targetWidth, startTime, endTime - startTime);
     }
 
-    const peaks = resolutionData.peaks;
+    // Fallback to pre-computed peaks
+    if (!peaks || peaks.length === 0) {
+      return [];
+    }
+
     const startRatio = startTime / duration;
     const endRatio = endTime / duration;
 
     const startIndex = Math.floor(startRatio * peaks.length);
     const endIndex = Math.ceil(endRatio * peaks.length);
 
-    return peaks.slice(startIndex, endIndex);
+    const slicedPeaks = peaks.slice(startIndex, endIndex);
+
+    // Downsample if we have more peaks than pixels
+    if (slicedPeaks.length > width) {
+      return downsamplePeaks(slicedPeaks, Math.floor(width));
+    }
+
+    return slicedPeaks;
   }
 
-  // Get normalized waveform data for canvas rendering with optimal resolution
+  // Get normalized waveform data for canvas rendering
+  // Dynamically downsamples from the single high-resolution source
   function getNormalizedWaveform(
     width: number,
     _height: number,
@@ -439,59 +537,57 @@ export function useAudioWaveform() {
       return { peaks: [], barWidth: 1, resolution: 'high' };
     }
 
-    const { resolutions } = waveformData.value;
-    const resolution = getOptimalResolution(zoomLevel, width);
-    const resolutionData = resolutions[resolution];
+    const { peaks, channelData, duration } = waveformData.value;
 
-    if (!resolutionData || !resolutionData.peaks) {
-      // Fallback to any available resolution
-      const fallbackResolution = Object.values(resolutions)[0];
-      if (!fallbackResolution) return { peaks: [], barWidth: 1, resolution: 'high' };
-
-      const peaks = fallbackResolution.peaks;
-      const targetPeakCount = Math.min(width, peaks.length);
-      const step = peaks.length / targetPeakCount;
-      const normalizedPeaks: WaveformPeak[] = [];
-
-      for (let i = 0; i < targetPeakCount; i++) {
-        const sourceIndex = Math.floor(i * step);
-        const peak = peaks[sourceIndex];
-        if (peak) normalizedPeaks.push(peak);
-      }
-
+    // Prefer raw channel data
+    if (channelData && channelData.length > 0) {
+      const effectiveWidth = width * zoomLevel;
+      // Use the raw data to calculate exactly the peaks we need
+      const calculatedPeaks = calculatePeaksFromRaw(channelData, Math.floor(effectiveWidth), 0, duration);
+      
+      const barWidth = Math.max(1, width / calculatedPeaks.length);
+      
       return {
-        peaks: normalizedPeaks,
-        barWidth: Math.max(1, width / normalizedPeaks.length),
-        resolution: Object.keys(resolutions)[0] || 'high',
+        peaks: calculatedPeaks,
+        barWidth,
+        resolution: 'maximum' // Raw data is always maximum resolution
       };
     }
 
-    let peaks = resolutionData.peaks;
+    if (!peaks || peaks.length === 0) {
+      return { peaks: [], barWidth: 1, resolution: 'high' };
+    }
 
-    // For full timeline view, ensure we have enough peaks to cover the entire duration
-    // The peaks from Rust should already represent the full audio duration
-    // But we need to make sure we're using the right amount for the canvas width
+    // Calculate target peak count based on canvas width and zoom level
+    const effectiveWidth = width * zoomLevel;
+    const targetPeakCount = Math.min(Math.floor(effectiveWidth), peaks.length);
 
-    // Calculate how many peaks we can actually display on the canvas
-    const maxDisplayablePeaks = Math.floor(width / 1); // Minimum 1px per peak
-    if (peaks.length > maxDisplayablePeaks) {
-      // Downsample if we have too many peaks for the canvas width
-      const step = peaks.length / maxDisplayablePeaks;
-      const downsampledPeaks: WaveformPeak[] = [];
+    // Downsample if necessary
+    const displayPeaks =
+      targetPeakCount < peaks.length ? downsamplePeaks(peaks, targetPeakCount) : peaks;
 
-      for (let i = 0; i < maxDisplayablePeaks; i++) {
-        const sourceIndex = Math.floor(i * step);
-        if (sourceIndex < peaks.length) {
-          downsampledPeaks.push(peaks[sourceIndex]);
-        }
-      }
+    // Calculate bar width to fill the canvas
+    const barWidth = Math.max(1, width / displayPeaks.length);
 
-      peaks = downsampledPeaks;
+    // Determine a resolution label for debugging/display
+    let resolution = 'high';
+    if (displayPeaks.length >= 16000) {
+      resolution = 'maximum';
+    } else if (displayPeaks.length >= 8000) {
+      resolution = 'extreme';
+    } else if (displayPeaks.length >= 4000) {
+      resolution = 'ultra';
+    } else if (displayPeaks.length >= 2000) {
+      resolution = 'high';
+    } else if (displayPeaks.length >= 1000) {
+      resolution = 'medium';
+    } else {
+      resolution = 'low';
     }
 
     return {
-      peaks,
-      barWidth: Math.max(1, width / peaks.length),
+      peaks: displayPeaks,
+      barWidth,
       resolution,
     };
   }
@@ -515,7 +611,9 @@ export function useAudioWaveform() {
     loadWaveformFromVideo,
     getWaveformForTimeRange,
     getNormalizedWaveform,
-    getOptimalResolution,
+    clearCachedWaveform,
+    clearAllCachedWaveforms,
+    forceRegenerateWaveform,
     reset,
   };
 }

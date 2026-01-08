@@ -364,6 +364,7 @@
     Loader2,
     Building2,
     Image as ImageIcon,
+    Sparkles,
   } from 'lucide-vue-next';
   import type { Sticker as StickerType, ManualFramingConfigs } from '@/types';
   import { getAllImageAssets, type ImageAsset } from '@/services/database';
@@ -422,10 +423,22 @@
     { value: 'fade', label: 'Fade' },
   ];
 
+  const motionPresets = [
+    { value: 'none' as const, label: 'None', description: 'Static sticker' },
+    { value: 'fade' as const, label: 'Fade', description: 'Soft fade in/out', duration: 0.4 },
+    { value: 'slide-up' as const, label: 'Slide Up', description: 'Rise from bottom', duration: 0.5 },
+    { value: 'pop' as const, label: 'Pop', description: 'Pop & scale', duration: 0.35 },
+  ];
+
   // Computed
   const hasOrganizations = computed(() => {
     const user = authStore.user;
     return user && (user.owned_organization_id || user.created_by_organization_id);
+  });
+
+  const selectedSticker = computed(() => {
+    if (!selectedStickerId.value) return null;
+    return props.stickers.find((s) => s.id === selectedStickerId.value) || null;
   });
 
   const personalImagesFiltered = computed(() => {
@@ -469,6 +482,25 @@
     if (selectedStickerId.value) {
       emit('selectSticker', id);
     }
+  }
+
+  function motionPresetLabel(preset: StickerType['motionPreset']): string {
+    const found = motionPresets.find((p) => p.value === preset);
+    return found?.label || 'None';
+  }
+
+  function applyMotionPreset(preset: StickerType['motionPreset']) {
+    if (!selectedStickerId.value) return;
+    const defaultDuration = motionPresets.find((p) => p.value === preset)?.duration ?? 0.4;
+    emit('updateSticker', selectedStickerId.value, {
+      motionPreset: preset,
+      motionDuration: defaultDuration,
+    });
+  }
+
+  function updateMotionDuration(duration: number) {
+    if (!selectedStickerId.value || Number.isNaN(duration) || duration <= 0) return;
+    emit('updateSticker', selectedStickerId.value, { motionDuration: duration });
   }
 
   function switchToRatio(ratio: string) {

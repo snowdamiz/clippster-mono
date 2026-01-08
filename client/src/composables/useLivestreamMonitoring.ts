@@ -22,22 +22,27 @@ import type {
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useCreditBalance } from './useCreditBalance';
 import { useDvrRecording } from './useDvrRecording';
+import { useToast } from './useToast';
 
 const POLL_INTERVAL_MS = 30_000;
 
 // Global State
-const activeSessions = ref<Map<string, LiveSession>>(new Map());
-const failedSessions = ref<Map<string, number>>(new Map()); // streamerId -> timestamp
-const monitoredStreamers = ref<
-  Map<string, { streamer: MonitoredStreamer; options: { detectClips: boolean } }>
->(new Map());
+type MonitoredStreamerEntry = { streamer: MonitoredStreamer; options: { detectClips: boolean } };
+type ActiveSessionsMap = Map<string, LiveSession>;
+type FailedSessionsMap = Map<string, number>;
+type MonitoredStreamersMap = Map<string, MonitoredStreamerEntry>;
+type DvrSessionsMap = Map<string, { mintId: string }>;
+
+const activeSessions = ref<ActiveSessionsMap>(new Map());
+const failedSessions = ref<FailedSessionsMap>(new Map()); // streamerId -> timestamp
+const monitoredStreamers = ref<MonitoredStreamersMap>(new Map());
 const pollingHandle = ref<number | null>(null);
 // isMonitoring is true if we are actively polling any streamers
 const isMonitoring = computed(() => monitoredStreamers.value.size > 0);
 
 // Track DVR sessions for watched (but not persistently recorded) streamers
 // Key: streamerId, Value: { mintId }
-const dvrSessions = ref<Map<string, { mintId: string }>>(new Map());
+const dvrSessions = ref<DvrSessionsMap>(new Map());
 
 // Get the DVR recording composable instance (shared singleton)
 const dvrRecording = useDvrRecording();
@@ -50,6 +55,25 @@ const unlistenFunctions: UnlistenFn[] = [];
 
 // Instantiate segment processing once to maintain queue state if needed
 const { handleSegmentReady } = useLivestreamSegmentProcessing();
+const { success: showSuccess } = useToast();
+
+function updateActiveSessionsMap(mutator: (map: ActiveSessionsMap) => void) {
+  const next = new Map(activeSessions.value);
+  mutator(next);
+  activeSessions.value = next;
+}
+
+function updateMonitoredStreamersMap(mutator: (map: MonitoredStreamersMap) => void) {
+  const next = new Map(monitoredStreamers.value);
+  mutator(next);
+  monitoredStreamers.value = next;
+}
+
+function updateDvrSessionsMap(mutator: (map: DvrSessionsMap) => void) {
+  const next = new Map(dvrSessions.value);
+  mutator(next);
+  dvrSessions.value = next;
+}
 
 async function fetchLiveStatus(mintId: string): Promise<LiveStatus> {
   try {
@@ -71,6 +95,21 @@ async function fetchLiveStatus(mintId: string): Promise<LiveStatus> {
     console.warn('[LiveMonitor] Failed to check live status', error);
     return { isLive: false };
   }
+}
+
+async function setAutoDvr(streamerId: string, enabled: boolean) {
+  await updateMonitoredStreamer(streamerId, { auto_dvr: enabled ? 1 : 0 });
+  updateMonitoredStreamersMap((map) => {
+    const existing = map.get(streamerId);
+    if (!existing) return;
+    map.set(streamerId, {
+      ...existing,
+      streamer: {
+        ...existing.streamer,
+        autoDvr: enabled,
+      },
+    });
+  });
 }
 
 // Helper to generate unique IDs
@@ -716,6 +755,8 @@ export function useLivestreamMonitoring() {
         profileImageUrl: streamer.profileImageUrl,
       });
 
+      showSuccess(`${streamer.displayName} is live`, options.detectClips ? 'Auto-detect recording started.' : 'Recording started.');
+
       // Initial segment start log (use streamerId-1 as key)
       const id = addActivityLog({
         streamerId: streamer.id,
@@ -747,6 +788,7 @@ export function useLivestreamMonitoring() {
   return {
     startMonitoring,
     stopMonitoring,
+    setAutoDvr,
     activeSessions,
     monitoredStreamers,
     isMonitoring,

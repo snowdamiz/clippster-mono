@@ -5,6 +5,7 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.Organizations
   alias ClippsterServer.AI
   alias ClippsterServer.AppSettings
+  alias ClippsterServer.BetaCodes
 
   def get_ai_usage_stats(conn, _params) do
     stats = AI.get_usage_stats()
@@ -460,5 +461,97 @@ defmodule ClippsterServerWeb.AdminController do
     conn
     |> put_status(400)
     |> json(%{success: false, error: "Missing required parameters: key and value"})
+  end
+
+  # ============================================================================
+  # Beta Codes Management
+  # ============================================================================
+
+  @doc """
+  Generate new beta codes.
+  Requires admin authentication.
+  """
+  def generate_beta_codes(conn, %{"count" => count}) when is_integer(count) do
+    do_generate_beta_codes(conn, count)
+  end
+
+  def generate_beta_codes(conn, %{"count" => count}) when is_binary(count) do
+    case Integer.parse(count) do
+      {int_count, ""} -> do_generate_beta_codes(conn, int_count)
+      _ ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid count parameter"})
+    end
+  end
+
+  def generate_beta_codes(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(%{success: false, error: "Missing required parameter: count"})
+  end
+
+  defp do_generate_beta_codes(conn, count) when count > 0 and count <= 100 do
+    case BetaCodes.generate_codes(count) do
+      {:ok, codes} ->
+        codes_data = Enum.map(codes, fn code ->
+          %{
+            id: code.id,
+            code: code.code,
+            created_at: code.inserted_at
+          }
+        end)
+
+        json(conn, %{
+          success: true,
+          message: "Generated #{count} beta codes",
+          codes: codes_data
+        })
+
+      {:error, reason} ->
+        conn
+        |> put_status(500)
+        |> json(%{success: false, error: "Failed to generate codes: #{inspect(reason)}"})
+    end
+  end
+
+  defp do_generate_beta_codes(conn, _count) do
+    conn
+    |> put_status(400)
+    |> json(%{success: false, error: "Count must be between 1 and 100"})
+  end
+
+  @doc """
+  List all beta codes with their usage status.
+  Requires admin authentication.
+  """
+  def list_beta_codes(conn, _params) do
+    codes = BetaCodes.list_codes()
+    stats = BetaCodes.get_code_stats()
+
+    codes_data = Enum.map(codes, fn code ->
+      %{
+        id: code.id,
+        code: code.code,
+        used: not is_nil(code.used_by_user_id),
+        used_at: code.used_at,
+        used_by: if code.used_by_user do
+          %{
+            id: code.used_by_user.id,
+            email: code.used_by_user.email,
+            wallet_address: code.used_by_user.wallet_address
+          }
+        else
+          nil
+        end,
+        created_at: code.inserted_at
+      }
+    end)
+
+    json(conn, %{
+      success: true,
+      codes: codes_data,
+      stats: stats
+    })
   end
 end

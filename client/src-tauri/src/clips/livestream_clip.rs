@@ -18,10 +18,12 @@ pub struct ClipExtractionProgress {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SegmentInfo {
-    pub segment_number: i32,
+    #[serde(rename = "segmentNumber")]
+    pub _segment_number: i32,
     pub file_path: String,
     pub start_time: f64,
-    pub duration: f64,
+    #[serde(rename = "duration")]
+    pub _duration: f64,
     pub end_time: f64,
 }
 
@@ -184,6 +186,46 @@ pub async fn extract_livestream_clip(
     
     // Cleanup temp file
     let _ = std::fs::remove_file(&extracted_path);
+
+    // Validate the resulting clip has real duration (defensive against empty outputs).
+    // If duration is missing/zero but the file is non-trivial in size, allow it (some muxers omit duration).
+    // Otherwise, return a descriptive error that includes file size.
+    let clip_path_str = output_path.to_string_lossy().to_string();
+    let meta = std::fs::metadata(&output_path)
+        .map_err(|e| format!("Failed to stat clip file {}: {}", clip_path_str, e))?;
+    let file_size = meta.len();
+
+    match crate::clips::video_info::get_video_info(&app, &clip_path_str).await {
+        Ok(info) => {
+            let duration = info.duration.unwrap_or(0.0);
+            if duration <= 0.01 {
+                if file_size < 1_000 {
+                    return Err(format!(
+                        "Clip file has zero duration after extraction (size {} bytes): {}",
+                        file_size, clip_path_str
+                    ));
+                } else {
+                    println!(
+                        "[Rust] Clip duration missing/zero but file is {} bytes, accepting: {}",
+                        file_size, clip_path_str
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            if file_size < 1_000 {
+                return Err(format!(
+                    "Failed to inspect clip duration and file is too small ({} bytes): {} ({})",
+                    file_size, clip_path_str, e
+                ));
+            } else {
+                println!(
+                    "[Rust] Failed to inspect clip duration ({}), but file is {} bytes, accepting: {}",
+                    e, file_size, clip_path_str
+                );
+            }
+        }
+    }
 
     let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
         progress: 100.0,

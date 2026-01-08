@@ -67,6 +67,7 @@ export {
   getClipDetectionSessionsByProjectId,
   updateClipDetectionSession,
   deleteClipDetectionSession,
+  getOrCreateManualSession,
 } from './database/clip-detection-sessions';
 
 // Re-export clip version functions

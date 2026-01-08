@@ -15,6 +15,7 @@ mod waveform;
 mod focal_detection;
 mod commands;
 mod dvr;
+mod hls;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -411,6 +412,36 @@ pub fn run() {
                             sql: include_str!("../migrations/065_add_auto_dvr_to_monitored_streamers.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 67,
+                            description: "add_source_id_to_audio_tracks",
+                            sql: include_str!("../migrations/067_add_source_id_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 68,
+                            description: "add_audio_extracted_to_sources",
+                            sql: include_str!("../migrations/068_add_audio_extracted_to_sources.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 70,
+                            description: "add_keyframes_to_clip_watermarks",
+                            sql: include_str!("../migrations/070_add_keyframes_to_clip_watermarks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 71,
+                            description: "add_effects_transitions",
+                            sql: include_str!("../migrations/071_add_effects_transitions.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 72,
+                            description: "add_pan_to_audio_tracks",
+                            sql: include_str!("../migrations/072_add_pan_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -418,6 +449,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // OTA Updates - required for automatic app updates
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -528,11 +563,13 @@ pub fn run() {
             // Audio commands
             audio::extract_audio_from_video,
             audio::extract_and_chunk_audio,
+            audio::extract_audio_to_file,
 
             // Waveform commands
             waveform::extract_audio_waveform,
             waveform::get_cached_waveform,
             waveform::save_waveform_to_cache,
+            waveform::clear_waveform_cache,
 
             // Storage commands
             storage::get_storage_paths,
@@ -546,6 +583,9 @@ pub fn run() {
             storage::read_file_as_data_url,
             storage::delete_video_file,
             storage::get_video_duration,
+            storage::get_video_metadata,
+            storage::get_audio_metadata,
+            storage::get_image_metadata,
             storage::copy_watermark_to_storage,
             storage::delete_watermark_file,
             storage::merge_video_segments,
@@ -591,7 +631,15 @@ pub fn run() {
             dvr::read_dvr_chunk,
             dvr::read_all_dvr_chunks,
             dvr::read_dvr_init_segment,
-            dvr::read_dvr_cluster
+            dvr::read_dvr_cluster,
+            dvr::build_vod_from_dvr,
+            
+            // HLS commands
+            hls::start_hls_recording,
+            hls::stop_hls_recording,
+            hls::cleanup_hls_recordings,
+            hls::get_recording_output_dir,
+            hls::get_hls_segments
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

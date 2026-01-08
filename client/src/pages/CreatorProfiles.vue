@@ -277,28 +277,26 @@
                       >
                         <Trash2 class="w-3.5 h-3.5" />
                       </button>
-                      <!-- Separator before monitoring controls -->
+                      <!-- Live Clip Controls -->
                       <div
-                        v-if="isLiveClipEnabled && creator.platform_links.some((l) => l.platform === 'pumpfun')"
+                        v-if="isLiveClipEnabled && hasPumpfunLink(creator)"
                         class="w-px h-5 bg-border/60 mx-1"
                       ></div>
-                      <!-- Monitoring Controls (only shown when Live Clip feature is enabled) -->
-                      <template
-                        v-if="isLiveClipEnabled && creator.platform_links.some((l) => l.platform === 'pumpfun')"
+                      <div
+                        v-if="isLiveClipEnabled && hasPumpfunLink(creator)"
+                        class="flex items-center gap-1"
                       >
                         <template v-if="!isCreatorMonitored(creator)">
-                          <!-- Record Button -->
                           <button
-                            @click="startCreatorMonitoring(creator, false)"
+                            @click.stop="startCreatorMonitoring(creator, false)"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors"
                             title="Record Only"
                           >
                             <div class="w-2 h-2 rounded-full bg-red-500"></div>
                             Rec
                           </button>
-                          <!-- Auto-Detect Button -->
                           <button
-                            @click="startCreatorMonitoring(creator, true)"
+                            @click.stop="startCreatorMonitoring(creator, true)"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
                             title="Auto-Detect Clips"
                           >
@@ -307,9 +305,8 @@
                           </button>
                         </template>
                         <template v-else>
-                          <!-- Stop Button -->
                           <button
-                            @click="stopCreatorMonitoring(creator)"
+                            @click.stop="stopCreatorMonitoring(creator)"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors"
                             title="Stop Monitoring"
                           >
@@ -317,7 +314,50 @@
                             Stop
                           </button>
                         </template>
-                      </template>
+                        <button
+                          @click.stop="watchCreator(creator)"
+                          :disabled="!canWatchCreator(creator)"
+                          class="flex items-center gap-2 px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-all border"
+                          :class="
+                            canWatchCreator(creator)
+                              ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30'
+                              : 'bg-muted/40 text-muted-foreground/60 border-border/50 cursor-not-allowed'
+                          "
+                          :title="
+                            canWatchCreator(creator)
+                              ? 'Watch Live'
+                              : 'Watch becomes available when the creator is monitored and live'
+                          "
+                        >
+                          <Eye class="w-3.5 h-3.5" />
+                          Watch
+                          <span
+                            v-if="hasCreatorDvr(creator) && canWatchCreator(creator)"
+                            class="text-[10px] bg-green-500/20 text-green-400 px-1 py-0.5 rounded-full border border-green-500/30"
+                          >
+                            DVR
+                          </span>
+                        </button>
+                        <button
+                          @click.stop="toggleCreatorAutoDvr(creator)"
+                          :disabled="!isCreatorMonitored(creator)"
+                          class="h-8 px-3 rounded-md text-xs font-medium transition-all border"
+                          :class="[
+                            isCreatorMonitored(creator)
+                              ? isCreatorAutoDvrEnabled(creator)
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                                : 'bg-background text-muted-foreground border-border/50 hover:bg-muted/50'
+                              : 'bg-muted/40 text-muted-foreground/60 border-border/40 cursor-not-allowed',
+                          ]"
+                          :title="
+                            isCreatorMonitored(creator)
+                              ? 'Automatically start persistent recording when streamer goes live'
+                              : 'Start monitoring to manage Auto DVR'
+                          "
+                        >
+                          Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -396,6 +436,7 @@
     deleteCreatorProfile,
     getMonitoredStreamer,
     getMonitoredStreamerByMint,
+    updateMonitoredStreamer,
     type CreatorProfileWithLinks,
   } from '@/services/database';
   import {
@@ -421,8 +462,10 @@
     Square,
     Loader2,
     Building2,
+    Eye,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
+  import { useLivestreamStore } from '@/stores/livestream';
 
   // Extended type that can represent both local and org profiles
   interface DisplayCreatorProfile extends CreatorProfileWithLinks {
@@ -432,11 +475,90 @@
     server_id?: number; // ID on the server for org profiles
   }
 
+  function getMonitoredStreamerId(creator: DisplayCreatorProfile): string | null {
+    for (const link of creator.platform_links) {
+      if (link.monitored_streamer_id) {
+        return link.monitored_streamer_id;
+      }
+    }
+    return null;
+  }
+
+  function isCreatorAutoDvrEnabled(creator: DisplayCreatorProfile): boolean {
+    const streamerId = getMonitoredStreamerId(creator);
+    if (!streamerId) return false;
+    const entry = monitoredStreamers.value.get(streamerId);
+    return Boolean(entry?.streamer?.autoDvr);
+  }
+
+  function hasCreatorDvr(creator: DisplayCreatorProfile): boolean {
+    const streamerId = getMonitoredStreamerId(creator);
+    if (!streamerId) return false;
+    return hasDvrRecording(streamerId);
+  }
+
+  function canWatchCreator(creator: DisplayCreatorProfile): boolean {
+    if (!isCreatorLive(creator)) return false;
+    const streamerId = getMonitoredStreamerId(creator);
+    const pumpfunLink = creator.platform_links.find((l) => l.platform === 'pumpfun');
+    return Boolean(streamerId && pumpfunLink?.platform_id);
+  }
+
+  function watchCreator(creator: DisplayCreatorProfile) {
+    const pumpfunLink = creator.platform_links.find((l) => l.platform === 'pumpfun');
+    const streamerId = getMonitoredStreamerId(creator);
+    if (!pumpfunLink || !pumpfunLink.platform_id || !streamerId) {
+      showError('Cannot Watch', 'Start monitoring this creator to watch their stream.');
+      return;
+    }
+
+    const entry = monitoredStreamers.value.get(streamerId)?.streamer;
+    const displayName = entry?.displayName || pumpfunLink.display_name || creator.name;
+    const profileImage = entry?.profileImageUrl || pumpfunLink.profile_image_url || getCreatorProfileImage(creator);
+
+    livestreamStore.openWatchDialog(pumpfunLink.platform_id, streamerId, displayName, profileImage);
+  }
+
+  async function toggleCreatorAutoDvr(creator: DisplayCreatorProfile) {
+    const streamerId = getMonitoredStreamerId(creator);
+    if (!streamerId) {
+      showError('Auto DVR Unavailable', 'Start monitoring this creator before toggling Auto DVR.');
+      return;
+    }
+
+    const currentEntry = monitoredStreamers.value.get(streamerId);
+    if (!currentEntry) {
+      showError('Auto DVR Unavailable', 'Activate monitoring to manage Auto DVR.');
+      return;
+    }
+
+    const newValue = !Boolean(currentEntry.streamer?.autoDvr);
+
+    try {
+      await updateMonitoredStreamer(streamerId, { auto_dvr: newValue ? 1 : 0 });
+      currentEntry.streamer.autoDvr = newValue;
+      success(
+        newValue ? 'Auto DVR Enabled' : 'Auto DVR Disabled',
+        newValue ? `"${creator.name}" will auto record when live.` : `Auto DVR turned off for "${creator.name}".`
+      );
+    } catch (error) {
+      console.error('[CreatorProfiles] Failed to update Auto DVR', error);
+      showError('Update Failed', 'Could not update Auto DVR settings.');
+    }
+  }
+
   const router = useRouter();
   const authStore = useAuthStore();
   const { success, error: showError } = useToast();
-  const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring } = useLivestreamMonitoring();
+  const {
+    activeSessions,
+    monitoredStreamers,
+    startMonitoring,
+    stopMonitoring,
+    hasDvrRecording,
+  } = useLivestreamMonitoring();
   const { isLiveClipEnabled } = useFeatureFlags();
+  const livestreamStore = useLivestreamStore();
 
   // State
   const loading = ref(true);
@@ -664,6 +786,10 @@
       return (count / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
     }
     return count.toString();
+  }
+
+  function hasPumpfunLink(creator: DisplayCreatorProfile): boolean {
+    return creator.platform_links.some((l) => l.platform === 'pumpfun');
   }
 
   // Monitoring status helpers

@@ -1,14 +1,15 @@
 <template>
   <div
     ref="fullscreenContainerRef"
-    class="flex-1 flex flex-col min-h-0 relative"
-    :class="isFullscreen ? 'p-0 bg-black' : 'p-4'"
+    class="flex-1 flex flex-col min-h-0 relative items-center justify-center"
+    :class="isFullscreen ? 'p-0 bg-black' : 'p-0'"
   >
-    <!-- Video Container -->
+    <!-- Video Container - constrained to aspect ratio -->
     <div
       ref="videoContainerRef"
-      class="flex-1 flex items-center justify-center bg-black overflow-hidden relative"
+      class="flex items-center justify-center bg-black overflow-hidden relative max-w-full max-h-full"
       :class="isFullscreen ? 'rounded-none' : 'rounded-lg'"
+      :style="{ aspectRatio: previewAspectRatio.replace(':', '/'), width: 'auto', height: 'auto' }"
     >
       <!-- Single region mode: Main video with CSS transforms applied directly (no extra decoding) -->
       <div
@@ -119,130 +120,27 @@
           {{ previewAspectRatio }}
         </div>
 
-        <!-- Text Overlays (Draggable with Resize Handles) -->
-        <div
-          v-for="overlay in visibleTextOverlays"
-          :key="overlay.id"
-          :data-overlay-id="overlay.id"
-          class="absolute text-overlay select-none group"
-          :class="[
-            getTextOverlayClass(overlay),
-            {
-              'cursor-move pointer-events-auto': true,
-              'ring-2 ring-violet-500 ring-offset-2 ring-offset-transparent':
-                (dragState.type === 'text' && dragState.id === overlay.id) || resizeState.id === overlay.id,
-              'hover:ring-2 hover:ring-violet-400/50': dragState.id !== overlay.id && resizeState.id !== overlay.id,
-            },
-          ]"
-          :style="getTextOverlayStyle(overlay)"
-          @mousedown="(e) => startDrag(e, 'text', overlay.id, getOverlayConfigForRatio(overlay).position)"
-        >
-          <!-- Left Resize Handle -->
-          <div
-            class="absolute left-0 top-0 bottom-0 w-2 -ml-1 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
-            @mousedown.stop="(e) => startResize(e, overlay.id, 'left')"
-          >
-            <div class="w-1 h-8 bg-violet-500 rounded-full shadow-lg"></div>
-          </div>
-
-          <!-- Text Content -->
-          <span class="pointer-events-none">{{ overlay.text }}</span>
-
-          <!-- Right Resize Handle -->
-          <div
-            class="absolute right-0 top-0 bottom-0 w-2 -mr-1 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
-            @mousedown.stop="(e) => startResize(e, overlay.id, 'right')"
-          >
-            <div class="w-1 h-8 bg-violet-500 rounded-full shadow-lg"></div>
-          </div>
-        </div>
-
-        <!-- Stickers (Draggable with Resize and Rotate Handles) -->
-        <!-- Wrapper element for positioning (handles stay fixed size) -->
-        <div
-          v-for="sticker in visibleStickers"
-          :key="sticker.id"
-          :data-sticker-id="sticker.id"
-          class="absolute sticker-overlay select-none group pointer-events-auto"
-          :style="getStickerWrapperStyle(sticker)"
-        >
-          <!-- Sticker Content (scaled and rotated) -->
-          <div
-            :class="[getStickerClass(sticker), 'cursor-move']"
-            :style="getStickerContentStyle(sticker)"
-            @mousedown="(e) => startStickerDrag(e, sticker)"
-          >
-            <span v-if="sticker.stickerType === 'emoji'" class="sticker-emoji pointer-events-none select-none">
-              {{ sticker.stickerPath }}
-            </span>
-            <img
-              v-else
-              :src="sticker.stickerPath"
-              class="max-w-none pointer-events-none select-none"
-              :style="getStickerImageStyle(sticker)"
-              draggable="false"
-              alt="Sticker"
-              @load="(e) => onStickerImageLoad(sticker.id, e)"
-            />
-          </div>
-
-          <!-- Selection border (dashed, like POI regions) -->
-          <div
-            class="absolute inset-0 border border-dashed rounded-sm pointer-events-none transition-opacity"
-            :class="[
-              (dragState.type === 'sticker' && dragState.id === sticker.id) ||
-              stickerResizeState.id === sticker.id ||
-              stickerRotateState.id === sticker.id
-                ? 'border-violet-400 opacity-100'
-                : 'border-white/40 opacity-0 group-hover:opacity-100',
-            ]"
-            :style="getStickerBoundsStyle(sticker)"
+        <!-- Unified Track Rendering (New Architecture) -->
+        <template v-if="tracks && tracks.length > 0">
+          <TrackRenderer
+            v-for="track in overlayTracks"
+            :key="track.id"
+            :track="track"
+            :current-time="currentTime"
+            :is-playing="isPlaying"
+            :selected-item-ids="effectiveSelectedItemIds"
+            :canvas-size="containerSize"
+            :scale-overrides="unifiedScaleOverrides"
+            :rotation-overrides="unifiedRotationOverrides"
+            :width-overrides="unifiedWidthOverrides"
+            :position-overrides="unifiedPositionOverrides"
+            :item-style-overrides="unifiedItemStyleOverrides"
+            @item-mousedown="handleTrackItemMousedown"
+            @item-image-load="onItemImageLoad"
+            @item-resize-start="handleTrackItemResizeStart"
+            @item-rotate-start="handleTrackItemRotateStart"
           />
-
-          <!-- Rotation Handle (positioned above sticker, rotates with it) -->
-          <div
-            class="absolute w-5 h-5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-grab active:cursor-grabbing flex items-center justify-center transition-colors shadow-sm opacity-0 group-hover:opacity-100 z-20"
-            :class="{ '!opacity-100': stickerRotateState.id === sticker.id }"
-            :style="getRotationHandleStyle(sticker)"
-            @mousedown.stop="
-              (e) =>
-                startStickerRotate(
-                  e,
-                  sticker.id,
-                  (e.target as HTMLElement).closest('[data-sticker-id]') as HTMLElement,
-                  getStickerConfigForRatio(sticker).rotation
-                )
-            "
-          >
-            <RotateCw class="w-2.5 h-2.5 text-white" />
-          </div>
-
-          <!-- Corner Resize Handles (like POI regions) -->
-          <div
-            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nwse-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
-            :class="{ '!opacity-100': stickerResizeState.id === sticker.id }"
-            :style="getResizeHandleStyle(sticker, 'se')"
-            @mousedown.stop="(e) => startStickerResize(e, sticker)"
-          />
-          <div
-            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nesw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
-            :class="{ '!opacity-100': stickerResizeState.id === sticker.id }"
-            :style="getResizeHandleStyle(sticker, 'sw')"
-            @mousedown.stop="(e) => startStickerResize(e, sticker)"
-          />
-          <div
-            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nesw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
-            :class="{ '!opacity-100': stickerResizeState.id === sticker.id }"
-            :style="getResizeHandleStyle(sticker, 'ne')"
-            @mousedown.stop="(e) => startStickerResize(e, sticker)"
-          />
-          <div
-            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
-            :class="{ '!opacity-100': stickerResizeState.id === sticker.id }"
-            :style="getResizeHandleStyle(sticker, 'nw')"
-            @mousedown.stop="(e) => startStickerResize(e, sticker)"
-          />
-        </div>
+        </template>
 
         <!-- Creator Profile Watermark (Background watermark - not draggable) -->
         <div
@@ -259,239 +157,29 @@
           />
         </div>
 
-        <!-- Watermarks (Draggable with Resize Handles - like stickers) -->
+        <!-- Vignette Overlay (applied as overlay since it's a radial gradient effect) -->
         <div
-          v-for="watermark in visibleWatermarks"
-          :key="watermark.id"
-          :data-watermark-id="watermark.id"
-          class="absolute watermark-overlay select-none group pointer-events-auto"
-          :style="getWatermarkWrapperStyle(watermark)"
-        >
-          <!-- Watermark Content (scaled) -->
-          <div
-            class="cursor-move"
-            :style="getWatermarkContentStyle(watermark)"
-            @mousedown="(e) => startWatermarkDrag(e, watermark)"
-          >
-            <img
-              :src="watermark.previewUrl"
-              class="max-w-none pointer-events-none select-none"
-              :style="getWatermarkImageStyle(watermark)"
-              draggable="false"
-              alt="Watermark"
-              @load="(e) => onWatermarkImageLoad(watermark.id, e)"
-            />
-          </div>
+          v-if="filterSettings?.vignette && filterSettings.vignette > 0"
+          class="absolute inset-0 pointer-events-none"
+          :style="getVignetteStyle()"
+        />
 
-          <!-- Selection border (dashed, like stickers) -->
-          <div
-            class="absolute inset-0 border border-dashed rounded-sm pointer-events-none transition-opacity"
-            :class="[
-              (dragState.type === 'watermark' && dragState.id === watermark.id) ||
-              watermarkResizeState.id === watermark.id
-                ? 'border-violet-400 opacity-100'
-                : 'border-white/40 opacity-0 group-hover:opacity-100',
-            ]"
-            :style="getWatermarkBoundsStyle(watermark)"
-          />
-
-          <!-- Corner Resize Handles (like stickers) -->
-          <div
-            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nwse-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
-            :class="{ '!opacity-100': watermarkResizeState.id === watermark.id }"
-            :style="getWatermarkResizeHandleStyle(watermark, 'se')"
-            @mousedown.stop="(e) => startWatermarkResize(e, watermark)"
-          />
-          <div
-            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nesw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
-            :class="{ '!opacity-100': watermarkResizeState.id === watermark.id }"
-            :style="getWatermarkResizeHandleStyle(watermark, 'sw')"
-            @mousedown.stop="(e) => startWatermarkResize(e, watermark)"
-          />
-          <div
-            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nesw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
-            :class="{ '!opacity-100': watermarkResizeState.id === watermark.id }"
-            :style="getWatermarkResizeHandleStyle(watermark, 'ne')"
-            @mousedown.stop="(e) => startWatermarkResize(e, watermark)"
-          />
-          <div
-            class="absolute w-2.5 h-2.5 rounded-full bg-violet-500 hover:bg-violet-400 cursor-nw-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
-            :class="{ '!opacity-100': watermarkResizeState.id === watermark.id }"
-            :style="getWatermarkResizeHandleStyle(watermark, 'nw')"
-            @mousedown.stop="(e) => startWatermarkResize(e, watermark)"
-          />
-        </div>
-
-        <!-- Subtitles (Draggable with Resize Handles) -->
+        <!-- Temperature Overlay (warm/cool color tint) -->
         <div
-          v-if="subtitleSettings?.enabled && visibleSubtitleWords.length > 0"
-          class="absolute subtitle-overlay select-none cursor-move group pointer-events-auto"
-          :class="{
-            'ring-2 ring-purple-500 ring-offset-2 ring-offset-transparent':
-              dragState.type === 'subtitle' || subtitleResizeState.isResizing,
-            'hover:ring-2 hover:ring-purple-400/50': dragState.type !== 'subtitle' && !subtitleResizeState.isResizing,
-          }"
-          :style="getSubtitleContainerStyle()"
-          @mousedown="startSubtitleDrag"
+          v-if="filterSettings?.temperature && filterSettings.temperature !== 0"
+          class="absolute inset-0 pointer-events-none"
+          :style="getTemperatureStyle()"
+        />
+
+        <!-- Play Button (centered, doesn't block overlay interactions) -->
+        <button
+          v-if="!isPlaying"
+          @click.stop="emit('togglePlay')"
+          class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm flex items-center justify-center transition-colors pointer-events-auto z-10"
         >
-          <!-- Left Resize Handle -->
-          <div
-            class="absolute left-0 top-0 bottom-0 w-2 -ml-1 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10 pointer-events-auto"
-            @mousedown.stop="(e) => startSubtitleResize(e, 'left')"
-          >
-            <div class="w-1 h-8 bg-purple-500 rounded-full shadow-lg"></div>
-          </div>
-
-          <div class="subtitle-text-container pointer-events-none" :style="getSubtitleTextContainerStyle()">
-            <span
-              v-for="(wordInfo, index) in visibleSubtitleWords"
-              :key="`subtitle-word-${wordInfo.start}-${index}`"
-              class="subtitle-word-stack"
-              :class="getSubtitleAnimationClass"
-              :style="{
-                transitionDuration: `${getWordAnimationDuration(wordInfo)}s`,
-                ...getTypewriterStyle(wordInfo),
-              }"
-            >
-              <!-- Hidden span for sizing -->
-              <span
-                class="invisible pointer-events-none select-none"
-                :class="{ 'current-word': isCurrentWord(wordInfo) }"
-                :style="getWordTextStyle"
-              >
-                {{ wordInfo.word }}
-              </span>
-
-              <!-- SVG-based text rendering for proper borders -->
-              <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
-                <defs>
-                  <filter :id="`clip-shadow-${index}`" x="-50%" y="-50%" width="200%" height="200%">
-                    <feDropShadow
-                      v-if="subtitleSettings?.shadowBlur > 0"
-                      :dx="subtitleSettings.shadowOffsetX * overlayScaleFactor"
-                      :dy="subtitleSettings.shadowOffsetY * overlayScaleFactor"
-                      :stdDeviation="subtitleSettings.shadowBlur * overlayScaleFactor"
-                      :flood-color="subtitleSettings.shadowColor"
-                    />
-                  </filter>
-                </defs>
-
-                <g :style="{ transformOrigin: 'center', transformBox: 'fill-box' }">
-                  <!-- Layer 1: Outer border (Border 2) with shadow -->
-                  <text
-                    v-if="subtitleSettings && (subtitleSettings.border2Width > 0 || subtitleSettings.border1Width > 0)"
-                    x="50%"
-                    y="55%"
-                    dominant-baseline="middle"
-                    text-anchor="middle"
-                    :style="{
-                      fontFamily: subtitleSettings.fontFamily,
-                      fontWeight: subtitleSettings.fontWeight,
-                      fontSize: scaledFontSize + 'px',
-                      letterSpacing: scaledLetterSpacing + 'px',
-                      stroke: subtitleSettings.border2Color,
-                      strokeWidth:
-                        (subtitleSettings.border1Width + subtitleSettings.border2Width) * 2 * overlayScaleFactor + 'px',
-                      strokeLinejoin: 'round',
-                      strokeLinecap: 'round',
-                      fill: 'none',
-                      filter: `url(#clip-shadow-${index})`,
-                    }"
-                  >
-                    {{ wordInfo.word }}
-                  </text>
-
-                  <!-- Layer 2: Inner border (Border 1) -->
-                  <text
-                    v-if="subtitleSettings && subtitleSettings.border1Width > 0"
-                    x="50%"
-                    y="55%"
-                    dominant-baseline="middle"
-                    text-anchor="middle"
-                    :style="{
-                      fontFamily: subtitleSettings.fontFamily,
-                      fontWeight: subtitleSettings.fontWeight,
-                      fontSize: scaledFontSize + 'px',
-                      letterSpacing: scaledLetterSpacing + 'px',
-                      stroke: subtitleSettings.border1Color,
-                      strokeWidth: subtitleSettings.border1Width * 2 * overlayScaleFactor + 'px',
-                      strokeLinejoin: 'round',
-                      strokeLinecap: 'round',
-                      fill: 'none',
-                    }"
-                  >
-                    {{ wordInfo.word }}
-                  </text>
-
-                  <!-- Layer 3: Fill text -->
-                  <text
-                    x="50%"
-                    y="55%"
-                    dominant-baseline="middle"
-                    text-anchor="middle"
-                    :class="{ 'current-word-text': isCurrentWord(wordInfo) }"
-                    :style="{
-                      fontFamily: subtitleSettings.fontFamily,
-                      fontWeight: subtitleSettings.fontWeight,
-                      fontSize: scaledFontSize + 'px',
-                      letterSpacing: scaledLetterSpacing + 'px',
-                      fill:
-                        isCurrentWord(wordInfo) && subtitleSettings?.animationStyle === 'karaoke'
-                          ? subtitleSettings?.highlightColor || '#FFFF00'
-                          : subtitleSettings?.textColor || '#FFFFFF',
-                    }"
-                  >
-                    {{ wordInfo.word }}
-                  </text>
-
-                  <!-- Box highlight background -->
-                  <rect
-                    v-if="subtitleSettings?.animationStyle === 'box-highlight' && isCurrentWord(wordInfo)"
-                    x="0"
-                    y="15%"
-                    width="100%"
-                    height="80%"
-                    rx="4"
-                    :fill="subtitleSettings?.highlightColor || '#FFFF00'"
-                    :style="{ opacity: 0.3 }"
-                  />
-                </g>
-              </svg>
-            </span>
-          </div>
-
-          <!-- Right Resize Handle -->
-          <div
-            class="absolute right-0 top-0 bottom-0 w-2 -mr-1 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10 pointer-events-auto"
-            @mousedown.stop="(e) => startSubtitleResize(e, 'right')"
-          >
-            <div class="w-1 h-8 bg-purple-500 rounded-full shadow-lg"></div>
-          </div>
-        </div>
+          <Play class="w-6 h-6 text-white ml-0.5" />
+        </button>
       </div>
-
-      <!-- Vignette Overlay (applied as overlay since it's a radial gradient effect) -->
-      <div
-        v-if="filterSettings?.vignette && filterSettings.vignette > 0"
-        class="absolute inset-0 pointer-events-none"
-        :style="getVignetteStyle()"
-      />
-
-      <!-- Temperature Overlay (warm/cool color tint) -->
-      <div
-        v-if="filterSettings?.temperature && filterSettings.temperature !== 0"
-        class="absolute inset-0 pointer-events-none"
-        :style="getTemperatureStyle()"
-      />
-
-      <!-- Play Button (centered, doesn't block overlay interactions) -->
-      <button
-        v-if="!isPlaying"
-        @click.stop="emit('togglePlay')"
-        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-sm flex items-center justify-center transition-colors pointer-events-auto z-10"
-      >
-        <Play class="w-8 h-8 text-white ml-1" />
-      </button>
     </div>
 
     <!-- Controls Bar -->
@@ -499,29 +187,29 @@
       class="bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04]"
       :class="isFullscreen ? 'absolute bottom-4 left-4 right-4 mt-0 z-50' : 'mt-2'"
     >
-      <div class="flex items-center justify-between px-1.5 py-1.5">
+      <div class="flex items-center justify-between px-1 py-1">
         <!-- Left Controls -->
         <div class="flex items-center gap-1">
           <!-- Go to Beginning Button -->
           <button
             @click="goToBeginning"
-            class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group"
+            class="p-2 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group text-[12px]"
             title="Go to Beginning"
           >
-            <SkipBack class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
+            <SkipBack class="h-3.5 w-3.5 text-white/60 group-hover:text-white transition-colors" />
           </button>
           <!-- Play/Pause Button -->
           <button
             @click="emit('togglePlay')"
-            class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group"
+            class="p-2 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group text-[12px]"
             title="Play/Pause (Space)"
           >
-            <Play v-if="!isPlaying" class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
-            <Pause v-else class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
+            <Play v-if="!isPlaying" class="h-3.5 w-3.5 text-white/60 group-hover:text-white transition-colors" />
+            <Pause v-else class="h-3.5 w-3.5 text-white/60 group-hover:text-white transition-colors" />
           </button>
           <!-- Time Display -->
           <div
-            class="text-white/80 text-xs font-mono bg-white/[0.04] px-3 py-2 rounded-lg ml-1 tabular-nums tracking-tight"
+            class="text-white/80 text-[11px] font-mono bg-white/[0.04] px-2.5 py-1.5 rounded-lg ml-1 tabular-nums tracking-tight"
           >
             <span class="text-white/90">{{ formatDuration(displayCurrentTime) }}</span>
             <span class="text-white/40 mx-1">/</span>
@@ -530,8 +218,39 @@
         </div>
         <!-- Right Controls -->
         <div class="flex items-center gap-2 pr-1">
+          <!-- Playback Speed Control -->
+          <div class="relative">
+            <button
+              @click="showSpeedMenu = !showSpeedMenu"
+              class="flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group text-[11px] font-medium text-white/80"
+              title="Playback Speed"
+            >
+              <span>{{ playbackRate }}x</span>
+            </button>
+
+            <!-- Speed Menu -->
+            <div
+              v-if="showSpeedMenu"
+              class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl overflow-hidden min-w-[60px] flex flex-col z-50 py-1"
+            >
+              <button
+                v-for="rate in [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]"
+                :key="rate"
+                @click="setPlaybackRate(rate)"
+                class="px-3 py-1.5 text-[11px] hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-2"
+                :class="playbackRate === rate ? 'text-violet-400 font-bold bg-violet-500/10' : 'text-white/70'"
+              >
+                <span>{{ rate }}x</span>
+                <Check v-if="playbackRate === rate" :size="10" />
+              </button>
+            </div>
+
+            <!-- Click outside handler -->
+            <div v-if="showSpeedMenu" class="fixed inset-0 z-40" @click="showSpeedMenu = false"></div>
+          </div>
+
           <!-- Volume Control -->
-          <div class="flex items-center gap-2 px-2 py-1.5">
+          <div class="flex items-center gap-2 px-1.5 py-1">
             <button
               @click="toggleMute"
               class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group"
@@ -539,11 +258,11 @@
             >
               <VolumeX
                 v-if="isMuted || volume === 0"
-                class="h-4 w-4 text-white/50 group-hover:text-white/80 transition-colors"
+                class="h-3.5 w-3.5 text-white/50 group-hover:text-white/80 transition-colors"
               />
-              <Volume2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
+              <Volume2 v-else class="h-3.5 w-3.5 text-white/60 group-hover:text-white/90 transition-colors" />
             </button>
-            <div class="relative w-24 h-1 bg-white/10 rounded-full">
+            <div class="relative w-20 h-1 bg-white/10 rounded-full">
               <div
                 class="absolute left-0 top-0 h-full bg-white/40 rounded-full transition-all duration-150"
                 :style="{ width: `${volume * 100}%` }"
@@ -562,11 +281,14 @@
           <!-- Fullscreen Button -->
           <button
             @click="toggleFullscreen"
-            class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group ml-1"
-            :title="isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'"
+            class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group"
+            title="Toggle Fullscreen"
           >
-            <Minimize2 v-if="isFullscreen" class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
-            <Maximize2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
+            <Minimize2
+              v-if="isFullscreen"
+              class="h-3.5 w-3.5 text-white/60 group-hover:text-white/90 transition-colors"
+            />
+            <Maximize2 v-else class="h-3.5 w-3.5 text-white/60 group-hover:text-white/90 transition-colors" />
           </button>
         </div>
       </div>
@@ -576,23 +298,25 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2 } from 'lucide-vue-next';
-  import type {
-    TextOverlay,
-    Sticker,
-    FilterSettings,
-    ManualFramingConfigs,
+  import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2, Check } from 'lucide-vue-next';
+  import TrackRenderer from './TrackRenderer.vue';
+  import { AnimationService } from '@/services/AnimationService';
+  import type { 
+    TextOverlay, 
+    Sticker, 
+    FilterSettings, 
+    ManualFramingConfigs, 
     ClipWatermark,
     ClipWatermarkRatioConfig,
     ClipSubtitleSettings,
     WordInfo,
     WhisperSegment,
+    VideoEditorTransition,
+    TransitionState,
+    ClipSegment,
   } from '@/types';
-
-  interface SegmentInput {
-    start_time: number;
-    end_time: number;
-  }
+  import type { Track, TimelineItem } from '@/types/timeline-model';
+  import { calculateTransitionState } from '@/types';
 
   interface DragState {
     isDragging: boolean;
@@ -660,7 +384,7 @@
       watermarks?: ClipWatermark[];
       creatorProfileWatermarkSettings?: any | null; // Creator profile watermark (background watermark for all exports)
       filterSettings: FilterSettings | null;
-      segments?: SegmentInput[];
+      segments?: ClipSegment[];
       previewAspectRatio: string; // Currently previewed aspect ratio (e.g., "16:9")
       selectedAspectRatios: string[]; // All selected aspect ratios
       framingConfigs: ManualFramingConfigs; // Framing configurations per aspect ratio
@@ -674,8 +398,14 @@
       editorMode?: boolean;
       // Total duration for editor mode (sum of all source durations)
       editorTotalDuration?: number;
-      // Active crossfade transition (when sources overlap)
-      activeTransition?: { startTime: number; endTime: number; duration: number } | null;
+      // Active transition (crossfade, slide, wipe, etc.)
+      activeTransition?: VideoEditorTransition | null;
+      // Video sources for editor mode (to check audio_extracted flag)
+      videoSources?: any[];
+      // Unified timeline tracks (new architecture)
+      tracks?: Track[];
+      // Selected item IDs for unified renderer
+      selectedItemIds?: Set<string>;
     }>(),
     {
       watermarks: () => [],
@@ -688,6 +418,9 @@
       editorMode: false,
       editorTotalDuration: 0,
       activeTransition: null,
+      videoSources: () => [],
+      tracks: () => [],
+      selectedItemIds: () => new Set(),
     }
   );
 
@@ -711,12 +444,74 @@
     (e: 'update:previewAspectRatio', ratio: string): void;
     (e: 'updateSubtitlePosition', position: { x: number; y: number }): void;
     (e: 'updateSubtitleMaxWidth', maxWidth: number): void;
+    // Completion events for undo/redo
+    (e: 'overlayDragEnd', type: 'text' | 'sticker' | 'watermark', id: string): void;
+    (e: 'overlayResizeEnd', id: string): void;
+    (e: 'stickerResizeEnd', id: string): void;
+    (e: 'stickerRotateEnd', id: string): void;
+    (e: 'watermarkResizeEnd', id: string): void;
+    (e: 'subtitleDragEnd'): void;
+    (e: 'subtitleResizeEnd'): void;
+    // Track events
+    (e: 'trackItemSelect', itemId: string, type: string): void;
   }>();
+
+  // ... existing refs ...
+
+  // Unified Track Rendering Logic
+  // (Moved to lower section to avoid duplication)
+
+  function handleTrackItemResizeStart(event: MouseEvent, item: TimelineItem, handle: 'tl' | 'tr' | 'bl' | 'br') {
+    // Map unified resize to legacy handlers
+    if (item.type === 'sticker') {
+      const sticker = props.stickers.find(s => s.id === item.id);
+      if (sticker) startStickerResize(event, sticker);
+    } else if (item.type === 'watermark') {
+      const watermark = props.watermarks.find(w => w.id === item.id);
+      if (watermark) startWatermarkResize(event, watermark);
+    } else if (item.type === 'text') {
+      const side = (handle === 'tr' || handle === 'br') ? 'right' : 'left';
+      startResize(event, item.id, side);
+    }
+  }
+
+  function handleTrackItemRotateStart(event: MouseEvent, item: TimelineItem) {
+    // Unified Rotation Handler
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Find the track item element using the event target (handle is inside the item)
+    const itemEl = (event.target as HTMLElement).closest('.timeline-item') as HTMLElement;
+    if (!itemEl) return;
+
+    const rect = itemEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Determine current rotation
+    const relativeTime = props.currentTime - item.startTime;
+    const currentRotation = AnimationService.getValueAtTime(item, 'rotation', relativeTime, item.rotation ?? 0);
+
+    // Reuse stickerRotateState as generic rotate state
+    stickerRotateState.isRotating = true;
+    stickerRotateState.id = item.id;
+    stickerRotateState.centerX = centerX;
+    stickerRotateState.centerY = centerY;
+    stickerRotateState.startRotation = currentRotation;
+    
+    // Calculate initial angle
+    const startAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * (180 / Math.PI);
+    stickerRotateState.startAngle = startAngle;
+
+    document.addEventListener('mousemove', onStickerRotateMove);
+    document.addEventListener('mouseup', onStickerRotateEnd);
+  }
 
   // Refs
   const videoRef = ref<HTMLVideoElement | null>(null);
   const preloadVideoRef = ref<HTMLVideoElement | null>(null); // Second video for seamless transitions
   const videoContainerRef = ref<HTMLElement | null>(null);
+  // ... rest of the code remains the same ...
   const overlayContainerRef = ref<HTMLElement | null>(null);
   const fullscreenContainerRef = ref<HTMLElement | null>(null);
   const regionVideoRefs = ref<(HTMLVideoElement | null)[]>([]);
@@ -726,6 +521,8 @@
   const isFullscreen = ref(false);
   const isDraggingProgress = ref(false);
   const containerSize = ref({ width: 0, height: 0 });
+  const playbackRate = ref(1);
+  const showSpeedMenu = ref(false);
 
   // Double-buffer state for seamless transitions (editor mode)
   const activeVideoIndex = ref<0 | 1>(0); // 0 = main video, 1 = preload video
@@ -749,6 +546,37 @@
       return props.preloadVideoSrc;
     }
     return '';
+  });
+
+  function setPlaybackRate(rate: number) {
+    playbackRate.value = rate;
+    showSpeedMenu.value = false;
+
+    // Apply to main video
+    if (videoRef.value) {
+      videoRef.value.playbackRate = rate;
+    }
+
+    // Apply to preload video
+    if (preloadVideoRef.value) {
+      preloadVideoRef.value.playbackRate = rate;
+    }
+
+    // Apply to region videos (multi-region mode)
+    regionVideoRefs.value.forEach((video) => {
+      if (video) {
+        video.playbackRate = rate;
+      }
+    });
+  }
+
+  // Ensure playback rate is applied when video elements change or become ready
+  watch(videoRef, (el) => {
+    if (el) el.playbackRate = playbackRate.value;
+  });
+
+  watch(preloadVideoRef, (el) => {
+    if (el) el.playbackRate = playbackRate.value;
   });
 
   // Track the preload src when it changes (avoid side effects in computed)
@@ -776,47 +604,35 @@
     { immediate: true }
   );
 
-  // Crossfade opacity state - for non-animated states (initial/final)
-  // During active crossfade, the animation loop handles opacity directly
-  const crossfadeState = computed(() => {
-    // If crossfade animation is running, return neutral values (animation loop handles it)
+  // Transition state - for non-animated states (initial/final)
+  // During active transition, the animation loop handles styles directly
+  const transitionState = computed<TransitionState | null>(() => {
+    // If transition animation is running, return neutral values (animation loop handles it)
     if (crossfadeActive.value) {
-      return {
-        mainOpacity: 1, // Will be overridden by animation loop
-        preloadOpacity: 1, // Will be overridden by animation loop
-        isInCrossfade: true,
-      };
+      return null;
     }
 
     // If no active transition, return full visibility for active video
     if (!props.editorMode || !props.activeTransition) {
       return {
-        mainOpacity: activeVideoIndex.value === 0 ? 1 : 0,
-        preloadOpacity: activeVideoIndex.value === 1 ? 1 : 0,
-        isInCrossfade: false,
+        opacityA: activeVideoIndex.value === 0 ? 1 : 0,
+        opacityB: activeVideoIndex.value === 1 ? 1 : 0,
+        zIndexA: activeVideoIndex.value === 0 ? 1 : 0,
+        zIndexB: activeVideoIndex.value === 1 ? 1 : 0,
       };
     }
 
     // Transition exists but animation not started yet - calculate initial state
-    const { startTime, duration } = props.activeTransition;
-    const currentTime = props.currentTime;
-    const progress = duration > 0 ? Math.max(0, Math.min(1, (currentTime - startTime) / duration)) : 0;
-
-    return {
-      mainOpacity: Math.max(0, Math.min(1, 1 - progress)),
-      preloadOpacity: Math.max(0, Math.min(1, progress)),
-      isInCrossfade: progress > 0 && progress < 1,
-    };
+    return calculateTransitionState(props.currentTime, props.activeTransition);
   });
 
-  // Crossfade animation state tracking
-  const crossfadeStartTime = ref<number>(0); // Wall-clock time when crossfade started
-  const crossfadeInitialProgress = ref<number>(0); // Progress into transition when crossfade started
+  // Crossfade/Transition animation state tracking
+  const crossfadeStartTime = ref<number>(0); // Wall-clock time when transition started
+  const crossfadeInitialProgress = ref<number>(0); // Progress into transition when started
   const crossfadePausedAt = ref<number | null>(null); // Progress when animation was paused (for pause/resume)
 
-  // Smooth crossfade animation loop using requestAnimationFrame (60fps)
-  // This bypasses Vue's reactivity for smooth opacity interpolation
-  // Uses elapsed wall-clock time to ensure smooth 60fps animation regardless of video timeupdate frequency
+  // Smooth transition animation loop using requestAnimationFrame (60fps)
+  // This bypasses Vue's reactivity for smooth interpolation of all style properties
   function startCrossfadeAnimation() {
     if (crossfadeAnimationId.value !== null || !props.activeTransition) {
       return;
@@ -827,11 +643,11 @@
     const preloadVideo = preloadVideoRef.value;
 
     if (!mainVideo || !preloadVideo) {
-      console.warn('[startCrossfadeAnimation] Missing video refs');
+      console.warn('[startTransitionAnimation] Missing video refs');
       return;
     }
 
-    // Calculate current progress into transition (when crossfade starts)
+    // Calculate current progress into transition (when starts)
     const currentProgress =
       transition.duration > 0
         ? Math.max(0, Math.min(1, (props.currentTime - transition.startTime) / transition.duration))
@@ -846,8 +662,10 @@
     const remainingDuration = transition.duration * (1 - currentProgress) * 1000;
 
     console.log(
-      '[startCrossfadeAnimation] Starting smooth crossfade animation',
-      'transition:',
+      '[startTransitionAnimation] Starting smooth animation',
+      'type:',
+      transition.type,
+      'range:',
       transition.startTime.toFixed(3),
       '-',
       transition.endTime.toFixed(3),
@@ -867,7 +685,7 @@
       const preloadVideo = preloadVideoRef.value;
 
       if (!mainVideo || !preloadVideo || !props.activeTransition) {
-        stopCrossfadeAnimation(true); // Reset opacity on abort
+        stopCrossfadeAnimation(true); // Reset styles on abort
         return;
       }
 
@@ -894,39 +712,50 @@
       }
 
       // Calculate progress using wall-clock time for smooth animation
-      // This ensures 60fps smooth animation regardless of video timeupdate frequency
       const elapsedMs = performance.now() - crossfadeStartTime.value;
       const transitionDurationMs = transition.duration * 1000;
 
-      // Calculate how much progress we've made since animation started (in progress units)
+      // Calculate how much progress we've made since animation started
       const progressSinceStart = transitionDurationMs > 0 ? elapsedMs / transitionDurationMs : 1;
 
-      // Total progress is initial progress + progress made during animation
+      // Total progress
       const progress = Math.max(0, Math.min(1, crossfadeInitialProgress.value + progressSinceStart));
 
-      // Calculate opacities with smooth interpolation
-      const mainOpacity = Math.max(0, Math.min(1, 1 - progress));
-      const preloadOpacity = Math.max(0, Math.min(1, progress));
+      // Calculate state for this progress point
+      const effectiveTime = transition.startTime + progress * transition.duration;
+      const state = calculateTransitionState(effectiveTime, transition);
 
-      // Apply opacities directly to DOM elements for smooth animation (bypasses Vue reactivity)
-      mainVideo.style.opacity = String(mainOpacity);
-      preloadVideo.style.opacity = String(preloadOpacity);
+      // Apply styles directly to DOM elements
+      // Opacity
+      mainVideo.style.opacity = String(state.opacityA);
+      preloadVideo.style.opacity = String(state.opacityB);
 
-      // Apply volume crossfade for smooth audio transition
-      // Use the same opacity values for audio volume (linear fade matches visual)
-      mainVideo.volume = mainOpacity;
-      preloadVideo.volume = preloadOpacity;
+      // Transform
+      mainVideo.style.transform = state.transformA || 'none';
+      preloadVideo.style.transform = state.transformB || 'none';
 
-      // Check if crossfade is complete (progress >= 1)
+      // Clip Path
+      mainVideo.style.clipPath = state.clipPathA || 'none';
+      preloadVideo.style.clipPath = state.clipPathB || 'none';
+
+      // Z-Index
+      mainVideo.style.zIndex = String(state.zIndexA);
+      preloadVideo.style.zIndex = String(state.zIndexB);
+
+      // Apply volume crossfade (always crossfade audio regardless of visual transition type)
+      // Use linear fade for audio
+      mainVideo.volume = 1 - progress;
+      preloadVideo.volume = progress;
+
+      // Check if complete
       if (progress >= 1) {
         console.log(
-          '[crossfadeAnimation] Crossfade complete, progress:',
+          '[transitionAnimation] Complete, progress:',
           (progress * 100).toFixed(1) + '%',
           'elapsed:',
           elapsedMs.toFixed(0) + 'ms'
         );
-        // Don't stop animation here - let the parent call completeCrossfade
-        // This ensures sync with parent's state management
+        // Don't stop animation here - let parent call completeCrossfade
         return;
       }
 
@@ -938,7 +767,7 @@
     crossfadeAnimationId.value = requestAnimationFrame(animate);
   }
 
-  function stopCrossfadeAnimation(resetOpacity: boolean = false) {
+  function stopCrossfadeAnimation(resetStyles: boolean = false) {
     if (crossfadeAnimationId.value !== null) {
       cancelAnimationFrame(crossfadeAnimationId.value);
       crossfadeAnimationId.value = null;
@@ -946,16 +775,19 @@
     crossfadeActive.value = false;
     crossfadePausedAt.value = null;
 
-    // Only reset opacity styles if requested (e.g., when animation is aborted, not completed)
-    if (resetOpacity) {
+    // Reset styles if requested
+    if (resetStyles) {
       const mainVideo = videoRef.value;
       const preloadVideo = preloadVideoRef.value;
-      if (mainVideo) {
-        mainVideo.style.opacity = '';
-      }
-      if (preloadVideo) {
-        preloadVideo.style.opacity = '';
-      }
+
+      [mainVideo, preloadVideo].forEach((video) => {
+        if (video) {
+          video.style.opacity = '';
+          video.style.transform = '';
+          video.style.clipPath = '';
+          video.style.zIndex = '';
+        }
+      });
     }
   }
 
@@ -1162,6 +994,117 @@
   // Local width tracking to prevent reflow during drag (before Vue updates)
   const localDragWidths = ref<Record<string, number>>({});
 
+  // Local position tracking for smooth drag feedback
+  const localDragPositions = ref<Record<string, { x: number; y: number }>>({});
+
+  // Unified Track Logic
+  const overlayTracks = computed(() => {
+    if (!props.tracks) return [];
+    // Sort tracks by orderIndex (ascending for visual stacking)
+    // Higher orderIndex means higher z-index (rendered later)
+    // Exclude the main video track (index 0) because it is rendered by the specialized main video player
+    // to support seamless looping, preloading, and complex crossfades that TrackRenderer doesn't handle yet.
+    // In TimelineAdapter, video tracks have IDs starting with 'track-video-'
+    return props.tracks
+      .filter(t => t.id !== 'track-video-0')
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+  });
+
+  // Track selection state
+  // Derived from prop + current interaction
+  const effectiveSelectedItemIds = computed(() => {
+    // Start with explicitly selected items from prop
+    const set = new Set<string>(props.selectedItemIds);
+    
+    // Add currently interacting items
+    if (dragState.id) set.add(dragState.id);
+    if (resizeState.id) set.add(resizeState.id);
+    if (stickerResizeState.id) set.add(stickerResizeState.id);
+    if (watermarkResizeState.id) set.add(watermarkResizeState.id);
+    if (stickerRotateState.id) set.add(stickerRotateState.id);
+    
+    return set;
+  });
+
+  // Overrides for immediate feedback during interaction
+  const unifiedScaleOverrides = computed(() => {
+    return {
+      ...localStickerScales.value,
+      ...localWatermarkScales.value
+    };
+  });
+
+  const unifiedRotationOverrides = computed(() => {
+    return {
+      ...localStickerRotations.value
+    };
+  });
+
+  const unifiedWidthOverrides = computed(() => {
+    return {
+      ...localDragWidths.value
+    };
+  });
+
+  const unifiedPositionOverrides = computed(() => {
+    return {
+      ...localDragPositions.value
+    };
+  });
+
+  const unifiedItemStyleOverrides = computed(() => {
+    const overrides: Record<string, Record<string, string>> = {};
+    if (!props.tracks) return overrides;
+
+    for (const track of props.tracks) {
+      // Skip main video track
+      if (track.id === 'track-video-0') continue;
+
+      for (const item of track.items) {
+        if (item.type === 'sticker' && item.originalData) {
+          overrides[item.id] = getStickerImageStyle(item.originalData as Sticker);
+        } else if (item.type === 'watermark' && item.originalData) {
+          overrides[item.id] = getWatermarkImageStyle(item.originalData as ClipWatermark);
+        } else if (item.type === 'text' && item.originalData) {
+          overrides[item.id] = getTextOverlayStyle(item.originalData as TextOverlay);
+        }
+      }
+    }
+    return overrides;
+  });
+
+  function onItemImageLoad(event: Event, item: TimelineItem) {
+    const img = event.target as HTMLImageElement;
+    if (!img || !img.naturalWidth || !img.naturalHeight) return;
+
+    const dimensions = { width: img.naturalWidth, height: img.naturalHeight };
+
+    if (item.type === 'sticker') {
+      stickerImageDimensions.value[item.id] = dimensions;
+    } else if (item.type === 'watermark') {
+      watermarkImageDimensions.value[item.id] = dimensions;
+    }
+  }
+
+  function handleTrackItemMousedown(e: MouseEvent, item: TimelineItem) {
+    // Emit selection event
+    emit('trackItemSelect', item.id, item.type);
+
+    if (item.type === 'text') {
+      startDrag(e, 'text', item.id, { x: (item.positionX ?? 0.5) * 100, y: (item.positionY ?? 0.5) * 100 });
+    } else if (item.type === 'sticker') {
+      if (item.originalData) startStickerDrag(e, item.originalData);
+    } else if (item.type === 'video') {
+      // Check if it's a watermark (legacy/fallback check)
+      if (item.originalData && 'watermarkId' in item.originalData) {
+        startWatermarkDrag(e, item.originalData);
+      }
+      // TODO: Handle generic video PiP drag
+    } else if (item.type === 'watermark') {
+         if (item.originalData) startWatermarkDrag(e, item.originalData);
+    }
+  }
+
   // Computed
   // Get sorted segments for playback control
   const sortedSegments = computed(() => {
@@ -1169,25 +1112,6 @@
       return [{ start_time: props.clipStart, end_time: props.clipEnd }];
     }
     return [...props.segments].sort((a, b) => a.start_time - b.start_time);
-  });
-
-  const visibleTextOverlays = computed(() => {
-    // Use effective time (accounts for segment cuts) for visibility
-    const effectiveTime = props.effectiveTime;
-    return props.textOverlays.filter((o) => effectiveTime >= o.startTime && effectiveTime <= o.endTime);
-  });
-
-  const visibleStickers = computed(() => {
-    // Use effective time (accounts for segment cuts) for visibility
-    const effectiveTime = props.effectiveTime;
-    return props.stickers.filter((s) => effectiveTime >= s.startTime && effectiveTime <= s.endTime);
-  });
-
-  // Get visible watermarks for current time
-  const visibleWatermarks = computed(() => {
-    // Use effective time (accounts for segment cuts) for visibility
-    const effectiveTime = props.effectiveTime;
-    return (props.watermarks || []).filter((w) => effectiveTime >= w.startTime && effectiveTime <= w.endTime);
   });
 
   // Creator profile watermark support
@@ -1235,7 +1159,8 @@
 
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const { getWatermarkImage, getWatermarkByServerId } = await import('@/services/database');
+        const { getWatermarkImage } = await import('@/services/database/watermarks');
+        const { getWatermarkByServerId } = await import('@/services/database');
 
         let dataUrl: string | null = null;
         let dimensions: { width: number; height: number } | null = null;
@@ -1711,6 +1636,15 @@
     return props.subtitleSettings.maxWidth;
   });
 
+  // Helper to check if a watermark is the creator profile watermark
+  function isCreatorProfileWatermark(watermark: ClipWatermark): boolean {
+    if (!props.creatorProfileWatermarkSettings?.watermarkId) return false;
+    const creatorWmId = props.creatorProfileWatermarkSettings.watermarkId;
+    const wmId = watermark.watermarkId;
+    // Check match handling both raw ID and potential prefix differences
+    return wmId === creatorWmId || wmId === `org-asset-${creatorWmId}` || creatorWmId === `org-asset-${wmId}`;
+  }
+
   // Get watermark config for current aspect ratio
   function getWatermarkConfigForRatio(watermark: ClipWatermark): ClipWatermarkRatioConfig {
     const ratio = props.previewAspectRatio;
@@ -1762,133 +1696,7 @@
     };
   }
 
-  // Handle watermark image load to capture actual dimensions
-  function onWatermarkImageLoad(watermarkId: string, event: Event) {
-    const img = event.target as HTMLImageElement;
-    if (img && img.naturalWidth && img.naturalHeight) {
-      watermarkImageDimensions.value[watermarkId] = {
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-      };
-    }
-  }
-
-  // Base width for watermarks = 15% of 1080p height = 162px (matching export default)
-  const WATERMARK_BASE_WIDTH = 162;
-
-  // Get the wrapper style for watermark positioning (no scale)
-  // Check if watermark matches creator profile watermark ID
-  function isCreatorProfileWatermark(watermark: ClipWatermark): boolean {
-    const creatorSettings = props.creatorProfileWatermarkSettings;
-    if (!creatorSettings?.watermarkId || !watermark.watermarkId) return false;
-
-    const creatorWmId = String(creatorSettings.watermarkId);
-    const wmId = String(watermark.watermarkId);
-
-    // Check for direct match or org-asset format variations
-    return (
-      creatorWmId === wmId ||
-      creatorWmId === `org-asset-${wmId}` ||
-      wmId === `org-asset-${creatorWmId}` ||
-      creatorWmId.replace('org-asset-', '') === wmId.replace('org-asset-', '')
-    );
-  }
-
-  function getWatermarkWrapperStyle(watermark: ClipWatermark): Record<string, string> {
-    const config = getWatermarkConfigForRatio(watermark);
-    const useCreatorStyle = isCreatorProfileWatermark(watermark);
-
-    // Log the actual position values being used
-    console.log('[ClipEditorPreview] getWatermarkWrapperStyle for ratio:', props.previewAspectRatio, {
-      watermarkId: watermark.watermarkId,
-      useCreatorStyle,
-      hasPerRatioConfigs: !!watermark.perRatioConfigs,
-      perRatioConfigKeys: watermark.perRatioConfigs ? Object.keys(watermark.perRatioConfigs) : [],
-      ratioConfigRaw: JSON.stringify(watermark.perRatioConfigs?.[props.previewAspectRatio]),
-      resolvedConfigRaw: JSON.stringify(config),
-      actualPositionX: config.position?.x,
-      actualPositionY: config.position?.y,
-      actualScale: config.scale,
-      actualOpacity: config.opacity,
-    });
-
-    // Full-frame overlay mode: position at 0,0 and fill the entire frame
-    if (config.isFullFrameOverlay) {
-      return {
-        left: '0%',
-        top: '0%',
-        transform: 'none',
-        opacity: String(config.opacity / 100),
-        width: '100%',
-        height: '100%',
-      };
-    }
-
-    // Use creator-style percentage-based sizing for creator profile watermarks
-    // This matches getCreatorWatermarkOverlayStyle exactly
-    if (useCreatorStyle) {
-      return {
-        left: `${config.position.x}%`,
-        top: `${config.position.y}%`,
-        transform: 'translate(-50%, -50%)',
-        opacity: String(config.opacity / 100),
-        width: `${config.scale}%`, // Percentage-based sizing like creator watermark
-      };
-    }
-
-    return {
-      left: `${config.position.x}%`,
-      top: `${config.position.y}%`,
-      transform: 'translate(-50%, -50%)',
-      opacity: String(config.opacity / 100),
-    };
-  }
-
   // Get the content style for watermark scaling
-  function getWatermarkContentStyle(watermark: ClipWatermark): Record<string, string> {
-    const dims = watermarkImageDimensions.value[watermark.id];
-
-    if (dims) {
-      const ratio = dims.width / dims.height;
-      const is16x9 = Math.abs(ratio - 16 / 9) < 0.02;
-      const isFullFrame = is16x9 && dims.width >= 1600 && dims.height >= 900 && props.previewAspectRatio === '16:9';
-
-      // Full-frame: no scaling transform
-      if (isFullFrame) {
-        return {
-          transform: 'none',
-        };
-      }
-    }
-
-    // Regular watermark: apply scale
-    const config = getWatermarkConfigForRatio(watermark);
-
-    // Full-frame overlay mode: no additional scaling
-    if (config.isFullFrameOverlay) {
-      return {
-        transform: 'none',
-        width: '100%',
-        height: '100%',
-      };
-    }
-
-    // Creator profile watermarks use percentage-based sizing in wrapper, no transform needed
-    if (isCreatorProfileWatermark(watermark)) {
-      return {
-        transform: 'none',
-      };
-    }
-
-    // Use local value during drag for instant feedback
-    const watermarkScale = localWatermarkScales.value[watermark.id] ?? config.scale / 15; // Convert from percentage to multiplier
-
-    return {
-      transform: `scale(${watermarkScale})`,
-    };
-  }
-
-  // Get the style for watermark image (scales width to base size, height auto)
   function getWatermarkImageStyle(watermark: ClipWatermark): Record<string, string> {
     const config = getWatermarkConfigForRatio(watermark);
 
@@ -1913,7 +1721,7 @@
 
     const containerScale = overlayScaleFactor.value;
     // Base width at current container scale
-    const baseWidth = WATERMARK_BASE_WIDTH * containerScale;
+    const baseWidth = 162 * containerScale;
 
     // Get cached dimensions for this watermark
     const dims = watermarkImageDimensions.value[watermark.id];
@@ -1950,67 +1758,6 @@
     };
   }
 
-  // Calculate the bounding box size in pixels for a watermark
-  function getWatermarkBoundsPx(watermark: ClipWatermark): { width: number; height: number } {
-    const config = getWatermarkConfigForRatio(watermark);
-    const containerScale = overlayScaleFactor.value;
-    const watermarkScale = localWatermarkScales.value[watermark.id] ?? config.scale / 15;
-
-    const dims = watermarkImageDimensions.value[watermark.id];
-    const baseWidth = WATERMARK_BASE_WIDTH * containerScale;
-
-    if (dims) {
-      const aspectRatio = dims.width / dims.height;
-      const width = baseWidth * watermarkScale;
-      const height = (baseWidth / aspectRatio) * watermarkScale;
-
-      return { width, height };
-    }
-
-    // Fallback before image loads (assume square)
-    return { width: baseWidth * watermarkScale, height: baseWidth * watermarkScale };
-  }
-
-  // Get the style for the selection border that surrounds the scaled watermark
-  function getWatermarkBoundsStyle(watermark: ClipWatermark): Record<string, string> {
-    const bounds = getWatermarkBoundsPx(watermark);
-    const padding = 2; // Tight padding around content
-
-    return {
-      width: `${bounds.width + padding * 2}px`,
-      height: `${bounds.height + padding * 2}px`,
-      left: '50%',
-      top: '50%',
-      transform: 'translate(-50%, -50%)',
-    };
-  }
-
-  // Get the style for corner resize handles
-  function getWatermarkResizeHandleStyle(
-    watermark: ClipWatermark,
-    corner: 'nw' | 'ne' | 'sw' | 'se'
-  ): Record<string, string> {
-    const bounds = getWatermarkBoundsPx(watermark);
-    const halfW = bounds.width / 2;
-    const halfH = bounds.height / 2;
-
-    // Corner offsets relative to center
-    const cornerOffsets: Record<string, { x: number; y: number }> = {
-      nw: { x: -halfW, y: -halfH },
-      ne: { x: halfW, y: -halfH },
-      sw: { x: -halfW, y: halfH },
-      se: { x: halfW, y: halfH },
-    };
-
-    const offset = cornerOffsets[corner];
-
-    return {
-      left: `calc(50% + ${offset.x}px)`,
-      top: `calc(50% + ${offset.y}px)`,
-      transform: 'translate(-50%, -50%)',
-    };
-  }
-
   // Helper to start watermark drag (position)
   function startWatermarkDrag(e: MouseEvent, watermark: ClipWatermark) {
     const config = getWatermarkConfigForRatio(watermark);
@@ -2023,7 +1770,7 @@
     e.stopPropagation();
 
     // Get the watermark element to find its center
-    const watermarkEl = (e.target as HTMLElement).closest('[data-watermark-id]') as HTMLElement;
+    const watermarkEl = (e.target as HTMLElement).closest('[data-item-id]') as HTMLElement;
     if (!watermarkEl) return;
 
     const rect = watermarkEl.getBoundingClientRect();
@@ -2075,6 +1822,8 @@
 
   function onWatermarkResizeEnd() {
     if (watermarkResizeState.id) {
+      // Emit completion event for undo/redo
+      emit('watermarkResizeEnd', watermarkResizeState.id);
       // Clear local scale after emit completes
       delete localWatermarkScales.value[watermarkResizeState.id];
     }
@@ -2127,6 +1876,7 @@
   }
 
   function onSubtitleDragEnd() {
+    emit('subtitleDragEnd');
     dragState.isDragging = false;
     dragState.type = null;
     dragState.id = null;
@@ -2182,6 +1932,7 @@
   }
 
   function onSubtitleResizeEnd() {
+    emit('subtitleResizeEnd');
     // Clear local width after emit completes
     localSubtitleMaxWidth.value = null;
 
@@ -2239,8 +1990,6 @@
 
   // Get current framing config for the selected aspect ratio
   const currentFramingConfig = computed(() => {
-    if (props.previewAspectRatio === '16:9') return null;
-
     // Check if this aspect ratio is selected
     const isSelected = props.selectedAspectRatios.includes(props.previewAspectRatio);
     if (!isSelected) return null;
@@ -2250,6 +1999,9 @@
     if (manualConfig && manualConfig.regions && manualConfig.regions.length > 0) {
       return manualConfig;
     }
+
+    // For 16:9 without manual config, return null (show full video)
+    if (props.previewAspectRatio === '16:9') return null;
 
     // Generate a default center-crop preview for auto mode or unconfigured manual mode
     return {
@@ -2420,7 +2172,7 @@
         const config = getOverlayConfigForRatio(overlay);
         // Only capture width if not already explicitly set
         if (config.style?.width === undefined || config.style.width <= 0) {
-          const overlayEl = overlayContainerRef.value.querySelector(`[data-overlay-id="${id}"]`) as HTMLElement;
+          const overlayEl = overlayContainerRef.value.querySelector(`[data-item-id="${id}"]`) as HTMLElement;
           if (overlayEl) {
             const containerRect = overlayContainerRef.value.getBoundingClientRect();
             const capturedWidth = (overlayEl.offsetWidth / containerRect.width) * 100;
@@ -2468,11 +2220,22 @@
 
     // Emit position update (only for text, sticker, watermark - subtitle has its own handler)
     if (dragState.type && dragState.id && dragState.type !== 'subtitle') {
+      // Update local position for immediate feedback
+      localDragPositions.value[dragState.id] = { x: newX / 100, y: newY / 100 }; // Store as 0-1 normalized
+      
       emit('updateOverlayPosition', dragState.type, dragState.id, { x: newX, y: newY });
     }
   }
 
   function onDragEnd() {
+    // Emit completion event for undo/redo before clearing state
+    if (dragState.type && dragState.id && dragState.type !== 'subtitle') {
+      emit('overlayDragEnd', dragState.type, dragState.id);
+      
+      // Clear local position override
+      delete localDragPositions.value[dragState.id];
+    }
+
     dragState.isDragging = false;
     dragState.type = null;
     dragState.id = null;
@@ -2496,7 +2259,7 @@
     let currentWidth = currentStyle?.width;
     if (currentWidth === undefined || currentWidth <= 0) {
       // Calculate initial width from the element's actual rendered size
-      const overlayEl = overlayContainerRef.value.querySelector(`[data-overlay-id="${overlayId}"]`) as HTMLElement;
+      const overlayEl = overlayContainerRef.value.querySelector(`[data-item-id="${overlayId}"]`) as HTMLElement;
       if (overlayEl) {
         const containerRect = overlayContainerRef.value.getBoundingClientRect();
         currentWidth = (overlayEl.offsetWidth / containerRect.width) * 100;
@@ -2547,6 +2310,11 @@
   }
 
   function onResizeEnd() {
+    // Emit completion event for undo/redo before clearing state
+    if (resizeState.id) {
+      emit('overlayResizeEnd', resizeState.id);
+    }
+
     resizeState.isResizing = false;
     resizeState.id = null;
     resizeState.side = null;
@@ -2567,7 +2335,7 @@
     e.stopPropagation();
 
     // Get the sticker element to find its center
-    const stickerEl = (e.target as HTMLElement).closest('[data-sticker-id]') as HTMLElement;
+    const stickerEl = (e.target as HTMLElement).closest('[data-item-id]') as HTMLElement;
     if (!stickerEl) return;
 
     const rect = stickerEl.getBoundingClientRect();
@@ -2616,6 +2384,8 @@
 
   function onStickerResizeEnd() {
     if (stickerResizeState.id) {
+      // Emit completion event for undo/redo
+      emit('stickerResizeEnd', stickerResizeState.id);
       // Clear local scale after emit completes
       delete localStickerScales.value[stickerResizeState.id];
     }
@@ -2676,6 +2446,8 @@
 
   function onStickerRotateEnd() {
     if (stickerRotateState.id) {
+      // Emit completion event for undo/redo
+      emit('stickerRotateEnd', stickerRotateState.id);
       // Clear local rotation after emit completes
       delete localStickerRotations.value[stickerRotateState.id];
     }
@@ -2704,6 +2476,31 @@
       const minutes = Math.floor((totalSeconds % 3600) / 60);
       const remainingSeconds = totalSeconds % 60;
       return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+  }
+
+  // Check if current playback position is in a segment with extracted audio and mute accordingly
+  function updateVideoMuteState(currentTime: number) {
+    if (!videoRef.value || !props.videoSources || props.videoSources.length === 0) return;
+
+    // Find which video source is currently playing based on timeline position
+    let shouldMute = false;
+    for (const source of props.videoSources) {
+      if (currentTime >= source.start_time && currentTime < source.end_time) {
+        // Check if this source has audio extracted (use snake_case as returned from DB)
+        if ((source as any).audio_extracted === true) {
+          shouldMute = true;
+          break;
+        }
+      }
+    }
+
+    // Mute/unmute the video element
+    videoRef.value.muted = shouldMute;
+
+    // Also update preload video if it exists
+    if (preloadVideoRef.value) {
+      preloadVideoRef.value.muted = shouldMute;
     }
   }
 
@@ -2741,9 +2538,10 @@
     if (videoRef.value && !isDraggingProgress.value) {
       const currentVideoTime = videoRef.value.currentTime;
 
-      // In editor mode, simply emit the time without segment logic
-      // The parent component handles time mapping for multiple sources
+      // In editor mode, check if current source has audio extracted and mute accordingly
       if (props.editorMode) {
+        updateVideoMuteState(currentVideoTime);
+
         // Only emit time updates from main video when it's the active video (index 0)
         // When activeVideoIndex === 1, the preload video is active and handles time updates
         if (activeVideoIndex.value === 0) {
@@ -3300,6 +3098,7 @@
       }
     } else {
       // In non-framed mode, calculate actual video display height
+      // The video uses object-contain, so it fits within container while maintaining aspect ratio
       const videoWidth = videoRef.value?.videoWidth || 1920;
       const videoHeight = videoRef.value?.videoHeight || 1080;
       const videoAspect = videoWidth / videoHeight;
@@ -3324,40 +3123,35 @@
 
     // Get the scale factor for this container size
     const scale = overlayScaleFactor.value;
-
+    
     // Scale all size-related properties
-    const scaledFontSize = Math.round((overlayStyle?.fontSize || 24) * scale);
-    const scaledLetterSpacing = (overlayStyle?.letterSpacing || 0) * scale;
-    const scaledPadding = Math.round((overlayStyle?.padding || 8) * scale);
-    const scaledBorderRadius = Math.round((overlayStyle?.borderRadius || 4) * scale);
-    const scaledBorderWidth = (overlayStyle?.border1Width || 0) * scale;
-    const scaledShadowOffsetX = (overlayStyle?.shadowOffsetX || 2) * scale;
-    const scaledShadowOffsetY = (overlayStyle?.shadowOffsetY || 2) * scale;
-    const scaledShadowBlur = (overlayStyle?.shadowBlur || 4) * scale;
-    const scaledStrokeWidth = (overlayStyle?.strokeWidth || 1) * scale;
+    // We only apply the base container scale. Animation scale is handled by TrackRenderer transform.
+    const finalFontSize = Math.round((overlayStyle?.fontSize || 24) * scale);
+    const finalLetterSpacing = (overlayStyle?.letterSpacing || 0) * scale;
+    const finalPadding = Math.round((overlayStyle?.padding || 8) * scale);
+    const finalBorderRadius = Math.round((overlayStyle?.borderRadius || 4) * scale);
+    const finalBorderWidth = (overlayStyle?.border1Width || 0) * scale;
+    const finalShadowOffsetX = (overlayStyle?.shadowOffsetX || 2) * scale;
+    const finalShadowOffsetY = (overlayStyle?.shadowOffsetY || 2) * scale;
+    const finalShadowBlur = (overlayStyle?.shadowBlur || 4) * scale;
+    const finalStrokeWidth = (overlayStyle?.strokeWidth || 1) * scale;
 
     const style: Record<string, string> = {
-      left: `${config.position.x}%`,
-      top: `${config.position.y}%`,
-      transform: 'translate(-50%, -50%)',
+      // Layout/Transform/Opacity handled by TrackRenderer via getItemStyle
+      
+      // Text Content Styles
       fontFamily: overlayStyle?.fontFamily || 'sans-serif',
-      fontSize: `${scaledFontSize}px`,
+      fontSize: `${finalFontSize}px`,
       fontWeight: String(overlayStyle?.fontWeight || 600),
       color: overlayStyle?.color || '#ffffff',
       textAlign: overlayStyle?.textAlign || 'center',
       lineHeight: String(overlayStyle?.lineHeight || 1.2),
-      letterSpacing: `${scaledLetterSpacing}px`,
+      letterSpacing: `${finalLetterSpacing}px`,
     };
 
-    // Check for local drag width first (immediately applied to prevent reflow)
-    const localWidth = localDragWidths.value[overlay.id];
-
-    // Use explicit width if set (from style or local drag), otherwise use maxWidth for auto-sizing
-    // When width is set, it prevents the text from resizing during drag
-    if (localWidth !== undefined && localWidth > 0) {
-      style.width = `${localWidth}%`;
-      style.maxWidth = `${localWidth}%`;
-    } else if (overlayStyle?.width !== undefined && overlayStyle.width > 0) {
+    // Width handling
+    // We pass the base width/maxWidth. TrackRenderer handles overrides from drag interactions.
+    if (overlayStyle?.width !== undefined && overlayStyle.width > 0) {
       style.width = `${overlayStyle.width}%`;
       style.maxWidth = `${overlayStyle.width}%`;
     } else {
@@ -3368,34 +3162,27 @@
 
     if (overlayStyle?.backgroundEnabled && overlayStyle?.backgroundColor) {
       style.backgroundColor = overlayStyle.backgroundColor;
-      style.padding = `${scaledPadding}px`;
-      style.borderRadius = `${scaledBorderRadius}px`;
+      style.padding = `${finalPadding}px`;
+      style.borderRadius = `${finalBorderRadius}px`;
     }
 
     // Apply shadow (scaled)
     if (overlayStyle?.shadowEnabled) {
-      style.textShadow = `${scaledShadowOffsetX}px ${scaledShadowOffsetY}px ${scaledShadowBlur}px ${overlayStyle.shadowColor || '#000000'}`;
+      style.textShadow = `${finalShadowOffsetX}px ${finalShadowOffsetY}px ${finalShadowBlur}px ${overlayStyle.shadowColor || '#000000'}`;
     }
 
     // Apply border using text-stroke (scaled)
     if (overlayStyle?.border1Width && overlayStyle.border1Width > 0) {
-      style.webkitTextStroke = `${scaledBorderWidth}px ${overlayStyle.border1Color || '#000000'}`;
+      style.webkitTextStroke = `${finalBorderWidth}px ${overlayStyle.border1Color || '#000000'}`;
       style.paintOrder = 'stroke fill';
     } else if (overlayStyle?.strokeEnabled) {
-      style.webkitTextStroke = `${scaledStrokeWidth}px ${overlayStyle.strokeColor || '#000000'}`;
+      style.webkitTextStroke = `${finalStrokeWidth}px ${overlayStyle.strokeColor || '#000000'}`;
       style.paintOrder = 'stroke fill';
     }
 
     return style;
   }
 
-  function getTextOverlayClass(overlay: TextOverlay): string[] {
-    const classes: string[] = [];
-    if (overlay.animation && overlay.animation !== 'none') {
-      classes.push(`animate-${overlay.animation}`);
-    }
-    return classes;
-  }
 
   // Get the position, scale, and rotation for a sticker, respecting per-ratio configs
   function getStickerConfigForRatio(sticker: Sticker): {
@@ -3422,44 +3209,18 @@
     };
   }
 
-  // Get the wrapper style for sticker positioning (no scale/rotation)
-  function getStickerWrapperStyle(sticker: Sticker): Record<string, string> {
-    const config = getStickerConfigForRatio(sticker);
-    return {
-      left: `${config.position.x}%`,
-      top: `${config.position.y}%`,
-      transform: 'translate(-50%, -50%)',
-    };
-  }
-
-  // Base sizes for different sticker types at 1080p reference
-  const EMOJI_BASE_SIZE = 48;
-  // Image base width = 10% of 1080p height = 108px (matches export: video_height * 0.1)
-  const IMAGE_BASE_WIDTH = 108;
-
-  // Handle image sticker load to capture actual dimensions
-  function onStickerImageLoad(stickerId: string, event: Event) {
-    const img = event.target as HTMLImageElement;
-    if (img && img.naturalWidth && img.naturalHeight) {
-      stickerImageDimensions.value[stickerId] = {
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-      };
-    }
-  }
-
   // Get the style for image stickers (scales width to base size, height auto - matches export)
   function getStickerImageStyle(sticker: Sticker): Record<string, string> {
     const containerScale = overlayScaleFactor.value;
     // Base width at current container scale (export uses video_height * 0.1 for width)
-    const baseWidth = IMAGE_BASE_WIDTH * containerScale;
+    const baseWidth = 108 * containerScale;
 
     // Get cached dimensions for this sticker
     const dims = stickerImageDimensions.value[sticker.id];
 
     if (dims) {
       // Scale width to baseWidth, calculate height to maintain aspect ratio
-      // This matches FFmpeg's scale=width:-1 behavior
+      // This matches FFmpeg's scale=width:-1 behavior and the export
       const aspectRatio = dims.width / dims.height;
       const width = baseWidth;
       const height = baseWidth / aspectRatio;
@@ -3475,139 +3236,6 @@
       width: `${baseWidth}px`,
       height: 'auto',
     };
-  }
-
-  // Get the content style for sticker scaling and rotation
-  function getStickerContentStyle(sticker: Sticker): Record<string, string> {
-    const config = getStickerConfigForRatio(sticker);
-
-    // Get the scale factor for this container size (same as text overlays)
-    const containerScale = overlayScaleFactor.value;
-
-    // Use local values during drag for instant feedback, otherwise use config values
-    const stickerScale = localStickerScales.value[sticker.id] ?? config.scale;
-    const stickerRotation = localStickerRotations.value[sticker.id] ?? config.rotation;
-
-    // Base size for emojis
-    const baseSize = EMOJI_BASE_SIZE * containerScale;
-
-    return {
-      transform: `scale(${stickerScale}) rotate(${stickerRotation}deg)`,
-      fontSize: `${baseSize}px`,
-    };
-  }
-
-  // Calculate the bounding box size in pixels for a sticker
-  function getStickerBoundsPx(sticker: Sticker): { width: number; height: number } {
-    const config = getStickerConfigForRatio(sticker);
-    const containerScale = overlayScaleFactor.value;
-    const stickerScale = localStickerScales.value[sticker.id] ?? config.scale;
-
-    const isEmoji = sticker.stickerType === 'emoji';
-
-    if (isEmoji) {
-      // Emojis use font-size based dimensions
-      const baseSize = EMOJI_BASE_SIZE * containerScale;
-      const scaledSize = baseSize * stickerScale;
-      return { width: scaledSize, height: scaledSize };
-    }
-
-    // For images, use actual dimensions if available
-    const dims = stickerImageDimensions.value[sticker.id];
-    const baseWidth = IMAGE_BASE_WIDTH * containerScale;
-
-    if (dims) {
-      // Scale width to baseWidth, calculate height to maintain aspect ratio
-      // This matches FFmpeg's scale=width:-1 behavior and the export
-      const aspectRatio = dims.width / dims.height;
-      const width = baseWidth * stickerScale;
-      const height = (baseWidth / aspectRatio) * stickerScale;
-
-      return { width, height };
-    }
-
-    // Fallback before image loads (assume square)
-    return { width: baseWidth * stickerScale, height: baseWidth * stickerScale };
-  }
-
-  // Get the current rotation for a sticker
-  function getStickerRotation(sticker: Sticker): number {
-    const config = getStickerConfigForRatio(sticker);
-    return localStickerRotations.value[sticker.id] ?? config.rotation;
-  }
-
-  // Get the style for the selection border that surrounds the scaled sticker
-  function getStickerBoundsStyle(sticker: Sticker): Record<string, string> {
-    const bounds = getStickerBoundsPx(sticker);
-    const rotation = getStickerRotation(sticker);
-    const padding = 2; // Tight padding around content
-
-    return {
-      width: `${bounds.width + padding * 2}px`,
-      height: `${bounds.height + padding * 2}px`,
-      left: '50%',
-      top: '50%',
-      transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
-    };
-  }
-
-  // Get the style for rotation handle positioning (above the sticker)
-  function getRotationHandleStyle(sticker: Sticker): Record<string, string> {
-    const bounds = getStickerBoundsPx(sticker);
-    const rotation = getStickerRotation(sticker);
-    const offset = bounds.height / 2 + 2; // Position just above the sticker
-
-    // Calculate rotated position for the handle
-    // CSS rotation is clockwise for positive angles
-    const angleRad = (rotation * Math.PI) / 180;
-    const handleDistance = offset + 20; // Distance from center to handle
-    // At 0°: handle at top (x=0, y=-distance)
-    // At 90° (clockwise): handle at right (x=+distance, y=0)
-    const x = Math.sin(angleRad) * handleDistance;
-    const y = -Math.cos(angleRad) * handleDistance;
-
-    return {
-      left: `calc(50% + ${x}px)`,
-      top: `calc(50% + ${y}px)`,
-      transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
-    };
-  }
-
-  // Get the style for corner resize handles (rotated with sticker)
-  function getResizeHandleStyle(sticker: Sticker, corner: 'nw' | 'ne' | 'sw' | 'se'): Record<string, string> {
-    const bounds = getStickerBoundsPx(sticker);
-    const rotation = getStickerRotation(sticker);
-    const halfW = bounds.width / 2;
-    const halfH = bounds.height / 2;
-
-    // Corner offsets relative to center (before rotation)
-    const cornerOffsets: Record<string, { x: number; y: number }> = {
-      nw: { x: -halfW, y: -halfH },
-      ne: { x: halfW, y: -halfH },
-      sw: { x: -halfW, y: halfH },
-      se: { x: halfW, y: halfH },
-    };
-
-    const offset = cornerOffsets[corner];
-    const angleRad = (rotation * Math.PI) / 180;
-
-    // Rotate the corner position (standard 2D rotation for CSS clockwise convention)
-    const rotatedX = offset.x * Math.cos(angleRad) - offset.y * Math.sin(angleRad);
-    const rotatedY = offset.x * Math.sin(angleRad) + offset.y * Math.cos(angleRad);
-
-    return {
-      left: `calc(50% + ${rotatedX}px)`,
-      top: `calc(50% + ${rotatedY}px)`,
-      transform: 'translate(-50%, -50%)',
-    };
-  }
-
-  function getStickerClass(sticker: Sticker): string[] {
-    const classes: string[] = [];
-    if (sticker.animation && sticker.animation !== 'none') {
-      classes.push(`animate-${sticker.animation}`);
-    }
-    return classes;
   }
 
   function getVideoFilterStyle(): Record<string, string> {
@@ -3659,48 +3287,6 @@
     };
   }
 
-  // Get style for main video including crossfade opacity
-  function getMainVideoStyle(): Record<string, string> {
-    const filterStyle = getVideoFilterStyle();
-
-    if (!props.editorMode) {
-      return filterStyle;
-    }
-
-    // During active crossfade animation, don't set opacity here
-    // The animation loop handles it directly via inline styles for smooth 60fps transitions
-    if (crossfadeActive.value) {
-      return filterStyle;
-    }
-
-    // When not in crossfade, use opacity 1 or 0 based on active video
-    return {
-      ...filterStyle,
-      opacity: activeVideoIndex.value === 0 ? '1' : '0',
-    };
-  }
-
-  // Get style for preload video including crossfade opacity
-  function getPreloadVideoStyle(): Record<string, string> {
-    const filterStyle = getVideoFilterStyle();
-
-    if (!props.editorMode) {
-      return filterStyle;
-    }
-
-    // During active crossfade animation, don't set opacity here
-    // The animation loop handles it directly via inline styles for smooth 60fps transitions
-    if (crossfadeActive.value) {
-      return filterStyle;
-    }
-
-    // When not in crossfade, use opacity 1 or 0 based on active video
-    return {
-      ...filterStyle,
-      opacity: activeVideoIndex.value === 1 ? '1' : '0',
-    };
-  }
-
   function getVignetteStyle(): Record<string, string> {
     const vignette = props.filterSettings?.vignette || 0;
     if (vignette === 0) {
@@ -3714,6 +3300,28 @@
     return {
       background: `radial-gradient(ellipse at center, transparent ${innerStop}%, rgba(0,0,0,${opacity}) 100%)`,
       pointerEvents: 'none',
+    };
+  }
+
+  function getMainVideoStyle(): Record<string, string> {
+    const filterStyle = getVideoFilterStyle();
+    const opacity = activeVideoIndex.value === 0 ? 1 : 0;
+
+    return {
+      ...filterStyle,
+      opacity: opacity.toString(),
+      transition: crossfadeActive.value ? 'opacity 0.3s ease-in-out' : 'none',
+    };
+  }
+
+  function getPreloadVideoStyle(): Record<string, string> {
+    const filterStyle = getVideoFilterStyle();
+    const opacity = activeVideoIndex.value === 1 ? 1 : 0;
+
+    return {
+      ...filterStyle,
+      opacity: opacity.toString(),
+      transition: crossfadeActive.value ? 'opacity 0.3s ease-in-out' : 'none',
     };
   }
 
@@ -4061,6 +3669,56 @@
 
   .sticker-overlay:hover {
     z-index: 20;
+  }
+
+  /* Motion presets (preview-only) */
+  .motion-fade {
+    animation: motion-fade var(--motion-duration, 0.4s) ease-out both;
+  }
+
+  .motion-slide-up {
+    animation: motion-slide-up var(--motion-duration, 0.5s) ease-out both;
+  }
+
+  .motion-pop {
+    animation: motion-pop var(--motion-duration, 0.35s) cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  }
+
+  @keyframes motion-fade {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: var(--motion-base-transform, translate(-50%, -50%));
+    }
+  }
+
+  @keyframes motion-slide-up {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -50%) translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: var(--motion-base-transform, translate(-50%, -50%));
+    }
+  }
+
+  @keyframes motion-pop {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.4);
+    }
+    70% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.08);
+    }
+    100% {
+      opacity: 1;
+      transform: var(--motion-base-transform, translate(-50%, -50%));
+    }
   }
 
   /* Watermark overlay styling */

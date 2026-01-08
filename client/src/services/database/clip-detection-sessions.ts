@@ -110,3 +110,30 @@ export async function deleteClipDetectionSession(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('DELETE FROM clip_detection_sessions WHERE id = ?', [id]);
 }
+
+/**
+ * Get or create a "manual" detection session for a project.
+ * Used for manually created clips (DVR, livestream, etc.) that need
+ * a valid session_id for the clip_versions foreign key constraint.
+ */
+export async function getOrCreateManualSession(projectId: string): Promise<string> {
+  const db = await getDatabase();
+
+  // Check if a manual session already exists for this project
+  const existing = await db.select<ClipDetectionSession[]>(
+    `SELECT id FROM clip_detection_sessions 
+     WHERE project_id = ? AND prompt = 'Manual clip creation'
+     ORDER BY created_at DESC LIMIT 1`,
+    [projectId]
+  );
+
+  if (existing.length > 0) {
+    return existing[0].id;
+  }
+
+  // Create a new manual session
+  return await createClipDetectionSession(projectId, 'Manual clip creation', {
+    detectionModel: 'manual',
+    runColor: '#6B7280', // Gray for manual clips
+  });
+}

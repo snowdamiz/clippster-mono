@@ -241,12 +241,15 @@
     type IntroOutro,
     getClipsWithVersionsByProjectId,
     deleteClip,
-    getWatermarkImage,
     getWatermarkByServerId,
     getCreatorProfileByProjectId,
     getIntroOutroById,
     getProject,
+    createClipVersion,
+    updateClip,
+    getOrCreateManualSession,
   } from '@/services/database';
+  import { getWatermarkImage } from '@/services/database/watermarks';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type { WatermarkSettings } from '@/types';
@@ -505,6 +508,7 @@
     onVideoError,
     loadVideos,
     loadVideoForProject,
+    loadVideoFromPath,
     resetVideoState,
     playClipSegments,
     stopSegmentedPlayback,
@@ -1039,7 +1043,20 @@
   function transformClipsForTimeline(clipsWithVersion: ClipWithVersion[]): any[] {
     return clipsWithVersion
       .map((clip) => {
-        const version = clip.current_version;
+        let version = clip.current_version;
+
+        // If version is missing but we have repaired data in the clip object, use that
+        if (!version && clip.current_version_name) {
+          version = {
+            id: clip.current_version_id,
+            name: clip.current_version_name,
+            description: clip.current_version_description || null,
+            start_time: clip.current_version_start_time ?? clip.start_time ?? 0,
+            end_time: clip.current_version_end_time ?? clip.end_time ?? 10,
+            virality_score: clip.current_version_virality_score || null,
+            detection_reason: clip.current_version_detection_reason || null,
+          } as any;
+        }
 
         if (!version) {
           console.warn('[ProjectWorkspaceDialog] Clip missing current version:', clip.id);
@@ -1097,6 +1114,58 @@
       .filter(Boolean); // Remove any null entries
   }
 
+  // Auto-repair clips missing current_version by creating a version from clip data
+  async function repairClipsMissingVersion(clips: any[]): Promise<void> {
+    for (const clip of clips) {
+      // Skip if already has a version
+      if (clip.current_version_id && clip.current_version_name) {
+        continue;
+      }
+
+      // Check if clip has basic data we can use to create a version
+      const clipName = clip.name || 'Untitled Clip';
+      const startTime = clip.start_time ?? 0;
+      const endTime = clip.end_time ?? (clip.duration ? startTime + clip.duration : startTime + 10);
+
+      console.log(`[ProjectWorkspaceDialog] Auto-repairing clip missing version: ${clip.id}`);
+
+      try {
+        // Get or create a manual session for this clip's project (needed for FK constraint)
+        const sessionId = clip.detection_session_id || (await getOrCreateManualSession(clip.project_id));
+
+        // Create a version for this orphaned clip
+        const versionId = await createClipVersion(
+          clip.id,
+          sessionId,
+          1,
+          {
+            name: clipName,
+            description: clip.description || undefined,
+            startTime,
+            endTime,
+            viralityScore: clip.virality_score || undefined,
+            detectionReason: 'Auto-repaired: clip was missing version record',
+          },
+          'detected',
+          'Auto-created version for legacy clip'
+        );
+
+        // Update the clip to point to this version
+        await updateClip(clip.id, { current_version_id: versionId });
+
+        // Update the in-memory clip data so transform works
+        clip.current_version_id = versionId;
+        clip.current_version_name = clipName;
+        clip.current_version_start_time = startTime;
+        clip.current_version_end_time = endTime;
+
+        console.log(`[ProjectWorkspaceDialog] Repaired clip ${clip.id} with version ${versionId}`);
+      } catch (err) {
+        console.error(`[ProjectWorkspaceDialog] Failed to repair clip ${clip.id}:`, err);
+      }
+    }
+  }
+
   // Load clips for timeline
   async function loadTimelineClips(projectId: string) {
     if (!projectId) {
@@ -1106,6 +1175,9 @@
 
     try {
       const clipsWithVersion = await getClipsWithVersionsByProjectId(projectId);
+
+      // Auto-repair any clips missing versions
+      await repairClipsMissingVersion(clipsWithVersion);
 
       timelineClips.value = transformClipsForTimeline(clipsWithVersion);
     } catch (error) {
@@ -1460,7 +1532,7 @@
   }
 
   // Function to handle clip playback
-  function onPlayClip(clip: any) {
+  async function onPlayClip(clip: any) {
     // Clear all previous selection states when starting playback
     hoveredClipId.value = null;
     hoveredTimelineClipId.value = null;
@@ -1484,15 +1556,56 @@
       scrollToClipInTimeline(clip.id);
     });
 
-    // Get segments from the clip
+    // Check if this is a standalone clip file (DVR/livestream clip without raw video)
+    // If no video is loaded but clip has a file path, load the clip's video directly
+    const clipFilePath = clip.filename || clip.file_path;
+    const hasNoRawVideo = !videoSrc.value;
+    const isStandaloneClip = hasNoRawVideo && clipFilePath;
+
+    if (isStandaloneClip) {
+      console.log('[ProjectWorkspaceDialog] Loading standalone clip file:', clipFilePath);
+      const loaded = await loadVideoFromPath(clipFilePath);
+      if (loaded) {
+        // For standalone clips, we just play from start - the whole file is the clip
+        // Wait for the video element to be ready after loading
+        await nextTick();
+
+        // Wait a bit more for the video element to actually render and be accessible
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        if (videoElement.value) {
+          videoElement.value.currentTime = 0;
+          videoElement.value.play().catch((err) => {
+            console.warn('[ProjectWorkspaceDialog] Autoplay prevented for standalone clip:', err);
+          });
+        }
+        return;
+      }
+    }
+
+    // Get segments from the clip (for raw video scrubbing)
+    // Note: transformed clips have `segments` directly (from transformClipsForTimeline),
+    // while raw ClipWithVersion objects have `current_version_segments`
     let segments: any[] = [];
 
-    if (
+    if (clip.segments && Array.isArray(clip.segments) && clip.segments.length > 0) {
+      // Use segments from transformed clip format (Timeline clips)
+      segments = clip.segments.map((segment: any, index: number) => ({
+        id: segment.id || `segment-${clip.id}-${index}`,
+        clip_version_id: segment.clip_version_id || clip.id,
+        segment_index: segment.segment_index ?? index,
+        start_time: segment.start_time,
+        end_time: segment.end_time,
+        duration: segment.duration || segment.end_time - segment.start_time,
+        transcript: segment.transcript || null,
+        created_at: segment.created_at || Date.now(),
+      }));
+    } else if (
       clip.current_version_segments &&
       Array.isArray(clip.current_version_segments) &&
       clip.current_version_segments.length > 0
     ) {
-      // Use the proper segments from database
+      // Use the proper segments from database (raw ClipWithVersion format)
       segments = clip.current_version_segments.map((segment: any) => ({
         id: segment.id,
         clip_version_id: segment.clip_version_id,
@@ -1504,7 +1617,7 @@
         created_at: segment.created_at,
       }));
     } else if (clip.current_version) {
-      // Fallback: create single segment from version timing
+      // Fallback: create single segment from version timing (raw format)
       segments = [
         {
           id: `fallback-${clip.id}`,
@@ -1514,6 +1627,20 @@
           end_time: clip.current_version.end_time || 0,
           duration: (clip.current_version.end_time || 0) - (clip.current_version.start_time || 0),
           transcript: clip.current_version.description || null,
+          created_at: Date.now(),
+        },
+      ];
+    } else if (clip.total_duration > 0) {
+      // Last resort: use total_duration from transformed clip
+      segments = [
+        {
+          id: `fallback-${clip.id}`,
+          clip_version_id: clip.id,
+          segment_index: 0,
+          start_time: 0,
+          end_time: clip.total_duration,
+          duration: clip.total_duration,
+          transcript: clip.combined_transcript || null,
           created_at: Date.now(),
         },
       ];

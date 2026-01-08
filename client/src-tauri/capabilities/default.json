@@ -26,6 +26,9 @@
     "shell:allow-execute",
     "shell:allow-open",
     "opener:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-unregister",
     {
       "identifier": "opener:allow-reveal-item-in-dir",
       "allow": [

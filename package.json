@@ -31,5 +31,6 @@
     "client/**/*.{vue,js,ts,json,css,scss,md}": [
       "yarn format:staged"
     ]
-  }
+  },
+  "dependencies": {}
 }
