@@ -12,6 +12,8 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
   Documentation: https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
   """
 
+  require Logger
+
   @behaviour ClippsterServer.Social.Platform
 
   # Instagram OAuth endpoints
@@ -155,17 +157,26 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
   @impl true
   def publish_media(access_token, media_url, opts) do
+    Logger.info("[Instagram] publish_media called")
+    Logger.info("[Instagram] Media URL: #{media_url}")
+    Logger.info("[Instagram] Options: #{inspect(opts)}")
+
     # Get the user ID from opts or fetch it
     ig_user_id = opts[:ig_user_id] || opts[:user_id]
     caption = opts[:caption] || ""
     media_type = detect_media_type(media_url, opts)
 
+    Logger.info("[Instagram] Detected media_type: #{media_type}, ig_user_id: #{ig_user_id}")
+
     unless ig_user_id do
+      Logger.info("[Instagram] No user ID in opts, fetching from token...")
       # Try to get the user ID from the access token
       case get_user_profile(access_token) do
         {:ok, profile} ->
+          Logger.info("[Instagram] Got profile, user_id: #{profile.user_id}")
           do_publish_media(access_token, profile.user_id, media_url, caption, media_type)
         {:error, reason} ->
+          Logger.error("[Instagram] Cannot get user profile: #{inspect(reason)}")
           {:error, "Cannot determine user ID: #{inspect(reason)}"}
       end
     else
@@ -322,11 +333,22 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
   # ============================================================================
 
   defp do_publish_media(access_token, ig_user_id, media_url, caption, media_type) do
+    Logger.info("[Instagram] do_publish_media: type=#{media_type}, user_id=#{ig_user_id}")
+    Logger.info("[Instagram] Caption: #{String.slice(caption || "", 0, 50)}...")
+
     case media_type do
-      "image" -> publish_image(access_token, ig_user_id, media_url, caption)
-      "video" -> publish_video(access_token, ig_user_id, media_url, caption)
-      "reel" -> publish_reel(access_token, ig_user_id, media_url, caption)
-      _ -> {:error, :unsupported_media_type}
+      "image" ->
+        Logger.info("[Instagram] Publishing as IMAGE")
+        publish_image(access_token, ig_user_id, media_url, caption)
+      "video" ->
+        Logger.info("[Instagram] Publishing as VIDEO")
+        publish_video(access_token, ig_user_id, media_url, caption)
+      "reel" ->
+        Logger.info("[Instagram] Publishing as REEL")
+        publish_reel(access_token, ig_user_id, media_url, caption)
+      _ ->
+        Logger.error("[Instagram] Unsupported media type: #{inspect(media_type)}")
+        {:error, :unsupported_media_type}
     end
   end
 
@@ -387,23 +409,30 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
   end
 
   defp create_media_container(url, body) do
+    Logger.info("[Instagram] Creating media container at: #{url}")
     headers = [{"Content-Type", "application/x-www-form-urlencoded"}]
 
     case HTTPoison.post(url, body, headers) do
       {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
+        Logger.info("[Instagram] Container response (200): #{response_body}")
         case Jason.decode(response_body) do
           {:ok, %{"id" => container_id}} ->
+            Logger.info("[Instagram] Container created: #{container_id}")
             {:ok, container_id}
           {:ok, %{"error" => error}} ->
+            Logger.error("[Instagram] Container creation error: #{inspect(error)}")
             {:error, error["message"] || "Container creation failed"}
           _ ->
+            Logger.error("[Instagram] Invalid container response: #{response_body}")
             {:error, :invalid_response}
         end
 
-      {:ok, %HTTPoison.Response{body: body}} ->
-        {:error, extract_error(body, :container_creation_failed)}
+      {:ok, %HTTPoison.Response{status_code: status, body: response_body}} ->
+        Logger.error("[Instagram] Container creation failed (#{status}): #{response_body}")
+        {:error, extract_error(response_body, :container_creation_failed)}
 
       {:error, reason} ->
+        Logger.error("[Instagram] HTTP error creating container: #{inspect(reason)}")
         {:error, reason}
     end
   end

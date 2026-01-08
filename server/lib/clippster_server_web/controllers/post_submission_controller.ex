@@ -5,6 +5,8 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   """
   use ClippsterServerWeb, :controller
 
+  require Logger
+
   alias ClippsterServer.Social
   alias ClippsterServer.Social.{SocialAccount, Platform}
   alias ClippsterServer.Organizations
@@ -380,26 +382,41 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   # ============================================================================
 
   defp publish_to_platform(submission, account, params) do
+    Logger.info("[PostSubmission] Starting publish for submission #{submission.id} to #{account.platform}")
+    Logger.info("[PostSubmission] Media URL: #{params["media_url"]}")
+    Logger.info("[PostSubmission] Platform User ID: #{account.platform_user_id}")
+
     access_token = SocialAccount.get_access_token(account)
 
-    publish_opts = %{
-      caption: params["caption"] || "",
-      media_type: params["media_type"],
-      ig_user_id: account.platform_user_id
-    }
+    if is_nil(access_token) or access_token == "" do
+      Logger.error("[PostSubmission] No access token found for account #{account.id}")
+      Social.mark_post_failed(submission, "No access token available")
+    else
+      Logger.info("[PostSubmission] Access token available (length: #{String.length(access_token)})")
 
-    case Platform.call(account.platform, :publish_media, [access_token, params["media_url"], publish_opts]) do
-      {:ok, result} ->
-        # Update submission with post details
-        Social.mark_post_published(submission, %{
-          post_id: result.post_id,
-          post_url: result.post_url,
-          posted_at: DateTime.utc_now()
-        })
+      publish_opts = %{
+        caption: params["caption"] || "",
+        media_type: params["media_type"],
+        ig_user_id: account.platform_user_id
+      }
 
-      {:error, reason} ->
-        error_msg = if is_binary(reason), do: reason, else: inspect(reason)
-        Social.mark_post_failed(submission, error_msg)
+      Logger.info("[PostSubmission] Publishing with opts: #{inspect(publish_opts)}")
+
+      case Platform.call(account.platform, :publish_media, [access_token, params["media_url"], publish_opts]) do
+        {:ok, result} ->
+          Logger.info("[PostSubmission] Publish successful! Post ID: #{result.post_id}")
+          # Update submission with post details
+          Social.mark_post_published(submission, %{
+            post_id: result.post_id,
+            post_url: result.post_url,
+            posted_at: DateTime.utc_now()
+          })
+
+        {:error, reason} ->
+          error_msg = if is_binary(reason), do: reason, else: inspect(reason)
+          Logger.error("[PostSubmission] Publish failed: #{error_msg}")
+          Social.mark_post_failed(submission, error_msg)
+      end
     end
   end
 
