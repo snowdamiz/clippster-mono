@@ -26,6 +26,17 @@
       {{ streamerName }}
     </div>
 
+    <!-- Toast Notification -->
+    <Transition name="toast">
+      <div 
+        v-if="toastMessage"
+        class="absolute top-10 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded text-white text-xs font-medium pointer-events-none z-50"
+        :class="toastType === 'success' ? 'bg-green-600/90' : 'bg-red-600/90'"
+      >
+        {{ toastMessage }}
+      </div>
+    </Transition>
+
     <!-- Controls Overlay - appears on hover -->
     <div 
       class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent pt-8 pb-2 px-2 transition-opacity duration-200"
@@ -106,6 +117,20 @@ const isMuted = ref(false);
 const canClip = ref(false);
 const hlsUrl = ref<string | null>(null);
 
+// Toast state
+const toastMessage = ref<string | null>(null);
+const toastType = ref<'success' | 'error'>('success');
+let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function showToast(message: string, type: 'success' | 'error' = 'success') {
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastMessage.value = message;
+  toastType.value = type;
+  toastTimeout = setTimeout(() => {
+    toastMessage.value = null;
+  }, 3000);
+}
+
 let hls: Hls | null = null;
 let unlistenFns: UnlistenFn[] = [];
 
@@ -143,6 +168,14 @@ onMounted(async () => {
     )
   );
 
+  // Listen for clip creation result
+  unlistenFns.push(
+    await listen<{ success: boolean; message: string }>('pip-clip-result', (event) => {
+      console.log('[PIP] Clip result:', event.payload);
+      showToast(event.payload.message, event.payload.success ? 'success' : 'error');
+    })
+  );
+
   // Request initial state from main window
   console.log('[PIP] Requesting initial state...');
   await emitTo('main', 'pip-request-state');
@@ -154,6 +187,7 @@ onUnmounted(() => {
     hls.destroy();
     hls = null;
   }
+  if (toastTimeout) clearTimeout(toastTimeout);
 });
 
 // Watch for volume/mute changes
@@ -175,6 +209,10 @@ watch(isPlaying, (playing) => {
   }
 });
 
+// HLS recovery state
+let networkErrorRetries = 0;
+let lastHlsUrl: string | null = null;
+
 function initHls(url: string) {
   console.log('[PIP] initHls called with URL:', url);
   
@@ -189,12 +227,20 @@ function initHls(url: string) {
     hls.destroy();
   }
 
+  lastHlsUrl = url;
+
   if (Hls.isSupported()) {
     console.log('[PIP] HLS.js is supported, initializing...');
     hls = new Hls({
       enableWorker: true,
-      lowLatencyMode: true,
+      lowLatencyMode: false, // More reliable for long streams
       backBufferLength: 90,
+      liveSyncDurationCount: 5,
+      liveMaxLatencyDurationCount: Infinity,
+      liveDurationInfinity: true,
+      fragLoadingTimeOut: 20000,
+      fragLoadingMaxRetry: 6,
+      manifestLoadingMaxRetry: 6,
     });
 
     hls.loadSource(url);
@@ -202,13 +248,39 @@ function initHls(url: string) {
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       console.log('[PIP] HLS manifest parsed, starting playback');
+      networkErrorRetries = 0; // Reset on successful load
       if (videoRef.value && isPlaying.value) {
         videoRef.value.play().catch((e) => console.error('[PIP] Play error:', e));
       }
     });
 
     hls.on(Hls.Events.ERROR, (_, data) => {
-      console.error('[PIP] HLS error:', data.type, data.details, data);
+      console.error('[PIP] HLS error:', data.type, data.details, data.fatal);
+      
+      if (data.fatal) {
+        switch (data.type) {
+          case Hls.ErrorTypes.NETWORK_ERROR:
+            networkErrorRetries++;
+            console.log(`[PIP] Network error, retry ${networkErrorRetries}/10`);
+            if (networkErrorRetries < 10) {
+              setTimeout(() => hls?.startLoad(), 2000 * networkErrorRetries);
+            } else {
+              // Try full reinit
+              networkErrorRetries = 0;
+              setTimeout(() => initHls(url), 3000);
+            }
+            break;
+          case Hls.ErrorTypes.MEDIA_ERROR:
+            console.log('[PIP] Attempting media error recovery');
+            hls?.recoverMediaError();
+            break;
+          default:
+            console.log('[PIP] Fatal error, attempting reinit');
+            setTimeout(() => initHls(url), 3000);
+        }
+      } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        hls?.startLoad();
+      }
     });
   } else if (videoRef.value.canPlayType('application/vnd.apple.mpegurl')) {
     // Safari native HLS
@@ -299,5 +371,17 @@ input[type='range']::-moz-range-thumb {
   border-radius: 50%;
   border: none;
   cursor: pointer;
+}
+
+/* Toast transition */
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -10px);
 }
 </style>

@@ -798,7 +798,7 @@
       });
 
       // Extract the clip
-      const result = await invoke<string>('extract_livestream_clip', {
+      const resultJson = await invoke<string>('extract_livestream_clip', {
         sessionId: effectiveSessionId,
         clipEndTime: clipEndTime,
         clipDuration: QUICK_CLIP_DURATION,
@@ -809,15 +809,24 @@
         watermarkSettings: null,
       });
 
-      console.log('[WatchDialog] Quick clip extracted:', result);
+      // Parse the JSON result containing clipPath and thumbnailPath
+      const extractionResult = JSON.parse(resultJson) as { clipPath: string; thumbnailPath: string | null };
+      const clipFilePath = extractionResult.clipPath;
+      const thumbnailFilePath = extractionResult.thumbnailPath;
+
+      console.log('[WatchDialog] Quick clip extracted:', clipFilePath);
+      if (thumbnailFilePath) {
+        console.log('[WatchDialog] Thumbnail generated:', thumbnailFilePath);
+      }
 
       // Save clip to database
       try {
-        const clipId = await createClipRecord(effectiveProjectId, result, {
+        const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: clipName,
           duration: QUICK_CLIP_DURATION,
           startTime: clipStartTime,
           endTime: clipEndTime,
+          thumbnailPath: thumbnailFilePath || undefined,
         });
 
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);
@@ -840,11 +849,18 @@
 
       clipsCreatedCount.value++;
       showSuccess('Quick Clip Created', `${QUICK_CLIP_DURATION}s clip saved!`);
-      emit('clip-created', result, effectiveProjectId);
+      
+      // Notify PIP window of success
+      emitTo('pip-controls', 'pip-clip-result', { success: true, message: '30s clip saved!' });
+      
+      emit('clip-created', clipFilePath, effectiveProjectId);
     } catch (err) {
       console.error('[WatchDialog] Quick clip failed:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
       showError('Clip Failed', errorMessage);
+      
+      // Notify PIP window of failure
+      emitTo('pip-controls', 'pip-clip-result', { success: false, message: 'Clip failed' });
     } finally {
       isCreatingQuickClip.value = false;
       if (progressUnlisten) {
@@ -962,10 +978,10 @@
       })
     );
 
-    // Listen for clip request
+    // Listen for clip request - use quick clip (30s) like the Alt+C shortcut
     pipEventListeners.push(
       await listen('pip-create-clip', () => {
-        openClipModal();
+        performQuickClip();
       })
     );
 
