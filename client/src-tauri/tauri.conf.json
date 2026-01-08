@@ -63,12 +63,14 @@
     ],
     "resources": [
       "binaries/ffmpeg*",
+      "binaries/yt-dlp*",
       "fonts/*",
       "pumpfun-service/**/*"
     ],
     "externalBin": [
       "binaries/ffmpeg",
-      "binaries/node"
+      "binaries/node",
+      "binaries/yt-dlp"
     ],
     "windows": {
       "nsis": {},

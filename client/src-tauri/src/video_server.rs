@@ -614,6 +614,129 @@ pub async fn start_video_server_impl() {
             }
         });
 
+    // Kick HLS proxy route - proxies Kick's HLS stream to bypass origin restrictions
+    let kick_hls_proxy_route = warp::path!("kick-hls-proxy" / String)
+        .and(warp::get())
+        .and_then(|encoded_url: String| async move {
+            use base64::{Engine as _, engine::general_purpose};
+            
+            // Try URL_SAFE_NO_PAD first (JS btoa with manual conversion), then fallbacks
+            let decoded = general_purpose::URL_SAFE_NO_PAD.decode(&encoded_url)
+                .or_else(|_| general_purpose::URL_SAFE.decode(&encoded_url))
+                .or_else(|_| general_purpose::STANDARD.decode(&encoded_url));
+            
+            let decoded = match decoded {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("Kick proxy: Base64 decode failed: {:?}", e);
+                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid URL encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let url_str = match String::from_utf8(decoded) {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid UTF-8 in URL"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            println!("Kick proxy: Fetching {}", &url_str[..std::cmp::min(80, url_str.len())]);
+
+            // Validate it's a Kick-related URL for security
+            if !url_str.contains("kick.com") && !url_str.contains("live-video.net") && !url_str.contains("kick.live") {
+                eprintln!("Kick proxy: URL not allowed: {}", &url_str[..std::cmp::min(50, url_str.len())]);
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&serde_json::json!({"error": "Only Kick URLs allowed"})),
+                    warp::http::StatusCode::FORBIDDEN
+                ).into_response());
+            }
+
+            // Fetch from Kick with proper headers
+            let client = reqwest::Client::builder()
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+
+            match client.get(&url_str)
+                .header("Referer", "https://kick.com/")
+                .header("Origin", "https://kick.com")
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    if !resp.status().is_success() {
+                        eprintln!("Kick proxy: Upstream error {}", resp.status());
+                        return Ok(warp::reply::with_status(
+                            warp::reply::json(&serde_json::json!({"error": format!("Upstream: {}", resp.status())})),
+                            warp::http::StatusCode::BAD_GATEWAY
+                        ).into_response());
+                    }
+
+                    let content_type = if url_str.contains(".m3u8") {
+                        "application/vnd.apple.mpegurl"
+                    } else if url_str.contains(".ts") {
+                        "video/mp2t"
+                    } else {
+                        "application/octet-stream"
+                    };
+
+                    match resp.bytes().await {
+                        Ok(body) => {
+                            // For m3u8 playlists, rewrite URLs to go through proxy
+                            let final_body = if url_str.contains(".m3u8") {
+                                let playlist = String::from_utf8_lossy(&body);
+                                let base = url_str.rsplit_once('/').map(|(b, _)| b).unwrap_or(&url_str);
+                                
+                                let rewritten: String = playlist.lines().map(|line| {
+                                    if line.starts_with('#') || line.trim().is_empty() {
+                                        line.to_string()
+                                    } else {
+                                        let abs = if line.starts_with("http") {
+                                            line.to_string()
+                                        } else {
+                                            format!("{}/{}", base, line)
+                                        };
+                                        let enc = general_purpose::URL_SAFE_NO_PAD.encode(abs.as_bytes());
+                                        format!("http://127.0.0.1:{}/kick-hls-proxy/{}", VIDEO_SERVER_PORT, enc)
+                                    }
+                                }).collect::<Vec<_>>().join("\n");
+                                
+                                rewritten.into_bytes()
+                            } else {
+                                body.to_vec()
+                            };
+
+                            let response = warp::reply::with_header(final_body, "Content-Type", content_type);
+                            let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
+                            let cache = if url_str.contains(".m3u8") { "no-cache" } else { "max-age=3600" };
+                            let response = warp::reply::with_header(response, "Cache-Control", cache);
+                            Ok(response.into_response())
+                        }
+                        Err(e) => {
+                            eprintln!("Kick proxy: Body read error: {}", e);
+                            Ok(warp::reply::with_status(
+                                warp::reply::json(&serde_json::json!({"error": "Body read failed"})),
+                                warp::http::StatusCode::BAD_GATEWAY
+                            ).into_response())
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Kick proxy: Fetch error: {}", e);
+                    Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": format!("Fetch failed: {}", e)})),
+                        warp::http::StatusCode::BAD_GATEWAY
+                    ).into_response())
+                }
+            }
+        });
+
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "HEAD", "OPTIONS"])
@@ -625,6 +748,7 @@ pub async fn start_video_server_impl() {
         .or(hls_playlist_route)
         .or(hls_playlist_tmp_route)
         .or(hls_segment_route)
+        .or(kick_hls_proxy_route)
         .with(cors);
 
     println!("Starting local video server on port {}", VIDEO_SERVER_PORT);

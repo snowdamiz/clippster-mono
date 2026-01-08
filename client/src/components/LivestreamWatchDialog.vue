@@ -381,6 +381,79 @@
         </Transition>
       </div>
     </Transition>
+
+    <!-- Floating PIP Control Panel - appears when in native PIP mode -->
+    <Transition name="pip-controls">
+      <div
+        v-if="isInPipMode && !modelValue"
+        class="fixed bottom-4 right-4 z-[9999] bg-zinc-900/95 backdrop-blur-md rounded-xl border border-white/10 shadow-2xl p-3"
+      >
+        <div class="flex items-center gap-2">
+          <!-- Stream Info -->
+          <div class="flex items-center gap-2 pr-2 border-r border-white/10">
+            <div class="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+            <span class="text-white text-sm font-medium truncate max-w-[100px]">{{ displayName }}</span>
+          </div>
+
+          <!-- Play/Pause Button -->
+          <button
+            @click="viewer.togglePlayPause"
+            class="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
+            :title="viewer.state.value.isPlaying ? 'Pause' : 'Play'"
+          >
+            <Pause v-if="viewer.state.value.isPlaying" class="w-4 h-4" />
+            <Play v-else class="w-4 h-4" />
+          </button>
+
+          <!-- Volume Control -->
+          <div class="flex items-center gap-1 group">
+            <button
+              @click="viewer.toggleMute"
+              class="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
+              :title="viewer.state.value.isMuted ? 'Unmute' : 'Mute'"
+            >
+              <VolumeX v-if="viewer.state.value.isMuted || viewer.state.value.volume === 0" class="w-4 h-4" />
+              <Volume1 v-else-if="viewer.state.value.volume < 0.5" class="w-4 h-4" />
+              <Volume2 v-else class="w-4 h-4" />
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              :value="viewer.state.value.volume"
+              @input="handleVolumeChange"
+              class="w-16 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer"
+              :style="{ '--value': `${viewer.state.value.volume * 100}%` }"
+            />
+          </div>
+
+          <!-- Clip Button -->
+          <button
+            @click="openClipModal"
+            :disabled="viewer.state.value.totalRecordedDuration < 5 || viewer.state.value.availableSegments.length === 0"
+            class="p-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white transition-colors"
+            title="Create Clip (Alt+C)"
+          >
+            <Scissors class="w-4 h-4" />
+          </button>
+
+          <!-- Exit PIP Button -->
+          <button
+            @click="exitPipMode"
+            class="p-2 rounded-lg text-white hover:bg-white/10 transition-colors"
+            title="Exit Picture-in-Picture"
+          >
+            <Maximize class="w-4 h-4" />
+          </button>
+        </div>
+
+        <!-- Keyboard Shortcut Hint -->
+        <div class="mt-2 text-[10px] text-zinc-500 text-center">
+          Press <kbd class="px-1 py-0.5 bg-zinc-800 rounded text-zinc-400">Alt+C</kbd> to clip
+        </div>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -407,7 +480,7 @@
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window';
-  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { listen, emit as tauriEmit, type UnlistenFn } from '@tauri-apps/api/event';
   import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
   import { useToast } from '@/composables/useToast';
@@ -425,6 +498,8 @@
     streamerId: string;
     displayName: string;
     profileImageUrl?: string;
+    /** Platform for the stream (PumpFun, Kick, etc.) */
+    platform?: 'PumpFun' | 'Kick' | 'Twitch' | 'Youtube';
     /** External PIP mode state from global store */
     isPipModeExternal?: boolean;
   }
@@ -437,6 +512,7 @@
   }
 
   const props = withDefaults(defineProps<Props>(), {
+    platform: 'PumpFun',
     isPipModeExternal: false,
   });
   const emit = defineEmits<Emits>();
@@ -588,10 +664,10 @@
 
   const volumeGradient = computed(() => {
     const pct = Math.min(100, Math.max(0, viewer.state.value.volume * 100));
-    // Violet fill to current value, neutral gray beyond
+    // Set CSS variable for the track gradient
     return {
-      background: `linear-gradient(to right, #a855f7 0%, #a855f7 ${pct}%, #3f3f46 ${pct}%, #3f3f46 100%)`,
-    };
+      '--value': `${pct}%`,
+    } as Record<string, string>;
   });
 
   // Load watermark image
@@ -892,7 +968,7 @@
   }
 
   async function reconnect() {
-    await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
+    await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl, true, props.platform);
   }
 
   async function toggleFullscreen() {
@@ -908,33 +984,96 @@
   }
 
   async function togglePip() {
-    // Use HLS video element for PiP (HLS-only mode)
-    const video = hlsVideoRef.value;
-    if (!video) return;
-
+    // Use our custom Tauri PIP window instead of browser's native PIP
+    // This gives us full control over the UI with video + controls attached
     try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
+      if (isInPipMode.value) {
+        // Exit PIP mode
+        await exitPipMode();
       } else {
-        // Ensure video is playing before entering PiP
-        if (video.paused) {
-          await video.play().catch(() => {});
-        }
-
-        await video.requestPictureInPicture();
-
-        // Ensure video continues playing in PiP
-        if (video.paused) {
-          await video.play().catch(() => {});
-        }
+        // Enter PIP mode - trigger the same flow as browser PIP would
+        await handlePipEnter();
       }
     } catch (error) {
       console.warn('[WatchDialog] PiP error:', error);
     }
   }
 
+  // PIP window event listeners
+  let pipEventListeners: UnlistenFn[] = [];
+
+  async function setupPipEventListeners() {
+    // Listen for state request from PIP window
+    pipEventListeners.push(
+      await listen('pip-request-state', () => {
+        sendPipStateUpdate();
+      })
+    );
+
+    // Listen for play/pause toggle
+    pipEventListeners.push(
+      await listen('pip-toggle-play-pause', () => {
+        viewer.togglePlayPause();
+        sendPipStateUpdate();
+      })
+    );
+
+    // Listen for mute toggle
+    pipEventListeners.push(
+      await listen('pip-toggle-mute', () => {
+        viewer.toggleMute();
+        sendPipStateUpdate();
+      })
+    );
+
+    // Listen for volume change
+    pipEventListeners.push(
+      await listen<number>('pip-volume-change', (event) => {
+        viewer.setVolume(event.payload);
+        sendPipStateUpdate();
+      })
+    );
+
+    // Listen for clip request
+    pipEventListeners.push(
+      await listen('pip-create-clip', () => {
+        openClipModal();
+      })
+    );
+
+    // Listen for close request
+    pipEventListeners.push(
+      await listen('pip-close', async () => {
+        await exitPipMode();
+      })
+    );
+  }
+
+  function cleanupPipEventListeners() {
+    pipEventListeners.forEach((unlisten) => unlisten());
+    pipEventListeners = [];
+  }
+
+  function sendPipStateUpdate() {
+    // Build HLS URL from output directory
+    let hlsUrl: string | undefined;
+    if (viewer.hlsOutputDir.value) {
+      // The local video server serves HLS playlists
+      hlsUrl = `http://localhost:48276/hls/${encodeURIComponent(viewer.hlsOutputDir.value)}/playlist.m3u8`;
+    }
+
+    tauriEmit('pip-state-update', {
+      streamerName: props.displayName,
+      isPlaying: viewer.state.value.isPlaying,
+      volume: viewer.state.value.volume,
+      isMuted: viewer.state.value.isMuted,
+      canClip: viewer.state.value.totalRecordedDuration >= 5 && viewer.state.value.availableSegments.length > 0,
+      hlsUrl,
+    });
+  }
+
   // PiP event handlers
-  function handlePipEnter() {
+  async function handlePipEnter() {
     console.log('[WatchDialog] Entered PiP mode');
     isInPipMode.value = true;
     emit('pip-mode-changed', true);
@@ -943,6 +1082,30 @@
     emit('update:modelValue', false);
     // Setup global key listener for quick clipping
     registerGlobalShortcut();
+
+    // Open the always-on-top PIP control window
+    try {
+      await setupPipEventListeners();
+      await invoke('create_pip_control_window');
+      // Send initial state after a short delay to ensure window is ready
+      setTimeout(() => sendPipStateUpdate(), 500);
+    } catch (error) {
+      console.warn('[WatchDialog] Failed to create PIP control window:', error);
+    }
+  }
+
+  // Exit PIP mode programmatically
+  async function exitPipMode() {
+    // Close our custom Tauri PIP window
+    cleanupPipEventListeners();
+    try {
+      await invoke('close_pip_control_window');
+    } catch (error) {
+      console.warn('[WatchDialog] Error closing PIP window:', error);
+    }
+
+    // Trigger the leave handler
+    await handlePipLeave();
   }
 
   async function handlePipLeave() {
@@ -956,6 +1119,14 @@
     
     // Cleanup global key listener
     await unregisterGlobalShortcut();
+
+    // Close the PIP control window and cleanup event listeners
+    cleanupPipEventListeners();
+    try {
+      await invoke('close_pip_control_window');
+    } catch (error) {
+      console.warn('[WatchDialog] Failed to close PIP control window:', error);
+    }
 
     // Bring main window to front
     const win = getCurrentWindow();
@@ -1093,7 +1264,7 @@
         if (viewer.state.value.connectionState !== 'connected') {
           // Connect to livestream
           try {
-            await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
+            await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl, true, props.platform);
 
             // Load watermark from creator profile after connection
             await loadWatermark();
@@ -1225,6 +1396,20 @@
   }
   .dialog-leave-to {
     transform: scale(0.95);
+    opacity: 0;
+  }
+
+  /* PIP controls panel transition */
+  .pip-controls-enter-active,
+  .pip-controls-leave-active {
+    transition: all 0.3s ease;
+  }
+  .pip-controls-enter-from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  .pip-controls-leave-to {
+    transform: translateY(20px);
     opacity: 0;
   }
 

@@ -153,6 +153,7 @@ export interface MonitoredStreamerRecord {
   id: string;
   mint_id: string;
   display_name: string;
+  platform: string; // 'pumpfun' | 'kick' - stored as lowercase in DB
   last_check_timestamp: number | null;
   is_currently_live: number | boolean;
   current_session_id: string | null;

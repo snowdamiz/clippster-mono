@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pip-window-permissions",
+  "description": "Permissions for the PIP control window",
+  "windows": ["pip-controls"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-position",
+    "core:event:default"
+  ]
+}

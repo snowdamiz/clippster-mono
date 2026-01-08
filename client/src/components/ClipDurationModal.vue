@@ -434,7 +434,7 @@
 
       // Call Tauri command to extract clip (no watermark - clean extraction)
       // Use effective values (which may have been created for temp/DVR recording)
-      const result = await invoke<string>('extract_livestream_clip', {
+      const resultJson = await invoke<string>('extract_livestream_clip', {
         sessionId: effectiveSessionId,
         clipEndTime: props.playbackPosition,
         clipDuration: selectedDuration.value,
@@ -445,15 +445,24 @@
         watermarkSettings: null,
       });
 
-      console.log('[ClipModal] Clip extracted successfully:', result);
+      // Parse the JSON result containing clipPath and thumbnailPath
+      const extractionResult = JSON.parse(resultJson) as { clipPath: string; thumbnailPath: string | null };
+      const clipFilePath = extractionResult.clipPath;
+      const thumbnailFilePath = extractionResult.thumbnailPath;
+
+      console.log('[ClipModal] Clip extracted successfully:', clipFilePath);
+      if (thumbnailFilePath) {
+        console.log('[ClipModal] Thumbnail generated:', thumbnailFilePath);
+      }
 
       // Save clip to database with a default version so workspace can load it
       try {
-        const clipId = await createClipRecord(effectiveProjectId, result, {
+        const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: finalClipName,
           duration: selectedDuration.value,
           startTime: clipStartTime,
           endTime: clipEndTime,
+          thumbnailPath: thumbnailFilePath || undefined,
         });
 
         // Get or create a manual session for this project (needed for FK constraint on clip_versions)
@@ -478,11 +487,11 @@
         // Don't fail the whole operation if DB save fails - clip file was created
       }
 
-      createdClipPath.value = result;
+      createdClipPath.value = clipFilePath;
       clipCreated.value = true;
       clipName.value = finalClipName;
 
-      emit('clip-created', result, effectiveProjectId);
+      emit('clip-created', clipFilePath, effectiveProjectId);
     } catch (err) {
       console.error('[ClipModal] Failed to create clip:', err);
       // Handle different error formats from Tauri

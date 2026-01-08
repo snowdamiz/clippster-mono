@@ -13,6 +13,7 @@ export async function createClip(
     orderIndex?: number;
     introId?: string;
     outroId?: string;
+    thumbnailPath?: string;
   }
 ): Promise<string> {
   const db = await getDatabase();
@@ -21,12 +22,13 @@ export async function createClip(
   const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO clips (id, project_id, name, file_path, duration, start_time, end_time, order_index, intro_id, outro_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO clips (id, project_id, name, file_path, built_thumbnail_path, duration, start_time, end_time, order_index, intro_id, outro_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       projectId,
       options?.name || null,
       filePath,
+      options?.thumbnailPath || null,
       options?.duration || null,
       options?.startTime || null,
       options?.endTime || null,

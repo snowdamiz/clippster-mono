@@ -1,4 +1,4 @@
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 // Modules
 mod storage;
@@ -11,6 +11,7 @@ mod video_server;
 mod assets;
 mod ui_utils;
 mod pumpfun;
+mod kick;
 mod waveform;
 mod focal_detection;
 mod commands;
@@ -38,6 +39,60 @@ async fn copy_file(source: String, destination: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to copy file: {}", e))?;
     
     println!("[Rust] File copied successfully");
+    Ok(())
+}
+
+/// Create an always-on-top PIP window with video and controls
+#[tauri::command]
+async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> {
+    // Check if window already exists
+    if app.get_webview_window("pip-controls").is_some() {
+        // Window exists, just show and focus it
+        if let Some(window) = app.get_webview_window("pip-controls") {
+            window.show().map_err(|e| e.to_string())?;
+            window.set_focus().map_err(|e| e.to_string())?;
+        }
+        return Ok(());
+    }
+
+    // Create new always-on-top window with video player size (16:9 aspect ratio)
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "pip-controls",
+        WebviewUrl::App("/pip-controls".into())
+    )
+    .title("Stream")
+    .inner_size(400.0, 265.0)  // 16:9 video + controls bar
+    .min_inner_size(320.0, 220.0)
+    .max_inner_size(640.0, 400.0)
+    .resizable(true)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(true)
+    .build()
+    .map_err(|e| format!("Failed to create PIP window: {}", e))?;
+
+    // Position in bottom-right corner
+    if let Ok(monitor) = window.current_monitor() {
+        if let Some(monitor) = monitor {
+            let size = monitor.size();
+            let x = size.width as i32 - 420;
+            let y = size.height as i32 - 300;
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+        }
+    }
+
+    Ok(())
+}
+
+/// Close the PIP control window
+#[tauri::command]
+async fn close_pip_control_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("pip-controls") {
+        window.close().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -442,6 +497,12 @@ pub fn run() {
                             sql: include_str!("../migrations/072_add_pan_to_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 74,
+                            description: "add_platform_to_monitored_streamers",
+                            sql: include_str!("../migrations/074_add_platform_to_monitored_streamers.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -554,6 +615,16 @@ pub fn run() {
             pumpfun::stop_livestream_recording,
             pumpfun::stop_all_livestream_recordings,
 
+            // Kick commands
+            kick::check_kick_livestream,
+            kick::get_kick_stream_url,
+            kick::check_streamlink_available,
+            kick::get_streamlink_version,
+            kick::start_kick_recording,
+            kick::stop_kick_recording,
+            kick::stop_all_kick_recordings,
+            kick::get_kick_session_output_dir,
+
             // Download commands
             downloads::download_pumpfun_vod,
             downloads::download_pumpfun_vod_segment,
@@ -620,6 +691,10 @@ pub fn run() {
             
             // File operations
             copy_file,
+
+            // PIP control window commands
+            create_pip_control_window,
+            close_pip_control_window,
 
             // DVR commands
             dvr::save_dvr_chunk,

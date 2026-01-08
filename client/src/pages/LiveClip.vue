@@ -438,6 +438,7 @@
     fetchTokenMetadataFromServer,
     type TokenSearchResult,
   } from '@/services/pumpfun';
+  import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
 
@@ -548,7 +549,7 @@
       }
 
       try {
-        const status = await fetchLiveStatus(streamer.mintId);
+        const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
         const idx = streamers.value.findIndex((s) => s.id === streamer.id);
         if (idx !== -1) {
           streamers.value[idx] = {
@@ -580,7 +581,7 @@
     streamers.value[index] = { ...streamers.value[index], isCheckingLive: true };
 
     try {
-      const status = await fetchLiveStatus(streamer.mintId);
+      const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
       streamers.value[index] = {
         ...streamers.value[index],
         isLive: status.isLive,
@@ -699,7 +700,8 @@
       streamer.mintId,
       streamer.id,
       streamer.displayName,
-      streamer.profileImageUrl
+      streamer.profileImageUrl,
+      streamer.platform
     );
   }
 
@@ -726,11 +728,20 @@
         const monitored = monitoredStreamers.value.get(record.id);
         const session = activeSessions.value.get(record.id);
 
+        // Map platform from DB (lowercase) to display format
+        const platformMap: Record<string, Platform> = {
+          'pumpfun': 'PumpFun',
+          'kick': 'Kick',
+          'twitch': 'Twitch',
+          'youtube': 'Youtube',
+        };
+        const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
+
         return {
           id: record.id,
           mintId: record.mint_id,
           displayName: record.display_name,
-          platform: 'PumpFun',
+          platform,
           lastCheckTimestamp: record.last_check_timestamp,
           isCurrentlyLive: Boolean(record.is_currently_live),
           currentSessionId: record.current_session_id,
@@ -854,6 +865,44 @@
   async function addStreamer() {
     if (!inputValue.value) return;
 
+    // Check if it's a Kick URL/channel first
+    if (detectedPlatform.value === 'Kick') {
+      const channelSlug = extractChannelSlug(inputValue.value);
+      if (channelSlug) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Kick',
+          message: `Checking Kick channel "${channelSlug}"...`,
+          status: 'loading',
+        });
+
+        try {
+          // Fetch channel info from Kick API
+          const kickStatus = await checkKickLivestream(channelSlug);
+          const displayName = kickStatus.username || channelSlug;
+          const profileImage = kickStatus.profileImageUrl;
+
+          addActivityLog({
+            streamerId: 'system',
+            streamerName: 'System',
+            platform: 'Kick',
+            message: kickStatus.isLive 
+              ? `Found ${displayName} - Currently LIVE!` 
+              : `Found ${displayName}`,
+            status: 'success',
+          });
+
+          await confirmAddStreamer(channelSlug, displayName, profileImage, 'kick');
+        } catch (error) {
+          console.error('[LiveClip] Failed to fetch Kick channel info', error);
+          // Still add the streamer with basic info
+          await confirmAddStreamer(channelSlug, channelSlug, undefined, 'kick');
+        }
+        return;
+      }
+    }
+
     // Check if it's a valid mint ID or URL first
     const mintId = extractMintId(inputValue.value);
 
@@ -901,7 +950,7 @@
         // Ignore errors, fallback to basic ID
       }
 
-      await confirmAddStreamer(mintId, displayName, profileImage);
+      await confirmAddStreamer(mintId, displayName, profileImage, 'pumpfun');
       return;
     }
 
@@ -966,32 +1015,38 @@
     }
   }
 
-  async function confirmAddStreamer(mintId: string, displayName: string, profileImageUrl?: string) {
+  async function confirmAddStreamer(
+    platformId: string, 
+    displayName: string, 
+    profileImageUrl?: string,
+    platform: string = 'pumpfun'
+  ) {
+    const platformDisplay = platform === 'kick' ? 'Kick' : 'PumpFun';
     try {
-      await createMonitoredStreamer(mintId, displayName, profileImageUrl);
+      await createMonitoredStreamer(platformId, displayName, profileImageUrl, 5, false, platform);
       await loadStreamers();
       inputValue.value = '';
       detectedPlatform.value = null;
       showSearchDialog.value = false;
 
       addActivityLog({
-        streamerId: mintId,
+        streamerId: platformId,
         streamerName: displayName,
-        platform: 'PumpFun',
+        platform: platformDisplay,
         message: 'Added to monitored list.',
         status: 'success',
-        mintId,
+        mintId: platformId,
         profileImageUrl,
       });
     } catch (error) {
       console.error('[LiveClip] Failed to add streamer', error);
       addActivityLog({
-        streamerId: mintId,
+        streamerId: platformId,
         streamerName: displayName,
-        platform: 'PumpFun',
+        platform: platformDisplay,
         message: 'Failed to add streamer. Ensure it is not already tracked.',
         status: 'info',
-        mintId,
+        mintId: platformId,
       });
     }
   }

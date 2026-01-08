@@ -144,13 +144,18 @@ export function useHlsPlayback() {
 
   /**
    * Initialize HLS playback
+   * @param video - The video element to attach to
+   * @param outputDirOrUrl - Either a local output directory path OR a direct HLS URL (starting with http)
    */
-  async function initialize(video: HTMLVideoElement, outputDir: string): Promise<boolean> {
+  async function initialize(video: HTMLVideoElement, outputDirOrUrl: string): Promise<boolean> {
     // Reset cleanup flag when starting new initialization
     isCleaningUp = false;
 
+    // Detect if this is a direct URL or a local directory path
+    const isDirectUrl = outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
+    const newUrl = isDirectUrl ? outputDirOrUrl : getHlsUrl(outputDirOrUrl);
+    
     // Skip if already initialized for this URL
-    const newUrl = getHlsUrl(outputDir);
     if (hlsUrl === newUrl && videoElement === video && state.value.isInitialized) {
       return true;
     }
@@ -174,17 +179,20 @@ export function useHlsPlayback() {
       return false;
     }
 
-    // Wait for the playlist to be available
-    const playlistReady = await waitForPlaylist(hlsUrl);
-    if (!playlistReady) {
-      if (!isCleaningUp) {
-        state.value.error = 'Playlist not available - recording may not have started';
+    // For direct URLs (like Kick proxy), skip the playlist polling - just try to load directly
+    // For local recordings, wait for the playlist to be available
+    if (!isDirectUrl) {
+      const playlistReady = await waitForPlaylist(hlsUrl);
+      if (!playlistReady) {
+        if (!isCleaningUp) {
+          state.value.error = 'Playlist not available - recording may not have started';
+        }
+        return false;
       }
-      return false;
-    }
 
-    // Ensure at least one segment exists
-    await waitForFirstSegment(hlsUrl);
+      // Ensure at least one segment exists
+      await waitForFirstSegment(hlsUrl);
+    }
 
     try {
       // Create HLS instance with live streaming config optimized for DVR playback

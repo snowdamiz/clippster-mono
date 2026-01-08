@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import type { SupportedLivestreamPlatform } from '@/types/livestream';
 
 export interface LivestreamWatchState {
   isOpen: boolean;
@@ -7,6 +8,7 @@ export interface LivestreamWatchState {
   streamerId: string;
   displayName: string;
   profileImageUrl?: string;
+  platform: SupportedLivestreamPlatform;
   isInPipMode: boolean;
 }
 
@@ -18,6 +20,7 @@ export const useLivestreamStore = defineStore('livestream', () => {
     streamerId: '',
     displayName: '',
     profileImageUrl: undefined,
+    platform: 'PumpFun',
     isInPipMode: false,
   });
 
@@ -36,7 +39,8 @@ export const useLivestreamStore = defineStore('livestream', () => {
     mintId: string,
     streamerId: string,
     displayName: string,
-    profileImageUrl?: string
+    profileImageUrl?: string,
+    platform: SupportedLivestreamPlatform = 'PumpFun'
   ) {
     watchState.value = {
       isOpen: true,
@@ -44,6 +48,7 @@ export const useLivestreamStore = defineStore('livestream', () => {
       streamerId,
       displayName,
       profileImageUrl,
+      platform,
       isInPipMode: false,
     };
   }
@@ -85,6 +90,7 @@ export const useLivestreamStore = defineStore('livestream', () => {
       streamerId: '',
       displayName: '',
       profileImageUrl: undefined,
+      platform: 'PumpFun',
       isInPipMode: false,
     };
   }

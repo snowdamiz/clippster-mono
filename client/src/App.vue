@@ -250,6 +250,7 @@
         :streamer-id="livestreamStore.currentStreamer.streamerId"
         :display-name="livestreamStore.currentStreamer.displayName"
         :profile-image-url="livestreamStore.currentStreamer.profileImageUrl"
+        :platform="livestreamStore.watchState.platform"
         :is-pip-mode-external="livestreamStore.isInPipMode"
         @clip-created="handleClipCreated"
         @pip-mode-changed="(isPip: boolean) => (isPip ? livestreamStore.enterPipMode() : livestreamStore.exitPipMode())"

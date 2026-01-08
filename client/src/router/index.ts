@@ -228,6 +228,13 @@ const router = createRouter({
       name: 'accept-invitation',
       component: () => import('@/pages/AcceptInvitation.vue'),
     },
+    // PIP Controls window (separate always-on-top window)
+    {
+      path: '/pip-controls',
+      name: 'pip-controls',
+      component: () => import('@/pages/PipControls.vue'),
+      meta: { noPadding: true, noLayout: true },
+    },
   ],
 });
 

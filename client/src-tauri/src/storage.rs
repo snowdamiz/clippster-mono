@@ -174,6 +174,15 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
     Ok(paths)
 }
 
+/// Get the livestream recordings directory
+pub fn get_livestream_recordings_dir() -> Result<PathBuf, String> {
+    let base_dir = get_storage_base_dir()?;
+    let recordings_dir = base_dir.join("livestream_recordings");
+    std::fs::create_dir_all(&recordings_dir)
+        .map_err(|e| format!("Failed to create livestream recordings directory: {}", e))?;
+    Ok(recordings_dir)
+}
+
 /// Storage paths structure
 #[derive(Debug, Clone)]
 pub struct StoragePaths {
