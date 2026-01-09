@@ -72,7 +72,11 @@
 
       <!-- Tabs -->
       <Tabs v-model="activeTab">
-        <TabsList class="grid w-full grid-cols-3 max-w-lg">
+        <TabsList class="grid w-full grid-cols-4 max-w-xl">
+          <TabsTrigger value="leaderboard">
+            <Trophy class="w-4 h-4 mr-2" />
+            Leaderboard
+          </TabsTrigger>
           <TabsTrigger value="accounts">
             <Share2 class="w-4 h-4 mr-2" />
             Accounts
@@ -86,6 +90,129 @@
             Campaigns
           </TabsTrigger>
         </TabsList>
+
+        <!-- Leaderboard Tab -->
+        <TabsContent value="leaderboard" class="mt-6">
+          <div class="space-y-6">
+            <!-- TODO Banner -->
+            <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-center gap-3">
+              <AlertTriangle class="w-5 h-5 text-amber-500 flex-shrink-0" />
+              <div>
+                <p class="text-sm font-medium text-amber-600 dark:text-amber-400">Leaderboard In Progress</p>
+                <p class="text-xs text-muted-foreground">View tracking not yet implemented. See <code class="bg-muted px-1 rounded">docs/Leaderboard_TODO.md</code> for remaining tasks.</p>
+              </div>
+            </div>
+
+            <!-- Your Ranking Card -->
+            <div class="bg-card border border-border/60 rounded-xl p-6">
+              <h3 class="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <Trophy class="w-5 h-5 text-amber-500" />
+                Your Ranking
+              </h3>
+              <div class="grid grid-cols-3 gap-6">
+                <div class="text-center">
+                  <div class="text-3xl font-bold text-foreground">{{ myRank || '--' }}</div>
+                  <div class="text-sm text-muted-foreground">Global Rank</div>
+                </div>
+                <div class="text-center">
+                  <div class="text-3xl font-bold text-foreground">{{ clipperProfile?.total_clips_delivered || 0 }}</div>
+                  <div class="text-sm text-muted-foreground">Clips Posted</div>
+                </div>
+                <div class="text-center">
+                  <div class="text-3xl font-bold text-foreground">{{ formatViews(totalViews) }}</div>
+                  <div class="text-sm text-muted-foreground">Total Views</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Top Clippers Leaderboard -->
+            <div class="bg-card border border-border/60 rounded-xl p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-foreground">Top Clippers</h3>
+                <div class="flex gap-1 bg-muted/50 rounded-lg p-1">
+                  <button
+                    @click="switchLeaderboardPeriod('weekly')"
+                    class="px-3 py-1 text-sm rounded-md transition-colors"
+                    :class="leaderboardPeriod === 'weekly' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+                  >
+                    Weekly
+                  </button>
+                  <button
+                    @click="switchLeaderboardPeriod('monthly')"
+                    class="px-3 py-1 text-sm rounded-md transition-colors"
+                    :class="leaderboardPeriod === 'monthly' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+                  >
+                    Monthly
+                  </button>
+                </div>
+              </div>
+              
+              <div v-if="loadingLeaderboard" class="space-y-3">
+                <div v-for="i in 5" :key="i" class="flex items-center gap-4 p-3 bg-muted/20 rounded-lg animate-pulse">
+                  <div class="w-8 h-8 rounded-full bg-muted/40"></div>
+                  <div class="flex-1 space-y-2">
+                    <div class="h-4 bg-muted/40 rounded w-32"></div>
+                    <div class="h-3 bg-muted/30 rounded w-24"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="leaderboardEntries.length === 0" class="text-center py-8">
+                <Trophy class="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
+                <p class="text-sm text-muted-foreground">No leaderboard data yet</p>
+                <p class="text-xs text-muted-foreground mt-1">Start posting clips to campaigns to appear here!</p>
+              </div>
+
+              <div v-else class="space-y-2">
+                <div
+                  v-for="(entry, index) in leaderboardEntries"
+                  :key="entry.id"
+                  class="flex items-center gap-4 p-3 rounded-lg transition-colors"
+                  :class="entry.clipper_profile?.user_id === currentUserId ? 'bg-primary/10 border border-primary/30' : 'bg-muted/20 hover:bg-muted/30'"
+                >
+                  <!-- Rank -->
+                  <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm"
+                    :class="{
+                      'bg-amber-500 text-white': index === 0,
+                      'bg-gray-400 text-white': index === 1,
+                      'bg-amber-700 text-white': index === 2,
+                      'bg-muted text-muted-foreground': index > 2
+                    }"
+                  >
+                    {{ index + 1 }}
+                  </div>
+
+                  <!-- Avatar & Name -->
+                  <div class="flex items-center gap-3 flex-1 min-w-0">
+                    <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <img v-if="entry.clipper_profile?.avatar_url" :src="entry.clipper_profile.avatar_url" class="w-full h-full object-cover" />
+                      <UserCircle v-else class="w-5 h-5 text-primary" />
+                    </div>
+                    <div class="min-w-0">
+                      <div class="font-medium text-foreground truncate">
+                        {{ entry.clipper_profile?.display_name || 'Anonymous Clipper' }}
+                        <span v-if="entry.clipper_profile?.user_id === currentUserId" class="text-xs text-primary ml-1">(You)</span>
+                      </div>
+                      <div class="text-xs text-muted-foreground">
+                        {{ entry.clips_delivered }} clips
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Stats -->
+                  <div class="text-right flex-shrink-0">
+                    <div class="font-semibold text-foreground">{{ formatViews(entry.total_views || 0) }}</div>
+                    <div class="text-xs text-muted-foreground">views</div>
+                  </div>
+                </div>
+              </div>
+
+              <p class="text-xs text-muted-foreground mt-4 text-center italic">
+                Leaderboard based on clips posted and views from your social accounts
+              </p>
+            </div>
+          </div>
+        </TabsContent>
 
         <!-- Accounts Tab -->
         <TabsContent value="accounts" class="mt-6">
@@ -551,7 +678,7 @@ import { ref, reactive, onMounted } from 'vue';
 import { 
   UserCircle, Share2, Wallet, Plus, Pencil, Trash2, CheckCircle, Loader2,
   Music2, Instagram, Twitter, Youtube, Globe, CreditCard, Bitcoin, Smartphone, DollarSign, Building,
-  Megaphone, Calendar, Eye, Upload
+  Megaphone, Calendar, Eye, Upload, Trophy, AlertTriangle
 } from 'lucide-vue-next';
 import PageLayout from '@/components/PageLayout.vue';
 import { Button } from '@/components/ui/button';
@@ -581,7 +708,7 @@ import { useToast } from '@/composables/useToast';
 
 const { toast } = useToast();
 
-const activeTab = ref('accounts');
+const activeTab = ref('leaderboard');
 const clipperProfile = ref<ClipperProfile | null>(null);
 const loadingSocialAccounts = ref(true);
 const loadingPaymentMethods = ref(true);
@@ -597,6 +724,72 @@ const earningsSummary = ref<EarningsSummary>({
   total_submissions: 0,
   verified_submissions: 0
 });
+
+// Leaderboard state
+const loadingLeaderboard = ref(true);
+const leaderboardEntries = ref<LeaderboardEntry[]>([]);
+const myRank = ref<number | null>(null);
+const totalViews = ref(0);
+const currentUserId = ref<number | null>(null);
+const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
+
+interface LeaderboardEntry {
+  id: number;
+  rank: number;
+  clips_delivered: number;
+  total_views: number;
+  clipper_profile?: {
+    id: number;
+    user_id: number;
+    display_name: string | null;
+    avatar_url: string | null;
+  };
+}
+
+const formatViews = (views: number): string => {
+  if (views >= 1000000) {
+    return (views / 1000000).toFixed(1) + 'M';
+  } else if (views >= 1000) {
+    return (views / 1000).toFixed(1) + 'K';
+  }
+  return views.toString();
+};
+
+const switchLeaderboardPeriod = (period: 'weekly' | 'monthly') => {
+  if (leaderboardPeriod.value !== period) {
+    leaderboardPeriod.value = period;
+    loadLeaderboard();
+  }
+};
+
+const loadLeaderboard = async () => {
+  loadingLeaderboard.value = true;
+  try {
+    // TODO: Replace with actual API call when backend is ready
+    // For now, use mock data or existing leaderboard endpoint
+    const response = await import('@/services/clipperProfilesApi').then(m => m.getLeaderboard(leaderboardPeriod.value));
+    if (response.success) {
+      // Map entries to include total_views (placeholder for now)
+      leaderboardEntries.value = response.entries.map((entry: any, index: number) => ({
+        ...entry,
+        total_views: entry.total_views || 0, // Will be populated when API is ready
+        rank: index + 1
+      }));
+      
+      // Find current user's rank
+      if (currentUserId.value) {
+        const myEntry = leaderboardEntries.value.find(
+          e => e.clipper_profile?.user_id === currentUserId.value
+        );
+        myRank.value = myEntry?.rank || null;
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load leaderboard:', error);
+  } finally {
+    loadingLeaderboard.value = false;
+  }
+};
 
 const showSocialAccountDialog = ref(false);
 const showPaymentMethodDialog = ref(false);
@@ -943,8 +1136,14 @@ const loadClipperProfile = async () => {
   }
 };
 
-onMounted(() => {
-  loadClipperProfile();
+onMounted(async () => {
+  // Load clipper profile first to get current user ID
+  await loadClipperProfile();
+  if (clipperProfile.value) {
+    currentUserId.value = clipperProfile.value.user_id;
+  }
+  
+  loadLeaderboard();
   loadSocialAccounts();
   loadPaymentMethods();
   loadMyCampaigns();

@@ -17,6 +17,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperLeaderboardEntry do
     field :clips_delivered, :integer, default: 0
     field :campaigns_active, :integer, default: 0
     field :endorsements_received, :integer, default: 0
+    field :total_views, :integer, default: 0
     field :score, :integer, default: 0
 
     belongs_to :clipper_profile, ClipperProfile
@@ -31,7 +32,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperLeaderboardEntry do
     entry
     |> cast(attrs, [
       :clipper_profile_id, :period_type, :period_start, :period_end,
-      :rank, :clips_delivered, :campaigns_active, :endorsements_received, :score
+      :rank, :clips_delivered, :campaigns_active, :endorsements_received, :total_views, :score
     ])
     |> validate_required([:clipper_profile_id, :period_type, :period_start, :period_end])
     |> validate_inclusion(:period_type, @period_types)

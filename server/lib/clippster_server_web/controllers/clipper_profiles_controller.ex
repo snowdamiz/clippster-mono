@@ -413,13 +413,16 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
 
   defp serialize_leaderboard_entry(entry) do
     %{
+      id: entry.id,
       rank: entry.rank,
       score: entry.score,
       clips_delivered: entry.clips_delivered,
       campaigns_active: entry.campaigns_active,
       endorsements_received: entry.endorsements_received,
-      profile: if(entry.clipper_profile, do: %{
+      total_views: entry.total_views || 0,
+      clipper_profile: if(entry.clipper_profile, do: %{
         id: entry.clipper_profile.id,
+        user_id: entry.clipper_profile.user_id,
         display_name: entry.clipper_profile.display_name,
         avatar_url: entry.clipper_profile.avatar_url,
         slug: entry.clipper_profile.slug,
