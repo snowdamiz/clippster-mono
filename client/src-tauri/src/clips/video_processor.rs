@@ -7,6 +7,12 @@ use super::encoder::{detect_hardware_encoder, get_quality_settings, run_ffmpeg_w
 use super::video_info::{get_video_info, calculate_crop_params, IntroOutroCache};
 use super::font_manager::get_fonts_dir;
 
+/// Ensure a dimension is even (required by H.264/libx264)
+/// Rounds up to the nearest even number
+fn make_even(n: u32) -> u32 {
+    if n % 2 == 0 { n } else { n + 1 }
+}
+
 /// Build time-based FFmpeg filter string from filter segments
 /// This creates a filter string with enable expressions for each segment's time range
 fn build_video_filter_string(segments: Option<&Vec<VideoFilterSegment>>) -> Option<String> {
@@ -1539,12 +1545,13 @@ pub async fn build_split_screen_clip(
 
     // Calculate output dimensions based on target aspect ratio
     // Use 1080 as base width, calculate height from aspect ratio
+    // Ensure dimensions are even (required by H.264/libx264)
     let output_w: u32 = 1080;
-    let output_h: u32 = ((output_w as f32) * aspect.height / aspect.width) as u32;
+    let output_h: u32 = make_even(((output_w as f32) * aspect.height / aspect.width) as u32);
 
-    // Calculate heights for each split region in the output
-    let top_output_height = (output_h as f64 * layout.split_ratio) as u32;
-    let bottom_output_height = output_h - top_output_height;
+    // Calculate heights for each split region in the output (ensure even for H.264)
+    let top_output_height = make_even((output_h as f64 * layout.split_ratio) as u32);
+    let bottom_output_height = make_even(output_h - top_output_height);
 
     // Calculate the CORRECT aspect ratio for each split region
     // This is crucial - each split has its own aspect ratio, not the overall 9:16
@@ -1754,15 +1761,16 @@ fn calculate_aspect_preserving_crop(
 ) -> (u32, u32, u32, u32) {
     let source_aspect = source_w as f64 / source_h as f64;
     
+    // Ensure crop dimensions are even (required by H.264/libx264)
     let (crop_w, crop_h) = if target_aspect > source_aspect {
         // Target is wider - use full width, crop height
-        let w = source_w;
-        let h = (source_w as f64 / target_aspect) as u32;
+        let w = make_even(source_w);
+        let h = make_even((source_w as f64 / target_aspect) as u32);
         (w, h)
     } else {
         // Target is taller - use full height, crop width
-        let h = source_h;
-        let w = (source_h as f64 * target_aspect) as u32;
+        let h = make_even(source_h);
+        let w = make_even((source_h as f64 * target_aspect) as u32);
         (w, h)
     };
     
@@ -1819,18 +1827,19 @@ pub async fn build_dynamic_pan_clip(
     let source_h = video_info.height;
 
     // Calculate crop dimensions for target aspect ratio
+    // Ensure dimensions are even (required by H.264/libx264)
     let target_aspect = aspect.width as f64 / aspect.height as f64;
     let source_aspect = source_w as f64 / source_h as f64;
     
     let (crop_w, crop_h) = if target_aspect < source_aspect {
         // Crop width (most common case: 16:9 to 9:16)
-        let h = source_h;
-        let w = (h as f64 * target_aspect) as u32;
+        let h = make_even(source_h);
+        let w = make_even((h as f64 * target_aspect) as u32);
         (w, h)
     } else {
         // Crop height
-        let w = source_w;
-        let h = (w as f64 / target_aspect) as u32;
+        let w = make_even(source_w);
+        let h = make_even((w as f64 / target_aspect) as u32);
         (w, h)
     };
 
@@ -2003,8 +2012,9 @@ pub async fn build_multi_region_clip(
     let source_h = video_info.height as f64;
 
     // Calculate output dimensions (1080p base width)
+    // Ensure dimensions are even (required by H.264/libx264)
     let output_w: u32 = 1080;
-    let output_h: u32 = ((output_w as f32) * aspect.height / aspect.width) as u32;
+    let output_h: u32 = make_even(((output_w as f32) * aspect.height / aspect.width) as u32);
 
     println!("[Rust] Output dimensions: {}x{}", output_w, output_h);
 
@@ -2019,17 +2029,17 @@ pub async fn build_multi_region_clip(
 
     // For each region, create crop and scale filters
     for (i, region) in config.regions.iter().enumerate() {
-        // Calculate source crop in pixels
+        // Calculate source crop in pixels (ensure even for H.264 compatibility)
         let crop_x = (region.source.x * source_w) as u32;
         let crop_y = (region.source.y * source_h) as u32;
-        let crop_w = (region.source.width * source_w) as u32;
-        let crop_h = (region.source.height * source_h) as u32;
+        let crop_w = make_even((region.source.width * source_w) as u32);
+        let crop_h = make_even((region.source.height * source_h) as u32);
 
-        // Calculate output position and size in pixels
+        // Calculate output position and size in pixels (ensure even dimensions for scale)
         let out_x = (region.output.x * output_w as f64) as u32;
         let out_y = (region.output.y * output_h as f64) as u32;
-        let out_w = (region.output.width * output_w as f64) as u32;
-        let out_h = (region.output.height * output_h as f64) as u32;
+        let out_w = make_even((region.output.width * output_w as f64) as u32);
+        let out_h = make_even((region.output.height * output_h as f64) as u32);
 
         println!("[Rust] Region {}: crop={}:{}:{}:{} -> scale={}:{} @ ({},{})", 
             i, crop_w, crop_h, crop_x, crop_y, out_w, out_h, out_x, out_y);
