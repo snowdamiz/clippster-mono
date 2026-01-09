@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 
 use super::types::{AspectRatio, WatermarkSettings, AudioSettings, MusicTrackSettings, VideoFilterSegment, build_time_based_filter_string, StickerSettings};
-use super::encoder::{detect_hardware_encoder, get_quality_settings};
+use super::encoder::{detect_hardware_encoder, get_quality_settings, run_ffmpeg_with_fallback};
 use super::video_info::{get_video_info, calculate_crop_params, IntroOutroCache};
 use super::font_manager::get_fonts_dir;
 
@@ -487,7 +487,7 @@ async fn apply_watermark_to_video_with_ratio(
     let scale_pct = resolved.scale;
     let watermark_file_path = &resolved.file_path;
 
-    let shell = app.shell();
+    let _shell = app.shell();
     
     // Get video info for calculating watermark size
     let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
@@ -617,17 +617,9 @@ async fn apply_watermark_to_video_with_ratio(
     
     println!("[Rust] Applying watermark to video...");
     
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to apply watermark: {}", e))?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg watermark failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg watermark failed: {}", e))?;
     
     // Replace original file with watermarked version
     std::fs::remove_file(input_path)
@@ -733,17 +725,9 @@ pub async fn build_single_segment_clip_with_settings(
             segment_file.to_string_lossy().to_string(),
         ]);
 
-        let output = shell.sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-            .args(args)
-            .output()
-            .await
+        // Use fallback helper for hardware encoder resilience
+        run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
             .map_err(|e| format!("Failed to extract segment: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Failed to extract segment: {}", stderr));
-        }
 
         // Apply watermark to the main segment BEFORE concatenation with intro/outro
         // This ensures the watermark only appears on the main content, not on intro/outro
@@ -1020,18 +1004,10 @@ pub async fn build_single_segment_clip_with_settings(
         .map_err(|e| format!("Failed to get storage paths: {}", e))?
         .temp.join("fonts.conf");
 
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    let env_vars = vec![("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())];
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, Some(env_vars)).await
+        .map_err(|e| format!("FFmpeg failed: {}", e))?;
 
     // Apply watermark if enabled (after all other processing)
     if let Some(wm) = watermark_settings {
@@ -1107,6 +1083,7 @@ pub async fn build_multi_segment_clip_with_settings(
         let video_path = video_path.to_string();
         let app = app.clone();
         let encoder = encoder.clone();
+        let quality = quality.to_string();
         let frame_rate_str = frame_rate.to_string();
         let output_offset = segment_output_offsets[i];
         
@@ -1142,7 +1119,7 @@ pub async fn build_multi_segment_clip_with_settings(
         let mute_audio = segment["mute_audio"].as_bool().unwrap_or(false);
         
         async move {
-            let shell = app.shell();
+            let _shell = app.shell();
             
             // Build encoder-specific args
             let mut args = vec![
@@ -1184,17 +1161,9 @@ pub async fn build_multi_segment_clip_with_settings(
                 segment_file.to_string_lossy().to_string(),
             ]);
             
-            let output = shell.sidecar("ffmpeg")
-                .map_err(|e| format!("Failed to get ffmpeg sidecar for segment {}: {}", i, e))?
-                .args(args)
-                .output()
-                .await
+            // Use fallback helper for hardware encoder resilience
+            run_ffmpeg_with_fallback(&app, args, &encoder, &quality, None).await
                 .map_err(|e| format!("Failed to extract segment {}: {}", i, e))?;
-
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Failed to extract segment {}: {}", i, stderr));
-            }
 
             Ok::<std::path::PathBuf, String>(segment_file)
         }
@@ -1452,7 +1421,7 @@ pub async fn prepare_intro_outro_for_concat(
         }
     } // Lock is dropped here before any await points
     
-    let shell = app.shell();
+    let _shell = app.shell();
     println!("[Rust] Preparing {} for concat with aspect ratio {}:{}", file_prefix, aspect_ratio.width, aspect_ratio.height);
 
     // Detect hardware encoder
@@ -1496,18 +1465,9 @@ pub async fn prepare_intro_outro_for_concat(
         output_path.to_string_lossy().to_string(),
     ]);
 
-    // Process the intro/outro
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to process {}: {}", file_prefix, e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg failed to process {}: {}", file_prefix, stderr));
-    }
+    // Process the intro/outro with fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg failed to process {}: {}", file_prefix, e))?;
 
     println!("[Rust] Successfully processed {} to: {}", file_prefix, output_path.display());
     
@@ -1557,7 +1517,7 @@ pub async fn build_split_screen_clip(
 ) -> Result<(), String> {
     // Build time-based filter string for the full clip duration
     let video_filter_str = build_video_filter_string(video_filter_segments);
-    let shell = app.shell();
+    let _shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
     let duration = end_time - start_time;
@@ -1760,17 +1720,9 @@ pub async fn build_split_screen_clip(
 
     println!("[Rust] Running split screen FFmpeg command...");
 
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg split screen failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg split screen failed: {}", e))?;
 
     println!("[Rust] Split screen clip built successfully");
     Ok(())
@@ -1846,7 +1798,7 @@ pub async fn build_dynamic_pan_clip(
 ) -> Result<(), String> {
     // Build time-based filter string
     let video_filter_str = build_video_filter_string(video_filter_segments);
-    let shell = app.shell();
+    let _shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
     let duration = end_time - start_time;
@@ -1934,17 +1886,9 @@ pub async fn build_dynamic_pan_clip(
 
     println!("[Rust] Running dynamic pan FFmpeg command...");
 
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg dynamic pan failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg dynamic pan failed: {}", e))?;
 
     println!("[Rust] Dynamic pan clip built successfully");
     Ok(())
@@ -2037,7 +1981,7 @@ pub async fn build_multi_region_clip(
 ) -> Result<(), String> {
     // Build time-based filter string
     let video_filter_str = build_video_filter_string(video_filter_segments);
-    let shell = app.shell();
+    let _shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
     let duration = end_time - start_time;
@@ -2188,16 +2132,9 @@ pub async fn build_multi_region_clip(
 
     println!("[Rust] Running FFmpeg multi-region build...");
     
-    let output = shell.command("ffmpeg")
-        .args(&args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg multi-region build failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg multi-region build failed: {}", e))?;
 
     println!("[Rust] Multi-region clip built successfully");
     Ok(())
@@ -2456,7 +2393,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
     };
 
     // Concatenate segments
-    let shell = app.shell();
+    let _shell = app.shell();
     let encoder = detect_hardware_encoder(app, quality).await;
     
     let mut args = vec![
@@ -2484,23 +2421,15 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
         concat_output.to_string_lossy().to_string(),
     ]);
 
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg concat failed: {}", e))?;
 
     // Clean up segment temp files
     for temp_file in &temp_files {
         let _ = std::fs::remove_file(temp_file);
     }
     let _ = std::fs::remove_file(&concat_file);
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg concat failed: {}", stderr));
-    }
 
     // Add subtitles if needed
     if let Some(sub_path) = subtitle_path {
@@ -2545,7 +2474,7 @@ async fn extract_segment_with_crop(
 ) -> Result<(), String> {
     // Build time-based filter string
     let video_filter_str = build_video_filter_string(video_filter_segments);
-    let shell = app.shell();
+    let _shell = app.shell();
     let encoder = detect_hardware_encoder(app, quality).await;
     
     let start = segment.get("start_time")
@@ -2613,17 +2542,9 @@ async fn extract_segment_with_crop(
         output_path.to_string_lossy().to_string(),
     ]);
 
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg crop failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg crop failed: {}", e))?;
 
     Ok(())
 }
@@ -2636,7 +2557,7 @@ async fn burn_subtitles_to_video(
     subtitle_path: &std::path::Path,
     quality: &str,
 ) -> Result<(), String> {
-    let shell = app.shell();
+    let _shell = app.shell();
     let encoder = detect_hardware_encoder(app, quality).await;
 
     let sub_arg = subtitle_path.to_string_lossy().replace("\\", "/").replace(":", "\\:");
@@ -2668,18 +2589,10 @@ async fn burn_subtitles_to_video(
         output_path.to_string_lossy().to_string(),
     ]);
 
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to burn subtitles: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg subtitle burning failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    let env_vars = vec![("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())];
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, Some(env_vars)).await
+        .map_err(|e| format!("FFmpeg subtitle burning failed: {}", e))?;
 
     Ok(())
 }
@@ -2697,7 +2610,7 @@ pub async fn apply_stickers_to_video(
         return Ok(());
     }
 
-    let shell = app.shell();
+    let _shell = app.shell();
     
     // Get video info for calculating sticker positions
     let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
@@ -2880,18 +2793,9 @@ pub async fn apply_stickers_to_video(
     
     println!("[Rust] Applying {} stickers to video", stickers.len());
     
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to apply stickers: {}", e))?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        println!("[Rust] FFmpeg sticker overlay stderr: {}", stderr);
-        return Err(format!("FFmpeg sticker overlay failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg sticker overlay failed: {}", e))?;
     
     // Replace original with sticker-overlayed version
     std::fs::remove_file(input_path)
@@ -2916,7 +2820,7 @@ pub async fn apply_clip_watermarks_to_video(
         return Ok(());
     }
 
-    let shell = app.shell();
+    let _shell = app.shell();
     
     // Get video info for calculating watermark positions
     let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
@@ -3064,18 +2968,9 @@ pub async fn apply_clip_watermarks_to_video(
     
     println!("[Rust] Applying {} clip watermarks to video", watermarks.len());
     
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to apply clip watermarks: {}", e))?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        println!("[Rust] FFmpeg clip watermark overlay stderr: {}", stderr);
-        return Err(format!("FFmpeg clip watermark overlay failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg clip watermark overlay failed: {}", e))?;
     
     // Replace original with watermark-overlayed version
     std::fs::remove_file(input_path)
