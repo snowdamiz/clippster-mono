@@ -3,7 +3,7 @@ use tauri_plugin_shell::ShellExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::encoder::detect_hardware_encoder;
+use super::encoder::{detect_hardware_encoder, run_ffmpeg_with_fallback};
 use super::types::WatermarkSettings;
 use crate::storage;
 
@@ -346,7 +346,7 @@ async fn extract_single_segment_clip(
     clip_duration: f64,
     temp_dir: &PathBuf,
 ) -> Result<PathBuf, String> {
-    let shell = app.shell();
+    let _shell = app.shell();
     
     // Calculate seek position within this segment
     let seek_in_segment = clip_start_time - segment.start_time;
@@ -386,17 +386,9 @@ async fn extract_single_segment_clip(
 
     println!("[Rust] Running FFmpeg for single segment extraction...");
 
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg extraction failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, "high", None).await
+        .map_err(|e| format!("FFmpeg extraction failed: {}", e))?;
 
     Ok(output_path)
 }
@@ -496,20 +488,13 @@ async fn extract_multi_segment_clip(
 
     println!("[Rust] Running FFmpeg for multi-segment extraction (seek: {}s, duration: {}s)...", seek_position, clip_duration);
 
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    // Use fallback helper for hardware encoder resilience
+    let result = run_ffmpeg_with_fallback(app, args, &encoder, "high", None).await;
 
     // Cleanup concatenated file
     let _ = std::fs::remove_file(&concat_output_path);
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg extraction failed: {}", stderr));
-    }
+    result.map_err(|e| format!("FFmpeg extraction failed: {}", e))?;
 
     Ok(output_path)
 }
@@ -525,7 +510,7 @@ async fn apply_watermark_to_clip(
         return Ok(());
     }
 
-    let shell = app.shell();
+    let _shell = app.shell();
 
     // Get video info to calculate watermark position
     let video_info = crate::clips::video_info::get_video_info(
@@ -602,17 +587,9 @@ async fn apply_watermark_to_clip(
 
     println!("[Rust] Applying watermark to clip...");
 
-    let output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to apply watermark: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg watermark failed: {}", stderr));
-    }
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg watermark failed: {}", e))?;
 
     // Replace original with watermarked version
     std::fs::remove_file(clip_path)
