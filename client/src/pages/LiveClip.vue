@@ -598,7 +598,10 @@
 
   async function refreshStreamerMetadata() {
     const needsUpdate = streamers.value.filter(
-      (s) => s.platform === 'PumpFun' && (s.displayName === s.mintId || !s.profileImageUrl)
+      (s) => (
+        (s.platform === 'PumpFun' && (s.displayName === s.mintId || !s.profileImageUrl)) ||
+        (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId))
+      )
     );
 
     if (needsUpdate.length === 0) return;
@@ -606,32 +609,16 @@
     // Process sequentially to avoid rate limits
     for (const streamer of needsUpdate) {
       try {
-        // Use search to find token metadata
-        let match: TokenSearchResult | null = null;
-
-        // 1. Try DexScreener search first
-        const results = await searchPumpFunTokens(streamer.mintId);
-        if (results && results.length > 0) {
-          // Find exact match if possible, or take first
-          match = results.find((r) => r.mint === streamer.mintId) || results[0];
-        }
-
-        // 2. Fallback to server (Metaplex) if no match or missing image
-        if (!match || !match.image) {
-          const serverMeta = await fetchTokenMetadataFromServer(streamer.mintId);
-          if (serverMeta) {
-            // Use server metadata, potentially overriding DexScreener partial result
-            match = serverMeta;
-          }
-        }
-
-        if (match) {
+        if (streamer.platform === 'Kick') {
+          // Fetch Kick metadata
+          const status = await checkKickLivestream(streamer.mintId);
           const updates: any = {};
-          if (streamer.displayName === streamer.mintId) {
-            updates.display_name = match.symbol; // Use symbol as display name
+          
+          if (streamer.displayName === streamer.mintId && status.username) {
+            updates.display_name = status.username;
           }
-          if (!streamer.profileImageUrl && match.image) {
-            updates.profile_image_url = match.image;
+          if (!streamer.profileImageUrl && status.profileImageUrl) {
+            updates.profile_image_url = status.profileImageUrl;
           }
 
           if (Object.keys(updates).length > 0) {
@@ -639,6 +626,42 @@
             // Update local state
             if (updates.display_name) streamer.displayName = updates.display_name;
             if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+          }
+        } else {
+          // Use search to find token metadata (PumpFun)
+          let match: TokenSearchResult | null = null;
+
+          // 1. Try DexScreener search first
+          const results = await searchPumpFunTokens(streamer.mintId);
+          if (results && results.length > 0) {
+            // Find exact match if possible, or take first
+            match = results.find((r) => r.mint === streamer.mintId) || results[0];
+          }
+
+          // 2. Fallback to server (Metaplex) if no match or missing image
+          if (!match || !match.image) {
+            const serverMeta = await fetchTokenMetadataFromServer(streamer.mintId);
+            if (serverMeta) {
+              // Use server metadata, potentially overriding DexScreener partial result
+              match = serverMeta;
+            }
+          }
+
+          if (match) {
+            const updates: any = {};
+            if (streamer.displayName === streamer.mintId) {
+              updates.display_name = match.symbol; // Use symbol as display name
+            }
+            if (!streamer.profileImageUrl && match.image) {
+              updates.profile_image_url = match.image;
+            }
+
+            if (Object.keys(updates).length > 0) {
+              await updateMonitoredStreamer(streamer.id, updates);
+              // Update local state
+              if (updates.display_name) streamer.displayName = updates.display_name;
+              if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+            }
           }
         }
       } catch (e) {
