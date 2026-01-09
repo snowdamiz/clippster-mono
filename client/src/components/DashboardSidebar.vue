@@ -28,34 +28,43 @@
               class="nav-link"
               :class="{ 'nav-link-active': isActive(item.path) }"
             >
-              <div
-                v-if="item.useImage"
-                class="h-5 w-5 transition-all"
-                :class="{
-                  'brightness-0 invert': isActive(item.path),
-                }"
-                :style="{
-                  backgroundColor: 'currentColor',
-                  maskImage: `url(${item.icon})`,
-                  WebkitMaskImage: `url(${item.icon})`,
-                  maskSize: 'contain',
-                  WebkitMaskSize: 'contain',
-                  maskRepeat: 'no-repeat',
-                  WebkitMaskRepeat: 'no-repeat',
-                  maskPosition: 'center',
-                  WebkitMaskPosition: 'center',
-                }"
-              ></div>
-              <svg
-                v-else-if="item.name === 'PumpFun'"
-                xmlns="http://www.w3.org/2000/svg"
-                class="h-5 w-5"
-                :fill="isActive(item.path) ? 'white' : 'currentColor'"
-                viewBox="0 0 24 24"
-              >
-                <path :d="item.icon as string" />
-              </svg>
-              <component v-else :is="item.icon as string" class="h-5 w-5" />
+              <div class="relative">
+                <div
+                  v-if="item.useImage"
+                  class="h-5 w-5 transition-all"
+                  :class="{
+                    'brightness-0 invert': isActive(item.path),
+                  }"
+                  :style="{
+                    backgroundColor: 'currentColor',
+                    maskImage: `url(${item.icon})`,
+                    WebkitMaskImage: `url(${item.icon})`,
+                    maskSize: 'contain',
+                    WebkitMaskSize: 'contain',
+                    maskRepeat: 'no-repeat',
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskPosition: 'center',
+                    WebkitMaskPosition: 'center',
+                  }"
+                ></div>
+                <svg
+                  v-else-if="item.name === 'PumpFun'"
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-5 w-5"
+                  :fill="isActive(item.path) ? 'white' : 'currentColor'"
+                  viewBox="0 0 24 24"
+                >
+                  <path :d="item.icon as string" />
+                </svg>
+                <component v-else :is="item.icon as string" class="h-5 w-5" />
+                <!-- Unread badge for Messages -->
+                <span
+                  v-if="item.name === 'Messages' && totalUnreadMessages > 0"
+                  class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold bg-red-500 text-white rounded-full"
+                >
+                  {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
+                </span>
+              </div>
               <span>{{ item.name }}</span>
             </router-link>
 
@@ -145,6 +154,7 @@
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
+  import { useMessagingStore } from '@/stores/messaging';
   import { useWallet } from '@/composables/useWallet';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
@@ -156,7 +166,11 @@
   const route = useRoute();
   const router = useRouter();
   const authStore = useAuthStore();
+  const messagingStore = useMessagingStore();
   const { formatAddress } = useWallet();
+
+  // Total unread messages count from messaging store
+  const totalUnreadMessages = computed(() => messagingStore.totalUnread);
   const { isAIAllowed } = useAIPermission();
   const { isLiveClipEnabled, initialize: initFeatureFlags } = useFeatureFlags();
 

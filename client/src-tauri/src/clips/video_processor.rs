@@ -193,6 +193,11 @@ fn build_audio_processing_config(audio_settings: Option<&AudioSettings>, _clip_d
         if track.gain_db != 0.0 {
             track_filters.push(format!("volume={}dB", track.gain_db));
         }
+
+        // Apply pan
+        if track.pan != 0.0 {
+            track_filters.push(format!("stereotools=balance_out={}", track.pan));
+        }
         
         // Apply fade in (if > 0)
         if track.fade_in > 0.0 {
@@ -1133,6 +1138,9 @@ pub async fn build_multi_segment_clip_with_settings(
             println!("[Rust] Segment {} has time-based filters applied", i);
         }
 
+        // Check if audio should be muted for this segment
+        let mute_audio = segment["mute_audio"].as_bool().unwrap_or(false);
+        
         async move {
             let shell = app.shell();
             
@@ -1155,11 +1163,21 @@ pub async fn build_multi_segment_clip_with_settings(
             args.push(encoder.quality_param.clone());
             args.push(encoder.quality_value.clone());
             
+            // Add audio parameters (mute if audio was extracted)
+            if mute_audio {
+                args.extend_from_slice(&[
+                    "-an".to_string(), // No audio
+                ]);
+            } else {
+                args.extend_from_slice(&[
+                    "-c:a".to_string(), "aac".to_string(),
+                    "-b:a".to_string(), "192k".to_string(),
+                ]);
+            }
+            
             // Add common parameters
             args.extend_from_slice(&[
                 "-r".to_string(), frame_rate_str.clone(),
-                "-c:a".to_string(), "aac".to_string(),
-                "-b:a".to_string(), "192k".to_string(),
                 "-pix_fmt".to_string(), "yuv420p".to_string(),
                 "-avoid_negative_ts".to_string(), "1".to_string(),
                 "-y".to_string(),

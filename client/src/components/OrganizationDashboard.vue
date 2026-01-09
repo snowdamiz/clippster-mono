@@ -47,6 +47,10 @@
           </div>
 
           <div class="flex items-center gap-2 mr-1">
+            <Button v-if="!loading" variant="outline" size="sm" @click="router.push(`/organization/${organizationId}/messages`)">
+              <MessageCircle class="h-4 w-4 mr-1.5" />
+              Messages
+            </Button>
             <Button v-if="!loading && isAdmin" size="sm" @click="showInviteDialog = true">
               <UserPlus class="h-4 w-4 mr-1.5" />
               Add Member
@@ -887,6 +891,18 @@
           </div>
         </div>
 
+        <!-- Shared Clips Tab -->
+        <div v-else-if="activeTab === 'shared-clips'" class="p-6">
+          <SharedClipsList
+            ref="sharedClipsListRef"
+            :organization-id="organizationId ?? ''"
+            :is-admin="isAdmin"
+            @share-clip="showShareClipDialog = true"
+            @view-clip="handleViewSharedClip"
+            @view-stats="handleViewSharedClipStats"
+          />
+        </div>
+
         <!-- Social Accounts Tab -->
         <div v-else-if="activeTab === 'social'" class="p-6">
           <SocialAccountsManager
@@ -1036,6 +1052,15 @@
       v-model="showInviteDialog"
       :organization-id="organizationId ?? ''"
       @member-added="loadOrganization"
+    />
+
+    <!-- Share Clip Dialog -->
+    <ShareClipDialog
+      v-model:open="showShareClipDialog"
+      :organization-id="organizationId ?? ''"
+      :members="members"
+      @created="handleSharedClipCreated"
+      @close="showShareClipDialog = false"
     />
 
     <!-- Change Role Dialog -->
@@ -1810,6 +1835,7 @@
     Sticker,
     Play,
     Pause,
+    MessageCircle,
     UserCircle,
     Link2,
     SkipForward,
@@ -1836,6 +1862,9 @@
   import ProfileAssignmentDialog from './ProfileAssignmentDialog.vue';
   import SocialAccountsManager from './organization/SocialAccountsManager.vue';
   import PostSubmissionsList from './organization/PostSubmissionsList.vue';
+  import SharedClipsList from './organization/SharedClipsList.vue';
+  import ShareClipDialog from './organization/ShareClipDialog.vue';
+  import { SharedClip } from '@/services/sharedClipsApi';
   import api from '@/services/api';
   import {
     listOrganizationCreatorProfiles,
@@ -1880,6 +1909,11 @@
 
   const activeTab = ref('members');
   const showInviteDialog = ref(false);
+
+  // Shared clips state
+  const showShareClipDialog = ref(false);
+  const sharedClipsListRef = ref<InstanceType<typeof SharedClipsList> | null>(null);
+  const selectedSharedClip = ref<SharedClip | null>(null);
 
   // Role change dialog state
   const showRoleDialog = ref(false);
@@ -2013,6 +2047,7 @@
   const tabs = [
     { id: 'members', label: 'Members' },
     { id: 'creators', label: 'Creator Profiles' },
+    { id: 'shared-clips', label: 'Shared Clips' },
     { id: 'social', label: 'Social Accounts' },
     { id: 'posts', label: 'Posts' },
     { id: 'assets', label: 'Assets' },
@@ -2073,6 +2108,25 @@
       // transactionsLoaded.value = false;
     }
   });
+
+  // Shared clips handlers
+  function handleViewSharedClip(clip: SharedClip) {
+    selectedSharedClip.value = clip;
+    // For now, just log - could open a preview dialog
+    console.log('View shared clip:', clip);
+  }
+
+  function handleViewSharedClipStats(clip: SharedClip) {
+    selectedSharedClip.value = clip;
+    // For now, just log - could open a stats dialog
+    console.log('View shared clip stats:', clip);
+  }
+
+  function handleSharedClipCreated(clip: SharedClip) {
+    showShareClipDialog.value = false;
+    sharedClipsListRef.value?.loadClips();
+    showSuccess('Clip shared successfully');
+  }
 
   async function loadOrganization() {
     const orgId = organizationId.value;

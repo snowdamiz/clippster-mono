@@ -119,22 +119,17 @@
   );
 
   function formatDuration(seconds: number): string {
-    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
+    if (isNaN(seconds) || !isFinite(seconds)) return '0:00.00';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds - mins * 60;
+    const secsWithHundredths = secs.toFixed(2); // always show hundredths
 
-    const totalSeconds = Math.floor(seconds);
-
-    if (totalSeconds < 60) {
-      return `0:${totalSeconds.toString().padStart(2, '0')}`;
-    } else if (totalSeconds < 3600) {
-      const minutes = Math.floor(totalSeconds / 60);
-      const remainingSeconds = totalSeconds % 60;
-      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-    } else {
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const remainingSeconds = totalSeconds % 60;
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    if (mins === 0) {
+      return `${secsWithHundredths}`;
     }
+
+    const [wholeSecs, hundredths] = secsWithHundredths.split('.');
+    return `${mins}:${wholeSecs.padStart(2, '0')}.${hundredths}`;
   }
 
   function togglePlayPause() {

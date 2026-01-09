@@ -164,6 +164,8 @@ pub struct WatermarkSettings {
 pub struct MusicTrackSettings {
     pub file_path: String,   // Path to audio file
     pub gain_db: f64,        // dB gain (-20 to +20)
+    #[serde(default)]
+    pub pan: f64,            // Pan -1.0 to 1.0 (0.0 is center)
     pub fade_in: f64,        // Fade in duration in seconds
     pub fade_out: f64,       // Fade out duration in seconds
     pub start_time: f64,     // When audio starts in clip timeline
@@ -689,6 +691,21 @@ pub struct ManualFramingConfig {
     /// Source aspect ratio (e.g., "16:9")
     pub source_aspect_ratio: Option<String>,
 }
+
+/// Segment-specific framing configuration
+/// Associates a framing config with specific segment IDs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SegmentFramingConfig {
+    /// Which segment IDs this framing applies to
+    pub segment_ids: Vec<String>,
+    /// The framing configuration for these segments
+    pub config: ManualFramingConfig,
+}
+
+/// Per-aspect-ratio segment-specific framing configurations
+/// Maps aspect ratio strings to arrays of segment framing configs
+pub type SegmentFramingConfigs = std::collections::HashMap<String, Vec<SegmentFramingConfig>>;
 
 impl ManualFramingConfig {
     /// Convert manual config to a FramingStrategy with MultiRegion mode

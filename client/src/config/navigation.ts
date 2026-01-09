@@ -3,6 +3,7 @@ import {
   Video,
   LayoutGrid,
   MessageSquare,
+  MessageCircle,
   Bug,
   Settings,
   Archive,
@@ -58,6 +59,12 @@ export const navigationItems: NavigationItem[] = [
     name: 'Stream VODs',
     path: '/vods',
     icon: Video,
+  },
+  {
+    name: 'Messages',
+    path: '/messages',
+    icon: MessageCircle,
+    orgMember: true, // Show for any user who is a member of at least one organization
   },
   {
     name: 'Assets',

@@ -13,7 +13,7 @@
       ]"
     >
       <component :is="tab.icon" :size="14" />
-      <span v-if="activeTab === tab.id" class="whitespace-nowrap">{{ tab.label }}</span>
+      <span class="whitespace-nowrap">{{ tab.label }}</span>
     </button>
   </div>
 </template>
@@ -22,16 +22,13 @@
   import { computed } from 'vue';
   import {
     Music,
-    Palette,
-    Type,
-    Sticker,
-    Crop,
-    FileText,
+    Layers,
     Droplet,
-    Captions,
-    Library,
+    MessageSquare,
+    Sparkles,
+    Wand2,
     Download,
-    Clapperboard,
+    FolderOpen,
   } from 'lucide-vue-next';
   import type { ClipEditorTab, VideoEditorTab } from '@/types';
 
@@ -49,38 +46,28 @@
     (e: 'tabChange', tab: ClipEditorTab | VideoEditorTab): void;
   }>();
 
-  // Tabs for clip editing mode (includes Sources tab for promoting to video project)
-  const clipTabs = [
-    { id: 'sources' as const, label: 'Sources', icon: Library },
-    { id: 'intro-outro' as const, label: 'Intro/Outro', icon: Clapperboard },
+  // Consolidated tabs for both modes
+  // Media: Sources + Intro/Outro (project-specific media library)
+  // Audio: Audio mixer and music
+  // Effects: Transitions + Effects
+  // Overlays: Text + Stickers
+  // Aspect: Aspect Ratio settings
+  // Captions: Subtitles + Transcript
+  // Watermark: Watermark (kept separate per user request)
+  // Export: Export settings
+  const tabs = [
+    { id: 'media' as const, label: 'Media', icon: FolderOpen },
     { id: 'audio' as const, label: 'Audio', icon: Music },
-    { id: 'filters' as const, label: 'Filters', icon: Palette },
-    { id: 'text' as const, label: 'Text', icon: Type },
-    { id: 'stickers' as const, label: 'Stickers', icon: Sticker },
+    { id: 'effects' as const, label: 'Effects', icon: Wand2 },
+    { id: 'overlays' as const, label: 'Overlays', icon: Layers },
+    { id: 'aspect' as const, label: 'Aspect', icon: Sparkles },
+    { id: 'captions' as const, label: 'Captions', icon: MessageSquare },
     { id: 'watermark' as const, label: 'Watermark', icon: Droplet },
-    { id: 'subtitles' as const, label: 'Subtitles', icon: Captions },
-    { id: 'aspect' as const, label: 'Aspect', icon: Crop },
-    { id: 'transcript' as const, label: 'Transcript', icon: FileText },
-    { id: 'export' as const, label: 'Export', icon: Download },
-  ];
-
-  // Tabs for video editor mode (includes Sources, excludes clip-specific tabs)
-  const editorTabs = [
-    { id: 'sources' as const, label: 'Sources', icon: Library },
-    { id: 'intro-outro' as const, label: 'Intro/Outro', icon: Clapperboard },
-    { id: 'audio' as const, label: 'Audio', icon: Music },
-    { id: 'filters' as const, label: 'Filters', icon: Palette },
-    { id: 'text' as const, label: 'Text', icon: Type },
-    { id: 'stickers' as const, label: 'Stickers', icon: Sticker },
-    { id: 'watermark' as const, label: 'Watermark', icon: Droplet },
-    { id: 'subtitles' as const, label: 'Subtitles', icon: Captions },
-    { id: 'aspect' as const, label: 'Aspect', icon: Crop },
-    { id: 'transcript' as const, label: 'Transcript', icon: FileText },
     { id: 'export' as const, label: 'Export', icon: Download },
   ];
 
   const activeTabs = computed(() => {
-    return props.editorMode ? editorTabs : clipTabs;
+    return tabs;
   });
 
   function handleTabChange(tabId: string) {

@@ -1,4 +1,5 @@
 import type { WaveformPeak } from '@/composables/useAudioWaveform';
+import { renderCapcutStyleBar, DB_COLORS } from '@/utils/audioDbUtils';
 
 export interface WaveformRenderOptions {
   width: number;
@@ -9,8 +10,9 @@ export interface WaveformRenderOptions {
   color?: string;
   backgroundColor?: string;
   opacity?: number;
-  style?: 'bars' | 'line' | 'filled';
+  style?: 'bars' | 'line' | 'filled' | 'db-bars'; // Added db-bars for dB-based coloring
   amplitude?: number; // 0-1, multiplier for peak height
+  useDbColors?: boolean; // Enable dB-based color coding (green/yellow/orange/red)
 }
 
 export interface WaveformRenderContext {
@@ -68,6 +70,7 @@ export function renderWaveformBars(
     color = '#9333ea',
     opacity = 0.8,
     amplitude = 1.0,
+    useDbColors = false,
   } = options;
 
   if (peaks.length === 0) return;
@@ -76,8 +79,6 @@ export function renderWaveformBars(
   const centerY = height / 2;
   const maxBarHeight = height * amplitude;
 
-  // Set rendering style
-  ctx.fillStyle = color;
   ctx.globalAlpha = opacity;
 
   peaks.forEach((peak, index) => {
@@ -90,15 +91,63 @@ export function renderWaveformBars(
     const positiveHeight = Math.abs(peak.max) * maxBarHeight;
     const negativeHeight = Math.abs(peak.min) * maxBarHeight;
 
-    // Draw upper bar (positive values)
-    if (positiveHeight > 0) {
-      ctx.fillRect(x, centerY - positiveHeight, barWidth, positiveHeight);
+    // Use CapCut-style gradient if enabled, otherwise use static color
+    if (useDbColors) {
+      const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
+      const totalHeight = positiveHeight + negativeHeight;
+      // Render CapCut-style bar centered
+      renderCapcutStyleBar(ctx, x, centerY + negativeHeight, barWidth, totalHeight, magnitude);
+    } else {
+      ctx.fillStyle = color;
+      // Draw upper bar (positive values)
+      if (positiveHeight > 0) {
+        ctx.fillRect(x, centerY - positiveHeight, barWidth, positiveHeight);
+      }
+      // Draw lower bar (negative values)
+      if (negativeHeight > 0) {
+        ctx.fillRect(x, centerY, barWidth, negativeHeight);
+      }
     }
+  });
 
-    // Draw lower bar (negative values)
-    if (negativeHeight > 0) {
-      ctx.fillRect(x, centerY, barWidth, negativeHeight);
-    }
+  ctx.globalAlpha = 1.0;
+}
+
+// Render waveform as vertical bars with CapCut-style gradient (base color with yellow/red at top)
+export function renderWaveformDbBars(
+  ctx: CanvasRenderingContext2D,
+  options: WaveformRenderOptions
+): void {
+  const {
+    width,
+    height,
+    peaks,
+    barWidth = 3,
+    barSpacing = 1,
+    opacity = 1.0,
+    amplitude = 0.9,
+  } = options;
+
+  if (peaks.length === 0) return;
+
+  const totalBarWidth = barWidth + barSpacing;
+  const maxBarHeight = height * amplitude;
+  const baselineY = height; // Bars grow upward from bottom
+
+  ctx.globalAlpha = opacity;
+
+  peaks.forEach((peak, index) => {
+    const x = index * totalBarWidth;
+
+    // Skip if bar would be outside canvas bounds
+    if (x + barWidth > width) return;
+
+    // Calculate magnitude and bar height
+    const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
+    const barHeight = Math.max(1, magnitude * maxBarHeight);
+
+    // Render CapCut-style bar with gradient (base color, yellow/red at top when loud)
+    renderCapcutStyleBar(ctx, x, baselineY, barWidth, barHeight, magnitude);
   });
 
   ctx.globalAlpha = 1.0;
@@ -216,6 +265,9 @@ export function renderWaveform(
   switch (mergedOptions.style) {
     case 'bars':
       renderWaveformBars(ctx, mergedOptions as WaveformRenderOptions);
+      break;
+    case 'db-bars':
+      renderWaveformDbBars(ctx, mergedOptions as WaveformRenderOptions);
       break;
     case 'line':
       renderWaveformLine(ctx, mergedOptions as WaveformRenderOptions);

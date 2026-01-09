@@ -54,7 +54,8 @@ export async function createMonitoredStreamer(
   displayName: string,
   profileImageUrl?: string,
   segmentDurationMinutes: number = 5,
-  autoDvr: boolean = false
+  autoDvr: boolean = false,
+  platform: string = 'pumpfun'
 ): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
@@ -62,11 +63,12 @@ export async function createMonitoredStreamer(
   const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO monitored_streamers (id, mint_id, display_name, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, segment_duration_minutes, auto_dvr, user_id, created_at, updated_at) VALUES (?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?, ?, ?, ?)',
+    'INSERT INTO monitored_streamers (id, mint_id, display_name, platform, last_check_timestamp, is_currently_live, current_session_id, profile_image_url, stream_thumbnail_url, segment_duration_minutes, auto_dvr, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, 0, NULL, ?, NULL, ?, ?, ?, ?, ?)',
     [
       id,
       mintId,
       displayName,
+      platform.toLowerCase(),
       profileImageUrl || null,
       segmentDurationMinutes,
       autoDvr ? 1 : 0,
@@ -79,7 +81,7 @@ export async function createMonitoredStreamer(
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('monitored-streamers-updated', {
-        detail: { action: 'created', streamerId: id, mintId },
+        detail: { action: 'created', streamerId: id, mintId, platform },
       })
     );
   }

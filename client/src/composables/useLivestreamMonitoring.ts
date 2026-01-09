@@ -18,7 +18,9 @@ import type {
   MonitoredStreamer,
   ActivityLog,
   SegmentEventPayload,
+  SupportedLivestreamPlatform,
 } from '@/types/livestream';
+import { checkKickLivestream, startKickRecording, stopKickRecording, type KickLiveStatus } from '@/services/kick';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useCreditBalance } from './useCreditBalance';
 import { useDvrRecording } from './useDvrRecording';
@@ -75,7 +77,7 @@ function updateDvrSessionsMap(mutator: (map: DvrSessionsMap) => void) {
   dvrSessions.value = next;
 }
 
-async function fetchLiveStatus(mintId: string): Promise<LiveStatus> {
+async function fetchPumpFunLiveStatus(mintId: string): Promise<LiveStatus> {
   try {
     const response = await invoke<string>('check_pumpfun_livestream', { mintId });
     if (!response) {
@@ -92,8 +94,34 @@ async function fetchLiveStatus(mintId: string): Promise<LiveStatus> {
       raw: data,
     };
   } catch (error) {
-    console.warn('[LiveMonitor] Failed to check live status', error);
+    console.warn('[LiveMonitor] Failed to check PumpFun live status', error);
     return { isLive: false };
+  }
+}
+
+async function fetchKickLiveStatus(channelSlug: string): Promise<LiveStatus> {
+  try {
+    const kickStatus: KickLiveStatus = await checkKickLivestream(channelSlug);
+    return {
+      isLive: kickStatus.isLive,
+      streamId: kickStatus.channelId,
+      streamStartTimestamp: kickStatus.startedAt ? new Date(kickStatus.startedAt).getTime() : undefined,
+      numParticipants: kickStatus.viewerCount,
+      raw: kickStatus,
+    };
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to check Kick live status', error);
+    return { isLive: false };
+  }
+}
+
+async function fetchLiveStatus(platformId: string, platform: SupportedLivestreamPlatform = 'PumpFun'): Promise<LiveStatus> {
+  switch (platform) {
+    case 'Kick':
+      return fetchKickLiveStatus(platformId);
+    case 'PumpFun':
+    default:
+      return fetchPumpFunLiveStatus(platformId);
   }
 }
 
@@ -159,14 +187,14 @@ function updateActivityLog(id: string, updates: Partial<ActivityLog>) {
 // Helper to resolve streamer info even if session is closed
 async function getStreamerInfo(streamerId: string): Promise<{
   displayName: string;
-  platform: 'PumpFun';
+  platform: SupportedLivestreamPlatform;
   profileImageUrl?: string;
 }> {
   const session = activeSessions.value.get(streamerId);
   if (session) {
     return {
       displayName: session.displayName,
-      platform: session.platform as 'PumpFun',
+      platform: session.platform,
       profileImageUrl: session.profileImageUrl,
     };
   }
@@ -177,7 +205,7 @@ async function getStreamerInfo(streamerId: string): Promise<{
     if (streamer) {
       return {
         displayName: streamer.display_name,
-        platform: 'PumpFun',
+        platform: (streamer.platform as SupportedLivestreamPlatform) || 'PumpFun',
         profileImageUrl: streamer.profile_image_url || undefined,
       };
     }
@@ -223,7 +251,12 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   if (!session) return;
 
   try {
-    await invoke('stop_livestream_recording', { mintId: streamer.mintId });
+    // Stop platform-specific recording
+    if (streamer.platform === 'Kick') {
+      await stopKickRecording(streamer.mintId);
+    } else {
+      await invoke('stop_livestream_recording', { mintId: streamer.mintId });
+    }
   } catch (error) {
     console.warn('[LiveMonitor] Failed to stop recorder on end', error);
   }
@@ -249,6 +282,20 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
 
 // Handle DVR cleanup when stream ends (for watch-only DVR sessions)
 async function handleDvrStreamEnd(streamerId: string, mintId: string) {
+  // Check for Kick DVR session first
+  const kickSession = kickDvrSessions.value.get(streamerId);
+  if (kickSession) {
+    console.log('[LiveMonitor] Cleaning up Kick DVR session for', mintId);
+    await stopKickDvrRecording(streamerId);
+    
+    // Also remove from general DVR sessions
+    updateDvrSessionsMap((map) => {
+      map.delete(streamerId);
+    });
+    return;
+  }
+
+  // Handle PumpFun DVR session
   const dvrSession = dvrSessions.value.get(streamerId);
   if (!dvrSession) return;
 
@@ -281,6 +328,12 @@ async function startDvrRecordingForStreamer(streamer: MonitoredStreamer): Promis
     return true;
   }
 
+  // For Kick streams, use yt-dlp based recording
+  if (streamer.platform === 'Kick') {
+    return startKickDvrRecording(streamer);
+  }
+
+  // For PumpFun, use the existing DVR recording system
   // Check if DVR session already exists (may have been started by another component)
   if (dvrRecording.isDvrSessionActive(streamer.mintId)) {
     // Track it locally
@@ -305,6 +358,75 @@ async function startDvrRecordingForStreamer(streamer: MonitoredStreamer): Promis
     console.warn('[LiveMonitor] Failed to start DVR for', streamer.mintId, error);
     return false;
   }
+}
+
+// Track Kick DVR sessions separately (they use yt-dlp, not LiveKit)
+// Key: streamerId, Value: { mintId, sessionId, outputDir }
+type KickDvrSession = { mintId: string; sessionId: string; outputDir: string };
+const kickDvrSessions = ref<Map<string, KickDvrSession>>(new Map());
+
+// Start Kick DVR recording using yt-dlp
+async function startKickDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
+  // Check if already has Kick DVR recording
+  if (kickDvrSessions.value.has(streamer.id)) {
+    console.log('[LiveMonitor] Kick DVR already active for:', streamer.id);
+    return true;
+  }
+
+  try {
+    // Generate a DVR session ID
+    const sessionId = `kick-dvr-${streamer.mintId}-${Date.now()}`;
+    
+    // Start yt-dlp recording via Rust backend
+    await startKickRecording(
+      streamer.mintId, // channel slug
+      streamer.id,     // streamer ID
+      sessionId,
+      5                // 5 minute segments (doesn't matter much for DVR)
+    );
+
+    // Get the output directory
+    const outputDir = await invoke<string>('get_kick_session_output_dir', { sessionId });
+
+    // Track the Kick DVR session
+    const newMap = new Map(kickDvrSessions.value);
+    newMap.set(streamer.id, { mintId: streamer.mintId, sessionId, outputDir });
+    kickDvrSessions.value = newMap;
+
+    // Also track in general DVR sessions for compatibility
+    updateDvrSessionsMap((map) => {
+      map.set(streamer.id, { mintId: streamer.mintId });
+    });
+
+    console.log('[LiveMonitor] Started Kick DVR recording for', streamer.mintId, 'output:', outputDir);
+    return true;
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to start Kick DVR for', streamer.mintId, error);
+    return false;
+  }
+}
+
+// Stop Kick DVR recording
+async function stopKickDvrRecording(streamerId: string): Promise<void> {
+  const session = kickDvrSessions.value.get(streamerId);
+  if (!session) return;
+
+  try {
+    await stopKickRecording(session.mintId);
+    console.log('[LiveMonitor] Stopped Kick DVR recording for', session.mintId);
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to stop Kick DVR', error);
+  }
+
+  // Remove from tracking
+  const newMap = new Map(kickDvrSessions.value);
+  newMap.delete(streamerId);
+  kickDvrSessions.value = newMap;
+}
+
+// Get Kick DVR session info
+function getKickDvrSession(streamerId: string): KickDvrSession | null {
+  return kickDvrSessions.value.get(streamerId) || null;
 }
 
 // Shared function to finalize a recording session (cleanup empty projects)
@@ -669,7 +791,8 @@ export function useLivestreamMonitoring() {
       const config = monitoredStreamers.value.get(streamer.id);
       if (!config) continue;
 
-      const status = await fetchLiveStatus(streamer.mintId);
+      // Use platform-aware live status check
+      const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
       await updateMonitoredStreamer(streamer.id, {
         last_check_timestamp: Math.floor(Date.now() / 1000),
         is_currently_live: status.isLive ? 1 : 0,
@@ -720,12 +843,23 @@ export function useLivestreamMonitoring() {
       // Use the streamer's configured segment duration, defaulting to 5 minutes
       const segmentDuration = streamer.segmentDurationMinutes ?? 5;
 
-      await invoke('start_livestream_recording', {
-        mintId: streamer.mintId,
-        streamerId: streamer.id,
-        sessionId: sessionInfo.sessionId,
-        segmentDurationMinutes: segmentDuration,
-      });
+      // Start platform-specific recording
+      if (streamer.platform === 'Kick') {
+        await startKickRecording(
+          streamer.mintId, // For Kick, mintId is the channel slug
+          streamer.id,
+          sessionInfo.sessionId,
+          segmentDuration
+        );
+      } else {
+        // PumpFun recording (default)
+        await invoke('start_livestream_recording', {
+          mintId: streamer.mintId,
+          streamerId: streamer.id,
+          sessionId: sessionInfo.sessionId,
+          segmentDurationMinutes: segmentDuration,
+        });
+      }
 
       activeSessions.value.set(streamer.id, {
         sessionId: sessionInfo.sessionId,
@@ -806,5 +940,10 @@ export function useLivestreamMonitoring() {
     hasDvrRecording: (streamerId: string) => dvrSessions.value.has(streamerId),
     // Direct access to DVR composable
     dvrRecording,
+    // Kick DVR exports
+    kickDvrSessions,
+    getKickDvrSession,
+    startKickDvrRecording,
+    stopKickDvrRecording,
   };
 }

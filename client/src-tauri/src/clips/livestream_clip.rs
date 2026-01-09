@@ -227,6 +227,17 @@ pub async fn extract_livestream_clip(
         }
     }
 
+    // Generate thumbnail at midpoint of the clip
+    let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
+        progress: 95.0,
+        message: "Generating thumbnail...".to_string(),
+    });
+
+    let thumbnail_path = generate_clip_thumbnail(&app, &output_path, clip_duration).await;
+    if let Some(ref thumb) = thumbnail_path {
+        println!("[Rust] Generated thumbnail: {}", thumb);
+    }
+
     let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
         progress: 100.0,
         message: "Clip created successfully!".to_string(),
@@ -234,7 +245,97 @@ pub async fn extract_livestream_clip(
 
     println!("[Rust] Clip extracted successfully: {}", output_path.display());
 
-    Ok(output_path.to_string_lossy().to_string())
+    // Return JSON with both clip path and thumbnail path
+    let result = serde_json::json!({
+        "clipPath": output_path.to_string_lossy().to_string(),
+        "thumbnailPath": thumbnail_path
+    });
+
+    Ok(result.to_string())
+}
+
+/// Generate a thumbnail for a clip at its midpoint
+async fn generate_clip_thumbnail(
+    app: &tauri::AppHandle,
+    clip_path: &PathBuf,
+    clip_duration: f64,
+) -> Option<String> {
+    use tauri_plugin_shell::ShellExt;
+
+    // Get storage paths for thumbnails
+    let paths = match storage::init_storage_dirs() {
+        Ok(p) => p,
+        Err(e) => {
+            println!("[Rust] Failed to get storage paths for thumbnail: {}", e);
+            return None;
+        }
+    };
+
+    // Generate thumbnail at midpoint
+    let midpoint = clip_duration / 2.0;
+    
+    // Generate unique thumbnail filename based on clip name
+    let clip_stem = clip_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("clip");
+    let thumbnail_filename = format!("{}_thumb.jpg", clip_stem);
+    let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
+
+    // Format timestamp for ffmpeg
+    let hours = (midpoint / 3600.0).floor() as i32;
+    let minutes = ((midpoint % 3600.0) / 60.0).floor() as i32;
+    let seconds = midpoint % 60.0;
+    let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
+
+    let clip_path_str = clip_path.to_string_lossy().to_string();
+    let thumbnail_path_str = thumbnail_path.to_string_lossy().to_string();
+
+    // Use ffmpeg to generate thumbnail
+    let output = match app.shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))
+    {
+        Ok(cmd) => {
+            match cmd
+                .args([
+                    "-hwaccel", "auto",
+                    "-ss", &timestamp_str,
+                    "-i", &clip_path_str,
+                    "-vframes", "1",
+                    "-vf", "scale=320:-1",
+                    "-y",
+                    &thumbnail_path_str,
+                ])
+                .output()
+                .await
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    println!("[Rust] Failed to run ffmpeg for thumbnail: {}", e);
+                    return None;
+                }
+            }
+        }
+        Err(e) => {
+            println!("[Rust] {}", e);
+            return None;
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[Rust] FFmpeg thumbnail generation failed: {}", stderr);
+        return None;
+    }
+
+    // Verify thumbnail was created
+    if thumbnail_path.exists() {
+        Some(thumbnail_path_str)
+    } else {
+        println!("[Rust] Thumbnail file not created");
+        None
+    }
 }
 
 /// Extract clip from a single segment

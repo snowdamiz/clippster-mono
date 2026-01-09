@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 const NODE_VERSION: &str = "v20.11.0";
 const FFMPEG_STATIC_VERSION: &str = "b6.0";
+const YTDLP_VERSION: &str = "2025.12.08";
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
@@ -20,6 +21,9 @@ fn main() {
 
     // Download node
     download_node(&binaries_dir, &target_os, &target_arch);
+
+    // Download yt-dlp (standalone binaries for all platforms)
+    download_ytdlp(&binaries_dir, &target_os, &target_arch);
 
     // Generate migrations
     generate_migrations(&manifest_dir);
@@ -484,4 +488,125 @@ fn extract_node_from_tar_gz(
     }
 
     Err(format!("node binary not found in archive at path: {}", extract_path).into())
+}
+
+fn download_ytdlp(binaries_dir: &Path, target_os: &str, target_arch: &str) {
+    // yt-dlp provides standalone binaries for all platforms (no Python required)
+    // https://github.com/yt-dlp/yt-dlp/releases
+    
+    // Tauri externalBin requires target triple suffix (e.g., yt-dlp-x86_64-pc-windows-msvc.exe)
+    let (ytdlp_name, download_url) = match (target_os, target_arch) {
+        ("windows", "x86_64") => (
+            "yt-dlp-x86_64-pc-windows-msvc.exe",
+            format!(
+                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp.exe",
+                YTDLP_VERSION
+            ),
+        ),
+        ("windows", "aarch64") => (
+            "yt-dlp-aarch64-pc-windows-msvc.exe",
+            format!(
+                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_arm64.exe",
+                YTDLP_VERSION
+            ),
+        ),
+        ("linux", "x86_64") => (
+            "yt-dlp-x86_64-unknown-linux-gnu",
+            format!(
+                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_linux",
+                YTDLP_VERSION
+            ),
+        ),
+        ("linux", "aarch64") => (
+            "yt-dlp-aarch64-unknown-linux-gnu",
+            format!(
+                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_linux_aarch64",
+                YTDLP_VERSION
+            ),
+        ),
+        ("macos", "x86_64") => (
+            "yt-dlp-x86_64-apple-darwin",
+            format!(
+                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_macos",
+                YTDLP_VERSION
+            ),
+        ),
+        ("macos", "aarch64") => (
+            "yt-dlp-aarch64-apple-darwin",
+            format!(
+                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_macos",
+                YTDLP_VERSION
+            ),
+        ),
+        _ => {
+            println!(
+                "cargo:warning=Unsupported platform for yt-dlp: {}-{}",
+                target_os, target_arch
+            );
+            return;
+        }
+    };
+
+    let ytdlp_path = binaries_dir.join(ytdlp_name);
+
+    // Skip download if already exists
+    if ytdlp_path.exists() {
+        println!(
+            "cargo:warning=yt-dlp binary already exists at {:?}",
+            ytdlp_path
+        );
+        return;
+    }
+
+    println!(
+        "cargo:warning=Downloading yt-dlp {} for {}-{}...",
+        YTDLP_VERSION, target_os, target_arch
+    );
+
+    // yt-dlp binaries are standalone executables - download directly
+    match download_binary(&download_url, &ytdlp_path) {
+        Ok(_) => println!(
+            "cargo:warning=Successfully downloaded yt-dlp to {:?}",
+            ytdlp_path
+        ),
+        Err(e) => {
+            println!("cargo:warning=Failed to download yt-dlp: {}", e);
+            println!(
+                "cargo:warning=Please download manually from: {}",
+                download_url
+            );
+            println!("cargo:warning=Place at: {:?}", ytdlp_path);
+        }
+    }
+}
+
+// Keep the old streamlink extraction function for reference but it's no longer used
+#[allow(dead_code)]
+fn download_and_extract_streamlink_legacy(
+    url: &str,
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Download the zip file
+    let response = ureq::get(url).call()?;
+    let mut bytes = Vec::new();
+    response.into_reader().read_to_end(&mut bytes)?;
+
+    // Extract streamlink.exe from the zip
+    let reader = Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(reader)?;
+
+    // Find streamlink.exe in the archive (it's in a subdirectory)
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let file_name = file.name().to_string();
+
+        // Look for streamlink.exe (not streamlinkw.exe which is the windowed version)
+        if file_name.ends_with("/streamlink.exe") || file_name.ends_with("\\streamlink.exe") {
+            let mut output_file = File::create(output_path)?;
+            io::copy(&mut file, &mut output_file)?;
+            return Ok(());
+        }
+    }
+
+    Err("streamlink.exe not found in archive".into())
 }

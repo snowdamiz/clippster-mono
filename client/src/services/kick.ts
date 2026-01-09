@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import api from './api';
 
 export interface KickClip {
@@ -121,4 +122,134 @@ export function formatRelativeTime(dateString?: string): string {
   } catch {
     return 'Unknown';
   }
+}
+
+// ============================================================================
+// Live Stream Functions (via Tauri backend)
+// ============================================================================
+
+/**
+ * Live status response from Kick API
+ */
+export interface KickLiveStatus {
+  isLive: boolean;
+  channelId?: number;
+  channelSlug?: string;
+  username?: string;
+  profileImageUrl?: string;
+  streamTitle?: string;
+  viewerCount?: number;
+  thumbnailUrl?: string;
+  playbackUrl?: string;
+  startedAt?: string;
+  error?: string;
+}
+
+/**
+ * Check if a Kick channel is currently live
+ * Uses the server API which proxies to RapidAPI (same as VOD fetching)
+ * @param channel - Channel slug or URL
+ * @returns Live status information
+ */
+export async function checkKickLivestream(channel: string): Promise<KickLiveStatus> {
+  try {
+    // Normalize channel slug (extract from URL if needed)
+    const channelSlug = extractChannelSlug(channel) || channel.toLowerCase().trim();
+    
+    // Use server API (same RapidAPI as VOD fetching)
+    const response = await api.get<KickLiveStatus>(`/kick/channels/${channelSlug}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('[Kick] Failed to check live status:', error);
+    return { 
+      isLive: false,
+      error: error.response?.data?.error || error.message || 'Failed to check live status'
+    };
+  }
+}
+
+/**
+ * Get the HLS stream URL for a live Kick channel
+ * @param channel - Channel slug or full Kick URL
+ * @returns The m3u8 playback URL
+ */
+export async function getKickStreamUrl(channel: string): Promise<string | null> {
+  try {
+    const result = await invoke<string>('get_kick_stream_url', { channel });
+    return result;
+  } catch (error) {
+    console.error('[Kick] Failed to get stream URL:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if Streamlink is available on the system
+ * @returns true if Streamlink is installed and working
+ */
+export async function checkStreamlinkAvailable(): Promise<boolean> {
+  try {
+    const result = await invoke<boolean>('check_streamlink_available');
+    return result;
+  } catch (error) {
+    console.error('[Kick] Failed to check Streamlink availability:', error);
+    return false;
+  }
+}
+
+/**
+ * Get Streamlink version information
+ * @returns Version string or null if not available
+ */
+export async function getStreamlinkVersion(): Promise<string | null> {
+  try {
+    const result = await invoke<string>('get_streamlink_version');
+    return result;
+  } catch (error) {
+    console.error('[Kick] Failed to get Streamlink version:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch live status for a Kick channel (alias for checkKickLivestream for consistency with PumpFun)
+ */
+export async function fetchKickLiveStatus(channel: string): Promise<KickLiveStatus> {
+  return checkKickLivestream(channel);
+}
+
+/**
+ * Start recording a Kick livestream using Streamlink
+ * @param channelSlug - The Kick channel slug
+ * @param streamerId - The internal streamer ID
+ * @param sessionId - The recording session ID
+ * @param segmentDurationMinutes - Duration of each segment in minutes (default: 5)
+ */
+export async function startKickRecording(
+  channelSlug: string,
+  streamerId: string,
+  sessionId: string,
+  segmentDurationMinutes?: number
+): Promise<void> {
+  await invoke('start_kick_recording', {
+    channelSlug,
+    streamerId,
+    sessionId,
+    segmentDurationMinutes,
+  });
+}
+
+/**
+ * Stop recording a Kick livestream
+ * @param channelSlug - The Kick channel slug
+ */
+export async function stopKickRecording(channelSlug: string): Promise<void> {
+  await invoke('stop_kick_recording', { channelSlug });
+}
+
+/**
+ * Stop all active Kick recordings
+ */
+export async function stopAllKickRecordings(): Promise<void> {
+  await invoke('stop_all_kick_recordings');
 }

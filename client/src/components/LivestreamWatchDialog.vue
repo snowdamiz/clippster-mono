@@ -26,8 +26,8 @@
             <!-- Header Bar (hidden in fullscreen unless hovered) -->
             <div
               :class="[
-                'absolute top-0 left-0 right-0 z-30 transition-opacity duration-300',
-                isFullscreen && !showControls ? 'opacity-0 pointer-events-none' : 'opacity-100',
+                'absolute top-0 left-0 right-0 z-30 transition-all duration-300 ease-in-out',
+                showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none',
               ]"
               @click.stop
             >
@@ -232,8 +232,10 @@
               <!-- Controls Overlay -->
               <div
                 :class="[
-                  'absolute bottom-0 left-0 right-0 z-30 transition-opacity duration-300',
-                  showControls || !viewer.state.value.isPlaying ? 'opacity-100' : 'opacity-0 pointer-events-none',
+                  'absolute bottom-0 left-0 right-0 z-30 transition-all duration-300 ease-in-out',
+                  showControls || !viewer.state.value.isPlaying
+                    ? 'opacity-100 translate-y-0'
+                    : 'opacity-0 translate-y-full pointer-events-none',
                 ]"
                 @click.stop
               >
@@ -379,6 +381,7 @@
         </Transition>
       </div>
     </Transition>
+
   </Teleport>
 </template>
 
@@ -404,7 +407,9 @@
     Radio,
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
-  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window';
+  import { listen, emitTo, type UnlistenFn } from '@tauri-apps/api/event';
+  import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut';
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
@@ -421,6 +426,8 @@
     streamerId: string;
     displayName: string;
     profileImageUrl?: string;
+    /** Platform for the stream (PumpFun, Kick, etc.) */
+    platform?: 'PumpFun' | 'Kick' | 'Twitch' | 'Youtube';
     /** External PIP mode state from global store */
     isPipModeExternal?: boolean;
   }
@@ -433,6 +440,7 @@
   }
 
   const props = withDefaults(defineProps<Props>(), {
+    platform: 'PumpFun',
     isPipModeExternal: false,
   });
   const emit = defineEmits<Emits>();
@@ -456,15 +464,14 @@
   const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
   let controlsTimeout: number | null = null;
 
-  // PiP state tracking - keep stream alive when dialog closes for PiP
+  // PiP state tracking
   const isInPipMode = ref(false);
   const closingForPip = ref(false);
   const pipListenersSetup = ref(false);
-  const globalKeyListenerSetup = ref(false);
   const globalShortcutRegistered = ref(false);
   const GLOBAL_SHORTCUT = 'Alt+C';
 
-  // Track clips created during this session
+  // Session tracking
   const sessionProjectId = ref<string | null>(null);
   const clipsCreatedCount = ref(0);
 
@@ -585,10 +592,10 @@
 
   const volumeGradient = computed(() => {
     const pct = Math.min(100, Math.max(0, viewer.state.value.volume * 100));
-    // Violet fill to current value, neutral gray beyond
+    // Set CSS variable for the track gradient
     return {
-      background: `linear-gradient(to right, #a855f7 0%, #a855f7 ${pct}%, #3f3f46 ${pct}%, #3f3f46 100%)`,
-    };
+      '--value': `${pct}%`,
+    } as Record<string, string>;
   });
 
   // Load watermark image
@@ -650,20 +657,31 @@
 
   // Event handlers
   function handleMouseMove() {
+    // Always show controls when mouse moves
     showControls.value = true;
+
+    // Clear any existing timeout to reset the timer
+    if (controlsTimeout) {
+      clearTimeout(controlsTimeout);
+    }
+
+    // Set a new timeout to hide controls after a period of inactivity
+    if (viewer.state.value.isPlaying) {
+      controlsTimeout = window.setTimeout(() => {
+        showControls.value = false;
+      }, 3000); // 3 seconds of inactivity
+    }
+  }
+
+  function handleMouseLeave() {
+    // When the mouse leaves, immediately start the timeout to hide controls
     if (controlsTimeout) {
       clearTimeout(controlsTimeout);
     }
     if (viewer.state.value.isPlaying) {
       controlsTimeout = window.setTimeout(() => {
         showControls.value = false;
-      }, 3000);
-    }
-  }
-
-  function handleMouseLeave() {
-    if (viewer.state.value.isPlaying) {
-      showControls.value = false;
+      }, 500); // Hide faster when mouse leaves
     }
   }
 
@@ -780,7 +798,7 @@
       });
 
       // Extract the clip
-      const result = await invoke<string>('extract_livestream_clip', {
+      const resultJson = await invoke<string>('extract_livestream_clip', {
         sessionId: effectiveSessionId,
         clipEndTime: clipEndTime,
         clipDuration: QUICK_CLIP_DURATION,
@@ -791,15 +809,24 @@
         watermarkSettings: null,
       });
 
-      console.log('[WatchDialog] Quick clip extracted:', result);
+      // Parse the JSON result containing clipPath and thumbnailPath
+      const extractionResult = JSON.parse(resultJson) as { clipPath: string; thumbnailPath: string | null };
+      const clipFilePath = extractionResult.clipPath;
+      const thumbnailFilePath = extractionResult.thumbnailPath;
+
+      console.log('[WatchDialog] Quick clip extracted:', clipFilePath);
+      if (thumbnailFilePath) {
+        console.log('[WatchDialog] Thumbnail generated:', thumbnailFilePath);
+      }
 
       // Save clip to database
       try {
-        const clipId = await createClipRecord(effectiveProjectId, result, {
+        const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: clipName,
           duration: QUICK_CLIP_DURATION,
           startTime: clipStartTime,
           endTime: clipEndTime,
+          thumbnailPath: thumbnailFilePath || undefined,
         });
 
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);
@@ -822,11 +849,18 @@
 
       clipsCreatedCount.value++;
       showSuccess('Quick Clip Created', `${QUICK_CLIP_DURATION}s clip saved!`);
-      emit('clip-created', result, effectiveProjectId);
+      
+      // Notify PIP window of success
+      emitTo('pip-controls', 'pip-clip-result', { success: true, message: '30s clip saved!' });
+      
+      emit('clip-created', clipFilePath, effectiveProjectId);
     } catch (err) {
       console.error('[WatchDialog] Quick clip failed:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
       showError('Clip Failed', errorMessage);
+      
+      // Notify PIP window of failure
+      emitTo('pip-controls', 'pip-clip-result', { success: false, message: 'Clip failed' });
     } finally {
       isCreatingQuickClip.value = false;
       if (progressUnlisten) {
@@ -862,8 +896,8 @@
       emit('pip-mode-changed', false);
     }
 
-    // Clean up global key listener
-    cleanupGlobalKeyListener();
+    // Cleanup global shortcut
+    await unregisterGlobalShortcut();
 
     // Stop playback locally to avoid lingering audio when switching streams
     viewer.pause();
@@ -878,7 +912,7 @@
   }
 
   async function reconnect() {
-    await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
+    await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl, true, props.platform);
   }
 
   async function toggleFullscreen() {
@@ -894,92 +928,203 @@
   }
 
   async function togglePip() {
-    // Use HLS video element for PiP (HLS-only mode)
-    const video = hlsVideoRef.value;
-    if (!video) return;
-
+    // Use our custom Tauri PIP window instead of browser's native PIP
+    // This gives us full control over the UI with video + controls attached
     try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
+      if (isInPipMode.value) {
+        // Exit PIP mode
+        await exitPipMode();
       } else {
-        // Ensure video is playing before entering PiP
-        if (video.paused) {
-          await video.play().catch(() => {});
-        }
-
-        await video.requestPictureInPicture();
-        // PiP entered successfully - close dialog but keep stream running
-        isInPipMode.value = true;
-        closingForPip.value = true;
-        emit('pip-mode-changed', true);
-        emit('update:modelValue', false);
-        // Reset flag after emit is processed
-        await nextTick();
-        closingForPip.value = false;
-
-        // Setup global keyboard listener for quick clip
-        setupGlobalKeyListener();
-
-        // Ensure video continues playing in PiP
-        if (video.paused) {
-          await video.play().catch(() => {});
-        }
+        // Enter PIP mode - trigger the same flow as browser PIP would
+        await handlePipEnter();
       }
     } catch (error) {
       console.warn('[WatchDialog] PiP error:', error);
     }
   }
 
+  // PIP window event listeners
+  let pipEventListeners: UnlistenFn[] = [];
+
+  async function setupPipEventListeners() {
+    // Listen for state request from PIP window
+    pipEventListeners.push(
+      await listen('pip-request-state', () => {
+        sendPipStateUpdate();
+      })
+    );
+
+    // Listen for play/pause toggle
+    pipEventListeners.push(
+      await listen('pip-toggle-play-pause', () => {
+        viewer.togglePlayPause();
+        sendPipStateUpdate();
+      })
+    );
+
+    // Listen for mute toggle
+    pipEventListeners.push(
+      await listen('pip-toggle-mute', () => {
+        viewer.toggleMute();
+        sendPipStateUpdate();
+      })
+    );
+
+    // Listen for volume change
+    pipEventListeners.push(
+      await listen<number>('pip-volume-change', (event) => {
+        viewer.setVolume(event.payload);
+        sendPipStateUpdate();
+      })
+    );
+
+    // Listen for clip request - use quick clip (30s) like the Alt+C shortcut
+    pipEventListeners.push(
+      await listen('pip-create-clip', () => {
+        performQuickClip();
+      })
+    );
+
+    // Listen for close request
+    pipEventListeners.push(
+      await listen('pip-close', async () => {
+        await exitPipMode();
+      })
+    );
+  }
+
+  function cleanupPipEventListeners() {
+    pipEventListeners.forEach((unlisten) => unlisten());
+    pipEventListeners = [];
+  }
+
+  function sendPipStateUpdate() {
+    // Build HLS URL from output directory
+    // The video server expects base64-encoded directory path (URL_SAFE_NO_PAD)
+    let hlsUrl: string | undefined;
+    console.log('[WatchDialog] sendPipStateUpdate - hlsOutputDir:', viewer.hlsOutputDir.value);
+    
+    if (viewer.hlsOutputDir.value) {
+      // Base64 encode the directory path - use standard base64 as server expects
+      // Note: btoa produces standard base64, we need to URL-encode it for the path
+      const base64Dir = btoa(viewer.hlsOutputDir.value);
+      hlsUrl = `http://localhost:48276/hls/${base64Dir}/playlist.m3u8`;
+      console.log('[WatchDialog] Built HLS URL:', hlsUrl, 'from dir:', viewer.hlsOutputDir.value);
+    } else {
+      console.warn('[WatchDialog] No hlsOutputDir available for PIP');
+    }
+
+    const payload = {
+      streamerName: props.displayName,
+      isPlaying: viewer.state.value.isPlaying,
+      volume: viewer.state.value.volume,
+      isMuted: viewer.state.value.isMuted,
+      canClip: viewer.state.value.totalRecordedDuration >= 5 && viewer.state.value.availableSegments.length > 0,
+      hlsUrl,
+    };
+    console.log('[WatchDialog] Sending PIP state update:', payload);
+    // Send to the PIP window specifically
+    emitTo('pip-controls', 'pip-state-update', payload);
+  }
+
   // PiP event handlers
-  function handlePipEnter() {
+  async function handlePipEnter() {
+    console.log('[WatchDialog] Entered PiP mode');
     isInPipMode.value = true;
     emit('pip-mode-changed', true);
-    setupGlobalKeyListener();
+    // When entering PiP, close the dialog but keep the stream alive
+    closingForPip.value = true;
+    emit('update:modelValue', false);
+    // Setup global key listener for quick clipping
+    registerGlobalShortcut();
+
+    // Mute the main window's video element directly to prevent audio echo
+    // Don't pause - HLS needs to keep running to maintain live position
+    if (hlsVideoRef.value) {
+      hlsVideoRef.value.muted = true;
+    }
+
+    // Open the always-on-top PIP control window
+    try {
+      await setupPipEventListeners();
+      await invoke('create_pip_control_window');
+      // Send initial state after a short delay to ensure window is ready
+      setTimeout(() => sendPipStateUpdate(), 500);
+    } catch (error) {
+      console.warn('[WatchDialog] Failed to create PIP control window:', error);
+    }
   }
 
-  function handlePipLeave() {
-    // Reopen dialog when user exits PiP
+  // Exit PIP mode programmatically
+  async function exitPipMode() {
+    // Close our custom Tauri PIP window
+    cleanupPipEventListeners();
+    try {
+      await invoke('close_pip_control_window');
+    } catch (error) {
+      console.warn('[WatchDialog] Error closing PIP window:', error);
+    }
+
+    // Trigger the leave handler
+    await handlePipLeave();
+  }
+
+  async function handlePipLeave() {
+    console.log('[WatchDialog] Left PiP mode');
+    
+    // Update state
     isInPipMode.value = false;
-    emit('pip-mode-changed', false);
-    cleanupGlobalKeyListener();
-    // The watch on modelValue will handle resetting isInPipMode and resuming video
+    closingForPip.value = false;
+    
+    // Restore the main window's video element mute state from viewer state
+    if (hlsVideoRef.value) {
+      hlsVideoRef.value.muted = viewer.state.value.isMuted;
+    }
+    
+    // Re-open the dialog when leaving PiP
     emit('update:modelValue', true);
+    
+    // Wait for dialog to open and state to sync before updating external state
+    await nextTick();
+    emit('pip-mode-changed', false);
+    
+    // Cleanup global key listener
+    await unregisterGlobalShortcut();
+
+    // Bring main window to front
+    const win = getCurrentWindow();
+    await win.unminimize();
+    await win.setFocus();
+    await win.requestUserAttention(UserAttentionType.Critical);
   }
 
-  // Global keyboard listener for quick clip when in PiP mode
-  function handleGlobalKeydown(event: KeyboardEvent) {
-    // Only handle if in PiP mode and dialog is not open
-    if (!isInPipMode.value && !props.isPipModeExternal) return;
-    if (props.modelValue) return; // Dialog is open, it handles its own keys
-
-    // Don't handle if user is typing in an input anywhere in the app
-    const target = event.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-      return;
+  // Register the Alt+C global shortcut
+  async function registerGlobalShortcut() {
+    try {
+      if (await isRegistered(GLOBAL_SHORTCUT)) {
+        console.warn(`[WatchDialog] Shortcut ${GLOBAL_SHORTCUT} already registered.`);
+        return;
+      }
+      await register(GLOBAL_SHORTCUT, performQuickClip);
+      globalShortcutRegistered.value = true;
+      console.log(`[WatchDialog] Global shortcut ${GLOBAL_SHORTCUT} registered.`);
+    } catch (err) {
+      console.error(`[WatchDialog] Failed to register global shortcut ${GLOBAL_SHORTCUT}:`, err);
+      showError('Shortcut Failed', `Could not register ${GLOBAL_SHORTCUT}. It might be in use by another application.`);
     }
+  }
 
-    // Handle 'C' for quick clip (30 seconds, no dialog)
-    if (event.key.toLowerCase() === 'c' && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault();
-      event.stopPropagation();
-      console.log('[WatchDialog] Global C key pressed - creating quick clip');
-      // Perform quick clip without showing dialog
-      performQuickClip();
+  // Unregister the global shortcut
+  async function unregisterGlobalShortcut() {
+    try {
+      if (await isRegistered(GLOBAL_SHORTCUT)) {
+        await unregister(GLOBAL_SHORTCUT);
+        console.log(`[WatchDialog] Global shortcut ${GLOBAL_SHORTCUT} unregistered.`);
+      }
+    } catch (err) {
+      console.error(`[WatchDialog] Failed to unregister global shortcut ${GLOBAL_SHORTCUT}:`, err);
     }
-  }
-
-  function setupGlobalKeyListener() {
-    if (globalKeyListenerSetup.value) return;
-    window.addEventListener('keydown', handleGlobalKeydown, true);
-    globalKeyListenerSetup.value = true;
-    console.log('[WatchDialog] Global key listener setup for PiP mode');
-  }
-
-  function cleanupGlobalKeyListener() {
-    if (!globalKeyListenerSetup.value) return;
-    window.removeEventListener('keydown', handleGlobalKeydown, true);
-    globalKeyListenerSetup.value = false;
-    console.log('[WatchDialog] Global key listener cleaned up');
+    globalShortcutRegistered.value = false;
   }
 
   // Setup PiP event listeners on video element
@@ -1056,6 +1201,9 @@
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen) {
+        // Reset closingForPip flag
+        closingForPip.value = false;
+
         // Reset session tracking state when opening dialog (but not if returning from PiP)
         if (!isInPipMode.value) {
           sessionProjectId.value = null;
@@ -1079,7 +1227,7 @@
         if (viewer.state.value.connectionState !== 'connected') {
           // Connect to livestream
           try {
-            await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl);
+            await viewer.connect(props.mintId, props.streamerId, props.displayName, props.profileImageUrl, true, props.platform);
 
             // Load watermark from creator profile after connection
             await loadWatermark();
@@ -1149,7 +1297,7 @@
     });
   }
 
-  onUnmounted(() => {
+  onUnmounted(async () => {
     document.removeEventListener('fullscreenchange', handleFullscreenChange);
     if (controlsTimeout) {
       clearTimeout(controlsTimeout);
@@ -1159,7 +1307,7 @@
       cleanupPipListeners(hlsVideoRef.value);
     }
     // Clean up global key listener and shortcut
-    cleanupGlobalKeyListener();
+    await unregisterGlobalShortcut();
 
     // Exit PiP if active when component unmounts
     if (document.pictureInPictureElement) {
@@ -1176,11 +1324,11 @@
       if (isPip && !isInPipMode.value) {
         // External state says we're in PiP but local state doesn't - sync it
         isInPipMode.value = true;
-        setupGlobalKeyListener();
+        registerGlobalShortcut();
       } else if (!isPip && isInPipMode.value) {
         // External state says we're not in PiP - sync and cleanup
         isInPipMode.value = false;
-        cleanupGlobalKeyListener();
+        unregisterGlobalShortcut();
       }
     }
   );
@@ -1213,6 +1361,7 @@
     transform: scale(0.95);
     opacity: 0;
   }
+
 
   /* Volume slider styling */
   input[type='range'] {

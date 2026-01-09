@@ -12,6 +12,15 @@ const VIDEO_SERVER_PORT = 48276;
 const BUFFER_STALL_RECOVERY_TIMEOUT = 4500; // 4.5 seconds before attempting recovery (> 1 segment)
 const MAX_BUFFER_STALL_RETRIES = 3; // Max recovery attempts before seeking to live
 
+// Network error recovery constants
+const MAX_NETWORK_ERROR_RETRIES = 10; // Max retries for network errors before full reinit
+const NETWORK_ERROR_RETRY_DELAY = 2000; // 2 seconds between network error retries
+
+// Playback health monitoring constants
+const PLAYBACK_HEALTH_CHECK_INTERVAL = 5000; // Check every 5 seconds
+const PLAYBACK_STALL_THRESHOLD = 15000; // 15 seconds without progress = stalled
+const MAX_REINIT_ATTEMPTS = 3; // Max full reinitialization attempts
+
 // HLS Playback state
 export interface HlsPlaybackState {
   // Playback
@@ -82,6 +91,17 @@ export function useHlsPlayback() {
   let bufferStallRetries = 0;
   let bufferStallRecoveryTimeout: number | null = null;
 
+  // Network error recovery state
+  let networkErrorRetries = 0;
+  let networkErrorRetryTimeout: number | null = null;
+
+  // Playback health monitoring state
+  let healthCheckInterval: number | null = null;
+  let lastProgressTime: number = Date.now();
+  let lastProgressPosition: number = 0;
+  let reinitAttempts = 0;
+  let cachedOutputDirOrUrl: string | null = null;
+
   // Computed
   const isAtLiveEdge = computed(() => {
     if (!state.value.isInitialized) return true;
@@ -93,8 +113,9 @@ export function useHlsPlayback() {
    */
   function getHlsUrl(outputDir: string): string {
     const encodedDir = btoa(outputDir);
-    // Use the temp playlist for latest updates; server falls back to the stable file if tmp is missing
-    return `http://127.0.0.1:${VIDEO_SERVER_PORT}/hls/${encodedDir}/playlist.m3u8.tmp`;
+    // Use the stable playlist path - FFmpeg on macOS writes directly to playlist.m3u8
+    // (no .tmp file), while Windows may use .tmp. The server handles both cases.
+    return `http://127.0.0.1:${VIDEO_SERVER_PORT}/hls/${encodedDir}/playlist.m3u8`;
   }
 
   /**
@@ -144,13 +165,18 @@ export function useHlsPlayback() {
 
   /**
    * Initialize HLS playback
+   * @param video - The video element to attach to
+   * @param outputDirOrUrl - Either a local output directory path OR a direct HLS URL (starting with http)
    */
-  async function initialize(video: HTMLVideoElement, outputDir: string): Promise<boolean> {
+  async function initialize(video: HTMLVideoElement, outputDirOrUrl: string): Promise<boolean> {
     // Reset cleanup flag when starting new initialization
     isCleaningUp = false;
 
+    // Detect if this is a direct URL or a local directory path
+    const isDirectUrl = outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
+    const newUrl = isDirectUrl ? outputDirOrUrl : getHlsUrl(outputDirOrUrl);
+    
     // Skip if already initialized for this URL
-    const newUrl = getHlsUrl(outputDir);
     if (hlsUrl === newUrl && videoElement === video && state.value.isInitialized) {
       return true;
     }
@@ -174,17 +200,20 @@ export function useHlsPlayback() {
       return false;
     }
 
-    // Wait for the playlist to be available
-    const playlistReady = await waitForPlaylist(hlsUrl);
-    if (!playlistReady) {
-      if (!isCleaningUp) {
-        state.value.error = 'Playlist not available - recording may not have started';
+    // For direct URLs (like Kick proxy), skip the playlist polling - just try to load directly
+    // For local recordings, wait for the playlist to be available
+    if (!isDirectUrl) {
+      const playlistReady = await waitForPlaylist(hlsUrl);
+      if (!playlistReady) {
+        if (!isCleaningUp) {
+          state.value.error = 'Playlist not available - recording may not have started';
+        }
+        return false;
       }
-      return false;
-    }
 
-    // Ensure at least one segment exists
-    await waitForFirstSegment(hlsUrl);
+      // Ensure at least one segment exists
+      await waitForFirstSegment(hlsUrl);
+    }
 
     try {
       // Create HLS instance with live streaming config optimized for DVR playback
@@ -228,6 +257,9 @@ export function useHlsPlayback() {
         startPosition: -1, // -1 means start at live edge (but liveSyncDurationCount controls effective position)
       });
 
+      // Cache the output dir/URL for potential reinitialization
+      cachedOutputDirOrUrl = outputDirOrUrl;
+
       // Set up HLS event handlers
       setupHlsEventHandlers(hls);
 
@@ -240,6 +272,10 @@ export function useHlsPlayback() {
 
       // Start update interval
       startUpdateInterval();
+
+      // Start health monitoring for long-running streams
+      startHealthCheck();
+
       return true;
     } catch (error) {
       console.error('[HlsPlayback] Failed to initialize:', error);
@@ -316,6 +352,8 @@ export function useHlsPlayback() {
     hlsInstance.on(Hls.Events.ERROR, (event, data) => {
       if (isCleaningUp) return;
 
+      console.log('[HlsPlayback] Error:', data.type, data.details, 'fatal:', data.fatal);
+
       // Handle specific error types
       if (data.details === 'bufferStalledError') {
         handleBufferStall();
@@ -330,21 +368,163 @@ export function useHlsPlayback() {
       if (data.fatal) {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            hlsInstance.startLoad();
+            handleNetworkError(hlsInstance);
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
+            console.log('[HlsPlayback] Attempting media error recovery');
             hlsInstance.recoverMediaError();
             break;
           default:
             console.error('[HlsPlayback] Fatal error:', data.details);
-            state.value.error = `HLS error: ${data.details}`;
-            cleanup();
+            // Try to reinitialize instead of giving up
+            attemptReinitialize();
             break;
         }
       } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
         hlsInstance.recoverMediaError();
+      } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        // Non-fatal network error - still try to recover
+        handleNetworkError(hlsInstance);
       }
     });
+  }
+
+  /**
+   * Handle network errors with retry logic
+   */
+  function handleNetworkError(hlsInstance: Hls) {
+    if (isCleaningUp) return;
+
+    networkErrorRetries++;
+    console.log(`[HlsPlayback] Network error, retry ${networkErrorRetries}/${MAX_NETWORK_ERROR_RETRIES}`);
+
+    if (networkErrorRetries >= MAX_NETWORK_ERROR_RETRIES) {
+      console.log('[HlsPlayback] Max network retries reached, attempting full reinitialize');
+      networkErrorRetries = 0;
+      attemptReinitialize();
+      return;
+    }
+
+    // Clear any existing retry timeout
+    if (networkErrorRetryTimeout) {
+      clearTimeout(networkErrorRetryTimeout);
+    }
+
+    // Retry with exponential backoff
+    const delay = Math.min(NETWORK_ERROR_RETRY_DELAY * Math.pow(1.5, networkErrorRetries - 1), 10000);
+    networkErrorRetryTimeout = window.setTimeout(() => {
+      if (!isCleaningUp && hls) {
+        console.log('[HlsPlayback] Retrying load after network error');
+        hls.startLoad();
+      }
+    }, delay);
+  }
+
+  /**
+   * Attempt to fully reinitialize HLS playback
+   */
+  async function attemptReinitialize() {
+    if (isCleaningUp || !videoElement || !cachedOutputDirOrUrl) return;
+
+    reinitAttempts++;
+    console.log(`[HlsPlayback] Attempting reinitialize ${reinitAttempts}/${MAX_REINIT_ATTEMPTS}`);
+
+    if (reinitAttempts > MAX_REINIT_ATTEMPTS) {
+      console.error('[HlsPlayback] Max reinit attempts reached, giving up');
+      state.value.error = 'Stream playback failed after multiple recovery attempts';
+      return;
+    }
+
+    // Store current position to resume from
+    const resumePosition = videoElement.currentTime;
+    const wasPlaying = state.value.isPlaying;
+
+    // Clean up current instance without resetting cachedOutputDirOrUrl
+    const savedUrl = cachedOutputDirOrUrl;
+    await cleanupInternal(false);
+
+    // Wait a moment before reinitializing
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    if (isCleaningUp) return;
+
+    // Reinitialize
+    cachedOutputDirOrUrl = savedUrl;
+    const success = await initialize(videoElement!, savedUrl);
+
+    if (success) {
+      console.log('[HlsPlayback] Reinitialize successful');
+      // Try to resume from previous position
+      if (resumePosition > 0 && hls) {
+        hls.startLoad(resumePosition);
+        videoElement!.currentTime = resumePosition;
+      }
+      if (wasPlaying) {
+        play();
+      }
+      // Reset retry counters on successful recovery
+      networkErrorRetries = 0;
+      reinitAttempts = 0;
+    }
+  }
+
+  /**
+   * Start playback health monitoring
+   */
+  function startHealthCheck() {
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval);
+    }
+
+    lastProgressTime = Date.now();
+    lastProgressPosition = videoElement?.currentTime ?? 0;
+
+    healthCheckInterval = window.setInterval(() => {
+      if (isCleaningUp || !videoElement || !state.value.isInitialized) return;
+
+      const currentPosition = videoElement.currentTime;
+      const now = Date.now();
+
+      // Check if playback is progressing (only when supposed to be playing)
+      if (state.value.isPlaying && !state.value.isPaused) {
+        const positionDelta = Math.abs(currentPosition - lastProgressPosition);
+        const timeDelta = now - lastProgressTime;
+
+        // If position hasn't changed significantly in PLAYBACK_STALL_THRESHOLD ms
+        if (positionDelta < 0.5 && timeDelta > PLAYBACK_STALL_THRESHOLD) {
+          console.warn(`[HlsPlayback] Playback stalled for ${timeDelta}ms, attempting recovery`);
+          
+          // Try progressive recovery steps
+          if (hls) {
+            // First try: just restart loading
+            hls.startLoad();
+            
+            // If still stalled after a few checks, try more aggressive recovery
+            if (timeDelta > PLAYBACK_STALL_THRESHOLD * 2) {
+              console.log('[HlsPlayback] Extended stall, attempting media error recovery');
+              hls.recoverMediaError();
+            }
+            
+            if (timeDelta > PLAYBACK_STALL_THRESHOLD * 3) {
+              console.log('[HlsPlayback] Severe stall, attempting full reinitialize');
+              attemptReinitialize();
+            }
+          }
+        } else if (positionDelta >= 0.5) {
+          // Playback is progressing, update tracking
+          lastProgressTime = now;
+          lastProgressPosition = currentPosition;
+          // Reset error state if we were recovering
+          if (state.value.error) {
+            state.value.error = null;
+          }
+        }
+      } else {
+        // Not playing, just update tracking
+        lastProgressTime = now;
+        lastProgressPosition = currentPosition;
+      }
+    }, PLAYBACK_HEALTH_CHECK_INTERVAL);
   }
 
   /**
@@ -642,17 +822,25 @@ export function useHlsPlayback() {
   }
 
   /**
-   * Clean up resources
+   * Internal cleanup that can optionally preserve state for reinitialization
    */
-  async function cleanup() {
-    if (isCleaningUp) return;
-
-    isCleaningUp = true;
-
+  async function cleanupInternal(fullCleanup: boolean = true) {
     // Clear buffer stall recovery state
     clearBufferStallRecovery();
 
-    // Clear interval
+    // Clear network error retry timeout
+    if (networkErrorRetryTimeout) {
+      clearTimeout(networkErrorRetryTimeout);
+      networkErrorRetryTimeout = null;
+    }
+
+    // Clear health check interval
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval);
+      healthCheckInterval = null;
+    }
+
+    // Clear update interval
     if (updateInterval) {
       clearInterval(updateInterval);
       updateInterval = null;
@@ -664,12 +852,14 @@ export function useHlsPlayback() {
       hls = null;
     }
 
-    // Clean up video element
+    // Clean up video element (but don't null it if we're reinitializing)
     if (videoElement) {
       videoElement.pause();
       videoElement.src = '';
       videoElement.load();
-      videoElement = null;
+      if (fullCleanup) {
+        videoElement = null;
+      }
     }
 
     // Reset state
@@ -686,13 +876,29 @@ export function useHlsPlayback() {
       isInitialized: false,
       liveEdgeTime: 0,
       isAtLiveEdge: true,
-      isMuted: false,
-      volume: 1,
+      isMuted: state.value.isMuted, // Preserve audio settings
+      volume: state.value.volume,
       error: null,
       isLive: true,
       latency: 0,
     };
     timelineOffset = null;
+
+    if (fullCleanup) {
+      cachedOutputDirOrUrl = null;
+      networkErrorRetries = 0;
+      reinitAttempts = 0;
+    }
+  }
+
+  /**
+   * Clean up resources
+   */
+  async function cleanup() {
+    if (isCleaningUp) return;
+
+    isCleaningUp = true;
+    await cleanupInternal(true);
   }
 
   // Cleanup on unmount

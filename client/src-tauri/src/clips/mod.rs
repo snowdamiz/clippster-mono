@@ -7,6 +7,9 @@ mod subtitle;
 pub mod video_processor;
 mod orchestrator;
 pub mod livestream_clip;
+mod overlay_renderer;
+pub mod effect_renderer;
+pub mod audio_effect_renderer;
 
 // Re-export public types
 pub use types::*;
@@ -54,6 +57,7 @@ pub async fn build_clip_from_segments(
     audio_settings: Option<AudioSettings>,
     framing_strategy: Option<FramingStrategy>,
     manual_framing_configs: Option<std::collections::HashMap<String, ManualFramingConfig>>,
+    segment_framing_configs: Option<SegmentFramingConfigs>,
     video_filter_segments: Option<Vec<VideoFilterSegment>>,
     text_overlays: Option<Vec<TextOverlaySettings>>,
     stickers: Option<Vec<StickerSettings>>,
@@ -89,6 +93,7 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   text_overlays count: {}", text_overlays.as_ref().map(|v| v.len()).unwrap_or(0));
     println!("[Rust]   stickers count: {}", stickers.as_ref().map(|v| v.len()).unwrap_or(0));
     println!("[Rust]   clip_watermarks count: {}", clip_watermarks.as_ref().map(|v| v.len()).unwrap_or(0));
+    println!("[Rust]   segment_framing_configs: {:?}", segment_framing_configs.as_ref().map(|c| c.keys().collect::<Vec<_>>()));
 
     // Check if clip is already being built and create cancellation token
     let cancel_rx = {
@@ -127,6 +132,7 @@ pub async fn build_clip_from_segments(
     let text_overlays_clone = text_overlays.clone();
     let stickers_clone = stickers.clone();
     let clip_watermarks_clone = clip_watermarks.clone();
+    let segment_framing_configs_clone = segment_framing_configs.clone();
 
     // Send initial progress
     let _ = app.emit("clip-build-progress", ClipBuildProgress {
@@ -169,6 +175,7 @@ pub async fn build_clip_from_segments(
             audio_settings_clone,
             framing_strategy_clone,
             manual_framing_configs_clone,
+            segment_framing_configs_clone,
             video_filter_segments_clone,
             text_overlays_clone,
             stickers_clone,

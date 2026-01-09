@@ -1,4 +1,4 @@
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 // Modules
 mod storage;
@@ -11,6 +11,7 @@ mod video_server;
 mod assets;
 mod ui_utils;
 mod pumpfun;
+mod kick;
 mod waveform;
 mod focal_detection;
 mod commands;
@@ -38,6 +39,60 @@ async fn copy_file(source: String, destination: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to copy file: {}", e))?;
     
     println!("[Rust] File copied successfully");
+    Ok(())
+}
+
+/// Create an always-on-top PIP window with video and controls
+#[tauri::command]
+async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> {
+    // Check if window already exists
+    if app.get_webview_window("pip-controls").is_some() {
+        // Window exists, just show and focus it
+        if let Some(window) = app.get_webview_window("pip-controls") {
+            window.show().map_err(|e| e.to_string())?;
+            window.set_focus().map_err(|e| e.to_string())?;
+        }
+        return Ok(());
+    }
+
+    // Create new always-on-top window with video player size (16:9 aspect ratio)
+    let window = WebviewWindowBuilder::new(
+        &app,
+        "pip-controls",
+        WebviewUrl::App("/pip-controls".into())
+    )
+    .title("Stream")
+    .inner_size(400.0, 265.0)  // 16:9 video + controls bar
+    .min_inner_size(320.0, 220.0)
+    .max_inner_size(640.0, 400.0)
+    .resizable(true)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(true)
+    .build()
+    .map_err(|e| format!("Failed to create PIP window: {}", e))?;
+
+    // Position in bottom-right corner
+    if let Ok(monitor) = window.current_monitor() {
+        if let Some(monitor) = monitor {
+            let size = monitor.size();
+            let x = size.width as i32 - 420;
+            let y = size.height as i32 - 300;
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+        }
+    }
+
+    Ok(())
+}
+
+/// Close the PIP control window
+#[tauri::command]
+async fn close_pip_control_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("pip-controls") {
+        window.close().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -412,6 +467,54 @@ pub fn run() {
                             sql: include_str!("../migrations/065_add_auto_dvr_to_monitored_streamers.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 67,
+                            description: "add_source_id_to_audio_tracks",
+                            sql: include_str!("../migrations/067_add_source_id_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 68,
+                            description: "add_audio_extracted_to_sources",
+                            sql: include_str!("../migrations/068_add_audio_extracted_to_sources.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 70,
+                            description: "add_keyframes_to_clip_watermarks",
+                            sql: include_str!("../migrations/070_add_keyframes_to_clip_watermarks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 71,
+                            description: "add_effects_transitions",
+                            sql: include_str!("../migrations/071_add_effects_transitions.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 72,
+                            description: "add_pan_to_audio_tracks",
+                            sql: include_str!("../migrations/072_add_pan_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 73,
+                            description: "add_keyframes_to_video_editor_sources",
+                            sql: include_str!("../migrations/073_add_keyframes_to_video_editor_sources.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 74,
+                            description: "add_platform_to_monitored_streamers",
+                            sql: include_str!("../migrations/074_add_platform_to_monitored_streamers.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 75,
+                            description: "add_audio_effects",
+                            sql: include_str!("../migrations/075_add_audio_effects.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -524,6 +627,16 @@ pub fn run() {
             pumpfun::stop_livestream_recording,
             pumpfun::stop_all_livestream_recordings,
 
+            // Kick commands
+            kick::check_kick_livestream,
+            kick::get_kick_stream_url,
+            kick::check_streamlink_available,
+            kick::get_streamlink_version,
+            kick::start_kick_recording,
+            kick::stop_kick_recording,
+            kick::stop_all_kick_recordings,
+            kick::get_kick_session_output_dir,
+
             // Download commands
             downloads::download_pumpfun_vod,
             downloads::download_pumpfun_vod_segment,
@@ -533,11 +646,13 @@ pub fn run() {
             // Audio commands
             audio::extract_audio_from_video,
             audio::extract_and_chunk_audio,
+            audio::extract_audio_to_file,
 
             // Waveform commands
             waveform::extract_audio_waveform,
             waveform::get_cached_waveform,
             waveform::save_waveform_to_cache,
+            waveform::clear_waveform_cache,
 
             // Storage commands
             storage::get_storage_paths,
@@ -551,6 +666,9 @@ pub fn run() {
             storage::read_file_as_data_url,
             storage::delete_video_file,
             storage::get_video_duration,
+            storage::get_video_metadata,
+            storage::get_audio_metadata,
+            storage::get_image_metadata,
             storage::copy_watermark_to_storage,
             storage::delete_watermark_file,
             storage::merge_video_segments,
@@ -585,6 +703,10 @@ pub fn run() {
             
             // File operations
             copy_file,
+
+            // PIP control window commands
+            create_pip_control_window,
+            close_pip_control_window,
 
             // DVR commands
             dvr::save_dvr_chunk,

@@ -10,6 +10,7 @@
   import MandatoryUpdateDialog from '@/components/MandatoryUpdateDialog.vue';
   import SubscriptionGate from '@/components/SubscriptionGate.vue';
   import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
+  import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -30,6 +31,9 @@
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
+  
+  // Check if this is the PIP window (no title bar needed)
+  const isPipWindow = computed(() => window.location.pathname === '/pip-controls');
 
   // Show beta activation dialog when:
   // - User is authenticated
@@ -112,23 +116,29 @@
     }
 
     // MANDATORY UPDATE CHECK - must complete before app continues
-    // Check for updates FIRST before any other initialization
-    try {
-      console.log('[App] Checking for mandatory updates...');
-      const hasUpdate = await checkForUpdates();
-      if (hasUpdate) {
-        console.log('[App] Update required - blocking app until update is installed');
-        updateRequired.value = true;
-        isCheckingForUpdates.value = false;
-        // Stop here - user must update before continuing
-        return;
+    // Skip update check in development environment
+    if (import.meta.env.DEV) {
+      console.log('[App] Skipping update check in development mode');
+      isCheckingForUpdates.value = false;
+    } else {
+      // Check for updates FIRST before any other initialization
+      try {
+        console.log('[App] Checking for mandatory updates...');
+        const hasUpdate = await checkForUpdates();
+        if (hasUpdate) {
+          console.log('[App] Update required - blocking app until update is installed');
+          updateRequired.value = true;
+          isCheckingForUpdates.value = false;
+          // Stop here - user must update before continuing
+          return;
+        }
+        console.log('[App] No update required, continuing with app initialization');
+      } catch (error) {
+        console.error('[App] Failed to check for updates:', error);
+        // On error, allow app to continue (don't block users if update server is down)
       }
-      console.log('[App] No update required, continuing with app initialization');
-    } catch (error) {
-      console.error('[App] Failed to check for updates:', error);
-      // On error, allow app to continue (don't block users if update server is down)
+      isCheckingForUpdates.value = false;
     }
-    isCheckingForUpdates.value = false;
 
     // Continue with normal app initialization only if no update required
     await initializeApp();
@@ -136,6 +146,15 @@
 
   // Separate function for app initialization (called after update check passes)
   async function initializeApp() {
+    // Check if this is the PIP window - it only needs minimal initialization
+    const isPipWindow = window.location.pathname === '/pip-controls';
+    
+    if (isPipWindow) {
+      // PIP window only needs to show content, no DB/auth/etc
+      isLoading.value = false;
+      return;
+    }
+
     // Check authentication status on app start
     try {
       await authStore.checkAuth();
@@ -184,6 +203,14 @@
       console.error('[App] Failed to initialize window close handler:', error);
     }
 
+    // Initialize global clip build event handler
+    // This ensures database is always updated when builds complete, regardless of which view is active
+    try {
+      await initClipBuildEventHandler();
+    } catch (error) {
+      console.error('[App] Failed to initialize clip build event handler:', error);
+    }
+
     // Hide loading screen after initialization
     isLoading.value = false;
   }
@@ -196,6 +223,9 @@
     });
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
+    
+    // Cleanup global clip build event handler
+    cleanupClipBuildEventHandler();
   });
 </script>
 
@@ -216,11 +246,11 @@
 
   <!-- Main app (hidden while loading or updating) -->
   <div v-else class="app-container">
-    <!-- Custom titlebar -->
-    <TitleBar :dark-mode="true" :platform-override="titleBarPlatformOverride" />
+    <!-- Custom titlebar (hidden for PIP window) -->
+    <TitleBar v-if="!isPipWindow" :dark-mode="true" :platform-override="titleBarPlatformOverride" />
 
     <!-- Main content area with scrolling -->
-    <div class="main-content">
+    <div class="main-content" :class="{ 'pip-content': isPipWindow }">
       <!-- Toast notifications provider -->
       <Toast />
       <!-- Router view for page content (key changes on auth to force refresh) -->
@@ -248,6 +278,7 @@
         :streamer-id="livestreamStore.currentStreamer.streamerId"
         :display-name="livestreamStore.currentStreamer.displayName"
         :profile-image-url="livestreamStore.currentStreamer.profileImageUrl"
+        :platform="livestreamStore.watchState.platform"
         :is-pip-mode-external="livestreamStore.isInPipMode"
         @clip-created="handleClipCreated"
         @pip-mode-changed="(isPip: boolean) => (isPip ? livestreamStore.enterPipMode() : livestreamStore.exitPipMode())"
@@ -271,5 +302,10 @@
     overflow-y: auto;
     overflow-x: hidden;
     box-sizing: border-box;
+  }
+
+  .main-content.pip-content {
+    padding-top: 0; /* No title bar in PIP window */
+    overflow: hidden;
   }
 </style>

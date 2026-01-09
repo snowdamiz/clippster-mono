@@ -19,9 +19,10 @@ import {
   type CreatorProfileWithLinks,
 } from '@/services/database';
 import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
-import type { LiveStatus, LiveSession, SegmentEventPayload } from '@/types/livestream';
+import type { LiveStatus, LiveSession, SegmentEventPayload, SupportedLivestreamPlatform } from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
 import { useHlsPlayback } from './useHlsPlayback';
+import { checkKickLivestream, startKickRecording, stopKickRecording } from '@/services/kick';
 
 // PumpFun LiveKit API endpoints
 const PUMPFUN_LIVESTREAM_API = 'https://livestream-api.pump.fun';
@@ -36,7 +37,7 @@ export type ViewerConnectionState =
   | 'failed';
 
 // Playback modes
-export type PlaybackMode = 'webrtc' | 'hls';
+export type PlaybackMode = 'webrtc' | 'hls' | 'iframe';
 
 // Segment info for clipping
 export interface SegmentInfo {
@@ -58,6 +59,7 @@ export interface LivestreamViewerState {
   streamerId: string | null;
   displayName: string | null;
   profileImageUrl: string | null;
+  platform: SupportedLivestreamPlatform;
   viewerCount: number;
   streamQuality: string | null;
   latencyMs: number | null;
@@ -93,6 +95,9 @@ export interface LivestreamViewerState {
   creatorProfile: CreatorProfileWithLinks | null;
   watermarkId: string | null;
   watermarkSettings: Record<string, any> | null;
+
+  // Kick embed (iframe-based playback due to origin restrictions)
+  kickEmbedUrl: string | null;
 }
 
 // Join livestream API response
@@ -109,7 +114,7 @@ const MUTED_STORAGE_KEY = 'livestream-viewer-muted';
 
 export function useLivestreamViewer() {
   // Get the monitoring composable to access active sessions
-  const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, dvrSessions } =
+  const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, dvrSessions, getKickDvrSession } =
     useLivestreamMonitoring();
 
   // HLS Playback composable for reliable live streaming with DVR
@@ -126,6 +131,7 @@ export function useLivestreamViewer() {
     streamerId: null,
     displayName: null,
     profileImageUrl: null,
+    platform: 'PumpFun',
     viewerCount: 0,
     streamQuality: null,
     latencyMs: null,
@@ -149,6 +155,7 @@ export function useLivestreamViewer() {
     creatorProfile: null,
     watermarkId: null,
     watermarkSettings: null,
+    kickEmbedUrl: null,
   });
 
   // Track if HLS is ready for playback (has at least one segment)
@@ -179,6 +186,12 @@ export function useLivestreamViewer() {
   const MAX_RECONNECT_ATTEMPTS = 5;
   let reconnectTimeout: number | null = null;
   let isIntentionalDisconnect = false; // Flag to prevent reconnects on intentional disconnect
+
+  // Segment stall detection for Kick HLS
+  let lastSegmentCount = 0;
+  let lastSegmentTime = Date.now();
+  let isRestartingRecorder = false;
+  const SEGMENT_STALL_THRESHOLD = 30000; // 30 seconds without new segments = stalled
 
   // Update timers
   let liveEdgeUpdateInterval: number | null = null;
@@ -491,13 +504,131 @@ export function useLivestreamViewer() {
     }
   }
 
+  // Connect to Kick livestream using yt-dlp recording (bypasses origin restrictions)
+  // Kick's CDN validates JWT tokens server-side, so we use yt-dlp to capture to local HLS
+  async function connectToKick(
+    channelSlug: string,
+    streamerId: string,
+    displayName: string,
+    profileImageUrl?: string
+  ) {
+    try {
+      console.log('[LiveViewer] Connecting to Kick channel:', channelSlug);
+
+      // Check if stream is live and get stream info
+      const kickStatus = await checkKickLivestream(channelSlug);
+
+      if (!kickStatus.isLive) {
+        state.value.connectionState = 'failed';
+        state.value.connectionError = 'Stream is not live';
+        return;
+      }
+
+      state.value.viewerCount = kickStatus.viewerCount || 0;
+      state.value.recordingStartTime = kickStatus.startedAt 
+        ? new Date(kickStatus.startedAt).getTime() 
+        : Date.now();
+
+      // Check if there's an existing DVR session for this streamer (Auto DVR)
+      const existingDvrSession = getKickDvrSession(streamerId);
+      let outputDir: string;
+      let sessionId: string;
+
+      if (existingDvrSession) {
+        // Use existing DVR session - allows seeking back to beginning of stream
+        console.log('[LiveViewer] Found existing Kick DVR session:', existingDvrSession.sessionId);
+        outputDir = existingDvrSession.outputDir;
+        sessionId = existingDvrSession.sessionId;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = false; // Not a temp recording - it's a DVR session
+      } else {
+        // No existing DVR session - start a new temp recording
+        sessionId = `kick-view-${channelSlug}-${Date.now()}`;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = true;
+
+        console.log('[LiveViewer] Starting new Kick recording:', channelSlug);
+
+        // Start yt-dlp recording - this creates local HLS files we can play
+        try {
+          await startKickRecording(channelSlug, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Kick recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+
+        // Get the output directory for HLS playback
+        outputDir = await invoke<string>('get_kick_session_output_dir', { sessionId });
+      }
+      
+      console.log('[LiveViewer] Kick HLS output dir:', outputDir);
+
+      // Initialize HLS playback with the local recording output
+      if (hlsVideoElement.value) {
+        state.value.dvrStartTime = Date.now();
+        state.value.kickEmbedUrl = null;
+        
+        // Store the output dir for HLS playback
+        hlsOutputDir.value = outputDir;
+        
+        // Use the HLS playback composable for local Kick stream
+        // This will poll for the playlist to become available
+        await hlsPlayback.initialize(hlsVideoElement.value, outputDir);
+        
+        state.value.connectionState = 'connected';
+        state.value.isBuffering = false;
+        state.value.playbackMode = 'hls';
+        isHlsReady.value = true;
+        reconnectAttempts = 0;
+
+        // Reset segment stall detection
+        lastSegmentCount = 0;
+        lastSegmentTime = Date.now();
+        isRestartingRecorder = false;
+
+        // Start live edge updates for Kick
+        startLiveEdgeUpdates();
+
+        // Start segment polling for clipping functionality
+        startSegmentPolling();
+
+        // Start playback sync to keep UI in sync with HLS state
+        startPlaybackSync();
+
+        // Auto-play
+        hlsPlayback.play();
+        state.value.isPlaying = true;
+
+        console.log('[LiveViewer] Connected to Kick stream via yt-dlp', existingDvrSession ? '(using existing DVR)' : '(new recording)');
+      } else {
+        throw new Error('HLS video element not available');
+      }
+    } catch (error) {
+      console.error('[LiveViewer] Failed to connect to Kick:', error);
+      state.value.connectionState = 'failed';
+      state.value.connectionError = error instanceof Error ? error.message : 'Connection failed';
+      
+      // Clean up recording if it was started (only for temp recordings)
+      if (state.value.tempSessionId && state.value.isTempRecording) {
+        try {
+          await stopKickRecording(channelSlug);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    }
+  }
+
   // Connect to livestream
   async function connect(
     mintId: string,
     streamerId: string,
     displayName: string,
     profileImageUrl?: string,
-    autoStartRecording: boolean = true
+    autoStartRecording: boolean = true,
+    platform: SupportedLivestreamPlatform = 'PumpFun'
   ) {
     if (!mintId) {
       console.error('[LiveViewer] No mintId provided!');
@@ -519,8 +650,16 @@ export function useLivestreamViewer() {
     state.value.streamerId = streamerId;
     state.value.displayName = displayName;
     state.value.profileImageUrl = profileImageUrl || null;
+    state.value.platform = platform;
     state.value.isBuffering = true;
 
+    // Route to platform-specific connection
+    if (platform === 'Kick') {
+      await connectToKick(mintId, streamerId, displayName, profileImageUrl);
+      return;
+    }
+
+    // PumpFun connection (default)
     try {
       // Check if stream is live
       const liveStatus = await fetchLiveStatus(mintId);
@@ -974,13 +1113,27 @@ export function useLivestreamViewer() {
       });
 
       if (segments && segments.length > 0) {
+        const previousCount = state.value.availableSegments.length;
         state.value.availableSegments = segments;
         state.value.totalRecordedDuration = segments[segments.length - 1].endTime;
         
-        // Log segment update only when count changes
-        if (segments.length !== state.value.availableSegments.length) {
-          console.log('[LiveViewer] Segments updated:', segments.length, 
-            'Duration:', segments[segments.length - 1].endTime.toFixed(1) + 's');
+        // Track segment progress for stall detection
+        if (segments.length > lastSegmentCount) {
+          lastSegmentCount = segments.length;
+          lastSegmentTime = Date.now();
+          
+          // Log segment update only when count changes
+          if (segments.length !== previousCount) {
+            console.log('[LiveViewer] Segments updated:', segments.length, 
+              'Duration:', segments[segments.length - 1].endTime.toFixed(1) + 's');
+          }
+        } else {
+          // Check for segment stall - no new segments for too long
+          const timeSinceLastSegment = Date.now() - lastSegmentTime;
+          if (timeSinceLastSegment > SEGMENT_STALL_THRESHOLD && !isRestartingRecorder && !isIntentionalDisconnect) {
+            console.warn(`[LiveViewer] No new segments for ${(timeSinceLastSegment / 1000).toFixed(0)}s, checking stream status...`);
+            checkAndRestartRecorderIfNeeded();
+          }
         }
       } else {
         console.debug('[LiveViewer] No segments returned from get_hls_segments');
@@ -988,6 +1141,76 @@ export function useLivestreamViewer() {
     } catch (error) {
       // Silently fail - segments may not be ready yet
       console.debug('[LiveViewer] Could not get HLS segments:', error);
+    }
+  }
+
+  // Check if stream is still live and restart recorder if needed
+  async function checkAndRestartRecorderIfNeeded() {
+    if (isRestartingRecorder || isIntentionalDisconnect) return;
+    
+    const channelSlug = state.value.mintId; // For Kick, mintId is the channel slug
+    const streamerId = state.value.streamerId;
+    
+    if (!channelSlug || !streamerId) {
+      console.warn('[LiveViewer] Cannot restart recorder: missing channelSlug or streamerId');
+      return;
+    }
+
+    isRestartingRecorder = true;
+    
+    try {
+      const kickStatus = await checkKickLivestream(channelSlug);
+      
+      if (kickStatus.isLive) {
+        console.log('[LiveViewer] Stream is still live but segments stalled, restarting recorder...');
+        state.value.isBuffering = true;
+        
+        // Stop existing recording first
+        try {
+          await stopKickRecording(channelSlug);
+        } catch (stopError) {
+          console.warn('[LiveViewer] Error stopping old recording:', stopError);
+        }
+        
+        // Wait a moment for cleanup
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Start new recording
+        const newSessionId = `kick-view-${channelSlug}-${Date.now()}`;
+        state.value.tempSessionId = newSessionId;
+        
+        try {
+          await startKickRecording(channelSlug, streamerId, newSessionId, 1);
+          
+          const newOutputDir = await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId });
+          console.log('[LiveViewer] Recorder restarted, new output dir:', newOutputDir);
+          
+          // Reset segment tracking
+          lastSegmentCount = 0;
+          lastSegmentTime = Date.now();
+          
+          // Update output dir and reinitialize playback
+          hlsOutputDir.value = newOutputDir;
+          
+          if (hlsVideoElement.value) {
+            await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
+            hlsPlayback.play();
+            state.value.isBuffering = false;
+            console.log('[LiveViewer] Playback reinitialized after recorder restart');
+          }
+        } catch (restartError) {
+          console.error('[LiveViewer] Failed to restart recording:', restartError);
+          state.value.connectionError = 'Recording stopped and failed to restart';
+        }
+      } else {
+        console.log('[LiveViewer] Stream is no longer live');
+        state.value.connectionState = 'disconnected';
+        state.value.connectionError = 'Stream ended';
+      }
+    } catch (checkError) {
+      console.error('[LiveViewer] Failed to check stream status:', checkError);
+    } finally {
+      isRestartingRecorder = false;
     }
   }
 
@@ -1204,6 +1427,66 @@ export function useLivestreamViewer() {
       }
     });
 
+    // Listen for recorder exit - attempt to restart if stream is still live
+    const recorderExitUnlisten = await listen<{
+      streamerId: string;
+      sessionId: string;
+      channelSlug: string;
+      code: number | null;
+    }>('recorder-exit', async (event) => {
+      const { streamerId, channelSlug } = event.payload;
+      
+      // Only handle if this is our current stream and we're still supposed to be connected
+      if (streamerId !== state.value.streamerId || isIntentionalDisconnect) {
+        return;
+      }
+
+      console.log('[LiveViewer] Recorder exited unexpectedly, checking if stream is still live...');
+      
+      // Check if stream is still live
+      try {
+        const kickStatus = await checkKickLivestream(channelSlug);
+        
+        if (kickStatus.isLive) {
+          console.log('[LiveViewer] Stream is still live, attempting to restart recording...');
+          state.value.isBuffering = true;
+          
+          // Restart the recording with a new session
+          const newSessionId = `kick-view-${channelSlug}-${Date.now()}`;
+          state.value.tempSessionId = newSessionId;
+          
+          try {
+            await startKickRecording(channelSlug, streamerId, newSessionId, 1);
+            
+            // Get the new output directory
+            const newOutputDir = await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId });
+            
+            console.log('[LiveViewer] Recording restarted, new output dir:', newOutputDir);
+            
+            // Update the HLS output dir - this will trigger the watcher to reinitialize playback
+            hlsOutputDir.value = newOutputDir;
+            
+            // Reinitialize HLS playback with the new recording
+            if (hlsVideoElement.value) {
+              await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
+              hlsPlayback.play();
+              state.value.isBuffering = false;
+              console.log('[LiveViewer] Playback reinitialized after recorder restart');
+            }
+          } catch (restartError) {
+            console.error('[LiveViewer] Failed to restart recording:', restartError);
+            state.value.connectionError = 'Recording stopped and failed to restart';
+          }
+        } else {
+          console.log('[LiveViewer] Stream is no longer live');
+          state.value.connectionState = 'disconnected';
+          state.value.connectionError = 'Stream ended';
+        }
+      } catch (checkError) {
+        console.error('[LiveViewer] Failed to check stream status:', checkError);
+      }
+    });
+
     // For HLS mode, poll for new segments
     const hlsUpdateInterval = window.setInterval(() => {
       if (hlsOutputDir.value) {
@@ -1216,7 +1499,7 @@ export function useLivestreamViewer() {
       clearInterval(hlsUpdateInterval);
     };
 
-    unlistenFunctions.push(unlisten, cleanupHlsInterval as any);
+    unlistenFunctions.push(unlisten, recorderExitUnlisten, cleanupHlsInterval as any);
   }
 
   // Disconnect from livestream
@@ -1262,6 +1545,16 @@ export function useLivestreamViewer() {
 
     // Clean up HLS playback
     await hlsPlayback.cleanup();
+
+    // Stop Kick recording if this was a Kick stream
+    if (state.value.platform === 'Kick' && state.value.mintId) {
+      try {
+        await stopKickRecording(state.value.mintId);
+        console.log('[LiveViewer] Stopped Kick recording');
+      } catch (e) {
+        console.warn('[LiveViewer] Error stopping Kick recording:', e);
+      }
+    }
 
     // Reset HLS output directory
     hlsOutputDir.value = null;
@@ -1340,7 +1633,9 @@ export function useLivestreamViewer() {
 
       state.value.isPlaying = true;
     } else {
+      // HLS mode (including Kick streams)
       await hlsPlayback.play();
+      state.value.isPlaying = true;
     }
   }
 
@@ -1356,7 +1651,9 @@ export function useLivestreamViewer() {
 
       state.value.isPlaying = false;
     } else {
+      // HLS mode (including Kick streams)
       hlsPlayback.pause();
+      state.value.isPlaying = false;
     }
   }
 
@@ -1529,5 +1826,8 @@ export function useLivestreamViewer() {
 
     // Utility
     updateAvailableSegments,
+
+    // HLS output directory (for PIP window)
+    hlsOutputDir,
   };
 }

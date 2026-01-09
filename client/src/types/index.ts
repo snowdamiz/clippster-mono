@@ -634,11 +634,26 @@ export interface ManualFramingConfig {
   sourceAspectRatio?: string; // "16:9" typically
 }
 
-// Per-aspect-ratio manual framing configurations
+// Segment-specific framing configuration
+export interface SegmentFramingConfig {
+  segmentIds: string[]; // Which segment IDs this framing applies to
+  config: ManualFramingConfig;
+}
+
+// Per-aspect-ratio manual framing configurations (legacy - global per aspect ratio)
 export interface ManualFramingConfigs {
   '9:16'?: ManualFramingConfig;
   '4:5'?: ManualFramingConfig;
   '1:1'?: ManualFramingConfig;
+  '16:9'?: ManualFramingConfig;
+}
+
+// Per-aspect-ratio segment-specific framing configurations (new - per segment)
+export interface SegmentFramingConfigs {
+  '9:16'?: SegmentFramingConfig[];
+  '4:5'?: SegmentFramingConfig[];
+  '1:1'?: SegmentFramingConfig[];
+  '16:9'?: SegmentFramingConfig[];
 }
 
 // Predefined colors for POI regions
@@ -696,11 +711,16 @@ export interface AudioTrack {
   startTime: number; // When audio starts in clip timeline
   endTime: number;
   volume: number; // 0-1
+  pan?: number; // -1 (left) to 1 (right), 0 is center
   fadeIn: number; // Duration in seconds
   fadeOut: number; // Duration in seconds
   trackOrder: number;
   isMuted: boolean;
   isSolo: boolean;
+  isLocked?: boolean;
+  isHidden?: boolean;
+  keyframes?: Keyframe[];
+  linkedSourceId?: string; // ID of linked video source (for extracted audio)
 }
 
 // Per-aspect-ratio configuration for text overlays
@@ -709,6 +729,8 @@ export interface TextOverlayRatioConfig {
   style: TextOverlayStyle;
   // Future: could add scale, rotation, etc.
 }
+
+import type { Keyframe } from './timeline-model';
 
 // Text overlay configuration
 export interface TextOverlay {
@@ -719,10 +741,15 @@ export interface TextOverlay {
   position: { x: number; y: number }; // 0-100 percentage - default/fallback position
   style: TextOverlayStyle; // Default/fallback style
   animation: TextAnimation;
+  keyframes?: Keyframe[];
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, TextOverlayRatioConfig>;
-  // Height of preview container when overlay was configured (for proper font scaling on export)
+  previewWidth?: number;
   previewHeight?: number;
+  // UI-only motion preset for editor preview (does not affect export)
+  motionPreset?: 'none' | 'fade' | 'slide-up' | 'pop';
+  motionDuration?: number; // seconds
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
 }
 
 export interface TextOverlayStyle {
@@ -806,8 +833,13 @@ export interface Sticker {
   scale: number; // 0.1-3 - default/fallback scale
   rotation: number; // Degrees - default/fallback rotation
   animation: StickerAnimation;
+  keyframes?: Keyframe[];
+  // UI-only motion preset for editor preview (does not affect export)
+  motionPreset?: 'none' | 'fade' | 'slide-up' | 'pop';
+  motionDuration?: number; // seconds
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, StickerRatioConfig>;
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
 }
 
 export type StickerAnimation = 'none' | 'bounce' | 'spin' | 'pulse' | 'shake' | 'float' | 'fade';
@@ -833,6 +865,8 @@ export interface ClipWatermark {
   opacity: number; // 0-100 - default/fallback opacity
   // Per-aspect-ratio configurations (key is aspect ratio string like "16:9", "9:16", "1:1")
   perRatioConfigs?: Record<string, ClipWatermarkRatioConfig>;
+  keyframes?: Keyframe[];
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
 }
 
 // Visual effects
@@ -853,7 +887,9 @@ export type EffectType =
   | 'blur'
   | 'freeze'
   | 'flash'
-  | 'shake';
+  | 'shake'
+  | 'adjustment_layer'
+  | 'chroma';
 
 export interface EffectSettings {
   // Filter settings
@@ -880,6 +916,22 @@ export interface EffectSettings {
   // Flash/Shake settings
   intensity?: number;
   frequency?: number;
+
+  // Chroma Key (Green Screen) settings
+  keyColor?: string; // Hex color to key out (default: #00ff00)
+  tolerance?: number; // 0-1, how much color variation to include
+  softness?: number; // 0-1, edge softness
+
+  // Adjustment Layer settings (inherits filter settings)
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  hue?: number;
+  temperature?: number;
+  vignette?: number;
+  sharpen?: number;
+  fade?: number;
+  blendMode?: 'normal' | 'screen' | 'multiply' | 'overlay' | 'soft-light' | 'hard-light' | 'difference';
 
   // Generic settings for future effects
   [key: string]: any;
@@ -932,16 +984,13 @@ export interface ClipEditorDialogProps {
 
 // Editor tab types
 export type ClipEditorTab =
-  | 'sources'
-  | 'intro-outro'
+  | 'media'
   | 'audio'
-  | 'filters'
-  | 'text'
-  | 'stickers'
+  | 'overlays'
   | 'watermark'
-  | 'subtitles'
+  | 'captions'
   | 'aspect'
-  | 'transcript'
+  | 'effects'
   | 'export';
 
 // Timeline track types for clip editor
@@ -1055,10 +1104,38 @@ export interface VideoEditorSource {
   source_duration: number | null; // Original duration of source
   start_time: number; // Position in timeline
   end_time: number; // End position in timeline
-  trim_start: number; // Trim from source start
+  trim_start: number; // Trim from source start (video)
   trim_end: number | null; // Trim from source end (null = use full duration)
+  // J/L Cut support: Independent audio trim points
+  // When null, audio uses the same trim as video (default behavior)
+  audio_trim_start?: number | null; // Audio trim start (J-cut: earlier than video)
+  audio_trim_end?: number | null; // Audio trim end (L-cut: later than video)
   order_index: number;
+  track_index?: number; // Video track index (0 = main track, 1+ = additional tracks)
   created_at: number;
+  isMuted?: boolean;
+  isLocked?: boolean;
+  isHidden?: boolean;
+  audioExtracted?: boolean; // True if audio has been extracted to a separate track
+  speed?: number; // Playback speed multiplier (1.0 = normal, 0.5 = half speed, 2.0 = double speed)
+  speedKeyframes?: SpeedKeyframe[]; // Keyframes for speed ramping/time remapping
+  freezePoints?: FreezePoint[]; // Time freeze points within the segment
+}
+
+// Speed keyframe for time remapping
+export interface SpeedKeyframe {
+  id: string;
+  time: number; // Time within the segment (relative to trim_start)
+  speed: number; // Speed at this point (0.25 - 4.0, negative for reverse)
+  easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bezier';
+  controlPoints?: { x1: number; y1: number; x2: number; y2: number }; // For bezier easing
+}
+
+// Time freeze point - pauses playback at a specific moment
+export interface FreezePoint {
+  id: string;
+  time: number; // Time within the segment to freeze
+  duration: number; // How long to freeze (in seconds)
 }
 
 // Project with all sources loaded
@@ -1066,18 +1143,15 @@ export interface VideoEditorProjectWithSources extends VideoEditorProject {
   sources: VideoEditorSource[];
 }
 
-// Editor tab types for standalone video editor (includes 'sources' tab)
+// Editor tab types for standalone video editor
 export type VideoEditorTab =
-  | 'sources'
-  | 'intro-outro'
+  | 'media'
   | 'audio'
-  | 'filters'
-  | 'text'
-  | 'stickers'
+  | 'overlays'
   | 'watermark'
-  | 'subtitles'
+  | 'captions'
   | 'aspect'
-  | 'transcript'
+  | 'effects'
   | 'export';
 
 // Source item displayed in the Sources tab (unified format for clips and raw videos)
@@ -1113,15 +1187,15 @@ export interface VideoEditorDialogEmits {
 // Video Editor Transition Types
 // ==========================================
 
-// Represents a crossfade transition between two overlapping video sources
+// Represents a transition between two overlapping video sources
 export interface VideoEditorTransition {
   id: string;
   sourceAId: string; // First source (ending)
   sourceBId: string; // Second source (starting)
   startTime: number; // When transition starts (sourceB.start_time)
   endTime: number; // When transition ends (sourceA.end_time)
-  duration: number; // Length of the crossfade
-  type: 'crossfade'; // Future: could support 'wipe', 'dissolve', etc.
+  duration: number; // Length of the transition
+  type: 'crossfade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'wipe-left' | 'wipe-right' | 'zoom-in' | 'zoom-out';
 }
 
 // Utility function to detect transitions between overlapping sources
@@ -1149,7 +1223,7 @@ export function detectSourceTransitions(sources: VideoEditorSource[]): VideoEdit
           startTime: overlapStart,
           endTime: overlapEnd,
           duration,
-          type: 'crossfade',
+          type: 'crossfade', // Default to crossfade
         });
       }
     }
@@ -1158,23 +1232,467 @@ export function detectSourceTransitions(sources: VideoEditorSource[]): VideoEdit
   return transitions;
 }
 
-// Calculate crossfade opacity for preview playback
-// Returns { opacityA, opacityB } where values are 0-1
+// Calculate transition state for preview playback
+export interface TransitionState {
+  opacityA: number;
+  opacityB: number;
+  transformA?: string;
+  transformB?: string;
+  clipPathA?: string;
+  clipPathB?: string;
+  zIndexA: number;
+  zIndexB: number;
+}
+
+export function calculateTransitionState(
+  currentTime: number,
+  transition: VideoEditorTransition
+): TransitionState {
+  // Default state (no transition active)
+  if (currentTime < transition.startTime) {
+    return { opacityA: 1, opacityB: 0, zIndexA: 1, zIndexB: 0 };
+  }
+  if (currentTime >= transition.endTime) {
+    return { opacityA: 0, opacityB: 1, zIndexA: 0, zIndexB: 1 };
+  }
+
+  const progress = (currentTime - transition.startTime) / transition.duration;
+  
+  switch (transition.type) {
+    case 'slide-left':
+      // B slides in from right, A slides out to left
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        transformA: `translateX(${-progress * 100}%)`,
+        transformB: `translateX(${(1 - progress) * 100}%)`,
+        zIndexA: 1,
+        zIndexB: 2 // B on top
+      };
+      
+    case 'slide-right':
+      // B slides in from left, A slides out to right
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        transformA: `translateX(${progress * 100}%)`,
+        transformB: `translateX(${-(1 - progress) * 100}%)`,
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'slide-up':
+      // B slides in from bottom
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        transformA: `translateY(${-progress * 100}%)`,
+        transformB: `translateY(${(1 - progress) * 100}%)`,
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'slide-down':
+      // B slides in from top
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        transformA: `translateY(${progress * 100}%)`,
+        transformB: `translateY(${-(1 - progress) * 100}%)`,
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'wipe-left':
+      // B wipes over A from right to left
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        clipPathB: `inset(0 0 0 ${(1 - progress) * 100}%)`, // Reveal B from right
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'wipe-right':
+      // B wipes over A from left to right
+      return {
+        opacityA: 1,
+        opacityB: 1,
+        clipPathB: `inset(0 ${(1 - progress) * 100}% 0 0)`, // Reveal B from left
+        zIndexA: 1,
+        zIndexB: 2
+      };
+      
+    case 'zoom-in':
+      // A zooms in and fades out, B fades in
+      return {
+        opacityA: 1 - progress,
+        opacityB: progress,
+        transformA: `scale(${1 + progress})`,
+        transformB: `scale(1)`,
+        zIndexA: 2,
+        zIndexB: 1
+      };
+      
+    case 'zoom-out':
+      // A zooms out and fades out
+      return {
+        opacityA: 1 - progress,
+        opacityB: progress,
+        transformA: `scale(${1 - progress * 0.5})`,
+        transformB: `scale(1)`,
+        zIndexA: 2,
+        zIndexB: 1
+      };
+
+    case 'crossfade':
+    default:
+      return {
+        opacityA: 1 - progress,
+        opacityB: progress,
+        zIndexA: 1,
+        zIndexB: 1 // Equal z-index for blend
+      };
+  }
+}
+
+// Deprecated: use calculateTransitionState instead
 export function calculateCrossfadeOpacity(
   currentTime: number,
   transition: VideoEditorTransition
 ): { opacityA: number; opacityB: number } {
-  if (currentTime < transition.startTime) {
-    return { opacityA: 1, opacityB: 0 };
-  }
-  if (currentTime >= transition.endTime) {
-    return { opacityA: 0, opacityB: 1 };
-  }
+  const state = calculateTransitionState(currentTime, transition);
+  return { opacityA: state.opacityA, opacityB: state.opacityB };
+}
 
-  // Linear crossfade
-  const progress = (currentTime - transition.startTime) / transition.duration;
-  return {
-    opacityA: 1 - progress,
-    opacityB: progress,
-  };
+export * from './timeline-model';
+
+// ==========================================
+// Effects & Transitions Types
+// ==========================================
+
+// Transition Categories
+export type TransitionCategory = 'basic' | 'wipe' | 'slide' | 'zoom' | 'stylized' | 'shape' | 'directional';
+
+// Effect Categories
+export type EffectCategory = 'basic' | 'color' | 'stylized' | 'distortion' | 'motion' | 'overlay';
+
+// Transition Preset (built-in library)
+export interface TransitionPreset {
+  id: string;
+  name: string;
+  type: string;
+  category: TransitionCategory;
+  description?: string;
+  parametersSchema?: Record<string, unknown>;
+  defaultParameters?: Record<string, unknown>;
+  previewUrl?: string;
+  ffmpegFilter?: string;
+  cssAnimation?: string;
+  isBuiltin: boolean;
+  sortOrder: number;
+}
+
+// Effect Preset (built-in library)
+export interface EffectPreset {
+  id: string;
+  name: string;
+  type: string;
+  category: EffectCategory;
+  description?: string;
+  parametersSchema?: Record<string, unknown>;
+  defaultParameters?: Record<string, unknown>;
+  previewUrl?: string;
+  ffmpegFilter?: string;
+  cssFilter?: string;
+  isBuiltin: boolean;
+  sortOrder: number;
+}
+
+// Applied Transition (clip mode)
+export interface ClipTransition {
+  id: string;
+  clipEditId: string;
+  presetId?: string;
+  transitionType: string;
+  positionIndex: number; // Position between segments
+  duration: number;
+  parameters?: Record<string, unknown>;
+  easing: string;
+  createdAt: number;
+}
+
+// Applied Effect (clip mode)
+export interface ClipEffect {
+  id: string;
+  clipEditId: string;
+  presetId?: string;
+  effectType: string;
+  startTime: number;
+  endTime: number;
+  intensity: number; // 0-1
+  parameters?: Record<string, unknown>;
+  keyframes?: EffectKeyframe[];
+  blendMode: string;
+  layer: number;
+  isEnabled: boolean;
+  createdAt: number;
+}
+
+// Effect Keyframe for animated parameters
+export interface EffectKeyframe {
+  time: number;
+  parameter: string;
+  value: number;
+  easing?: string;
+}
+
+// Applied Transition (video editor mode)
+export interface VideoEditorTransitionEffect {
+  id: string;
+  editId: string;
+  presetId?: string;
+  transitionType: string;
+  fromSourceId?: string;
+  toSourceId?: string;
+  duration: number;
+  parameters?: Record<string, unknown>;
+  easing: string;
+  createdAt: number;
+}
+
+// Applied Effect (video editor mode)
+export interface VideoEditorEffect {
+  id: string;
+  editId: string;
+  presetId?: string;
+  effectType: string;
+  targetSourceId?: string;
+  startTime: number;
+  endTime: number;
+  intensity: number;
+  parameters?: Record<string, unknown>;
+  keyframes?: EffectKeyframe[];
+  blendMode: string;
+  layer: number;
+  isEnabled: boolean;
+  createdAt: number;
+}
+
+// Effect Parameters by Type
+export interface BlurEffectParams {
+  radius: number;
+  type?: 'gaussian' | 'motion' | 'radial';
+  angle?: number; // For motion blur
+  centerX?: number; // For radial blur
+  centerY?: number;
+}
+
+export interface ColorEffectParams {
+  brightness?: number;
+  contrast?: number;
+  saturation?: number;
+  hue?: number;
+  temperature?: number;
+  tint?: number;
+  vibrance?: number;
+}
+
+export interface GlitchEffectParams {
+  intensity: number;
+  frequency: number;
+  colorShift?: boolean;
+  scanlines?: boolean;
+}
+
+export interface VHSEffectParams {
+  tracking: number;
+  noise: number;
+  colorBleed: number;
+  scanlines: boolean;
+}
+
+export interface ShakeEffectParams {
+  intensity: number;
+  speed: number;
+  rotationAmount?: number;
+}
+
+// Transition Parameters
+export interface TransitionParams {
+  direction?: 'left' | 'right' | 'up' | 'down';
+  color?: string; // For dip to color
+  softness?: number; // Edge softness for wipes
+  angle?: number; // For diagonal wipes
+  segments?: number; // For kaleidoscope/blinds
+}
+
+// ============================================
+// Audio Effects Types
+// ============================================
+
+export type AudioEffectCategory =
+  | 'volume'
+  | 'eq'
+  | 'spatial'
+  | 'time'
+  | 'pitch'
+  | 'voice'
+  | 'enhancement'
+  | 'creative'
+  | 'fades';
+
+// Audio Effect Preset (built-in library)
+export interface AudioEffectPreset {
+  id: string;
+  name: string;
+  effectType: string;
+  category: AudioEffectCategory;
+  description?: string;
+  icon?: string;
+  ffmpegFilter: string;
+  webAudioConfig?: WebAudioConfig;
+  defaultParameters?: Record<string, unknown>;
+  parameterSchema?: AudioEffectParameterSchema[];
+  isBuiltIn: boolean;
+  createdAt: number;
+}
+
+// Web Audio API configuration for preview
+export interface WebAudioConfig {
+  nodeType: 'gain' | 'biquad' | 'delay' | 'convolver' | 'dynamics' | 'panner' | 'waveshaper' | 'worklet' | 'chain';
+  nodes?: WebAudioNodeConfig[];
+  params?: Record<string, number | string>;
+}
+
+export interface WebAudioNodeConfig {
+  type: string;
+  params: Record<string, number | string>;
+}
+
+// Parameter schema for UI generation
+export interface AudioEffectParameterSchema {
+  name: string;
+  label: string;
+  type: 'number' | 'select' | 'boolean';
+  min?: number;
+  max?: number;
+  step?: number;
+  default: number | string | boolean;
+  unit?: string;
+  options?: { value: string | number; label: string }[];
+}
+
+// Applied Audio Effect (per track)
+export interface AudioTrackEffect {
+  id: string;
+  trackId: string;
+  clipEditId?: string;
+  videoEditorProjectId?: string;
+  effectType: string;
+  presetId?: string;
+  startTime: number;
+  endTime: number;
+  intensity: number; // 0-1
+  parameters?: Record<string, unknown>;
+  isEnabled: boolean;
+  orderIndex: number;
+  createdAt: number;
+}
+
+// Audio Effect Keyframe for automation
+export interface AudioEffectKeyframe {
+  id: string;
+  effectId: string;
+  parameterName: string;
+  time: number;
+  value: number;
+  easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
+  createdAt: number;
+}
+
+// Audio Effect Parameter Types
+export interface GainParams {
+  gain: number; // dB, -60 to +24
+}
+
+export interface EQParams {
+  frequency: number; // Hz
+  gain?: number; // dB
+  q?: number; // Quality factor
+  type?: 'lowpass' | 'highpass' | 'bandpass' | 'lowshelf' | 'highshelf' | 'peaking' | 'notch';
+}
+
+export interface CompressorParams {
+  threshold: number; // dB
+  ratio: number;
+  attack: number; // ms
+  release: number; // ms
+  knee?: number; // dB
+  makeupGain?: number; // dB
+}
+
+export interface ReverbParams {
+  decay: number; // seconds
+  wetDry: number; // 0-1 mix
+  preDelay?: number; // ms
+  roomSize?: 'small' | 'medium' | 'large' | 'hall';
+}
+
+export interface DelayParams {
+  time: number; // ms
+  feedback: number; // 0-1
+  wetDry: number; // 0-1 mix
+  pingPong?: boolean;
+}
+
+export interface PitchShiftParams {
+  semitones: number; // -12 to +12
+  cents?: number; // -100 to +100
+  preserveFormants?: boolean;
+}
+
+export interface PanParams {
+  pan: number; // -1 (left) to +1 (right)
+}
+
+export interface FadeParams {
+  type: 'in' | 'out';
+  duration: number; // seconds
+  curve?: 'linear' | 'exponential' | 'logarithmic';
+}
+
+export interface NoiseReductionParams {
+  amount: number; // 0-1
+  sensitivity?: number;
+}
+
+export interface VoiceEffectParams {
+  preset: string; // chipmunk, deep, echo, etc.
+  intensity?: number;
+}
+
+export interface DistortionParams {
+  amount: number; // 0-1
+  type?: 'soft' | 'hard' | 'fuzz';
+}
+
+export interface ChorusParams {
+  rate: number; // Hz
+  depth: number; // 0-1
+  mix: number; // 0-1
+}
+
+export interface FlangerParams {
+  rate: number; // Hz
+  depth: number; // 0-1
+  feedback: number; // 0-1
+  mix: number; // 0-1
+}
+
+export interface PhaserParams {
+  rate: number; // Hz
+  depth: number; // 0-1
+  stages?: number;
+  feedback?: number;
 }

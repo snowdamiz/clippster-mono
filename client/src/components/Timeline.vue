@@ -50,7 +50,7 @@
             dragging: isDragging,
             'add-clip-mode': isAddClipModeActive,
           }"
-          :style="{ width: `${100 * zoomLevel}%` }"
+          :style="{ width: `${Math.max(1, zoomLevel) * 100}%` }"
         >
           <!-- Shared Timestamp Ruler -->
           <TimelineRuler :duration="duration" :zoomLevel="zoomLevel" @rulerWheel="onRulerWheel" />

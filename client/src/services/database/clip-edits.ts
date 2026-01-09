@@ -20,6 +20,7 @@ export interface ClipAudioTrackRecord {
   start_time: number;
   end_time: number;
   volume: number;
+  pan: number;
   fade_in: number;
   fade_out: number;
   track_order: number;
@@ -40,6 +41,7 @@ export interface ClipTextOverlayRecord {
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
   preview_height?: number; // Height of preview container for proper font scaling
   animation: string;
+  keyframes_data?: string; // JSON string for keyframes
   created_at: number;
 }
 
@@ -56,6 +58,7 @@ export interface ClipStickerRecord {
   rotation: number;
   animation: string;
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
+  keyframes_data?: string; // JSON string for keyframes
   created_at: number;
 }
 
@@ -81,7 +84,9 @@ export interface ClipWatermarkRecord {
   position_y: number;
   scale: number;
   opacity: number;
+  layer?: number; // Visual track layer (0 = bottom, higher = on top)
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
+  keyframes_data?: string; // JSON string for keyframes
   created_at: number;
 }
 
@@ -157,8 +162,8 @@ export async function createAudioTrack(
 
   await db.execute(
     `INSERT INTO clip_audio_tracks 
-     (id, clip_edit_id, file_path, name, start_time, end_time, volume, fade_in, fade_out, track_order, is_muted, is_solo, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, clip_edit_id, file_path, name, start_time, end_time, volume, pan, fade_in, fade_out, track_order, is_muted, is_solo, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipEditId,
@@ -167,6 +172,7 @@ export async function createAudioTrack(
       data.start_time || 0,
       data.end_time || 0,
       data.volume ?? 1.0,
+      data.pan ?? 0,
       data.fade_in || 0,
       data.fade_out || 0,
       data.track_order || 0,
@@ -184,6 +190,7 @@ export async function createAudioTrack(
     start_time: data.start_time || 0,
     end_time: data.end_time || 0,
     volume: data.volume ?? 1.0,
+    pan: data.pan ?? 0,
     fade_in: data.fade_in || 0,
     fade_out: data.fade_out || 0,
     track_order: data.track_order || 0,
@@ -245,6 +252,10 @@ export async function updateAudioTrack(
     updates.push('is_solo = ?');
     values.push(data.is_solo);
   }
+  if (data.pan !== undefined) {
+    updates.push('pan = ?');
+    values.push(data.pan);
+  }
 
   if (updates.length > 0) {
     values.push(id);
@@ -271,8 +282,8 @@ export async function createTextOverlay(
 
   await db.execute(
     `INSERT INTO clip_text_overlays 
-     (id, clip_edit_id, text, start_time, end_time, position_x, position_y, style_data, animation, preview_height, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, clip_edit_id, text, start_time, end_time, position_x, position_y, style_data, animation, preview_height, keyframes_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipEditId,
@@ -284,6 +295,7 @@ export async function createTextOverlay(
       data.style_data || '{}',
       data.animation || 'none',
       data.preview_height ?? null,
+      data.keyframes_data || null,
       now,
     ]
   );
@@ -298,6 +310,7 @@ export async function createTextOverlay(
     position_y: data.position_y ?? 50,
     style_data: data.style_data || '{}',
     animation: data.animation || 'none',
+    keyframes_data: data.keyframes_data,
     created_at: now,
   };
 }
@@ -356,6 +369,10 @@ export async function updateTextOverlay(
     updates.push('animation = ?');
     values.push(data.animation);
   }
+  if (data.keyframes_data !== undefined) {
+    updates.push('keyframes_data = ?');
+    values.push(data.keyframes_data);
+  }
 
   if (updates.length > 0) {
     values.push(id);
@@ -382,8 +399,8 @@ export async function createSticker(
 
   await db.execute(
     `INSERT INTO clip_stickers 
-     (id, clip_edit_id, sticker_path, sticker_type, start_time, end_time, position_x, position_y, scale, rotation, animation, per_ratio_configs_data, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, clip_edit_id, sticker_path, sticker_type, start_time, end_time, position_x, position_y, scale, rotation, animation, per_ratio_configs_data, keyframes_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipEditId,
@@ -397,6 +414,7 @@ export async function createSticker(
       data.rotation || 0,
       data.animation || 'none',
       data.per_ratio_configs_data || null,
+      data.keyframes_data || null,
       now,
     ]
   );
@@ -414,6 +432,7 @@ export async function createSticker(
     rotation: data.rotation || 0,
     animation: data.animation || 'none',
     per_ratio_configs_data: data.per_ratio_configs_data,
+    keyframes_data: data.keyframes_data,
     created_at: now,
   };
 }
@@ -470,6 +489,10 @@ export async function updateSticker(id: string, data: Partial<ClipStickerRecord>
   if (data.per_ratio_configs_data !== undefined) {
     updates.push('per_ratio_configs_data = ?');
     values.push(data.per_ratio_configs_data);
+  }
+  if (data.keyframes_data !== undefined) {
+    updates.push('keyframes_data = ?');
+    values.push(data.keyframes_data);
   }
 
   if (updates.length > 0) {
@@ -576,8 +599,8 @@ export async function createWatermark(
 
   await db.execute(
     `INSERT INTO clip_watermarks 
-     (id, clip_edit_id, watermark_id, watermark_path, preview_url, start_time, end_time, position_x, position_y, scale, opacity, per_ratio_configs_data, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, clip_edit_id, watermark_id, watermark_path, preview_url, start_time, end_time, position_x, position_y, scale, opacity, per_ratio_configs_data, keyframes_data, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipEditId,
@@ -591,6 +614,7 @@ export async function createWatermark(
       data.scale ?? 15,
       data.opacity ?? 80,
       data.per_ratio_configs_data || null,
+      data.keyframes_data || null,
       now,
     ]
   );
@@ -608,6 +632,7 @@ export async function createWatermark(
     scale: data.scale ?? 15,
     opacity: data.opacity ?? 80,
     per_ratio_configs_data: data.per_ratio_configs_data,
+    keyframes_data: data.keyframes_data,
     created_at: now,
   };
 }
@@ -667,6 +692,10 @@ export async function updateWatermarkRecord(
   if (data.per_ratio_configs_data !== undefined) {
     updates.push('per_ratio_configs_data = ?');
     values.push(data.per_ratio_configs_data);
+  }
+  if (data.keyframes_data !== undefined) {
+    updates.push('keyframes_data = ?');
+    values.push(data.keyframes_data);
   }
 
   if (updates.length > 0) {

@@ -102,6 +102,7 @@ defmodule ClippsterServerWeb.Router do
     get "/metadata/:mint_id", MetadataController, :fetch
 
     # Kick routes
+    get "/kick/channels/:channel_slug", KickController, :get_channel
     get "/kick/channels/:channel_slug/videos", KickController, :get_clips
 
     # Organization invitation (public - for viewing invitation details)
@@ -205,6 +206,20 @@ defmodule ClippsterServerWeb.Router do
     # User's organization assets (for sync)
     get "/user/organization-assets", OrganizationAssetController, :user_assets
 
+    # Organization shared clips (admin endpoints)
+    get "/organizations/:organization_id/shared-clips", SharedClipController, :index
+    get "/organizations/:organization_id/shared-clips/:id", SharedClipController, :show
+    post "/organizations/:organization_id/shared-clips", SharedClipController, :create
+    put "/organizations/:organization_id/shared-clips/:id/branding", SharedClipController, :update_branding
+    delete "/organizations/:organization_id/shared-clips/:id", SharedClipController, :delete
+    get "/organizations/:organization_id/shared-clips/:id/stats", SharedClipController, :stats
+
+    # User's shared clips (member endpoints)
+    get "/user/shared-clips", SharedClipController, :user_clips
+    post "/shared-clips/:id/mark-viewed", SharedClipController, :mark_viewed
+    post "/shared-clips/:id/mark-downloaded", SharedClipController, :mark_downloaded
+    post "/shared-clips/:id/post", SharedClipController, :mark_posted
+
     # Organization creator profiles
     get "/organizations/:organization_id/creator-profiles", OrganizationCreatorProfileController, :index
     get "/organizations/:organization_id/creator-profiles/:id", OrganizationCreatorProfileController, :show
@@ -255,6 +270,28 @@ defmodule ClippsterServerWeb.Router do
     post "/organizations/:organization_id/posts/:id/sync", PostSubmissionController, :sync_analytics
     post "/organizations/:organization_id/posts/:id/reset-override", PostSubmissionController, :reset_override
 
+    # Organization messaging
+    get "/organizations/:organization_id/messaging/conversations", MessagingController, :list_conversations
+    post "/organizations/:organization_id/messaging/conversations/direct", MessagingController, :create_direct
+    post "/organizations/:organization_id/messaging/conversations/group", MessagingController, :create_group
+    post "/organizations/:organization_id/messaging/conversations/announcement", MessagingController, :create_announcement
+    get "/organizations/:organization_id/messaging/unread", MessagingController, :get_unread_counts
+
+    # Conversation-specific endpoints
+    get "/conversations/:id", MessagingController, :get_conversation
+    get "/conversations/:id/messages", MessagingController, :get_messages
+    post "/conversations/:id/messages", MessagingController, :send_message
+    put "/conversations/:id/messages/:message_id", MessagingController, :edit_message
+    delete "/conversations/:id/messages/:message_id", MessagingController, :delete_message
+    post "/conversations/:id/read", MessagingController, :mark_read
+    put "/conversations/:id/mute", MessagingController, :toggle_mute
+    post "/conversations/:id/participants", MessagingController, :add_participant
+    delete "/conversations/:id/participants/:user_id", MessagingController, :remove_participant
+    post "/conversations/:id/leave", MessagingController, :leave_conversation
+
+    # User-level messaging endpoints
+    get "/me/conversations", MessagingController, :list_all_conversations
+    get "/me/unread-count", MessagingController, :get_total_unread
     # Analytics tracking (requires authentication)
     post "/analytics/track", AnalyticsController, :track
   end

@@ -412,6 +412,7 @@
     subtitleSettings?: any | null;
     framingMode?: 'auto' | 'manual';
     framingConfigs?: any;
+    segmentFramingConfigs?: any;
     filterSegments?: any[];
     textOverlays?: any[];
     stickers?: any[];
@@ -591,6 +592,7 @@
             .map((t) => ({
               filePath: t.filePath,
               gainDb: props.trackDbValues?.[t.id] ?? 0,
+              pan: t.pan ?? 0,
               fadeIn: t.fadeIn ?? 0,
               fadeOut: t.fadeOut ?? 0,
               startTime: t.startTime,
@@ -837,6 +839,7 @@
       audioSettings: audioSettings,
       framingStrategy: framingStrategy,
       manualFramingConfigs: props.framingConfigs || null,
+      segmentFramingConfigs: props.segmentFramingConfigs || null,
       videoFilterSegments: videoFilterSegments,
       textOverlays: textOverlaysForExport,
       stickers: stickersForExport,
@@ -895,6 +898,7 @@
         end_time: source.trim_end ?? source.trim_start + (source.end_time - source.start_time),
         duration: (source.trim_end ?? source.trim_start + (source.end_time - source.start_time)) - source.trim_start,
         transcript: null,
+        mute_audio: (source as any).audio_extracted === true, // Mute audio if it has been extracted to a separate track
       }));
 
       // Get intro/outro paths
@@ -947,6 +951,7 @@
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
+        segmentFramingConfigs: props.segmentFramingConfigs || null,
         videoFilterSegments: videoFilterSegments,
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
@@ -1022,6 +1027,7 @@
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: props.framingConfigs || null,
+        segmentFramingConfigs: props.segmentFramingConfigs || null,
         videoFilterSegments: videoFilterSegments,
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,

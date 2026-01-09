@@ -151,6 +151,20 @@ const router = createRouter({
         },
       ],
     },
+    // Messages page (Telegram-style)
+    {
+      path: '/messages',
+      name: 'messages',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'messages-home',
+          component: () => import('@/pages/Messages.vue'),
+        },
+      ],
+    },
     // Legacy redirects for old platform routes
     {
       path: '/pumpfun',
@@ -234,11 +248,36 @@ const router = createRouter({
         },
       ],
     },
+    {
+      path: '/organization/:organizationId/messages',
+      name: 'organization-messages',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'organization-messages-home',
+          component: () => import('@/pages/OrganizationMessages.vue'),
+        },
+        {
+          path: ':conversationId',
+          name: 'organization-messages-conversation',
+          component: () => import('@/pages/OrganizationMessages.vue'),
+        },
+      ],
+    },
     // Invitation acceptance
     {
       path: '/invite/:token',
       name: 'accept-invitation',
       component: () => import('@/pages/AcceptInvitation.vue'),
+    },
+    // PIP Controls window (separate always-on-top window)
+    {
+      path: '/pip-controls',
+      name: 'pip-controls',
+      component: () => import('@/pages/PipControls.vue'),
+      meta: { noPadding: true, noLayout: true },
     },
   ],
 });

@@ -652,8 +652,12 @@ pub async fn download_pumpfun_vod(
         let encoder = detect_hardware_encoder(&app_clone).await.unwrap_or_else(|| "libx264".to_string());
         println!("[Rust] Using encoder: {}", encoder);
 
+        // For full VOD downloads, add a small seek offset to avoid issues with problematic
+        // initial segments in some HLS streams. This mimics starting at 0.1s which works around
+        // streams that have issues at position 0.
         let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
         let (mut rx, child) = cmd.args([
+            "-ss", "0.1",  // Small offset to avoid problematic stream starts
             "-i", &video_url,
             "-c:v", &encoder,
             "-preset", if encoder == "libx264" { "ultrafast" } else { "fast" },
@@ -676,7 +680,7 @@ pub async fn download_pumpfun_vod(
         }
 
         let result = tokio::spawn(async move {
-            let total_duration = duration_for_progress.unwrap_or(600.0);
+            let mut total_duration = duration_for_progress.unwrap_or(600.0);
             let app_progress = app_clone_for_progress.clone();
             let download_id_progress = download_id_for_progress.clone();
 
@@ -706,6 +710,13 @@ pub async fn download_pumpfun_vod(
                                 if let Some(time_str) = line.strip_prefix("out_time=") {
                                     println!("[Rust] Found progress line: out_time={}", time_str);
                                     if let Some(current_time) = parse_ffmpeg_time(time_str) {
+                                        // If current time exceeds our estimate, update the estimate
+                                        // This handles cases where duration extraction failed or was inaccurate
+                                        if current_time > total_duration {
+                                            total_duration = current_time * 1.1; // Add 10% buffer
+                                            println!("[Rust] Duration estimate updated to: {}s (current: {}s)", total_duration, current_time);
+                                        }
+                                        
                                         let progress = ((current_time / total_duration) * 100.0).min(95.0);
                                         println!("[Rust] Real progress: {:.1}% ({}s / {}s)", progress, current_time, total_duration);
 
@@ -1519,8 +1530,12 @@ pub async fn download_kick_vod(
 
         println!("[Rust] Spawning FFmpeg sidecar with real-time progress...");
 
+        // For full VOD downloads, add a small seek offset to avoid issues with problematic
+        // initial segments in some HLS streams. This mimics starting at 0.1s which works around
+        // streams that have issues at position 0.
         let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
         let (mut rx, child) = cmd.args([
+            "-ss", "0.1",  // Small offset to avoid problematic stream starts
             "-i", &video_url,
             "-c:v", "copy",
             "-c:a", "aac",
@@ -1542,7 +1557,7 @@ pub async fn download_kick_vod(
         }
 
         let result = tokio::spawn(async move {
-            let total_duration = duration_for_progress.unwrap_or(600.0);
+            let mut total_duration = duration_for_progress.unwrap_or(600.0);
             let app_progress = app_clone_for_progress.clone();
             let download_id_progress = download_id_for_progress.clone();
 
@@ -1571,6 +1586,13 @@ pub async fn download_kick_vod(
                             if line.starts_with("out_time=") {
                                 if let Some(time_str) = line.strip_prefix("out_time=") {
                                     if let Some(current_time) = parse_ffmpeg_time(time_str) {
+                                        // If current time exceeds our estimate, update the estimate
+                                        // This handles cases where duration extraction failed or was inaccurate
+                                        if current_time > total_duration {
+                                            total_duration = current_time * 1.1; // Add 10% buffer
+                                            println!("[Rust] Duration estimate updated to: {}s (current: {}s)", total_duration, current_time);
+                                        }
+                                        
                                         let progress = ((current_time / total_duration) * 100.0).min(95.0);
 
                                         if last_progress_time.elapsed().as_secs() >= 1 {
