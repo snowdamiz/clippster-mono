@@ -187,6 +187,12 @@ export function useLivestreamViewer() {
   let reconnectTimeout: number | null = null;
   let isIntentionalDisconnect = false; // Flag to prevent reconnects on intentional disconnect
 
+  // Segment stall detection for Kick HLS
+  let lastSegmentCount = 0;
+  let lastSegmentTime = Date.now();
+  let isRestartingRecorder = false;
+  const SEGMENT_STALL_THRESHOLD = 30000; // 30 seconds without new segments = stalled
+
   // Update timers
   let liveEdgeUpdateInterval: number | null = null;
   let segmentPollInterval: number | null = null;
@@ -576,6 +582,11 @@ export function useLivestreamViewer() {
         state.value.playbackMode = 'hls';
         isHlsReady.value = true;
         reconnectAttempts = 0;
+
+        // Reset segment stall detection
+        lastSegmentCount = 0;
+        lastSegmentTime = Date.now();
+        isRestartingRecorder = false;
 
         // Start live edge updates for Kick
         startLiveEdgeUpdates();
@@ -1102,13 +1113,27 @@ export function useLivestreamViewer() {
       });
 
       if (segments && segments.length > 0) {
+        const previousCount = state.value.availableSegments.length;
         state.value.availableSegments = segments;
         state.value.totalRecordedDuration = segments[segments.length - 1].endTime;
         
-        // Log segment update only when count changes
-        if (segments.length !== state.value.availableSegments.length) {
-          console.log('[LiveViewer] Segments updated:', segments.length, 
-            'Duration:', segments[segments.length - 1].endTime.toFixed(1) + 's');
+        // Track segment progress for stall detection
+        if (segments.length > lastSegmentCount) {
+          lastSegmentCount = segments.length;
+          lastSegmentTime = Date.now();
+          
+          // Log segment update only when count changes
+          if (segments.length !== previousCount) {
+            console.log('[LiveViewer] Segments updated:', segments.length, 
+              'Duration:', segments[segments.length - 1].endTime.toFixed(1) + 's');
+          }
+        } else {
+          // Check for segment stall - no new segments for too long
+          const timeSinceLastSegment = Date.now() - lastSegmentTime;
+          if (timeSinceLastSegment > SEGMENT_STALL_THRESHOLD && !isRestartingRecorder && !isIntentionalDisconnect) {
+            console.warn(`[LiveViewer] No new segments for ${(timeSinceLastSegment / 1000).toFixed(0)}s, checking stream status...`);
+            checkAndRestartRecorderIfNeeded();
+          }
         }
       } else {
         console.debug('[LiveViewer] No segments returned from get_hls_segments');
@@ -1116,6 +1141,76 @@ export function useLivestreamViewer() {
     } catch (error) {
       // Silently fail - segments may not be ready yet
       console.debug('[LiveViewer] Could not get HLS segments:', error);
+    }
+  }
+
+  // Check if stream is still live and restart recorder if needed
+  async function checkAndRestartRecorderIfNeeded() {
+    if (isRestartingRecorder || isIntentionalDisconnect) return;
+    
+    const channelSlug = state.value.mintId; // For Kick, mintId is the channel slug
+    const streamerId = state.value.streamerId;
+    
+    if (!channelSlug || !streamerId) {
+      console.warn('[LiveViewer] Cannot restart recorder: missing channelSlug or streamerId');
+      return;
+    }
+
+    isRestartingRecorder = true;
+    
+    try {
+      const kickStatus = await checkKickLivestream(channelSlug);
+      
+      if (kickStatus.isLive) {
+        console.log('[LiveViewer] Stream is still live but segments stalled, restarting recorder...');
+        state.value.isBuffering = true;
+        
+        // Stop existing recording first
+        try {
+          await stopKickRecording(channelSlug);
+        } catch (stopError) {
+          console.warn('[LiveViewer] Error stopping old recording:', stopError);
+        }
+        
+        // Wait a moment for cleanup
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Start new recording
+        const newSessionId = `kick-view-${channelSlug}-${Date.now()}`;
+        state.value.tempSessionId = newSessionId;
+        
+        try {
+          await startKickRecording(channelSlug, streamerId, newSessionId, 1);
+          
+          const newOutputDir = await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId });
+          console.log('[LiveViewer] Recorder restarted, new output dir:', newOutputDir);
+          
+          // Reset segment tracking
+          lastSegmentCount = 0;
+          lastSegmentTime = Date.now();
+          
+          // Update output dir and reinitialize playback
+          hlsOutputDir.value = newOutputDir;
+          
+          if (hlsVideoElement.value) {
+            await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
+            hlsPlayback.play();
+            state.value.isBuffering = false;
+            console.log('[LiveViewer] Playback reinitialized after recorder restart');
+          }
+        } catch (restartError) {
+          console.error('[LiveViewer] Failed to restart recording:', restartError);
+          state.value.connectionError = 'Recording stopped and failed to restart';
+        }
+      } else {
+        console.log('[LiveViewer] Stream is no longer live');
+        state.value.connectionState = 'disconnected';
+        state.value.connectionError = 'Stream ended';
+      }
+    } catch (checkError) {
+      console.error('[LiveViewer] Failed to check stream status:', checkError);
+    } finally {
+      isRestartingRecorder = false;
     }
   }
 
@@ -1332,6 +1427,66 @@ export function useLivestreamViewer() {
       }
     });
 
+    // Listen for recorder exit - attempt to restart if stream is still live
+    const recorderExitUnlisten = await listen<{
+      streamerId: string;
+      sessionId: string;
+      channelSlug: string;
+      code: number | null;
+    }>('recorder-exit', async (event) => {
+      const { streamerId, channelSlug } = event.payload;
+      
+      // Only handle if this is our current stream and we're still supposed to be connected
+      if (streamerId !== state.value.streamerId || isIntentionalDisconnect) {
+        return;
+      }
+
+      console.log('[LiveViewer] Recorder exited unexpectedly, checking if stream is still live...');
+      
+      // Check if stream is still live
+      try {
+        const kickStatus = await checkKickLivestream(channelSlug);
+        
+        if (kickStatus.isLive) {
+          console.log('[LiveViewer] Stream is still live, attempting to restart recording...');
+          state.value.isBuffering = true;
+          
+          // Restart the recording with a new session
+          const newSessionId = `kick-view-${channelSlug}-${Date.now()}`;
+          state.value.tempSessionId = newSessionId;
+          
+          try {
+            await startKickRecording(channelSlug, streamerId, newSessionId, 1);
+            
+            // Get the new output directory
+            const newOutputDir = await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId });
+            
+            console.log('[LiveViewer] Recording restarted, new output dir:', newOutputDir);
+            
+            // Update the HLS output dir - this will trigger the watcher to reinitialize playback
+            hlsOutputDir.value = newOutputDir;
+            
+            // Reinitialize HLS playback with the new recording
+            if (hlsVideoElement.value) {
+              await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
+              hlsPlayback.play();
+              state.value.isBuffering = false;
+              console.log('[LiveViewer] Playback reinitialized after recorder restart');
+            }
+          } catch (restartError) {
+            console.error('[LiveViewer] Failed to restart recording:', restartError);
+            state.value.connectionError = 'Recording stopped and failed to restart';
+          }
+        } else {
+          console.log('[LiveViewer] Stream is no longer live');
+          state.value.connectionState = 'disconnected';
+          state.value.connectionError = 'Stream ended';
+        }
+      } catch (checkError) {
+        console.error('[LiveViewer] Failed to check stream status:', checkError);
+      }
+    });
+
     // For HLS mode, poll for new segments
     const hlsUpdateInterval = window.setInterval(() => {
       if (hlsOutputDir.value) {
@@ -1344,7 +1499,7 @@ export function useLivestreamViewer() {
       clearInterval(hlsUpdateInterval);
     };
 
-    unlistenFunctions.push(unlisten, cleanupHlsInterval as any);
+    unlistenFunctions.push(unlisten, recorderExitUnlisten, cleanupHlsInterval as any);
   }
 
   // Disconnect from livestream

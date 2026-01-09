@@ -139,6 +139,20 @@ const router = createRouter({
         },
       ],
     },
+    // Messages page (Telegram-style)
+    {
+      path: '/messages',
+      name: 'messages',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'messages-home',
+          component: () => import('@/pages/Messages.vue'),
+        },
+      ],
+    },
     // Legacy redirects for old platform routes
     {
       path: '/pumpfun',
@@ -219,6 +233,24 @@ const router = createRouter({
           path: '',
           name: 'organization-detail-home',
           component: () => import('@/components/OrganizationDashboard.vue'),
+        },
+      ],
+    },
+    {
+      path: '/organization/:organizationId/messages',
+      name: 'organization-messages',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'organization-messages-home',
+          component: () => import('@/pages/OrganizationMessages.vue'),
+        },
+        {
+          path: ':conversationId',
+          name: 'organization-messages-conversation',
+          component: () => import('@/pages/OrganizationMessages.vue'),
         },
       ],
     },

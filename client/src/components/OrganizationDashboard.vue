@@ -47,6 +47,10 @@
           </div>
 
           <div class="flex items-center gap-2 mr-1">
+            <Button v-if="!loading" variant="outline" size="sm" @click="router.push(`/organization/${organizationId}/messages`)">
+              <MessageCircle class="h-4 w-4 mr-1.5" />
+              Messages
+            </Button>
             <Button v-if="!loading && isAdmin" size="sm" @click="showInviteDialog = true">
               <UserPlus class="h-4 w-4 mr-1.5" />
               Add Member
@@ -1831,6 +1835,7 @@
     Sticker,
     Play,
     Pause,
+    MessageCircle,
     UserCircle,
     Link2,
     SkipForward,
