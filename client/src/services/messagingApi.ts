@@ -22,6 +22,7 @@ export interface Conversation {
   type: 'direct' | 'group' | 'announcement';
   name: string | null;
   organizationId: number;
+  createdByUserId: number;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
   createdAt: string;
@@ -97,10 +98,7 @@ export async function createGroupConversation(
 /**
  * Create an announcement (admin/owner only).
  */
-export async function createAnnouncement(
-  orgId: number,
-  content: string
-): Promise<Conversation> {
+export async function createAnnouncement(orgId: number, content: string): Promise<Conversation> {
   const response = await api.post<{ data: Conversation }>(
     `/organizations/${orgId}/messaging/conversations/announcement`,
     { content }
@@ -126,9 +124,7 @@ export async function getUnreadCounts(orgId: number): Promise<UnreadCounts> {
  * Get a specific conversation.
  */
 export async function getConversation(conversationId: number): Promise<Conversation> {
-  const response = await api.get<{ data: Conversation }>(
-    `/conversations/${conversationId}`
-  );
+  const response = await api.get<{ data: Conversation }>(`/conversations/${conversationId}`);
   return response.data.data;
 }
 
@@ -143,24 +139,19 @@ export async function getMessages(
   if (opts?.before) params.before = opts.before.toString();
   if (opts?.limit) params.limit = opts.limit.toString();
 
-  const response = await api.get<{ data: Message[] }>(
-    `/conversations/${conversationId}/messages`,
-    { params }
-  );
+  const response = await api.get<{ data: Message[] }>(`/conversations/${conversationId}/messages`, {
+    params,
+  });
   return response.data.data;
 }
 
 /**
  * Send a message to a conversation.
  */
-export async function sendMessage(
-  conversationId: number,
-  content: string
-): Promise<Message> {
-  const response = await api.post<{ data: Message }>(
-    `/conversations/${conversationId}/messages`,
-    { content }
-  );
+export async function sendMessage(conversationId: number, content: string): Promise<Message> {
+  const response = await api.post<{ data: Message }>(`/conversations/${conversationId}/messages`, {
+    content,
+  });
   return response.data.data;
 }
 
@@ -182,10 +173,7 @@ export async function editMessage(
 /**
  * Delete a message.
  */
-export async function deleteMessage(
-  conversationId: number,
-  messageId: number
-): Promise<void> {
+export async function deleteMessage(conversationId: number, messageId: number): Promise<void> {
   await api.delete(`/conversations/${conversationId}/messages/${messageId}`);
 }
 
@@ -199,9 +187,7 @@ export async function markAsRead(conversationId: number): Promise<void> {
 /**
  * Toggle mute for a conversation.
  */
-export async function toggleMute(
-  conversationId: number
-): Promise<{ muted: boolean }> {
+export async function toggleMute(conversationId: number): Promise<{ muted: boolean }> {
   const response = await api.put<{ data: { muted: boolean } }>(
     `/conversations/${conversationId}/mute`
   );
@@ -211,10 +197,7 @@ export async function toggleMute(
 /**
  * Add a participant to a group conversation.
  */
-export async function addParticipant(
-  conversationId: number,
-  userId: number
-): Promise<Participant> {
+export async function addParticipant(conversationId: number, userId: number): Promise<Participant> {
   const response = await api.post<{ data: Participant }>(
     `/conversations/${conversationId}/participants`,
     { user_id: userId }
@@ -225,10 +208,7 @@ export async function addParticipant(
 /**
  * Remove a participant from a group conversation.
  */
-export async function removeParticipant(
-  conversationId: number,
-  userId: number
-): Promise<void> {
+export async function removeParticipant(conversationId: number, userId: number): Promise<void> {
   await api.delete(`/conversations/${conversationId}/participants/${userId}`);
 }
 
@@ -237,6 +217,13 @@ export async function removeParticipant(
  */
 export async function leaveConversation(conversationId: number): Promise<void> {
   await api.post(`/conversations/${conversationId}/leave`);
+}
+
+/**
+ * Delete a conversation (only conversation creator can delete).
+ */
+export async function deleteConversation(conversationId: number): Promise<void> {
+  await api.delete(`/conversations/${conversationId}`);
 }
 
 // ============================================================================
@@ -255,8 +242,6 @@ export async function listAllConversations(): Promise<Conversation[]> {
  * Get total unread count across all organizations.
  */
 export async function getTotalUnread(): Promise<number> {
-  const response = await api.get<{ data: { unread_count: number } }>(
-    '/me/unread-count'
-  );
+  const response = await api.get<{ data: { unread_count: number } }>('/me/unread-count');
   return response.data.data.unread_count;
 }

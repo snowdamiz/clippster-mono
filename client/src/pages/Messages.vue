@@ -1,1429 +1,1357 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-import { useMessagingStore } from '@/stores/messaging';
-import { useAuthStore } from '@/stores/auth';
-import api from '@/services/api';
-import type { Conversation, Message } from '@/services/messagingApi';
+  import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+  import { useMessagingStore } from '@/stores/messaging';
+  import { useAuthStore } from '@/stores/auth';
+  import api from '@/services/api';
+  import type { Conversation, Message } from '@/services/messagingApi';
+  import PageLayout from '@/components/PageLayout.vue';
+  import {
+    MessageSquare,
+    Search,
+    Plus,
+    X,
+    Send,
+    Bell,
+    BellOff,
+    Users,
+    User,
+    Check,
+    Pencil,
+    Trash2,
+    Loader2,
+    Megaphone,
+    MoreVertical,
+    UserMinus,
+    LogOut,
+  } from 'lucide-vue-next';
 
-const messagingStore = useMessagingStore();
-const authStore = useAuthStore();
+  const messagingStore = useMessagingStore();
+  const authStore = useAuthStore();
 
-const messageInput = ref('');
-const messagesContainer = ref<HTMLElement | null>(null);
-const isAtBottom = ref(true);
-const editingMessageId = ref<number | null>(null);
-const editContent = ref('');
-const searchQuery = ref('');
-const showNewConversationDialog = ref(false);
-const newConversationType = ref<'direct' | 'group'>('direct');
-const newGroupName = ref('');
-const selectedUserIds = ref<number[]>([]);
-const memberSearchQuery = ref('');
-const members = ref<Array<{ id: number; orgId: number; userId: number; displayName: string; avatarUrl: string | null; orgName: string }>>([]);
-const isLoadingMembers = ref(false);
-const organizations = ref<Array<{ id: number; name: string }>>([]);
+  const messageInput = ref('');
+  const messagesContainer = ref<HTMLElement | null>(null);
+  const isAtBottom = ref(true);
+  const editingMessageId = ref<number | null>(null);
+  const editContent = ref('');
+  const searchQuery = ref('');
+  const showNewConversationDialog = ref(false);
+  const newConversationType = ref<'direct' | 'group'>('direct');
+  const newGroupName = ref('');
+  const selectedUserIds = ref<number[]>([]);
+  const memberSearchQuery = ref('');
+  const members = ref<
+    Array<{
+      id: number;
+      orgId: number;
+      userId: number;
+      displayName: string;
+      avatarUrl: string | null;
+      orgName: string;
+      role?: string;
+    }>
+  >([]);
+  const isLoadingMembers = ref(false);
+  const organizations = ref<Array<{ id: number; name: string }>>([]);
+  const showConversationMenu = ref(false);
+  const showParticipantsDialog = ref(false);
+  const isDeletingConversation = ref(false);
+  const isKickingUser = ref<number | null>(null);
+  const menuButtonRef = ref<HTMLElement | null>(null);
+  const menuPosition = ref({ top: 0, right: 0 });
 
-let typingTimeout: number | null = null;
-
-const filteredConversations = computed(() => {
-  if (!searchQuery.value) return messagingStore.conversationList;
-  const query = searchQuery.value.toLowerCase();
-  return messagingStore.conversationList.filter(conv => {
-    const name = getConversationName(conv).toLowerCase();
-    return name.includes(query);
+  // Confirmation dialog state
+  const showConfirmDialog = ref(false);
+  const confirmDialogConfig = ref<{
+    title: string;
+    message: string;
+    confirmText: string;
+    confirmVariant: 'danger' | 'primary';
+    onConfirm: () => void;
+  }>({
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    confirmVariant: 'danger',
+    onConfirm: () => {},
   });
-});
 
-const sortedMessages = computed(() => {
-  return [...messagingStore.activeMessages].sort((a, b) => 
-    new Date(a.insertedAt).getTime() - new Date(b.insertedAt).getTime()
-  );
-});
+  let typingTimeout: number | null = null;
 
-const typingUserNames = computed(() => {
-  const names: string[] = [];
-  messagingStore.activeTypingUsers.forEach(userId => {
-    const participant = messagingStore.activeConversation?.participants.find(p => p.userId === userId);
-    if (participant?.user?.displayName) {
-      names.push(participant.user.displayName);
+  const filteredConversations = computed(() => {
+    if (!searchQuery.value) return messagingStore.conversationList;
+    const query = searchQuery.value.toLowerCase();
+    return messagingStore.conversationList.filter((conv) => {
+      const name = getConversationName(conv).toLowerCase();
+      return name.includes(query);
+    });
+  });
+
+  const sortedMessages = computed(() => {
+    return [...messagingStore.activeMessages].sort((a, b) => {
+      const aTime = (a as any).insertedAt || (a as any).inserted_at;
+      const bTime = (b as any).insertedAt || (b as any).inserted_at;
+      return new Date(aTime).getTime() - new Date(bTime).getTime();
+    });
+  });
+
+  const typingUserNames = computed(() => {
+    const names: string[] = [];
+    messagingStore.activeTypingUsers.forEach((userId) => {
+      const participant = messagingStore.activeConversation?.participants.find((p) => {
+        const pUserId = (p as any).userId ?? (p as any).user_id;
+        return pUserId === userId;
+      });
+      if (participant) {
+        const name = getParticipantDisplayName(participant);
+        if (name !== 'Unknown User') {
+          names.push(name);
+        }
+      }
+    });
+    return names;
+  });
+
+  const filteredMembers = computed(() => {
+    // Filter out current user for conversation creation
+    let filtered = members.value.filter((m) => m.userId !== authStore.user?.id);
+    if (!memberSearchQuery.value) return filtered;
+    const query = memberSearchQuery.value.toLowerCase();
+    return filtered.filter((m) => m.displayName.toLowerCase().includes(query));
+  });
+
+  const canCreateConversation = computed(() => {
+    if (newConversationType.value === 'direct') {
+      return selectedUserIds.value.length === 1;
+    }
+    return newGroupName.value.trim() && selectedUserIds.value.length >= 1;
+  });
+
+  // Check if current user is the conversation creator
+  const isConversationCreator = computed(() => {
+    if (!messagingStore.activeConversation) return false;
+    const conv = messagingStore.activeConversation as any;
+    // Check both camelCase and snake_case in case of mapping issues
+    const creatorId = conv.createdByUserId ?? conv.created_by_user_id;
+    return creatorId === authStore.user?.id;
+  });
+
+  // Check if current user is a conversation admin (can kick users)
+  const isConversationAdmin = computed(() => {
+    if (!messagingStore.activeConversation) return false;
+    const myParticipant = messagingStore.activeConversation.participants.find((p) => {
+      const pUserId = (p as any).userId ?? (p as any).user_id;
+      return pUserId === authStore.user?.id;
+    });
+    return myParticipant?.role === 'admin';
+  });
+
+  // Get current user's org role for the active conversation's org
+  const myOrgRole = computed(() => {
+    if (!messagingStore.activeConversation) return null;
+    const member = members.value.find((m) => m.userId === authStore.user?.id);
+    return member?.role || null;
+  });
+
+  // Check if user can kick a specific participant
+  function canKickParticipant(participant: any): boolean {
+    if (!isConversationAdmin.value) return false;
+    const participantUserId = participant.userId ?? participant.user_id;
+    if (participantUserId === authStore.user?.id) return false; // Can't kick self
+
+    // Find the target's org role
+    const targetOrgMember = members.value.find((m) => m.userId === participantUserId);
+    const targetIsOrgAdmin = targetOrgMember?.role === 'owner' || targetOrgMember?.role === 'admin';
+
+    // If I'm not an org admin, I can't kick org admins
+    const iAmOrgAdmin = myOrgRole.value === 'owner' || myOrgRole.value === 'admin';
+    if (!iAmOrgAdmin && targetIsOrgAdmin) return false;
+
+    return true;
+  }
+
+  onMounted(async () => {
+    if (authStore.isAuthenticated) {
+      await loadOrganizationsAndMembers();
     }
   });
-  return names;
-});
 
-const filteredMembers = computed(() => {
-  if (!memberSearchQuery.value) return members.value;
-  const query = memberSearchQuery.value.toLowerCase();
-  return members.value.filter(m => m.displayName.toLowerCase().includes(query));
-});
+  onUnmounted(() => {
+    messagingStore.cleanup();
+  });
 
-const canCreateConversation = computed(() => {
-  if (newConversationType.value === 'direct') {
-    return selectedUserIds.value.length === 1;
-  }
-  return newGroupName.value.trim() && selectedUserIds.value.length >= 1;
-});
-
-onMounted(async () => {
-  if (authStore.isAuthenticated) {
-    await loadOrganizationsAndMembers();
-  }
-});
-
-onUnmounted(() => {
-  messagingStore.cleanup();
-});
-
-watch(() => authStore.isAuthenticated, async (isAuth) => {
-  if (isAuth) {
-    await loadOrganizationsAndMembers();
-  }
-});
-
-watch(() => messagingStore.activeMessages.length, () => {
-  if (isAtBottom.value) {
-    scrollToBottom();
-  }
-});
-
-watch(() => messagingStore.activeConversationId, () => {
-  scrollToBottom(false);
-});
-
-async function loadOrganizationsAndMembers() {
-  try {
-    const orgsResponse = await api.get<{ data: Array<{ id: number; name: string }> }>('/organizations');
-    organizations.value = orgsResponse.data.data || [];
-    
-    // Load members from all organizations
-    isLoadingMembers.value = true;
-    members.value = [];
-    
-    for (const org of organizations.value) {
-      try {
-        const membersResponse = await api.get<{ data: Array<{ id: number; user_id: number; user: { display_name: string; avatar_url: string | null }; role: string }> }>(
-          `/organizations/${org.id}/members`
-        );
-        const orgMembers = (membersResponse.data.data || []).map(m => ({
-          id: m.id,
-          orgId: org.id,
-          userId: m.user_id,
-          displayName: m.user?.display_name || 'Unknown',
-          avatarUrl: m.user?.avatar_url || null,
-          orgName: org.name
-        })).filter(m => m.userId !== authStore.user?.id); // Exclude self
-        
-        members.value.push(...orgMembers);
-        
-        // Initialize messaging for first org
-        if (org === organizations.value[0]) {
-          await messagingStore.initialize(org.id);
-        }
-      } catch (e) {
-        console.error(`Failed to load members for org ${org.id}:`, e);
+  watch(
+    () => authStore.isAuthenticated,
+    async (isAuth) => {
+      if (isAuth) {
+        await loadOrganizationsAndMembers();
       }
     }
-  } catch (error) {
-    console.error('Failed to load organizations:', error);
-  } finally {
-    isLoadingMembers.value = false;
+  );
+
+  watch(
+    () => messagingStore.activeMessages.length,
+    () => {
+      if (isAtBottom.value) {
+        scrollToBottom();
+      }
+    }
+  );
+
+  watch(
+    () => messagingStore.activeConversationId,
+    () => {
+      scrollToBottom(false);
+    }
+  );
+
+  async function loadOrganizationsAndMembers() {
+    try {
+      const orgsResponse = await api.get<{ organizations: Array<{ id: number; name: string }> }>('/organizations');
+      organizations.value = orgsResponse.data.organizations || [];
+
+      isLoadingMembers.value = true;
+      members.value = [];
+
+      for (const org of organizations.value) {
+        try {
+          const membersResponse = await api.get<{
+            members: Array<{
+              id: number;
+              user_id: number;
+              user: { name: string; email: string; avatar_url: string | null };
+              role: string;
+            }>;
+          }>(`/organizations/${org.id}/members`);
+          const orgMembers = (membersResponse.data.members || []).map((m) => ({
+            id: m.id,
+            orgId: org.id,
+            userId: m.user_id,
+            displayName: m.user?.name || m.user?.email || 'Unknown',
+            avatarUrl: m.user?.avatar_url || null,
+            orgName: org.name,
+            role: m.role,
+          }));
+
+          members.value.push(...orgMembers);
+
+          if (org === organizations.value[0]) {
+            await messagingStore.initialize(org.id);
+          }
+        } catch (e) {
+          console.error(`Failed to load members for org ${org.id}:`, e);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load organizations:', error);
+    } finally {
+      isLoadingMembers.value = false;
+    }
   }
-}
 
-function getConversationName(conversation: Conversation): string {
-  if (conversation.name) return conversation.name;
-  
-  if (conversation.type === 'direct') {
-    const otherParticipant = conversation.participants.find(p => p.userId !== authStore.user?.id);
-    return otherParticipant?.user?.displayName || 'Unknown User';
+  function getParticipantDisplayName(participant: any): string {
+    if (!participant?.user) return 'Unknown User';
+    // Handle both camelCase and snake_case
+    return participant.user.displayName || participant.user.display_name || 'Unknown User';
   }
-  
-  if (conversation.type === 'announcement') return 'Announcement';
-  return 'Group Chat';
-}
 
-function getConversationAvatar(conversation: Conversation): string | null {
-  if (conversation.type === 'direct') {
-    const otherParticipant = conversation.participants.find(p => p.userId !== authStore.user?.id);
-    return otherParticipant?.user?.avatarUrl || null;
-  }
-  return null;
-}
+  function getConversationName(conversation: Conversation): string {
+    if (conversation.name) return conversation.name;
 
-function formatTime(dateString: string | null): string {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  
-  if (diffDays === 0) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } else if (diffDays === 1) {
-    return 'Yesterday';
-  } else if (diffDays < 7) {
-    return date.toLocaleDateString([], { weekday: 'short' });
-  }
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
-function formatMessageTime(dateString: string): string {
-  return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function scrollToBottom(smooth = true) {
-  nextTick(() => {
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTo({
-        top: messagesContainer.value.scrollHeight,
-        behavior: smooth ? 'smooth' : 'auto'
+    if (conversation.type === 'direct') {
+      const otherParticipant = conversation.participants.find((p) => {
+        const oderId = (p as any).userId ?? (p as any).user_id;
+        return oderId !== authStore.user?.id;
       });
-    }
-  });
-}
-
-function handleScroll() {
-  if (!messagesContainer.value) return;
-  const { scrollTop, scrollHeight, clientHeight } = messagesContainer.value;
-  isAtBottom.value = scrollHeight - scrollTop - clientHeight < 50;
-}
-
-async function selectConversation(conversationId: number) {
-  await messagingStore.setActiveConversation(conversationId);
-}
-
-async function sendMessage() {
-  const content = messageInput.value.trim();
-  if (!content) return;
-
-  messageInput.value = '';
-  
-  try {
-    await messagingStore.sendMessage(content);
-    scrollToBottom();
-  } catch (error) {
-    console.error('Failed to send message:', error);
-    messageInput.value = content;
-  }
-}
-
-function handleInputKeydown(event: KeyboardEvent) {
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault();
-    if (editingMessageId.value) {
-      saveEdit();
-    } else {
-      sendMessage();
-    }
-  }
-}
-
-function handleTyping() {
-  if (typingTimeout) clearTimeout(typingTimeout);
-  messagingStore.sendTyping();
-  typingTimeout = window.setTimeout(() => { typingTimeout = null; }, 2000);
-}
-
-function startEdit(message: Message) {
-  editingMessageId.value = message.id;
-  editContent.value = message.content;
-}
-
-async function saveEdit() {
-  if (!editingMessageId.value || !editContent.value.trim()) return;
-  try {
-    await messagingStore.editMessage(editingMessageId.value, editContent.value.trim());
-    cancelEdit();
-  } catch (error) {
-    console.error('Failed to edit message:', error);
-  }
-}
-
-function cancelEdit() {
-  editingMessageId.value = null;
-  editContent.value = '';
-}
-
-async function deleteMessage(messageId: number) {
-  if (!confirm('Delete this message?')) return;
-  try {
-    await messagingStore.deleteMessage(messageId);
-  } catch (error) {
-    console.error('Failed to delete message:', error);
-  }
-}
-
-function toggleUserSelection(userId: number) {
-  if (newConversationType.value === 'direct') {
-    selectedUserIds.value = [userId];
-  } else {
-    const index = selectedUserIds.value.indexOf(userId);
-    if (index === -1) {
-      selectedUserIds.value.push(userId);
-    } else {
-      selectedUserIds.value.splice(index, 1);
-    }
-  }
-}
-
-async function createConversation() {
-  if (!canCreateConversation.value) return;
-
-  try {
-    // Find the org for the selected user
-    const selectedMember = members.value.find(m => m.userId === selectedUserIds.value[0]);
-    if (!selectedMember) return;
-
-    // Make sure we're initialized for that org
-    if (messagingStore.currentOrgId !== selectedMember.orgId) {
-      await messagingStore.initialize(selectedMember.orgId);
+      return getParticipantDisplayName(otherParticipant);
     }
 
-    let conversation;
+    if (conversation.type === 'announcement') return 'Announcement';
+    return 'Group Chat';
+  }
+
+  function getParticipantAvatarUrl(participant: any): string | null {
+    if (!participant?.user) return null;
+    // Handle both camelCase and snake_case
+    return participant.user.avatarUrl || participant.user.avatar_url || null;
+  }
+
+  function getConversationAvatar(conversation: Conversation): string | null {
+    if (conversation.type === 'direct') {
+      const otherParticipant = conversation.participants.find((p) => {
+        const oderId = (p as any).userId ?? (p as any).user_id;
+        return oderId !== authStore.user?.id;
+      });
+      return getParticipantAvatarUrl(otherParticipant);
+    }
+    return null;
+  }
+
+  function formatTime(dateString: string | null): string {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (diffDays === 1) {
+      return 'Yesterday';
+    } else if (diffDays < 7) {
+      return date.toLocaleDateString([], { weekday: 'short' });
+    }
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  function formatMessageTime(dateString: string): string {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function scrollToBottom(smooth = true) {
+    nextTick(() => {
+      if (messagesContainer.value) {
+        messagesContainer.value.scrollTo({
+          top: messagesContainer.value.scrollHeight,
+          behavior: smooth ? 'smooth' : 'auto',
+        });
+      }
+    });
+  }
+
+  function handleScroll() {
+    if (!messagesContainer.value) return;
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainer.value;
+    isAtBottom.value = scrollHeight - scrollTop - clientHeight < 50;
+  }
+
+  async function selectConversation(conversationId: number) {
+    await messagingStore.setActiveConversation(conversationId);
+  }
+
+  async function sendMessage() {
+    const content = messageInput.value.trim();
+    if (!content) return;
+
+    messageInput.value = '';
+
+    try {
+      await messagingStore.sendMessage(content);
+      scrollToBottom();
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      messageInput.value = content;
+    }
+  }
+
+  function handleInputKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (editingMessageId.value) {
+        saveEdit();
+      } else {
+        sendMessage();
+      }
+    }
+  }
+
+  function handleTyping() {
+    if (typingTimeout) clearTimeout(typingTimeout);
+    messagingStore.sendTyping();
+    typingTimeout = window.setTimeout(() => {
+      typingTimeout = null;
+    }, 2000);
+  }
+
+  function startEdit(message: Message) {
+    editingMessageId.value = message.id;
+    editContent.value = message.content;
+  }
+
+  async function saveEdit() {
+    if (!editingMessageId.value || !editContent.value.trim()) return;
+    try {
+      await messagingStore.editMessage(editingMessageId.value, editContent.value.trim());
+      cancelEdit();
+    } catch (error) {
+      console.error('Failed to edit message:', error);
+    }
+  }
+
+  function cancelEdit() {
+    editingMessageId.value = null;
+    editContent.value = '';
+  }
+
+  function deleteMessage(messageId: number) {
+    showConfirm({
+      title: 'Delete Message',
+      message: 'Are you sure you want to delete this message?',
+      confirmText: 'Delete',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        try {
+          await messagingStore.deleteMessage(messageId);
+        } catch (error) {
+          console.error('Failed to delete message:', error);
+        }
+      },
+    });
+  }
+
+  function toggleUserSelection(userId: number) {
     if (newConversationType.value === 'direct') {
-      conversation = await messagingStore.startDirectConversation(selectedUserIds.value[0]);
+      selectedUserIds.value = [userId];
     } else {
-      conversation = await messagingStore.startGroupConversation(newGroupName.value.trim(), selectedUserIds.value);
+      const index = selectedUserIds.value.indexOf(userId);
+      if (index === -1) {
+        selectedUserIds.value.push(userId);
+      } else {
+        selectedUserIds.value.splice(index, 1);
+      }
     }
-
-    if (conversation) {
-      await selectConversation(conversation.id);
-      closeNewConversationDialog();
-    }
-  } catch (error) {
-    console.error('Failed to create conversation:', error);
   }
-}
 
-function openNewConversationDialog() {
-  showNewConversationDialog.value = true;
-  newConversationType.value = 'direct';
-  newGroupName.value = '';
-  selectedUserIds.value = [];
-  memberSearchQuery.value = '';
-}
+  async function createConversation() {
+    if (!canCreateConversation.value) return;
 
-function closeNewConversationDialog() {
-  showNewConversationDialog.value = false;
-}
+    try {
+      const selectedMember = members.value.find((m) => m.userId === selectedUserIds.value[0]);
+      if (!selectedMember) return;
 
-function getUnreadCount(conversationId: number): number {
-  return messagingStore.unreadCounts.get(conversationId) || 0;
-}
+      if (messagingStore.currentOrgId !== selectedMember.orgId) {
+        await messagingStore.initialize(selectedMember.orgId);
+      }
+
+      let conversation;
+      if (newConversationType.value === 'direct') {
+        conversation = await messagingStore.startDirectConversation(selectedUserIds.value[0]);
+      } else {
+        conversation = await messagingStore.startGroupConversation(newGroupName.value.trim(), selectedUserIds.value);
+      }
+
+      if (conversation) {
+        await selectConversation(conversation.id);
+        closeNewConversationDialog();
+      }
+    } catch (error) {
+      console.error('Failed to create conversation:', error);
+    }
+  }
+
+  function openNewConversationDialog() {
+    showNewConversationDialog.value = true;
+    newConversationType.value = 'direct';
+    newGroupName.value = '';
+    selectedUserIds.value = [];
+    memberSearchQuery.value = '';
+  }
+
+  function closeNewConversationDialog() {
+    showNewConversationDialog.value = false;
+  }
+
+  function getUnreadCount(conversationId: number): number {
+    return messagingStore.unreadCounts.get(conversationId) || 0;
+  }
+
+  function toggleConversationMenu() {
+    if (!showConversationMenu.value && menuButtonRef.value) {
+      const rect = menuButtonRef.value.getBoundingClientRect();
+      menuPosition.value = {
+        top: rect.bottom + 8,
+        right: window.innerWidth - rect.right,
+      };
+    }
+    showConversationMenu.value = !showConversationMenu.value;
+  }
+
+  function showConfirm(config: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    confirmVariant?: 'danger' | 'primary';
+    onConfirm: () => void;
+  }) {
+    confirmDialogConfig.value = {
+      title: config.title,
+      message: config.message,
+      confirmText: config.confirmText || 'Confirm',
+      confirmVariant: config.confirmVariant || 'danger',
+      onConfirm: config.onConfirm,
+    };
+    showConfirmDialog.value = true;
+  }
+
+  function closeConfirmDialog() {
+    showConfirmDialog.value = false;
+  }
+
+  function handleConfirm() {
+    confirmDialogConfig.value.onConfirm();
+    closeConfirmDialog();
+  }
+
+  function closeConversationMenu() {
+    showConversationMenu.value = false;
+  }
+
+  function openParticipantsDialog() {
+    showParticipantsDialog.value = true;
+    closeConversationMenu();
+  }
+
+  function closeParticipantsDialog() {
+    showParticipantsDialog.value = false;
+  }
+
+  function handleDeleteConversation() {
+    if (!messagingStore.activeConversation) return;
+    const conversationId = messagingStore.activeConversation.id;
+    closeConversationMenu();
+
+    showConfirm({
+      title: 'Delete Conversation',
+      message: 'Are you sure you want to delete this conversation? This cannot be undone.',
+      confirmText: 'Delete',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        isDeletingConversation.value = true;
+        try {
+          await messagingStore.deleteConversation(conversationId);
+        } catch (error) {
+          console.error('Failed to delete conversation:', error);
+        } finally {
+          isDeletingConversation.value = false;
+        }
+      },
+    });
+  }
+
+  function handleKickParticipant(userId: number) {
+    if (!messagingStore.activeConversation) return;
+
+    const participant = messagingStore.activeConversation.participants.find((p) => {
+      const pUserId = (p as any).userId ?? (p as any).user_id;
+      return pUserId === userId;
+    });
+    const name = participant ? getParticipantDisplayName(participant) : 'this user';
+    const conversationId = messagingStore.activeConversation.id;
+
+    showConfirm({
+      title: 'Remove Participant',
+      message: `Are you sure you want to remove ${name} from this conversation?`,
+      confirmText: 'Remove',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        isKickingUser.value = userId;
+        try {
+          await messagingStore.removeParticipant(conversationId, userId);
+        } catch (error: any) {
+          console.error('Failed to remove participant:', error);
+        } finally {
+          isKickingUser.value = null;
+        }
+      },
+    });
+  }
+
+  function handleLeaveConversation() {
+    if (!messagingStore.activeConversation) return;
+    const conversationId = messagingStore.activeConversation.id;
+    closeConversationMenu();
+
+    showConfirm({
+      title: 'Leave Conversation',
+      message: 'Are you sure you want to leave this conversation? You will no longer receive messages.',
+      confirmText: 'Leave',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        try {
+          await messagingStore.leaveConversation(conversationId);
+        } catch (error) {
+          console.error('Failed to leave conversation:', error);
+        }
+      },
+    });
+  }
 </script>
 
 <template>
-  <div class="messages-page">
-    <!-- Conversation List (Left Panel) -->
-    <div class="conversations-panel">
-      <div class="panel-header">
-        <h1>Messages</h1>
-        <button class="new-chat-btn" @click="openNewConversationDialog" title="New conversation">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 5v14M5 12h14"/>
-          </svg>
-        </button>
-      </div>
+  <PageLayout
+    title="Messages"
+    description="Chat with your team and organization members"
+    :show-header="true"
+    :icon="MessageSquare"
+  >
+    <!-- Main Messages Container -->
+    <div class="flex gap-4 h-[calc(100vh-12rem)] min-h-[500px]">
+      <!-- Conversations Panel (Left) -->
+      <div class="w-80 flex-shrink-0 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
+        <!-- Panel Header -->
+        <div class="p-4 border-b border-border flex items-center justify-between">
+          <h2 class="text-base font-semibold text-white">Conversations</h2>
+          <button
+            @click="openNewConversationDialog"
+            class="p-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-lg transition-all duration-200 shadow-lg shadow-indigo-500/20"
+            title="New conversation"
+          >
+            <Plus class="h-4 w-4" />
+          </button>
+        </div>
 
-      <!-- Search -->
-      <div class="search-box">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"/>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        <input v-model="searchQuery" type="text" placeholder="Search conversations..." />
-      </div>
-
-      <!-- Conversations List -->
-      <div class="conversations-list">
-        <div
-          v-for="conv in filteredConversations"
-          :key="conv.id"
-          class="conversation-item"
-          :class="{ active: conv.id === messagingStore.activeConversationId }"
-          @click="selectConversation(conv.id)"
-        >
-          <div class="conv-avatar" :class="conv.type">
-            <img v-if="getConversationAvatar(conv)" :src="getConversationAvatar(conv)!" alt="" />
-            <span v-else>{{ getConversationName(conv).charAt(0).toUpperCase() }}</span>
-          </div>
-          <div class="conv-content">
-            <div class="conv-header">
-              <span class="conv-name">{{ getConversationName(conv) }}</span>
-              <span class="conv-time">{{ formatTime(conv.lastMessageAt) }}</span>
-            </div>
-            <div class="conv-preview">
-              <span class="preview-text">{{ conv.lastMessagePreview || 'No messages yet' }}</span>
-              <span v-if="getUnreadCount(conv.id) > 0" class="unread-badge">
-                {{ getUnreadCount(conv.id) > 99 ? '99+' : getUnreadCount(conv.id) }}
-              </span>
-            </div>
+        <!-- Search Box -->
+        <div class="p-3">
+          <div class="relative">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search conversations..."
+              class="w-full pl-10 pr-4 py-2.5 bg-muted/50 border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all"
+            />
           </div>
         </div>
 
-        <div v-if="filteredConversations.length === 0 && !messagingStore.isLoading" class="empty-conversations">
-          <p>No conversations yet</p>
-          <button @click="openNewConversationDialog">Start a conversation</button>
-        </div>
+        <!-- Conversations List -->
+        <div class="flex-1 overflow-y-auto">
+          <div
+            v-for="conv in filteredConversations"
+            :key="conv.id"
+            class="mx-2 mb-1 p-3 rounded-lg cursor-pointer transition-all duration-150"
+            :class="[
+              conv.id === messagingStore.activeConversationId
+                ? 'bg-primary/15 border border-primary/30'
+                : 'hover:bg-muted/60 border border-transparent',
+            ]"
+            @click="selectConversation(conv.id)"
+          >
+            <div class="flex items-center gap-3">
+              <!-- Avatar -->
+              <div
+                class="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold overflow-hidden"
+                :class="[
+                  conv.type === 'direct'
+                    ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white'
+                    : conv.type === 'group'
+                      ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
+                      : 'bg-gradient-to-br from-amber-500 to-orange-600 text-white',
+                ]"
+              >
+                <img
+                  v-if="getConversationAvatar(conv)"
+                  :src="getConversationAvatar(conv)!"
+                  alt=""
+                  class="w-full h-full object-cover"
+                />
+                <Users v-else-if="conv.type === 'group'" class="h-5 w-5" />
+                <Megaphone v-else-if="conv.type === 'announcement'" class="h-5 w-5" />
+                <span v-else>{{ getConversationName(conv).charAt(0).toUpperCase() }}</span>
+              </div>
 
-        <div v-if="messagingStore.isLoading" class="loading-conversations">
-          <div class="spinner"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Divider -->
-    <div class="panel-divider"></div>
-
-    <!-- Chat Panel (Right) -->
-    <div class="chat-panel">
-      <template v-if="messagingStore.activeConversation">
-        <!-- Chat Header -->
-        <div class="chat-header">
-          <div class="chat-header-info">
-            <div class="chat-avatar" :class="messagingStore.activeConversation.type">
-              <img v-if="getConversationAvatar(messagingStore.activeConversation)" :src="getConversationAvatar(messagingStore.activeConversation)!" alt="" />
-              <span v-else>{{ getConversationName(messagingStore.activeConversation).charAt(0).toUpperCase() }}</span>
-            </div>
-            <div class="chat-header-text">
-              <h2>{{ getConversationName(messagingStore.activeConversation) }}</h2>
-              <span class="chat-subtitle">
-                {{ messagingStore.activeConversation.type === 'direct' ? 'Direct message' : 
-                   messagingStore.activeConversation.type === 'group' ? `${messagingStore.activeConversation.participants.length} members` : 
-                   'Announcement' }}
-              </span>
-            </div>
-          </div>
-          <div class="chat-header-actions">
-            <button 
-              class="header-action-btn"
-              :class="{ active: messagingStore.activeConversation.muted }"
-              @click="messagingStore.toggleMute(messagingStore.activeConversation.id)"
-              :title="messagingStore.activeConversation.muted ? 'Unmute' : 'Mute'"
-            >
-              <svg v-if="messagingStore.activeConversation.muted" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m2 2 20 20"/>
-                <path d="M18.36 6.64A9 9 0 0 1 20.77 15"/>
-                <path d="M6.16 6.16a9 9 0 1 0 12.68 12.68"/>
-                <path d="M12 2v4"/>
-              </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
-                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <!-- Messages -->
-        <div ref="messagesContainer" class="messages-container" @scroll="handleScroll">
-          <div v-if="messagingStore.isLoadingMessages" class="loading-messages">
-            <div class="spinner"></div>
-          </div>
-
-          <div class="messages-list">
-            <div
-              v-for="message in sortedMessages"
-              :key="message.id"
-              class="message"
-              :class="{ 
-                own: message.senderId === authStore.user?.id,
-                deleted: !!message.deletedAt
-              }"
-            >
-              <div class="message-bubble">
-                <div v-if="message.senderId !== authStore.user?.id && message.sender" class="message-sender">
-                  {{ message.sender.displayName }}
+              <!-- Content -->
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between mb-0.5">
+                  <span class="text-sm font-medium text-foreground truncate">{{ getConversationName(conv) }}</span>
+                  <span class="text-xs text-muted-foreground flex-shrink-0 ml-2">
+                    {{ formatTime(conv.lastMessageAt) }}
+                  </span>
                 </div>
-                
-                <template v-if="editingMessageId === message.id">
-                  <textarea
-                    v-model="editContent"
-                    @keydown.enter.prevent="saveEdit"
-                    @keydown.escape="cancelEdit"
-                    class="edit-textarea"
-                    rows="2"
-                  ></textarea>
-                  <div class="edit-actions">
-                    <button @click="saveEdit">Save</button>
-                    <button @click="cancelEdit">Cancel</button>
-                  </div>
-                </template>
-                <template v-else>
-                  <p v-if="message.deletedAt" class="deleted-text">Message deleted</p>
-                  <p v-else class="message-text">{{ message.content }}</p>
-                </template>
-
-                <div class="message-meta">
-                  <span class="message-time">{{ formatMessageTime(message.insertedAt) }}</span>
-                  <span v-if="message.editedAt && !message.deletedAt" class="edited-label">edited</span>
-                </div>
-
-                <div v-if="message.senderId === authStore.user?.id && !message.deletedAt && editingMessageId !== message.id" class="message-actions">
-                  <button @click="startEdit(message)" title="Edit">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                  </button>
-                  <button @click="deleteMessage(message.id)" title="Delete">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="3 6 5 6 21 6"/>
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    </svg>
-                  </button>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-muted-foreground truncate flex-1">
+                    {{ conv.lastMessagePreview || 'No messages yet' }}
+                  </span>
+                  <span
+                    v-if="getUnreadCount(conv.id) > 0"
+                    class="flex-shrink-0 min-w-[20px] h-5 px-1.5 bg-primary text-primary-foreground text-xs font-bold rounded-full flex items-center justify-center"
+                  >
+                    {{ getUnreadCount(conv.id) > 99 ? '99+' : getUnreadCount(conv.id) }}
+                  </span>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Typing indicator -->
-          <div v-if="typingUserNames.length > 0" class="typing-indicator">
-            <div class="typing-dots">
-              <span></span><span></span><span></span>
+          <!-- Empty State -->
+          <div
+            v-if="filteredConversations.length === 0 && !messagingStore.isLoading"
+            class="flex flex-col items-center justify-center py-12 px-4 text-center"
+          >
+            <div class="w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-4">
+              <MessageSquare class="h-7 w-7 text-muted-foreground" />
             </div>
-            <span>{{ typingUserNames.join(', ') }} {{ typingUserNames.length === 1 ? 'is' : 'are' }} typing...</span>
+            <p class="text-sm text-muted-foreground mb-3">No conversations yet</p>
+            <button
+              @click="openNewConversationDialog"
+              class="text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+            >
+              Start a conversation
+            </button>
+          </div>
+
+          <!-- Loading State -->
+          <div v-if="messagingStore.isLoading" class="flex items-center justify-center py-12">
+            <Loader2 class="h-6 w-6 text-primary animate-spin" />
           </div>
         </div>
+      </div>
 
-        <!-- Input -->
-        <div class="message-input-area">
-          <textarea
-            v-model="messageInput"
-            placeholder="Write a message..."
-            rows="1"
-            @keydown="handleInputKeydown"
-            @input="handleTyping"
-          ></textarea>
-          <button class="send-btn" :disabled="!messageInput.trim()" @click="sendMessage">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
-          </button>
-        </div>
-      </template>
+      <!-- Chat Panel (Right) -->
+      <div class="flex-1 bg-card border border-border rounded-xl flex flex-col overflow-hidden">
+        <template v-if="messagingStore.activeConversation">
+          <!-- Chat Header -->
+          <div class="px-5 py-3.5 border-b border-border flex items-center justify-between bg-muted/30">
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold overflow-hidden"
+                :class="[
+                  messagingStore.activeConversation.type === 'direct'
+                    ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white'
+                    : messagingStore.activeConversation.type === 'group'
+                      ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
+                      : 'bg-gradient-to-br from-amber-500 to-orange-600 text-white',
+                ]"
+              >
+                <img
+                  v-if="getConversationAvatar(messagingStore.activeConversation)"
+                  :src="getConversationAvatar(messagingStore.activeConversation)!"
+                  alt=""
+                  class="w-full h-full object-cover"
+                />
+                <Users v-else-if="messagingStore.activeConversation.type === 'group'" class="h-5 w-5" />
+                <Megaphone v-else-if="messagingStore.activeConversation.type === 'announcement'" class="h-5 w-5" />
+                <span v-else>{{ getConversationName(messagingStore.activeConversation).charAt(0).toUpperCase() }}</span>
+              </div>
+              <div>
+                <h3 class="text-sm font-semibold text-foreground">
+                  {{ getConversationName(messagingStore.activeConversation) }}
+                </h3>
+                <p class="text-xs text-muted-foreground">
+                  {{
+                    messagingStore.activeConversation.type === 'direct'
+                      ? 'Direct message'
+                      : messagingStore.activeConversation.type === 'group'
+                        ? `${messagingStore.activeConversation.participants.length} members`
+                        : 'Announcement'
+                  }}
+                </p>
+              </div>
+            </div>
 
-      <!-- No conversation selected -->
-      <div v-else class="no-chat-selected">
-        <div class="empty-chat-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
+            <div class="flex items-center gap-2">
+              <button
+                class="p-2 rounded-lg transition-all duration-150"
+                :class="[
+                  messagingStore.activeConversation.muted
+                    ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground',
+                ]"
+                @click="messagingStore.toggleMute(messagingStore.activeConversation.id)"
+                :title="messagingStore.activeConversation.muted ? 'Unmute' : 'Mute'"
+              >
+                <BellOff v-if="messagingStore.activeConversation.muted" class="h-4 w-4" />
+                <Bell v-else class="h-4 w-4" />
+              </button>
+
+              <!-- Conversation Menu -->
+              <button
+                ref="menuButtonRef"
+                @click="toggleConversationMenu"
+                class="p-2 rounded-lg bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-all duration-150"
+                title="Conversation options"
+              >
+                <MoreVertical class="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Messages Container -->
+          <div ref="messagesContainer" class="flex-1 overflow-y-auto p-5 space-y-3" @scroll="handleScroll">
+            <!-- Loading Messages -->
+            <div v-if="messagingStore.isLoadingMessages" class="flex items-center justify-center py-8">
+              <Loader2 class="h-6 w-6 text-primary animate-spin" />
+            </div>
+
+            <!-- Messages List -->
+            <div
+              v-for="message in sortedMessages"
+              :key="message.id"
+              class="flex"
+              :class="message.senderId === authStore.user?.id ? 'justify-end' : 'justify-start'"
+            >
+              <div class="max-w-[70%] group relative" :class="{ 'opacity-60': !!message.deletedAt }">
+                <!-- Message Bubble -->
+                <div
+                  class="px-4 py-2.5 rounded-2xl"
+                  :class="[
+                    message.senderId === authStore.user?.id
+                      ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-br-md'
+                      : 'bg-muted text-foreground rounded-bl-md',
+                  ]"
+                >
+                  <!-- Sender Name (for group chats) -->
+                  <div
+                    v-if="
+                      message.senderId !== authStore.user?.id &&
+                      message.sender &&
+                      messagingStore.activeConversation?.type !== 'direct'
+                    "
+                    class="text-xs font-medium text-primary mb-1"
+                  >
+                    {{ (message.sender as any).displayName || (message.sender as any).display_name || 'Unknown' }}
+                  </div>
+
+                  <!-- Edit Mode -->
+                  <template v-if="editingMessageId === message.id">
+                    <textarea
+                      v-model="editContent"
+                      @keydown.enter.exact.prevent="saveEdit"
+                      @keydown.escape="cancelEdit"
+                      class="w-full bg-background border border-border rounded-lg p-2 text-sm text-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      rows="2"
+                    ></textarea>
+                    <div class="flex gap-2 mt-2">
+                      <button
+                        @click="saveEdit"
+                        class="px-3 py-1 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors"
+                      >
+                        Save
+                      </button>
+                      <button
+                        @click="cancelEdit"
+                        class="px-3 py-1 text-xs font-medium bg-muted hover:bg-muted/80 text-foreground rounded-md transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </template>
+
+                  <!-- Message Content -->
+                  <template v-else>
+                    <p v-if="message.deletedAt" class="text-sm italic text-muted-foreground">Message deleted</p>
+                    <p v-else class="text-sm leading-relaxed whitespace-pre-wrap break-words">{{ message.content }}</p>
+                  </template>
+
+                  <!-- Meta Info -->
+                  <div class="flex items-center gap-2 mt-1.5">
+                    <span class="text-[10px] opacity-70">
+                      {{ formatMessageTime((message as any).insertedAt || (message as any).inserted_at) }}
+                    </span>
+                    <span
+                      v-if="((message as any).editedAt || (message as any).edited_at) && !message.deletedAt"
+                      class="text-[10px] opacity-70"
+                    >
+                      • edited
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Message Actions -->
+                <div
+                  v-if="
+                    message.senderId === authStore.user?.id && !message.deletedAt && editingMessageId !== message.id
+                  "
+                  class="absolute -left-16 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <button
+                    @click="startEdit(message)"
+                    class="p-1.5 bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground rounded-md transition-colors"
+                    title="Edit"
+                  >
+                    <Pencil class="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    @click="deleteMessage(message.id)"
+                    class="p-1.5 bg-muted hover:bg-red-600 text-muted-foreground hover:text-white rounded-md transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Typing Indicator -->
+            <div v-if="typingUserNames.length > 0" class="flex items-center gap-2 text-xs text-muted-foreground italic">
+              <div class="flex gap-1">
+                <span
+                  class="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"
+                  style="animation-delay: 0ms"
+                ></span>
+                <span
+                  class="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"
+                  style="animation-delay: 150ms"
+                ></span>
+                <span
+                  class="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"
+                  style="animation-delay: 300ms"
+                ></span>
+              </div>
+              <span>{{ typingUserNames.join(', ') }} {{ typingUserNames.length === 1 ? 'is' : 'are' }} typing...</span>
+            </div>
+          </div>
+
+          <!-- Message Input -->
+          <div class="p-4 border-t border-border bg-muted/30">
+            <div class="flex items-end gap-3">
+              <textarea
+                v-model="messageInput"
+                placeholder="Write a message..."
+                rows="1"
+                @keydown="handleInputKeydown"
+                @input="handleTyping"
+                class="flex-1 px-4 py-3 bg-muted/50 border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all max-h-32"
+              ></textarea>
+              <button
+                class="p-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:bg-muted disabled:from-muted disabled:to-muted disabled:cursor-not-allowed text-white rounded-xl transition-all duration-200 shadow-lg shadow-indigo-500/20 disabled:shadow-none"
+                :disabled="!messageInput.trim()"
+                @click="sendMessage"
+              >
+                <Send class="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- No Conversation Selected -->
+        <div v-else class="flex-1 flex flex-col items-center justify-center text-center px-8">
+          <div class="w-20 h-20 rounded-2xl bg-muted flex items-center justify-center mb-6">
+            <MessageSquare class="h-10 w-10 text-muted-foreground" />
+          </div>
+          <h2 class="text-xl font-semibold text-foreground mb-2">Select a conversation</h2>
+          <p class="text-sm text-muted-foreground max-w-sm">
+            Choose from your existing conversations or start a new one
+          </p>
         </div>
-        <h2>Select a conversation</h2>
-        <p>Choose from your existing conversations or start a new one</p>
       </div>
     </div>
 
     <!-- New Conversation Dialog -->
-    <div v-if="showNewConversationDialog" class="dialog-overlay" @click.self="closeNewConversationDialog">
-      <div class="dialog">
-        <div class="dialog-header">
-          <h2>New Conversation</h2>
-          <button class="close-btn" @click="closeNewConversationDialog">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-
-        <div class="dialog-content">
-          <div class="type-tabs">
-            <button :class="{ active: newConversationType === 'direct' }" @click="newConversationType = 'direct'; selectedUserIds = []">
-              Direct Message
-            </button>
-            <button :class="{ active: newConversationType === 'group' }" @click="newConversationType = 'group'; selectedUserIds = []">
-              Group Chat
-            </button>
-          </div>
-
-          <div v-if="newConversationType === 'group'" class="group-name-input">
-            <input v-model="newGroupName" type="text" placeholder="Group name..." />
-          </div>
-
-          <div class="member-search">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"/>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <input v-model="memberSearchQuery" type="text" placeholder="Search members..." />
-          </div>
-
-          <div class="members-list">
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showNewConversationDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]"
+          @click.self="closeNewConversationDialog"
+        >
+          <Transition name="dialog" appear>
             <div
-              v-for="member in filteredMembers"
-              :key="`${member.orgId}-${member.userId}`"
-              class="member-item"
-              :class="{ selected: selectedUserIds.includes(member.userId) }"
-              @click="toggleUserSelection(member.userId)"
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-4 border border-white/10 overflow-hidden max-h-[85vh] flex flex-col shadow-2xl"
             >
-              <div class="member-avatar">
-                <img v-if="member.avatarUrl" :src="member.avatarUrl" alt="" />
-                <span v-else>{{ member.displayName.charAt(0).toUpperCase() }}</span>
-              </div>
-              <div class="member-info">
-                <span class="member-name">{{ member.displayName }}</span>
-                <span class="member-org">{{ member.orgName }}</span>
-              </div>
-              <div v-if="selectedUserIds.includes(member.userId)" class="check-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-              </div>
-            </div>
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-indigo-500 via-violet-500 to-purple-500 flex-shrink-0" />
 
-            <div v-if="filteredMembers.length === 0 && !isLoadingMembers" class="no-members">
-              No members found
-            </div>
+              <!-- Header -->
+              <div class="p-5 border-b border-white/10 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div
+                    class="p-2 bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-indigo-500/30 rounded-xl"
+                  >
+                    <MessageSquare class="h-5 w-5 text-indigo-400" />
+                  </div>
+                  <h2 class="text-lg font-semibold text-white">New Conversation</h2>
+                </div>
+                <button
+                  @click="closeNewConversationDialog"
+                  class="p-2 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors"
+                >
+                  <X class="h-5 w-5" />
+                </button>
+              </div>
 
-            <div v-if="isLoadingMembers" class="loading-members">
-              <div class="spinner"></div>
+              <!-- Content -->
+              <div class="flex-1 overflow-y-auto p-5 space-y-5">
+                <!-- Type Tabs -->
+                <div class="flex gap-2">
+                  <button
+                    @click="
+                      newConversationType = 'direct';
+                      selectedUserIds = [];
+                    "
+                    class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
+                    :class="[
+                      newConversationType === 'direct'
+                        ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25'
+                        : 'bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700/80 border border-zinc-700/50',
+                    ]"
+                  >
+                    <User class="h-4 w-4" />
+                    Direct Message
+                  </button>
+                  <button
+                    @click="
+                      newConversationType = 'group';
+                      selectedUserIds = [];
+                    "
+                    class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
+                    :class="[
+                      newConversationType === 'group'
+                        ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/25'
+                        : 'bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700/80 border border-zinc-700/50',
+                    ]"
+                  >
+                    <Users class="h-4 w-4" />
+                    Group Chat
+                  </button>
+                </div>
+
+                <!-- Group Name Input -->
+                <div v-if="newConversationType === 'group'" class="space-y-2">
+                  <label class="text-sm font-medium text-zinc-300">Group Name</label>
+                  <input
+                    v-model="newGroupName"
+                    type="text"
+                    placeholder="Enter group name..."
+                    class="w-full px-4 py-2.5 bg-zinc-800/80 border border-zinc-700/50 rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                  />
+                </div>
+
+                <!-- Member Search -->
+                <div class="space-y-2">
+                  <label class="text-sm font-medium text-zinc-300">
+                    {{ newConversationType === 'direct' ? 'Select User' : 'Select Members' }}
+                  </label>
+                  <div class="relative">
+                    <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                    <input
+                      v-model="memberSearchQuery"
+                      type="text"
+                      placeholder="Search members..."
+                      class="w-full pl-10 pr-4 py-2.5 bg-zinc-800/80 border border-zinc-700/50 rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <!-- Members List -->
+                <div class="border border-zinc-700/50 rounded-xl overflow-hidden max-h-64 overflow-y-auto">
+                  <div
+                    v-for="member in filteredMembers"
+                    :key="`${member.orgId}-${member.userId}`"
+                    class="flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-zinc-800/50 last:border-0"
+                    :class="[selectedUserIds.includes(member.userId) ? 'bg-indigo-600/15' : 'hover:bg-zinc-800/60']"
+                    @click="toggleUserSelection(member.userId)"
+                  >
+                    <div
+                      class="w-10 h-10 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-800 flex items-center justify-center text-sm font-medium text-white overflow-hidden flex-shrink-0"
+                    >
+                      <img v-if="member.avatarUrl" :src="member.avatarUrl" alt="" class="w-full h-full object-cover" />
+                      <span v-else>{{ member.displayName.charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-white truncate">{{ member.displayName }}</p>
+                      <p class="text-xs text-zinc-500 truncate">{{ member.orgName }}</p>
+                    </div>
+                    <div
+                      v-if="selectedUserIds.includes(member.userId)"
+                      class="w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0"
+                    >
+                      <Check class="h-4 w-4 text-white" />
+                    </div>
+                  </div>
+
+                  <!-- No Members -->
+                  <div
+                    v-if="filteredMembers.length === 0 && !isLoadingMembers"
+                    class="py-8 text-center text-sm text-zinc-500"
+                  >
+                    No members found
+                  </div>
+
+                  <!-- Loading Members -->
+                  <div v-if="isLoadingMembers" class="py-8 flex items-center justify-center">
+                    <Loader2 class="h-5 w-5 text-indigo-500 animate-spin" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="p-5 border-t border-white/10 flex gap-3">
+                <button
+                  @click="closeNewConversationDialog"
+                  class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl font-medium transition-all duration-200 border border-zinc-700/50"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="createConversation"
+                  :disabled="!canCreateConversation"
+                  class="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-all duration-200 shadow-lg shadow-indigo-500/25 disabled:shadow-none"
+                >
+                  Create
+                </button>
+              </div>
             </div>
-          </div>
+          </Transition>
         </div>
+      </Transition>
+    </Teleport>
 
-        <div class="dialog-footer">
-          <button class="cancel-btn" @click="closeNewConversationDialog">Cancel</button>
-          <button class="create-btn" :disabled="!canCreateConversation" @click="createConversation">
-            Create
+    <!-- Conversation Menu Dropdown -->
+    <Teleport to="body">
+      <!-- Click outside to close menu -->
+      <div v-if="showConversationMenu" class="fixed inset-0 z-[55]" @click="closeConversationMenu"></div>
+
+      <Transition name="fade">
+        <div
+          v-if="showConversationMenu && messagingStore.activeConversation"
+          class="fixed w-48 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-[56] overflow-hidden py-1"
+          :style="{ top: menuPosition.top + 'px', right: menuPosition.right + 'px' }"
+        >
+          <!-- Manage Participants (group chats only) -->
+          <button
+            v-if="messagingStore.activeConversation.type === 'group' && isConversationAdmin"
+            @click="openParticipantsDialog"
+            class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+          >
+            <Users class="h-4 w-4" />
+            Manage Participants
+          </button>
+
+          <!-- Leave Conversation (any type, not creator) -->
+          <button
+            v-if="!isConversationCreator"
+            @click="handleLeaveConversation"
+            class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+          >
+            <LogOut class="h-4 w-4" />
+            Leave Conversation
+          </button>
+
+          <!-- Delete Conversation (creator only) -->
+          <button
+            v-if="isConversationCreator"
+            @click="handleDeleteConversation"
+            class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+            :disabled="isDeletingConversation"
+          >
+            <Loader2 v-if="isDeletingConversation" class="h-4 w-4 animate-spin" />
+            <Trash2 v-else class="h-4 w-4" />
+            Delete Conversation
           </button>
         </div>
-      </div>
-    </div>
-  </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Confirmation Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showConfirmDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[70]"
+          @click.self="closeConfirmDialog"
+        >
+          <Transition name="dialog" appear>
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-sm w-full mx-4 border border-white/10 overflow-hidden shadow-2xl"
+            >
+              <!-- Decorative top accent -->
+              <div
+                class="h-1 w-full"
+                :class="
+                  confirmDialogConfig.confirmVariant === 'danger'
+                    ? 'bg-gradient-to-r from-red-500 via-rose-500 to-pink-500'
+                    : 'bg-gradient-to-r from-indigo-500 via-violet-500 to-purple-500'
+                "
+              />
+
+              <!-- Header -->
+              <div class="p-5 pb-0">
+                <div class="flex items-center gap-3">
+                  <div
+                    class="p-2 rounded-xl border"
+                    :class="
+                      confirmDialogConfig.confirmVariant === 'danger'
+                        ? 'bg-gradient-to-br from-red-500/20 to-rose-500/20 border-red-500/30'
+                        : 'bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border-indigo-500/30'
+                    "
+                  >
+                    <Trash2 v-if="confirmDialogConfig.confirmVariant === 'danger'" class="h-5 w-5 text-red-400" />
+                    <MessageSquare v-else class="h-5 w-5 text-indigo-400" />
+                  </div>
+                  <h2 class="text-lg font-semibold text-white">{{ confirmDialogConfig.title }}</h2>
+                </div>
+              </div>
+
+              <!-- Content -->
+              <div class="p-5">
+                <p class="text-sm text-zinc-400 leading-relaxed">{{ confirmDialogConfig.message }}</p>
+              </div>
+
+              <!-- Footer -->
+              <div class="p-5 pt-0 flex gap-3">
+                <button
+                  @click="closeConfirmDialog"
+                  class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl font-medium transition-all duration-200 border border-zinc-700/50"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="handleConfirm"
+                  class="flex-1 px-4 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-lg"
+                  :class="
+                    confirmDialogConfig.confirmVariant === 'danger'
+                      ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-red-500/25'
+                      : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-indigo-500/25'
+                  "
+                >
+                  {{ confirmDialogConfig.confirmText }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Participants Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showParticipantsDialog && messagingStore.activeConversation"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]"
+          @click.self="closeParticipantsDialog"
+        >
+          <Transition name="dialog" appear>
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-4 border border-white/10 overflow-hidden max-h-[85vh] flex flex-col shadow-2xl"
+            >
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 flex-shrink-0" />
+
+              <!-- Header -->
+              <div class="p-5 border-b border-white/10 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div
+                    class="p-2 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 rounded-xl"
+                  >
+                    <Users class="h-5 w-5 text-emerald-400" />
+                  </div>
+                  <h2 class="text-lg font-semibold text-white">Participants</h2>
+                </div>
+                <button
+                  @click="closeParticipantsDialog"
+                  class="p-2 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-lg transition-colors"
+                >
+                  <X class="h-5 w-5" />
+                </button>
+              </div>
+
+              <!-- Content -->
+              <div class="flex-1 overflow-y-auto p-5">
+                <div class="space-y-2">
+                  <div
+                    v-for="participant in messagingStore.activeConversation.participants"
+                    :key="participant.userId"
+                    class="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-800/50 border border-zinc-700/50"
+                  >
+                    <div
+                      class="w-10 h-10 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-800 flex items-center justify-center text-sm font-medium text-white overflow-hidden flex-shrink-0"
+                    >
+                      <img
+                        v-if="getParticipantAvatarUrl(participant)"
+                        :src="getParticipantAvatarUrl(participant)!"
+                        alt=""
+                        class="w-full h-full object-cover"
+                      />
+                      <span v-else>{{ getParticipantDisplayName(participant).charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2">
+                        <p class="text-sm font-medium text-white truncate">
+                          {{ getParticipantDisplayName(participant) }}
+                          <span
+                            v-if="((participant as any).userId ?? (participant as any).user_id) === authStore.user?.id"
+                            class="text-zinc-500"
+                          >
+                            (you)
+                          </span>
+                        </p>
+                        <span
+                          v-if="participant.role === 'admin'"
+                          class="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-indigo-500/20 text-indigo-400 rounded"
+                        >
+                          Admin
+                        </span>
+                      </div>
+                      <p class="text-xs text-zinc-500">Joined {{ formatTime(participant.joinedAt) }}</p>
+                    </div>
+
+                    <!-- Kick Button -->
+                    <button
+                      v-if="canKickParticipant(participant)"
+                      @click="handleKickParticipant((participant as any).userId ?? (participant as any).user_id)"
+                      :disabled="isKickingUser === ((participant as any).userId ?? (participant as any).user_id)"
+                      class="p-2 rounded-lg text-zinc-400 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
+                      title="Remove from conversation"
+                    >
+                      <Loader2
+                        v-if="isKickingUser === ((participant as any).userId ?? (participant as any).user_id)"
+                        class="h-4 w-4 animate-spin"
+                      />
+                      <UserMinus v-else class="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="p-5 border-t border-white/10">
+                <button
+                  @click="closeParticipantsDialog"
+                  class="w-full px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl font-medium transition-all duration-200 border border-zinc-700/50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+  </PageLayout>
 </template>
 
 <style scoped>
-.messages-page {
-  display: flex;
-  height: calc(100vh - 2rem);
-  background: hsl(var(--background));
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid hsl(var(--border));
-}
-
-/* Left Panel - Conversations */
-.conversations-panel {
-  width: 340px;
-  min-width: 280px;
-  display: flex;
-  flex-direction: column;
-  background: hsl(var(--card));
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-.panel-header h1 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: hsl(var(--foreground));
-}
-
-.new-chat-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 50%;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-
-.new-chat-btn:hover {
-  opacity: 0.9;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 12px 16px;
-  padding: 10px 14px;
-  background: hsl(var(--muted));
-  border-radius: 10px;
-}
-
-.search-box svg {
-  color: hsl(var(--muted-foreground));
-  flex-shrink: 0;
-}
-
-.search-box input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: hsl(var(--foreground));
-  font-size: 14px;
-  outline: none;
-}
-
-.search-box input::placeholder {
-  color: hsl(var(--muted-foreground));
-}
-
-.conversations-list {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.conversation-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.conversation-item:hover {
-  background: hsl(var(--muted) / 0.5);
-}
-
-.conversation-item.active {
-  background: hsl(var(--muted));
-}
-
-.conv-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: hsl(var(--primary) / 0.2);
-  color: hsl(var(--primary));
-  font-weight: 600;
-  font-size: 18px;
-  overflow: hidden;
-}
-
-.conv-avatar.group {
-  background: hsl(220 80% 50% / 0.2);
-  color: hsl(220 80% 50%);
-}
-
-.conv-avatar.announcement {
-  background: hsl(0 70% 50% / 0.2);
-  color: hsl(0 70% 50%);
-}
-
-.conv-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.conv-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.conv-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.conv-name {
-  font-size: 15px;
-  font-weight: 500;
-  color: hsl(var(--foreground));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.conv-time {
-  font-size: 12px;
-  color: hsl(var(--muted-foreground));
-  flex-shrink: 0;
-  margin-left: 8px;
-}
-
-.conv-preview {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.preview-text {
-  font-size: 13px;
-  color: hsl(var(--muted-foreground));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-}
-
-.unread-badge {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-
-.empty-conversations,
-.loading-conversations {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
-  color: hsl(var(--muted-foreground));
-  text-align: center;
-}
-
-.empty-conversations button {
-  margin-top: 12px;
-  padding: 8px 16px;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-/* Divider */
-.panel-divider {
-  width: 2px;
-  min-width: 2px;
-  background: rgba(255, 255, 255, 0.3);
-  flex-shrink: 0;
-  align-self: stretch;
-}
-
-/* Right Panel - Chat */
-.chat-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  background: hsl(var(--background));
-}
-
-.chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 20px;
-  background: hsl(var(--card));
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-.chat-header-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.chat-avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: hsl(var(--primary) / 0.2);
-  color: hsl(var(--primary));
-  font-weight: 600;
-  font-size: 16px;
-  overflow: hidden;
-}
-
-.chat-avatar.group {
-  background: hsl(220 80% 50% / 0.2);
-  color: hsl(220 80% 50%);
-}
-
-.chat-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.chat-header-text h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: hsl(var(--foreground));
-}
-
-.chat-subtitle {
-  font-size: 12px;
-  color: hsl(var(--muted-foreground));
-}
-
-.chat-header-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.header-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 8px;
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.header-action-btn:hover {
-  background: hsl(var(--muted) / 0.8);
-  color: hsl(var(--foreground));
-}
-
-.header-action-btn.active {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-}
-
-/* Messages */
-.messages-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-}
-
-.loading-messages {
-  display: flex;
-  justify-content: center;
-  padding: 20px;
-}
-
-.messages-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.message {
-  display: flex;
-  max-width: 70%;
-}
-
-.message.own {
-  margin-left: auto;
-}
-
-.message-bubble {
-  position: relative;
-  padding: 10px 14px;
-  border-radius: 18px;
-  background: hsl(var(--muted));
-}
-
-.message.own .message-bubble {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  border-bottom-right-radius: 4px;
-}
-
-.message:not(.own) .message-bubble {
-  border-bottom-left-radius: 4px;
-}
-
-.message.deleted .message-bubble {
-  background: hsl(var(--muted) / 0.5);
-}
-
-.message-sender {
-  font-size: 12px;
-  font-weight: 500;
-  color: hsl(var(--primary));
-  margin-bottom: 4px;
-}
-
-.message-text {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.deleted-text {
-  margin: 0;
-  font-size: 14px;
-  font-style: italic;
-  color: hsl(var(--muted-foreground));
-}
-
-.message-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.message-time {
-  font-size: 11px;
-  opacity: 0.7;
-}
-
-.edited-label {
-  font-size: 11px;
-  opacity: 0.7;
-}
-
-.message-actions {
-  position: absolute;
-  top: 50%;
-  left: -50px;
-  transform: translateY(-50%);
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.message:hover .message-actions {
-  opacity: 1;
-}
-
-.message-actions button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-}
-
-.message-actions button:hover {
-  background: hsl(var(--destructive));
-  color: hsl(var(--destructive-foreground));
-}
-
-.edit-textarea {
-  width: 100%;
-  background: hsl(var(--background));
-  border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-  padding: 8px;
-  color: hsl(var(--foreground));
-  font-size: 14px;
-  font-family: inherit;
-  resize: none;
-  outline: none;
-}
-
-.edit-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.edit-actions button {
-  padding: 4px 12px;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.edit-actions button:first-child {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-}
-
-.edit-actions button:last-child {
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
-}
-
-/* Typing indicator */
-.typing-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 0;
-  color: hsl(var(--muted-foreground));
-  font-size: 13px;
-  font-style: italic;
-}
-
-.typing-dots {
-  display: flex;
-  gap: 3px;
-}
-
-.typing-dots span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: hsl(var(--muted-foreground));
-  animation: bounce 1.4s infinite ease-in-out both;
-}
-
-.typing-dots span:nth-child(1) { animation-delay: -0.32s; }
-.typing-dots span:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes bounce {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
-}
-
-/* Input area */
-.message-input-area {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  padding: 16px 20px;
-  background: hsl(var(--card));
-  border-top: 1px solid hsl(var(--border));
-}
-
-.message-input-area textarea {
-  flex: 1;
-  padding: 12px 16px;
-  background: hsl(var(--muted));
-  border: none;
-  border-radius: 24px;
-  color: hsl(var(--foreground));
-  font-size: 14px;
-  font-family: inherit;
-  resize: none;
-  max-height: 120px;
-  outline: none;
-}
-
-.message-input-area textarea::placeholder {
-  color: hsl(var(--muted-foreground));
-}
-
-.send-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: none;
-  border-radius: 50%;
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  cursor: pointer;
-  transition: opacity 0.2s;
-  flex-shrink: 0;
-}
-
-.send-btn:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* No chat selected */
-.no-chat-selected {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: hsl(var(--muted-foreground));
-  text-align: center;
-  padding: 40px;
-}
-
-.empty-chat-icon {
-  margin-bottom: 20px;
-  opacity: 0.3;
-}
-
-.no-chat-selected h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
-  font-weight: 600;
-  color: hsl(var(--foreground));
-}
-
-.no-chat-selected p {
-  margin: 0;
-  font-size: 14px;
-}
-
-/* Dialog */
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.dialog {
-  background: hsl(var(--card));
-  border-radius: 16px;
-  width: 100%;
-  max-width: 440px;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-}
-
-.dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-.dialog-header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.close-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: hsl(var(--muted-foreground));
-  cursor: pointer;
-}
-
-.close-btn:hover {
-  background: hsl(var(--muted));
-}
-
-.dialog-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-}
-
-.type-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.type-tabs button {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-  background: transparent;
-  color: hsl(var(--muted-foreground));
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.type-tabs button:hover {
-  border-color: hsl(var(--primary));
-}
-
-.type-tabs button.active {
-  background: hsl(var(--primary));
-  border-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-}
-
-.group-name-input {
-  margin-bottom: 16px;
-}
-
-.group-name-input input {
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
-  font-size: 14px;
-  outline: none;
-}
-
-.group-name-input input:focus {
-  border-color: hsl(var(--primary));
-}
-
-.member-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: hsl(var(--muted));
-  border-radius: 8px;
-  margin-bottom: 12px;
-}
-
-.member-search svg {
-  color: hsl(var(--muted-foreground));
-}
-
-.member-search input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  color: hsl(var(--foreground));
-  font-size: 14px;
-  outline: none;
-}
-
-.members-list {
-  max-height: 280px;
-  overflow-y: auto;
-  border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-}
-
-.member-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: background 0.15s;
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-.member-item:last-child {
-  border-bottom: none;
-}
-
-.member-item:hover {
-  background: hsl(var(--muted) / 0.5);
-}
-
-.member-item.selected {
-  background: hsl(var(--primary) / 0.1);
-}
-
-.member-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: hsl(var(--muted));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  font-weight: 500;
-  color: hsl(var(--muted-foreground));
-}
-
-.member-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.member-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.member-name {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: hsl(var(--foreground));
-}
-
-.member-org {
-  display: block;
-  font-size: 12px;
-  color: hsl(var(--muted-foreground));
-}
-
-.check-icon {
-  color: hsl(var(--primary));
-}
-
-.no-members,
-.loading-members {
-  padding: 24px;
-  text-align: center;
-  color: hsl(var(--muted-foreground));
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 20px;
-  border-top: 1px solid hsl(var(--border));
-}
-
-.cancel-btn,
-.create-btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.cancel-btn {
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
-}
-
-.create-btn {
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-}
-
-.create-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Spinner */
-.spinner {
-  width: 24px;
-  height: 24px;
-  border: 2px solid hsl(var(--border));
-  border-top-color: hsl(var(--primary));
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  /* Fade transition for dropdown */
+  .fade-enter-active,
+  .fade-leave-active {
+    transition: opacity 0.15s ease;
+  }
+
+  .fade-enter-from,
+  .fade-leave-to {
+    opacity: 0;
+  }
 </style>

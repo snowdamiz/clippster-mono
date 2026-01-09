@@ -288,6 +288,7 @@ defmodule ClippsterServerWeb.Router do
     post "/conversations/:id/participants", MessagingController, :add_participant
     delete "/conversations/:id/participants/:user_id", MessagingController, :remove_participant
     post "/conversations/:id/leave", MessagingController, :leave_conversation
+    delete "/conversations/:id", MessagingController, :delete_conversation
 
     # User-level messaging endpoints
     get "/me/conversations", MessagingController, :list_all_conversations

@@ -57,15 +57,18 @@
                   <path :d="item.icon as string" />
                 </svg>
                 <component v-else :is="item.icon as string" class="h-5 w-5" />
-                <!-- Unread badge for Messages -->
-                <span
-                  v-if="item.name === 'Messages' && totalUnreadMessages > 0"
-                  class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold bg-red-500 text-white rounded-full"
-                >
+              </div>
+              <span class="flex-1">{{ item.name }}</span>
+              <!-- Unread badge with bell icon for Messages -->
+              <div
+                v-if="item.name === 'Messages' && totalUnreadMessages > 0"
+                class="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/15 text-red-400 rounded-md"
+              >
+                <Bell class="h-3 w-3" />
+                <span class="text-[11px] font-semibold">
                   {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
                 </span>
               </div>
-              <span>{{ item.name }}</span>
             </router-link>
 
             <!-- Dialog Action Item -->
@@ -161,7 +164,10 @@
   import { navigationItems } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
   import api from '@/services/api';
-  import { DollarSign } from 'lucide-vue-next';
+  import { DollarSign, Bell } from 'lucide-vue-next';
+
+  // Timer for unread message refresh
+  let unreadRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
   const route = useRoute();
   const router = useRouter();
@@ -245,12 +251,13 @@
     return filtered;
   });
 
-  // Watch for auth changes and load organizations
+  // Watch for auth changes and load organizations + unread messages
   watch(
     () => authStore.isAuthenticated,
     (isAuth) => {
       if (isAuth) {
         loadUserOrganizations();
+        messagingStore.fetchTotalUnread();
       } else {
         userOrganizations.value = [];
       }
@@ -346,8 +353,9 @@
       // User logged out - clear balance immediately
       hoursRemaining.value = 0;
     } else {
-      // User logged in - fetch new balance
+      // User logged in - fetch new balance and unread messages
       fetchBalance();
+      messagingStore.fetchTotalUnread();
     }
   }
 
@@ -358,8 +366,20 @@
     // Initial fetch
     fetchBalance();
 
+    // Initial fetch of unread messages count
+    if (authStore.isAuthenticated) {
+      messagingStore.fetchTotalUnread();
+    }
+
     // Refresh balance every 30 seconds
     balanceRefreshInterval = setInterval(fetchBalance, 30000);
+
+    // Refresh unread messages count every 30 seconds
+    unreadRefreshInterval = setInterval(() => {
+      if (authStore.isAuthenticated) {
+        messagingStore.fetchTotalUnread();
+      }
+    }, 30000);
 
     // Listen for auth state changes
     window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
@@ -369,10 +389,14 @@
   });
 
   onUnmounted(() => {
-    // Clear the interval to prevent memory leaks
+    // Clear the intervals to prevent memory leaks
     if (balanceRefreshInterval) {
       clearInterval(balanceRefreshInterval);
       balanceRefreshInterval = null;
+    }
+    if (unreadRefreshInterval) {
+      clearInterval(unreadRefreshInterval);
+      unreadRefreshInterval = null;
     }
 
     // Remove auth state change listener

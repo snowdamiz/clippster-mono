@@ -248,23 +248,10 @@ const router = createRouter({
         },
       ],
     },
+    // Legacy organization messages route - redirect to main messages page
     {
       path: '/organization/:organizationId/messages',
-      name: 'organization-messages',
-      component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
-      children: [
-        {
-          path: '',
-          name: 'organization-messages-home',
-          component: () => import('@/pages/OrganizationMessages.vue'),
-        },
-        {
-          path: ':conversationId',
-          name: 'organization-messages-conversation',
-          component: () => import('@/pages/OrganizationMessages.vue'),
-        },
-      ],
+      redirect: '/messages',
     },
     // Invitation acceptance
     {
