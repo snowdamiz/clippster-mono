@@ -641,13 +641,16 @@
     updateCreatorProfile,
     addPlatformLink as dbAddPlatformLink,
     deletePlatformLink as dbDeletePlatformLink,
+    updatePlatformLink as dbUpdatePlatformLink,
     getAllIntroOutros,
+    createMonitoredStreamer,
+    getMonitoredStreamerByMint,
     type CreatorProfileWithLinks,
     type IntroOutro,
   } from '@/services/database';
   import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
-  import { extractChannelSlug } from '@/services/kick';
+  import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
@@ -955,8 +958,8 @@
     link.platform = platformId;
     openPlatformDropdown.value = null;
 
-    // If switching to PumpFun and we have a platform ID, extract it
-    if (platformId === 'pumpfun' && link.platform_id.trim()) {
+    // If switching to PumpFun or Kick and we have a platform ID, extract metadata
+    if ((platformId === 'pumpfun' || platformId === 'kick') && link.platform_id.trim()) {
       await extractPlatformId(link);
     }
   }
@@ -1017,6 +1020,36 @@
       const slug = extractChannelSlug(input);
       if (slug) {
         link.platform_id = slug;
+
+        // Check if we already have a profile image from another link
+        const existingProfileImage = formData.value.platformLinks.find(
+          (l) => l !== link && l.profile_image_url
+        )?.profile_image_url;
+
+        if (existingProfileImage) {
+          link.profile_image_url = existingProfileImage;
+          return;
+        }
+
+        // Fetch profile image from Kick API
+        fetchingProfileImage.value = true;
+        try {
+          const status = await checkKickLivestream(slug);
+          if (status) {
+            // Update display name if not already set
+            if (!link.display_name && status.username) {
+              link.display_name = status.username;
+            }
+            // Store the profile image URL
+            if (status.profileImageUrl) {
+              link.profile_image_url = status.profileImageUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch Kick channel metadata:', e);
+        } finally {
+          fetchingProfileImage.value = false;
+        }
       }
     }
   }
@@ -1544,16 +1577,40 @@
         }
       }
 
-      // Add new links
+      // Add new links and create monitored_streamer for pumpfun/kick
       for (const link of validLinks) {
         if (link.isNew || !link.id) {
+          // Create monitored_streamer for pumpfun/kick platforms
+          let monitoredStreamerId: string | null = null;
+          if (link.platform === 'pumpfun' || link.platform === 'kick') {
+            try {
+              // First check if a monitored_streamer already exists for this platform_id
+              const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
+              if (existing) {
+                monitoredStreamerId = existing.id;
+              } else {
+                // Create new monitored_streamer
+                monitoredStreamerId = await createMonitoredStreamer(
+                  link.platform_id.trim(),
+                  link.display_name.trim() || formData.value.name.trim(),
+                  link.profile_image_url || undefined,
+                  5, // segment duration
+                  formData.value.auto_dvr_enabled, // auto_dvr from form
+                  link.platform // platform type
+                );
+              }
+            } catch (err) {
+              console.warn('[ProfileDialog] Failed to create monitored_streamer:', err);
+            }
+          }
+
           await dbAddPlatformLink(
             props.creator.id,
             link.platform,
             link.platform_id.trim(),
             link.display_name.trim() || null,
             link.profile_image_url || null,
-            null,
+            monitoredStreamerId, // Pass the monitored_streamer_id
             link.is_primary
           );
         }
@@ -1573,21 +1630,48 @@
         formData.value.auto_dvr_enabled
       );
 
-      // Add platform links
+      // Add platform links and create monitored_streamer for pumpfun/kick
       for (const link of validLinks) {
+        // Create monitored_streamer for pumpfun/kick platforms
+        let monitoredStreamerId: string | null = null;
+        if (link.platform === 'pumpfun' || link.platform === 'kick') {
+          try {
+            // First check if a monitored_streamer already exists for this platform_id
+            const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
+            if (existing) {
+              monitoredStreamerId = existing.id;
+            } else {
+              // Create new monitored_streamer
+              monitoredStreamerId = await createMonitoredStreamer(
+                link.platform_id.trim(),
+                link.display_name.trim() || formData.value.name.trim(),
+                link.profile_image_url || undefined,
+                5, // segment duration
+                formData.value.auto_dvr_enabled, // auto_dvr from form
+                link.platform // platform type
+              );
+            }
+          } catch (err) {
+            console.warn('[ProfileDialog] Failed to create monitored_streamer:', err);
+          }
+        }
+
         await dbAddPlatformLink(
           creatorId,
           link.platform,
           link.platform_id.trim(),
           link.display_name.trim() || null,
           link.profile_image_url || null,
-          null,
+          monitoredStreamerId, // Pass the monitored_streamer_id
           link.is_primary
         );
       }
 
       showSuccess('Creator Created', `"${formData.value.name}" has been added`);
     }
+
+    // Notify other components (like LiveClip.vue) about the new/updated monitoring data
+    window.dispatchEvent(new CustomEvent('monitored-streamers-updated'));
 
     emit('saved');
     emit('close');

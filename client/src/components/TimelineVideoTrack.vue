@@ -27,8 +27,8 @@
         </div>
         <!-- Video Track with Waveform -->
         <div v-else class="relative w-full h-full">
-          <!-- Full video duration background -->
-          <div class="absolute inset-0 bg-gradient-to-r from-violet-900/15 to-indigo-900/10 rounded-md"></div>
+          <!-- Full video duration background (neutral gray) -->
+          <div class="absolute inset-0 bg-[#1a1a1a] rounded-md"></div>
 
           <!-- Audio Waveform Canvas -->
           <canvas
@@ -37,15 +37,15 @@
             style="mix-blend-mode: normal; z-index: 25"
           ></canvas>
 
-          <!-- Played progress overlay -->
+          <!-- Played progress overlay (lighter gray) -->
           <div
-            class="absolute inset-y-0 left-0 bg-gradient-to-r from-violet-500/20 to-indigo-500/15 rounded-l-md transition-all duration-100 pointer-events-none z-15"
+            class="absolute inset-y-0 left-0 bg-[#2a2a2a] rounded-l-md transition-all duration-100 pointer-events-none z-15"
             :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
           ></div>
 
           <!-- Loading indicator for waveform -->
           <div
-            v-if="isWaveformLoading"
+            v-if="isLoading"
             class="absolute inset-0 flex items-center justify-center bg-black/20 rounded-md"
           >
             <div class="text-xs text-muted-foreground/60">Loading waveform...</div>
@@ -57,10 +57,10 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+  import { ref, watch, nextTick, onMounted, onUnmounted, computed } from 'vue';
   import { Video } from 'lucide-vue-next';
-  import { useAudioWaveform } from '@/composables/useAudioWaveform';
-  import { calculateWaveformParameters, createThrottledRenderer } from '@/utils/audioWaveformUtils';
+  import { waveformService, useWaveform } from '@/services/waveformService';
+  import { renderWaveformWithPlayhead, createThrottledRenderer } from '@/utils/waveformRenderer';
   import type { TimelineVideoTrackProps, TimelineVideoTrackEmits } from '../types';
 
   const props = withDefaults(defineProps<TimelineVideoTrackProps>(), {
@@ -73,26 +73,60 @@
     return Math.pow(10, db / 20);
   }
 
+  // Normalize peaks for display - scales quiet audio to be visible
+  function normalizePeaks(peaks: { min: number; max: number }[]): { min: number; max: number }[] {
+    if (peaks.length === 0) return peaks;
+
+    // Find the maximum amplitude in the waveform
+    let maxAmplitude = 0;
+    for (const peak of peaks) {
+      const peakMax = Math.max(Math.abs(peak.min), Math.abs(peak.max));
+      if (peakMax > maxAmplitude) {
+        maxAmplitude = peakMax;
+      }
+    }
+
+    // If waveform is already loud enough (>50% of full scale), don't normalize
+    if (maxAmplitude >= 0.5 || maxAmplitude === 0) {
+      return peaks;
+    }
+
+    // Calculate scale factor to bring max amplitude to ~85% of full scale
+    // This leaves headroom while making quiet audio visible
+    const targetAmplitude = 0.85;
+    const scaleFactor = targetAmplitude / maxAmplitude;
+
+    // Apply normalization (cap at reasonable max to avoid over-amplification of noise)
+    const maxScale = 10; // Don't amplify more than 10x
+    const finalScale = Math.min(scaleFactor, maxScale);
+
+    return peaks.map(peak => ({
+      min: peak.min * finalScale,
+      max: peak.max * finalScale,
+    }));
+  }
+
   const emit = defineEmits<TimelineVideoTrackEmits>();
 
   // Canvas ref for waveform rendering
   const waveformCanvas = ref<HTMLCanvasElement | null>(null);
 
-  // Audio waveform composable
-  const {
-    waveformData,
-    isLoading: isWaveformLoading,
-    isLoaded: isWaveformLoaded,
-    loadWaveformFromVideo,
-    getNormalizedWaveform,
-  } = useAudioWaveform();
+  // Use new waveform service
+  const waveform = useWaveform();
+  const isLoading = computed(() => waveform.isLoading.value);
+  const isLoaded = computed(() => waveform.isLoaded.value);
 
   // Resize observer for canvas updates
   let resizeObserver: ResizeObserver | null = null;
 
-  // Render waveform on canvas with adaptive resolution
-  function renderWaveform(): void {
-    if (!waveformCanvas.value || !waveformData.value || !isWaveformLoaded.value) {
+  // Render waveform on canvas
+  function renderWaveformOnCanvas(): void {
+    if (!waveformCanvas.value || !props.videoSrc || !isLoaded.value) {
+      return;
+    }
+
+    // Need valid duration to render
+    if (!props.duration || props.duration <= 0) {
       return;
     }
 
@@ -100,129 +134,44 @@
       const canvas = waveformCanvas.value;
       const rect = canvas.getBoundingClientRect();
 
-      // Set canvas actual size (account for device pixel ratio)
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
+      if (rect.width === 0 || rect.height === 0) return;
 
-      // Scale context for device pixel ratio
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.scale(dpr, dpr);
-      }
+      // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
+      const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
+      const peaks = waveformService.getPeaksForRange(props.videoSrc, {
+        startTime: 0,
+        endTime: props.duration,
+        pixelWidth: Math.floor(rect.width),
+        gainMultiplier,
+      });
 
-      // Get optimal resolution data for current zoom level
-      const normalizedData = getNormalizedWaveform(rect.width, rect.height, props.zoomLevel);
-
-      if (!normalizedData.peaks || normalizedData.peaks.length === 0) {
-        console.warn('[TimelineVideoTrack] No waveform peaks available for rendering');
+      if (peaks.length === 0) {
         return;
       }
 
-      // Calculate optimal waveform parameters with the selected resolution
-      const params = calculateWaveformParameters(
-        props.duration,
+      // Normalize peaks for display (makes quiet audio visible)
+      const normalizedPeaks = normalizePeaks(peaks);
+
+      // Use the unified renderer with playhead support
+      renderWaveformWithPlayhead(
+        canvas,
+        normalizedPeaks,
         rect.width,
-        props.zoomLevel,
-        normalizedData.resolution,
-        normalizedData.peaks.length
+        rect.height,
+        props.currentTime,
+        props.duration,
+        {
+          style: 'bars',
+          useGradientColors: false, // Simple white/teal for this track
+        }
       );
-
-      // Apply audio gain to peaks
-      const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
-      const gainedPeaks = normalizedData.peaks.map((peak: any) => ({
-        min: Math.max(-1, peak.min * gainMultiplier), // Clamp to prevent overdrive
-        max: Math.min(1, peak.max * gainMultiplier),
-      }));
-
-      // Render dual-color waveform (white before playhead, purple after)
-      renderDualColorWaveform(canvas, {
-        width: rect.width,
-        height: rect.height,
-        peaks: gainedPeaks,
-        duration: props.duration,
-        currentTime: props.currentTime,
-        barWidth: params.barWidth,
-        barSpacing: params.barSpacing,
-        amplitude: 0.8,
-      });
     } catch (error) {
       console.error('[TimelineVideoTrack] Error rendering waveform:', error);
     }
   }
 
-  // Render dual-color waveform (white before playhead, purple after)
-  function renderDualColorWaveform(
-    canvas: HTMLCanvasElement,
-    options: {
-      width: number;
-      height: number;
-      peaks: any[];
-      duration: number;
-      currentTime: number;
-      barWidth: number;
-      barSpacing: number;
-      amplitude: number;
-    }
-  ): void {
-    const ctx = canvas.getContext('2d');
-    if (!ctx || options.peaks.length === 0) return;
-
-    const { width, height, peaks, duration, currentTime, barWidth, barSpacing, amplitude } = options;
-    const totalBarWidth = barWidth + barSpacing;
-    const maxBarHeight = height * amplitude;
-    const baselineY = height;
-
-    // Calculate playhead position (0-1 ratio)
-    const playheadRatio = Math.max(0, Math.min(1, currentTime / duration));
-    const playheadPixel = playheadRatio * width;
-
-    // Ensure canvas size is correct
-    canvas.width = width;
-    canvas.height = height;
-
-    // Clear canvas completely
-    ctx.clearRect(0, 0, width, height);
-
-    // Disable any global compositing that might interfere
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1.0;
-
-    // Render each peak with appropriate color (single bar rising from baseline)
-    peaks.forEach((peak, index) => {
-      const x = index * totalBarWidth;
-
-      // Ensure bar stays within canvas bounds (clip instead of skip)
-      if (x >= width) return; // Only skip if starting position is beyond canvas
-
-      // Determine color based on position relative to playhead
-      const barCenter = x + barWidth / 2;
-      const isBeforePlayhead = barCenter < playheadPixel;
-      const color = '#e5e7eb';
-
-      // Set color with full opacity
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 1.0;
-
-      // Calculate bar height from peak magnitude
-      const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
-      const barHeight = Math.max(1, magnitude * maxBarHeight);
-
-      // Calculate actual bar width to stay within canvas bounds
-      const actualBarWidth = Math.min(barWidth, width - x);
-
-      // Draw single bar from baseline up
-      if (barHeight > 0 && actualBarWidth > 0) {
-        ctx.fillRect(x, baselineY - barHeight, actualBarWidth, barHeight);
-      }
-    });
-
-    // Reset global alpha
-    ctx.globalAlpha = 1.0;
-  }
-
   // Throttled renderer for performance
-  const throttledRender = createThrottledRenderer(renderWaveform, 16); // ~60fps
+  const throttledRender = createThrottledRenderer(renderWaveformOnCanvas);
 
   // Setup resize observer
   function setupResizeObserver(): void {
@@ -248,17 +197,18 @@
     () => props.videoSrc,
     async (newVideoSrc) => {
       if (newVideoSrc) {
-        await loadWaveformFromVideo(newVideoSrc);
+        await waveform.load(newVideoSrc);
       }
     },
     { immediate: true }
   );
 
   // Watch for waveform data changes and render
+  // Include duration so we re-render when video metadata loads
   watch(
-    [waveformData, isWaveformLoaded, () => props.zoomLevel, () => props.currentTime, () => props.audioGainDb],
-    () => {
-      if (isWaveformLoaded.value && waveformData.value) {
+    [isLoaded, () => props.zoomLevel, () => props.currentTime, () => props.audioGainDb, () => props.duration],
+    ([loaded, _zoom, _time, _gain, duration]) => {
+      if (loaded && duration > 0) {
         nextTick(() => {
           throttledRender();
         });
@@ -285,7 +235,7 @@
     nextTick(() => {
       setupResizeObserver();
       if (props.videoSrc) {
-        loadWaveformFromVideo(props.videoSrc);
+        waveform.load(props.videoSrc);
       }
     });
   });
@@ -298,14 +248,14 @@
 <style scoped>
   /* Video track styling */
   .video-track {
-    background: linear-gradient(to right, rgba(124, 58, 237, 0.15), rgba(99, 102, 241, 0.1));
+    background: #1a1a1a;
     border-radius: 0.375rem;
     position: relative;
     overflow: hidden;
   }
 
   .video-track-progress {
-    background: linear-gradient(to right, rgba(139, 92, 246, 0.25), rgba(99, 102, 241, 0.2));
+    background: #2a2a2a;
     transition: width 0.1s ease;
   }
 

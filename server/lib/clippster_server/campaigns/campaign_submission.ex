@@ -1,0 +1,145 @@
+defmodule ClippsterServer.Campaigns.CampaignSubmission do
+  @moduledoc """
+  Schema for clip submissions to campaigns.
+  """
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  alias ClippsterServer.Accounts.User
+  alias ClippsterServer.Campaigns.{Campaign, CampaignParticipant, CampaignPayment, ClipperSocialAccount}
+
+  @statuses ~w(pending verified rejected paid)
+  @platforms ~w(tiktok instagram x youtube)
+
+  schema "campaign_submissions" do
+    field :clip_url, :string
+    field :platform, :string
+    field :platform_post_id, :string
+    field :view_count, :integer, default: 0
+    field :views_last_updated_at, :utc_datetime
+    field :status, :string, default: "pending"
+    field :rejection_reason, :string
+    field :verified_at, :utc_datetime
+
+    belongs_to :campaign, Campaign
+    belongs_to :participant, CampaignParticipant
+    belongs_to :user, User
+    belongs_to :social_account, ClipperSocialAccount
+    belongs_to :verified_by_user, User, foreign_key: :verified_by_user_id
+    has_many :payments, CampaignPayment, foreign_key: :submission_id
+
+    timestamps(type: :utc_datetime)
+  end
+
+  @doc """
+  Changeset for creating a new submission.
+  """
+  def create_changeset(submission, attrs) do
+    submission
+    |> cast(attrs, [
+      :campaign_id,
+      :participant_id,
+      :user_id,
+      :social_account_id,
+      :clip_url,
+      :platform,
+      :platform_post_id
+    ])
+    |> validate_required([:campaign_id, :participant_id, :user_id, :clip_url, :platform])
+    |> validate_inclusion(:platform, @platforms)
+    |> validate_url(:clip_url)
+    |> detect_platform_from_url()
+    |> foreign_key_constraint(:campaign_id)
+    |> foreign_key_constraint(:participant_id)
+    |> foreign_key_constraint(:user_id)
+    |> foreign_key_constraint(:social_account_id)
+    |> unique_constraint(:clip_url, message: "has already been submitted")
+  end
+
+  @doc """
+  Changeset for verifying a submission.
+  """
+  def verify_changeset(submission, attrs) do
+    submission
+    |> cast(attrs, [:verified_by_user_id])
+    |> put_change(:status, "verified")
+    |> put_change(:verified_at, DateTime.utc_now() |> DateTime.truncate(:second))
+    |> foreign_key_constraint(:verified_by_user_id)
+  end
+
+  @doc """
+  Changeset for rejecting a submission.
+  """
+  def reject_changeset(submission, attrs) do
+    submission
+    |> cast(attrs, [:rejection_reason, :verified_by_user_id])
+    |> put_change(:status, "rejected")
+    |> validate_required([:rejection_reason])
+    |> validate_length(:rejection_reason, max: 1000)
+    |> foreign_key_constraint(:verified_by_user_id)
+  end
+
+  @doc """
+  Changeset for marking submission as paid.
+  """
+  def mark_paid_changeset(submission) do
+    submission
+    |> change(status: "paid")
+  end
+
+  @doc """
+  Changeset for updating view count.
+  """
+  def update_views_changeset(submission, attrs) do
+    submission
+    |> cast(attrs, [:view_count, :platform_post_id])
+    |> put_change(:views_last_updated_at, DateTime.utc_now() |> DateTime.truncate(:second))
+    |> validate_number(:view_count, greater_than_or_equal_to: 0)
+  end
+
+  defp validate_url(changeset, field) do
+    validate_change(changeset, field, fn _, value ->
+      case URI.parse(value) do
+        %URI{scheme: scheme, host: host} when scheme in ["http", "https"] and not is_nil(host) ->
+          []
+        _ ->
+          [{field, "must be a valid URL"}]
+      end
+    end)
+  end
+
+  defp detect_platform_from_url(changeset) do
+    case get_change(changeset, :clip_url) do
+      nil -> changeset
+      url ->
+        detected = detect_platform(url)
+        current_platform = get_change(changeset, :platform)
+        
+        if is_nil(current_platform) and detected do
+          put_change(changeset, :platform, detected)
+        else
+          changeset
+        end
+    end
+  end
+
+  @doc """
+  Detects platform from URL.
+  """
+  def detect_platform(url) when is_binary(url) do
+    url_lower = String.downcase(url)
+    
+    cond do
+      String.contains?(url_lower, "tiktok.com") -> "tiktok"
+      String.contains?(url_lower, "instagram.com") -> "instagram"
+      String.contains?(url_lower, "x.com") or String.contains?(url_lower, "twitter.com") -> "x"
+      String.contains?(url_lower, "youtube.com") or String.contains?(url_lower, "youtu.be") -> "youtube"
+      true -> nil
+    end
+  end
+
+  def detect_platform(_), do: nil
+
+  def statuses, do: @statuses
+  def platforms, do: @platforms
+end

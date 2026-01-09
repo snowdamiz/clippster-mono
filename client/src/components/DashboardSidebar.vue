@@ -57,18 +57,15 @@
                   <path :d="item.icon as string" />
                 </svg>
                 <component v-else :is="item.icon as string" class="h-5 w-5" />
-              </div>
-              <span class="flex-1">{{ item.name }}</span>
-              <!-- Unread badge with bell icon for Messages -->
-              <div
-                v-if="item.name === 'Messages' && totalUnreadMessages > 0"
-                class="flex items-center gap-1 px-1.5 py-0.5 bg-red-500/15 text-red-400 rounded-md"
-              >
-                <Bell class="h-3 w-3" />
-                <span class="text-[11px] font-semibold">
+                <!-- Unread badge for Messages -->
+                <span
+                  v-if="item.name === 'Messages' && totalUnreadMessages > 0"
+                  class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold bg-red-500 text-white rounded-full"
+                >
                   {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
                 </span>
               </div>
+              <span>{{ item.name }}</span>
             </router-link>
 
             <!-- Dialog Action Item -->
@@ -140,9 +137,18 @@
       <!-- User info -->
       <div :class="authStore.isAuthenticated ? 'px-4 pb-4 pt-4' : 'px-2 pb-2 pt-2'" class="border-t border-border">
         <div v-if="authStore.isAuthenticated" class="flex items-center justify-between gap-2 min-w-0">
-          <span class="font-mono text-xs text-primary truncate min-w-0" :title="formattedAddress">
-            {{ formattedAddress }}
-          </span>
+          <div class="flex items-center gap-2 min-w-0">
+            <button 
+              @click="router.push('/clipper-profile')"
+              class="p-1.5 rounded-md hover:bg-primary/10 transition-colors text-muted-foreground hover:text-primary"
+              title="Clipper Profile"
+            >
+              <UserCircle class="w-4 h-4" />
+            </button>
+            <span class="font-mono text-xs text-primary truncate min-w-0" :title="formattedAddress">
+              {{ formattedAddress }}
+            </span>
+          </div>
           <button @click="handleDisconnect" class="disconnect-btn flex-shrink-0">{{ disconnectButtonText }}</button>
         </div>
         <div v-else class="flex items-center justify-center">
@@ -164,10 +170,7 @@
   import { navigationItems } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
   import api from '@/services/api';
-  import { DollarSign, Bell } from 'lucide-vue-next';
-
-  // Timer for unread message refresh
-  let unreadRefreshInterval: ReturnType<typeof setInterval> | null = null;
+  import { DollarSign, UserCircle } from 'lucide-vue-next';
 
   const route = useRoute();
   const router = useRouter();
@@ -251,13 +254,12 @@
     return filtered;
   });
 
-  // Watch for auth changes and load organizations + unread messages
+  // Watch for auth changes and load organizations
   watch(
     () => authStore.isAuthenticated,
     (isAuth) => {
       if (isAuth) {
         loadUserOrganizations();
-        messagingStore.fetchTotalUnread();
       } else {
         userOrganizations.value = [];
       }
@@ -353,9 +355,8 @@
       // User logged out - clear balance immediately
       hoursRemaining.value = 0;
     } else {
-      // User logged in - fetch new balance and unread messages
+      // User logged in - fetch new balance
       fetchBalance();
-      messagingStore.fetchTotalUnread();
     }
   }
 
@@ -366,20 +367,8 @@
     // Initial fetch
     fetchBalance();
 
-    // Initial fetch of unread messages count
-    if (authStore.isAuthenticated) {
-      messagingStore.fetchTotalUnread();
-    }
-
     // Refresh balance every 30 seconds
     balanceRefreshInterval = setInterval(fetchBalance, 30000);
-
-    // Refresh unread messages count every 30 seconds
-    unreadRefreshInterval = setInterval(() => {
-      if (authStore.isAuthenticated) {
-        messagingStore.fetchTotalUnread();
-      }
-    }, 30000);
 
     // Listen for auth state changes
     window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
@@ -389,14 +378,10 @@
   });
 
   onUnmounted(() => {
-    // Clear the intervals to prevent memory leaks
+    // Clear the interval to prevent memory leaks
     if (balanceRefreshInterval) {
       clearInterval(balanceRefreshInterval);
       balanceRefreshInterval = null;
-    }
-    if (unreadRefreshInterval) {
-      clearInterval(unreadRefreshInterval);
-      unreadRefreshInterval = null;
     }
 
     // Remove auth state change listener
