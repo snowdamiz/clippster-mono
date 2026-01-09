@@ -138,6 +138,63 @@ const router = createRouter({
         },
       ],
     },
+    // Campaigns marketplace
+    {
+      path: '/campaigns',
+      name: 'campaigns',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'campaigns-home',
+          component: () => import('@/pages/CampaignsPage.vue'),
+        },
+      ],
+    },
+    // Clipper Profile (social accounts, payment methods & campaign history)
+    {
+      path: '/clipper-profile',
+      name: 'clipper-profile',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'clipper-profile-home',
+          component: () => import('@/pages/ClipperProfilePage.vue'),
+        },
+        {
+          path: 'edit',
+          name: 'clipper-profile-edit',
+          component: () => import('@/pages/ClipperProfileEditPage.vue'),
+        },
+      ],
+    },
+    // Clipper Directory (browse public profiles)
+    {
+      path: '/clippers',
+      name: 'clippers',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'clippers-directory',
+          component: () => import('@/pages/ClipperDirectoryPage.vue'),
+        },
+        {
+          path: 'leaderboard',
+          name: 'clippers-leaderboard',
+          component: () => import('@/pages/ClipperLeaderboardPage.vue'),
+        },
+        {
+          path: ':slug',
+          name: 'clipper-public-profile',
+          component: () => import('@/pages/ClipperPublicProfilePage.vue'),
+        },
+      ],
+    },
     // Unified VODs page for all streaming platforms
     {
       path: '/vods',

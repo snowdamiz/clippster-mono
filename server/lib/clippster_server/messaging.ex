@@ -579,4 +579,44 @@ defmodule ClippsterServer.Messaging do
       _ -> false
     end
   end
+
+  @doc """
+  Gets response times for a user (time between receiving a message and responding).
+  Used for calculating average response time for clipper profiles.
+  Returns list of response times in minutes.
+  """
+  def get_user_response_times(user_id, limit \\ 20) do
+    # Find conversations where user is a participant
+    conversation_ids =
+      ConversationParticipant
+      |> where([p], p.user_id == ^user_id)
+      |> where([p], is_nil(p.left_at))
+      |> select([p], p.conversation_id)
+      |> Repo.all()
+
+    if Enum.empty?(conversation_ids) do
+      []
+    else
+      # Get messages in those conversations, ordered by time
+      messages =
+        Message
+        |> where([m], m.conversation_id in ^conversation_ids)
+        |> order_by([m], asc: m.inserted_at)
+        |> Repo.all()
+
+      # Calculate response times
+      messages
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.filter(fn [prev, curr] ->
+        # Previous message was from someone else, current is from user
+        prev.sender_id != user_id and curr.sender_id == user_id
+      end)
+      |> Enum.map(fn [prev, curr] ->
+        # Calculate time difference in minutes
+        DateTime.diff(curr.inserted_at, prev.inserted_at, :minute)
+      end)
+      |> Enum.filter(fn minutes -> minutes > 0 and minutes < 60 * 24 * 7 end) # Filter out > 1 week
+      |> Enum.take(-limit) # Take most recent
+    end
+  end
 end

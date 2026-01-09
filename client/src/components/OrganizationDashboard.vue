@@ -891,6 +891,19 @@
           </div>
         </div>
 
+        <!-- Campaigns Tab -->
+        <div v-else-if="activeTab === 'campaigns'" class="p-6">
+          <OrganizationCampaigns
+            :organization-id="organizationId ?? ''"
+            :is-admin="isAdmin"
+          />
+        </div>
+
+        <!-- Clippers Tab -->
+        <div v-else-if="activeTab === 'clippers'" class="p-6">
+          <OrganizationClippers />
+        </div>
+
         <!-- Shared Clips Tab -->
         <div v-else-if="activeTab === 'shared-clips'" class="p-6">
           <SharedClipsList
@@ -1864,6 +1877,8 @@
   import PostSubmissionsList from './organization/PostSubmissionsList.vue';
   import SharedClipsList from './organization/SharedClipsList.vue';
   import ShareClipDialog from './organization/ShareClipDialog.vue';
+  import OrganizationCampaigns from './organization/OrganizationCampaigns.vue';
+  import OrganizationClippers from './organization/OrganizationClippers.vue';
   import { SharedClip } from '@/services/sharedClipsApi';
   import api from '@/services/api';
   import {
@@ -2047,6 +2062,8 @@
   const tabs = [
     { id: 'members', label: 'Members' },
     { id: 'creators', label: 'Creator Profiles' },
+    { id: 'campaigns', label: 'Campaigns' },
+    { id: 'clippers', label: 'Find Clippers' },
     { id: 'shared-clips', label: 'Shared Clips' },
     { id: 'social', label: 'Social Accounts' },
     { id: 'posts', label: 'Posts' },

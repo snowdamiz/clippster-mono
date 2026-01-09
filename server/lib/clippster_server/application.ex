@@ -69,6 +69,10 @@ defmodule ClippsterServer.Application do
       ClippsterServer.Organizations.SharedClipCleanupWorker,
       # Release info cache for landing page downloads
       ClippsterServer.ReleaseService,
+      # Clipper profile workers
+      ClippsterServer.ClipperProfiles.LeaderboardWorker,
+      ClippsterServer.ClipperProfiles.BadgeWorker,
+      ClippsterServer.ClipperProfiles.ResponseTimeWorker,
       # Start to serve requests, typically the last entry
       ClippsterServerWeb.Endpoint
     ]

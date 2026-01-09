@@ -13,6 +13,7 @@ import {
   Clapperboard,
   Building2,
   Receipt,
+  Megaphone,
 } from 'lucide-vue-next';
 
 export interface NavigationItem {
@@ -70,6 +71,11 @@ export const navigationItems: NavigationItem[] = [
     name: 'Assets',
     path: '/assets',
     icon: Archive,
+  },
+  {
+    name: 'Campaigns',
+    path: '/campaigns',
+    icon: Megaphone,
   },
   {
     name: 'Prompts',

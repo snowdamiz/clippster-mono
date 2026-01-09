@@ -340,20 +340,13 @@
                         </button>
                         <button
                           @click.stop="toggleCreatorAutoDvr(creator)"
-                          :disabled="!isCreatorMonitored(creator)"
                           class="h-8 px-3 rounded-md text-xs font-medium transition-all border"
                           :class="[
-                            isCreatorMonitored(creator)
-                              ? isCreatorAutoDvrEnabled(creator)
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                                : 'bg-background text-muted-foreground border-border/50 hover:bg-muted/50'
-                              : 'bg-muted/40 text-muted-foreground/60 border-border/40 cursor-not-allowed',
+                            isCreatorAutoDvrEnabled(creator)
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                              : 'bg-background text-muted-foreground border-border/50 hover:bg-muted/50',
                           ]"
-                          :title="
-                            isCreatorMonitored(creator)
-                              ? 'Automatically start persistent recording when streamer goes live'
-                              : 'Start monitoring to manage Auto DVR'
-                          "
+                          title="Automatically start persistent recording when streamer goes live"
                         >
                           Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
                         </button>

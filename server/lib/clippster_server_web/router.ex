@@ -294,6 +294,89 @@ defmodule ClippsterServerWeb.Router do
     get "/me/unread-count", MessagingController, :get_total_unread
     # Analytics tracking (requires authentication)
     post "/analytics/track", AnalyticsController, :track
+
+    # ============================================================================
+    # Campaigns - Public/Clipper Routes
+    # ============================================================================
+
+    # Campaign marketplace (browse active campaigns)
+    get "/campaigns", CampaignController, :index
+    get "/campaigns/:id", CampaignController, :show
+    post "/campaigns/:id/apply", CampaignController, :apply
+    post "/campaigns/:id/submissions", CampaignController, :submit_clip
+
+    # User's campaigns and submissions
+    get "/user/campaigns", CampaignController, :my_campaigns
+    get "/user/submissions", CampaignController, :my_submissions
+    get "/user/earnings", CampaignController, :my_earnings
+
+    # Clipper social accounts (for campaigns)
+    get "/user/social-accounts", ClipperProfileController, :list_social_accounts
+    post "/user/social-accounts", ClipperProfileController, :create_social_account
+    put "/user/social-accounts/:id", ClipperProfileController, :update_social_account
+    delete "/user/social-accounts/:id", ClipperProfileController, :delete_social_account
+
+    # Clipper payment methods (for campaigns)
+    get "/user/payment-methods", ClipperProfileController, :list_payment_methods
+    post "/user/payment-methods", ClipperProfileController, :create_payment_method
+    put "/user/payment-methods/:id", ClipperProfileController, :update_payment_method
+    delete "/user/payment-methods/:id", ClipperProfileController, :delete_payment_method
+
+    # ============================================================================
+    # Clipper Profiles - User's Own Profile
+    # ============================================================================
+    get "/user/clipper-profile", ClipperProfilesController, :show_own
+    put "/user/clipper-profile", ClipperProfilesController, :update_own
+    
+    # Channel links
+    get "/user/clipper-profile/channel-links", ClipperProfilesController, :list_channel_links
+    post "/user/clipper-profile/channel-links", ClipperProfilesController, :create_channel_link
+    put "/user/clipper-profile/channel-links/:id", ClipperProfilesController, :update_channel_link
+    delete "/user/clipper-profile/channel-links/:id", ClipperProfilesController, :delete_channel_link
+    
+    # Portfolio clips
+    get "/user/clipper-profile/portfolio-clips", ClipperProfilesController, :list_portfolio_clips
+    post "/user/clipper-profile/portfolio-clips", ClipperProfilesController, :create_portfolio_clip
+    put "/user/clipper-profile/portfolio-clips/:id", ClipperProfilesController, :update_portfolio_clip
+    delete "/user/clipper-profile/portfolio-clips/:id", ClipperProfilesController, :delete_portfolio_clip
+
+    # ============================================================================
+    # Clipper Directory - Public Profiles
+    # ============================================================================
+    get "/clippers", ClipperProfilesController, :index
+    get "/clippers/leaderboard", ClipperProfilesController, :leaderboard
+    get "/clippers/:slug", ClipperProfilesController, :show
+    post "/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement
+
+    # ============================================================================
+    # Campaigns - Organization Management Routes
+    # ============================================================================
+
+    # Campaign CRUD
+    get "/organizations/:organization_id/campaigns", CampaignController, :org_index
+    post "/organizations/:organization_id/campaigns", CampaignController, :create
+    put "/organizations/:organization_id/campaigns/:id", CampaignController, :update
+    delete "/organizations/:organization_id/campaigns/:id", CampaignController, :delete
+    post "/organizations/:organization_id/campaigns/:id/pause", CampaignController, :pause
+    post "/organizations/:organization_id/campaigns/:id/activate", CampaignController, :activate
+    post "/organizations/:organization_id/campaigns/:id/complete", CampaignController, :complete
+
+    # Campaign participants
+    get "/organizations/:organization_id/campaigns/:id/participants", CampaignController, :list_participants
+    post "/organizations/:organization_id/campaigns/:id/participants/:participant_id/approve", CampaignController, :approve_participant
+    post "/organizations/:organization_id/campaigns/:id/participants/:participant_id/reject", CampaignController, :reject_participant
+    delete "/organizations/:organization_id/campaigns/:id/participants/:participant_id", CampaignController, :remove_participant
+
+    # Campaign submissions (org view)
+    get "/organizations/:organization_id/campaigns/:id/submissions", CampaignController, :list_submissions
+    post "/organizations/:organization_id/submissions/:submission_id/verify", CampaignController, :verify_submission
+    post "/organizations/:organization_id/submissions/:submission_id/reject", CampaignController, :reject_submission
+    put "/organizations/:organization_id/submissions/:submission_id/views", CampaignController, :update_views
+
+    # Campaign payments
+    get "/organizations/:organization_id/campaigns/:id/payments", CampaignController, :list_payments
+    post "/organizations/:organization_id/submissions/:submission_id/pay", CampaignController, :create_payment
+    post "/organizations/:organization_id/payments/:payment_id/complete", CampaignController, :complete_payment
   end
 
   # Admin-only routes

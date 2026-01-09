@@ -137,9 +137,18 @@
       <!-- User info -->
       <div :class="authStore.isAuthenticated ? 'px-4 pb-4 pt-4' : 'px-2 pb-2 pt-2'" class="border-t border-border">
         <div v-if="authStore.isAuthenticated" class="flex items-center justify-between gap-2 min-w-0">
-          <span class="font-mono text-xs text-primary truncate min-w-0" :title="formattedAddress">
-            {{ formattedAddress }}
-          </span>
+          <div class="flex items-center gap-2 min-w-0">
+            <button 
+              @click="router.push('/clipper-profile')"
+              class="p-1.5 rounded-md hover:bg-primary/10 transition-colors text-muted-foreground hover:text-primary"
+              title="Clipper Profile"
+            >
+              <UserCircle class="w-4 h-4" />
+            </button>
+            <span class="font-mono text-xs text-primary truncate min-w-0" :title="formattedAddress">
+              {{ formattedAddress }}
+            </span>
+          </div>
           <button @click="handleDisconnect" class="disconnect-btn flex-shrink-0">{{ disconnectButtonText }}</button>
         </div>
         <div v-else class="flex items-center justify-center">
@@ -161,7 +170,7 @@
   import { navigationItems } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
   import api from '@/services/api';
-  import { DollarSign } from 'lucide-vue-next';
+  import { DollarSign, UserCircle } from 'lucide-vue-next';
 
   const route = useRoute();
   const router = useRouter();
@@ -385,7 +394,7 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
+    padding: 0.45rem 0.75rem;
     border-radius: 0.35rem;
     color: var(--muted-foreground);
   }

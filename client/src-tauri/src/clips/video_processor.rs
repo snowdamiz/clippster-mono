@@ -1569,8 +1569,8 @@ pub async fn build_split_screen_clip(
     video_filter_segments: Option<&Vec<VideoFilterSegment>>,
     effects_filter_chain: Option<&str>,
 ) -> Result<(), String> {
-    // Build time-based filter string for the full clip duration
-    let video_filter_str = build_video_filter_string(video_filter_segments);
+    // Build combined filter string (color grading + effects)
+    let video_filter_str = build_combined_filter_string(video_filter_segments, effects_filter_chain);
     let _shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
@@ -1853,8 +1853,8 @@ pub async fn build_dynamic_pan_clip(
     video_filter_segments: Option<&Vec<VideoFilterSegment>>,
     effects_filter_chain: Option<&str>,
 ) -> Result<(), String> {
-    // Build time-based filter string
-    let video_filter_str = build_video_filter_string(video_filter_segments);
+    // Build combined filter string (color grading + effects)
+    let video_filter_str = build_combined_filter_string(video_filter_segments, effects_filter_chain);
     let _shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
@@ -2038,8 +2038,8 @@ pub async fn build_multi_region_clip(
     video_filter_segments: Option<&Vec<VideoFilterSegment>>,
     effects_filter_chain: Option<&str>,
 ) -> Result<(), String> {
-    // Build time-based filter string
-    let video_filter_str = build_video_filter_string(video_filter_segments);
+    // Build combined filter string (color grading + effects)
+    let video_filter_str = build_combined_filter_string(video_filter_segments, effects_filter_chain);
     let _shell = app.shell();
     let start_time: f64 = segment["start_time"].as_f64().ok_or("Invalid start_time")?;
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
@@ -2539,8 +2539,8 @@ async fn extract_segment_with_crop(
     video_filter_segments: Option<&Vec<VideoFilterSegment>>,
     effects_filter_chain: Option<&str>,
 ) -> Result<(), String> {
-    // Build time-based filter string
-    let video_filter_str = build_video_filter_string(video_filter_segments);
+    // Build combined filter string (color grading + effects)
+    let video_filter_str = build_combined_filter_string(video_filter_segments, effects_filter_chain);
     let _shell = app.shell();
     let encoder = detect_hardware_encoder(app, quality).await;
     
