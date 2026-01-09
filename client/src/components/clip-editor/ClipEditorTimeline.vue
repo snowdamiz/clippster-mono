@@ -1619,11 +1619,10 @@
     TrendingUp,
     Headphones,
   } from 'lucide-vue-next';
-  import { useAudioWaveform, type WaveformData } from '@/composables/useAudioWaveform';
   import { useTimelineTools, type TimelineTool } from '@/composables/useTimelineTools';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-  import { renderCapcutStyleBar, DB_COLORS, AMPLITUDE_THRESHOLDS } from '@/utils/audioDbUtils';
-  import { extractWaveformFromUrl } from '@/utils/webAudioWaveform';
+  import { waveformService, useWaveform, type WaveformPeak, type AudioData } from '@/services/waveformService';
+  import { renderWaveform, renderAudioTrackWaveform, WAVEFORM_COLORS, createThrottledRenderer } from '@/utils/waveformRenderer';
   import type { Track, Keyframe, ItemType } from '@/types/timeline-model';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
   import KeyframeMarker from './KeyframeMarker.vue';
@@ -1958,11 +1957,11 @@
   const waveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
   const audioWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
   const audioSegmentCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map()); // key: `${trackId}-${segmentIndex}`
-  const audioWaveformData = ref<Map<string, { peaks: { min: number; max: number }[]; duration: number }>>(new Map());
-  // Video source waveform data and canvas refs for editor mode
+  // Video source waveform canvas refs for editor mode
   const sourceWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
-  const sourceWaveformData = ref<Map<string, WaveformData>>(new Map());
   const sourceWaveformLoading = ref<Set<string>>(new Set());
+  // Audio track waveform loading state
+  const audioWaveformLoading = ref<Set<string>>(new Set());
 
   const videoTrackState = reactive({
     isMuted: false,
@@ -2923,8 +2922,15 @@
   let lastSyncPosition = 0; // playhead position (0-1) at sync time
   let lastKnownPosition = 0; // For seek detection
 
-  // Audio waveform
-  const { waveformData, isLoaded: isWaveformLoaded, loadWaveformFromVideo } = useAudioWaveform();
+  // Audio waveform - use new waveform service
+  const mainWaveform = useWaveform();
+  const waveformData = computed(() => mainWaveform.audioData.value);
+  const isWaveformLoaded = computed(() => mainWaveform.isLoaded.value);
+
+  // Load waveform from video using new service
+  async function loadWaveformFromVideo(videoSrc: string): Promise<void> {
+    await mainWaveform.load(videoSrc);
+  }
 
   // Resize observer for waveform canvases
   let resizeObserver: ResizeObserver | null = null;
@@ -2932,6 +2938,39 @@
   // Convert dB to linear gain multiplier
   function dbToLinear(db: number): number {
     return Math.pow(10, db / 20);
+  }
+
+  // Normalize peaks for display - scales quiet audio to be visible
+  function normalizePeaks(peaks: { min: number; max: number }[]): { min: number; max: number }[] {
+    if (peaks.length === 0) return peaks;
+
+    // Find the maximum amplitude in the waveform
+    let maxAmplitude = 0;
+    for (const peak of peaks) {
+      const peakMax = Math.max(Math.abs(peak.min), Math.abs(peak.max));
+      if (peakMax > maxAmplitude) {
+        maxAmplitude = peakMax;
+      }
+    }
+
+    // If waveform is already loud enough (>50% of full scale), don't normalize
+    if (maxAmplitude >= 0.5 || maxAmplitude === 0) {
+      return peaks;
+    }
+
+    // Calculate scale factor to bring max amplitude to ~85% of full scale
+    // This leaves headroom while making quiet audio visible
+    const targetAmplitude = 0.85;
+    const scaleFactor = targetAmplitude / maxAmplitude;
+
+    // Apply normalization (cap at reasonable max to avoid over-amplification of noise)
+    const maxScale = 10; // Don't amplify more than 10x
+    const finalScale = Math.min(scaleFactor, maxScale);
+
+    return peaks.map(peak => ({
+      min: peak.min * finalScale,
+      max: peak.max * finalScale,
+    }));
   }
 
   // Color mappings
@@ -6994,25 +7033,17 @@
     }
   }
 
-  // Waveform rendering
+  // Waveform rendering - uses new waveformService for on-demand peak calculation
   function renderWaveformForSegment(segmentId: string, segment: TrimSegment) {
     const canvas = waveformCanvasRefs.value.get(segmentId);
-    if (!canvas || !waveformData.value || !isWaveformLoaded.value) return;
+    if (!canvas || !props.videoSrc) return;
+
+    // Check if waveform data is loaded
+    if (!waveformService.isLoaded(props.videoSrc)) return;
 
     try {
       const rect = canvas.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
-
-      // Set canvas actual size (account for device pixel ratio)
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-
-      // Scale context for device pixel ratio
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.scale(dpr, dpr);
 
       // Segment times are relative to the clip (0 to duration)
       // Convert to absolute source video times for waveform extraction
@@ -7020,307 +7051,72 @@
       const absoluteEndTime = props.clipStart + segment.endTime;
       const segmentDuration = segment.endTime - segment.startTime;
 
-      // Get the highest resolution waveform data available for maximum detail
-      // For segments, we need more peaks because we're showing a smaller portion of the video
-      const { duration, peaks } = waveformData.value;
+      // Calculate playhead position within segment
+      const isWithinSegment = props.currentTime >= segment.startTime && props.currentTime <= segment.endTime;
+      const playheadRatio = isWithinSegment
+        ? (props.currentTime - segment.startTime) / segmentDuration
+        : props.currentTime < segment.startTime ? 0 : 1;
 
-      // DEBUG: Log waveform mapping details
-      console.log('[ClipEditorTimeline] Waveform mapping debug:', {
-        clipStart: props.clipStart,
-        segmentStartTime: segment.startTime,
-        segmentEndTime: segment.endTime,
-        absoluteStartTime,
-        absoluteEndTime,
-        waveformDuration: duration,
-        totalPeaks: peaks?.length,
-        // Sample some peaks to see if they have data
-        samplePeaks: peaks?.slice(0, 5).map((p: any) => ({ min: p.min.toFixed(4), max: p.max.toFixed(4) })),
-      });
-
-      if (!peaks || peaks.length === 0) return;
-
-      // Extract peaks for this segment's time range
-      const startRatio = absoluteStartTime / duration;
-      const endRatio = absoluteEndTime / duration;
-      const startIndex = Math.floor(startRatio * peaks.length);
-      const endIndex = Math.ceil(endRatio * peaks.length);
-      const segmentPeaks = peaks.slice(startIndex, endIndex);
-      
-      console.log('[ClipEditorTimeline] Peak extraction:', {
-        startRatio: startRatio.toFixed(4),
-        endRatio: endRatio.toFixed(4),
-        startIndex,
-        endIndex,
-        segmentPeaksCount: segmentPeaks.length,
-        // Sample extracted peaks
-        sampleExtractedPeaks: segmentPeaks.slice(0, 5).map((p: any) => ({ min: p.min.toFixed(4), max: p.max.toFixed(4) })),
-      });
-
-      if (segmentPeaks.length === 0) return;
-
-      // Calculate how to best display the peaks across the canvas width
-      const canvasWidth = rect.width;
-      const numPeaks = segmentPeaks.length;
-
-      // Target: thin bars (1-2px) with no/minimal spacing for detailed waveform
-      // If we have more peaks than pixels, downsample
-      // If we have fewer peaks than pixels, make bars wider
-      let displayPeaks = segmentPeaks;
-      let barWidth: number;
-      let barSpacing: number;
-
-      if (numPeaks > canvasWidth) {
-        // More peaks than pixels - downsample to 1 bar per pixel
-        const step = numPeaks / canvasWidth;
-        displayPeaks = [];
-        for (let i = 0; i < canvasWidth; i++) {
-          const idx = Math.floor(i * step);
-          if (idx < numPeaks) {
-            displayPeaks.push(segmentPeaks[idx]);
-          }
-        }
-        barWidth = 1;
-        barSpacing = 0;
-      } else {
-        // Fewer peaks than pixels - spread bars across canvas
-        // Use bar width of 2px with spacing calculated to fill canvas
-        barWidth = 2;
-        const totalBarSpace = numPeaks * barWidth;
-        const remainingSpace = canvasWidth - totalBarSpace;
-        barSpacing = numPeaks > 1 ? remainingSpace / (numPeaks - 1) : 0;
-
-        // If spacing is too large, increase bar width instead
-        if (barSpacing > barWidth * 2) {
-          const totalWidth = canvasWidth / numPeaks;
-          barWidth = Math.floor(totalWidth * 0.7); // 70% bar, 30% spacing
-          barSpacing = totalWidth - barWidth;
-        }
-      }
-
-      // Use fixed normalizer to preserve relative volume dynamics
-      const normalizer = 1.0;
-      const normalizedPeaks = displayPeaks.map((peak: any) => ({
-        min: peak.min / normalizer,
-        max: peak.max / normalizer,
-      }));
-
-      // Apply audio gain to peaks
+      // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
       const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
-      const gainedPeaks = normalizedPeaks.map((peak: any) => ({
-        min: Math.max(-1, peak.min * gainMultiplier), // Clamp to prevent overdrive
-        max: Math.min(1, peak.max * gainMultiplier),
-      }));
+      const peaks = waveformService.getPeaksForRange(props.videoSrc, {
+        startTime: absoluteStartTime,
+        endTime: absoluteEndTime,
+        pixelWidth: Math.floor(rect.width),
+        gainMultiplier,
+      });
 
-      renderSegmentWaveform(canvas, {
+      if (peaks.length === 0) return;
+
+      // Normalize peaks for display (makes quiet audio visible)
+      const normalizedPeaks = normalizePeaks(peaks);
+
+      // Use the unified renderer
+      renderWaveform(canvas, {
         width: rect.width,
         height: rect.height,
-        peaks: gainedPeaks,
-        segmentDuration,
-        currentTime: props.currentTime,
-        segmentStartTime: segment.startTime,
-        segmentEndTime: segment.endTime,
-        barWidth,
-        barSpacing,
-        amplitude: 1.0, // Use full available height (scaled by 0.9 internally)
+        peaks: normalizedPeaks,
+        playheadRatio,
+        style: 'bars',
+        useGradientColors: true,
       });
     } catch (error) {
       console.error('[ClipEditorTimeline] Error rendering waveform:', error);
     }
   }
 
-  function renderSegmentWaveform(
-    canvas: HTMLCanvasElement,
-    options: {
-      width: number;
-      height: number;
-      peaks: any[];
-      segmentDuration: number;
-      currentTime: number;
-      segmentStartTime: number;
-      segmentEndTime: number;
-      barWidth: number;
-      barSpacing: number;
-      amplitude: number;
-    }
-  ): void {
-    const ctx = canvas.getContext('2d');
-    if (!ctx || options.peaks.length === 0) return;
-
-    const { width, height, peaks, currentTime, segmentStartTime, segmentEndTime, barWidth, barSpacing, amplitude } =
-      options;
-    
-    // Use pixel-based iteration logic - CapCut style with thin bars
-    const barW = 1; // Thin bars like CapCut
-    const gap = 1;
-    const step = barW + gap;
-    const numBars = Math.ceil(width / step);
-    const maxBarHeight = height * (amplitude * 0.9);
-    // Bars grow upward from bottom baseline
-    const baselineY = height;
-
-    // Calculate playhead position within segment
-    const isWithinSegment = currentTime >= segmentStartTime && currentTime <= segmentEndTime;
-    const playheadRatio = isWithinSegment
-      ? (currentTime - segmentStartTime) / (segmentEndTime - segmentStartTime)
-      : currentTime < segmentStartTime
-        ? 0
-        : 1;
-    const playheadPixel = playheadRatio * width;
-
-    canvas.width = width;
-    canvas.height = height;
-
-    ctx.clearRect(0, 0, width, height);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1.0;
-
-    // CapCut-style waveform: base color with yellow/orange/red gradient at TOP when loud
-
-    for (let i = 0; i < numBars; i++) {
-      const x = i * step;
-      
-      // Map current bar position to index in peaks array
-      const percent = i / numBars;
-      const peakIndex = Math.min(
-        Math.floor(percent * peaks.length),
-        peaks.length - 1
-      );
-      
-      const peak = peaks[peakIndex];
-      if (!peak) continue;
-
-      const magnitude = Math.max(Math.abs(peak.max), Math.abs(peak.min));
-      const barHeight = Math.max(1, magnitude * maxBarHeight);
-      
-      // Render bar growing upward from baseline
-      renderCapcutStyleBar(ctx, x, baselineY, barW, barHeight, magnitude);
-    }
-
-    ctx.globalAlpha = 1.0;
-  }
-
   function renderAllWaveforms() {
-    if (!isWaveformLoaded.value || !waveformData.value) return;
+    if (!props.videoSrc || !waveformService.isLoaded(props.videoSrc)) return;
 
     sortedTrimSegments.value.forEach((segment) => {
       renderWaveformForSegment(segment.id, segment);
     });
   }
 
-  // Video source waveform functions (editor mode)
-
-  // Generate cache key from source path (same logic as useAudioWaveform)
-  function getSourceCacheKey(sourcePath: string): string {
-    let hash = 0;
-    for (let i = 0; i < sourcePath.length; i++) {
-      const char = sourcePath.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    return Math.abs(hash).toString();
-  }
-
-  // Get cached waveform from database
-  async function getCachedSourceWaveform(cacheKey: string): Promise<WaveformData | null> {
-    try {
-      const { getDatabase } = await import('@/services/database');
-      const db = await getDatabase();
-
-      const result = await db.select<
-        {
-          sample_rate: number;
-          duration: number;
-          resolutions: string;
-        }[]
-      >(`SELECT sample_rate, duration, resolutions FROM waveform_data WHERE video_path_hash = ?1`, [cacheKey]);
-
-      if (result.length === 0) return null;
-
-      const cached = result[0];
-      const parsed = JSON.parse(cached.resolutions);
-
-      // Handle both old multi-resolution format and new single-array format
-      let peaks: { min: number; max: number }[] = [];
-
-      if (Array.isArray(parsed)) {
-        // New format: direct peaks array
-        peaks = parsed;
-      } else if (parsed.peaks && Array.isArray(parsed.peaks)) {
-        // New format with wrapper object
-        peaks = parsed.peaks;
-      } else {
-        // Old multi-resolution format - extract highest resolution available
-        const resolutionOrder = ['maximum', 'extreme', 'ultra', 'high', 'medium', 'low'];
-        for (const level of resolutionOrder) {
-          const resolutionData = parsed[level];
-          if (resolutionData && resolutionData.peaks) {
-            peaks = resolutionData.peaks.map((p: any) => ({ min: p.min, max: p.max }));
-            break;
-          }
-        }
-        if (peaks.length === 0) {
-          const firstKey = Object.keys(parsed)[0];
-          const firstData = parsed[firstKey];
-          if (firstData && firstData.peaks) {
-            peaks = firstData.peaks.map((p: any) => ({ min: p.min, max: p.max }));
-          }
-        }
-      }
-
-      return {
-        sampleRate: cached.sample_rate,
-        duration: cached.duration,
-        peaks,
-        peakCount: peaks.length,
-      };
-    } catch (err) {
-      console.error('[ClipEditorTimeline] Error loading cached waveform:', err);
-      return null;
-    }
-  }
+  // Video source waveform functions (editor mode) - uses new waveformService
 
   async function loadSourceWaveform(sourceId: string, sourcePath: string): Promise<void> {
     // Skip if already loaded or currently loading
-    if (sourceWaveformData.value.has(sourceId) || sourceWaveformLoading.value.has(sourceId)) {
+    if (waveformService.isLoaded(sourcePath) || sourceWaveformLoading.value.has(sourceId)) {
+      // If already loaded, just render
+      if (waveformService.isLoaded(sourcePath)) {
+        nextTick(() => renderSourceWaveform(sourceId));
+      }
       return;
     }
 
     sourceWaveformLoading.value.add(sourceId);
 
     try {
-      // Use Web Audio API for extraction - guarantees perfect sync with video playback
-      // since it uses the browser's native audio decoder (same as video element)
-      console.log('[ClipEditorTimeline] Extracting waveform using Web Audio API for source:', sourceId);
+      console.log('[ClipEditorTimeline] Loading waveform for source:', sourceId);
+      await waveformService.loadAudio(sourcePath);
       
-      // Pass raw local path so WebAudio extractor can read via Tauri fs (no asset.localhost fetch)
-      const videoUrl = sourcePath;
-      console.log('[ClipEditorTimeline] Video path for Web Audio:', videoUrl);
-      
-      const webAudioData = await extractWaveformFromUrl(videoUrl);
-      
-      console.log('[ClipEditorTimeline] Received waveform from Web Audio API:', {
-        sampleCount: webAudioData.channelData.length,
-        duration: webAudioData.duration,
-        sampleRate: webAudioData.sampleRate,
-      });
-
-      // Convert to our WaveformData interface
-      const data: WaveformData = {
-        sampleRate: webAudioData.sampleRate,
-        duration: webAudioData.duration,
-        channelData: webAudioData.channelData,
-        peaks: [], // Raw mode doesn't use pre-computed peaks
-        peakCount: webAudioData.channelData.length,
-      };
-
-      sourceWaveformData.value.set(sourceId, data);
-
       // Render the waveform after loading
       nextTick(() => {
         renderSourceWaveform(sourceId);
       });
     } catch (err) {
-      console.error('[ClipEditorTimeline] Failed to load waveform for source (no fallback):', sourceId, err);
+      console.error('[ClipEditorTimeline] Failed to load waveform for source:', sourceId, err);
     } finally {
       sourceWaveformLoading.value.delete(sourceId);
     }
@@ -7328,10 +7124,10 @@
 
   function renderSourceWaveform(sourceId: string): void {
     const canvas = sourceWaveformCanvasRefs.value.get(sourceId);
-    const data = sourceWaveformData.value.get(sourceId);
     const source = props.videoSources.find((s) => s.id === sourceId);
 
-    if (!canvas || !data || !source) return;
+    if (!canvas || !source || !source.source_path) return;
+    if (!waveformService.isLoaded(source.source_path)) return;
 
     try {
       const rect = canvas.getBoundingClientRect();
@@ -7342,168 +7138,25 @@
       const segmentDuration = source.end_time - source.start_time;
       const trimEnd = source.trim_end ?? trimStart + segmentDuration;
 
-      // Get the waveform data
-      const { duration, channelData, peaks, sampleRate } = data;
-
-      if (duration <= 0) return;
-      if ((!channelData || channelData.length === 0) && (!peaks || peaks.length === 0)) return;
-
-      // Calculate how to best display the peaks across the canvas width
-      const width = rect.width;
-      const height = rect.height;
-      
-      // Set canvas size and clear
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.clearRect(0, 0, width, height);
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 1.0;
-
-      // COMPREHENSIVE DEBUG LOGGING
-      // Use zero offset now that Web Audio decode is raw and direct
-      const AUDIO_OFFSET_SECONDS = 0.0; 
-      
-      // Use fixed normalizer of 1.0 to respect actual volume levels
-      const normalizer = 1.0;
+      // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
       const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
-
-      // Render using pixel-based iteration to guarantee full width coverage
-      // CapCut style: thin bars growing upward from bottom
-      const barWidth = 1; 
-      const gap = 1;
-      const step = barWidth + gap;
-      const numBars = Math.ceil(width / step);
-      const baselineY = height; 
-      const maxBarHeight = height * 0.9; 
-
-      const segmentStartTime = source.start_time;
-      const segmentEndTime = source.end_time;
-      
-      // Setup loop variables
-      let maxBarHeightDrawn = 0;
-      let barsDrawn = 0;
-
-      // MODE 1: High Fidelity (Raw Data)
-      if (channelData && channelData.length > 0) {
-        console.log('=== WAVEFORM RENDER: RAW DATA (INFINITE ZOOM) ===');
-        
-        for (let i = 0; i < numBars; i++) {
-          const x = i * step;
-
-          // 1. Map pixel position to time in the segment
-          const percentStart = i / numBars;
-          const percentEnd = (i + 1) / numBars;
-          
-          const timeStart = trimStart + (percentStart * segmentDuration);
-          const timeEnd = trimStart + (percentEnd * segmentDuration);
-          
-          // 2. Map time to sample indices
-          const sampleStart = Math.floor((timeStart + AUDIO_OFFSET_SECONDS) * sampleRate);
-          const sampleEnd = Math.floor((timeEnd + AUDIO_OFFSET_SECONDS) * sampleRate);
-          
-          // Safety bounds
-          const safeStart = Math.max(0, Math.min(sampleStart, channelData.length - 1));
-          const safeEnd = Math.max(0, Math.min(sampleEnd, channelData.length));
-          
-          // 3. Max Pooling
-          let maxMagnitude = 0;
-          let hasData = false;
-          
-          if (safeEnd <= safeStart) {
-             if (safeStart < channelData.length) {
-              const val = channelData[safeStart];
-              const normVal = (val / normalizer) * gainMultiplier;
-              maxMagnitude = Math.abs(normVal);
-              hasData = true;
-            }
-          } else {
-            for (let j = safeStart; j < safeEnd; j++) {
-              const val = channelData[j];
-              const normVal = (val / normalizer) * gainMultiplier;
-              const mag = Math.abs(normVal);
-              if (mag > maxMagnitude) maxMagnitude = mag;
-              hasData = true;
-            }
-          }
-
-          if (!hasData) continue;
-
-          // Apply clamping
-          const magnitude = Math.min(1, maxMagnitude);
-          const barHeight = Math.max(1, magnitude * maxBarHeight);
-
-          if (barHeight > maxBarHeightDrawn) maxBarHeightDrawn = barHeight;
-          barsDrawn++;
-
-          renderCapcutStyleBar(ctx, x, baselineY, barWidth, barHeight, magnitude);
-        }
-      } 
-      // MODE 2: Legacy/Fallback (Pre-computed Peaks)
-      else if (peaks && peaks.length > 0) {
-        console.log('=== WAVEFORM RENDER: LEGACY PEAKS (FALLBACK) ===');
-        
-        const peaksPerSecond = peaks.length / duration;
-        const offsetPeaks = Math.floor(AUDIO_OFFSET_SECONDS * peaksPerSecond);
-
-        for (let i = 0; i < numBars; i++) {
-          const x = i * step;
-          
-          const percentStart = i / numBars;
-          const percentEnd = (i + 1) / numBars;
-
-          const timeStart = trimStart + (percentStart * segmentDuration);
-          const timeEnd = trimStart + (percentEnd * segmentDuration);
-          
-          // Map to peak indices
-          const idxStart = Math.floor(timeStart * peaksPerSecond) + offsetPeaks;
-          const idxEnd = Math.floor(timeEnd * peaksPerSecond) + offsetPeaks;
-          
-          const safeStart = Math.max(0, Math.min(idxStart, peaks.length - 1));
-          const safeEnd = Math.max(0, Math.min(idxEnd, peaks.length));
-          
-          let maxMagnitude = 0;
-          let hasData = false;
-          
-           if (safeEnd <= safeStart) {
-             if (safeStart < peaks.length) {
-              const p = peaks[safeStart];
-              const mag = Math.max(Math.abs(p.min), Math.abs(p.max)) * gainMultiplier;
-              maxMagnitude = mag;
-              hasData = true;
-            }
-          } else {
-            for (let j = safeStart; j < safeEnd; j++) {
-              const p = peaks[j];
-              const mag = Math.max(Math.abs(p.min), Math.abs(p.max)) * gainMultiplier;
-              if (mag > maxMagnitude) maxMagnitude = mag;
-              hasData = true;
-            }
-          }
-
-          if (!hasData) continue;
-
-          const magnitude = Math.min(1, maxMagnitude);
-          const barHeight = Math.max(1, magnitude * maxBarHeight);
-          
-          if (barHeight > maxBarHeightDrawn) maxBarHeightDrawn = barHeight;
-          barsDrawn++;
-
-          renderCapcutStyleBar(ctx, x, baselineY, barWidth, barHeight, magnitude);
-        }
-      }
-      
-      console.log('[renderSourceWaveform] Drawing complete:', {
-        barsDrawn,
-        maxBarHeightDrawn,
-        maxBarHeight,
-        mode: channelData ? 'RAW' : 'PEAKS'
+      const peaks = waveformService.getPeaksForRange(source.source_path, {
+        startTime: trimStart,
+        endTime: trimEnd,
+        pixelWidth: Math.floor(rect.width),
+        gainMultiplier,
       });
 
-      ctx.globalAlpha = 1.0;
+      if (peaks.length === 0) return;
+
+      // Normalize peaks for display (makes quiet audio visible)
+      const normalizedPeaks = normalizePeaks(peaks);
+
+      // Use the unified renderer
+      renderAudioTrackWaveform(canvas, normalizedPeaks, rect.width, rect.height, {
+        style: 'bars',
+        useGradientColors: true,
+      });
     } catch (err) {
       console.error('[ClipEditorTimeline] Error rendering source waveform:', sourceId, err);
     }
@@ -7513,150 +7166,55 @@
     if (!props.editorMode) return;
 
     props.videoSources.forEach((source) => {
-      if (sourceWaveformData.value.has(source.id)) {
+      if (source.source_path && waveformService.isLoaded(source.source_path)) {
         renderSourceWaveform(source.id);
       }
     });
   }
 
-  // Audio track waveform functions
+  // Audio track waveform functions - uses new waveformService
   async function loadAudioWaveform(trackId: string, audioSrc: string): Promise<void> {
-    console.log('[loadAudioWaveform] Called with trackId:', trackId);
-    console.log('[loadAudioWaveform] Called with audioSrc:', audioSrc);
-
-    // Skip if already loaded
-    if (audioWaveformData.value.has(trackId)) {
-      console.log('[loadAudioWaveform] Already loaded, skipping');
+    // Skip if already loaded or currently loading
+    if (waveformService.isLoaded(audioSrc) || audioWaveformLoading.value.has(trackId)) {
+      // If already loaded, just render
+      if (waveformService.isLoaded(audioSrc)) {
+        nextTick(() => renderAudioWaveform(trackId));
+      }
       return;
     }
 
-    // Check URL type
-    const isDataUrl = audioSrc.startsWith('data:');
-    const isBlobUrl = audioSrc.startsWith('blob:');
-    const isHttpUrl = audioSrc.startsWith('http://') || audioSrc.startsWith('https://');
-
-    // For blob URLs (legacy/invalid), use simulated waveform
-    if (isBlobUrl) {
-      // Blob URLs from previous sessions are invalid - use simulated waveform
-      generateSimulatedAudioWaveform(trackId);
+    // For blob URLs (legacy/invalid), skip - can't load
+    if (audioSrc.startsWith('blob:')) {
+      console.warn('[loadAudioWaveform] Blob URLs not supported:', trackId);
       return;
     }
+
+    audioWaveformLoading.value.add(trackId);
 
     try {
-      let arrayBuffer: ArrayBuffer;
-
-      if (isDataUrl) {
-        // Convert data URL to ArrayBuffer
-        arrayBuffer = dataUrlToArrayBuffer(audioSrc);
-      } else if (isHttpUrl) {
-        // Already a URL, fetch directly
-        const response = await fetch(audioSrc);
-        arrayBuffer = await response.arrayBuffer();
-      } else {
-        // Local file path - convert to video server URL
-        const port = await invoke<number>('get_video_server_port');
-        const encodedPath = btoa(unescape(encodeURIComponent(audioSrc)));
-        const streamingUrl = `http://localhost:${port}/video/${encodedPath}`;
-        const response = await fetch(streamingUrl);
-        arrayBuffer = await response.arrayBuffer();
-      }
-
-      const audioContext = new AudioContext();
-
-      // Decode the audio
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-      // Get raw audio data (use first channel)
-      const channelData = audioBuffer.getChannelData(0);
-      const duration = audioBuffer.duration;
-
-      console.log('[loadAudioWaveform] Loaded audio for track:', trackId);
-      console.log('[loadAudioWaveform]   audioSrc:', audioSrc);
-      console.log('[loadAudioWaveform]   duration:', duration);
-      console.log('[loadAudioWaveform]   sampleRate:', audioBuffer.sampleRate);
-      console.log('[loadAudioWaveform]   numberOfChannels:', audioBuffer.numberOfChannels);
-      console.log('[loadAudioWaveform]   length:', channelData.length);
-
-      // Generate peaks - aim for about 1000 peaks
-      const targetPeaks = 1000;
-      const samplesPerPeak = Math.floor(channelData.length / targetPeaks);
-      const peaks: { min: number; max: number }[] = [];
-
-      for (let i = 0; i < targetPeaks; i++) {
-        const start = i * samplesPerPeak;
-        const end = Math.min(start + samplesPerPeak, channelData.length);
-
-        let min = 0;
-        let max = 0;
-
-        for (let j = start; j < end; j++) {
-          const value = channelData[j];
-          if (value < min) min = value;
-          if (value > max) max = value;
-        }
-
-        peaks.push({ min, max });
-      }
-
-      audioWaveformData.value.set(trackId, { peaks, duration });
-      audioContext.close();
-
+      console.log('[loadAudioWaveform] Loading audio for track:', trackId);
+      await waveformService.loadAudio(audioSrc);
+      
       // Render the waveform
-      renderAudioWaveform(trackId);
+      nextTick(() => renderAudioWaveform(trackId));
     } catch (err) {
-      // Fall back to simulated waveform
-      console.error('[loadAudioWaveform] Failed to load audio waveform, falling back to simulated:', err);
-      generateSimulatedAudioWaveform(trackId);
+      console.error('[loadAudioWaveform] Failed to load audio waveform:', trackId, err);
+    } finally {
+      audioWaveformLoading.value.delete(trackId);
     }
-  }
-
-  // Convert a data URL to ArrayBuffer
-  function dataUrlToArrayBuffer(dataUrl: string): ArrayBuffer {
-    // Extract base64 data from data URL
-    const base64 = dataUrl.split(',')[1];
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes.buffer;
-  }
-
-  function generateSimulatedAudioWaveform(trackId: string): void {
-    const track = props.audioTracks.find((t) => t.id === trackId);
-    if (!track) return;
-
-    const duration = track.endTime - track.startTime;
-    const peakCount = Math.max(100, Math.min(1000, Math.floor(duration * 50)));
-    const peaks: { min: number; max: number }[] = [];
-
-    for (let i = 0; i < peakCount; i++) {
-      const t = i / peakCount;
-      const baseAmplitude = 0.3 + Math.random() * 0.3;
-      const variation = Math.sin(t * Math.PI * 6) * 0.15 + Math.random() * 0.1;
-
-      peaks.push({
-        min: -(baseAmplitude + Math.abs(variation)),
-        max: baseAmplitude + Math.abs(variation),
-      });
-    }
-
-    audioWaveformData.value.set(trackId, { peaks, duration });
-    renderAudioWaveform(trackId);
   }
 
   function renderAudioWaveform(trackId: string): void {
-    const data = audioWaveformData.value.get(trackId);
     const track = props.audioTracks.find((t) => t.id === trackId);
-
-    if (!data || !track) return;
+    if (!track || !track.filePath) return;
+    if (!waveformService.isLoaded(track.filePath)) return;
 
     // Get visual segments for this track
     const visualSegments = getAudioVisualSegments(track);
 
     // Render each visual segment
     visualSegments.forEach((visualSeg, segIdx) => {
-      renderAudioVisualSegmentWaveform(trackId, segIdx, visualSeg, data, track);
+      renderAudioVisualSegmentWaveform(trackId, segIdx, visualSeg, track);
     });
   }
 
@@ -7664,146 +7222,38 @@
     trackId: string,
     segIdx: number,
     visualSeg: AudioVisualSegment,
-    data: { peaks: { min: number; max: number }[]; duration: number },
     track: AudioTrack
   ): void {
     const canvas = audioSegmentCanvasRefs.value.get(`${trackId}-${segIdx}`);
-    if (!canvas) return;
+    if (!canvas || !track.filePath) return;
+    if (!waveformService.isLoaded(track.filePath)) return;
 
     try {
       const rect = canvas.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
 
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.scale(dpr, dpr);
-
-      const { peaks } = data;
-      const width = rect.width;
-      const height = rect.height;
-      const amplitude = 0.9;
-      const maxBarHeight = height * amplitude;
-      const baselineY = height; // Bars grow upward from bottom
-
-      // Calculate which portion of the waveform to show for this visual segment
-      const audioDuration = track.endTime - track.startTime;
-      const segmentStartRatio = visualSeg.audioStartTime / audioDuration;
-      const segmentEndRatio = visualSeg.audioEndTime / audioDuration;
-
-      const startPeakIndex = Math.floor(segmentStartRatio * peaks.length);
-      const endPeakIndex = Math.ceil(segmentEndRatio * peaks.length);
-      const segmentPeaks = peaks.slice(startPeakIndex, Math.max(startPeakIndex + 1, endPeakIndex));
-
-      if (segmentPeaks.length === 0) return;
-
-      // Use fixed normalizer of 1.0 to respect actual volume levels
-      const normalizer = 1.0;
-
       // Apply per-track volume and dB gain (matching audio playback behavior)
       const trackDbGain = props.trackDbValues?.[trackId] ?? 0;
       const dbGainMultiplier = dbToLinear(trackDbGain);
-      // Combine volume (0-1) with dB gain for waveform visualization
       const gainMultiplier = track.volume * dbGainMultiplier;
 
-      // Calculate bar dimensions
-      const numPeaks = segmentPeaks.length;
-      let displayPeaks = segmentPeaks;
-      let barWidth: number;
-      let barSpacing: number;
+      // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
+      const peaks = waveformService.getPeaksForRange(track.filePath, {
+        startTime: visualSeg.audioStartTime,
+        endTime: visualSeg.audioEndTime,
+        pixelWidth: Math.floor(rect.width),
+        gainMultiplier,
+      });
 
-      if (numPeaks > width) {
-        const step = numPeaks / width;
-        displayPeaks = [];
-        for (let i = 0; i < width; i++) {
-          const idx = Math.floor(i * step);
-          if (idx < numPeaks) {
-            displayPeaks.push(segmentPeaks[idx]);
-          }
-        }
-        barWidth = 1;
-        barSpacing = 0;
-      } else {
-        barWidth = 2;
-        const totalBarSpace = numPeaks * barWidth;
-        const remainingSpace = width - totalBarSpace;
-        barSpacing = numPeaks > 1 ? remainingSpace / (numPeaks - 1) : 0;
-        if (barSpacing > barWidth * 2) {
-          const totalWidth = width / numPeaks;
-          barWidth = Math.floor(totalWidth * 0.7);
-          barSpacing = totalWidth - barWidth;
-        }
-      }
+      if (peaks.length === 0) return;
 
-      const totalBarWidth = barWidth + barSpacing;
+      // Normalize peaks for display (makes quiet audio visible)
+      const normalizedPeaks = normalizePeaks(peaks);
 
-      // Calculate playhead position for this segment
-      let accumulatedAudioTime = 0;
-      const currentVideoTime = props.currentTime;
-
-      if (props.editorMode) {
-        // Editor mode: calculate playhead position relative to the audio track's start time
-        // The audio track starts at track.startTime on the timeline
-        // So if playhead is at 20s and track starts at 16.6s, we're 3.4s into the audio
-        const audioTrackStart = track.startTime;
-        const audioTrackEnd = track.endTime;
-
-        if (currentVideoTime < audioTrackStart) {
-          // Playhead is before the audio track - nothing played yet
-          accumulatedAudioTime = 0;
-        } else if (currentVideoTime > audioTrackEnd) {
-          // Playhead is after the audio track - entire track has been played
-          accumulatedAudioTime = audioTrackEnd - audioTrackStart;
-        } else {
-          // Playhead is within the audio track
-          accumulatedAudioTime = currentVideoTime - audioTrackStart;
-        }
-      } else {
-        // Clip mode: calculate accumulated time based on video segments
-        for (const segment of sortedTrimSegments.value) {
-          if (currentVideoTime < segment.startTime) {
-            break;
-          } else if (currentVideoTime <= segment.endTime) {
-            accumulatedAudioTime += currentVideoTime - segment.startTime;
-            break;
-          } else {
-            accumulatedAudioTime += segment.endTime - segment.startTime;
-          }
-        }
-      }
-
-      // Calculate playhead position within this visual segment
-      const segmentDuration = visualSeg.audioEndTime - visualSeg.audioStartTime;
-      const playheadInSegment = accumulatedAudioTime - visualSeg.audioStartTime;
-      const playheadRatio = Math.max(0, Math.min(1, playheadInSegment / segmentDuration));
-      const playheadPixel = playheadRatio * width;
-
-      ctx.clearRect(0, 0, width, height);
-
-      // Use dB-based color coding for professional audio metering
-      // Green: Safe levels (below -12 dB)
-      // Yellow: Caution (-12 to -6 dB)
-      // Orange: Warning (-6 to -3 dB)
-      // Red: Clipping danger (above -3 dB)
-
-      displayPeaks.forEach((peak, index) => {
-        const x = index * totalBarWidth;
-        if (x >= width) return;
-
-        // Apply gain and clamp to prevent overdrive - use magnitude for vertical bars
-        const magnitude = Math.max(Math.abs(peak.max / normalizer), Math.abs(peak.min / normalizer));
-        const gainedMagnitude = Math.min(1, magnitude * gainMultiplier);
-        const barHeight = Math.max(1, gainedMagnitude * maxBarHeight);
-        const actualBarWidth = Math.min(barWidth, width - x);
-
-        if (barHeight > 0 && actualBarWidth > 0) {
-          // Render bar growing upward from baseline
-          renderCapcutStyleBar(ctx, x, baselineY, actualBarWidth, barHeight, gainedMagnitude);
-        }
+      // Use the unified renderer
+      renderAudioTrackWaveform(canvas, normalizedPeaks, rect.width, rect.height, {
+        style: 'bars',
+        useGradientColors: true,
       });
     } catch (error) {
       console.error('[ClipEditorTimeline] Error rendering audio segment waveform:', error);
@@ -7879,7 +7329,7 @@
     async (newVideoSrc) => {
       if (newVideoSrc) {
         console.log('[ClipEditorTimeline] Loading waveform for video:', newVideoSrc);
-        // Cache is disabled in useAudioWaveform - always extracts fresh data from Rust
+        // Load waveform using the new waveformService
         await loadWaveformFromVideo(newVideoSrc);
       }
     },
@@ -7928,16 +7378,15 @@
     async (newTracks) => {
       // Load waveforms for new tracks
       for (const track of newTracks) {
-        if (track.filePath && !audioWaveformData.value.has(track.id)) {
+        if (track.filePath && !waveformService.isLoaded(track.filePath)) {
           await loadAudioWaveform(track.id, track.filePath);
         }
       }
 
-      // Clean up data for removed tracks
+      // Clean up canvas refs for removed tracks
       const trackIds = new Set(newTracks.map((t) => t.id));
-      audioWaveformData.value.forEach((_, id) => {
+      audioWaveformCanvasRefs.value.forEach((_, id) => {
         if (!trackIds.has(id)) {
-          audioWaveformData.value.delete(id);
           audioWaveformCanvasRefs.value.delete(id);
         }
       });
@@ -7979,16 +7428,15 @@
 
       // Load waveforms for new sources
       for (const source of newSources) {
-        if (source.source_path && !sourceWaveformData.value.has(source.id)) {
+        if (source.source_path && !waveformService.isLoaded(source.source_path)) {
           await loadSourceWaveform(source.id, source.source_path);
         }
       }
 
-      // Clean up data for removed sources
+      // Clean up canvas refs for removed sources
       const sourceIds = new Set(newSources.map((s) => s.id));
-      sourceWaveformData.value.forEach((_, id) => {
+      sourceWaveformCanvasRefs.value.forEach((_, id) => {
         if (!sourceIds.has(id)) {
-          sourceWaveformData.value.delete(id);
           sourceWaveformCanvasRefs.value.delete(id);
         }
       });
