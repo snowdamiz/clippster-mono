@@ -3,7 +3,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-base font-semibold text-foreground">Clipping Campaigns</h2>
+        <h2 class="text-xl font-semibold text-foreground">Clipping Campaigns</h2>
         <p class="text-sm text-muted-foreground mt-0.5">
           Create campaigns for clippers to promote your content
         </p>
@@ -16,15 +16,15 @@
 
     <!-- Loading State -->
     <div v-if="loading" class="space-y-4">
-      <div v-for="i in 3" :key="i" class="bg-muted/20 border border-border/30 rounded-xl p-4 animate-pulse">
+      <div v-for="i in 3" :key="i" class="bg-card border border-border/60 rounded-xl p-4 animate-pulse">
         <div class="flex items-start gap-4">
-          <div class="w-16 h-16 rounded-lg bg-muted/40"></div>
+          <div class="w-16 h-16 rounded-lg bg-muted/50"></div>
           <div class="flex-1 space-y-2">
-            <div class="h-5 bg-muted/40 rounded w-48"></div>
-            <div class="h-4 bg-muted/30 rounded w-full"></div>
+            <div class="h-5 bg-muted/50 rounded w-48"></div>
+            <div class="h-4 bg-muted/40 rounded w-full"></div>
             <div class="flex gap-2">
-              <div class="h-6 bg-muted/30 rounded-full w-20"></div>
-              <div class="h-6 bg-muted/30 rounded-full w-16"></div>
+              <div class="h-6 bg-muted/40 rounded-full w-20"></div>
+              <div class="h-6 bg-muted/40 rounded-full w-16"></div>
             </div>
           </div>
         </div>
@@ -32,7 +32,7 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="campaigns.length === 0" class="text-center py-16 bg-muted/20 border border-border/30 rounded-xl">
+    <div v-else-if="campaigns.length === 0" class="text-center py-16 bg-card border border-border/60 rounded-xl">
       <Megaphone class="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
       <h3 class="text-lg font-medium text-foreground mb-1">No campaigns yet</h3>
       <p class="text-sm text-muted-foreground mb-4">
@@ -345,7 +345,7 @@
                 <div
                   v-for="participant in participants"
                   :key="participant.id"
-                  class="p-4 bg-muted/20 rounded-lg border border-border/40"
+                  class="p-4 bg-muted/30 rounded-lg border border-border/50"
                 >
                   <div class="flex items-start justify-between gap-4">
                     <!-- Clipper Info -->
@@ -430,7 +430,7 @@
                 <div
                   v-for="submission in submissions"
                   :key="submission.id"
-                  class="p-3 bg-muted/20 rounded-lg"
+                  class="p-3 bg-muted/30 rounded-lg border border-border/50"
                 >
                   <div class="flex items-start justify-between gap-3">
                     <div class="flex-1 min-w-0">
