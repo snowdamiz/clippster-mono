@@ -269,6 +269,7 @@ defmodule ClippsterServer.Social do
     account_id = Keyword.get(opts, :account_id)
     platform = Keyword.get(opts, :platform)
     status = Keyword.get(opts, :status)
+    submitted_by_user_id = Keyword.get(opts, :submitted_by_user_id)
     limit = Keyword.get(opts, :limit, 50)
     offset = Keyword.get(opts, :offset, 0)
 
@@ -283,6 +284,7 @@ defmodule ClippsterServer.Social do
     query = if account_id, do: where(query, [p], p.organization_social_account_id == ^account_id), else: query
     query = if platform, do: where(query, [p], p.platform == ^platform), else: query
     query = if status, do: where(query, [p], p.status == ^status), else: query
+    query = if submitted_by_user_id, do: where(query, [p], p.submitted_by_user_id == ^submitted_by_user_id), else: query
 
     posts = Repo.all(query)
 
@@ -295,6 +297,7 @@ defmodule ClippsterServer.Social do
     count_query = if account_id, do: where(count_query, [p], p.organization_social_account_id == ^account_id), else: count_query
     count_query = if platform, do: where(count_query, [p], p.platform == ^platform), else: count_query
     count_query = if status, do: where(count_query, [p], p.status == ^status), else: count_query
+    count_query = if submitted_by_user_id, do: where(count_query, [p], p.submitted_by_user_id == ^submitted_by_user_id), else: count_query
 
     total = Repo.one(count_query)
 
@@ -431,7 +434,6 @@ defmodule ClippsterServer.Social do
         total_views: sum(p.view_count),
         total_likes: sum(p.like_count),
         total_comments: sum(p.comment_count),
-        total_shares: sum(p.share_count),
         total_saves: sum(p.save_count),
         total_reach: sum(p.reach_count),
         total_impressions: sum(p.impressions_count)

@@ -262,7 +262,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
               like_count: media_data["like_count"] || 0,
               comment_count: media_data["comments_count"] || 0,
               view_count: 0,
-              share_count: 0,
               save_count: 0,
               reach_count: 0,
               impressions_count: 0
@@ -271,10 +270,10 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
             # Get insights metrics from the insights endpoint
             # As of 2024-2025: 'plays', 'video_views', 'impressions' are DEPRECATED
             # Use 'views' as the new unified consumption metric for all media types
-            # 'shares', 'reach', 'saved' are still available
+            # 'reach', 'saved' are still available
             metrics = case media_type do
-              "VIDEO" -> "views,reach,saved,shares"
-              "REELS" -> "views,reach,saved,shares"
+              "VIDEO" -> "views,reach,saved"
+              "REELS" -> "views,reach,saved"
               _ -> "reach,saved"
             end
 
@@ -799,7 +798,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         "views" -> %{acc | view_count: value}
         "reach" -> %{acc | reach_count: value}
         "saved" -> %{acc | save_count: value}
-        "shares" -> %{acc | share_count: value}
         # Legacy metrics (deprecated but kept for backwards compatibility)
         "impressions" -> %{acc | impressions_count: value}
         "video_views" -> %{acc | view_count: value}

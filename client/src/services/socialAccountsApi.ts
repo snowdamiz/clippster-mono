@@ -75,7 +75,6 @@ export interface PostAnalytics {
   view_count: number;
   like_count: number;
   comment_count: number;
-  share_count: number;
   save_count: number;
   reach_count: number;
   impressions_count: number;
@@ -140,7 +139,6 @@ export interface AnalyticsSummary {
   total_views: number;
   total_likes: number;
   total_comments: number;
-  total_shares: number;
   total_saves: number;
   total_reach: number;
   total_impressions: number;
@@ -436,6 +434,7 @@ export async function listPostSubmissions(
     account_id?: number;
     platform?: string;
     status?: string;
+    submitted_by_user_id?: number;
     limit?: number;
     offset?: number;
   }

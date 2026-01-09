@@ -57,6 +57,18 @@
         </SelectContent>
       </Select>
 
+      <Select v-if="members.length > 0" v-model="filters.submittedByUserId">
+        <SelectTrigger class="w-[180px]">
+          <SelectValue placeholder="All Members" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Members</SelectItem>
+          <SelectItem v-for="member in members" :key="member.user_id" :value="String(member.user_id)">
+            {{ member.user.name || member.user.email }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+
       <div class="flex-1"></div>
 
       <Button variant="outline" size="sm" @click="loadPosts" :disabled="loading">
@@ -151,7 +163,11 @@
 
             <!-- Meta -->
             <div class="flex items-center gap-3 text-xs text-muted-foreground">
-              <span v-if="post.posted_at">Posted {{ formatDate(post.posted_at) }}</span>
+              <span v-if="post.submitted_by" class="flex items-center gap-1">
+                <User class="h-3 w-3" />
+                {{ post.submitted_by.name || post.submitted_by.email }}
+              </span>
+              <span v-if="post.posted_at">· Posted {{ formatDate(post.posted_at) }}</span>
               <span v-if="post.last_synced_at">· Synced {{ formatDate(post.last_synced_at) }}</span>
               <span v-if="post.manual_override" class="text-amber-500">· Manual override</span>
             </div>
@@ -163,7 +179,7 @@
           </div>
 
           <!-- Analytics -->
-          <div class="grid grid-cols-4 gap-4 text-center">
+          <div class="grid grid-cols-3 gap-4 text-center">
             <div>
               <div class="text-lg font-semibold text-foreground">
                 {{ formatNumber(post.analytics.view_count) }}
@@ -181,12 +197,6 @@
                 {{ formatNumber(post.analytics.comment_count) }}
               </div>
               <div class="text-xs text-muted-foreground">Comments</div>
-            </div>
-            <div>
-              <div class="text-lg font-semibold text-foreground">
-                {{ formatNumber(post.analytics.share_count) }}
-              </div>
-              <div class="text-xs text-muted-foreground">Shares</div>
             </div>
           </div>
 
@@ -265,10 +275,6 @@
               <Input id="comments" type="number" v-model.number="editForm.comment_count" min="0" />
             </div>
             <div>
-              <Label for="shares">Shares</Label>
-              <Input id="shares" type="number" v-model.number="editForm.share_count" min="0" />
-            </div>
-            <div>
               <Label for="saves">Saves</Label>
               <Input id="saves" type="number" v-model.number="editForm.save_count" min="0" />
             </div>
@@ -310,7 +316,7 @@
     DropdownMenuItem,
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
-  import { Instagram, FileVideo, RefreshCw, ExternalLink, MoreVertical, Edit, RotateCcw } from 'lucide-vue-next';
+  import { Instagram, FileVideo, RefreshCw, ExternalLink, MoreVertical, Edit, RotateCcw, User } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import {
     listPostSubmissions,
@@ -327,10 +333,20 @@
     name: string;
   }
 
+  interface Member {
+    user_id: number;
+    user: {
+      id: number;
+      name: string | null;
+      email: string;
+    };
+  }
+
   const props = defineProps<{
     organizationId: string | number;
     isAdmin: boolean;
     creatorProfiles: CreatorProfile[];
+    members: Member[];
   }>();
 
   const { showToast } = useToast();
@@ -346,7 +362,6 @@
     total_views: 0,
     total_likes: 0,
     total_comments: 0,
-    total_shares: 0,
     total_saves: 0,
     total_reach: 0,
     total_impressions: 0,
@@ -356,6 +371,7 @@
     status: 'all',
     platform: 'all',
     creatorProfileId: 'all',
+    submittedByUserId: 'all',
   });
 
   const showEditDialog = ref(false);
@@ -365,7 +381,6 @@
     view_count: 0,
     like_count: 0,
     comment_count: 0,
-    share_count: 0,
     save_count: 0,
     reach_count: 0,
   });
@@ -388,6 +403,7 @@
         status: filters.status !== 'all' ? filters.status : undefined,
         platform: filters.platform !== 'all' ? filters.platform : undefined,
         creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
+        submitted_by_user_id: filters.submittedByUserId !== 'all' ? parseInt(filters.submittedByUserId) : undefined,
         limit: limit.value,
         offset: offset.value,
       });
@@ -451,7 +467,6 @@
     editForm.view_count = post.analytics.view_count;
     editForm.like_count = post.analytics.like_count;
     editForm.comment_count = post.analytics.comment_count;
-    editForm.share_count = post.analytics.share_count;
     editForm.save_count = post.analytics.save_count;
     editForm.reach_count = post.analytics.reach_count;
     showEditDialog.value = true;
