@@ -381,18 +381,57 @@ defmodule ClippsterServer.Messaging do
 
   @doc """
   Removes a participant from a group conversation.
-  Only admins can remove participants.
+  Conversation starters (admins) can kick anyone.
+  If conversation starter is just a member (not org admin), they cannot kick org admins.
   """
-  def remove_participant(conversation_id, user_id, remover_id) do
-    with {:ok, _} <- get_conversation_for_user(conversation_id, remover_id),
-         :ok <- verify_is_admin(conversation_id, remover_id) do
+  def remove_participant(conversation_id, target_user_id, remover_id) do
+    with {:ok, conversation} <- get_conversation_for_user(conversation_id, remover_id),
+         :ok <- verify_can_kick(conversation, target_user_id, remover_id) do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
 
       ConversationParticipant
-      |> where([p], p.conversation_id == ^conversation_id and p.user_id == ^user_id)
+      |> where([p], p.conversation_id == ^conversation_id and p.user_id == ^target_user_id)
       |> Repo.update_all(set: [left_at: now])
 
       :ok
+    end
+  end
+
+  defp verify_can_kick(conversation, target_user_id, remover_id) do
+    # Get remover's conversation role
+    remover_participant =
+      ConversationParticipant
+      |> where([p], p.conversation_id == ^conversation.id and p.user_id == ^remover_id)
+      |> where([p], is_nil(p.left_at))
+      |> Repo.one()
+
+    # Check if remover is conversation admin (starter)
+    is_conversation_admin = remover_participant && remover_participant.role == "admin"
+
+    # Check if remover is org admin/owner
+    remover_org_member = Organizations.get_member(conversation.organization_id, remover_id)
+    is_org_admin = remover_org_member && remover_org_member.role in ["owner", "admin"]
+
+    # Check if target is org admin/owner
+    target_org_member = Organizations.get_member(conversation.organization_id, target_user_id)
+    target_is_org_admin = target_org_member && target_org_member.role in ["owner", "admin"]
+
+    cond do
+      # Can't kick if not conversation admin
+      !is_conversation_admin ->
+        {:error, :not_admin}
+
+      # Org admins can kick anyone
+      is_org_admin ->
+        :ok
+
+      # Non-org-admin conversation starters cannot kick org admins
+      target_is_org_admin ->
+        {:error, :cannot_kick_org_admin}
+
+      # Otherwise allow
+      true ->
+        :ok
     end
   end
 
@@ -411,6 +450,47 @@ defmodule ClippsterServer.Messaging do
       {1, _} -> :ok
       {0, _} -> {:error, :not_found}
     end
+  end
+
+  @doc """
+  Deletes a conversation. Only the conversation creator can delete it.
+  """
+  def delete_conversation(conversation_id, user_id) do
+    conversation = get_conversation(conversation_id)
+
+    cond do
+      is_nil(conversation) ->
+        {:error, :not_found}
+
+      conversation.created_by_user_id == user_id ->
+        do_delete_conversation(conversation)
+
+      true ->
+        {:error, :unauthorized}
+    end
+  end
+
+  defp do_delete_conversation(conversation) do
+    Repo.transaction(fn ->
+      # Delete all read statuses for messages in this conversation
+      MessageReadStatus
+      |> join(:inner, [rs], m in Message, on: rs.message_id == m.id)
+      |> where([rs, m], m.conversation_id == ^conversation.id)
+      |> Repo.delete_all()
+
+      # Delete all messages
+      Message
+      |> where([m], m.conversation_id == ^conversation.id)
+      |> Repo.delete_all()
+
+      # Delete all participants
+      ConversationParticipant
+      |> where([p], p.conversation_id == ^conversation.id)
+      |> Repo.delete_all()
+
+      # Delete the conversation
+      Repo.delete(conversation)
+    end)
   end
 
   @doc """

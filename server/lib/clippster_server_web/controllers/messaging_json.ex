@@ -11,6 +11,7 @@ defmodule ClippsterServerWeb.MessagingJSON do
       type: conversation.type,
       name: conversation.name,
       organization_id: conversation.organization_id,
+      created_by_user_id: conversation.created_by_user_id,
       last_message_at: conversation.last_message_at,
       last_message_preview: conversation.last_message_preview,
       created_at: conversation.inserted_at,
@@ -81,7 +82,7 @@ defmodule ClippsterServerWeb.MessagingJSON do
   defp render_user(user) do
     %{
       id: user.id,
-      display_name: user.display_name,
+      display_name: user.name,
       avatar_url: user.avatar_url
     }
   end

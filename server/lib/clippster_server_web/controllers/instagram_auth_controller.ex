@@ -21,7 +21,7 @@ defmodule ClippsterServerWeb.InstagramAuthController do
   alias ClippsterServer.Accounts
 
   # Instagram OAuth scopes for Business Login
-  @instagram_scopes "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_messages,instagram_business_manage_comments"
+  @instagram_scopes "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_manage_insights"
 
   @doc """
   Start Instagram OAuth flow (for Tauri desktop apps).

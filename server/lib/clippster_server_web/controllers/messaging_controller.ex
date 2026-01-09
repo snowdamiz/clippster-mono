@@ -304,6 +304,11 @@ defmodule ClippsterServerWeb.MessagingController do
         |> put_status(:forbidden)
         |> json(%{error: "Only admins can remove participants"})
 
+      {:error, :cannot_kick_org_admin} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "Cannot remove organization admins from this conversation"})
+
       {:error, reason} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -328,6 +333,41 @@ defmodule ClippsterServerWeb.MessagingController do
         |> put_status(:not_found)
         |> json(%{error: "Not a participant in this conversation"})
     end
+  end
+
+  @doc """
+  Delete a conversation (only conversation creator can delete).
+  """
+  def delete_conversation(conn, %{"id" => conversation_id}) do
+    user_id = conn.assigns.current_user.id
+
+    case Messaging.delete_conversation(conversation_id, user_id) do
+      {:ok, _} ->
+        # Broadcast conversation deleted to all participants
+        broadcast_conversation_deleted(conversation_id)
+
+        conn
+        |> put_status(:no_content)
+        |> send_resp(:no_content, "")
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Conversation not found"})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "Only the conversation creator can delete this conversation"})
+    end
+  end
+
+  defp broadcast_conversation_deleted(conversation_id) do
+    ClippsterServerWeb.Endpoint.broadcast(
+      "messaging:conversation:#{conversation_id}",
+      "conversation_deleted",
+      %{conversation_id: conversation_id}
+    )
   end
 
   # ============================================================================

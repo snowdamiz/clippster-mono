@@ -16,6 +16,7 @@ import {
   leaveConversation as apiLeaveConversation,
   addParticipant as apiAddParticipant,
   removeParticipant as apiRemoveParticipant,
+  deleteConversation as apiDeleteConversation,
   type Conversation,
   type Message,
   type UnreadCounts,
@@ -187,7 +188,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     isLoadingMessages.value = true;
     try {
       const msgs = await getMessages(conversationId, opts);
-      
+
       if (opts?.before) {
         // Append to existing messages (pagination)
         const existing = messages.value.get(conversationId) || [];
@@ -230,7 +231,11 @@ export const useMessagingStore = defineStore('messaging', () => {
     if (!activeConversationId.value) return;
 
     try {
-      const message = await messagingSocket.editMessage(activeConversationId.value, messageId, content);
+      const message = await messagingSocket.editMessage(
+        activeConversationId.value,
+        messageId,
+        content
+      );
       handleMessageEdited(activeConversationId.value, message);
       return message;
     } catch (error) {
@@ -341,7 +346,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     conversations.value.delete(conversationId);
     messages.value.delete(conversationId);
     unreadCounts.value.delete(conversationId);
-    
+
     if (activeConversationId.value === conversationId) {
       activeConversationId.value = null;
     }
@@ -367,8 +372,45 @@ export const useMessagingStore = defineStore('messaging', () => {
     await apiRemoveParticipant(conversationId, userId);
     const conv = conversations.value.get(conversationId);
     if (conv) {
-      conv.participants = conv.participants.filter(p => p.userId !== userId);
+      conv.participants = conv.participants.filter((p) => p.userId !== userId);
       conversations.value.set(conversationId, { ...conv });
+    }
+  }
+
+  /**
+   * Delete a conversation (only conversation creator can delete).
+   */
+  async function deleteConversation(conversationId: number) {
+    await apiDeleteConversation(conversationId);
+
+    // Leave the conversation channel if active
+    if (activeConversationId.value === conversationId) {
+      messagingSocket.leaveConversation(conversationId);
+      activeConversationId.value = null;
+    }
+
+    // Remove from local state
+    conversations.value.delete(conversationId);
+    messages.value.delete(conversationId);
+    unreadCounts.value.delete(conversationId);
+    recalculateTotalUnread();
+  }
+
+  /**
+   * Fetch total unread count across all organizations.
+   * This is a lightweight method that doesn't require full initialization.
+   */
+  async function fetchTotalUnread() {
+    const authStore = useAuthStore();
+    if (!authStore.isAuthenticated) {
+      totalUnread.value = 0;
+      return;
+    }
+
+    try {
+      totalUnread.value = await getTotalUnread();
+    } catch (error) {
+      console.error('[MessagingStore] Failed to fetch total unread:', error);
     }
   }
 
@@ -392,9 +434,9 @@ export const useMessagingStore = defineStore('messaging', () => {
 
   function handleNewMessage(conversationId: number, message: Message) {
     const msgs = messages.value.get(conversationId) || [];
-    
+
     // Avoid duplicates
-    if (!msgs.find(m => m.id === message.id)) {
+    if (!msgs.find((m) => m.id === message.id)) {
       messages.value.set(conversationId, [...msgs, message]);
     }
 
@@ -432,7 +474,7 @@ export const useMessagingStore = defineStore('messaging', () => {
   function handleMessageEdited(conversationId: number, message: Message) {
     const msgs = messages.value.get(conversationId);
     if (msgs) {
-      const index = msgs.findIndex(m => m.id === message.id);
+      const index = msgs.findIndex((m) => m.id === message.id);
       if (index !== -1) {
         msgs[index] = message;
         messages.value.set(conversationId, [...msgs]);
@@ -443,7 +485,7 @@ export const useMessagingStore = defineStore('messaging', () => {
   function handleMessageDeleted(conversationId: number, messageId: number) {
     const msgs = messages.value.get(conversationId);
     if (msgs) {
-      const index = msgs.findIndex(m => m.id === messageId);
+      const index = msgs.findIndex((m) => m.id === messageId);
       if (index !== -1) {
         // Mark as deleted rather than removing
         msgs[index] = { ...msgs[index], deletedAt: new Date().toISOString() };
@@ -472,7 +514,7 @@ export const useMessagingStore = defineStore('messaging', () => {
 
   function recalculateTotalUnread() {
     let total = 0;
-    unreadCounts.value.forEach(count => {
+    unreadCounts.value.forEach((count) => {
       total += count;
     });
     totalUnread.value = total;
@@ -520,6 +562,8 @@ export const useMessagingStore = defineStore('messaging', () => {
     leaveConversation,
     addParticipant,
     removeParticipant,
+    deleteConversation,
+    fetchTotalUnread,
     cleanup,
   };
 });

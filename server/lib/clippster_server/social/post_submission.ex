@@ -27,7 +27,6 @@ defmodule ClippsterServer.Social.PostSubmission do
     field :view_count, :integer, default: 0
     field :like_count, :integer, default: 0
     field :comment_count, :integer, default: 0
-    field :share_count, :integer, default: 0
     field :save_count, :integer, default: 0
     field :reach_count, :integer, default: 0
     field :impressions_count, :integer, default: 0
@@ -110,7 +109,6 @@ defmodule ClippsterServer.Social.PostSubmission do
         :view_count,
         :like_count,
         :comment_count,
-        :share_count,
         :save_count,
         :reach_count,
         :impressions_count
@@ -128,7 +126,6 @@ defmodule ClippsterServer.Social.PostSubmission do
       :view_count,
       :like_count,
       :comment_count,
-      :share_count,
       :save_count,
       :reach_count,
       :impressions_count,
@@ -137,7 +134,6 @@ defmodule ClippsterServer.Social.PostSubmission do
     |> validate_number(:view_count, greater_than_or_equal_to: 0)
     |> validate_number(:like_count, greater_than_or_equal_to: 0)
     |> validate_number(:comment_count, greater_than_or_equal_to: 0)
-    |> validate_number(:share_count, greater_than_or_equal_to: 0)
     |> validate_number(:save_count, greater_than_or_equal_to: 0)
     |> validate_number(:reach_count, greater_than_or_equal_to: 0)
     |> validate_number(:impressions_count, greater_than_or_equal_to: 0)

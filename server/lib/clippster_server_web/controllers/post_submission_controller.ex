@@ -42,6 +42,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         account_id: params["account_id"],
         platform: params["platform"],
         status: params["status"],
+        submitted_by_user_id: params["submitted_by_user_id"],
         limit: parse_int(params["limit"], 50),
         offset: parse_int(params["offset"], 0)
       ]
@@ -227,7 +228,6 @@ defmodule ClippsterServerWeb.PostSubmissionController do
           view_count: params["view_count"],
           like_count: params["like_count"],
           comment_count: params["comment_count"],
-          share_count: params["share_count"],
           save_count: params["save_count"],
           reach_count: params["reach_count"],
           impressions_count: params["impressions_count"]
@@ -337,7 +337,6 @@ defmodule ClippsterServerWeb.PostSubmissionController do
           total_views: summary.total_views || 0,
           total_likes: summary.total_likes || 0,
           total_comments: summary.total_comments || 0,
-          total_shares: summary.total_shares || 0,
           total_saves: summary.total_saves || 0,
           total_reach: summary.total_reach || 0,
           total_impressions: summary.total_impressions || 0
@@ -561,7 +560,6 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         view_count: post.view_count,
         like_count: post.like_count,
         comment_count: post.comment_count,
-        share_count: post.share_count,
         save_count: post.save_count,
         reach_count: post.reach_count,
         impressions_count: post.impressions_count
