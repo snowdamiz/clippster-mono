@@ -294,6 +294,7 @@
   import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource } from '@/services/database';
   import { resolveWatermarkById } from '@/services/database/watermarks';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
+  import { trackEvent } from '@/services/analytics';
 
   /**
    * Resolves creator profile watermark settings to include file paths for the Rust backend.
@@ -1149,6 +1150,14 @@
           buildProgress.value = 100;
           loadBuilds();
           emit('buildCompleted', eventBuildId || '');
+
+          trackEvent({
+            event_type: 'clip_export',
+            metadata: {
+              clip_id: eventClipId,
+              build_id: eventBuildId,
+            },
+          });
         } else {
           console.log('[ExportTab] ClipId mismatch:', eventClipId, '!==', effectiveClipId.value);
         }

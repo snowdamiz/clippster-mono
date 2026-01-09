@@ -113,6 +113,18 @@ const router = createRouter({
         },
       ],
     },
+    {
+      path: '/billing',
+      name: 'billing',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'billing-home',
+          component: () => import('@/pages/Billing.vue'),
+        },
+      ],
+    },
     // Creator Profiles page
     {
       path: '/creators',

@@ -6,6 +6,7 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.AI
   alias ClippsterServer.AppSettings
   alias ClippsterServer.BetaCodes
+  alias ClippsterServer.Subscriptions
 
   def get_ai_usage_stats(conn, _params) do
     stats = AI.get_usage_stats()
@@ -57,6 +58,9 @@ defmodule ClippsterServerWeb.AdminController do
         }
       end
 
+      # Get subscription info
+      subscription_info = Subscriptions.get_subscription_status(user.id)
+
       %{
         id: user.id,
         wallet_address: user.wallet_address,
@@ -65,7 +69,8 @@ defmodule ClippsterServerWeb.AdminController do
         is_admin: user.is_admin,
         created_at: user.inserted_at,
         updated_at: user.updated_at,
-        credits: credits_info
+        credits: credits_info,
+        subscription: subscription_info
       }
     end)
 
@@ -554,4 +559,244 @@ defmodule ClippsterServerWeb.AdminController do
       stats: stats
     })
   end
+
+  # ============================================================================
+  # Subscription Management
+  # ============================================================================
+
+  @doc """
+  Grant a subscription to a user.
+  Requires admin authentication.
+  """
+  def grant_subscription(conn, %{"user_id" => user_id_string} = params) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        # Validate parameters
+        tier = Map.get(params, "tier")
+        days = Map.get(params, "days", "30")
+        grant_credits = Map.get(params, "grant_credits", "false")
+
+        case validate_tier(tier) do
+          :ok ->
+            days_int = parse_days(days)
+            grant_credits_bool = parse_boolean(grant_credits)
+
+            case Subscriptions.admin_grant_subscription(user_id, tier, days_int, grant_credits_bool) do
+              {:ok, _result} ->
+                subscription_info = Subscriptions.get_subscription_status(user_id)
+
+                json(conn, %{
+                  success: true,
+                  message: "Successfully granted #{tier} subscription to user",
+                  subscription: subscription_info
+                })
+
+              {:error, :invalid_tier} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Invalid subscription tier"})
+
+              {:error, reason} ->
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed to grant subscription: #{inspect(reason)}"})
+            end
+
+          {:error, reason} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: reason})
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Extend a user's subscription.
+  Requires admin authentication.
+  """
+  def extend_subscription(conn, %{"user_id" => user_id_string} = params) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        days = Map.get(params, "days", "30")
+        grant_credits = Map.get(params, "grant_credits", "false")
+
+        days_int = parse_days(days)
+        grant_credits_bool = parse_boolean(grant_credits)
+
+            case Subscriptions.admin_extend_subscription(user_id, days_int, grant_credits_bool) do
+              {:ok, _result} ->
+                subscription_info = Subscriptions.get_subscription_status(user_id)
+
+            json(conn, %{
+              success: true,
+              message: "Successfully extended subscription by #{days_int} days",
+              subscription: subscription_info
+            })
+
+          {:error, :no_tier} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "User has no subscription tier to extend"})
+
+          {:error, :invalid_tier} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "Invalid subscription tier"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to extend subscription: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Change a user's subscription tier.
+  Requires admin authentication.
+  """
+  def change_subscription_tier(conn, %{"user_id" => user_id_string} = params) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        tier = Map.get(params, "tier")
+        grant_credits = Map.get(params, "grant_credits", "false")
+
+        case validate_tier(tier) do
+          :ok ->
+            grant_credits_bool = parse_boolean(grant_credits)
+
+            case Subscriptions.admin_change_tier(user_id, tier, grant_credits_bool) do
+              {:ok, _result} ->
+                subscription_info = Subscriptions.get_subscription_status(user_id)
+
+                json(conn, %{
+                  success: true,
+                  message: "Successfully changed subscription tier to #{tier}",
+                  subscription: subscription_info
+                })
+
+              {:error, :invalid_tier} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Invalid subscription tier"})
+
+              {:error, reason} ->
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed to change tier: #{inspect(reason)}"})
+            end
+
+          {:error, reason} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: reason})
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Cancel a user's subscription.
+  Requires admin authentication.
+  """
+  def cancel_user_subscription(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Subscriptions.cancel_subscription(user_id) do
+          {:ok, _user} ->
+            subscription_info = Subscriptions.get_subscription_status(user_id)
+
+            json(conn, %{
+              success: true,
+              message: "Successfully cancelled subscription for user",
+              subscription: subscription_info
+            })
+
+          {:error, :not_active} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "User does not have an active subscription"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to cancel subscription: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Get subscription history for a user.
+  Requires admin authentication.
+  """
+  def get_subscription_history(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        subscriptions = Subscriptions.list_user_subscriptions(user_id)
+
+        subscriptions_data = Enum.map(subscriptions, fn sub ->
+          %{
+            id: sub.id,
+            status: sub.status,
+            tier: sub.subscription_tier,
+            start_date: sub.start_date,
+            end_date: sub.end_date,
+            credits_granted: (if sub.credits_granted, do: Decimal.to_float(sub.credits_granted), else: nil),
+            payment_method: sub.payment_method,
+            amount_usd: (if sub.amount_usd, do: Decimal.to_float(sub.amount_usd), else: nil),
+            created_at: sub.inserted_at
+          }
+        end)
+
+        json(conn, %{
+          success: true,
+          subscriptions: subscriptions_data,
+          count: length(subscriptions_data)
+        })
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  # Helper functions for subscription management
+
+  defp validate_tier(tier) when tier in ["starter", "creator", "pro"], do: :ok
+  defp validate_tier(_), do: {:error, "Invalid tier - must be one of: starter, creator, pro"}
+
+  defp parse_days(value) when is_integer(value) and value > 0, do: value
+  defp parse_days(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} when int > 0 -> int
+      _ -> 30
+    end
+  end
+  defp parse_days(_), do: 30
+
+  defp parse_boolean("true"), do: true
+  defp parse_boolean("false"), do: false
+  defp parse_boolean(true), do: true
+  defp parse_boolean(false), do: false
+  defp parse_boolean(_), do: false
 end

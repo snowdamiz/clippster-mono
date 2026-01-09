@@ -6,9 +6,9 @@ type LinkItem = { label: string; href: string; isPage?: boolean }
 const links: Record<string, LinkItem[]> = {
   Product: [
     { label: 'Features', href: '#features' },
-    { label: 'Pricing', href: '/pricing', isPage: true },
+    { label: 'Pricing', href: '#pricing' },
+    { label: 'Full Pricing', href: '/pricing', isPage: true },
     { label: 'Changelog', href: '#' },
-    { label: 'API', href: '#' },
   ],
   Company: [
     { label: 'About', href: '#' },

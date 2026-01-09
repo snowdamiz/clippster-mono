@@ -115,7 +115,7 @@
                         {{
                           option.hoursRemaining === -1
                             ? 'Unlimited'
-                            : `${option.hoursRemaining.toFixed(2)} hrs remaining`
+                            : `${Math.round(option.hoursRemaining)} min remaining`
                         }}
                       </div>
                     </div>
@@ -260,24 +260,27 @@
       return 'Loading credit information...';
     }
 
-    const hoursToCharge = effectiveDuration.value / 3600; // Convert seconds to hours
-    // If already transcribed, charge 0.75 credits per hour, otherwise 1.0
+    const minutesToCharge = effectiveDuration.value / 60; // Convert seconds to minutes
+    // If already transcribed, charge 0.75 credits per minute, otherwise 1.0
     const rate = props.isTranscribed ? 0.75 : 1.0;
-    const creditsToCharge = hoursToCharge * rate;
+    const creditsToCharge = minutesToCharge * rate;
 
     const remaining = selectedSourceHoursRemaining.value;
     const sourceName =
       selectedOption.value?.type === 'organization' ? selectedOption.value.organizationName : 'Personal';
 
+    const roundedCredits = Math.ceil(creditsToCharge);
+    const roundedRemaining = Math.round(remaining);
+
     if (remaining === 0) {
-      return `No credits remaining in ${sourceName}. This operation requires ${creditsToCharge.toFixed(2)} credits.`;
+      return `No credits remaining in ${sourceName}. This operation requires ${roundedCredits} credits.`;
     }
 
     if (remaining < creditsToCharge) {
-      return `Insufficient credits in ${sourceName}. You have ${remaining.toFixed(2)} credits, but this operation requires ${creditsToCharge.toFixed(2)} credits.`;
+      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits.`;
     }
 
-    return `This operation will charge ${creditsToCharge.toFixed(2)} credits from ${sourceName}. You have ${remaining.toFixed(2)} credits remaining.`;
+    return `This operation will charge ${roundedCredits} credits from ${sourceName}. You have ${roundedRemaining} credits remaining.`;
   });
 
   // Close dropdown when clicking outside
@@ -331,10 +334,10 @@
 
     // Check credits for non-admin users
     if (!isAdmin.value) {
-      const hoursToCharge = effectiveDuration.value / 3600;
-      // If already transcribed, charge 0.75 credits per hour, otherwise 1.0
+      const minutesToCharge = effectiveDuration.value / 60;
+      // If already transcribed, charge 0.75 credits per minute, otherwise 1.0
       const rate = props.isTranscribed ? 0.75 : 1.0;
-      const creditsToCharge = hoursToCharge * rate;
+      const creditsToCharge = minutesToCharge * rate;
 
       if (!hasEnoughCredits(creditsToCharge)) {
         error.value = 'Insufficient credits for this operation';

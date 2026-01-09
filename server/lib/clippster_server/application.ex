@@ -67,6 +67,8 @@ defmodule ClippsterServer.Application do
       ClippsterServer.Social.TokenRefreshWorker,
       # Shared clips cleanup worker (deletes expired clips daily)
       ClippsterServer.Organizations.SharedClipCleanupWorker,
+      # Release info cache for landing page downloads
+      ClippsterServer.ReleaseService,
       # Start to serve requests, typically the last entry
       ClippsterServerWeb.Endpoint
     ]

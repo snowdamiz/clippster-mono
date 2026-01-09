@@ -2,6 +2,34 @@ const { PublicKey } = require('@solana/web3.js');
 const nacl = require('tweetnacl');
 const bs58 = require('bs58').default || require('bs58');
 
+// PulseKit initialization
+let pulsekit = null;
+try {
+  const { PulseKit } = require('@120356aa/pulsekit-sdk');
+  const apiKey = process.env.PULSEKIT_SIGNATURE_VERIFICATION_SERVICE;
+  const endpoint = process.env.PULSEKIT_ENDPOINT || 'https://pulsekit.fly.dev';
+  
+  if (apiKey) {
+    pulsekit = new PulseKit({
+      endpoint,
+      apiKey,
+      environment: process.env.NODE_ENV || 'development',
+    });
+  }
+} catch (e) {
+  // PulseKit not available, continue without it
+}
+
+function pulseCapture(event) {
+  if (pulsekit) {
+    try {
+      pulsekit.capture(event);
+    } catch (e) {
+      // Ignore PulseKit errors
+    }
+  }
+}
+
 /**
  * Verify a Solana wallet signature
  * @param {string} message - The message that was signed
@@ -10,6 +38,14 @@ const bs58 = require('bs58').default || require('bs58');
  * @returns {boolean} - True if signature is valid, false otherwise
  */
 function verifySignature(message, signatureBase64, publicKeyBase58) {
+  pulseCapture({
+    type: 'signature.verify.start',
+    level: 'info',
+    message: `Verifying signature for public key: ${publicKeyBase58}`,
+    metadata: { publicKey: publicKeyBase58, messageLength: message.length },
+    tags: { service: 'signature', action: 'verify_start' }
+  });
+  
   try {
     // Decode the signature from base64
     const signature = Buffer.from(signatureBase64, 'base64');
@@ -27,9 +63,24 @@ function verifySignature(message, signatureBase64, publicKeyBase58) {
       publicKey
     );
     
+    pulseCapture({
+      type: isValid ? 'signature.verify.success' : 'signature.verify.invalid',
+      level: isValid ? 'info' : 'warning',
+      message: isValid ? `Signature valid for: ${publicKeyBase58}` : `Signature invalid for: ${publicKeyBase58}`,
+      metadata: { publicKey: publicKeyBase58, isValid },
+      tags: { service: 'signature', action: isValid ? 'verify_success' : 'verify_invalid' }
+    });
+    
     return isValid;
   } catch (error) {
     console.error('Error verifying signature:', error);
+    pulseCapture({
+      type: 'signature.verify.error',
+      level: 'error',
+      message: `Failed to verify signature: ${error.message}`,
+      metadata: { publicKey: publicKeyBase58, error: error.message, stack: error.stack },
+      tags: { service: 'signature', action: 'verify_error' }
+    });
     return false;
   }
 }

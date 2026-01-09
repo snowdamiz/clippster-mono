@@ -44,6 +44,9 @@ defmodule ClippsterServerWeb.Router do
       "http://localhost:5173",
       "http://localhost:1420",
       "http://localhost:4000",
+      # Landing page
+      "https://clippster.app",
+      "https://www.clippster.app",
       # Match any localhost port
       ~r/^http:\/\/localhost:\d+$/,
       # Match Tauri custom protocols
@@ -92,6 +95,9 @@ defmodule ClippsterServerWeb.Router do
     # Stripe payment routes (webhook is public, no auth needed)
     post "/stripe/webhook", StripeController, :webhook
 
+    # Subscription tiers (public - for pricing display)
+    get "/subscription/tiers", SubscriptionController, :get_tiers
+
     # Metadata routes
     get "/metadata/:mint_id", MetadataController, :fetch
 
@@ -104,6 +110,12 @@ defmodule ClippsterServerWeb.Router do
 
     # Public settings/feature flags
     get "/settings/feature-flags", SettingsController, :get_feature_flags
+
+    # App release info (for download buttons on landing page)
+    get "/releases/latest", ReleaseController, :latest
+
+    # Waitlist signup (public)
+    post "/waitlist", WaitlistController, :create
   end
 
   # Protected routes (require authentication)
@@ -115,6 +127,15 @@ defmodule ClippsterServerWeb.Router do
 
     # Credit balance (requires auth)
     get "/credits/balance", PaymentController, :get_balance
+    get "/credits/transactions", PaymentController, :get_transactions
+
+    # Subscription management (requires auth)
+    get "/subscription/status", SubscriptionController, :get_status
+    post "/subscription/checkout", SubscriptionController, :create_checkout
+    post "/subscription/crypto-quote", SubscriptionController, :get_crypto_quote
+    post "/subscription/crypto-confirm", SubscriptionController, :confirm_crypto_payment
+    post "/subscription/cancel", SubscriptionController, :cancel
+    get "/subscription/history", SubscriptionController, :history
 
     # Beta code activation (requires auth)
     post "/beta/activate", BetaController, :activate
@@ -243,6 +264,7 @@ defmodule ClippsterServerWeb.Router do
     get "/organizations/:organization_id/posts", PostSubmissionController, :index
     get "/organizations/:organization_id/posts/analytics", PostSubmissionController, :analytics_summary
     get "/organizations/:organization_id/posts/:id", PostSubmissionController, :show
+    post "/organizations/:organization_id/posts/upload-media", PostSubmissionController, :upload_media
     post "/organizations/:organization_id/posts/publish", PostSubmissionController, :publish
     put "/organizations/:organization_id/posts/:id", PostSubmissionController, :update
     post "/organizations/:organization_id/posts/:id/sync", PostSubmissionController, :sync_analytics
@@ -270,6 +292,8 @@ defmodule ClippsterServerWeb.Router do
     # User-level messaging endpoints
     get "/me/conversations", MessagingController, :list_all_conversations
     get "/me/unread-count", MessagingController, :get_total_unread
+    # Analytics tracking (requires authentication)
+    post "/analytics/track", AnalyticsController, :track
   end
 
   # Admin-only routes
@@ -278,8 +302,16 @@ defmodule ClippsterServerWeb.Router do
 
     get "/admin/users", AdminController, :list_users
     get "/admin/ai-usage", AdminController, :get_ai_usage_stats
+    get "/admin/analytics", AnalyticsController, :stats
     post "/admin/users/:user_id/promote", AdminController, :promote_user
     put "/admin/users/:user_id/credits", AdminController, :update_user_credits
+
+    # Admin subscription management
+    post "/admin/users/:user_id/subscription", AdminController, :grant_subscription
+    put "/admin/users/:user_id/subscription/extend", AdminController, :extend_subscription
+    put "/admin/users/:user_id/subscription/tier", AdminController, :change_subscription_tier
+    post "/admin/users/:user_id/subscription/cancel", AdminController, :cancel_user_subscription
+    get "/admin/users/:user_id/subscription/history", AdminController, :get_subscription_history
 
     # Admin organization management
     get "/admin/organizations", AdminController, :list_organizations
@@ -299,6 +331,9 @@ defmodule ClippsterServerWeb.Router do
     # Admin beta codes management
     post "/admin/beta-codes/generate", AdminController, :generate_beta_codes
     get "/admin/beta-codes", AdminController, :list_beta_codes
+
+    # Admin waitlist management
+    get "/admin/waitlist", WaitlistController, :index
   end
 
 

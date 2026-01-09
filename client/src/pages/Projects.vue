@@ -1381,11 +1381,13 @@
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
+  import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { Button } from '@/components/ui/button';
 
   // AI Permission check
   const { isAIAllowed } = useAIPermission();
+  const { gates } = useSubscriptionGate();
   import { utf8ToBase64 } from '@/utils/encoding';
   import { save } from '@tauri-apps/plugin-dialog';
 
@@ -3392,7 +3394,12 @@
     }
   });
 
-  function openCreateDialog() {
+  async function openCreateDialog() {
+    // Check subscription access before allowing project creation
+    if (!(await gates.createProject())) {
+      return; // Gate was shown, user doesn't have access
+    }
+
     selectedProject.value = null;
     showDialog.value = true;
   }
@@ -3787,11 +3794,16 @@
     return false;
   }
 
-  function startProjectDetection(project: Project) {
+  async function startProjectDetection(project: Project) {
     // Check if user is authenticated
     if (!authStore.isAuthenticated) {
       window.dispatchEvent(new CustomEvent('show-auth-modal'));
       return;
+    }
+
+    // Check AI access (requires credits) before allowing detection
+    if (!(await gates.aiDetection(`Detect clips in "${project.name}"`))) {
+      return; // Gate was shown, user doesn't have access
     }
 
     // Gather segments to detect (children if they exist, otherwise the project itself)

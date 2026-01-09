@@ -202,7 +202,7 @@
               <!-- Member Credit Allocation -->
               <div class="text-right mr-2">
                 <div class="text-sm font-medium text-foreground">
-                  {{ formatAllocation(member.allocation?.hours_remaining) }} hrs
+                  {{ formatAllocation(member.allocation?.hours_remaining) }} min
                 </div>
                 <div class="text-xs text-muted-foreground">
                   {{ formatAllocation(member.allocation?.hours_used) }} used
@@ -657,7 +657,7 @@
                 <Wallet class="h-4 w-4 text-primary" />
                 <span class="text-sm text-muted-foreground">Pool Balance</span>
               </div>
-              <div class="text-2xl font-bold text-foreground">{{ credits.hoursRemaining }} hrs</div>
+              <div class="text-2xl font-bold text-foreground">{{ credits.hoursRemaining }} min</div>
               <div class="text-xs text-muted-foreground mt-1">Available for allocation</div>
             </div>
             <div class="bg-muted/30 border border-border/50 rounded-lg p-4">
@@ -665,7 +665,7 @@
                 <Clock class="h-4 w-4 text-muted-foreground" />
                 <span class="text-sm text-muted-foreground">Total Used</span>
               </div>
-              <div class="text-2xl font-bold text-foreground">{{ credits.hoursUsed }} hrs</div>
+              <div class="text-2xl font-bold text-foreground">{{ credits.hoursUsed }} min</div>
               <div class="text-xs text-muted-foreground mt-1">All time usage</div>
             </div>
             <div class="bg-muted/30 border border-border/50 rounded-lg p-4">
@@ -674,7 +674,7 @@
                 <span class="text-sm text-muted-foreground">My Allocation</span>
               </div>
               <div class="text-2xl font-bold text-foreground">
-                {{ formatAllocation(myAllocation?.hours_remaining) }} hrs
+                {{ formatAllocation(myAllocation?.hours_remaining) }} min
               </div>
               <div class="text-xs text-muted-foreground mt-1">Your remaining credits</div>
             </div>
@@ -707,10 +707,10 @@
                     {{ member.user?.name || member.user?.email }}
                   </div>
                   <div class="text-xs text-muted-foreground mt-1">
-                    Allocated: {{ formatAllocation(member.allocation?.hours_allocated) }} hrs • Used:
-                    {{ formatAllocation(member.allocation?.hours_used) }} hrs •
+                    Allocated: {{ formatAllocation(member.allocation?.hours_allocated) }} min • Used:
+                    {{ formatAllocation(member.allocation?.hours_used) }} min •
                     <span class="text-primary font-medium">
-                      Remaining: {{ formatAllocation(member.allocation?.hours_remaining) }} hrs
+                      Remaining: {{ formatAllocation(member.allocation?.hours_remaining) }} min
                     </span>
                   </div>
                 </div>
@@ -725,7 +725,7 @@
                     class="w-20 text-right text-sm"
                     :disabled="poolBalance === 0"
                   />
-                  <span class="text-muted-foreground text-xs">hrs</span>
+                  <span class="text-muted-foreground text-xs">min</span>
                   <Button
                     size="sm"
                     @click="allocateCredits(member.user_id)"
@@ -847,7 +847,7 @@
                   <div class="text-right flex-shrink-0">
                     <div class="font-semibold text-foreground text-sm">${{ parseFloat(tx.amount_usd).toFixed(2) }}</div>
                     <div class="text-xs text-primary font-medium">
-                      +{{ parseFloat(tx.hours_purchased).toFixed(0) }} hrs
+                      +{{ parseFloat(tx.hours_purchased).toFixed(0) }} min
                     </div>
                   </div>
                 </div>
@@ -1540,7 +1540,7 @@
                       ]"
                     >
                       <div class="font-bold text-white capitalize mb-1">{{ key }}</div>
-                      <div class="text-xl font-bold text-violet-400">{{ pack.hours }} hrs</div>
+                      <div class="text-xl font-bold text-violet-400">{{ pack.hours }} min</div>
                       <div class="text-sm text-zinc-400">${{ Math.round(pack.usd) }}</div>
                     </button>
                   </div>
@@ -1576,8 +1576,8 @@
                       <span class="text-white font-medium capitalize">{{ selectedPackKey }}</span>
                     </div>
                     <div class="flex justify-between text-sm">
-                      <span class="text-zinc-400">Hours:</span>
-                      <span class="text-white font-medium">{{ selectedPack?.hours }} hours</span>
+                      <span class="text-zinc-400">Minutes:</span>
+                      <span class="text-white font-medium">{{ selectedPack?.hours }} minutes</span>
                     </div>
                     <div class="flex justify-between text-sm">
                       <span class="text-zinc-400">Price:</span>
@@ -1644,7 +1644,7 @@
                   </div>
                   <h3 class="text-lg font-bold text-white mb-2">Payment Successful!</h3>
                   <p class="text-zinc-400 text-sm mb-6">
-                    <span class="font-semibold text-emerald-400">{{ selectedPack?.hours }} hours</span>
+                    <span class="font-semibold text-emerald-400">{{ selectedPack?.hours }} minutes</span>
                     added to organization pool
                   </p>
                   <button
@@ -2509,22 +2509,22 @@
     const orgId = organizationId.value;
     if (!orgId) return;
 
-    const hours = allocations.value[userId];
-    if (!hours || hours <= 0) {
-      showError('Invalid amount', 'Please enter a positive number of hours to allocate');
+    const minutes = allocations.value[userId];
+    if (!minutes || minutes <= 0) {
+      showError('Invalid amount', 'Please enter a positive number of minutes to allocate');
       return;
     }
 
-    if (hours > poolBalance.value) {
-      showError('Insufficient pool credits', `You can only allocate up to ${poolBalance.value} hours from the pool`);
+    if (minutes > poolBalance.value) {
+      showError('Insufficient pool credits', `You can only allocate up to ${poolBalance.value} minutes from the pool`);
       return;
     }
 
     try {
-      const result = await authStore.allocateOrganizationCredits(orgId, userId, hours);
+      const result = await authStore.allocateOrganizationCredits(orgId, userId, minutes);
       if (result.success) {
         allocations.value[userId] = 0;
-        showSuccess('Credits allocated', `${hours} hours allocated successfully`);
+        showSuccess('Credits allocated', `${minutes} minutes allocated successfully`);
         loadOrganization();
       } else {
         showError('Allocation failed', result.error || 'Failed to allocate credits');
@@ -2561,8 +2561,8 @@
     if (!value) return '0';
     const num = parseFloat(value);
     if (isNaN(num)) return '0';
-    // Format to 2 decimal places, but remove trailing zeros
-    return num.toFixed(2).replace(/\.?0+$/, '');
+    // Return whole number (rounded)
+    return Math.round(num).toString();
   }
 
   // ============================================================================

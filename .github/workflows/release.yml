@@ -10,7 +10,7 @@ env:
   RELEASES_REPO: snowdamiz/clippster-releases
 
 jobs:
-  # First, create a draft release in the public repo
+  # First, create a draft release and build frontend (shared across all platforms)
   create-release:
     runs-on: ubuntu-latest
     outputs:
@@ -30,20 +30,71 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ steps.get_version.outputs.version }}
         run: |
-          # Check if release already exists
           if gh release view "v$VERSION" --repo $RELEASES_REPO > /dev/null 2>&1; then
             echo "Release v$VERSION already exists, deleting it first..."
             gh release delete "v$VERSION" --repo $RELEASES_REPO --yes || true
-            # Also delete the tag
             gh api --method DELETE "/repos/$RELEASES_REPO/git/refs/tags/v$VERSION" || true
           fi
-          
-          # Create new draft release
           gh release create "v$VERSION" \
             --repo $RELEASES_REPO \
             --title "Clippster v$VERSION" \
             --notes "See assets to download and install." \
             --draft
+
+      # Build frontend once and share across all platform builds
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: yarn
+          cache-dependency-path: client/yarn.lock
+
+      - name: Install and build frontend
+        working-directory: client
+        env:
+          VITE_API_URL: https://clippster-server.fly.dev
+        run: |
+          yarn install
+          yarn build:ci
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: client/dist
+          retention-days: 1
+
+  # Deploy server to Fly.io
+  deploy-server:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy Server to Fly.io
+        working-directory: server
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_SERVER_TOKEN }}
+        run: flyctl deploy --remote-only
+
+  # Deploy landing site to Fly.io
+  deploy-landing:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy Landing to Fly.io
+        working-directory: landing
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_LANDING_TOKEN }}
+        run: flyctl deploy --remote-only
 
   # Build for each platform
   build-tauri:
@@ -61,12 +112,18 @@ jobs:
             args: --target x86_64-apple-darwin
             artifact_suffix: x64
           - platform: windows-latest
-            args: ""
+            args: --bundles nsis
             artifact_suffix: windows
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: client/dist
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -84,37 +141,93 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: client/src-tauri -> target
+          shared-key: ${{ matrix.platform }}-${{ matrix.artifact_suffix }}
 
-      - name: Install frontend dependencies
+      - name: Install frontend dependencies (for tauri build)
         run: yarn install
         working-directory: client
 
-      - name: Build frontend with production API URL
-        run: |
-          echo "Building frontend with VITE_API_URL=$VITE_API_URL"
-          yarn build:ci
-        working-directory: client
-        shell: bash
-        env:
-          VITE_API_URL: https://clippster-server.fly.dev
+      - name: Install pumpfun-service dependencies
+        run: yarn install
+        working-directory: client/src-tauri/pumpfun-service
 
-      - name: Build Tauri App
+      # Sign native .node binaries for macOS notarization
+      - name: Sign native node modules (macOS)
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Import Apple certificate into a temporary keychain
+          CERTIFICATE_PATH=$RUNNER_TEMP/native_signing_cert.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/native-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o $CERTIFICATE_PATH
+          
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $CERTIFICATE_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          
+          # Add to search list (prepend to existing keychains)
+          EXISTING_KEYCHAINS=$(security list-keychains -d user | tr -d '"' | tr '\n' ' ')
+          security list-keychains -d user -s $KEYCHAIN_PATH $EXISTING_KEYCHAINS
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Find signing identity
+          IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          echo "Using identity: $IDENTITY"
+          
+          # Sign all .node files in pumpfun-service/node_modules
+          find client/src-tauri/pumpfun-service/node_modules -name "*.node" -type f | while read file; do
+            echo "Signing: $file"
+            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$file"
+          done
+          
+          echo "Native modules signed successfully"
+
+      # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
+      - name: Skip frontend rebuild (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          jq '.build.beforeBuildCommand = ""' client/src-tauri/tauri.conf.json > tmp.json && mv tmp.json client/src-tauri/tauri.conf.json
+
+      - name: Skip frontend rebuild (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $config = Get-Content client/src-tauri/tauri.conf.json | ConvertFrom-Json
+          $config.build.beforeBuildCommand = ""
+          $config | ConvertTo-Json -Depth 10 | Set-Content client/src-tauri/tauri.conf.json
+
+      # Use tauri-action for all platforms (handles CLI installation efficiently)
+      - name: Build Tauri App (macOS)
+        if: matrix.platform == 'macos-latest'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VITE_API_URL: https://clippster-server.fly.dev
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TAURI_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          TAURI_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
           projectPath: client
-          includeUpdaterJson: true
           args: ${{ matrix.args }}
-          retryAttempts: 3
+
+      - name: Build Tauri App (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: client
+          args: ${{ matrix.args }}
 
       - name: Upload artifacts to public releases repo (macOS)
         if: matrix.platform == 'macos-latest'
@@ -122,27 +235,53 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ needs.create-release.outputs.version }}
+          ARCH_SUFFIX: ${{ matrix.artifact_suffix }}
         run: |
-          # Find and upload DMG
+          # Upload DMG
           DMG_FILE=$(find client/src-tauri/target -name "*.dmg" -type f | head -1)
-          if [ -n "$DMG_FILE" ]; then
-            echo "Uploading DMG: $DMG_FILE"
-            gh release upload "v$VERSION" "$DMG_FILE" --repo $RELEASES_REPO --clobber
-          fi
+          [ -n "$DMG_FILE" ] && gh release upload "v$VERSION" "$DMG_FILE" --repo $RELEASES_REPO --clobber
           
-          # Find and upload .app.tar.gz (for updater)
+          # Upload .app.tar.gz (for updater) with architecture suffix
           APP_TAR=$(find client/src-tauri/target -name "*.app.tar.gz" -type f | head -1)
           if [ -n "$APP_TAR" ]; then
-            echo "Uploading app tar: $APP_TAR"
-            gh release upload "v$VERSION" "$APP_TAR" --repo $RELEASES_REPO --clobber
+            BASENAME=$(basename "$APP_TAR")
+            NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz"
+            cp "$APP_TAR" "/tmp/$NEW_NAME"
+            gh release upload "v$VERSION" "/tmp/$NEW_NAME" --repo $RELEASES_REPO --clobber
+            
+            # Upload signature
+            APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
+            if [ -n "$APP_SIG" ]; then
+              SIG_NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz.sig"
+              cp "$APP_SIG" "/tmp/$SIG_NEW_NAME"
+              gh release upload "v$VERSION" "/tmp/$SIG_NEW_NAME" --repo $RELEASES_REPO --clobber
+            fi
           fi
-          
-          # Find and upload .app.tar.gz.sig (signature for updater)
+
+      - name: Generate latest.json for macOS
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          ARCH_SUFFIX: ${{ matrix.artifact_suffix }}
+        run: |
+          PLATFORM_KEY=$( [ "$ARCH_SUFFIX" = "aarch64" ] && echo "darwin-aarch64" || echo "darwin-x86_64" )
           APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
-          if [ -n "$APP_SIG" ]; then
-            echo "Uploading app signature: $APP_SIG"
-            gh release upload "v$VERSION" "$APP_SIG" --repo $RELEASES_REPO --clobber
-          fi
+          SIGNATURE=$( [ -n "$APP_SIG" ] && cat "$APP_SIG" || echo "" )
+          APP_TAR=$(find client/src-tauri/target -name "*.app.tar.gz" -type f | head -1)
+          BASENAME=$(basename "$APP_TAR")
+          NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz"
+          
+          mkdir -p /tmp/latest-json
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "See release notes on GitHub." \
+            --arg pub_date "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+            --arg platform "$PLATFORM_KEY" \
+            --arg signature "$SIGNATURE" \
+            --arg url "https://github.com/$RELEASES_REPO/releases/download/v$VERSION/$NEW_NAME" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {($platform): {signature: $signature, url: $url}}}' \
+            > /tmp/latest-json/latest.json
 
       - name: Upload artifacts to public releases repo (Windows)
         if: matrix.platform == 'windows-latest'
@@ -151,107 +290,96 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          # Find and upload NSIS installer
-          $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*-setup.exe" | Select-Object -First 1
-          if ($exeFile) {
-            Write-Host "Uploading EXE: $($exeFile.FullName)"
-            gh release upload "v$env:VERSION" "$($exeFile.FullName)" --repo $env:RELEASES_REPO --clobber
-          }
+          # Upload EXE installer
+          $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe" } | Select-Object -First 1
+          if ($exeFile) { gh release upload "v$env:VERSION" "$($exeFile.FullName)" --repo $env:RELEASES_REPO --clobber }
           
-          # Find and upload MSI
-          $msiFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*.msi" | Select-Object -First 1
-          if ($msiFile) {
-            Write-Host "Uploading MSI: $($msiFile.FullName)"
-            gh release upload "v$env:VERSION" "$($msiFile.FullName)" --repo $env:RELEASES_REPO --clobber
-          }
-          
-          # Find and upload nsis.zip (for updater)
-          $nsisZip = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*_x64-setup.nsis.zip" | Select-Object -First 1
-          if ($nsisZip) {
-            Write-Host "Uploading NSIS zip: $($nsisZip.FullName)"
-            gh release upload "v$env:VERSION" "$($nsisZip.FullName)" --repo $env:RELEASES_REPO --clobber
-          }
-          
-          # Find and upload nsis.zip.sig (signature for updater)
-          $nsisSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -Filter "*_x64-setup.nsis.zip.sig" | Select-Object -First 1
-          if ($nsisSig) {
-            Write-Host "Uploading NSIS signature: $($nsisSig.FullName)"
-            gh release upload "v$env:VERSION" "$($nsisSig.FullName)" --repo $env:RELEASES_REPO --clobber
-          }
+          # Upload signature
+          $exeSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe.sig" } | Select-Object -First 1
+          if ($exeSig) { gh release upload "v$env:VERSION" "$($exeSig.FullName)" --repo $env:RELEASES_REPO --clobber }
 
-      - name: Upload latest.json artifact
+      - name: Generate latest.json for Windows
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          $exeFile = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe" } | Select-Object -First 1
+          $exeSig = Get-ChildItem -Path "client/src-tauri/target" -Recurse -File | Where-Object { $_.Name -like "*-setup.exe.sig" } | Select-Object -First 1
+          
+          $signature = if ($exeSig) { (Get-Content $exeSig.FullName -Raw).Trim() } else { "" }
+          $exeFileName = if ($exeFile) { $exeFile.Name } else { "" }
+          
+          $outputDir = "$env:RUNNER_TEMP/latest-json"
+          New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+          
+          @{
+            version = $env:VERSION
+            notes = "See release notes on GitHub."
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $signature
+                url = "https://github.com/$env:RELEASES_REPO/releases/download/v$env:VERSION/$exeFileName"
+              }
+            }
+          } | ConvertTo-Json -Depth 10 | Out-File -FilePath "$outputDir/latest.json" -Encoding utf8
+
+      - name: Upload latest.json artifact (macOS)
+        if: matrix.platform == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: latest-json-${{ matrix.artifact_suffix }}
-          path: client/src-tauri/target/**/latest.json
-          if-no-files-found: ignore
+          path: /tmp/latest-json/latest.json
+          if-no-files-found: warn
+
+      - name: Upload latest.json artifact (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-json-${{ matrix.artifact_suffix }}
+          path: ${{ runner.temp }}\latest-json\latest.json
+          if-no-files-found: warn
 
   # Merge latest.json files and publish release
   finalize-release:
-    needs: [create-release, build-tauri]
+    needs: [create-release, build-tauri, deploy-server, deploy-landing]
     runs-on: ubuntu-latest
     steps:
       - name: Download all latest.json artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: latest-json-*
-          merge-multiple: true
+          merge-multiple: false
 
-      - name: Find and merge latest.json
-        id: merge_json
+      - name: Merge latest.json files
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          echo "Looking for latest.json files..."
-          find . -name "latest.json" -type f
-          
-          # Find all latest.json files
           JSON_FILES=$(find . -name "latest.json" -type f)
           
           if [ -z "$JSON_FILES" ]; then
-            echo "No latest.json files found"
+            echo "ERROR: No latest.json files found!"
+            jq -n --arg v "$VERSION" --arg d "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+              '{version: $v, notes: "See release notes on GitHub.", pub_date: $d, platforms: {}}' > merged.json
             exit 0
           fi
           
-          # Take the first one as base and merge platforms from others
-          FIRST_FILE=$(echo "$JSON_FILES" | head -1)
-          
-          # Use jq to merge all platforms into one latest.json
-          # Each file has structure: { version, notes, pub_date, platforms: {...} }
-          echo '{}' > merged.json
-          
+          echo '{"platforms":{}}' > merged.json
           for file in $JSON_FILES; do
-            echo "Processing: $file"
-            cat "$file"
-            echo ""
-            
-            # Merge platforms
-            jq -s '.[0] * {platforms: (.[0].platforms + .[1].platforms)} | 
-                   if .[1].version then .version = .[1].version else . end |
-                   if .[1].notes then .notes = .[1].notes else . end |
-                   if .[1].pub_date then .pub_date = .[1].pub_date else . end' \
-                   merged.json "$file" > tmp.json && mv tmp.json merged.json
+            jq -s '{version: (.[1].version // .[0].version), notes: (.[1].notes // .[0].notes), pub_date: (.[1].pub_date // .[0].pub_date), platforms: ((.[0].platforms // {}) + (.[1].platforms // {}))}' \
+              merged.json "$file" > tmp.json && mv tmp.json merged.json
           done
-          
-          # Update URLs to point to public releases repo
-          VERSION="${{ needs.create-release.outputs.version }}"
-          sed -i "s|snowdamiz/clippster-mono|$RELEASES_REPO|g" merged.json
           
           echo "Final merged latest.json:"
           cat merged.json
 
-      - name: Upload latest.json to release
+      - name: Upload latest.json and publish release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |
-          if [ -f merged.json ]; then
-            mv merged.json latest.json
-            echo "Uploading latest.json..."
-            gh release upload "v$VERSION" latest.json --repo $RELEASES_REPO --clobber
-          fi
-
-      - name: Publish release (remove draft status)
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
-          VERSION: ${{ needs.create-release.outputs.version }}
-        run: |
+          mv merged.json latest.json
+          gh release upload "v$VERSION" latest.json --repo $RELEASES_REPO --clobber
           gh release edit "v$VERSION" --repo $RELEASES_REPO --draft=false

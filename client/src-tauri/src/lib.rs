@@ -498,9 +498,21 @@ pub fn run() {
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
+                            version: 73,
+                            description: "add_keyframes_to_clip_watermarks",
+                            sql: include_str!("../migrations/073_add_keyframes_to_clip_watermarkss.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
                             version: 74,
                             description: "add_platform_to_monitored_streamers",
                             sql: include_str!("../migrations/074_add_platform_to_monitored_streamers.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 75,
+                            description: "add_audio_effects",
+                            sql: include_str!("../migrations/075_add_audio_effects.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                     ],

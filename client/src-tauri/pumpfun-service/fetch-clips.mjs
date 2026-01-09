@@ -7,7 +7,43 @@
 
 import { PumpFunClient } from '@120356aa/pumpfun-wrapper';
 
+// PulseKit initialization
+let pulsekit = null;
+try {
+  const { PulseKit } = await import('@120356aa/pulsekit-sdk');
+  const apiKey = process.env.PULSEKIT_PUMPFUN_SERVICE;
+  const endpoint = process.env.PULSEKIT_ENDPOINT || 'https://pulsekit.fly.dev';
+  
+  if (apiKey) {
+    pulsekit = new PulseKit({
+      endpoint,
+      apiKey,
+      environment: process.env.NODE_ENV || 'development',
+    });
+  }
+} catch (e) {
+  // PulseKit not available, continue without it
+}
+
+function pulseCapture(event) {
+  if (pulsekit) {
+    try {
+      pulsekit.capture(event);
+    } catch (e) {
+      // Ignore PulseKit errors
+    }
+  }
+}
+
 async function fetchClips(mintId, limit = 20) {
+  pulseCapture({
+    type: 'pumpfun.clips.fetch_start',
+    level: 'info',
+    message: `Fetching clips for mint: ${mintId}`,
+    metadata: { mintId, limit },
+    tags: { service: 'pumpfun', action: 'fetch_clips_start' }
+  });
+  
   try {
     const client = new PumpFunClient();
     
@@ -19,12 +55,15 @@ async function fetchClips(mintId, limit = 20) {
       // Generate a title if not present
       const title = clip.title || `Stream ${index + 1}`;
       
+      // Try multiple possible thumbnail field names
+      const thumbnailUrl = clip.thumbnailUrl || clip.thumbnail_url || clip.thumbnail || null;
+      
       return {
         clipId: clip.clipId || clip.clip_id || clip.id,
         sessionId: clip.sessionId || clip.session_id,
         title: title,
         duration: clip.duration || 0,
-        thumbnailUrl: clip.thumbnailUrl || clip.thumbnail_url || clip.thumbnailUrl,
+        thumbnailUrl: thumbnailUrl,
         playlistUrl: clip.playlistUrl || clip.playlist_url || clip.url,
         mp4Url: clip.mp4Url || clip.mp4_url,
         clipType: clip.clipType || clip.clip_type || 'COMPLETE',
@@ -32,6 +71,14 @@ async function fetchClips(mintId, limit = 20) {
         endTime: clip.endTime || clip.end_time,
         createdAt: clip.createdAt || clip.created_at
       };
+    });
+    
+    pulseCapture({
+      type: 'pumpfun.clips.fetch_success',
+      level: 'info',
+      message: `Successfully fetched ${clips.length} clips for mint: ${mintId}`,
+      metadata: { mintId, clipCount: clips.length, hasMore: result.hasMore || false },
+      tags: { service: 'pumpfun', action: 'fetch_clips_success' }
     });
     
     // Output result as JSON
@@ -44,6 +91,14 @@ async function fetchClips(mintId, limit = 20) {
     
     console.log(JSON.stringify(output));
   } catch (error) {
+    pulseCapture({
+      type: 'pumpfun.clips.fetch_error',
+      level: 'error',
+      message: `Failed to fetch clips: ${error.message}`,
+      metadata: { mintId, error: error.message, stack: error.stack },
+      tags: { service: 'pumpfun', action: 'fetch_clips_error' }
+    });
+    
     // Output error as JSON
     const errorOutput = {
       success: false,

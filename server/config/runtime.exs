@@ -90,9 +90,20 @@ config :clippster_server, :instagram,
   app_secret: System.get_env("INSTAGRAM_APP_SECRET"),
   redirect_uri: instagram_redirect_uri
 
-# Social token encryption key
-config :clippster_server, :social,
-  token_encryption_key: System.get_env("SOCIAL_TOKEN_ENCRYPTION_KEY")
+# Social token encryption key (must be base64-encoded 32-byte key)
+config :clippster_server,
+  social_token_encryption_key: System.get_env("SOCIAL_TOKEN_ENCRYPTION_KEY")
+
+# PulseKit error tracking and event monitoring
+pulsekit_key = System.get_env("PULSEKIT_CLIPPSTER_SERVER_KEY")
+pulsekit_endpoint = System.get_env("PULSEKIT_ENDPOINT") || "https://pulsekit.fly.dev"
+
+if pulsekit_key do
+  config :pulsekit,
+    endpoint: pulsekit_endpoint,
+    api_key: pulsekit_key,
+    environment: config_env() |> to_string()
+end
 
 # Cloudflare R2 storage configuration (for organization assets)
 r2_account_id = System.get_env("R2_ACCOUNT_ID")
@@ -152,6 +163,16 @@ if config_env() == :prod do
       environment variable DATABASE_URL is missing.
       For example: ecto://USER:PASS@HOST/DATABASE
       """
+
+  # Ensure we connect to the primary for read-write operations (Fly MPG)
+  # This prevents "read_only_sql_transaction" errors when connecting to replicas
+  database_url =
+    if String.contains?(database_url, "target_session_attrs") do
+      database_url
+    else
+      separator = if String.contains?(database_url, "?"), do: "&", else: "?"
+      database_url <> separator <> "target_session_attrs=read-write"
+    end
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 

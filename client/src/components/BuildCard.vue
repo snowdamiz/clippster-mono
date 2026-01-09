@@ -86,6 +86,13 @@
         <ExternalLink class="h-5 w-5" />
       </button>
       <button
+        class="p-2 bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white rounded-full transition-all transform hover:scale-110 shadow-lg"
+        title="Publish to Instagram"
+        @click.stop="$emit('publish', build, filePath)"
+      >
+        <Instagram class="h-5 w-5" />
+      </button>
+      <button
         class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
         title="Delete build"
         @click.stop="$emit('delete', build)"
@@ -98,7 +105,7 @@
 
 <script setup lang="ts">
   import { computed } from 'vue';
-  import { Play, Trash2, Download, Video, ExternalLink } from 'lucide-vue-next';
+  import { Play, Trash2, Download, Video, ExternalLink, Instagram } from 'lucide-vue-next';
   import type { ClipBuild } from '@/services/database';
   import { useFormatters } from '@/composables/useFormatters';
 
@@ -120,6 +127,7 @@
     (e: 'save', build: ClipBuild, filePath?: string): void;
     (e: 'delete', build: ClipBuild): void;
     (e: 'openProject', build: ClipBuild): void;
+    (e: 'publish', build: ClipBuild, filePath?: string): void;
   }>();
 
   const { getRelativeTime } = useFormatters();

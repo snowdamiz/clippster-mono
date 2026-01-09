@@ -115,9 +115,7 @@ export async function getPumpFunClips(
     // Try to parse JSON with better error handling
     let parsed: PumpFunClipsResponse;
     try {
-      console.log('[PumpFun] Raw result from Tauri:', result);
       parsed = JSON.parse(result);
-      console.log('[PumpFun] Parsed response:', parsed);
     } catch (parseError) {
       console.error('[PumpFun] Failed to parse JSON response:', result);
       console.error('[PumpFun] Parse error:', parseError);

@@ -32,6 +32,17 @@
       </button>
 
       <button
+        v-if="activeTab === 'analytics'"
+        @click="fetchAnalyticsStats"
+        :disabled="analyticsLoading"
+        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md flex items-center gap-2 text-sm font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <RefreshCw v-if="!analyticsLoading" class="h-4 w-4" />
+        <Loader2 v-else class="h-4 w-4 animate-spin" />
+        Refresh Analytics
+      </button>
+
+      <button
         v-if="activeTab === 'organizations'"
         @click="fetchOrganizations"
         :disabled="organizationsLoading"
@@ -51,6 +62,17 @@
         <RefreshCw v-if="!betaCodesLoading" class="h-4 w-4" />
         <Loader2 v-else class="h-4 w-4 animate-spin" />
         Refresh Codes
+      </button>
+
+      <button
+        v-if="activeTab === 'waitlist'"
+        @click="fetchWaitlist"
+        :disabled="waitlistLoading"
+        class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md flex items-center gap-2 text-sm font-medium shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <RefreshCw v-if="!waitlistLoading" class="h-4 w-4" />
+        <Loader2 v-else class="h-4 w-4 animate-spin" />
+        Refresh Waitlist
       </button>
     </template>
 
@@ -76,22 +98,19 @@
       <!-- Loading State -->
       <div v-if="loading && !users.length" class="flex items-center justify-center py-12">
         <div class="text-center">
-          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p class="text-muted-foreground">Loading users...</p>
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-violet-400" />
+          <p class="text-zinc-400">Loading users...</p>
         </div>
       </div>
 
       <!-- Error State -->
-      <div
-        v-else-if="error"
-        class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-6 text-center"
-      >
-        <AlertTriangle class="h-8 w-8 text-red-500 mx-auto mb-4" />
-        <p class="text-red-600 dark:text-red-400 font-medium mb-2">Failed to load users</p>
-        <p class="text-red-500 dark:text-red-300 text-sm mb-4">{{ error }}</p>
+      <div v-else-if="error" class="bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center">
+        <AlertTriangle class="h-8 w-8 text-red-400 mx-auto mb-4" />
+        <p class="text-red-300 font-medium mb-2">Failed to load users</p>
+        <p class="text-red-400/80 text-sm mb-4">{{ error }}</p>
         <button
           @click="fetchUsers"
-          class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md text-sm font-medium transition-all"
+          class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-all"
         >
           Try Again
         </button>
@@ -99,140 +118,235 @@
 
       <!-- Users Table -->
       <div v-else-if="users.length > 0" class="space-y-4">
-        <!-- Stats -->
-        <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+        <!-- Stats Header -->
+        <div class="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
           <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-foreground">User Management</h2>
-            <span class="text-sm text-muted-foreground">
-              {{ users.length }} user{{ users.length !== 1 ? 's' : '' }} total
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center"
+              >
+                <Users class="h-5 w-5 text-violet-400" />
+              </div>
+              <div>
+                <h2 class="text-lg font-semibold text-white">User Management</h2>
+                <p class="text-xs text-zinc-500">Manage user accounts, credits, and subscriptions</p>
+              </div>
+            </div>
+            <span class="px-3 py-1.5 bg-zinc-800 rounded-lg text-sm text-zinc-300 font-medium">
+              {{ users.length }} user{{ users.length !== 1 ? 's' : '' }}
             </span>
           </div>
         </div>
 
         <!-- Table -->
-        <div class="bg-card border border-border rounded-md shadow-sm overflow-hidden">
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden">
           <div class="overflow-x-auto">
             <table class="w-full">
-              <thead class="bg-muted/30">
+              <thead class="bg-zinc-900/80">
                 <tr>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    ID
-                  </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">ID</th>
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Account
                   </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Role
                   </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                    Subscription
+                  </th>
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Credits
                   </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Created
                   </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody class="bg-card divide-y divide-border">
-                <tr v-for="user in users" :key="user.id" class="hover:bg-muted/20 transition-colors">
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-foreground">#{{ user.id }}</td>
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="flex items-center">
+              <tbody class="divide-y divide-zinc-800/50">
+                <tr v-for="user in users" :key="user.id" class="hover:bg-zinc-800/30 transition-colors">
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <span class="text-sm font-mono text-zinc-500">#{{ user.id }}</span>
+                  </td>
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <div class="flex items-center gap-2">
                       <!-- Show email for email/google providers, wallet address for wallet provider -->
                       <template v-if="user.email && (!user.wallet_address || user.provider !== 'wallet')">
-                        <span class="text-xs bg-muted px-2 py-1 rounded text-primary flex items-center gap-1.5">
-                          <span class="text-muted-foreground">{{ getProviderIcon(user.provider) }}</span>
+                        <span
+                          class="text-xs bg-zinc-800 px-2.5 py-1.5 rounded-lg text-zinc-200 flex items-center gap-2"
+                        >
+                          <span class="text-zinc-500">{{ getProviderIcon(user.provider) }}</span>
                           {{ user.email }}
                         </span>
                         <button
                           @click="copyToClipboard(user.email!)"
-                          class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
+                          class="p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
                           :title="`Copy ${user.email}`"
                         >
-                          <Copy class="h-4 w-4" />
+                          <Copy class="h-3.5 w-3.5" />
                         </button>
                       </template>
                       <template v-else-if="user.wallet_address">
-                        <code class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary">
+                        <code class="text-xs bg-zinc-800 px-2.5 py-1.5 rounded-lg font-mono text-zinc-200">
                           {{ formatWalletAddress(user.wallet_address) }}
                         </code>
                         <button
                           @click="copyToClipboard(user.wallet_address!)"
-                          class="ml-2 text-muted-foreground hover:text-foreground transition-colors"
+                          class="p-1.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
                           :title="`Copy ${user.wallet_address}`"
                         >
-                          <Copy class="h-4 w-4" />
+                          <Copy class="h-3.5 w-3.5" />
                         </button>
                       </template>
                       <template v-else>
-                        <span class="text-xs text-muted-foreground italic">No account info</span>
+                        <span class="text-xs text-zinc-600 italic">No account info</span>
                       </template>
                     </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap">
+                  <td class="px-5 py-4 whitespace-nowrap">
                     <span
                       v-if="user.is_admin"
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-purple-500/20 to-indigo-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30"
+                      class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30"
                     >
-                      <Shield class="h-3 w-3 mr-1" />
+                      <Shield class="h-3 w-3 mr-1.5" />
                       Admin
                     </span>
                     <span
                       v-else
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
+                      class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-400"
                     >
-                      <User class="h-3 w-3 mr-1" />
+                      <User class="h-3 w-3 mr-1.5" />
                       User
                     </span>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm">
-                    <div class="flex flex-col space-y-1">
-                      <div class="flex items-center">
-                        <CreditCard class="h-3 w-3 mr-1 text-green-500" />
-                        <span class="font-medium text-foreground">
-                          {{ formatCredits(user.credits?.hours_remaining || 0) }}
-                        </span>
-                        <span class="text-muted-foreground ml-1">hours</span>
-                      </div>
-                      <div class="flex items-center text-xs text-muted-foreground">
-                        <span>{{ formatCredits(user.credits?.hours_used || 0) }} used</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
-                    {{ formatDate(user.created_at) }}
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm">
-                    <div class="flex items-center gap-2">
-                      <button
-                        v-if="!user.is_admin"
-                        @click="confirmPromoteUser(user)"
-                        :disabled="promotingUserId === user.id"
-                        class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-purple-500/80 to-indigo-500/80 hover:from-purple-500/90 hover:to-indigo-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <button
+                      @click="openSubscriptionDialog(user)"
+                      :disabled="user.is_admin"
+                      class="flex flex-col gap-1 group text-left"
+                      :class="user.is_admin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:opacity-80'"
+                    >
+                      <span
+                        v-if="user.subscription?.tier_name"
+                        class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30"
                       >
-                        <Loader2 v-if="promotingUserId === user.id" class="h-3 w-3 mr-1 animate-spin" />
-                        <Shield v-else class="h-3 w-3 mr-1" />
-                        Promote
-                      </button>
+                        {{ user.subscription.tier_name }}
+                      </span>
                       <span
                         v-else
-                        class="inline-flex items-center px-2 py-1 text-xs font-medium text-muted-foreground bg-muted rounded-md"
+                        class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-zinc-800/50 text-zinc-500"
                       >
-                        <Check class="h-3 w-3 mr-1 text-green-500" />
+                        None
+                      </span>
+                      <div class="flex items-center gap-1.5 text-xs">
+                        <span :class="getSubscriptionStatusClass(user.subscription?.status)" class="capitalize">
+                          {{ user.subscription?.status || 'None' }}
+                        </span>
+                        <span v-if="user.subscription?.days_remaining > 0" class="text-zinc-600">
+                          ({{ user.subscription.days_remaining }}d)
+                        </span>
+                      </div>
+                    </button>
+                  </td>
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <div class="flex flex-col gap-0.5">
+                      <div class="flex items-center gap-1.5">
+                        <CreditCard class="h-3.5 w-3.5 text-green-400" />
+                        <span class="text-sm font-semibold text-white">
+                          {{ formatCredits(user.credits?.hours_remaining || 0) }}
+                        </span>
+                        <span class="text-xs text-zinc-500">min</span>
+                      </div>
+                      <span class="text-xs text-zinc-600">{{ formatCredits(user.credits?.hours_used || 0) }} used</span>
+                    </div>
+                  </td>
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <span class="text-sm text-zinc-500">{{ formatDate(user.created_at) }}</span>
+                  </td>
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <div class="flex items-center gap-2">
+                      <!-- Admin badge for admin users -->
+                      <span
+                        v-if="user.is_admin"
+                        class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-green-400 bg-green-500/10 rounded-lg border border-green-500/30"
+                      >
+                        <Check class="h-3 w-3 mr-1.5" />
                         Admin
                       </span>
-                      <button
-                        v-if="!user.is_admin"
-                        @click="openCreditDialog(user)"
-                        :disabled="updatingCreditsUserId === user.id"
-                        class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Loader2 v-if="updatingCreditsUserId === user.id" class="h-3 w-3 mr-1 animate-spin" />
-                        <CreditCard v-else class="h-3 w-3 mr-1" />
-                        Add Credits
-                      </button>
+
+                      <!-- Actions dropdown for non-admin users -->
+                      <div v-else class="relative" data-user-action-menu>
+                        <button
+                          :ref="(el) => setUserActionMenuRef(el, user.id)"
+                          @click.stop="toggleUserActionMenu(user.id)"
+                          class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-medium rounded-lg transition-all border border-zinc-700 hover:border-zinc-600"
+                          :class="{ 'bg-zinc-700 text-white border-zinc-600': openUserActionMenuId === user.id }"
+                        >
+                          <span>Actions</span>
+                          <ChevronDown
+                            class="h-3 w-3 transition-transform"
+                            :class="{ 'rotate-180': openUserActionMenuId === user.id }"
+                          />
+                        </button>
+
+                        <!-- Actions Dropdown Menu - Teleported to body -->
+                        <Teleport to="body">
+                          <div
+                            v-if="openUserActionMenuId === user.id"
+                            class="fixed z-[9999] w-[180px] bg-zinc-900/95 backdrop-blur-md border border-zinc-700 rounded-xl shadow-xl shadow-black/30 py-1.5 overflow-hidden"
+                            :style="getUserActionMenuPosition(user.id)"
+                            data-user-action-menu
+                            @click.stop
+                          >
+                            <!-- Promote to Admin -->
+                            <button
+                              @click.stop="
+                                confirmPromoteUser(user);
+                                closeUserActionMenu();
+                              "
+                              :disabled="promotingUserId === user.id"
+                              class="w-full px-3 py-2.5 flex items-center gap-3 text-sm text-zinc-300 hover:bg-purple-500/15 hover:text-purple-400 transition-colors disabled:opacity-50"
+                            >
+                              <Loader2 v-if="promotingUserId === user.id" class="h-4 w-4 animate-spin" />
+                              <Shield v-else class="h-4 w-4" />
+                              <span>Promote to Admin</span>
+                            </button>
+
+                            <!-- Divider -->
+                            <div class="my-1.5 border-t border-zinc-800"></div>
+
+                            <!-- Add Credits -->
+                            <button
+                              @click.stop="
+                                openCreditDialog(user);
+                                closeUserActionMenu();
+                              "
+                              :disabled="updatingCreditsUserId === user.id"
+                              class="w-full px-3 py-2.5 flex items-center gap-3 text-sm text-zinc-300 hover:bg-green-500/15 hover:text-green-400 transition-colors disabled:opacity-50"
+                            >
+                              <Loader2 v-if="updatingCreditsUserId === user.id" class="h-4 w-4 animate-spin" />
+                              <CreditCard v-else class="h-4 w-4" />
+                              <span>Add Credits</span>
+                            </button>
+
+                            <!-- Manage Subscription -->
+                            <button
+                              @click.stop="
+                                openSubscriptionDialog(user);
+                                closeUserActionMenu();
+                              "
+                              :disabled="updatingSubscriptionUserId === user.id"
+                              class="w-full px-3 py-2.5 flex items-center gap-3 text-sm text-zinc-300 hover:bg-blue-500/15 hover:text-blue-400 transition-colors disabled:opacity-50"
+                            >
+                              <Loader2 v-if="updatingSubscriptionUserId === user.id" class="h-4 w-4 animate-spin" />
+                              <Layers v-else class="h-4 w-4" />
+                              <span>Subscription</span>
+                            </button>
+                          </div>
+                        </Teleport>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -248,97 +362,103 @@
       <!-- Loading State -->
       <div v-if="organizationsLoading && !organizations.length" class="flex items-center justify-center py-12">
         <div class="text-center">
-          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p class="text-muted-foreground">Loading organizations...</p>
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-cyan-400" />
+          <p class="text-zinc-400">Loading organizations...</p>
         </div>
       </div>
 
       <!-- Organizations Table -->
       <div v-else-if="organizations.length > 0" class="space-y-4">
-        <!-- Stats -->
-        <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+        <!-- Stats Header -->
+        <div class="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
           <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-foreground">Organization Management</h2>
-            <span class="text-sm text-muted-foreground">
-              {{ organizations.length }} organization{{ organizations.length !== 1 ? 's' : '' }} total
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center"
+              >
+                <Building2 class="h-5 w-5 text-cyan-400" />
+              </div>
+              <div>
+                <h2 class="text-lg font-semibold text-white">Organization Management</h2>
+                <p class="text-xs text-zinc-500">Manage organizations and their credits</p>
+              </div>
+            </div>
+            <span class="px-3 py-1.5 bg-zinc-800 rounded-lg text-sm text-zinc-300 font-medium">
+              {{ organizations.length }} organization{{ organizations.length !== 1 ? 's' : '' }}
             </span>
           </div>
         </div>
 
         <!-- Table -->
-        <div class="bg-card border border-border rounded-md shadow-sm overflow-hidden">
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden">
           <div class="overflow-x-auto">
             <table class="w-full">
-              <thead class="bg-muted/30">
+              <thead class="bg-zinc-900/80">
                 <tr>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    ID
-                  </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">ID</th>
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Name
                   </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Members
                   </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Credits
                   </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Created
                   </th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody class="bg-card divide-y divide-border">
-                <tr v-for="org in organizations" :key="org.id" class="hover:bg-muted/20 transition-colors">
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-foreground">#{{ org.id }}</td>
-                  <td class="px-6 py-4">
+              <tbody class="divide-y divide-zinc-800/50">
+                <tr v-for="org in organizations" :key="org.id" class="hover:bg-zinc-800/30 transition-colors">
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <span class="text-sm font-mono text-zinc-500">#{{ org.id }}</span>
+                  </td>
+                  <td class="px-5 py-4">
                     <div class="flex flex-col">
-                      <span class="text-sm font-medium text-foreground">{{ org.name }}</span>
-                      <span v-if="org.description" class="text-xs text-muted-foreground line-clamp-1">
+                      <span class="text-sm font-medium text-white">{{ org.name }}</span>
+                      <span v-if="org.description" class="text-xs text-zinc-500 line-clamp-1">
                         {{ org.description }}
                       </span>
                     </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap">
+                  <td class="px-5 py-4 whitespace-nowrap">
                     <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                      class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30"
                     >
-                      <Users class="h-3 w-3 mr-1" />
+                      <Users class="h-3 w-3 mr-1.5" />
                       {{ org.member_count }} member{{ org.member_count !== 1 ? 's' : '' }}
                     </span>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm">
-                    <div class="flex flex-col space-y-1">
-                      <div class="flex items-center">
-                        <CreditCard class="h-3 w-3 mr-1 text-green-500" />
-                        <span class="font-medium text-foreground">
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <div class="flex flex-col gap-0.5">
+                      <div class="flex items-center gap-1.5">
+                        <CreditCard class="h-3.5 w-3.5 text-green-400" />
+                        <span class="text-sm font-semibold text-white">
                           {{ formatCredits(org.credits.hours_remaining) }}
                         </span>
-                        <span class="text-muted-foreground ml-1">hours</span>
+                        <span class="text-xs text-zinc-500">min</span>
                       </div>
-                      <div class="flex items-center text-xs text-muted-foreground">
-                        <span>{{ formatCredits(org.credits.hours_used) }} used</span>
-                      </div>
+                      <span class="text-xs text-zinc-600">{{ formatCredits(org.credits.hours_used) }} used</span>
                     </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
-                    {{ formatDate(org.created_at) }}
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <span class="text-sm text-zinc-500">{{ formatDate(org.created_at) }}</span>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm">
-                    <div class="flex items-center gap-2">
-                      <button
-                        @click="openOrgCreditDialog(org)"
-                        :disabled="updatingOrgCreditsId === org.id"
-                        class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Loader2 v-if="updatingOrgCreditsId === org.id" class="h-3 w-3 mr-1 animate-spin" />
-                        <CreditCard v-else class="h-3 w-3 mr-1" />
-                        Set Credits
-                      </button>
-                    </div>
+                  <td class="px-5 py-4 whitespace-nowrap">
+                    <button
+                      @click="openOrgCreditDialog(org)"
+                      :disabled="updatingOrgCreditsId === org.id"
+                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white text-xs font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Loader2 v-if="updatingOrgCreditsId === org.id" class="h-3 w-3 mr-1.5 animate-spin" />
+                      <CreditCard v-else class="h-3 w-3 mr-1.5" />
+                      Set Credits
+                    </button>
                   </td>
                 </tr>
               </tbody>
@@ -348,12 +468,16 @@
       </div>
 
       <!-- Empty State -->
-      <div v-else class="text-center py-12 bg-card border border-border rounded-lg">
-        <Building2 class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-        <p class="text-muted-foreground mb-4">No organizations found</p>
+      <div v-else class="text-center py-12 bg-zinc-900/40 border border-zinc-800 rounded-xl">
+        <div
+          class="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center mx-auto mb-4"
+        >
+          <Building2 class="h-7 w-7 text-cyan-400" />
+        </div>
+        <p class="text-zinc-400 mb-4">No organizations found</p>
         <button
           @click="fetchOrganizations"
-          class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium transition-all"
+          class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg text-sm font-medium transition-all border border-zinc-700"
         >
           Refresh Organizations
         </button>
@@ -362,14 +486,25 @@
 
     <!-- Bug Reports Tab -->
     <div v-if="activeTab === 'bugs'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+      <!-- Stats Header with Filters -->
+      <div class="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <h2 class="text-lg font-semibold text-foreground">Bug Reports</h2>
-          <div class="flex items-center gap-4 w-full sm:w-auto">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-500/30 flex items-center justify-center"
+            >
+              <FileText class="h-5 w-5 text-red-400" />
+            </div>
+            <div>
+              <h2 class="text-lg font-semibold text-white">Bug Reports</h2>
+              <p class="text-xs text-zinc-500">Track and manage reported issues</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 w-full sm:w-auto">
             <select
               v-model="bugReportFilters.status"
               @change="fetchBugReports"
-              class="px-3 py-1.5 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent w-full sm:w-auto"
+              class="px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/50 w-full sm:w-auto"
             >
               <option value="">All Status</option>
               <option value="open">Open</option>
@@ -380,7 +515,7 @@
             <select
               v-model="bugReportFilters.severity"
               @change="fetchBugReports"
-              class="px-3 py-1.5 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent w-full sm:w-auto"
+              class="px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/50 w-full sm:w-auto"
             >
               <option value="">All Severity</option>
               <option value="low">Low</option>
@@ -388,7 +523,9 @@
               <option value="high">High</option>
               <option value="critical">Critical</option>
             </select>
-            <span class="text-sm text-muted-foreground whitespace-nowrap hidden sm:inline">
+            <span
+              class="px-3 py-1.5 bg-zinc-800 rounded-lg text-sm text-zinc-300 font-medium whitespace-nowrap hidden sm:inline"
+            >
               {{ bugReports.length }} report{{ bugReports.length !== 1 ? 's' : '' }}
             </span>
           </div>
@@ -396,99 +533,97 @@
       </div>
 
       <!-- Bug Reports Table -->
-      <div v-if="bugReports.length > 0" class="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+      <div v-if="bugReports.length > 0" class="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden">
         <div class="overflow-x-auto">
           <table class="w-full">
-            <thead class="bg-muted/30">
+            <thead class="bg-zinc-900/80">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  ID
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">ID</th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Title
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Severity
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Status
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  User
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">User</th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Created
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody class="bg-card divide-y divide-border">
-              <tr v-for="bugReport in bugReports" :key="bugReport.id" class="hover:bg-muted/20 transition-colors">
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-foreground">#{{ bugReport.id }}</td>
-                <td class="px-6 py-4">
+            <tbody class="divide-y divide-zinc-800/50">
+              <tr v-for="bugReport in bugReports" :key="bugReport.id" class="hover:bg-zinc-800/30 transition-colors">
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm font-mono text-zinc-500">#{{ bugReport.id }}</span>
+                </td>
+                <td class="px-5 py-4">
                   <div class="max-w-xs">
-                    <p class="text-sm font-medium text-foreground truncate" :title="bugReport.title">
+                    <p class="text-sm font-medium text-white truncate" :title="bugReport.title">
                       {{ bugReport.title }}
                     </p>
-                    <p class="text-xs text-muted-foreground mt-1 line-clamp-2" :title="bugReport.description">
+                    <p class="text-xs text-zinc-500 mt-1 line-clamp-2" :title="bugReport.description">
                       {{ bugReport.description }}
                     </p>
                   </div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
+                <td class="px-5 py-4 whitespace-nowrap">
                   <span
-                    :class="getSeverityClass(bugReport.severity)"
-                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                    :class="getSeverityClassModern(bugReport.severity)"
+                    class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium"
                   >
                     {{ bugReport.severity.toUpperCase() }}
                   </span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
+                <td class="px-5 py-4 whitespace-nowrap">
                   <span
-                    :class="getStatusClass(bugReport.status)"
-                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                    :class="getStatusClassModern(bugReport.status)"
+                    class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium"
                   >
                     {{ bugReport.status.replace('_', ' ').toUpperCase() }}
                   </span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <code class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary">
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <code class="text-xs bg-zinc-800 px-2.5 py-1.5 rounded-lg font-mono text-zinc-200">
                     {{ formatWalletAddress(bugReport.user_wallet_address) }}
                   </code>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
-                  {{ formatDate(bugReport.inserted_at) }}
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm text-zinc-500">{{ formatDate(bugReport.inserted_at) }}</span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                <td class="px-5 py-4 whitespace-nowrap">
                   <div class="flex items-center gap-2">
                     <button
                       v-if="bugReport.status !== 'resolved'"
                       @click="updateBugReportStatus(bugReport.id, 'resolved')"
                       :disabled="updatingBugReportId === bugReport.id"
-                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white text-xs font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Loader2 v-if="updatingBugReportId === bugReport.id" class="h-3 w-3 mr-1 animate-spin" />
-                      <Check v-else class="h-3 w-3 mr-1" />
+                      <Loader2 v-if="updatingBugReportId === bugReport.id" class="h-3 w-3 mr-1.5 animate-spin" />
+                      <Check v-else class="h-3 w-3 mr-1.5" />
                       Resolve
                     </button>
                     <button
                       v-else
                       @click="updateBugReportStatus(bugReport.id, 'in_progress')"
                       :disabled="updatingBugReportId === bugReport.id"
-                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-yellow-500/80 to-orange-500/80 hover:from-yellow-500/90 hover:to-orange-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Loader2 v-if="updatingBugReportId === bugReport.id" class="h-3 w-3 mr-1 animate-spin" />
+                      <Loader2 v-if="updatingBugReportId === bugReport.id" class="h-3 w-3 mr-1.5 animate-spin" />
                       <span v-else>Reopen</span>
                     </button>
                     <button
                       @click="confirmDeleteBugReport(bugReport)"
                       :disabled="deletingBugReportId === bugReport.id"
-                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-red-500/80 to-pink-500/80 hover:from-red-500/90 hover:to-pink-500/90 text-white text-xs font-medium rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      class="inline-flex items-center px-3 py-1.5 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white text-xs font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Loader2 v-if="deletingBugReportId === bugReport.id" class="h-3 w-3 mr-1 animate-spin" />
-                      <Trash2 v-else class="h-3 w-3 mr-1" />
+                      <Loader2 v-if="deletingBugReportId === bugReport.id" class="h-3 w-3 mr-1.5 animate-spin" />
+                      <Trash2 v-else class="h-3 w-3 mr-1.5" />
                       Delete
                     </button>
                   </div>
@@ -500,12 +635,16 @@
       </div>
 
       <!-- Bug Reports Empty State -->
-      <div v-else class="text-center py-12 bg-card border border-border rounded-lg">
-        <FileText class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-        <p class="text-muted-foreground mb-4">No bug reports found</p>
+      <div v-else class="text-center py-12 bg-zinc-900/40 border border-zinc-800 rounded-xl">
+        <div
+          class="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-500/30 flex items-center justify-center mx-auto mb-4"
+        >
+          <FileText class="h-7 w-7 text-red-400" />
+        </div>
+        <p class="text-zinc-400 mb-4">No bug reports found</p>
         <button
           @click="fetchBugReports"
-          class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md text-sm font-medium transition-all"
+          class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg text-sm font-medium transition-all border border-zinc-700"
         >
           Refresh Bug Reports
         </button>
@@ -514,64 +653,95 @@
 
     <!-- AI Usage Stats Tab -->
     <div v-if="activeTab === 'ai'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
-        <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-foreground">AI Usage Stats</h2>
-          <!-- Refresh moved to header actions -->
+      <!-- Stats Header -->
+      <div class="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-500/30 flex items-center justify-center"
+          >
+            <Activity class="h-5 w-5 text-indigo-400" />
+          </div>
+          <div>
+            <h2 class="text-lg font-semibold text-white">AI Usage Stats</h2>
+            <p class="text-xs text-zinc-500">Monitor AI service consumption and performance</p>
+          </div>
         </div>
       </div>
 
       <!-- Stats Cards -->
       <div v-if="aiStats" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
-          <h3 class="text-sm font-medium text-muted-foreground">Total Tokens</h3>
-          <p class="text-2xl font-bold text-foreground mt-2">{{ formatNumber(aiStats.stats.total_tokens) }}</p>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30 flex items-center justify-center"
+            >
+              <Activity class="h-4 w-4 text-blue-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Total Tokens</h3>
+          </div>
+          <p class="text-2xl font-bold text-white">{{ formatNumber(aiStats.stats.total_tokens) }}</p>
         </div>
-        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
-          <h3 class="text-sm font-medium text-muted-foreground">Total Duration</h3>
-          <p class="text-2xl font-bold text-foreground mt-2">{{ formatDuration(aiStats.stats.total_duration) }}</p>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 flex items-center justify-center"
+            >
+              <Activity class="h-4 w-4 text-green-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Total Duration</h3>
+          </div>
+          <p class="text-2xl font-bold text-white">{{ formatDuration(aiStats.stats.total_duration) }}</p>
         </div>
-        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
-          <h3 class="text-sm font-medium text-muted-foreground">Active Providers</h3>
-          <p class="text-2xl font-bold text-foreground mt-2">{{ aiStats.stats.provider_stats.length }}</p>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center"
+            >
+              <Layers class="h-4 w-4 text-purple-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Active Providers</h3>
+          </div>
+          <p class="text-2xl font-bold text-white">{{ aiStats.stats.provider_stats.length }}</p>
         </div>
       </div>
 
       <!-- Breakdown Section -->
       <div v-if="aiStats" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <!-- Models Breakdown -->
-        <div class="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-          <div class="px-4 py-3 bg-muted/30 border-b border-border">
-            <h3 class="text-sm font-medium text-foreground">Usage by Model</h3>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden">
+          <div class="px-4 py-3 bg-zinc-900/80 border-b border-zinc-800">
+            <h3 class="text-sm font-semibold text-white">Usage by Model</h3>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full">
-              <thead class="bg-muted/10">
+              <thead class="bg-zinc-900/60">
                 <tr>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Model</th>
-                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Requests</th>
-                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Tokens</th>
-                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Duration</th>
+                  <th class="px-4 py-2.5 text-left text-xs font-semibold text-zinc-400">Model</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-semibold text-zinc-400">Requests</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-semibold text-zinc-400">Tokens</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-semibold text-zinc-400">Duration</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-border">
+              <tbody class="divide-y divide-zinc-800/50">
                 <tr v-if="aiStats.stats.model_stats.length === 0">
-                  <td colspan="4" class="px-4 py-4 text-center text-sm text-muted-foreground">
-                    No usage data available
-                  </td>
+                  <td colspan="4" class="px-4 py-4 text-center text-sm text-zinc-500">No usage data available</td>
                 </tr>
-                <tr v-for="stat in aiStats.stats.model_stats" :key="stat.model" class="hover:bg-muted/20">
-                  <td class="px-4 py-2 text-sm">
+                <tr
+                  v-for="stat in aiStats.stats.model_stats"
+                  :key="stat.model"
+                  class="hover:bg-zinc-800/30 transition-colors"
+                >
+                  <td class="px-4 py-2.5 text-sm">
                     <div class="flex flex-col">
-                      <span class="font-medium text-foreground">{{ stat.model }}</span>
-                      <span class="text-xs text-muted-foreground capitalize">{{ stat.provider }}</span>
+                      <span class="font-medium text-white">{{ stat.model }}</span>
+                      <span class="text-xs text-zinc-500 capitalize">{{ stat.provider }}</span>
                     </div>
                   </td>
-                  <td class="px-4 py-2 text-sm text-right font-mono">{{ formatNumber(stat.count) }}</td>
-                  <td class="px-4 py-2 text-sm text-right font-mono">
+                  <td class="px-4 py-2.5 text-sm text-right font-mono text-zinc-300">{{ formatNumber(stat.count) }}</td>
+                  <td class="px-4 py-2.5 text-sm text-right font-mono text-zinc-300">
                     {{ stat.total_tokens ? formatNumber(stat.total_tokens) : '-' }}
                   </td>
-                  <td class="px-4 py-2 text-sm text-right font-mono">
+                  <td class="px-4 py-2.5 text-sm text-right font-mono text-zinc-300">
                     {{
                       stat.total_duration && parseFloat(stat.total_duration) > 0
                         ? formatDuration(stat.total_duration)
@@ -585,35 +755,37 @@
         </div>
 
         <!-- Operations Breakdown -->
-        <div class="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-          <div class="px-4 py-3 bg-muted/30 border-b border-border">
-            <h3 class="text-sm font-medium text-foreground">Usage by Operation</h3>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden">
+          <div class="px-4 py-3 bg-zinc-900/80 border-b border-zinc-800">
+            <h3 class="text-sm font-semibold text-white">Usage by Operation</h3>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full">
-              <thead class="bg-muted/10">
+              <thead class="bg-zinc-900/60">
                 <tr>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Operation</th>
-                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Requests</th>
-                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Tokens</th>
-                  <th class="px-4 py-2 text-right text-xs font-medium text-muted-foreground">Duration</th>
+                  <th class="px-4 py-2.5 text-left text-xs font-semibold text-zinc-400">Operation</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-semibold text-zinc-400">Requests</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-semibold text-zinc-400">Tokens</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-semibold text-zinc-400">Duration</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-border">
+              <tbody class="divide-y divide-zinc-800/50">
                 <tr v-if="aiStats.stats.operation_stats.length === 0">
-                  <td colspan="4" class="px-4 py-4 text-center text-sm text-muted-foreground">
-                    No usage data available
-                  </td>
+                  <td colspan="4" class="px-4 py-4 text-center text-sm text-zinc-500">No usage data available</td>
                 </tr>
-                <tr v-for="stat in aiStats.stats.operation_stats" :key="stat.operation" class="hover:bg-muted/20">
-                  <td class="px-4 py-2 text-sm font-medium text-foreground capitalize">
+                <tr
+                  v-for="stat in aiStats.stats.operation_stats"
+                  :key="stat.operation"
+                  class="hover:bg-zinc-800/30 transition-colors"
+                >
+                  <td class="px-4 py-2.5 text-sm font-medium text-white capitalize">
                     {{ stat.operation.replace(/_/g, ' ') }}
                   </td>
-                  <td class="px-4 py-2 text-sm text-right font-mono">{{ formatNumber(stat.count) }}</td>
-                  <td class="px-4 py-2 text-sm text-right font-mono">
+                  <td class="px-4 py-2.5 text-sm text-right font-mono text-zinc-300">{{ formatNumber(stat.count) }}</td>
+                  <td class="px-4 py-2.5 text-sm text-right font-mono text-zinc-300">
                     {{ stat.total_tokens ? formatNumber(stat.total_tokens) : '-' }}
                   </td>
-                  <td class="px-4 py-2 text-sm text-right font-mono">
+                  <td class="px-4 py-2.5 text-sm text-right font-mono text-zinc-300">
                     {{
                       stat.total_duration && parseFloat(stat.total_duration) > 0
                         ? formatDuration(stat.total_duration)
@@ -630,55 +802,52 @@
       <!-- Recent Logs Table -->
       <div
         v-if="aiStats && aiStats.recent_logs.length > 0"
-        class="bg-card border border-border rounded-lg shadow-sm overflow-hidden"
+        class="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden"
       >
+        <div class="px-5 py-3.5 bg-zinc-900/80 border-b border-zinc-800">
+          <h3 class="text-sm font-semibold text-white">Recent Activity</h3>
+        </div>
         <div class="overflow-x-auto">
           <table class="w-full">
-            <thead class="bg-muted/30">
+            <thead class="bg-zinc-900/60">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Time
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  User
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">Time</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">User</th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Operation
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Provider/Model
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Usage
-                </th>
+                <th class="px-5 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">Usage</th>
               </tr>
             </thead>
-            <tbody class="bg-card divide-y divide-border">
-              <tr v-for="log in aiStats.recent_logs" :key="log.id" class="hover:bg-muted/20 transition-colors">
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
-                  {{ formatDate(log.created_at) }}
+            <tbody class="divide-y divide-zinc-800/50">
+              <tr v-for="log in aiStats.recent_logs" :key="log.id" class="hover:bg-zinc-800/30 transition-colors">
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm text-zinc-500">{{ formatDate(log.created_at) }}</span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <code class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary">
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <code class="text-xs bg-zinc-800 px-2.5 py-1.5 rounded-lg font-mono text-zinc-200">
                     {{ formatWalletAddress(log.user_wallet) }}
                   </code>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
+                <td class="px-5 py-4 whitespace-nowrap">
                   <span
-                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                    class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30"
                   >
                     {{ log.operation }}
                   </span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                <td class="px-5 py-4 whitespace-nowrap">
                   <div class="flex flex-col">
-                    <span class="font-medium capitalize">{{ log.provider }}</span>
-                    <span class="text-xs text-muted-foreground">{{ log.model }}</span>
+                    <span class="text-sm font-medium text-white capitalize">{{ log.provider }}</span>
+                    <span class="text-xs text-zinc-500">{{ log.model }}</span>
                   </div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">
-                  <div v-if="log.tokens" class="text-foreground">{{ formatNumber(log.tokens) }} tokens</div>
-                  <div v-if="log.duration" class="text-foreground">
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <div v-if="log.tokens" class="text-sm text-zinc-300">{{ formatNumber(log.tokens) }} tokens</div>
+                  <div v-if="log.duration" class="text-xs text-zinc-500">
                     {{ formatDuration(log.duration) }}
                   </div>
                 </td>
@@ -689,30 +858,125 @@
       </div>
     </div>
 
+    <!-- Analytics Tab -->
+    <div v-if="activeTab === 'analytics'" class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <!-- Stats Header -->
+      <div class="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 flex items-center justify-center"
+            >
+              <Activity class="h-5 w-5 text-emerald-400" />
+            </div>
+            <div>
+              <h2 class="text-lg font-semibold text-white">Analytics</h2>
+              <p class="text-xs text-zinc-500">Track key user actions and events</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="analyticsLoading" class="flex items-center justify-center py-12">
+        <div class="text-center">
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-emerald-400" />
+          <p class="text-zinc-400">Loading analytics...</p>
+        </div>
+      </div>
+
+      <div v-else-if="analyticsStats" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          v-for="(stats, event_type) in analyticsStats"
+          :key="event_type"
+          class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4 hover:bg-zinc-900/60 transition-colors"
+        >
+          <div class="flex items-center gap-2 mb-4">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 flex items-center justify-center"
+            >
+              <Activity class="h-4 w-4 text-emerald-400" />
+            </div>
+            <h3 class="text-sm font-semibold text-white capitalize">{{ formatEventName(event_type) }}</h3>
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="bg-zinc-800/50 rounded-lg p-2.5">
+              <p class="text-xs text-zinc-500 mb-1">Today</p>
+              <p class="text-xl font-bold text-white">{{ stats.today }}</p>
+            </div>
+            <div class="bg-zinc-800/50 rounded-lg p-2.5">
+              <p class="text-xs text-zinc-500 mb-1">This Week</p>
+              <p class="text-xl font-bold text-white">{{ stats.this_week }}</p>
+            </div>
+            <div class="bg-emerald-500/10 rounded-lg p-2.5 border border-emerald-500/20">
+              <p class="text-xs text-emerald-400/80 mb-1">Total</p>
+              <p class="text-xl font-bold text-emerald-400">{{ stats.total }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="text-center py-12 bg-zinc-900/40 border border-zinc-800 rounded-xl">
+        <div
+          class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 flex items-center justify-center mx-auto mb-4"
+        >
+          <Activity class="h-7 w-7 text-emerald-400" />
+        </div>
+        <p class="text-zinc-400">No analytics data available</p>
+      </div>
+    </div>
+
     <!-- Beta Codes Tab -->
     <div v-if="activeTab === 'beta'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <!-- Stats Cards -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
-          <h3 class="text-sm font-medium text-muted-foreground">Total Codes</h3>
-          <p class="text-2xl font-bold text-foreground mt-2">{{ betaCodeStats.total }}</p>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center"
+            >
+              <KeyRound class="h-4 w-4 text-amber-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Total Codes</h3>
+          </div>
+          <p class="text-2xl font-bold text-white">{{ betaCodeStats.total }}</p>
         </div>
-        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
-          <h3 class="text-sm font-medium text-muted-foreground">Available</h3>
-          <p class="text-2xl font-bold text-green-500 mt-2">{{ betaCodeStats.available }}</p>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 flex items-center justify-center"
+            >
+              <CheckCircle class="h-4 w-4 text-green-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Available</h3>
+          </div>
+          <p class="text-2xl font-bold text-green-400">{{ betaCodeStats.available }}</p>
         </div>
-        <div class="bg-card border border-border rounded-lg p-4 shadow-sm">
-          <h3 class="text-sm font-medium text-muted-foreground">Used</h3>
-          <p class="text-2xl font-bold text-amber-500 mt-2">{{ betaCodeStats.used }}</p>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center"
+            >
+              <XCircle class="h-4 w-4 text-amber-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Used</h3>
+          </div>
+          <p class="text-2xl font-bold text-amber-400">{{ betaCodeStats.used }}</p>
         </div>
       </div>
 
       <!-- Generate Codes Section -->
-      <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+      <div class="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h2 class="text-lg font-semibold text-foreground">Generate Beta Codes</h2>
-            <p class="text-sm text-muted-foreground mt-1">Create new codes for beta testers</p>
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center"
+            >
+              <KeyRound class="h-5 w-5 text-amber-400" />
+            </div>
+            <div>
+              <h2 class="text-lg font-semibold text-white">Generate Beta Codes</h2>
+              <p class="text-xs text-zinc-500">Create new codes for beta testers</p>
+            </div>
           </div>
           <div class="flex items-center gap-3 w-full sm:w-auto">
             <input
@@ -720,12 +984,12 @@
               type="number"
               min="1"
               max="100"
-              class="w-20 px-3 py-1.5 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              class="w-20 px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50"
             />
             <button
               @click="handleGenerateCodes"
               :disabled="generatingCodes"
-              class="px-4 py-2 bg-gradient-to-r from-amber-500/80 to-orange-500/80 hover:from-amber-500/90 hover:to-orange-500/90 text-white rounded-md flex items-center gap-2 text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              class="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Loader2 v-if="generatingCodes" class="h-4 w-4 animate-spin" />
               <Plus v-else class="h-4 w-4" />
@@ -734,109 +998,104 @@
             <button
               v-if="availableBetaCodes.length > 0"
               @click="copyAllAvailableCodes"
-              class="px-4 py-2 bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground rounded-md flex items-center gap-2 text-sm font-medium transition-all"
+              class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-all border border-zinc-700"
             >
               <Copy class="h-4 w-4" />
-              Copy All Available
+              Copy All
             </button>
           </div>
         </div>
       </div>
 
       <!-- Error Display -->
-      <div
-        v-if="betaCodesError"
-        class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4"
-      >
+      <div v-if="betaCodesError" class="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
         <div class="flex items-center gap-2">
-          <AlertTriangle class="h-4 w-4 text-red-500" />
-          <p class="text-red-600 dark:text-red-400 text-sm">{{ betaCodesError }}</p>
+          <AlertTriangle class="h-4 w-4 text-red-400" />
+          <p class="text-red-300 text-sm">{{ betaCodesError }}</p>
         </div>
       </div>
 
       <!-- Loading State -->
       <div v-if="betaCodesLoading && !betaCodes.length" class="flex items-center justify-center py-12">
         <div class="text-center">
-          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p class="text-muted-foreground">Loading beta codes...</p>
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-amber-400" />
+          <p class="text-zinc-400">Loading beta codes...</p>
         </div>
       </div>
 
       <!-- Beta Codes Table -->
-      <div v-else-if="betaCodes.length > 0" class="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+      <div v-else-if="betaCodes.length > 0" class="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden">
         <div class="overflow-x-auto">
           <table class="w-full">
-            <thead class="bg-muted/30">
+            <thead class="bg-zinc-900/80">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Code
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">Code</th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Status
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Used By
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Created
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody class="bg-card divide-y divide-border">
-              <tr v-for="code in betaCodes" :key="code.id" class="hover:bg-muted/20 transition-colors">
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <code class="text-sm bg-muted px-2 py-1 rounded font-mono text-primary tracking-wider">
+            <tbody class="divide-y divide-zinc-800/50">
+              <tr v-for="code in betaCodes" :key="code.id" class="hover:bg-zinc-800/30 transition-colors">
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <code class="text-sm bg-zinc-800 px-2.5 py-1.5 rounded-lg font-mono text-amber-300 tracking-wider">
                     {{ code.code }}
                   </code>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
+                <td class="px-5 py-4 whitespace-nowrap">
                   <span
                     v-if="code.used"
-                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                    class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30"
                   >
-                    <XCircle class="h-3 w-3 mr-1" />
+                    <XCircle class="h-3 w-3 mr-1.5" />
                     Used
                   </span>
                   <span
                     v-else
-                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800"
+                    class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-green-500/20 text-green-300 border border-green-500/30"
                   >
-                    <CheckCircle class="h-3 w-3 mr-1" />
+                    <CheckCircle class="h-3 w-3 mr-1.5" />
                     Available
                   </span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
+                <td class="px-5 py-4 whitespace-nowrap">
                   <template v-if="code.used_by">
-                    <span v-if="code.used_by.email" class="text-sm text-foreground">
+                    <span v-if="code.used_by.email" class="text-sm text-zinc-200">
                       {{ code.used_by.email }}
                     </span>
                     <code
                       v-else-if="code.used_by.wallet_address"
-                      class="text-xs bg-muted px-2 py-1 rounded font-mono text-primary"
+                      class="text-xs bg-zinc-800 px-2.5 py-1.5 rounded-lg font-mono text-zinc-200"
                     >
                       {{ formatWalletAddress(code.used_by.wallet_address) }}
                     </code>
-                    <span v-else class="text-sm text-muted-foreground">User #{{ code.used_by.id }}</span>
+                    <span v-else class="text-sm text-zinc-500">User #{{ code.used_by.id }}</span>
                   </template>
-                  <span v-else class="text-sm text-muted-foreground">-</span>
+                  <span v-else class="text-sm text-zinc-600">-</span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
-                  {{ formatDate(code.created_at) }}
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm text-zinc-500">{{ formatDate(code.created_at) }}</span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                <td class="px-5 py-4 whitespace-nowrap">
                   <button
                     v-if="!code.used"
                     @click="copyBetaCode(code.code, code.id)"
-                    class="inline-flex items-center px-3 py-1.5 bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground text-xs font-medium rounded-md transition-all"
+                    class="inline-flex items-center px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-medium rounded-lg transition-all border border-zinc-700"
                   >
-                    <Check v-if="copiedCodeId === code.id" class="h-3 w-3 mr-1 text-green-500" />
-                    <Copy v-else class="h-3 w-3 mr-1" />
+                    <Check v-if="copiedCodeId === code.id" class="h-3 w-3 mr-1.5 text-green-400" />
+                    <Copy v-else class="h-3 w-3 mr-1.5" />
                     {{ copiedCodeId === code.id ? 'Copied!' : 'Copy' }}
                   </button>
-                  <span v-else class="text-xs text-muted-foreground">
+                  <span v-else class="text-xs text-zinc-500">
                     Used {{ code.used_at ? formatDate(code.used_at) : '' }}
                   </span>
                 </td>
@@ -847,59 +1106,226 @@
       </div>
 
       <!-- Empty State -->
-      <div v-else class="text-center py-12 bg-card border border-border rounded-lg">
-        <KeyRound class="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-        <p class="text-muted-foreground mb-4">No beta codes generated yet</p>
+      <div v-else class="text-center py-12 bg-zinc-900/40 border border-zinc-800 rounded-xl">
+        <div
+          class="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center mx-auto mb-4"
+        >
+          <KeyRound class="h-7 w-7 text-amber-400" />
+        </div>
+        <p class="text-zinc-400 mb-4">No beta codes generated yet</p>
         <button
           @click="handleGenerateCodes"
           :disabled="generatingCodes"
-          class="px-4 py-2 bg-gradient-to-r from-amber-500/80 to-orange-500/80 hover:from-amber-500/90 hover:to-orange-500/90 text-white rounded-md text-sm font-medium transition-all disabled:opacity-50"
+          class="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
         >
           Generate Your First Codes
         </button>
       </div>
     </div>
 
+    <!-- Waitlist Tab -->
+    <div v-if="activeTab === 'waitlist'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <!-- Stats Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center"
+            >
+              <Users class="h-4 w-4 text-violet-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Total Signups</h3>
+          </div>
+          <p class="text-2xl font-bold text-white">{{ waitlistStats.total }}</p>
+        </div>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 flex items-center justify-center"
+            >
+              <Activity class="h-4 w-4 text-green-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">Today</h3>
+          </div>
+          <p class="text-2xl font-bold text-green-400">{{ waitlistStats.today }}</p>
+        </div>
+        <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30 flex items-center justify-center"
+            >
+              <Activity class="h-4 w-4 text-blue-400" />
+            </div>
+            <h3 class="text-sm font-medium text-zinc-400">This Week</h3>
+          </div>
+          <p class="text-2xl font-bold text-blue-400">{{ waitlistStats.this_week }}</p>
+        </div>
+      </div>
+
+      <!-- Header -->
+      <div class="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center"
+            >
+              <Users class="h-5 w-5 text-violet-400" />
+            </div>
+            <div>
+              <h2 class="text-lg font-semibold text-white">Waitlist</h2>
+              <p class="text-xs text-zinc-500">Users who signed up for early access</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              v-if="waitlistEntries.length > 0"
+              @click="copyAllWaitlistEmails"
+              class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg flex items-center gap-2 text-sm font-medium transition-all border border-zinc-700"
+            >
+              <Copy class="h-4 w-4" />
+              Copy All Emails
+            </button>
+            <span class="px-3 py-1.5 bg-zinc-800 rounded-lg text-sm text-zinc-300 font-medium whitespace-nowrap">
+              {{ waitlistEntries.length }} email{{ waitlistEntries.length !== 1 ? 's' : '' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Display -->
+      <div v-if="waitlistError" class="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+        <div class="flex items-center gap-2">
+          <AlertTriangle class="h-4 w-4 text-red-400" />
+          <p class="text-red-300 text-sm">{{ waitlistError }}</p>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="waitlistLoading && !waitlistEntries.length" class="flex items-center justify-center py-12">
+        <div class="text-center">
+          <Loader2 class="h-8 w-8 animate-spin mx-auto mb-4 text-violet-400" />
+          <p class="text-zinc-400">Loading waitlist...</p>
+        </div>
+      </div>
+
+      <!-- Waitlist Table -->
+      <div
+        v-else-if="waitlistEntries.length > 0"
+        class="bg-zinc-900/40 border border-zinc-800 rounded-xl overflow-hidden"
+      >
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-zinc-900/80">
+              <tr>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">ID</th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  Email
+                </th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  Signed Up
+                </th>
+                <th class="px-5 py-3.5 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-800/50">
+              <tr v-for="entry in waitlistEntries" :key="entry.id" class="hover:bg-zinc-800/30 transition-colors">
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm font-mono text-zinc-500">#{{ entry.id }}</span>
+                </td>
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm text-zinc-200">{{ entry.email }}</span>
+                </td>
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <span class="text-sm text-zinc-500">{{ formatDate(entry.created_at) }}</span>
+                </td>
+                <td class="px-5 py-4 whitespace-nowrap">
+                  <button
+                    @click="copyWaitlistEmail(entry.email)"
+                    class="inline-flex items-center px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-medium rounded-lg transition-all border border-zinc-700"
+                  >
+                    <Copy class="h-3 w-3 mr-1.5" />
+                    Copy
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else class="text-center py-12 bg-zinc-900/40 border border-zinc-800 rounded-xl">
+        <div
+          class="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center mx-auto mb-4"
+        >
+          <Users class="h-7 w-7 text-violet-400" />
+        </div>
+        <p class="text-zinc-400 mb-4">No waitlist signups yet</p>
+        <button
+          @click="fetchWaitlist"
+          class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg text-sm font-medium transition-all border border-zinc-700"
+        >
+          Refresh Waitlist
+        </button>
+      </div>
+    </div>
+
     <!-- UI Overrides Tab -->
     <div v-if="activeTab === 'settings'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div class="bg-card p-4 rounded-lg border border-border shadow-sm">
+      <!-- Stats Header -->
+      <div class="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-foreground">Settings</h2>
-          <span class="text-sm text-muted-foreground">Feature flags and UI configuration</span>
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-500/20 to-zinc-500/20 border border-slate-500/30 flex items-center justify-center"
+            >
+              <Settings class="h-5 w-5 text-slate-400" />
+            </div>
+            <div>
+              <h2 class="text-lg font-semibold text-white">Settings</h2>
+              <p class="text-xs text-zinc-500">Feature flags and UI configuration</p>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- Feature Flags -->
-      <div class="bg-card border border-border rounded-lg shadow-sm p-6">
+      <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-5">
         <div class="space-y-4">
           <div>
-            <h3 class="text-md font-medium text-foreground mb-3">Feature Flags</h3>
-            <p class="text-sm text-muted-foreground mb-4">
+            <h3 class="text-sm font-semibold text-white mb-2">Feature Flags</h3>
+            <p class="text-xs text-zinc-500 mb-4">
               Enable or disable features across the application. Changes take effect immediately for all users.
             </p>
 
             <div class="space-y-4">
               <!-- Live Clip Feature Toggle -->
-              <div class="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
+              <div class="flex items-center justify-between p-4 bg-zinc-900/60 rounded-xl border border-zinc-800">
                 <div class="flex-1">
                   <div class="flex items-center gap-2">
-                    <Radio class="h-4 w-4 text-primary" />
-                    <span class="font-medium text-foreground">Live Clip</span>
+                    <div
+                      class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 flex items-center justify-center"
+                    >
+                      <Radio class="h-4 w-4 text-violet-400" />
+                    </div>
+                    <span class="font-medium text-white">Live Clip</span>
                   </div>
-                  <p class="text-sm text-muted-foreground mt-1">
+                  <p class="text-xs text-zinc-500 mt-2 ml-10">
                     Enable real-time stream monitoring, recording, and clip detection features.
                   </p>
                 </div>
                 <div class="flex items-center gap-3">
-                  <span v-if="featureFlagsLoading" class="text-xs text-muted-foreground flex items-center gap-1">
+                  <span v-if="featureFlagsLoading" class="text-xs text-zinc-500 flex items-center gap-1">
                     <Loader2 class="h-3 w-3 animate-spin" />
                     Loading...
                   </span>
                   <button
                     @click="toggleLiveClipFeature"
                     :disabled="featureFlagsLoading || updatingLiveClipFlag"
-                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    :class="isLiveClipEnabled ? 'bg-primary' : 'bg-muted'"
+                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                    :class="isLiveClipEnabled ? 'bg-violet-500' : 'bg-zinc-700'"
                     role="switch"
                     :aria-checked="isLiveClipEnabled"
                   >
@@ -911,37 +1337,38 @@
                 </div>
               </div>
 
-              <div
-                v-if="!isLiveClipEnabled"
-                class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md"
-              >
-                <p class="text-sm text-amber-700 dark:text-amber-300">
+              <div v-if="!isLiveClipEnabled" class="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                <p class="text-sm text-amber-300">
                   <strong>Live Clip is disabled.</strong>
                   The Live Clip page and monitoring controls are hidden from all users.
                 </p>
               </div>
 
               <!-- Beta Mode Toggle -->
-              <div class="flex items-center justify-between p-4 bg-muted/30 rounded-lg border border-border/50">
+              <div class="flex items-center justify-between p-4 bg-zinc-900/60 rounded-xl border border-zinc-800">
                 <div class="flex-1">
                   <div class="flex items-center gap-2">
-                    <KeyRound class="h-4 w-4 text-amber-500" />
-                    <span class="font-medium text-foreground">Beta Mode</span>
+                    <div
+                      class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center"
+                    >
+                      <KeyRound class="h-4 w-4 text-amber-400" />
+                    </div>
+                    <span class="font-medium text-white">Beta Mode</span>
                   </div>
-                  <p class="text-sm text-muted-foreground mt-1">
+                  <p class="text-xs text-zinc-500 mt-2 ml-10">
                     Require new users to enter a beta code before accessing the app.
                   </p>
                 </div>
                 <div class="flex items-center gap-3">
-                  <span v-if="featureFlagsLoading" class="text-xs text-muted-foreground flex items-center gap-1">
+                  <span v-if="featureFlagsLoading" class="text-xs text-zinc-500 flex items-center gap-1">
                     <Loader2 class="h-3 w-3 animate-spin" />
                     Loading...
                   </span>
                   <button
                     @click="toggleBetaModeFeature"
                     :disabled="featureFlagsLoading || updatingBetaModeFlag"
-                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    :class="isBetaModeEnabled ? 'bg-amber-500' : 'bg-muted'"
+                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:ring-offset-2 focus:ring-offset-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                    :class="isBetaModeEnabled ? 'bg-amber-500' : 'bg-zinc-700'"
                     role="switch"
                     :aria-checked="isBetaModeEnabled"
                   >
@@ -953,11 +1380,8 @@
                 </div>
               </div>
 
-              <div
-                v-if="isBetaModeEnabled"
-                class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md"
-              >
-                <p class="text-sm text-amber-700 dark:text-amber-300">
+              <div v-if="isBetaModeEnabled" class="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                <p class="text-sm text-amber-300">
                   <strong>Beta Mode is enabled.</strong>
                   New users must enter a valid beta code to access the app. Generate codes in the Beta Codes tab.
                 </p>
@@ -968,11 +1392,11 @@
       </div>
 
       <!-- Platform Override Controls -->
-      <div class="bg-card border border-border rounded-lg shadow-sm p-6">
+      <div class="bg-zinc-900/40 border border-zinc-800 rounded-xl p-5">
         <div class="space-y-4">
           <div>
-            <h3 class="text-md font-medium text-foreground mb-3">TitleBar Platform Override</h3>
-            <p class="text-sm text-muted-foreground mb-4">
+            <h3 class="text-sm font-semibold text-white mb-2">TitleBar Platform Override</h3>
+            <p class="text-xs text-zinc-500 mb-4">
               Force the TitleBar component to render as if running on a specific operating system. This allows testing
               platform-specific styling without switching environments.
             </p>
@@ -983,11 +1407,12 @@
                 :key="platform"
                 @click="setTitleBarOverride(platform)"
                 :class="{
-                  'bg-gradient-to-r from-blue-500/80 to-indigo-500/80 hover:from-blue-500/90 hover:to-indigo-500/90 text-white':
+                  'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border-blue-500/30':
                     titleBarPlatformOverride === platform,
-                  'bg-muted text-muted-foreground hover:bg-muted/80': titleBarPlatformOverride !== platform,
+                  'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white border-zinc-700':
+                    titleBarPlatformOverride !== platform,
                 }"
-                class="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all"
+                class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all border"
               >
                 <Check v-if="titleBarPlatformOverride === platform" class="h-3 w-3 mr-2" />
                 {{ getPlatformDisplayName(platform) }}
@@ -996,15 +1421,12 @@
 
             <div
               v-if="titleBarPlatformOverride !== 'auto'"
-              class="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md"
+              class="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl"
             >
-              <p class="text-sm text-blue-700 dark:text-blue-300">
+              <p class="text-sm text-blue-300">
                 <strong>Active Override:</strong>
                 TitleBar is rendering as {{ getPlatformDisplayName(titleBarPlatformOverride) }} style.
-                <button
-                  @click="setTitleBarOverride('auto')"
-                  class="ml-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline"
-                >
+                <button @click="setTitleBarOverride('auto')" class="ml-2 text-blue-400 hover:text-blue-200 underline">
                   Reset to auto
                 </button>
               </p>
@@ -1039,188 +1461,546 @@
     />
 
     <!-- Credit Editing Modal -->
-    <div v-if="showCreditDialog" class="fixed inset-0 z-50 overflow-y-auto">
-      <div class="flex min-h-screen items-center justify-center p-4">
-        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
-        <div class="relative bg-card border border-border rounded-lg shadow-xl max-w-md w-full p-6">
-          <div class="mb-4">
-            <h3 class="text-lg font-semibold text-foreground">Add User Credits</h3>
-            <p class="text-sm text-muted-foreground mt-1">
-              Add credits for {{ userToEditCredits ? getUserDisplayName(userToEditCredits) : '' }}
-            </p>
-          </div>
-
-          <form @submit.prevent="updateUserCredits" class="space-y-4">
-            <!-- Hours to Add -->
-            <div>
-              <label for="hours_to_add" class="block text-sm font-medium text-foreground mb-1">Hours to Add</label>
-              <input
-                id="hours_to_add"
-                v-model.number="creditForm.hours_to_add"
-                type="number"
-                step="0.01"
-                min="0.01"
-                required
-                class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="Enter hours to add"
-              />
-              <p class="text-xs text-muted-foreground mt-1">Enter the number of hours to add to the user's balance</p>
-            </div>
-
-            <!-- Error Display -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showCreditDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="handleCreditDialogClose"
+        >
+          <Transition name="dialog" appear>
             <div
-              v-if="creditError"
-              class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3"
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
             >
-              <p class="text-red-600 dark:text-red-400 text-sm">{{ creditError }}</p>
-            </div>
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500" />
 
-            <!-- Current Credits Display -->
-            <div v-if="userToEditCredits?.credits" class="bg-muted/30 border border-border rounded-md p-3">
-              <p class="text-sm text-muted-foreground mb-1">Current balance:</p>
-              <div class="flex justify-between text-sm mb-2">
-                <span>Remaining: {{ formatCredits(userToEditCredits.credits.hours_remaining) }} hours</span>
-                <span>Used: {{ formatCredits(userToEditCredits.credits.hours_used) }} hours</span>
+              <div class="p-5 sm:p-6 lg:p-8">
+                <!-- Header -->
+                <div class="mb-4 sm:mb-6 text-center">
+                  <div
+                    class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 mb-3 sm:mb-4"
+                  >
+                    <CreditCard class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-green-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">Add Credits</h2>
+                  <p class="text-zinc-400 text-xs sm:text-sm mt-1">
+                    {{ userToEditCredits ? getUserDisplayName(userToEditCredits) : '' }}
+                  </p>
+                </div>
+
+                <form @submit.prevent="updateUserCredits" class="space-y-4">
+                  <!-- Current Credits Display -->
+                  <div
+                    v-if="userToEditCredits?.credits"
+                    class="p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800"
+                  >
+                    <p class="text-xs text-zinc-500 mb-2">Current Balance</p>
+                    <div class="flex justify-between text-sm">
+                      <div>
+                        <span class="text-zinc-400">Remaining:</span>
+                        <span class="ml-2 font-medium text-white">
+                          {{ formatCredits(userToEditCredits.credits.hours_remaining) }} min
+                        </span>
+                      </div>
+                      <div>
+                        <span class="text-zinc-400">Used:</span>
+                        <span class="ml-2 font-medium text-zinc-300">
+                          {{ formatCredits(userToEditCredits.credits.hours_used) }} min
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Hours to Add -->
+                  <div>
+                    <label for="hours_to_add" class="block text-sm font-medium text-zinc-300 mb-1.5">
+                      Minutes to Add
+                    </label>
+                    <input
+                      id="hours_to_add"
+                      v-model.number="creditForm.hours_to_add"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all text-sm"
+                      placeholder="Enter minutes to add"
+                    />
+                  </div>
+
+                  <!-- Preview -->
+                  <div
+                    v-if="creditForm.hours_to_add && creditForm.hours_to_add > 0 && userToEditCredits?.credits"
+                    class="p-3 bg-green-500/10 border border-green-500/30 rounded-lg"
+                  >
+                    <div class="flex items-center justify-between text-sm">
+                      <span class="text-green-300">New balance:</span>
+                      <span class="font-semibold text-green-400">
+                        {{
+                          formatCredits(
+                            (userToEditCredits.credits.hours_remaining === 'unlimited'
+                              ? 0
+                              : Number(userToEditCredits.credits.hours_remaining)) + creditForm.hours_to_add
+                          )
+                        }}
+                        min
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Error Display -->
+                  <div v-if="creditError" class="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <p class="text-red-400 text-sm">{{ creditError }}</p>
+                  </div>
+
+                  <!-- Actions -->
+                  <div class="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      @click="handleCreditDialogClose"
+                      class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 hover:border-zinc-600 text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      :disabled="updatingCreditsUserId !== null || !creditForm.hours_to_add"
+                      class="flex-1 px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-semibold transition-all relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      <div
+                        class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                      />
+                      <span class="relative flex items-center justify-center gap-2">
+                        <Loader2 v-if="updatingCreditsUserId !== null" class="h-4 w-4 animate-spin" />
+                        {{ updatingCreditsUserId !== null ? 'Adding...' : 'Add Credits' }}
+                      </span>
+                    </button>
+                  </div>
+                </form>
               </div>
-              <div v-if="creditForm.hours_to_add && creditForm.hours_to_add > 0" class="pt-2 border-t border-border">
-                <p class="text-sm text-muted-foreground mb-1">After adding credits:</p>
-                <div class="flex justify-between text-sm font-medium">
-                  <span>
-                    New balance:
-                    {{
-                      formatCredits(
-                        (userToEditCredits.credits.hours_remaining === 'unlimited'
-                          ? 0
-                          : Number(userToEditCredits.credits.hours_remaining)) + creditForm.hours_to_add
-                      )
-                    }}
-                    hours
-                  </span>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Subscription Management Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showSubscriptionDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="handleSubscriptionDialogClose"
+        >
+          <Transition name="dialog" appear>
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-2xl w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
+            >
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-blue-500 via-cyan-500 to-teal-500 flex-shrink-0" />
+
+              <!-- Header -->
+              <div
+                class="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-zinc-800 bg-zinc-900/50 flex-shrink-0"
+              >
+                <div class="flex items-center gap-3">
+                  <div
+                    class="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30"
+                  >
+                    <Layers class="h-5 w-5 text-blue-400" />
+                  </div>
+                  <div>
+                    <h2 class="text-lg font-semibold text-white">Subscription Management</h2>
+                    <p class="text-zinc-400 text-xs">
+                      {{ userToEditSubscription ? getUserDisplayName(userToEditSubscription) : '' }}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  @click="handleSubscriptionDialogClose"
+                  class="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors border border-zinc-800"
+                >
+                  <X class="w-5 h-5" />
+                </button>
+              </div>
+
+              <!-- Content -->
+              <div class="flex-1 p-5 sm:p-6 overflow-y-auto custom-scrollbar space-y-5">
+                <!-- Current Subscription Status -->
+                <div
+                  v-if="userToEditSubscription?.subscription"
+                  class="p-4 bg-zinc-900/80 rounded-xl border border-zinc-800"
+                >
+                  <h3 class="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">
+                    Current Subscription
+                  </h3>
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p class="text-xs text-zinc-500 mb-1">Tier</p>
+                      <p class="font-medium text-white">
+                        {{ userToEditSubscription.subscription.tier_name || 'None' }}
+                      </p>
+                    </div>
+                    <div>
+                      <p class="text-xs text-zinc-500 mb-1">Status</p>
+                      <span
+                        :class="getSubscriptionStatusBadgeClass(userToEditSubscription.subscription.status)"
+                        class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize"
+                      >
+                        {{ userToEditSubscription.subscription.status }}
+                      </span>
+                    </div>
+                    <div v-if="userToEditSubscription.subscription.end_date">
+                      <p class="text-xs text-zinc-500 mb-1">Ends</p>
+                      <p class="font-medium text-white">
+                        {{ formatDate(userToEditSubscription.subscription.end_date) }}
+                      </p>
+                    </div>
+                    <div>
+                      <p class="text-xs text-zinc-500 mb-1">Days Remaining</p>
+                      <p class="font-medium text-white">{{ userToEditSubscription.subscription.days_remaining }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Grant Subscription Section -->
+                <div
+                  v-if="!userToEditSubscription?.subscription?.tier_name"
+                  class="p-4 bg-zinc-900/60 rounded-xl border border-zinc-800"
+                >
+                  <h3 class="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Grant Subscription</h3>
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-400 mb-1.5">Tier</label>
+                      <select
+                        v-model="subscriptionForm.grant_tier"
+                        class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      >
+                        <option value="starter">Starter (600 credits)</option>
+                        <option value="creator">Creator (1800 credits)</option>
+                        <option value="pro">Pro (9000 credits)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-400 mb-1.5">Duration (days)</label>
+                      <input
+                        v-model.number="subscriptionForm.grant_days"
+                        type="number"
+                        min="1"
+                        class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        placeholder="30"
+                      />
+                    </div>
+                    <div class="flex flex-col justify-end gap-2">
+                      <label class="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                        <input
+                          v-model="subscriptionForm.grant_credits"
+                          type="checkbox"
+                          class="rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-blue-500/50"
+                        />
+                        Grant Credits
+                      </label>
+                      <button
+                        @click="grantSubscription"
+                        :disabled="updatingSubscriptionUserId !== null"
+                        class="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <span class="flex items-center justify-center gap-2">
+                          <Loader2 v-if="updatingSubscriptionUserId !== null" class="h-4 w-4 animate-spin" />
+                          Grant
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Extend Subscription Section -->
+                <div
+                  v-if="userToEditSubscription?.subscription?.tier_name"
+                  class="p-4 bg-zinc-900/60 rounded-xl border border-zinc-800"
+                >
+                  <h3 class="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Extend Subscription</h3>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-400 mb-1.5">Additional Days</label>
+                      <input
+                        v-model.number="subscriptionForm.extend_days"
+                        type="number"
+                        min="1"
+                        class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500/50"
+                        placeholder="30"
+                      />
+                    </div>
+                    <div class="flex flex-col justify-end gap-2">
+                      <label class="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                        <input
+                          v-model="subscriptionForm.extend_credits"
+                          type="checkbox"
+                          class="rounded border-zinc-600 bg-zinc-800 text-green-500 focus:ring-green-500/50"
+                        />
+                        Grant Credits
+                      </label>
+                      <button
+                        @click="extendSubscription"
+                        :disabled="updatingSubscriptionUserId !== null"
+                        class="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <span class="flex items-center justify-center gap-2">
+                          <Loader2 v-if="updatingSubscriptionUserId !== null" class="h-4 w-4 animate-spin" />
+                          Extend
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Change Tier Section -->
+                <div
+                  v-if="userToEditSubscription?.subscription?.tier_name"
+                  class="p-4 bg-zinc-900/60 rounded-xl border border-zinc-800"
+                >
+                  <h3 class="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Change Tier</h3>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-400 mb-1.5">New Tier</label>
+                      <select
+                        v-model="subscriptionForm.change_tier"
+                        class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                      >
+                        <option value="starter">Starter (600 credits)</option>
+                        <option value="creator">Creator (1800 credits)</option>
+                        <option value="pro">Pro (9000 credits)</option>
+                      </select>
+                    </div>
+                    <div class="flex flex-col justify-end gap-2">
+                      <label class="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+                        <input
+                          v-model="subscriptionForm.change_credits"
+                          type="checkbox"
+                          class="rounded border-zinc-600 bg-zinc-800 text-purple-500 focus:ring-purple-500/50"
+                        />
+                        Grant Credits
+                      </label>
+                      <button
+                        @click="changeSubscriptionTier"
+                        :disabled="updatingSubscriptionUserId !== null"
+                        class="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <span class="flex items-center justify-center gap-2">
+                          <Loader2 v-if="updatingSubscriptionUserId !== null" class="h-4 w-4 animate-spin" />
+                          Change
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Cancel Subscription Section -->
+                <div
+                  v-if="userToEditSubscription?.subscription?.tier_name"
+                  class="p-4 bg-red-500/5 rounded-xl border border-red-500/20"
+                >
+                  <h3 class="text-xs font-semibold text-red-400 uppercase tracking-wider mb-2">Cancel Subscription</h3>
+                  <p class="text-sm text-zinc-400 mb-3">
+                    Cancellation will stop future renewals. The user will retain access until the current end date.
+                  </p>
+                  <button
+                    @click="confirmCancelSubscription"
+                    :disabled="updatingSubscriptionUserId !== null"
+                    class="px-4 py-2 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancel Subscription
+                  </button>
+                </div>
+
+                <!-- Subscription History -->
+                <div v-if="subscriptionHistory.length > 0" class="p-4 bg-zinc-900/60 rounded-xl border border-zinc-800">
+                  <h3 class="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">
+                    Subscription History
+                  </h3>
+                  <div class="overflow-x-auto">
+                    <table class="w-full">
+                      <thead class="bg-zinc-800/50">
+                        <tr>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-zinc-400">Tier</th>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-zinc-400">Status</th>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-zinc-400">Start</th>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-zinc-400">End</th>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-zinc-400">Credits</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-zinc-800">
+                        <tr v-for="sub in subscriptionHistory" :key="sub.id" class="hover:bg-zinc-800/30">
+                          <td class="px-3 py-2 text-sm text-white capitalize">{{ sub.tier }}</td>
+                          <td class="px-3 py-2 text-sm">
+                            <span
+                              :class="getSubscriptionStatusBadgeClass(sub.status)"
+                              class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize"
+                            >
+                              {{ sub.status }}
+                            </span>
+                          </td>
+                          <td class="px-3 py-2 text-sm text-zinc-400">{{ formatDate(sub.start_date) }}</td>
+                          <td class="px-3 py-2 text-sm text-zinc-400">{{ formatDate(sub.end_date) }}</td>
+                          <td class="px-3 py-2 text-sm text-white">{{ sub.credits_granted || 0 }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- Error Display -->
+                <div v-if="subscriptionError" class="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <p class="text-red-400 text-sm">{{ subscriptionError }}</p>
                 </div>
               </div>
             </div>
-
-            <!-- Actions -->
-            <div class="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                @click="handleCreditDialogClose"
-                class="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="updatingCreditsUserId !== null"
-                class="px-4 py-2 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white rounded-md font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span v-if="updatingCreditsUserId !== null" class="flex items-center">
-                  <Loader2 class="h-4 w-4 mr-1 animate-spin" />
-                  Updating...
-                </span>
-                <span v-else>Add Credits</span>
-              </button>
-            </div>
-          </form>
+          </Transition>
         </div>
-      </div>
-    </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Subscription Cancel Confirmation Modal -->
+    <ConfirmationModal
+      :show="showCancelSubscriptionDialog"
+      title="Cancel Subscription"
+      :message="'Are you sure you want to cancel subscription for'"
+      :item-name="userToEditSubscription ? getUserDisplayName(userToEditSubscription) : ''"
+      suffix="?"
+      confirm-text="Cancel Subscription"
+      @close="handleCancelSubscriptionDialogClose"
+      @confirm="cancelSubscriptionConfirmed"
+    />
 
     <!-- Organization Credit Editing Modal -->
-    <div v-if="showOrgCreditDialog" class="fixed inset-0 z-50 overflow-y-auto" @click.self="handleOrgCreditDialogClose">
-      <div class="flex min-h-screen items-center justify-center p-4">
-        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm"></div>
-        <div class="relative bg-card border border-border rounded-lg shadow-xl max-w-md w-full p-6">
-          <div class="mb-4">
-            <h3 class="text-lg font-semibold text-foreground">Set Organization Credits</h3>
-            <p class="text-sm text-muted-foreground mt-1">
-              Set credits for
-              <span class="font-medium">{{ orgToEditCredits?.name }}</span>
-            </p>
-          </div>
-
-          <form @submit.prevent="updateOrgCredits" class="space-y-4">
-            <!-- Hours Remaining -->
-            <div>
-              <label for="org_hours_remaining" class="block text-sm font-medium text-foreground mb-1">
-                Hours Remaining
-              </label>
-              <input
-                id="org_hours_remaining"
-                v-model.number="orgCreditForm.hours_remaining"
-                type="number"
-                step="0.01"
-                min="0"
-                required
-                class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="Enter hours remaining"
-              />
-              <p class="text-xs text-muted-foreground mt-1">The total credit balance available to the organization</p>
-            </div>
-
-            <!-- Hours Used -->
-            <div>
-              <label for="org_hours_used" class="block text-sm font-medium text-foreground mb-1">Hours Used</label>
-              <input
-                id="org_hours_used"
-                v-model.number="orgCreditForm.hours_used"
-                type="number"
-                step="0.01"
-                min="0"
-                required
-                class="w-full px-3 py-2 bg-background border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="Enter hours used"
-              />
-              <p class="text-xs text-muted-foreground mt-1">Total hours consumed by the organization (for tracking)</p>
-            </div>
-
-            <!-- Error Display -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showOrgCreditDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="handleOrgCreditDialogClose"
+        >
+          <Transition name="dialog" appear>
             <div
-              v-if="orgCreditError"
-              class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3"
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
             >
-              <p class="text-red-600 dark:text-red-400 text-sm">{{ orgCreditError }}</p>
-            </div>
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500" />
 
-            <!-- Current Credits Display -->
-            <div v-if="orgToEditCredits?.credits" class="bg-muted/30 border border-border rounded-md p-3">
-              <p class="text-sm text-muted-foreground mb-1">Current balance:</p>
-              <div class="flex justify-between text-sm">
-                <span>Remaining: {{ formatCredits(orgToEditCredits.credits.hours_remaining) }} hours</span>
-                <span>Used: {{ formatCredits(orgToEditCredits.credits.hours_used) }} hours</span>
+              <div class="p-5 sm:p-6 lg:p-8">
+                <!-- Header -->
+                <div class="mb-4 sm:mb-6 text-center">
+                  <div
+                    class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 mb-3 sm:mb-4"
+                  >
+                    <Building2 class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-emerald-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">
+                    Set Organization Credits
+                  </h2>
+                  <p class="text-zinc-400 text-xs sm:text-sm mt-1">{{ orgToEditCredits?.name }}</p>
+                </div>
+
+                <form @submit.prevent="updateOrgCredits" class="space-y-4">
+                  <!-- Current Credits Display -->
+                  <div
+                    v-if="orgToEditCredits?.credits"
+                    class="p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800"
+                  >
+                    <p class="text-xs text-zinc-500 mb-2">Current Balance</p>
+                    <div class="flex justify-between text-sm">
+                      <div>
+                        <span class="text-zinc-400">Remaining:</span>
+                        <span class="ml-2 font-medium text-white">
+                          {{ formatCredits(orgToEditCredits.credits.hours_remaining) }} min
+                        </span>
+                      </div>
+                      <div>
+                        <span class="text-zinc-400">Used:</span>
+                        <span class="ml-2 font-medium text-zinc-300">
+                          {{ formatCredits(orgToEditCredits.credits.hours_used) }} min
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Hours Remaining -->
+                  <div>
+                    <label for="org_hours_remaining" class="block text-sm font-medium text-zinc-300 mb-1.5">
+                      Minutes Remaining
+                    </label>
+                    <input
+                      id="org_hours_remaining"
+                      v-model.number="orgCreditForm.hours_remaining"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all text-sm"
+                      placeholder="Enter minutes remaining"
+                    />
+                    <p class="text-xs text-zinc-500 mt-1">The total credit balance available to the organization</p>
+                  </div>
+
+                  <!-- Minutes Used -->
+                  <div>
+                    <label for="org_hours_used" class="block text-sm font-medium text-zinc-300 mb-1.5">
+                      Minutes Used
+                    </label>
+                    <input
+                      id="org_hours_used"
+                      v-model.number="orgCreditForm.hours_used"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all text-sm"
+                      placeholder="Enter minutes used"
+                    />
+                    <p class="text-xs text-zinc-500 mt-1">Total minutes consumed by the organization (for tracking)</p>
+                  </div>
+
+                  <!-- Error Display -->
+                  <div v-if="orgCreditError" class="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <p class="text-red-400 text-sm">{{ orgCreditError }}</p>
+                  </div>
+
+                  <!-- Actions -->
+                  <div class="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      @click="handleOrgCreditDialogClose"
+                      class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 hover:border-zinc-600 text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      :disabled="updatingOrgCreditsId !== null"
+                      class="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-semibold transition-all relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      <div
+                        class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                      />
+                      <span class="relative flex items-center justify-center gap-2">
+                        <Loader2 v-if="updatingOrgCreditsId !== null" class="h-4 w-4 animate-spin" />
+                        {{ updatingOrgCreditsId !== null ? 'Updating...' : 'Set Credits' }}
+                      </span>
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
-
-            <!-- Actions -->
-            <div class="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                @click="handleOrgCreditDialogClose"
-                class="px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                :disabled="updatingOrgCreditsId !== null"
-                class="px-4 py-2 bg-gradient-to-r from-green-500/80 to-emerald-500/80 hover:from-green-500/90 hover:to-emerald-500/90 text-white rounded-md font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <span v-if="updatingOrgCreditsId !== null" class="flex items-center">
-                  <Loader2 class="h-4 w-4 mr-1 animate-spin" />
-                  Updating...
-                </span>
-                <span v-else>Set Credits</span>
-              </button>
-            </div>
-          </form>
+          </Transition>
         </div>
-      </div>
-    </div>
+      </Transition>
+    </Teleport>
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed } from 'vue';
+  import { ref, onMounted, onUnmounted, computed } from 'vue';
   import { useAuthStore } from '@/stores/auth';
   import PageLayout from '@/components/PageLayout.vue';
   import {
@@ -1236,7 +2016,6 @@
     Trash2,
     FileText,
     Activity,
-    Monitor,
     Building2,
     Users,
     Radio,
@@ -1244,11 +2023,16 @@
     Plus,
     CheckCircle,
     XCircle,
+    Layers,
+    X,
+    ChevronDown,
+    MoreVertical,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import api from '@/services/api';
   import { generateCodes, listCodes, type BetaCode, type BetaCodeStats } from '@/services/betaCodes';
+  import { getAnalyticsStats } from '@/services/analytics';
 
   interface User {
     id: number;
@@ -1261,6 +2045,14 @@
     credits: {
       hours_remaining: number | 'unlimited';
       hours_used: number;
+    };
+    subscription: {
+      status: string;
+      tier: string | null;
+      tier_name: string | null;
+      start_date: string | null;
+      end_date: string | null;
+      days_remaining: number;
     };
   }
 
@@ -1349,6 +2141,8 @@
   const loading = ref(false);
   const error = ref<string | null>(null);
   const aiStats = ref<AiUsageStats | null>(null);
+  const analyticsStats = ref<Record<string, { total: number; today: number; this_week: number }> | null>(null);
+  const analyticsLoading = ref(false);
   const promotingUserId = ref<number | null>(null);
   const showPromoteDialog = ref(false);
   const userToPromote = ref<User | null>(null);
@@ -1367,7 +2161,9 @@
     { id: 'organizations', label: 'Organizations' },
     { id: 'bugs', label: 'Bug Reports' },
     { id: 'ai', label: 'AI Usage' },
+    { id: 'analytics', label: 'Analytics' },
     { id: 'beta', label: 'Beta Codes' },
+    { id: 'waitlist', label: 'Waitlist' },
     { id: 'settings', label: 'Settings' },
   ];
 
@@ -1394,6 +2190,23 @@
   });
   const orgCreditError = ref<string | null>(null);
 
+  // Subscription state
+  const showSubscriptionDialog = ref(false);
+  const userToEditSubscription = ref<User | null>(null);
+  const updatingSubscriptionUserId = ref<number | null>(null);
+  const subscriptionForm = ref({
+    grant_tier: 'starter',
+    grant_days: 30,
+    grant_credits: false,
+    extend_days: 30,
+    extend_credits: false,
+    change_tier: 'starter',
+    change_credits: false,
+  });
+  const subscriptionError = ref<string | null>(null);
+  const subscriptionHistory = ref<any[]>([]);
+  const showCancelSubscriptionDialog = ref(false);
+
   // UI Override state
   const titleBarPlatformOverride = ref<string>('auto');
 
@@ -1417,6 +2230,28 @@
   const generateCodeCount = ref(10);
   const betaCodesError = ref<string | null>(null);
   const copiedCodeId = ref<number | null>(null);
+
+  // Waitlist state
+  interface WaitlistEntry {
+    id: number;
+    email: string;
+    created_at: string;
+  }
+
+  interface WaitlistStats {
+    total: number;
+    today: number;
+    this_week: number;
+  }
+
+  const waitlistEntries = ref<WaitlistEntry[]>([]);
+  const waitlistStats = ref<WaitlistStats>({ total: 0, today: 0, this_week: 0 });
+  const waitlistLoading = ref(false);
+  const waitlistError = ref<string | null>(null);
+
+  // User action menu dropdown state
+  const openUserActionMenuId = ref<number | null>(null);
+  const userActionMenuRefs = ref<Map<number, HTMLElement>>(new Map());
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -1490,8 +2325,8 @@
 
   const formatCredits = (credits: number | 'unlimited') => {
     if (credits === 'unlimited') return '∞';
-    if (!credits || credits === 0) return '0.00';
-    return credits.toFixed(2);
+    if (!credits || credits === 0) return '0';
+    return Math.round(credits).toString();
   };
 
   const formatNumber = (num: number) => {
@@ -1709,6 +2544,23 @@
     }
   };
 
+  const fetchAnalyticsStats = async () => {
+    analyticsLoading.value = true;
+    try {
+      console.log('🔐 Admin - Fetching analytics stats...');
+      const stats = await getAnalyticsStats();
+
+      analyticsStats.value = Object.keys(stats).length > 0 ? stats : null;
+      console.log('🔐 Admin - Analytics stats loaded:', stats);
+      console.log('🔐 Admin - Analytics stats keys:', Object.keys(stats));
+    } catch (err) {
+      console.error('🔐 Admin - Error fetching analytics stats:', err);
+      analyticsStats.value = null;
+    } finally {
+      analyticsLoading.value = false;
+    }
+  };
+
   const fetchOrganizations = async () => {
     organizationsLoading.value = true;
 
@@ -1918,6 +2770,21 @@
     }
   };
 
+  const getSeverityClassModern = (severity: string) => {
+    switch (severity) {
+      case 'low':
+        return 'bg-blue-500/20 text-blue-300 border border-blue-500/30';
+      case 'medium':
+        return 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30';
+      case 'high':
+        return 'bg-orange-500/20 text-orange-300 border border-orange-500/30';
+      case 'critical':
+        return 'bg-red-500/20 text-red-300 border border-red-500/30';
+      default:
+        return 'bg-zinc-500/20 text-zinc-300 border border-zinc-500/30';
+    }
+  };
+
   const getStatusClass = (status: string) => {
     switch (status) {
       case 'open':
@@ -1930,6 +2797,21 @@
         return 'bg-gray-50 dark:bg-gray-900/20 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-800';
       default:
         return 'bg-gray-50 dark:bg-gray-900/20 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-800';
+    }
+  };
+
+  const getStatusClassModern = (status: string) => {
+    switch (status) {
+      case 'open':
+        return 'bg-red-500/20 text-red-300 border border-red-500/30';
+      case 'in_progress':
+        return 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30';
+      case 'resolved':
+        return 'bg-green-500/20 text-green-300 border border-green-500/30';
+      case 'closed':
+        return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30';
+      default:
+        return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30';
     }
   };
 
@@ -2099,17 +2981,360 @@
     }
   };
 
+  // Waitlist functions
+  const fetchWaitlist = async () => {
+    waitlistLoading.value = true;
+    waitlistError.value = null;
+
+    try {
+      console.log('🔐 Admin - Fetching waitlist entries...');
+      const response = await api.get('/admin/waitlist');
+
+      if (response.data.success) {
+        waitlistEntries.value = response.data.entries;
+        waitlistStats.value = response.data.stats;
+        console.log(`🔐 Admin - Loaded ${response.data.entries.length} waitlist entries`);
+      } else {
+        waitlistError.value = response.data.error || 'Failed to load waitlist';
+      }
+    } catch (err) {
+      console.error('🔐 Admin - Error fetching waitlist:', err);
+      waitlistError.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      waitlistLoading.value = false;
+    }
+  };
+
+  const copyWaitlistEmail = async (email: string) => {
+    try {
+      await navigator.clipboard.writeText(email);
+      console.log('Copied email to clipboard:', email);
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+    }
+  };
+
+  const copyAllWaitlistEmails = async () => {
+    const emails = waitlistEntries.value.map((entry) => entry.email).join('\n');
+
+    if (!emails) {
+      waitlistError.value = 'No emails to copy';
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(emails);
+      console.log('Copied all waitlist emails to clipboard');
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+    }
+  };
+
+  const getSubscriptionStatusClass = (status: string | undefined) => {
+    switch (status) {
+      case 'active':
+        return 'text-green-400';
+      case 'cancelled':
+        return 'text-amber-400';
+      case 'expired':
+        return 'text-red-400';
+      default:
+        return 'text-zinc-400';
+    }
+  };
+
+  const getSubscriptionStatusBadgeClass = (status: string | undefined) => {
+    switch (status) {
+      case 'active':
+        return 'bg-green-500/20 text-green-400 border border-green-500/30';
+      case 'cancelled':
+        return 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
+      case 'expired':
+        return 'bg-red-500/20 text-red-400 border border-red-500/30';
+      default:
+        return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30';
+    }
+  };
+
+  const openSubscriptionDialog = async (user: User) => {
+    userToEditSubscription.value = user;
+    subscriptionForm.value = {
+      grant_tier: 'starter',
+      grant_days: 30,
+      grant_credits: false,
+      extend_days: 30,
+      extend_credits: false,
+      change_tier: 'starter',
+      change_credits: false,
+    };
+    subscriptionError.value = null;
+    subscriptionHistory.value = [];
+
+    if (user.subscription?.tier_name) {
+      await fetchSubscriptionHistory(user.id);
+    }
+
+    showSubscriptionDialog.value = true;
+  };
+
+  const handleSubscriptionDialogClose = () => {
+    showSubscriptionDialog.value = false;
+    userToEditSubscription.value = null;
+    subscriptionForm.value = {
+      grant_tier: 'starter',
+      grant_days: 30,
+      grant_credits: false,
+      extend_days: 30,
+      extend_credits: false,
+      change_tier: 'starter',
+      change_credits: false,
+    };
+    subscriptionError.value = null;
+    subscriptionHistory.value = [];
+  };
+
+  const fetchSubscriptionHistory = async (userId: number) => {
+    try {
+      const response = await api.get(`/admin/users/${userId}/subscription/history`);
+      if (response.data.success) {
+        subscriptionHistory.value = response.data.subscriptions;
+      }
+    } catch (err) {
+      console.error('Error fetching subscription history:', err);
+    }
+  };
+
+  const grantSubscription = async () => {
+    if (!userToEditSubscription.value) return;
+
+    updatingSubscriptionUserId.value = userToEditSubscription.value.id;
+    subscriptionError.value = null;
+
+    try {
+      const response = await api.post(`/admin/users/${userToEditSubscription.value.id}/subscription`, {
+        tier: subscriptionForm.value.grant_tier,
+        days: subscriptionForm.value.grant_days,
+        grant_credits: subscriptionForm.value.grant_credits,
+      });
+
+      if (response.data.success) {
+        const userIndex = users.value.findIndex((u) => u.id === userToEditSubscription.value!.id);
+        if (userIndex !== -1) {
+          users.value[userIndex] = {
+            ...users.value[userIndex],
+            subscription: response.data.subscription,
+          };
+        }
+        await fetchSubscriptionHistory(userToEditSubscription.value.id);
+      } else {
+        throw new Error(response.data.error || 'Failed to grant subscription');
+      }
+    } catch (err) {
+      subscriptionError.value = err instanceof Error ? err.message : 'Failed to grant subscription';
+    } finally {
+      updatingSubscriptionUserId.value = null;
+    }
+  };
+
+  const extendSubscription = async () => {
+    if (!userToEditSubscription.value) return;
+
+    updatingSubscriptionUserId.value = userToEditSubscription.value.id;
+    subscriptionError.value = null;
+
+    try {
+      const response = await api.put(`/admin/users/${userToEditSubscription.value.id}/subscription/extend`, {
+        days: subscriptionForm.value.extend_days,
+        grant_credits: subscriptionForm.value.extend_credits,
+      });
+
+      if (response.data.success) {
+        const userIndex = users.value.findIndex((u) => u.id === userToEditSubscription.value!.id);
+        if (userIndex !== -1) {
+          users.value[userIndex] = {
+            ...users.value[userIndex],
+            subscription: response.data.subscription,
+          };
+        }
+        await fetchSubscriptionHistory(userToEditSubscription.value.id);
+      } else {
+        throw new Error(response.data.error || 'Failed to extend subscription');
+      }
+    } catch (err) {
+      subscriptionError.value = err instanceof Error ? err.message : 'Failed to extend subscription';
+    } finally {
+      updatingSubscriptionUserId.value = null;
+    }
+  };
+
+  const changeSubscriptionTier = async () => {
+    if (!userToEditSubscription.value) return;
+
+    updatingSubscriptionUserId.value = userToEditSubscription.value.id;
+    subscriptionError.value = null;
+
+    try {
+      const response = await api.put(`/admin/users/${userToEditSubscription.value.id}/subscription/tier`, {
+        tier: subscriptionForm.value.change_tier,
+        grant_credits: subscriptionForm.value.change_credits,
+      });
+
+      if (response.data.success) {
+        const userIndex = users.value.findIndex((u) => u.id === userToEditSubscription.value!.id);
+        if (userIndex !== -1) {
+          users.value[userIndex] = {
+            ...users.value[userIndex],
+            subscription: response.data.subscription,
+          };
+        }
+        await fetchSubscriptionHistory(userToEditSubscription.value.id);
+      } else {
+        throw new Error(response.data.error || 'Failed to change tier');
+      }
+    } catch (err) {
+      subscriptionError.value = err instanceof Error ? err.message : 'Failed to change tier';
+    } finally {
+      updatingSubscriptionUserId.value = null;
+    }
+  };
+
+  const confirmCancelSubscription = () => {
+    showCancelSubscriptionDialog.value = true;
+  };
+
+  const handleCancelSubscriptionDialogClose = () => {
+    showCancelSubscriptionDialog.value = false;
+  };
+
+  const cancelSubscriptionConfirmed = async () => {
+    if (!userToEditSubscription.value) return;
+
+    updatingSubscriptionUserId.value = userToEditSubscription.value.id;
+    subscriptionError.value = null;
+
+    try {
+      const response = await api.post(`/admin/users/${userToEditSubscription.value.id}/subscription/cancel`);
+
+      if (response.data.success) {
+        const userIndex = users.value.findIndex((u) => u.id === userToEditSubscription.value!.id);
+        if (userIndex !== -1) {
+          users.value[userIndex] = {
+            ...users.value[userIndex],
+            subscription: response.data.subscription,
+          };
+        }
+        await fetchSubscriptionHistory(userToEditSubscription.value.id);
+        handleCancelSubscriptionDialogClose();
+      } else {
+        throw new Error(response.data.error || 'Failed to cancel subscription');
+      }
+    } catch (err) {
+      subscriptionError.value = err instanceof Error ? err.message : 'Failed to cancel subscription';
+    } finally {
+      updatingSubscriptionUserId.value = null;
+    }
+  };
+
   const availableBetaCodes = computed(() => betaCodes.value.filter((code) => !code.used));
   const usedBetaCodes = computed(() => betaCodes.value.filter((code) => code.used));
+
+  const formatEventName = (eventType: string): string => {
+    const names: Record<string, string> = {
+      clip_detection: 'Clip Detection',
+      clip_export: 'Clip Export',
+      vod_download: 'VOD Download',
+      user_created: 'User Created',
+      credits_purchased: 'Credits Purchased',
+      credits_spent: 'Credits Spent',
+    };
+    return names[eventType] || eventType;
+  };
+
+  // User action menu functions
+  function setUserActionMenuRef(el: any, userId: number) {
+    if (el && el instanceof HTMLElement) {
+      userActionMenuRefs.value.set(userId, el);
+    } else {
+      userActionMenuRefs.value.delete(userId);
+    }
+  }
+
+  function toggleUserActionMenu(userId: number) {
+    openUserActionMenuId.value = openUserActionMenuId.value === userId ? null : userId;
+  }
+
+  function closeUserActionMenu() {
+    openUserActionMenuId.value = null;
+  }
+
+  function getUserActionMenuPosition(userId: number): Record<string, string> {
+    const button = userActionMenuRefs.value.get(userId);
+    if (!button) {
+      return { top: '0px', left: '0px' };
+    }
+
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 180;
+    const menuMaxHeight = 200;
+    const padding = 8;
+
+    // Align to right edge of button
+    let left = rect.right - menuWidth;
+
+    // Ensure it doesn't go off the left edge
+    if (left < padding) {
+      left = padding;
+    }
+
+    // Ensure it doesn't go off the right edge
+    const viewportWidth = window.innerWidth;
+    if (left + menuWidth > viewportWidth - padding) {
+      left = viewportWidth - menuWidth - padding;
+    }
+
+    // Position below button
+    let top = rect.bottom + 4;
+    const viewportHeight = window.innerHeight;
+
+    // Flip above if not enough space below
+    if (top + menuMaxHeight > viewportHeight - padding) {
+      top = rect.top - menuMaxHeight - 4;
+      if (top < padding) {
+        top = padding;
+      }
+    }
+
+    return {
+      top: `${top}px`,
+      left: `${left}px`,
+    };
+  }
+
+  // Close user action menu when clicking outside
+  function handleUserActionMenuClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('[data-user-action-menu]')) {
+      if (openUserActionMenuId.value !== null) {
+        openUserActionMenuId.value = null;
+      }
+    }
+  }
 
   onMounted(() => {
     fetchUsers();
     fetchOrganizations();
     fetchBugReports();
     fetchAiStats();
+    fetchAnalyticsStats();
     fetchBetaCodes();
+    fetchWaitlist();
     loadPlatformOverride();
     fetchFeatureFlags();
+    document.addEventListener('click', handleUserActionMenuClickOutside);
+  });
+
+  onUnmounted(() => {
+    document.removeEventListener('click', handleUserActionMenuClickOutside);
   });
 </script>
 
@@ -2125,5 +3350,53 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  /* Custom scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgb(63 63 70);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgb(82 82 91);
   }
 </style>

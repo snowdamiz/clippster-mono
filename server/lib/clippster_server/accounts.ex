@@ -7,7 +7,7 @@ defmodule ClippsterServer.Accounts do
   alias ClippsterServer.Repo
   alias ClippsterServer.Accounts.User
   alias ClippsterServer.Credits
-  alias ClippsterServer.{Emails, Mailer}
+  alias ClippsterServer.{Emails, Mailer, Analytics}
   alias ClippsterServer.Auth.TokenGenerator
 
   # OTP expires in 10 minutes
@@ -77,7 +77,7 @@ defmodule ClippsterServer.Accounts do
 
   @doc """
   Creates a user. If this is the first user, they are marked as admin.
-  New users automatically receive 1 free hour of credits.
+  New users automatically receive 60 free minutes of credits.
   """
   def create_user(wallet_address) do
     is_first_user = Repo.aggregate(User, :count) == 0
@@ -91,13 +91,18 @@ defmodule ClippsterServer.Accounts do
         })
         |> Repo.insert!()
 
-      # Give new user 1 free hour of credits
-      {:ok, _user_credit} = Credits.add_credits(user.id, 1)
+      # Give new user 60 free minutes of credits
+      {:ok, _user_credit} = Credits.add_credits(user.id, 60)
 
       user
     end)
     |> case do
-      {:ok, user} -> {:ok, user}
+      {:ok, user} ->
+        Analytics.track_event("user_created", user.id, %{
+          wallet_address: user.wallet_address,
+          is_admin: user.is_admin
+        })
+        {:ok, user}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -105,7 +110,7 @@ defmodule ClippsterServer.Accounts do
   @doc """
   Creates or gets a user from OAuth provider (Google, etc.).
   If this is the first user, they are marked as admin.
-  New users automatically receive 1 free hour of credits.
+  New users automatically receive 60 free minutes of credits.
   """
   def get_or_create_oauth_user(provider, provider_id, oauth_info \\ %{}) do
     case get_user_by_provider(provider, provider_id) do
@@ -132,13 +137,19 @@ defmodule ClippsterServer.Accounts do
         |> User.oauth_changeset(user_attrs)
         |> Repo.insert!()
 
-      # Give new user 1 free hour of credits
-      {:ok, _user_credit} = Credits.add_credits(user.id, 1)
+      # Give new user 60 free minutes of credits
+      {:ok, _user_credit} = Credits.add_credits(user.id, 60)
 
       user
     end)
     |> case do
-      {:ok, user} -> {:ok, user}
+      {:ok, user} ->
+        Analytics.track_event("user_created", user.id, %{
+          provider: provider,
+          email: user.email,
+          is_admin: user.is_admin
+        })
+        {:ok, user}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -281,8 +292,8 @@ defmodule ClippsterServer.Accounts do
         })
         |> Repo.update()
 
-      # Give new user 1 free hour of credits
-      {:ok, _user_credit} = Credits.add_credits(user.id, 1)
+      # Give new user 60 free minutes of credits
+      {:ok, _user_credit} = Credits.add_credits(user.id, 60)
 
       # Send verification email (with plain OTP and token)
       email

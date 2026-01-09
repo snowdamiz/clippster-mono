@@ -6,12 +6,14 @@ defmodule ClippsterServer.Credits do
   import Ecto.Query, warn: false
   alias ClippsterServer.Repo
   alias ClippsterServer.Credits.{CreditTransaction, UserCredit, ProcessingJob}
+  alias ClippsterServer.Analytics
 
+  # Credit packs for purchasing additional credits (separate from subscription)
+  # 1 credit = 1 minute of video processing
   @credit_packs %{
-    "starter" => %{hours: 4, usd: 10.00},
-    "creator" => %{hours: 12, usd: 20.00},
-    "pro" => %{hours: 40, usd: 50.00},
-    "studio" => %{hours: 200, usd: 200.00}
+    "small" => %{hours: 240, usd: 10.00, name: "Small Pack"},
+    "medium" => %{hours: 600, usd: 20.00, name: "Medium Pack"},
+    "large" => %{hours: 1800, usd: 50.00, name: "Large Pack"}
   }
 
   @doc """
@@ -88,7 +90,7 @@ defmodule ClippsterServer.Credits do
   def create_stripe_transaction(attrs) do
     # Check if transaction already exists (idempotency)
     stripe_session_id = attrs[:stripe_session_id] || attrs["stripe_session_id"]
-    
+
     case get_transaction_by_stripe_session(stripe_session_id) do
       nil ->
         Repo.transaction(fn ->
@@ -97,6 +99,13 @@ defmodule ClippsterServer.Credits do
             {:ok, transaction} ->
               # Add credits to user balance
               {:ok, _user_credit} = add_credits(transaction.user_id, Decimal.to_float(transaction.hours_purchased))
+
+              Analytics.track_event("credits_purchased", transaction.user_id, %{
+                hours: transaction.hours_purchased,
+                amount_usd: transaction.amount_usd,
+                payment_method: "stripe"
+              })
+
               transaction
 
             {:error, changeset} ->
@@ -208,6 +217,9 @@ defmodule ClippsterServer.Credits do
 
       case UserCredit.deduct_hours_changeset(user_credit, hours) |> Repo.update() do
         {:ok, updated_credit} ->
+          Analytics.track_event("credits_spent", user_id, %{
+            hours: hours
+          })
           updated_credit
 
         {:error, changeset} ->
@@ -218,10 +230,10 @@ defmodule ClippsterServer.Credits do
 
   @doc """
   Deducts credits with organization context.
-  
+
   If organization_id is provided, deducts from the member's org allocation.
   If organization_id is nil, deducts from personal credits.
-  
+
   Returns:
   - {:ok, %{source: :organization, org_id: id}} on org deduction success
   - {:ok, %{source: :personal}} on personal deduction success
@@ -233,7 +245,7 @@ defmodule ClippsterServer.Credits do
     # No org context - use personal credits
     case deduct_credits(user_id, hours) do
       {:ok, _} -> {:ok, %{source: :personal}}
-      {:error, _} -> 
+      {:error, _} ->
         {:ok, %{hours_remaining: remaining}} = get_user_balance(user_id)
         {:error, :insufficient_credits, Decimal.to_float(remaining), hours}
     end
@@ -241,7 +253,7 @@ defmodule ClippsterServer.Credits do
 
   def deduct_credits_with_org_context(user_id, hours, organization_id) do
     alias ClippsterServer.Organizations
-    
+
     # Check if user is a member of the organization
     unless Organizations.is_member?(organization_id, user_id) do
       {:error, :not_a_member}
@@ -250,7 +262,7 @@ defmodule ClippsterServer.Credits do
       case Organizations.deduct_member_credits(organization_id, user_id, hours, true) do
         {:ok, _allocation} ->
           {:ok, %{source: :organization, org_id: organization_id}}
-        
+
         {:error, :insufficient_credits} ->
           # Get remaining allocation for error message
           allocation = Organizations.get_member_allocation(organization_id, user_id)
@@ -261,7 +273,7 @@ defmodule ClippsterServer.Credits do
             0.0
           end
           {:error, :insufficient_credits, remaining, hours}
-        
+
         {:error, reason} ->
           {:error, reason}
       end
@@ -279,11 +291,11 @@ defmodule ClippsterServer.Credits do
 
   def get_context_balance(user_id, organization_id) do
     alias ClippsterServer.Organizations
-    
+
     case Organizations.get_member_allocation(organization_id, user_id) do
       nil ->
         {:ok, %{source: :organization, hours_remaining: 0.0, org_id: organization_id}}
-      
+
       allocation ->
         remaining = Organizations.MemberCreditAllocation.remaining_hours(allocation)
         {:ok, %{source: :organization, hours_remaining: Decimal.to_float(remaining), org_id: organization_id}}
@@ -313,7 +325,7 @@ defmodule ClippsterServer.Credits do
   """
   def has_enough_credits?(user_id, hours_needed) do
     {:ok, %{hours_remaining: remaining}} = get_user_balance(user_id)
-    
+
     if Decimal.compare(remaining, Decimal.new(to_string(hours_needed))) != :lt do
       true
     else
@@ -327,12 +339,12 @@ defmodule ClippsterServer.Credits do
   """
   def check_organization_credits(user_id, hours_needed) do
     alias ClippsterServer.Organizations
-    
+
     hours_decimal = Decimal.new(to_string(hours_needed))
-    
+
     # Get all organizations the user is a member of
     organizations = Organizations.list_user_organizations(user_id)
-    
+
     Enum.any?(organizations, fn %{organization: org} ->
       case Organizations.get_member_allocation(org.id, user_id) do
         nil -> false
@@ -348,12 +360,12 @@ defmodule ClippsterServer.Credits do
   """
   def get_total_available_credits(user_id) do
     alias ClippsterServer.Organizations
-    
+
     {:ok, %{hours_remaining: personal_remaining}} = get_user_balance(user_id)
-    
+
     # Sum up all organization allocations
     organizations = Organizations.list_user_organizations(user_id)
-    
+
     org_remaining = Enum.reduce(organizations, Decimal.new("0"), fn %{organization: org}, acc ->
       case Organizations.get_member_allocation(org.id, user_id) do
         nil -> acc
@@ -362,7 +374,7 @@ defmodule ClippsterServer.Credits do
           Decimal.add(acc, remaining)
       end
     end)
-    
+
     {:ok, %{
       personal: personal_remaining,
       organization: org_remaining,
@@ -401,10 +413,10 @@ defmodule ClippsterServer.Credits do
     case Repo.get(ProcessingJob, job_id) do
       nil ->
         {:error, :not_found}
-      
+
       %ProcessingJob{user_id: ^user_id} = job ->
         {:ok, job}
-      
+
       _job ->
         # Job exists but belongs to a different user
         {:error, :unauthorized}
@@ -432,13 +444,13 @@ defmodule ClippsterServer.Credits do
   @doc """
   Cancels a processing job and refunds the credits.
   This is the main server-authoritative cancellation function.
-  
+
   Security checks:
   - Job must exist
   - Job must belong to the requesting user
   - Job must be in 'processing' status
   - Refund cannot exceed original charge
-  
+
   Returns {:ok, %{job: job, refunded: amount}} or {:error, reason}
   """
   def cancel_processing_job(job_id, user_id, reason \\ "User cancelled") do

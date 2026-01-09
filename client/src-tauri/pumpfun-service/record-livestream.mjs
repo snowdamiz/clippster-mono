@@ -14,6 +14,34 @@ import {
   VideoBufferType,
 } from '@livekit/rtc-node';
 
+// PulseKit initialization for error tracking
+let pulsekit = null;
+try {
+  const { PulseKit } = await import('@120356aa/pulsekit-sdk');
+  const apiKey = process.env.PULSEKIT_PUMPFUN_SERVICE;
+  const endpoint = process.env.PULSEKIT_ENDPOINT || 'https://pulsekit.fly.dev';
+  
+  if (apiKey) {
+    pulsekit = new PulseKit({
+      endpoint,
+      apiKey,
+      environment: process.env.NODE_ENV || 'development',
+    });
+  }
+} catch (e) {
+  // PulseKit not available, continue without it
+}
+
+function pulseCapture(event) {
+  if (pulsekit) {
+    try {
+      pulsekit.capture(event);
+    } catch (e) {
+      // Ignore PulseKit errors
+    }
+  }
+}
+
 const VIDEO_QUALITY_HIGH = 2;
 
 // Fixed output resolution - all incoming video is scaled to this resolution
@@ -554,6 +582,14 @@ class PumpfunRecorder {
         message: 'Stream is live, starting recording...',
       })
     );
+
+    pulseCapture({
+      type: 'pumpfun.recorder.start',
+      level: 'info',
+      message: `Starting recording for mint: ${this.mintId}`,
+      metadata: { mintId: this.mintId, sessionId: this.sessionId, outputDir: this.outputDir },
+      tags: { service: 'pumpfun', action: 'recorder_start' }
+    });
 
     const joinData = await joinLivestream(this.mintId);
     const token = joinData?.token;
@@ -2151,6 +2187,20 @@ class PumpfunRecorder {
     // Stop synthetic video generation if in audio-only mode
     this.stopSyntheticVideo();
 
+    pulseCapture({
+      type: 'pumpfun.recorder.stop',
+      level: 'info',
+      message: `Stopping recording for mint: ${this.mintId}`,
+      metadata: {
+        mintId: this.mintId,
+        sessionId: this.sessionId,
+        videoFramesWritten: this.videoFramesWritten,
+        audioSamplesWritten: this.audioSamplesWritten,
+        syncMethod: this.syncMethod
+      },
+      tags: { service: 'pumpfun', action: 'recorder_stop' }
+    });
+
     // DIAGNOSTIC: Log final session summary
     if (DIAGNOSTIC_MODE) {
         const durationSec = this.referenceTime ? (Date.now() - this.referenceTime) / 1000 : 0;
@@ -2292,6 +2342,13 @@ async function main() {
 }
 
 main().catch((error) => {
+  pulseCapture({
+    type: 'pumpfun.recorder.fatal_error',
+    level: 'error',
+    message: `Fatal recorder error: ${error.message}`,
+    metadata: { mintId, sessionId, error: error.message, stack: error.stack },
+    tags: { service: 'pumpfun', action: 'recorder_fatal_error' }
+  });
   console.error(JSON.stringify({ type: 'error', message: error.message }));
   process.exit(1);
 });
