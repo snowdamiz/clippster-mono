@@ -172,6 +172,21 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     Logger.info("[Instagram] Media URL: #{media_url}")
     Logger.info("[Instagram] Options: #{inspect(opts)}")
 
+    # Generate a presigned URL if this is an R2 storage URL (private bucket)
+    # Instagram needs to be able to download the media, so we create a temporary public URL
+    accessible_url = if String.contains?(media_url, ".r2.cloudflarestorage.com") do
+      case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7200) do
+        {:ok, presigned} ->
+          Logger.info("[Instagram] Generated presigned URL for R2 media (expires in 2 hours)")
+          presigned
+        {:error, reason} ->
+          Logger.warning("[Instagram] Failed to generate presigned URL: #{inspect(reason)}, using original URL")
+          media_url
+      end
+    else
+      media_url
+    end
+
     # PulseKit: Log publish start
     pulse_capture(%{
       type: "instagram.publish.start",
@@ -179,6 +194,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
       message: "Instagram publish initiated",
       metadata: %{
         media_url: media_url,
+        accessible_url: accessible_url,
         media_type: opts[:media_type],
         ig_user_id: opts[:ig_user_id] || opts[:user_id],
         has_caption: !is_nil(opts[:caption]) && opts[:caption] != ""
@@ -189,7 +205,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     # Get the user ID from opts or fetch it
     ig_user_id = opts[:ig_user_id] || opts[:user_id]
     caption = opts[:caption] || ""
-    media_type = detect_media_type(media_url, opts)
+    media_type = detect_media_type(accessible_url, opts)
 
     Logger.info("[Instagram] Detected media_type: #{media_type}, ig_user_id: #{ig_user_id}")
 
@@ -199,7 +215,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
       case get_user_profile(access_token) do
         {:ok, profile} ->
           Logger.info("[Instagram] Got profile, user_id: #{profile.user_id}")
-          do_publish_media(access_token, profile.user_id, media_url, caption, media_type)
+          do_publish_media(access_token, profile.user_id, accessible_url, caption, media_type)
         {:error, reason} ->
           Logger.error("[Instagram] Cannot get user profile: #{inspect(reason)}")
           pulse_capture(%{
@@ -212,7 +228,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           {:error, "Cannot determine user ID: #{inspect(reason)}"}
       end
     else
-      do_publish_media(access_token, ig_user_id, media_url, caption, media_type)
+      do_publish_media(access_token, ig_user_id, accessible_url, caption, media_type)
     end
   end
 
@@ -580,7 +596,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
       {:error, :media_processing_timeout}
     else
       url = "#{@instagram_graph_url}/#{container_id}?" <> URI.encode_query(%{
-        "fields" => "status_code",
+        "fields" => "status_code,status",
         "access_token" => access_token
       })
 
@@ -596,15 +612,17 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
                 tags: %{platform: "instagram", action: "status_ready"}
               })
               :ok
-            {:ok, %{"status_code" => "ERROR"}} ->
+            {:ok, %{"status_code" => "ERROR"} = response} ->
+              error_reason = Map.get(response, "status", "Unknown error")
+              Logger.error("[Instagram] Media processing failed: #{error_reason}")
               pulse_capture(%{
                 type: "instagram.status.error",
                 level: :error,
-                message: "Media processing failed with ERROR status",
-                metadata: %{container_id: container_id, attempts: attempts},
+                message: "Media processing failed: #{error_reason}",
+                metadata: %{container_id: container_id, attempts: attempts, error_reason: error_reason},
                 tags: %{platform: "instagram", action: "status_error"}
               })
-              {:error, :media_processing_failed}
+              {:error, {:media_processing_failed, error_reason}}
             {:ok, %{"status_code" => status}} ->
               IO.puts("[Instagram] Media processing status: #{status}, waiting...")
               # Log every 5th poll to avoid flooding
