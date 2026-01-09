@@ -430,6 +430,8 @@
     getMonitoredStreamer,
     getMonitoredStreamerByMint,
     updateMonitoredStreamer,
+    createMonitoredStreamer,
+    updatePlatformLink,
     type CreatorProfileWithLinks,
   } from '@/services/database';
   import {
@@ -481,6 +483,11 @@
   function isCreatorAutoDvrEnabled(creator: DisplayCreatorProfile): boolean {
     const streamerId = getMonitoredStreamerId(creator);
     if (!streamerId) return false;
+    // First check the local autoDvr tracker
+    if (autoDvrTracker.value.has(streamerId)) {
+      return autoDvrTracker.value.get(streamerId)!;
+    }
+    // Fallback to monitored entry if actively monitoring
     const entry = monitoredStreamers.value.get(streamerId);
     return Boolean(entry?.streamer?.autoDvr);
   }
@@ -493,45 +500,128 @@
 
   function canWatchCreator(creator: DisplayCreatorProfile): boolean {
     if (!isCreatorLive(creator)) return false;
-    const streamerId = getMonitoredStreamerId(creator);
+    // Just need a monitorable link with platform_id to watch
     const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
-    return Boolean(streamerId && monitorableLink?.platform_id);
+    return Boolean(monitorableLink?.platform_id);
   }
 
-  function watchCreator(creator: DisplayCreatorProfile) {
+  async function watchCreator(creator: DisplayCreatorProfile) {
     // Find a monitorable link (pumpfun or kick)
     const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
-    const streamerId = getMonitoredStreamerId(creator);
-    if (!monitorableLink || !monitorableLink.platform_id || !streamerId) {
-      showError('Cannot Watch', 'Start monitoring this creator to watch their stream.');
+    if (!monitorableLink || !monitorableLink.platform_id) {
+      showError('Cannot Watch', 'No PumpFun or Kick platform link found for this creator.');
       return;
     }
 
-    const entry = monitoredStreamers.value.get(streamerId)?.streamer;
-    const displayName = entry?.displayName || monitorableLink.display_name || creator.name;
-    const profileImage = entry?.profileImageUrl || monitorableLink.profile_image_url || getCreatorProfileImage(creator);
+    try {
+      let streamerId = monitorableLink.monitored_streamer_id;
 
-    livestreamStore.openWatchDialog(monitorableLink.platform_id, streamerId, displayName, profileImage);
+      // If no monitored_streamer_id, create or find one
+      if (!streamerId) {
+        // Try to find existing by mint ID
+        const existingByMint = await getMonitoredStreamerByMint(monitorableLink.platform_id);
+        if (existingByMint) {
+          streamerId = existingByMint.id;
+          await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
+          monitorableLink.monitored_streamer_id = streamerId;
+        } else {
+          // Create new monitored_streamer
+          const platformDisplay = monitorableLink.platform === 'kick' ? 'kick' : 'pumpfun';
+          streamerId = await createMonitoredStreamer(
+            monitorableLink.platform_id,
+            monitorableLink.display_name || creator.name,
+            monitorableLink.profile_image_url || undefined,
+            5, // segment duration
+            false, // auto_dvr
+            platformDisplay
+          );
+          await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
+          monitorableLink.monitored_streamer_id = streamerId;
+        }
+        // Notify other components
+        window.dispatchEvent(new CustomEvent('monitored-streamers-updated'));
+      }
+
+      const entry = monitoredStreamers.value.get(streamerId)?.streamer;
+      const displayName = entry?.displayName || monitorableLink.display_name || creator.name;
+      const profileImage = entry?.profileImageUrl || monitorableLink.profile_image_url || getCreatorProfileImage(creator);
+
+      livestreamStore.openWatchDialog(monitorableLink.platform_id, streamerId, displayName, profileImage);
+    } catch (error) {
+      console.error('[CreatorProfiles] Failed to open watch dialog:', error);
+      showError('Watch Failed', 'Could not open the stream viewer.');
+    }
   }
 
   async function toggleCreatorAutoDvr(creator: DisplayCreatorProfile) {
-    const streamerId = getMonitoredStreamerId(creator);
-    if (!streamerId) {
-      showError('Auto DVR Unavailable', 'Start monitoring this creator before toggling Auto DVR.');
+    // Find a monitorable link
+    const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
+    if (!monitorableLink || !monitorableLink.platform_id) {
+      showError('Auto DVR Unavailable', 'No PumpFun or Kick platform link found for this creator.');
       return;
     }
-
-    const currentEntry = monitoredStreamers.value.get(streamerId);
-    if (!currentEntry) {
-      showError('Auto DVR Unavailable', 'Activate monitoring to manage Auto DVR.');
-      return;
-    }
-
-    const newValue = !Boolean(currentEntry.streamer?.autoDvr);
 
     try {
+      let streamerId = monitorableLink.monitored_streamer_id;
+
+      // If no monitored_streamer_id, create or find one
+      if (!streamerId) {
+        // Try to find existing by mint ID
+        const existingByMint = await getMonitoredStreamerByMint(monitorableLink.platform_id);
+        if (existingByMint) {
+          streamerId = existingByMint.id;
+          await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
+          monitorableLink.monitored_streamer_id = streamerId;
+        } else {
+          // Create new monitored_streamer
+          const platformDisplay = monitorableLink.platform === 'kick' ? 'kick' : 'pumpfun';
+          streamerId = await createMonitoredStreamer(
+            monitorableLink.platform_id,
+            monitorableLink.display_name || creator.name,
+            monitorableLink.profile_image_url || undefined,
+            5, // segment duration
+            false, // auto_dvr (will be toggled below)
+            platformDisplay
+          );
+          await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
+          monitorableLink.monitored_streamer_id = streamerId;
+        }
+      }
+
+      // Get current auto_dvr value
+      let currentAutoDvr = false;
+      // Check local tracker first
+      if (autoDvrTracker.value.has(streamerId)) {
+        currentAutoDvr = autoDvrTracker.value.get(streamerId)!;
+      } else {
+        // Check monitored entry or fetch from database
+        const currentEntry = monitoredStreamers.value.get(streamerId);
+        if (currentEntry) {
+          currentAutoDvr = Boolean(currentEntry.streamer?.autoDvr);
+        } else {
+          // Fetch from database
+          const streamerRecord = await getMonitoredStreamer(streamerId);
+          currentAutoDvr = Boolean(streamerRecord?.auto_dvr);
+        }
+      }
+
+      const newValue = !currentAutoDvr;
+
+      // Update database
       await updateMonitoredStreamer(streamerId, { auto_dvr: newValue ? 1 : 0 });
-      currentEntry.streamer.autoDvr = newValue;
+
+      // Update local tracker
+      autoDvrTracker.value.set(streamerId, newValue);
+
+      // Update monitored entry if it exists
+      const currentEntry = monitoredStreamers.value.get(streamerId);
+      if (currentEntry) {
+        currentEntry.streamer.autoDvr = newValue;
+      }
+
+      // Emit event to notify LiveClip.vue and other components
+      window.dispatchEvent(new CustomEvent('monitored-streamers-updated'));
+
       success(
         newValue ? 'Auto DVR Enabled' : 'Auto DVR Disabled',
         newValue ? `"${creator.name}" will auto record when live.` : `Auto DVR turned off for "${creator.name}".`
@@ -569,6 +659,9 @@
   // Live status tracking (by platform_id for pumpfun links)
   const liveStatusMap = ref<Map<string, { isLive: boolean; viewerCount?: number; isChecking: boolean }>>(new Map());
   const liveStatusInterval = ref<number | null>(null);
+
+  // Auto DVR status tracking (by streamer_id, for when not actively monitoring)
+  const autoDvrTracker = ref<Map<string, boolean>>(new Map());
 
   // Filtered creators based on search
   const filteredCreators = computed(() => {
@@ -702,11 +795,38 @@
       }
 
       creators.value = displayProfiles;
+
+      // Initialize autoDvrTracker with values from database for creators with monitored_streamer_ids
+      await initializeAutoDvrTracker(displayProfiles);
     } catch (err) {
       console.error('Failed to load creators:', err);
       showError('Load Failed', 'Failed to load creator profiles');
     } finally {
       loading.value = false;
+    }
+  }
+
+  // Initialize autoDvrTracker with values from DB
+  async function initializeAutoDvrTracker(profiles: DisplayCreatorProfile[]) {
+    const streamerIds: string[] = [];
+    for (const profile of profiles) {
+      for (const link of profile.platform_links) {
+        if (link.monitored_streamer_id && !autoDvrTracker.value.has(link.monitored_streamer_id)) {
+          streamerIds.push(link.monitored_streamer_id);
+        }
+      }
+    }
+
+    // Fetch auto_dvr status for each streamer from the database
+    for (const streamerId of streamerIds) {
+      try {
+        const streamer = await getMonitoredStreamer(streamerId);
+        if (streamer) {
+          autoDvrTracker.value.set(streamerId, Boolean(streamer.auto_dvr));
+        }
+      } catch (err) {
+        console.error(`[CreatorProfiles] Failed to fetch auto_dvr for ${streamerId}:`, err);
+      }
     }
   }
 

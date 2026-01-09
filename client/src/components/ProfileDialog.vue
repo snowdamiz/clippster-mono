@@ -641,7 +641,10 @@
     updateCreatorProfile,
     addPlatformLink as dbAddPlatformLink,
     deletePlatformLink as dbDeletePlatformLink,
+    updatePlatformLink as dbUpdatePlatformLink,
     getAllIntroOutros,
+    createMonitoredStreamer,
+    getMonitoredStreamerByMint,
     type CreatorProfileWithLinks,
     type IntroOutro,
   } from '@/services/database';
@@ -1544,16 +1547,40 @@
         }
       }
 
-      // Add new links
+      // Add new links and create monitored_streamer for pumpfun/kick
       for (const link of validLinks) {
         if (link.isNew || !link.id) {
+          // Create monitored_streamer for pumpfun/kick platforms
+          let monitoredStreamerId: string | null = null;
+          if (link.platform === 'pumpfun' || link.platform === 'kick') {
+            try {
+              // First check if a monitored_streamer already exists for this platform_id
+              const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
+              if (existing) {
+                monitoredStreamerId = existing.id;
+              } else {
+                // Create new monitored_streamer
+                monitoredStreamerId = await createMonitoredStreamer(
+                  link.platform_id.trim(),
+                  link.display_name.trim() || formData.value.name.trim(),
+                  link.profile_image_url || undefined,
+                  5, // segment duration
+                  formData.value.auto_dvr_enabled, // auto_dvr from form
+                  link.platform // platform type
+                );
+              }
+            } catch (err) {
+              console.warn('[ProfileDialog] Failed to create monitored_streamer:', err);
+            }
+          }
+
           await dbAddPlatformLink(
             props.creator.id,
             link.platform,
             link.platform_id.trim(),
             link.display_name.trim() || null,
             link.profile_image_url || null,
-            null,
+            monitoredStreamerId, // Pass the monitored_streamer_id
             link.is_primary
           );
         }
@@ -1573,21 +1600,48 @@
         formData.value.auto_dvr_enabled
       );
 
-      // Add platform links
+      // Add platform links and create monitored_streamer for pumpfun/kick
       for (const link of validLinks) {
+        // Create monitored_streamer for pumpfun/kick platforms
+        let monitoredStreamerId: string | null = null;
+        if (link.platform === 'pumpfun' || link.platform === 'kick') {
+          try {
+            // First check if a monitored_streamer already exists for this platform_id
+            const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
+            if (existing) {
+              monitoredStreamerId = existing.id;
+            } else {
+              // Create new monitored_streamer
+              monitoredStreamerId = await createMonitoredStreamer(
+                link.platform_id.trim(),
+                link.display_name.trim() || formData.value.name.trim(),
+                link.profile_image_url || undefined,
+                5, // segment duration
+                formData.value.auto_dvr_enabled, // auto_dvr from form
+                link.platform // platform type
+              );
+            }
+          } catch (err) {
+            console.warn('[ProfileDialog] Failed to create monitored_streamer:', err);
+          }
+        }
+
         await dbAddPlatformLink(
           creatorId,
           link.platform,
           link.platform_id.trim(),
           link.display_name.trim() || null,
           link.profile_image_url || null,
-          null,
+          monitoredStreamerId, // Pass the monitored_streamer_id
           link.is_primary
         );
       }
 
       showSuccess('Creator Created', `"${formData.value.name}" has been added`);
     }
+
+    // Notify other components (like LiveClip.vue) about the new/updated monitoring data
+    window.dispatchEvent(new CustomEvent('monitored-streamers-updated'));
 
     emit('saved');
     emit('close');
