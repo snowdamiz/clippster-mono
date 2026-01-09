@@ -78,7 +78,9 @@ defmodule ClippsterServer.MixProject do
       # HTTP client required by ExAws (with TLS support)
       {:hackney, "~> 1.20"},
       # CA certificates for HTTPS
-      {:certifi, "~> 2.12"}
+      {:certifi, "~> 2.12"},
+      # PulseKit error tracking and event monitoring
+      {:pulsekit, "~> 1.0"}
     ]
   end
 

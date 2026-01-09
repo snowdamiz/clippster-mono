@@ -94,6 +94,17 @@ config :clippster_server, :instagram,
 config :clippster_server,
   social_token_encryption_key: System.get_env("SOCIAL_TOKEN_ENCRYPTION_KEY")
 
+# PulseKit error tracking and event monitoring
+pulsekit_key = System.get_env("PULSEKIT_CLIPPSTER_SERVER_KEY")
+pulsekit_endpoint = System.get_env("PULSEKIT_ENDPOINT") || "https://pulsekit.fly.dev"
+
+if pulsekit_key do
+  config :pulsekit,
+    endpoint: pulsekit_endpoint,
+    api_key: pulsekit_key,
+    environment: config_env() |> to_string()
+end
+
 # Cloudflare R2 storage configuration (for organization assets)
 r2_account_id = System.get_env("R2_ACCOUNT_ID")
 

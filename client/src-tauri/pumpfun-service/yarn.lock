@@ -2,6 +2,11 @@
 # yarn lockfile v1
 
 
+"@120356aa/pulsekit-sdk@^1.0.0":
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/@120356aa/pulsekit-sdk/-/pulsekit-sdk-1.0.2.tgz#d52f7154892c93d0229b90a6a599ad560c5eff57"
+  integrity sha512-1lw8WHTI4xgLvpDObiVxlIfCuce56l4i/AxDSeSpmJifIWfjtasQa01vzKzIjKSMl2vfWVhT8i/ONKiag1XwPQ==
+
 "@120356aa/pumpfun-wrapper@^1.0.0":
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/@120356aa/pumpfun-wrapper/-/pumpfun-wrapper-1.0.0.tgz#c1d639e54cf84cae285e4a05228db0e14ecf1a2e"

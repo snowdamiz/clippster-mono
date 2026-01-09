@@ -1,4 +1,36 @@
-<!-- d0862a25-7c3d-4a67-a200-3370c5edfb6f afde4c02-a4ad-43c8-a008-026c2c60f842 -->
+---
+name: Organization Messaging System Plan
+overview: ""
+todos:
+  - id: a487c6e2-490c-4cf7-8c6c-b41c9578d155
+    content: Create database migrations for conversations, participants, messages, read_status tables
+    status: pending
+  - id: c4f2d46d-554c-437b-ad39-8d11c4fc3594
+    content: Create Ecto schemas for Conversation, ConversationParticipant, Message, MessageReadStatus
+    status: pending
+  - id: 1e8a618c-07a0-423e-8075-072f849c6382
+    content: Implement Messaging context with CRUD and query functions
+    status: pending
+  - id: 39ed6037-0335-41c9-ad1a-2039ba682c3f
+    content: Create MessagingSocket and MessagingChannel for real-time events
+    status: pending
+  - id: 57a65841-9be1-4793-a04d-713bbb411045
+    content: Add MessagingController with REST endpoints for conversations and messages
+    status: pending
+  - id: 977e3aa1-e42a-42d4-bb32-3ba9642317ea
+    content: Create messagingApi.ts and messagingSocket.ts services
+    status: pending
+  - id: 6bbdce53-c615-4f57-a2ae-ab7583ff1ee4
+    content: Create messaging Pinia store for state management
+    status: pending
+  - id: 728bf7bf-8721-4f1e-b789-d4839ce3b2da
+    content: Build Vue messaging components (panel, chat view, message bubbles)
+    status: pending
+  - id: e8a0a69e-1295-49cc-8638-6eaece4d6418
+    content: Add messages route, sidebar navigation, and unread badge indicators
+    status: pending
+---
+
 # Organization Messaging System Plan
 
 ## Architecture Overview
@@ -180,15 +212,3 @@ end
 5. **Frontend Services**: API client + WebSocket
 6. **UI Components**: Messaging interface
 7. **Integration**: Navigation and unread badges
-
-### To-dos
-
-- [ ] Create database migrations for conversations, participants, messages, read_status tables
-- [ ] Create Ecto schemas for Conversation, ConversationParticipant, Message, MessageReadStatus
-- [ ] Implement Messaging context with CRUD and query functions
-- [ ] Create MessagingSocket and MessagingChannel for real-time events
-- [ ] Add MessagingController with REST endpoints for conversations and messages
-- [ ] Create messagingApi.ts and messagingSocket.ts services
-- [ ] Create messaging Pinia store for state management
-- [ ] Build Vue messaging components (panel, chat view, message bubbles)
-- [ ] Add messages route, sidebar navigation, and unread badge indicators

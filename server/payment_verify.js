@@ -1,5 +1,33 @@
 const { Connection, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 
+// PulseKit initialization
+let pulsekit = null;
+try {
+  const { PulseKit } = require('@120356aa/pulsekit-sdk');
+  const apiKey = process.env.PULSEKIT_PAYMENT_VERIFICATION_SERVICE;
+  const endpoint = process.env.PULSEKIT_ENDPOINT || 'https://pulsekit.fly.dev';
+  
+  if (apiKey) {
+    pulsekit = new PulseKit({
+      endpoint,
+      apiKey,
+      environment: process.env.NODE_ENV || 'development',
+    });
+  }
+} catch (e) {
+  // PulseKit not available, continue without it
+}
+
+function pulseCapture(event) {
+  if (pulsekit) {
+    try {
+      pulsekit.capture(event);
+    } catch (e) {
+      // Ignore PulseKit errors
+    }
+  }
+}
+
 /**
  * Verify a Solana payment transaction
  * @param {string} txSignature - The transaction signature
@@ -12,6 +40,15 @@ const { Connection, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 async function verifyPayment(txSignature, fromAddress, toAddress, expectedSolAmount, rpcUrl) {
   // Use provided RPC URL or fallback to environment variable or default
   const solanaRpcUrl = rpcUrl || process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+  
+  pulseCapture({
+    type: 'payment.verify.start',
+    level: 'info',
+    message: `Verifying payment: ${txSignature}`,
+    metadata: { txSignature, fromAddress, toAddress, expectedSolAmount },
+    tags: { service: 'payment', action: 'verify_start' }
+  });
+  
   try {
     // Connect to Solana
     const connection = new Connection(solanaRpcUrl, 'confirmed');
@@ -23,6 +60,13 @@ async function verifyPayment(txSignature, fromAddress, toAddress, expectedSolAmo
     });
     
     if (!transaction) {
+      pulseCapture({
+        type: 'payment.verify.not_found',
+        level: 'warning',
+        message: `Transaction not found: ${txSignature}`,
+        metadata: { txSignature },
+        tags: { service: 'payment', action: 'tx_not_found' }
+      });
       return {
         valid: false,
         error: 'Transaction not found'
@@ -31,6 +75,13 @@ async function verifyPayment(txSignature, fromAddress, toAddress, expectedSolAmo
 
     // Check if transaction was successful
     if (transaction.meta.err) {
+      pulseCapture({
+        type: 'payment.verify.tx_failed',
+        level: 'warning',
+        message: `Transaction failed on-chain: ${txSignature}`,
+        metadata: { txSignature, error: transaction.meta.err },
+        tags: { service: 'payment', action: 'tx_failed' }
+      });
       return {
         valid: false,
         error: 'Transaction failed on-chain',
@@ -79,6 +130,13 @@ async function verifyPayment(txSignature, fromAddress, toAddress, expectedSolAmo
     const amountMatch = Math.abs(actualSolAmount - expectedSolAmount) <= tolerance;
 
     if (!amountMatch) {
+      pulseCapture({
+        type: 'payment.verify.mismatch',
+        level: 'warning',
+        message: `Payment amount mismatch for ${txSignature}`,
+        metadata: { txSignature, expected: expectedSolAmount, actual: actualSolAmount },
+        tags: { service: 'payment', action: 'verify_mismatch' }
+      });
       return {
         valid: false,
         error: 'Amount mismatch',
@@ -89,6 +147,14 @@ async function verifyPayment(txSignature, fromAddress, toAddress, expectedSolAmo
 
     // Get block time for the transaction
     const blockTime = transaction.blockTime;
+
+    pulseCapture({
+      type: 'payment.verify.success',
+      level: 'info',
+      message: `Payment verified successfully: ${txSignature}`,
+      metadata: { txSignature, fromAddress, toAddress, amount: actualSolAmount, slot: transaction.slot },
+      tags: { service: 'payment', action: 'verify_success' }
+    });
 
     return {
       valid: true,
@@ -104,6 +170,13 @@ async function verifyPayment(txSignature, fromAddress, toAddress, expectedSolAmo
 
   } catch (error) {
     console.error('Error verifying payment:', error);
+    pulseCapture({
+      type: 'payment.verify.error',
+      level: 'error',
+      message: `Failed to verify payment: ${error.message}`,
+      metadata: { txSignature, fromAddress, toAddress, error: error.message, stack: error.stack },
+      tags: { service: 'payment', action: 'verify_error' }
+    });
     return {
       valid: false,
       error: error.message
