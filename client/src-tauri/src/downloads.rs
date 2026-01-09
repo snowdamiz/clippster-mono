@@ -55,6 +55,315 @@ fn format_time_for_filename(seconds: f64) -> String {
     format!("{:02}{:02}{:02}", h, m, s)
 }
 
+/// Helper function to run FFmpeg segment download with a specific encoder
+/// Returns Ok(()) on success, Err(error_message) on failure
+async fn run_segment_download_with_encoder(
+    app: &tauri::AppHandle,
+    download_id: &str,
+    video_url: &str,
+    output_path: &str,
+    start_time: f64,
+    segment_duration: f64,
+    encoder: &str,
+) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    
+    println!("[Rust] Running segment download with encoder: {}", encoder);
+    
+    let shell = app.shell();
+    let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
+    
+    let preset = if encoder == "libx264" { "ultrafast" } else { "fast" };
+    
+    let (mut rx, child) = cmd.args([
+        "-ss", &format!("{:.3}", start_time),
+        "-i", video_url,
+        "-t", &format!("{:.3}", segment_duration),
+        "-c:v", encoder,
+        "-preset", preset,
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-map", "0:v:0?",
+        "-map", "0:a:0?",
+        "-avoid_negative_ts", "make_zero",
+        "-movflags", "+faststart",
+        "-progress", "pipe:2",
+        "-v", "warning",  // Changed from error to warning to capture more info
+        "-y",
+        output_path,
+    ]).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+
+    // Store process handle for cancellation
+    {
+        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
+        processes.insert(download_id.to_string(), child);
+    }
+
+    let total_duration = segment_duration;
+    let app_clone = app.clone();
+    let download_id_owned = download_id.to_string();
+    
+    let mut line_buffer = String::new();
+    let mut last_progress_time = std::time::Instant::now();
+    let mut lines_processed = 0;
+    let mut success = false;
+    let mut last_error: Option<String> = None;
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
+                let chunk = String::from_utf8_lossy(&data);
+                line_buffer.push_str(&chunk);
+
+                while let Some(newline_pos) = line_buffer.find('\n') {
+                    let line = line_buffer[..newline_pos].trim().to_string();
+                    line_buffer.drain(..=newline_pos);
+
+                    if line.is_empty() { continue; }
+
+                    lines_processed += 1;
+                    if lines_processed % 50 == 0 {
+                        println!("[Rust] Processed {} lines from FFmpeg stderr", lines_processed);
+                    }
+
+                    // Look for out_time= lines (current time in HH:MM:SS.ms format)
+                    if line.starts_with("out_time=") {
+                        if let Some(time_str) = line.strip_prefix("out_time=") {
+                            if let Some(current_time) = parse_ffmpeg_time(time_str) {
+                                let progress = ((current_time / total_duration) * 100.0).min(95.0);
+
+                                if last_progress_time.elapsed().as_secs() >= 1 {
+                                    let _ = app_clone.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_owned.clone(),
+                                        progress,
+                                        current_time: Some(current_time),
+                                        total_time: Some(total_duration),
+                                        status: "Downloading segment...".to_string(),
+                                    });
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    } else if !line.starts_with("frame=") && !line.starts_with("fps=") 
+                        && !line.starts_with("stream_") && !line.starts_with("bitrate=")
+                        && !line.starts_with("total_size=") && !line.starts_with("out_time_ms=")
+                        && !line.starts_with("out_time_us=") && !line.starts_with("dup_frames=")
+                        && !line.starts_with("drop_frames=") && !line.starts_with("speed=")
+                        && !line.starts_with("progress=") {
+                        // This is likely an error or warning message from FFmpeg
+                        println!("[Rust] FFmpeg output: {}", line);
+                        // Only capture as error if it looks like an error
+                        if line.to_lowercase().contains("error") || line.to_lowercase().contains("failed")
+                            || line.to_lowercase().contains("invalid") || line.to_lowercase().contains("cannot")
+                            || line.to_lowercase().contains("no such") || line.to_lowercase().contains("not found")
+                            || line.to_lowercase().contains("nvenc") || line.to_lowercase().contains("encoder") {
+                            last_error = Some(line.clone());
+                        }
+                    }
+                }
+            }
+            tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                if let Some(code) = payload.code {
+                    if code == 0 {
+                        println!("[Rust] FFmpeg segment download completed successfully");
+                        success = true;
+                    } else {
+                        println!("[Rust] FFmpeg segment download failed with exit code: {}", code);
+                        if last_error.is_none() {
+                            last_error = Some(format!("FFmpeg exited with code {}", code));
+                        }
+                    }
+                } else {
+                    println!("[Rust] FFmpeg segment download terminated without exit code");
+                    if last_error.is_none() {
+                        last_error = Some("FFmpeg terminated unexpectedly".to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Remove from active processes
+    {
+        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
+        processes.remove(download_id);
+    }
+
+    if success {
+        Ok(())
+    } else {
+        Err(format!("FFmpeg segment download failed: {}", 
+            last_error.unwrap_or_else(|| "Unknown error".to_string())))
+    }
+}
+
+/// Helper function to run FFmpeg full VOD download with a specific encoder
+/// Returns Ok(()) on success, Err(error_message) on failure
+async fn run_full_download_with_encoder(
+    app: &tauri::AppHandle,
+    download_id: &str,
+    video_url: &str,
+    output_path: &str,
+    estimated_duration: Option<f64>,
+    encoder: &str,
+    use_copy_codec: bool,
+) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    
+    println!("[Rust] Running full download with encoder: {} (copy: {})", encoder, use_copy_codec);
+    
+    let shell = app.shell();
+    let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
+    
+    let preset = if encoder == "libx264" { "ultrafast" } else { "fast" };
+    
+    // Build args based on whether we're copying or encoding
+    let args: Vec<&str> = if use_copy_codec {
+        vec![
+            "-ss", "0.1",
+            "-i", video_url,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-map", "0:v:0?",
+            "-map", "0:a:0?",
+            "-movflags", "+faststart",
+            "-progress", "pipe:2",
+            "-v", "warning",
+            "-y",
+            "-bsf:a", "aac_adtstoasc",
+            output_path,
+        ]
+    } else {
+        vec![
+            "-ss", "0.1",
+            "-i", video_url,
+            "-c:v", encoder,
+            "-preset", preset,
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-map", "0:v:0?",
+            "-map", "0:a:0?",
+            "-avoid_negative_ts", "make_zero",
+            "-movflags", "+faststart",
+            "-progress", "pipe:2",
+            "-v", "warning",
+            "-y",
+            output_path,
+        ]
+    };
+    
+    let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+
+    // Store process handle for cancellation
+    {
+        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
+        processes.insert(download_id.to_string(), child);
+    }
+
+    let mut total_duration = estimated_duration.unwrap_or(600.0);
+    let app_clone = app.clone();
+    let download_id_owned = download_id.to_string();
+    
+    let mut line_buffer = String::new();
+    let mut last_progress_time = std::time::Instant::now();
+    let mut lines_processed = 0;
+    let mut success = false;
+    let mut last_error: Option<String> = None;
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
+                let chunk = String::from_utf8_lossy(&data);
+                line_buffer.push_str(&chunk);
+
+                while let Some(newline_pos) = line_buffer.find('\n') {
+                    let line = line_buffer[..newline_pos].trim().to_string();
+                    line_buffer.drain(..=newline_pos);
+
+                    if line.is_empty() { continue; }
+
+                    lines_processed += 1;
+                    if lines_processed % 50 == 0 {
+                        println!("[Rust] Processed {} lines from FFmpeg stderr", lines_processed);
+                    }
+
+                    if line.starts_with("out_time=") {
+                        if let Some(time_str) = line.strip_prefix("out_time=") {
+                            if let Some(current_time) = parse_ffmpeg_time(time_str) {
+                                // Update duration estimate if needed
+                                if current_time > total_duration {
+                                    total_duration = current_time * 1.1;
+                                }
+                                
+                                let progress = ((current_time / total_duration) * 100.0).min(95.0);
+
+                                if last_progress_time.elapsed().as_secs() >= 1 {
+                                    let _ = app_clone.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_owned.clone(),
+                                        progress,
+                                        current_time: Some(current_time),
+                                        total_time: Some(total_duration),
+                                        status: "Downloading video...".to_string(),
+                                    });
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    } else if !line.starts_with("frame=") && !line.starts_with("fps=") 
+                        && !line.starts_with("stream_") && !line.starts_with("bitrate=")
+                        && !line.starts_with("total_size=") && !line.starts_with("out_time_ms=")
+                        && !line.starts_with("out_time_us=") && !line.starts_with("dup_frames=")
+                        && !line.starts_with("drop_frames=") && !line.starts_with("speed=")
+                        && !line.starts_with("progress=") {
+                        // This is likely an error or warning message from FFmpeg
+                        println!("[Rust] FFmpeg output: {}", line);
+                        if line.to_lowercase().contains("error") || line.to_lowercase().contains("failed")
+                            || line.to_lowercase().contains("invalid") || line.to_lowercase().contains("cannot")
+                            || line.to_lowercase().contains("no such") || line.to_lowercase().contains("not found")
+                            || line.to_lowercase().contains("nvenc") || line.to_lowercase().contains("encoder") {
+                            last_error = Some(line.clone());
+                        }
+                    }
+                }
+            }
+            tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                if let Some(code) = payload.code {
+                    if code == 0 {
+                        println!("[Rust] FFmpeg download completed successfully");
+                        success = true;
+                    } else {
+                        println!("[Rust] FFmpeg download failed with exit code: {}", code);
+                        if last_error.is_none() {
+                            last_error = Some(format!("FFmpeg exited with code {}", code));
+                        }
+                    }
+                } else {
+                    println!("[Rust] FFmpeg download terminated without exit code");
+                    if last_error.is_none() {
+                        last_error = Some("FFmpeg terminated unexpectedly".to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Remove from active processes
+    {
+        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
+        processes.remove(download_id);
+    }
+
+    if success {
+        Ok(())
+    } else {
+        Err(format!("FFmpeg download failed: {}", 
+            last_error.unwrap_or_else(|| "Unknown error".to_string())))
+    }
+}
+
 #[tauri::command]
 pub async fn download_pumpfun_vod_segment(
     app: tauri::AppHandle,
@@ -65,8 +374,6 @@ pub async fn download_pumpfun_vod_segment(
     start_time: f64,
     end_time: f64
 ) -> Result<(), String> {
-    use tauri_plugin_shell::ShellExt;
-
     println!("[Rust] download_pumpfun_vod_segment called with:");
     println!("[Rust]   download_id: {}", download_id);
     println!("[Rust]   title: {}", title);
@@ -174,144 +481,47 @@ pub async fn download_pumpfun_vod_segment(
     println!("[Rust] Starting async segment download task...");
 
     let result = tokio::spawn(async move {
+        use tauri_plugin_shell::ShellExt;
+        
         println!("[Rust] Async task started for segment download: {}", download_id_clone);
-
-        let shell = app_clone.shell();
-        println!("[Rust] Shell created successfully");
-
-        // Download the video segment with real-time progress tracking
-        println!("[Rust] Starting video segment download with real-time progress...");
-        println!("[Rust] Efficient segment download: start_time={}, duration={}s", start_time, segment_duration);
-        let app_clone_for_progress = app_clone.clone();
-        let download_id_for_progress = download_id_clone.clone();
-        let total_segment_duration = segment_duration;
-
-        // Use FFmpeg to extract and download the segment efficiently
-        // For HLS streams, we need additional flags for efficient seeking
-        println!("[Rust] Spawning FFmpeg sidecar for segment with real-time progress...");
 
         // Detect hardware encoder
         let encoder = detect_hardware_encoder(&app_clone).await.unwrap_or_else(|| "libx264".to_string());
-        println!("[Rust] Using encoder: {}", encoder);
+        println!("[Rust] Detected encoder: {}", encoder);
 
-        let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
-        let (mut rx, child) = cmd.args([
-            "-ss", &format!("{:.3}", start_time),  // Seek before input (efficient)
-            "-i", &video_url,
-            "-t", &format!("{:.3}", segment_duration),  // Duration
-            "-c:v", &encoder,
-            "-preset", if encoder == "libx264" { "ultrafast" } else { "fast" }, // ultrafast for CPU, fast for GPU (usually default is fine but explicit is good)
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-map", "0:v:0?",
-            "-map", "0:a:0?",
-            "-avoid_negative_ts", "make_zero",  // Fix timestamp issues for segments
-            "-movflags", "+faststart",
-            "-progress", "pipe:2",
-            "-v", "error",
-            "-y",
-            video_path.to_str().ok_or("Invalid video path")?,
-        ]).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+        let video_path_str = video_path.to_string_lossy().to_string();
 
-        // Store process handle for cancellation
-        {
-            let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-            processes.insert(download_id_clone.clone(), child);
-        }
+        // Try download with detected encoder first
+        let download_result = run_segment_download_with_encoder(
+            &app_clone,
+            &download_id_clone,
+            &video_url,
+            &video_path_str,
+            start_time,
+            segment_duration,
+            &encoder,
+        ).await;
 
-        let result = tokio::spawn(async move {
-            let total_duration = total_segment_duration;
-            let app_progress = app_clone_for_progress.clone();
-            let download_id_progress = download_id_for_progress.clone();
-
-            let mut line_buffer = String::new();
-            let mut last_progress_time = std::time::Instant::now();
-            let mut lines_processed = 0;
-            let mut success = false;
-
-            while let Some(event) = rx.recv().await {
-                match event {
-                    tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
-                        let chunk = String::from_utf8_lossy(&data);
-                        line_buffer.push_str(&chunk);
-
-                        while let Some(newline_pos) = line_buffer.find('\n') {
-                            let line = line_buffer[..newline_pos].trim().to_string();
-                            line_buffer.drain(..=newline_pos);
-
-                            if line.is_empty() { continue; }
-
-                            lines_processed += 1;
-                            if lines_processed % 50 == 0 {
-                                println!("[Rust] Processed {} lines from FFmpeg stderr for segment", lines_processed);
-                            }
-
-                            // Look for out_time= lines (current time in HH:MM:SS.ms format)
-                            if line.starts_with("out_time=") {
-                                if let Some(time_str) = line.strip_prefix("out_time=") {
-                                    println!("[Rust] Found segment progress line: out_time={}", time_str);
-                                    if let Some(current_time) = parse_ffmpeg_time(time_str) {
-                                        // For segment downloads, calculate progress relative to segment duration
-                                        let progress = ((current_time / total_duration) * 100.0).min(95.0);
-                                        println!("[Rust] Segment progress: {:.1}% ({}s / {}s)", progress, current_time, total_duration);
-
-                                        // Only emit progress if it's been at least 1 second since last update
-                                        if last_progress_time.elapsed().as_secs() >= 1 {
-                                            let progress_result = app_progress.emit("download-progress", DownloadProgress {
-                                                download_id: download_id_progress.clone(),
-                                                progress,
-                                                current_time: Some(current_time),
-                                                total_time: Some(total_duration),
-                                                status: "Downloading segment...".to_string(),
-                                            });
-
-                                            if let Err(e) = progress_result {
-                                                println!("[Rust] Failed to emit segment progress: {}", e);
-                                            }
-                                            last_progress_time = std::time::Instant::now();
-                                        }
-                                    } else {
-                                        println!("[Rust] Failed to parse time from: {}", time_str);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
-                        if let Some(code) = payload.code {
-                            if code == 0 {
-                                println!("[Rust] FFmpeg segment download completed successfully");
-                                success = true;
-                            } else {
-                                println!("[Rust] FFmpeg segment download failed with status: {}", code);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+        // If hardware encoder failed and we weren't already using software, retry with software
+        let download_result = match download_result {
+            Err(ref e) if encoder != "libx264" => {
+                println!("[Rust] Hardware encoder ({}) failed: {}. Retrying with software encoder (libx264)...", encoder, e);
+                run_segment_download_with_encoder(
+                    &app_clone,
+                    &download_id_clone,
+                    &video_url,
+                    &video_path_str,
+                    start_time,
+                    segment_duration,
+                    "libx264",
+                ).await
             }
+            other => other,
+        };
 
-            if success {
-                Ok(())
-            } else {
-                Err("FFmpeg segment download failed".to_string())
-            }
-        }).await;
-
-        match result {
-            Ok(inner_result) => {
-                match inner_result {
-                    Ok(()) => {
-                        // Segment download completed successfully
-                    }
-                    Err(e) => {
-                        return Err(e);
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(format!("Task join error for segment: {}", e));
-            }
+        // Check result
+        if let Err(e) = download_result {
+            return Err(e);
         }
 
         println!("[Rust] Segment download completed successfully");
@@ -331,6 +541,7 @@ pub async fn download_pumpfun_vod_segment(
 
         // Generate thumbnail for segment
         println!("[Rust] Generating thumbnail for segment...");
+        let shell = app_clone.shell();
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
         let thumbnail_result = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
@@ -505,8 +716,6 @@ pub async fn download_pumpfun_vod(
     video_url: String,
     mint_id: String
 ) -> Result<(), String> {
-    use tauri_plugin_shell::ShellExt;
-
     println!("[Rust] download_pumpfun_vod called with:");
     println!("[Rust]   download_id: {}", download_id);
     println!("[Rust]   title: {}", title);
@@ -596,38 +805,27 @@ pub async fn download_pumpfun_vod(
     println!("[Rust] Starting async download task...");
 
     let result = tokio::spawn(async move {
+        use tauri_plugin_shell::ShellExt;
+        
         println!("[Rust] Async task started for download: {}", download_id_clone);
 
         let shell = app_clone.shell();
-        println!("[Rust] Shell created successfully");
-
-        // Skip hardcoded progress steps - let real-time download progress handle everything
 
         // First, get video info to get duration
         println!("[Rust] Running ffmpeg to get video info for URL: {}", video_url);
         let info_output = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
-                println!("[Rust] FFmpeg sidecar obtained, running info command...");
                 match ffmpeg.args([
                     "-i", &video_url,
                     "-f", "null",
-                    "-t", "1",  // Only read first second to get metadata quickly
+                    "-t", "1",
                     "-"
                 ]).output().await {
-                    Ok(output) => {
-                        println!("[Rust] FFmpeg info command completed");
-                        output
-                    }
-                    Err(e) => {
-                        println!("[Rust] Failed to run ffmpeg info command: {}", e);
-                        return Err(format!("Failed to run ffmpeg info: {}", e));
-                    }
+                    Ok(output) => output,
+                    Err(e) => return Err(format!("Failed to run ffmpeg info: {}", e))
                 }
             }
-            Err(e) => {
-                println!("[Rust] Failed to get ffmpeg sidecar: {}", e);
-                return Err(format!("Failed to get ffmpeg sidecar: {}", e));
-            }
+            Err(e) => return Err(format!("Failed to get ffmpeg sidecar: {}", e))
         };
 
         // Extract duration from stderr
@@ -635,147 +833,43 @@ pub async fn download_pumpfun_vod(
         let duration = extract_duration_from_ffmpeg_output(&stderr);
         println!("[Rust] Video duration extracted: {:?}", duration);
 
-        // Download will start immediately with real-time progress
-
-        // Now download the video with real-time progress tracking
-        println!("[Rust] Starting video download with real-time progress...");
-        let app_clone_for_progress = app_clone.clone();
-        let download_id_for_progress = download_id_clone.clone();
-        let duration_for_progress = duration;
-
-        // Don't set initial progress here - let real-time progress calculation handle it
-        // This prevents the progress from jumping backward when real-time updates start
-
-        println!("[Rust] Spawning FFmpeg sidecar with real-time progress...");
-
         // Detect hardware encoder
         let encoder = detect_hardware_encoder(&app_clone).await.unwrap_or_else(|| "libx264".to_string());
-        println!("[Rust] Using encoder: {}", encoder);
+        println!("[Rust] Detected encoder: {}", encoder);
 
-        // For full VOD downloads, add a small seek offset to avoid issues with problematic
-        // initial segments in some HLS streams. This mimics starting at 0.1s which works around
-        // streams that have issues at position 0.
-        let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
-        let (mut rx, child) = cmd.args([
-            "-ss", "0.1",  // Small offset to avoid problematic stream starts
-            "-i", &video_url,
-            "-c:v", &encoder,
-            "-preset", if encoder == "libx264" { "ultrafast" } else { "fast" },
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-map", "0:v:0?",
-            "-map", "0:a:0?",
-            "-avoid_negative_ts", "make_zero",
-            "-movflags", "+faststart",
-            "-progress", "pipe:2",
-            "-v", "error",
-            "-y",
-            video_path.to_str().ok_or("Invalid video path")?,
-        ]).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+        let video_path_str = video_path.to_string_lossy().to_string();
 
-        // Store process handle for cancellation
-        {
-            let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-            processes.insert(download_id_clone.clone(), child);
-        }
+        // Try download with detected encoder first
+        let download_result = run_full_download_with_encoder(
+            &app_clone,
+            &download_id_clone,
+            &video_url,
+            &video_path_str,
+            duration,
+            &encoder,
+            false, // Don't use copy codec, encode for PumpFun
+        ).await;
 
-        let result = tokio::spawn(async move {
-            let mut total_duration = duration_for_progress.unwrap_or(600.0);
-            let app_progress = app_clone_for_progress.clone();
-            let download_id_progress = download_id_for_progress.clone();
-
-            let mut line_buffer = String::new();
-            let mut last_progress_time = std::time::Instant::now();
-            let mut lines_processed = 0;
-            let mut success = false;
-
-            while let Some(event) = rx.recv().await {
-                match event {
-                    tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
-                        let chunk = String::from_utf8_lossy(&data);
-                        line_buffer.push_str(&chunk);
-
-                        while let Some(newline_pos) = line_buffer.find('\n') {
-                            let line = line_buffer[..newline_pos].trim().to_string();
-                            line_buffer.drain(..=newline_pos);
-
-                            if line.is_empty() { continue; }
-
-                            lines_processed += 1;
-                            if lines_processed % 50 == 0 {
-                                println!("[Rust] Processed {} lines from FFmpeg stderr", lines_processed);
-                            }
-
-                            if line.starts_with("out_time=") {
-                                if let Some(time_str) = line.strip_prefix("out_time=") {
-                                    println!("[Rust] Found progress line: out_time={}", time_str);
-                                    if let Some(current_time) = parse_ffmpeg_time(time_str) {
-                                        // If current time exceeds our estimate, update the estimate
-                                        // This handles cases where duration extraction failed or was inaccurate
-                                        if current_time > total_duration {
-                                            total_duration = current_time * 1.1; // Add 10% buffer
-                                            println!("[Rust] Duration estimate updated to: {}s (current: {}s)", total_duration, current_time);
-                                        }
-                                        
-                                        let progress = ((current_time / total_duration) * 100.0).min(95.0);
-                                        println!("[Rust] Real progress: {:.1}% ({}s / {}s)", progress, current_time, total_duration);
-
-                                        if last_progress_time.elapsed().as_secs() >= 1 {
-                                            let progress_result = app_progress.emit("download-progress", DownloadProgress {
-                                                download_id: download_id_progress.clone(),
-                                                progress,
-                                                current_time: Some(current_time),
-                                                total_time: Some(total_duration),
-                                                status: "Downloading video...".to_string(),
-                                            });
-
-                                            if let Err(e) = progress_result {
-                                                println!("[Rust] Failed to emit progress: {}", e);
-                                            }
-                                            last_progress_time = std::time::Instant::now();
-                                        }
-                                    } else {
-                                        println!("[Rust] Failed to parse time from: {}", time_str);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
-                        if let Some(code) = payload.code {
-                            if code == 0 {
-                                println!("[Rust] FFmpeg download completed successfully");
-                                success = true;
-                            } else {
-                                println!("[Rust] FFmpeg download failed with status: {}", code);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+        // If hardware encoder failed and we weren't already using software, retry with software
+        let download_result = match download_result {
+            Err(ref e) if encoder != "libx264" => {
+                println!("[Rust] Hardware encoder ({}) failed: {}. Retrying with software encoder (libx264)...", encoder, e);
+                run_full_download_with_encoder(
+                    &app_clone,
+                    &download_id_clone,
+                    &video_url,
+                    &video_path_str,
+                    duration,
+                    "libx264",
+                    false,
+                ).await
             }
+            other => other,
+        };
 
-            if success {
-                Ok(())
-            } else {
-                Err("FFmpeg download failed".to_string())
-            }
-        }).await;
-
-        match result {
-            Ok(inner_result) => {
-                match inner_result {
-                    Ok(()) => {
-                        // Download completed successfully
-                    }
-                    Err(e) => {
-                        return Err(e);
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(format!("Task join error: {}", e));
-            }
+        // Check result
+        if let Err(e) = download_result {
+            return Err(e);
         }
 
         println!("[Rust] Download completed successfully");
@@ -970,8 +1064,6 @@ pub async fn download_kick_vod_segment(
     start_time: f64,
     end_time: f64
 ) -> Result<(), String> {
-    use tauri_plugin_shell::ShellExt;
-
     println!("[Rust] download_kick_vod_segment called with:");
     println!("[Rust]   download_id: {}", download_id);
     println!("[Rust]   title: {}", title);
@@ -1077,144 +1169,47 @@ pub async fn download_kick_vod_segment(
     println!("[Rust] Starting async segment download task...");
 
     let result = tokio::spawn(async move {
+        use tauri_plugin_shell::ShellExt;
+        
         println!("[Rust] Async task started for segment download: {}", download_id_clone);
-
-        let shell = app_clone.shell();
-        println!("[Rust] Shell created successfully");
-
-        // Download the video segment with real-time progress tracking
-        println!("[Rust] Starting video segment download with real-time progress...");
-        println!("[Rust] Efficient segment download: start_time={}, duration={}s", start_time, segment_duration);
-        let app_clone_for_progress = app_clone.clone();
-        let download_id_for_progress = download_id_clone.clone();
-        let total_segment_duration = segment_duration;
-
-        // Use FFmpeg to extract and download the segment efficiently
-        // For HLS streams, we need additional flags for efficient seeking
-        println!("[Rust] Spawning FFmpeg sidecar for segment with real-time progress...");
 
         // Detect hardware encoder
         let encoder = detect_hardware_encoder(&app_clone).await.unwrap_or_else(|| "libx264".to_string());
-        println!("[Rust] Using encoder: {}", encoder);
+        println!("[Rust] Detected encoder: {}", encoder);
 
-        let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
-        let (mut rx, child) = cmd.args([
-            "-ss", &format!("{:.3}", start_time),  // Seek before input (efficient)
-            "-i", &video_url,
-            "-t", &format!("{:.3}", segment_duration),  // Duration
-            "-c:v", &encoder,
-            "-preset", if encoder == "libx264" { "ultrafast" } else { "fast" }, // ultrafast for CPU, fast for GPU (usually default is fine but explicit is good)
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-map", "0:v:0?",
-            "-map", "0:a:0?",
-            "-avoid_negative_ts", "make_zero",  // Fix timestamp issues for segments
-            "-movflags", "+faststart",
-            "-progress", "pipe:2",
-            "-v", "error",
-            "-y",
-            video_path.to_str().ok_or("Invalid video path")?,
-        ]).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+        let video_path_str = video_path.to_string_lossy().to_string();
 
-        // Store process handle for cancellation
-        {
-            let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-            processes.insert(download_id_clone.clone(), child);
-        }
+        // Try download with detected encoder first
+        let download_result = run_segment_download_with_encoder(
+            &app_clone,
+            &download_id_clone,
+            &video_url,
+            &video_path_str,
+            start_time,
+            segment_duration,
+            &encoder,
+        ).await;
 
-        let result = tokio::spawn(async move {
-            let total_duration = total_segment_duration;
-            let app_progress = app_clone_for_progress.clone();
-            let download_id_progress = download_id_for_progress.clone();
-
-            let mut line_buffer = String::new();
-            let mut last_progress_time = std::time::Instant::now();
-            let mut lines_processed = 0;
-            let mut success = false;
-
-            while let Some(event) = rx.recv().await {
-                match event {
-                    tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
-                        let chunk = String::from_utf8_lossy(&data);
-                        line_buffer.push_str(&chunk);
-
-                        while let Some(newline_pos) = line_buffer.find('\n') {
-                            let line = line_buffer[..newline_pos].trim().to_string();
-                            line_buffer.drain(..=newline_pos);
-
-                            if line.is_empty() { continue; }
-
-                            lines_processed += 1;
-                            if lines_processed % 50 == 0 {
-                                println!("[Rust] Processed {} lines from FFmpeg stderr for segment", lines_processed);
-                            }
-
-                            // Look for out_time= lines (current time in HH:MM:SS.ms format)
-                            if line.starts_with("out_time=") {
-                                if let Some(time_str) = line.strip_prefix("out_time=") {
-                                    println!("[Rust] Found segment progress line: out_time={}", time_str);
-                                    if let Some(current_time) = parse_ffmpeg_time(time_str) {
-                                        // For segment downloads, calculate progress relative to segment duration
-                                        let progress = ((current_time / total_duration) * 100.0).min(95.0);
-                                        println!("[Rust] Segment progress: {:.1}% ({}s / {}s)", progress, current_time, total_duration);
-
-                                        // Only emit progress if it's been at least 1 second since last update
-                                        if last_progress_time.elapsed().as_secs() >= 1 {
-                                            let progress_result = app_progress.emit("download-progress", DownloadProgress {
-                                                download_id: download_id_progress.clone(),
-                                                progress,
-                                                current_time: Some(current_time),
-                                                total_time: Some(total_duration),
-                                                status: "Downloading segment...".to_string(),
-                                            });
-
-                                            if let Err(e) = progress_result {
-                                                println!("[Rust] Failed to emit segment progress: {}", e);
-                                            }
-                                            last_progress_time = std::time::Instant::now();
-                                        }
-                                    } else {
-                                        println!("[Rust] Failed to parse time from: {}", time_str);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
-                        if let Some(code) = payload.code {
-                            if code == 0 {
-                                println!("[Rust] FFmpeg segment download completed successfully");
-                                success = true;
-                            } else {
-                                println!("[Rust] FFmpeg segment download failed with status: {}", code);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+        // If hardware encoder failed and we weren't already using software, retry with software
+        let download_result = match download_result {
+            Err(ref e) if encoder != "libx264" => {
+                println!("[Rust] Hardware encoder ({}) failed: {}. Retrying with software encoder (libx264)...", encoder, e);
+                run_segment_download_with_encoder(
+                    &app_clone,
+                    &download_id_clone,
+                    &video_url,
+                    &video_path_str,
+                    start_time,
+                    segment_duration,
+                    "libx264",
+                ).await
             }
+            other => other,
+        };
 
-            if success {
-                Ok(())
-            } else {
-                Err("FFmpeg segment download failed".to_string())
-            }
-        }).await;
-
-        match result {
-            Ok(inner_result) => {
-                match inner_result {
-                    Ok(()) => {
-                        // Segment download completed successfully
-                    }
-                    Err(e) => {
-                        return Err(e);
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(format!("Task join error for segment: {}", e));
-            }
+        // Check result
+        if let Err(e) = download_result {
+            return Err(e);
         }
 
         println!("[Rust] Segment download completed successfully");
@@ -1234,6 +1229,7 @@ pub async fn download_kick_vod_segment(
 
         // Generate thumbnail for segment
         println!("[Rust] Generating thumbnail for segment...");
+        let shell = app_clone.shell();
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
         let thumbnail_result = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
@@ -1408,8 +1404,6 @@ pub async fn download_kick_vod(
     video_url: String,
     channel_slug: String
 ) -> Result<(), String> {
-    use tauri_plugin_shell::ShellExt;
-
     println!("[Rust] download_kick_vod called with:");
     println!("[Rust]   download_id: {}", download_id);
     println!("[Rust]   title: {}", title);
@@ -1495,10 +1489,11 @@ pub async fn download_kick_vod(
     println!("[Rust] Starting async download task...");
 
     let result = tokio::spawn(async move {
+        use tauri_plugin_shell::ShellExt;
+        
         println!("[Rust] Async task started for download: {}", download_id_clone);
 
         let shell = app_clone.shell();
-        println!("[Rust] Shell created successfully");
 
         // First, get video info to get duration
         println!("[Rust] Running ffmpeg to get video info for URL: {}", video_url);
@@ -1522,123 +1517,39 @@ pub async fn download_kick_vod(
         let duration = extract_duration_from_ffmpeg_output(&stderr);
         println!("[Rust] Video duration extracted: {:?}", duration);
 
-        // Download will start immediately with real-time progress
-        println!("[Rust] Starting video download with real-time progress...");
-        let app_clone_for_progress = app_clone.clone();
-        let download_id_for_progress = download_id_clone.clone();
-        let duration_for_progress = duration;
+        let video_path_str = video_path.to_string_lossy().to_string();
 
-        println!("[Rust] Spawning FFmpeg sidecar with real-time progress...");
+        // For Kick VODs, try stream copy first (fast), fall back to encoding if it fails
+        let download_result = run_full_download_with_encoder(
+            &app_clone,
+            &download_id_clone,
+            &video_url,
+            &video_path_str,
+            duration,
+            "copy", // Try copy first for Kick
+            true,   // use_copy_codec = true
+        ).await;
 
-        // For full VOD downloads, add a small seek offset to avoid issues with problematic
-        // initial segments in some HLS streams. This mimics starting at 0.1s which works around
-        // streams that have issues at position 0.
-        let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
-        let (mut rx, child) = cmd.args([
-            "-ss", "0.1",  // Small offset to avoid problematic stream starts
-            "-i", &video_url,
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-map", "0:v:0?",
-            "-map", "0:a:0?",
-            "-movflags", "+faststart",
-            "-progress", "pipe:2",
-            "-v", "error",
-            "-y",
-            "-bsf:a", "aac_adtstoasc",
-            video_path.to_str().ok_or("Invalid video path")?,
-        ]).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
-
-        // Store process handle
-        {
-            let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-            processes.insert(download_id_clone.clone(), child);
-        }
-
-        let result = tokio::spawn(async move {
-            let mut total_duration = duration_for_progress.unwrap_or(600.0);
-            let app_progress = app_clone_for_progress.clone();
-            let download_id_progress = download_id_for_progress.clone();
-
-            let mut line_buffer = String::new();
-            let mut last_progress_time = std::time::Instant::now();
-            let mut lines_processed = 0;
-            let mut success = false;
-
-            while let Some(event) = rx.recv().await {
-                match event {
-                    tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
-                        let chunk = String::from_utf8_lossy(&data);
-                        line_buffer.push_str(&chunk);
-
-                        while let Some(newline_pos) = line_buffer.find('\n') {
-                            let line = line_buffer[..newline_pos].trim().to_string();
-                            line_buffer.drain(..=newline_pos);
-
-                            if line.is_empty() { continue; }
-
-                            lines_processed += 1;
-                            if lines_processed % 50 == 0 {
-                                println!("[Rust] Processed {} lines from FFmpeg stderr", lines_processed);
-                            }
-
-                            if line.starts_with("out_time=") {
-                                if let Some(time_str) = line.strip_prefix("out_time=") {
-                                    if let Some(current_time) = parse_ffmpeg_time(time_str) {
-                                        // If current time exceeds our estimate, update the estimate
-                                        // This handles cases where duration extraction failed or was inaccurate
-                                        if current_time > total_duration {
-                                            total_duration = current_time * 1.1; // Add 10% buffer
-                                            println!("[Rust] Duration estimate updated to: {}s (current: {}s)", total_duration, current_time);
-                                        }
-                                        
-                                        let progress = ((current_time / total_duration) * 100.0).min(95.0);
-
-                                        if last_progress_time.elapsed().as_secs() >= 1 {
-                                            let _ = app_progress.emit("download-progress", DownloadProgress {
-                                                download_id: download_id_progress.clone(),
-                                                progress,
-                                                current_time: Some(current_time),
-                                                total_time: Some(total_duration),
-                                                status: "Downloading video...".to_string(),
-                                            });
-                                            last_progress_time = std::time::Instant::now();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
-                        if let Some(code) = payload.code {
-                            if code == 0 {
-                                println!("[Rust] FFmpeg download completed successfully");
-                                success = true;
-                            } else {
-                                println!("[Rust] FFmpeg download failed with status: {}", code);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+        // If copy failed, try with software encoding
+        let download_result = match download_result {
+            Err(ref e) => {
+                println!("[Rust] Stream copy failed: {}. Retrying with software encoding...", e);
+                run_full_download_with_encoder(
+                    &app_clone,
+                    &download_id_clone,
+                    &video_url,
+                    &video_path_str,
+                    duration,
+                    "libx264",
+                    false,
+                ).await
             }
+            other => other,
+        };
 
-            if success {
-                Ok(())
-            } else {
-                Err("FFmpeg download failed".to_string())
-            }
-        }).await;
-
-        match result {
-            Ok(inner_result) => {
-                match inner_result {
-                    Ok(()) => {}
-                    Err(e) => return Err(e)
-                }
-            }
-            Err(e) => return Err(format!("Task join error: {}", e))
+        // Check result
+        if let Err(e) = download_result {
+            return Err(e);
         }
 
         println!("[Rust] Download completed successfully");
