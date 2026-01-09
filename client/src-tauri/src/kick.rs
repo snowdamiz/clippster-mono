@@ -488,6 +488,7 @@ pub async fn stop_all_kick_recordings() -> Result<(), String> {
 }
 
 /// Get count of active Kick recordings
+#[allow(dead_code)]
 pub fn get_active_kick_recordings_count() -> usize {
     KICK_ACTIVE_RECORDINGS.lock().unwrap().len()
 }

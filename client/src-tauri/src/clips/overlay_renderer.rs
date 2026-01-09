@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::types::{TextOverlaySettings, StickerSettings, ClipWatermarkSettings, SubtitleSettings, WhisperSegment};
 
 /// Helper to convert hex color to RGB values for FFmpeg

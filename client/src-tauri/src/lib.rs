@@ -499,8 +499,8 @@ pub fn run() {
                         },
                         tauri_plugin_sql::Migration {
                             version: 73,
-                            description: "add_keyframes_to_clip_watermarks",
-                            sql: include_str!("../migrations/073_add_keyframes_to_clip_watermarkss.sql"),
+                            description: "add_keyframes_to_video_editor_sources",
+                            sql: include_str!("../migrations/073_add_keyframes_to_video_editor_sources.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {

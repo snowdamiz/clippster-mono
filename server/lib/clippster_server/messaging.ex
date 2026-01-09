@@ -451,7 +451,7 @@ defmodule ClippsterServer.Messaging do
   Checks if a user can send announcements in an organization.
   """
   def can_send_announcement?(organization_id, user_id) do
-    case Organizations.get_organization_member(organization_id, user_id) do
+    case Organizations.get_member(organization_id, user_id) do
       nil -> false
       member -> member.role in ["owner", "admin"]
     end
@@ -461,8 +461,8 @@ defmodule ClippsterServer.Messaging do
   Checks if two users can message each other (both must be in the same org).
   """
   def can_message_user?(organization_id, from_user_id, to_user_id) do
-    from_member = Organizations.get_organization_member(organization_id, from_user_id)
-    to_member = Organizations.get_organization_member(organization_id, to_user_id)
+    from_member = Organizations.get_member(organization_id, from_user_id)
+    to_member = Organizations.get_member(organization_id, to_user_id)
 
     from_member != nil and to_member != nil
   end
@@ -472,7 +472,7 @@ defmodule ClippsterServer.Messaging do
   # ============================================================================
 
   defp verify_org_membership(organization_id, user_id) do
-    case Organizations.get_organization_member(organization_id, user_id) do
+    case Organizations.get_member(organization_id, user_id) do
       nil -> {:error, :not_org_member}
       _member -> :ok
     end
@@ -555,7 +555,7 @@ defmodule ClippsterServer.Messaging do
   end
 
   defp get_org_member_ids(organization_id) do
-    Organizations.list_organization_members(organization_id)
+    Organizations.list_members(organization_id)
     |> Enum.map(& &1.user_id)
   end
 
