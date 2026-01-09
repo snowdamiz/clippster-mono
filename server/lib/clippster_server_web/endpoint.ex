@@ -19,6 +19,10 @@ defmodule ClippsterServerWeb.Endpoint do
     websocket: true,
     longpoll: false
 
+  socket "/messaging", ClippsterServerWeb.MessagingSocket,
+    websocket: true,
+    longpoll: false
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),

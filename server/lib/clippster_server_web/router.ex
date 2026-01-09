@@ -247,6 +247,29 @@ defmodule ClippsterServerWeb.Router do
     put "/organizations/:organization_id/posts/:id", PostSubmissionController, :update
     post "/organizations/:organization_id/posts/:id/sync", PostSubmissionController, :sync_analytics
     post "/organizations/:organization_id/posts/:id/reset-override", PostSubmissionController, :reset_override
+
+    # Organization messaging
+    get "/organizations/:organization_id/messaging/conversations", MessagingController, :list_conversations
+    post "/organizations/:organization_id/messaging/conversations/direct", MessagingController, :create_direct
+    post "/organizations/:organization_id/messaging/conversations/group", MessagingController, :create_group
+    post "/organizations/:organization_id/messaging/conversations/announcement", MessagingController, :create_announcement
+    get "/organizations/:organization_id/messaging/unread", MessagingController, :get_unread_counts
+
+    # Conversation-specific endpoints
+    get "/conversations/:id", MessagingController, :get_conversation
+    get "/conversations/:id/messages", MessagingController, :get_messages
+    post "/conversations/:id/messages", MessagingController, :send_message
+    put "/conversations/:id/messages/:message_id", MessagingController, :edit_message
+    delete "/conversations/:id/messages/:message_id", MessagingController, :delete_message
+    post "/conversations/:id/read", MessagingController, :mark_read
+    put "/conversations/:id/mute", MessagingController, :toggle_mute
+    post "/conversations/:id/participants", MessagingController, :add_participant
+    delete "/conversations/:id/participants/:user_id", MessagingController, :remove_participant
+    post "/conversations/:id/leave", MessagingController, :leave_conversation
+
+    # User-level messaging endpoints
+    get "/me/conversations", MessagingController, :list_all_conversations
+    get "/me/unread-count", MessagingController, :get_total_unread
   end
 
   # Admin-only routes
