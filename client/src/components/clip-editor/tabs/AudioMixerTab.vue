@@ -703,6 +703,7 @@
     (e: 'updateTrackDb', trackId: string, db: number): void;
     (e: 'updateTrackPan', trackId: string, pan: number): void;
     (e: 'addKeyframe', data: { itemId: string; type: 'audio'; property: 'volume'; time: number; value: number }): void;
+    (e: 'updateAudioEffects', effects: AudioTrackEffect[]): void;
   }>();
 
   const isOriginalMuted = ref(false);
@@ -974,6 +975,7 @@
 
     appliedAudioEffects.value.push(newEffect);
     console.log('[AudioMixerTab] Applied audio effect:', newEffect);
+    emit('updateAudioEffects', [...appliedAudioEffects.value]);
     
     // Clear selection
     selectedAudioEffect.value = null;
@@ -983,11 +985,13 @@
     const idx = appliedAudioEffects.value.findIndex(e => e.id === effect.id);
     if (idx !== -1) {
       appliedAudioEffects.value[idx].isEnabled = !appliedAudioEffects.value[idx].isEnabled;
+      emit('updateAudioEffects', [...appliedAudioEffects.value]);
     }
   }
 
   function deleteAudioEffect(effectId: string) {
     appliedAudioEffects.value = appliedAudioEffects.value.filter(e => e.id !== effectId);
+    emit('updateAudioEffects', [...appliedAudioEffects.value]);
   }
 
   // EQ state stored per track (in-memory, would need persistence for production)

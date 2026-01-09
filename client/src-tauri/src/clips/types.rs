@@ -999,4 +999,3 @@ pub struct ClipWatermarkSettings {
     #[serde(default)]
     pub per_ratio_configs: Option<std::collections::HashMap<String, ClipWatermarkRatioConfig>>,
 }
-

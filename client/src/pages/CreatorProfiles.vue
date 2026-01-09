@@ -200,9 +200,9 @@
                         <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
                         {{ getCreatorStatusLabel(creator) }}
                       </div>
-                      <!-- Live status for pumpfun creators (only shown when Live Clip feature is enabled) -->
+                      <!-- Live status for monitorable creators (pumpfun/kick) (only shown when Live Clip feature is enabled) -->
                       <template
-                        v-else-if="isLiveClipEnabled && creator.platform_links.some((l) => l.platform === 'pumpfun')"
+                        v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)"
                       >
                         <div
                           v-if="isCreatorCheckingLive(creator)"
@@ -279,11 +279,11 @@
                       </button>
                       <!-- Live Clip Controls -->
                       <div
-                        v-if="isLiveClipEnabled && hasPumpfunLink(creator)"
+                        v-if="isLiveClipEnabled && hasMonitorableLink(creator)"
                         class="w-px h-5 bg-border/60 mx-1"
                       ></div>
                       <div
-                        v-if="isLiveClipEnabled && hasPumpfunLink(creator)"
+                        v-if="isLiveClipEnabled && hasMonitorableLink(creator)"
                         class="flex items-center gap-1"
                       >
                         <template v-if="!isCreatorMonitored(creator)">
@@ -446,6 +446,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
+  import { checkKickLivestream } from '@/services/kick';
   import { type PlatformId } from '@/config/platforms';
   import {
     Users,
@@ -500,23 +501,24 @@
   function canWatchCreator(creator: DisplayCreatorProfile): boolean {
     if (!isCreatorLive(creator)) return false;
     const streamerId = getMonitoredStreamerId(creator);
-    const pumpfunLink = creator.platform_links.find((l) => l.platform === 'pumpfun');
-    return Boolean(streamerId && pumpfunLink?.platform_id);
+    const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
+    return Boolean(streamerId && monitorableLink?.platform_id);
   }
 
   function watchCreator(creator: DisplayCreatorProfile) {
-    const pumpfunLink = creator.platform_links.find((l) => l.platform === 'pumpfun');
+    // Find a monitorable link (pumpfun or kick)
+    const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
     const streamerId = getMonitoredStreamerId(creator);
-    if (!pumpfunLink || !pumpfunLink.platform_id || !streamerId) {
+    if (!monitorableLink || !monitorableLink.platform_id || !streamerId) {
       showError('Cannot Watch', 'Start monitoring this creator to watch their stream.');
       return;
     }
 
     const entry = monitoredStreamers.value.get(streamerId)?.streamer;
-    const displayName = entry?.displayName || pumpfunLink.display_name || creator.name;
-    const profileImage = entry?.profileImageUrl || pumpfunLink.profile_image_url || getCreatorProfileImage(creator);
+    const displayName = entry?.displayName || monitorableLink.display_name || creator.name;
+    const profileImage = entry?.profileImageUrl || monitorableLink.profile_image_url || getCreatorProfileImage(creator);
 
-    livestreamStore.openWatchDialog(pumpfunLink.platform_id, streamerId, displayName, profileImage);
+    livestreamStore.openWatchDialog(monitorableLink.platform_id, streamerId, displayName, profileImage);
   }
 
   async function toggleCreatorAutoDvr(creator: DisplayCreatorProfile) {
@@ -616,20 +618,26 @@
   });
 
   async function checkAllLiveStatuses() {
-    const linksToCheck: { platformId: string; mintId: string }[] = [];
+    const pumpfunLinksToCheck: { platformId: string; mintId: string }[] = [];
+    const kickLinksToCheck: { platformId: string; channelSlug: string }[] = [];
 
     for (const creator of creators.value) {
       for (const link of creator.platform_links) {
+        // Skip if already being monitored
+        if (link.monitored_streamer_id && monitoredStreamers.value.has(link.monitored_streamer_id)) {
+          continue;
+        }
+        
         if (link.platform === 'pumpfun') {
-          if (link.monitored_streamer_id && monitoredStreamers.value.has(link.monitored_streamer_id)) {
-            continue;
-          }
-          linksToCheck.push({ platformId: link.platform_id, mintId: link.platform_id });
+          pumpfunLinksToCheck.push({ platformId: link.platform_id, mintId: link.platform_id });
+        } else if (link.platform === 'kick') {
+          kickLinksToCheck.push({ platformId: link.platform_id, channelSlug: link.platform_id });
         }
       }
     }
 
-    const promises = linksToCheck.map(async ({ platformId, mintId }) => {
+    // Check PumpFun streams
+    const pumpfunPromises = pumpfunLinksToCheck.map(async ({ platformId, mintId }) => {
       liveStatusMap.value.set(platformId, {
         ...liveStatusMap.value.get(platformId),
         isLive: liveStatusMap.value.get(platformId)?.isLive ?? false,
@@ -644,7 +652,7 @@
           isChecking: false,
         });
       } catch (error) {
-        console.error('[CreatorProfiles] Failed to check live status for', mintId, error);
+        console.error('[CreatorProfiles] Failed to check PumpFun live status for', mintId, error);
         liveStatusMap.value.set(platformId, {
           ...liveStatusMap.value.get(platformId),
           isLive: false,
@@ -653,7 +661,32 @@
       }
     });
 
-    await Promise.all(promises);
+    // Check Kick streams
+    const kickPromises = kickLinksToCheck.map(async ({ platformId, channelSlug }) => {
+      liveStatusMap.value.set(platformId, {
+        ...liveStatusMap.value.get(platformId),
+        isLive: liveStatusMap.value.get(platformId)?.isLive ?? false,
+        isChecking: true,
+      });
+
+      try {
+        const status = await checkKickLivestream(channelSlug);
+        liveStatusMap.value.set(platformId, {
+          isLive: status.isLive,
+          viewerCount: status.viewerCount,
+          isChecking: false,
+        });
+      } catch (error) {
+        console.error('[CreatorProfiles] Failed to check Kick live status for', channelSlug, error);
+        liveStatusMap.value.set(platformId, {
+          ...liveStatusMap.value.get(platformId),
+          isLive: false,
+          isChecking: false,
+        });
+      }
+    });
+
+    await Promise.all([...pumpfunPromises, ...kickPromises]);
   }
 
   async function loadCreators() {
@@ -792,6 +825,14 @@
     return creator.platform_links.some((l) => l.platform === 'pumpfun');
   }
 
+  function hasKickLink(creator: DisplayCreatorProfile): boolean {
+    return creator.platform_links.some((l) => l.platform === 'kick');
+  }
+
+  function hasMonitorableLink(creator: DisplayCreatorProfile): boolean {
+    return hasPumpfunLink(creator) || hasKickLink(creator);
+  }
+
   // Monitoring status helpers
   function isCreatorMonitored(creator: DisplayCreatorProfile): boolean {
     for (const link of creator.platform_links) {
@@ -810,7 +851,8 @@
           return true;
         }
       }
-      if (link.platform === 'pumpfun') {
+      // Check live status for pumpfun and kick
+      if (link.platform === 'pumpfun' || link.platform === 'kick') {
         const status = liveStatusMap.value.get(link.platform_id);
         if (status?.isLive) {
           return true;
@@ -822,7 +864,7 @@
 
   function isCreatorCheckingLive(creator: DisplayCreatorProfile): boolean {
     for (const link of creator.platform_links) {
-      if (link.platform === 'pumpfun') {
+      if (link.platform === 'pumpfun' || link.platform === 'kick') {
         const status = liveStatusMap.value.get(link.platform_id);
         if (status?.isChecking) {
           return true;
@@ -834,7 +876,7 @@
 
   function getCreatorViewerCount(creator: DisplayCreatorProfile): number | undefined {
     for (const link of creator.platform_links) {
-      if (link.platform === 'pumpfun') {
+      if (link.platform === 'pumpfun' || link.platform === 'kick') {
         const status = liveStatusMap.value.get(link.platform_id);
         if (status?.isLive && status.viewerCount) {
           return status.viewerCount;
@@ -930,27 +972,31 @@
 
   // Monitoring controls
   async function startCreatorMonitoring(creator: DisplayCreatorProfile, detectClips: boolean) {
-    const pumpfunLink = creator.platform_links.find((l) => l.platform === 'pumpfun');
-    if (!pumpfunLink) {
-      showError('No Supported Platforms', 'Live monitoring is currently only available for PumpFun streams');
+    // Find a monitorable link (pumpfun or kick)
+    const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
+    if (!monitorableLink) {
+      showError('No Supported Platforms', 'Live monitoring is currently only available for PumpFun and Kick streams');
       return;
     }
-    if (!pumpfunLink.platform_id) {
-      showError('Missing PumpFun Mint/ID', 'Add the PumpFun mint ID on this creator before starting monitoring.');
+    if (!monitorableLink.platform_id) {
+      showError('Missing Platform ID', 'Add the platform ID on this creator before starting monitoring.');
       return;
     }
 
+    // Determine platform display name for monitoring
+    const platformDisplay = monitorableLink.platform === 'kick' ? 'Kick' : 'PumpFun';
+
     try {
-      let streamerId = pumpfunLink.monitored_streamer_id;
+      let streamerId = monitorableLink.monitored_streamer_id;
 
       // Reuse an existing monitored_streamer by mintId to avoid UNIQUE constraint errors
       if (!streamerId) {
-        const existingByMint = await getMonitoredStreamerByMint(pumpfunLink.platform_id);
+        const existingByMint = await getMonitoredStreamerByMint(monitorableLink.platform_id);
         if (existingByMint) {
           const { updatePlatformLink } = await import('@/services/database');
           streamerId = existingByMint.id;
-          await updatePlatformLink(pumpfunLink.id, { monitored_streamer_id: streamerId });
-          pumpfunLink.monitored_streamer_id = streamerId;
+          await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
+          monitorableLink.monitored_streamer_id = streamerId;
         }
       }
 
@@ -958,12 +1004,15 @@
       if (!streamerId) {
         const { createMonitoredStreamer, updatePlatformLink } = await import('@/services/database');
         streamerId = await createMonitoredStreamer(
-          pumpfunLink.platform_id,
-          pumpfunLink.display_name || creator.name,
-          pumpfunLink.profile_image_url || undefined
+          monitorableLink.platform_id,
+          monitorableLink.display_name || creator.name,
+          monitorableLink.profile_image_url || undefined,
+          5, // segment duration
+          false, // auto_dvr
+          monitorableLink.platform // pass the platform type
         );
-        await updatePlatformLink(pumpfunLink.id, { monitored_streamer_id: streamerId });
-        pumpfunLink.monitored_streamer_id = streamerId;
+        await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
+        monitorableLink.monitored_streamer_id = streamerId;
       }
 
       const streamer = await getMonitoredStreamer(streamerId);
@@ -975,7 +1024,7 @@
               id: streamer.id,
               mintId: streamer.mint_id,
               displayName: streamer.display_name,
-              platform: 'PumpFun',
+              platform: platformDisplay,
               lastCheckTimestamp: streamer.last_check_timestamp,
               isCurrentlyLive: Boolean(streamer.is_currently_live),
               currentSessionId: streamer.current_session_id,

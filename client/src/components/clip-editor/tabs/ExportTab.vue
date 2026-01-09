@@ -418,6 +418,8 @@
     stickers?: any[];
     watermarks?: any[];
     audioTracks?: any[];
+    clipEffects?: any[];
+    audioEffects?: any[];
     originalDb?: number;
     trackDbValues?: Record<string, number>;
     clipStartTime: number;
@@ -656,6 +658,32 @@
           perRatioConfigs: wm.perRatioConfigs ?? null,
         })) ?? null;
 
+      // Prepare clip effects for export (visual effects)
+      const clipEffectsForExport =
+        props.clipEffects
+          ?.filter((effect) => effect.isEnabled)
+          .map((effect) => ({
+            id: effect.id,
+            effectType: effect.effectType,
+            startTime: effect.startTime,
+            endTime: effect.endTime,
+            intensity: effect.intensity ?? 1.0,
+            parameters: effect.parameters ?? null,
+          })) ?? null;
+
+      // Prepare audio effects for export
+      const audioEffectsForExport =
+        props.audioEffects
+          ?.filter((effect) => effect.isEnabled)
+          .map((effect) => ({
+            id: effect.id,
+            effectType: effect.effectType,
+            startTime: effect.startTime,
+            endTime: effect.endTime,
+            intensity: effect.intensity ?? 1.0,
+            parameters: effect.parameters ?? null,
+          })) ?? null;
+
       // Determine framing strategy
       // FramingStrategy is a complex struct - pass null to let backend handle detection
       // Manual configs are passed separately via manualFramingConfigs parameter
@@ -676,6 +704,8 @@
           textOverlaysForExport,
           stickersForExport,
           clipWatermarksForExport,
+          clipEffectsForExport,
+          audioEffectsForExport,
           framingStrategy,
           resolvedWatermarkSettings
         );
@@ -688,6 +718,8 @@
           textOverlaysForExport,
           stickersForExport,
           clipWatermarksForExport,
+          clipEffectsForExport,
+          audioEffectsForExport,
           framingStrategy,
           resolvedWatermarkSettings
         );
@@ -709,6 +741,8 @@
     textOverlaysForExport: any,
     stickersForExport: any,
     clipWatermarksForExport: any,
+    clipEffectsForExport: any,
+    audioEffectsForExport: any,
     framingStrategy: string | null,
     resolvedWatermarkSettings: any | null
   ) {
@@ -844,6 +878,8 @@
       textOverlays: textOverlaysForExport,
       stickers: stickersForExport,
       clipWatermarks: clipWatermarksForExport,
+      clipEffects: clipEffectsForExport,
+      audioEffects: audioEffectsForExport,
     });
   }
 
@@ -855,6 +891,8 @@
     textOverlaysForExport: any,
     stickersForExport: any,
     clipWatermarksForExport: any,
+    clipEffectsForExport: any,
+    audioEffectsForExport: any,
     framingStrategy: string | null,
     resolvedWatermarkSettings: any | null
   ) {
@@ -956,6 +994,8 @@
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
         clipWatermarks: clipWatermarksForExport,
+        clipEffects: clipEffectsForExport,
+        audioEffects: audioEffectsForExport,
       });
     } else if (mainSources.length > 0) {
       // Multiple source files - need to handle concatenation
@@ -1032,6 +1072,8 @@
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
         clipWatermarks: clipWatermarksForExport,
+        clipEffects: clipEffectsForExport,
+        audioEffects: audioEffectsForExport,
       });
     } else {
       throw new Error('No video sources to export');

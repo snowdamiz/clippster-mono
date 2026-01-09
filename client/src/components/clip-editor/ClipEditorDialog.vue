@@ -185,6 +185,7 @@
                   @update-track-db="updateTrackDb"
                   @update-track-pan="updateTrackPan"
                   @add-keyframe="addKeyframe"
+                  @update-audio-effects="(effects) => audioEffects = effects"
                 />
 
                 <!-- Overlays Tab (Text + Stickers) -->
@@ -287,6 +288,8 @@
                   :stickers="stickers"
                   :watermarks="watermarks"
                   :audio-tracks="audioTracks"
+                  :clip-effects="clipEffects"
+                  :audio-effects="audioEffects"
                   :original-db="originalDb"
                   :track-db-values="trackDbValues"
                   :clip-start-time="props.clipStartTime"
@@ -562,7 +565,7 @@
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { ensureAssetDownloaded } from '@/services/orgAssetSync';
-  import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro, ClipTransition, ClipEffect } from '@/types';
+  import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro, ClipTransition, ClipEffect, AudioTrackEffect } from '@/types';
   import { calculateCrossfadeOpacity } from '@/types';
 
   // Disable attribute inheritance since this component renders a Teleport root
@@ -842,6 +845,7 @@
   // Effects & Transitions
   const clipTransitions = ref<ClipTransition[]>([]);
   const clipEffects = ref<ClipEffect[]>([]);
+  const audioEffects = ref<AudioTrackEffect[]>([]);
   const selectedSegmentIndex = ref<number | undefined>(undefined);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
