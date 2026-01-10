@@ -328,6 +328,7 @@ defmodule ClippsterServerWeb.Router do
     # ============================================================================
     get "/user/clipper-profile", ClipperProfilesController, :show_own
     put "/user/clipper-profile", ClipperProfilesController, :update_own
+    post "/user/clipper-profile/avatar", ClipperProfilesController, :upload_avatar
     
     # Channel links
     get "/user/clipper-profile/channel-links", ClipperProfilesController, :list_channel_links

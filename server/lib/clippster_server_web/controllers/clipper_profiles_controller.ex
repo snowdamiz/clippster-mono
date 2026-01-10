@@ -46,6 +46,78 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     end
   end
 
+  @doc """
+  POST /api/user/clipper-profile/avatar
+  Upload an avatar image to R2 storage (max 5MB).
+  """
+  @max_avatar_size 5 * 1024 * 1024  # 5MB
+  def upload_avatar(conn, %{"file" => %Plug.Upload{} = upload}) do
+    user = conn.assigns.current_user
+    alias ClippsterServer.Storage
+
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    content_type = upload.content_type || "image/jpeg"
+
+    if content_type not in allowed_types do
+      conn
+      |> put_status(:bad_request)
+      |> json(%{success: false, error: "Invalid file type. Allowed: JPEG, PNG, GIF, WebP"})
+    else
+      # Check file size
+      case File.stat(upload.path) do
+        {:ok, %{size: size}} when size > @max_avatar_size ->
+          conn
+          |> put_status(:request_entity_too_large)
+          |> json(%{success: false, error: "File size exceeds 5MB limit"})
+
+        {:ok, %{size: _file_size}} ->
+          with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
+               {:ok, file_binary} <- File.read(upload.path),
+               key <- generate_avatar_key(user.id, upload.filename),
+               {:ok, avatar_url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
+            
+            # Update the profile with the new avatar URL
+            case ClipperProfiles.update_profile(profile, %{"avatar_url" => avatar_url}) do
+              {:ok, updated_profile} ->
+                updated_profile = ClippsterServer.Repo.preload(updated_profile, [:channel_links, :portfolio_clips, :badges])
+                json(conn, %{success: true, profile: serialize_profile(updated_profile), avatar_url: avatar_url})
+
+              {:error, changeset} ->
+                # Clean up uploaded file on failure
+                Storage.delete_file(key)
+                conn
+                |> put_status(:unprocessable_entity)
+                |> json(%{success: false, error: format_changeset_errors(changeset)})
+            end
+          else
+            {:error, reason} ->
+              conn
+              |> put_status(:unprocessable_entity)
+              |> json(%{success: false, error: "Upload failed: #{inspect(reason)}"})
+          end
+
+        {:error, reason} ->
+          conn
+          |> put_status(:unprocessable_entity)
+          |> json(%{success: false, error: "Could not read file: #{inspect(reason)}"})
+      end
+    end
+  end
+
+  def upload_avatar(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{success: false, error: "No file provided"})
+  end
+
+  defp generate_avatar_key(user_id, filename) do
+    timestamp = DateTime.utc_now() |> DateTime.to_unix()
+    ext = Path.extname(filename) |> String.downcase()
+    ext = if ext == "", do: ".jpg", else: ext
+    "avatars/clipper/#{user_id}/#{timestamp}#{ext}"
+  end
+
   # ============================================================================
   # Channel Links Endpoints
   # ============================================================================

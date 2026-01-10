@@ -89,13 +89,49 @@
                   </div>
 
                   <div class="space-y-1.5 sm:space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Avatar URL</label>
-                    <input
-                      v-model="profile.avatar_url"
-                      type="text"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
-                      placeholder="https://..."
-                    />
+                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Avatar</label>
+                    <div class="flex items-center gap-4">
+                      <!-- Avatar Preview -->
+                      <div class="relative">
+                        <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-zinc-800 border-2 border-zinc-700 overflow-hidden flex items-center justify-center">
+                          <img 
+                            v-if="profile.avatar_url" 
+                            :src="profile.avatar_url" 
+                            class="w-full h-full object-cover"
+                            @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
+                          />
+                          <UserCircle v-else class="w-10 h-10 text-zinc-500" />
+                        </div>
+                        <div 
+                          v-if="uploadingAvatar" 
+                          class="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center"
+                        >
+                          <Loader2 class="w-5 h-5 animate-spin text-white" />
+                        </div>
+                      </div>
+                      
+                      <!-- Upload Button -->
+                      <div class="flex-1">
+                        <input
+                          ref="avatarInputRef"
+                          type="file"
+                          accept="image/jpeg,image/png,image/gif,image/webp"
+                          class="hidden"
+                          @change="handleAvatarUpload"
+                        />
+                        <button 
+                          @click="($refs.avatarInputRef as HTMLInputElement)?.click()"
+                          :disabled="uploadingAvatar"
+                          class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs sm:text-sm font-medium rounded-lg border border-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                          <Upload class="w-4 h-4" />
+                          {{ profile.avatar_url ? 'Change Avatar' : 'Upload Avatar' }}
+                        </button>
+                        <p class="text-xs text-zinc-500 mt-1">
+                          JPEG, PNG, GIF, or WebP. Max 5MB.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -540,12 +576,13 @@
 
 <script setup lang="ts">
   import { ref, reactive, watch } from 'vue';
-  import { Loader2, UserCircle, Globe, Lock, Plus, Link2, Video, Pencil, Trash2, Music2, Instagram, Twitter, Youtube, Twitch } from 'lucide-vue-next';
+  import { Loader2, UserCircle, Globe, Lock, Plus, Link2, Video, Pencil, Trash2, Music2, Instagram, Twitter, Youtube, Twitch, Upload } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
     getMyClipperProfile, updateMyClipperProfile,
     listChannelLinks, createChannelLink, updateChannelLink, deleteChannelLink,
     listPortfolioClips, createPortfolioClip, updatePortfolioClip, deletePortfolioClip, uploadPortfolioClip,
+    uploadClipperAvatar,
     type ClipperProfile, type ChannelLink, type PortfolioClip,
     EXPERIENCE_LEVELS, SPECIALTY_TAGS, CONTENT_STYLE_TAGS, PREFERRED_PLATFORMS, LANGUAGES, CHANNEL_PLATFORMS,
     getPlatformLabel
@@ -604,6 +641,10 @@
   const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
   const clipThumbnailCache = ref<Map<string, string>>(new Map());
 
+  // Avatar upload state
+  const uploadingAvatar = ref(false);
+  const avatarInputRef = ref<HTMLInputElement | null>(null);
+
   // Delete confirmation state
   const showDeleteConfirm = ref(false);
   const deleteType = ref<'channel' | 'clip'>('channel');
@@ -658,6 +699,31 @@
     error.value = null;
     success.value = null;
     saving.value = false;
+  };
+
+  // Handle avatar upload
+  const handleAvatarUpload = async (event: Event) => {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    uploadingAvatar.value = true;
+    try {
+      const response = await uploadClipperAvatar(file);
+      if (response.success && response.avatar_url) {
+        profile.avatar_url = response.avatar_url;
+        success.value = 'Avatar uploaded successfully';
+      } else {
+        error.value = response.error || 'Failed to upload avatar';
+      }
+    } catch (err) {
+      console.error('Failed to upload avatar:', err);
+      error.value = 'Failed to upload avatar';
+    } finally {
+      uploadingAvatar.value = false;
+      // Reset the input so the same file can be selected again
+      if (input) input.value = '';
+    }
   };
 
   // Load user's built clips for selection

@@ -164,11 +164,29 @@
             <Label class="text-xs">Specialties</Label>
             <div class="flex flex-wrap gap-1">
               <button
-                v-for="tag in SPECIALTY_TAGS.slice(0, 6)"
+                v-for="tag in SPECIALTY_TAGS"
                 :key="tag.value"
                 @click="toggleFilter('specialty_tags', tag.value)"
                 class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
                 :class="filters.specialty_tags.includes(tag.value) 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+              >
+                {{ tag.label }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Content Style Tags -->
+          <div class="space-y-1.5">
+            <Label class="text-xs">Content Style</Label>
+            <div class="flex flex-wrap gap-1">
+              <button
+                v-for="tag in CONTENT_STYLE_TAGS"
+                :key="tag.value"
+                @click="toggleFilter('content_style_tags', tag.value)"
+                class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
+                :class="filters.content_style_tags.includes(tag.value) 
                   ? 'bg-primary text-primary-foreground' 
                   : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
               >
@@ -191,6 +209,24 @@
                   : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
               >
                 {{ platform.label }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Languages -->
+          <div class="space-y-1.5">
+            <Label class="text-xs">Languages</Label>
+            <div class="flex flex-wrap gap-1">
+              <button
+                v-for="lang in LANGUAGES"
+                :key="lang.code"
+                @click="toggleFilter('languages', lang.code)"
+                class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
+                :class="filters.languages.includes(lang.code) 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+              >
+                {{ lang.name }}
               </button>
             </div>
           </div>
@@ -321,8 +357,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   listClippers, getLeaderboard,
   type ClipperProfile,
-  EXPERIENCE_LEVELS, SPECIALTY_TAGS, PREFERRED_PLATFORMS,
-  getExperienceLevelLabel, getSpecialtyTagLabel
+  EXPERIENCE_LEVELS, SPECIALTY_TAGS, CONTENT_STYLE_TAGS, PREFERRED_PLATFORMS, LANGUAGES,
+  getExperienceLevelLabel, getSpecialtyTagLabel, getContentStyleTagLabel, getLanguageName
 } from '@/services/clipperProfilesApi';
 
 // View state
@@ -391,7 +427,9 @@ const filters = reactive({
   verified_only: false,
   experience_level: 'any',
   specialty_tags: [] as string[],
-  preferred_platforms: [] as string[]
+  content_style_tags: [] as string[],
+  preferred_platforms: [] as string[],
+  languages: [] as string[]
 });
 
 const loadClippers = async () => {
@@ -402,7 +440,9 @@ const loadClippers = async () => {
       verified_only: filters.verified_only || undefined,
       experience_level: filters.experience_level !== 'any' ? filters.experience_level : undefined,
       specialty_tags: filters.specialty_tags.length ? filters.specialty_tags : undefined,
-      preferred_platforms: filters.preferred_platforms.length ? filters.preferred_platforms : undefined
+      content_style_tags: filters.content_style_tags.length ? filters.content_style_tags : undefined,
+      preferred_platforms: filters.preferred_platforms.length ? filters.preferred_platforms : undefined,
+      languages: filters.languages.length ? filters.languages : undefined
     });
     if (response.success) {
       clippers.value = response.profiles;
@@ -414,7 +454,7 @@ const loadClippers = async () => {
   }
 };
 
-const toggleFilter = (field: 'specialty_tags' | 'preferred_platforms', value: string) => {
+const toggleFilter = (field: 'specialty_tags' | 'content_style_tags' | 'preferred_platforms' | 'languages', value: string) => {
   const arr = filters[field];
   const idx = arr.indexOf(value);
   if (idx >= 0) {
@@ -430,7 +470,9 @@ const clearFilters = () => {
   filters.verified_only = false;
   filters.experience_level = 'any';
   filters.specialty_tags = [];
+  filters.content_style_tags = [];
   filters.preferred_platforms = [];
+  filters.languages = [];
   loadClippers();
 };
 
