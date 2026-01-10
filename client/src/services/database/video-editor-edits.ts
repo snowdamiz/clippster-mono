@@ -45,6 +45,7 @@ export interface VideoEditorTextOverlayRecord {
   animation: string;
   layer?: number; // Visual track layer (0 = bottom, higher = on top)
   keyframes_data?: string;
+  keyframes?: string; // Alternative name for keyframes data
   created_at: number;
 }
 
@@ -63,6 +64,7 @@ export interface VideoEditorStickerRecord {
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
   layer?: number; // Visual track layer (0 = bottom, higher = on top)
   keyframes_data?: string;
+  keyframes?: string; // Alternative name for keyframes data
   created_at: number;
 }
 
@@ -81,6 +83,7 @@ export interface VideoEditorWatermarkRecord {
   layer?: number; // Visual track layer (0 = bottom, higher = on top)
   per_ratio_configs_data?: string; // JSON string for per-aspect-ratio configurations
   keyframes_data?: string;
+  keyframes?: string; // Alternative name for keyframes data
   created_at: number;
 }
 

@@ -4,7 +4,7 @@
     :class="{
       'bg-violet-500/10': isDragTarget,
       'h-20': track.type === 'video', /* Taller for video tracks with thumbnails */
-      'h-12': track.type === 'audio' || track.type === 'text'
+      'h-12': track.type === 'audio'
     }"
     :data-track-id="track.id"
     :data-track-index="track.orderIndex"
@@ -31,7 +31,6 @@
         </button>
         
         <button 
-          v-if="track.type !== 'text' && track.type !== 'sticker'"
           @click.stop="$emit('toggleMute', track.id)"
           class="p-0.5 hover:text-white"
           :title="track.isMuted ? 'Unmute' : 'Mute'"
@@ -47,8 +46,8 @@
     <div 
       class="flex-1 h-full relative overflow-hidden"
       @click="(e) => $emit('trackClick', e, track.id)"
-      @dragover.prevent="$emit('trackDragOver', e, track.id)"
-      @drop.prevent="$emit('trackDrop', e, track.id)"
+      @dragover.prevent="(e) => $emit('trackDragOver', e, track.id)"
+      @drop.prevent="(e) => $emit('trackDrop', e, track.id)"
     >
       <!-- Background grid/guides could go here -->
       

@@ -583,7 +583,15 @@
                 "
               >
                 <Loader2 v-if="saving || fetchingProfileImage" class="h-4 w-4 animate-spin" />
-                {{ saving ? 'Saving...' : fetchingProfileImage ? 'Fetching Info...' : isEditing ? 'Update Profile' : 'Create Profile' }}
+                {{
+                  saving
+                    ? 'Saving...'
+                    : fetchingProfileImage
+                      ? 'Fetching Info...'
+                      : isEditing
+                        ? 'Update Profile'
+                        : 'Create Profile'
+                }}
               </button>
             </div>
           </div>
@@ -1559,7 +1567,7 @@
     // Helper to process a single link (create or update)
     const processLink = async (creatorId: string, link: PlatformLinkInput) => {
       let monitoredStreamerId: string | null = null;
-      
+
       // Resolve monitored streamer for supported platforms
       if (link.platform === 'pumpfun' || link.platform === 'kick') {
         try {
@@ -1589,7 +1597,7 @@
           display_name: link.display_name.trim() || null,
           profile_image_url: link.profile_image_url || null,
           monitored_streamer_id: monitoredStreamerId,
-          is_primary: link.is_primary
+          is_primary: link.is_primary,
         });
       } else {
         // Create new link

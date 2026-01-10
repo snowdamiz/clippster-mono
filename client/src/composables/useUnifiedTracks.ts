@@ -71,6 +71,7 @@ export function useUnifiedTracks(options: UseUnifiedTracksOptions) {
         start_time: t.startTime,
         end_time: t.endTime,
         volume: t.volume,
+        pan: t.pan ?? 0,
         fade_in: t.fadeIn,
         fade_out: t.fadeOut,
         track_order: t.trackOrder,

@@ -218,7 +218,7 @@ const loadCampaigns = async () => {
     toast({
       title: 'Error',
       description: 'Failed to load campaigns',
-      variant: 'destructive'
+      type: 'error'
     });
   } finally {
     loading.value = false;

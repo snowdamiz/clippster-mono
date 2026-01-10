@@ -69,17 +69,34 @@ function info(title: string, description?: string, duration?: number) {
   return addToast({ title, description, type: 'info', duration });
 }
 
+function loading(title: string, description?: string) {
+  // Loading toasts don't auto-dismiss - they stay until manually removed or updated
+  return addToast({ title, description, type: 'loading', duration: Infinity });
+}
+
+function updateToast(id: string, options: Partial<ToastOptions>) {
+  const toast = state.toasts.find((t) => t.id === id);
+  if (toast) {
+    if (options.title !== undefined) toast.title = options.title;
+    if (options.description !== undefined) toast.description = options.description;
+    if (options.type !== undefined) toast.type = options.type;
+    if (options.duration !== undefined) toast.duration = options.duration;
+  }
+}
+
 export function useToastStore() {
   return {
     // Note: toasts is NOT readonly because Toast.vue needs to mutate toast.open via v-model
     toasts: state.toasts,
     addToast,
     removeToast,
+    updateToast,
     clearAllToasts,
     success,
     error,
     warning,
     info,
+    loading,
   };
 }
 
@@ -96,5 +113,8 @@ export function useToast() {
     error,
     warning,
     info,
+    loading,
+    updateToast,
+    removeToast,
   };
 }

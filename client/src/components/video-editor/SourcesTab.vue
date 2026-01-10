@@ -423,7 +423,7 @@
           thumbnailPath: v.thumbnail_path,
           duration: v.duration,
           projectId: normalizeId(v.project_id),
-          projectName: projectNames.value.get(normalizeId(v.project_id) || '') || v.project_name || null,
+          projectName: projectNames.value.get(normalizeId(v.project_id) || '') || null,
         }));
 
         // Build a lookup of first raw video per project (for detected clips)

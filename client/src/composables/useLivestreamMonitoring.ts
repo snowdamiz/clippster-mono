@@ -20,7 +20,12 @@ import type {
   SegmentEventPayload,
   SupportedLivestreamPlatform,
 } from '@/types/livestream';
-import { checkKickLivestream, startKickRecording, stopKickRecording, type KickLiveStatus } from '@/services/kick';
+import {
+  checkKickLivestream,
+  startKickRecording,
+  stopKickRecording,
+  type KickLiveStatus,
+} from '@/services/kick';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useCreditBalance } from './useCreditBalance';
 import { useDvrRecording } from './useDvrRecording';
@@ -105,7 +110,9 @@ async function fetchKickLiveStatus(channelSlug: string): Promise<LiveStatus> {
     return {
       isLive: kickStatus.isLive,
       streamId: kickStatus.channelId,
-      streamStartTimestamp: kickStatus.startedAt ? new Date(kickStatus.startedAt).getTime() : undefined,
+      streamStartTimestamp: kickStatus.startedAt
+        ? new Date(kickStatus.startedAt).getTime()
+        : undefined,
       numParticipants: kickStatus.viewerCount,
       profileImageUrl: kickStatus.profileImageUrl,
       raw: kickStatus,
@@ -116,7 +123,10 @@ async function fetchKickLiveStatus(channelSlug: string): Promise<LiveStatus> {
   }
 }
 
-async function fetchLiveStatus(platformId: string, platform: SupportedLivestreamPlatform = 'PumpFun'): Promise<LiveStatus> {
+async function fetchLiveStatus(
+  platformId: string,
+  platform: SupportedLivestreamPlatform = 'PumpFun'
+): Promise<LiveStatus> {
   switch (platform) {
     case 'Kick':
       return fetchKickLiveStatus(platformId);
@@ -288,7 +298,7 @@ async function handleDvrStreamEnd(streamerId: string, mintId: string) {
   if (kickSession) {
     console.log('[LiveMonitor] Cleaning up Kick DVR session for', mintId);
     await stopKickDvrRecording(streamerId);
-    
+
     // Also remove from general DVR sessions
     updateDvrSessionsMap((map) => {
       map.delete(streamerId);
@@ -301,7 +311,7 @@ async function handleDvrStreamEnd(streamerId: string, mintId: string) {
   if (!dvrSession) return;
 
   console.log('[LiveMonitor] Cleaning up DVR session for', mintId);
-  
+
   try {
     // Stop and cleanup DVR session (including temp files)
     await dvrRecording.stopDvrSession(mintId);
@@ -347,7 +357,7 @@ async function startDvrRecordingForStreamer(streamer: MonitoredStreamer): Promis
 
   try {
     await dvrRecording.startDvrSession(streamer.mintId, streamer.id, streamer.displayName);
-    
+
     // Track the DVR session
     const newMap = new Map(dvrSessions.value);
     newMap.set(streamer.id, { mintId: streamer.mintId });
@@ -377,13 +387,13 @@ async function startKickDvrRecording(streamer: MonitoredStreamer): Promise<boole
   try {
     // Generate a DVR session ID
     const sessionId = `kick-dvr-${streamer.mintId}-${Date.now()}`;
-    
+
     // Start yt-dlp recording via Rust backend
     await startKickRecording(
       streamer.mintId, // channel slug
-      streamer.id,     // streamer ID
+      streamer.id, // streamer ID
       sessionId,
-      5                // 5 minute segments (doesn't matter much for DVR)
+      5 // 5 minute segments (doesn't matter much for DVR)
     );
 
     // Get the output directory
@@ -399,7 +409,12 @@ async function startKickDvrRecording(streamer: MonitoredStreamer): Promise<boole
       map.set(streamer.id, { mintId: streamer.mintId });
     });
 
-    console.log('[LiveMonitor] Started Kick DVR recording for', streamer.mintId, 'output:', outputDir);
+    console.log(
+      '[LiveMonitor] Started Kick DVR recording for',
+      streamer.mintId,
+      'output:',
+      outputDir
+    );
     return true;
   } catch (error) {
     console.warn('[LiveMonitor] Failed to start Kick DVR for', streamer.mintId, error);
@@ -890,7 +905,10 @@ export function useLivestreamMonitoring() {
         profileImageUrl: streamer.profileImageUrl,
       });
 
-      showSuccess(`${streamer.displayName} is live`, options.detectClips ? 'Auto-detect recording started.' : 'Recording started.');
+      showSuccess(
+        `${streamer.displayName} is live`,
+        options.detectClips ? 'Auto-detect recording started.' : 'Recording started.'
+      );
 
       // Initial segment start log (use streamerId-1 as key)
       const id = addActivityLog({

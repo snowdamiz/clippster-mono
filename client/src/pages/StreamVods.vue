@@ -510,9 +510,7 @@
 
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(null);
-  const currentPlatformConfig = computed(() =>
-    platformConfigs[detectedPlatform.value || platformStore.activePlatform]
-  );
+  const currentPlatformConfig = computed(() => platformConfigs[detectedPlatform.value || platformStore.activePlatform]);
 
   function detectPlatform() {
     const val = searchInput.value?.trim();

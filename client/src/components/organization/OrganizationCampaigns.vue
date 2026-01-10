@@ -4,9 +4,7 @@
     <div class="flex items-center justify-between mb-6">
       <div>
         <h2 class="text-xl font-semibold text-foreground">Clipping Campaigns</h2>
-        <p class="text-sm text-muted-foreground mt-0.5">
-          Create campaigns for clippers to promote your content
-        </p>
+        <p class="text-sm text-muted-foreground mt-0.5">Create campaigns for clippers to promote your content</p>
       </div>
       <Button v-if="isAdmin" @click="openCreateDialog">
         <Plus class="h-4 w-4 mr-1.5" />
@@ -35,9 +33,7 @@
     <div v-else-if="campaigns.length === 0" class="text-center py-16 bg-card border border-border/60 rounded-xl">
       <Megaphone class="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
       <h3 class="text-lg font-medium text-foreground mb-1">No campaigns yet</h3>
-      <p class="text-sm text-muted-foreground mb-4">
-        Create your first campaign to start working with clippers
-      </p>
+      <p class="text-sm text-muted-foreground mb-4">Create your first campaign to start working with clippers</p>
       <Button v-if="isAdmin" @click="openCreateDialog">
         <Plus class="h-4 w-4 mr-1.5" />
         Create Campaign
@@ -54,11 +50,7 @@
         <div class="flex items-start gap-4 p-4">
           <!-- Cover Image -->
           <div class="w-20 h-20 rounded-lg bg-primary/10 flex-shrink-0 overflow-hidden">
-            <img
-              v-if="campaign.cover_image_url"
-              :src="campaign.cover_image_url"
-              class="w-full h-full object-cover"
-            />
+            <img v-if="campaign.cover_image_url" :src="campaign.cover_image_url" class="w-full h-full object-cover" />
             <div v-else class="w-full h-full flex items-center justify-center">
               <Megaphone class="w-8 h-8 text-primary/40" />
             </div>
@@ -109,12 +101,8 @@
         <!-- Actions Footer -->
         <div class="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t border-border/40">
           <div class="flex items-center gap-2 text-[12px] text-muted-foreground">
-            <span v-if="campaign.starts_at">
-              Starts {{ formatDate(campaign.starts_at) }}
-            </span>
-            <span v-if="campaign.ends_at">
-              · Ends {{ formatDate(campaign.ends_at) }}
-            </span>
+            <span v-if="campaign.starts_at">Starts {{ formatDate(campaign.starts_at) }}</span>
+            <span v-if="campaign.ends_at">· Ends {{ formatDate(campaign.ends_at) }}</span>
           </div>
           <div class="flex items-center gap-1">
             <Button variant="ghost" size="sm" @click="viewCampaign(campaign)">
@@ -163,16 +151,24 @@
     <!-- Create/Edit Campaign Dialog -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showCampaignDialog" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]" @click.self="showCampaignDialog = false">
+        <div
+          v-if="showCampaignDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]"
+          @click.self="showCampaignDialog = false"
+        >
           <Transition name="dialog" appear>
-            <div class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-xl sm:max-w-2xl w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col">
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-xl sm:max-w-2xl w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
+            >
               <!-- Decorative top accent -->
               <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 flex-shrink-0" />
 
               <div class="p-5 sm:p-6 overflow-y-auto custom-scrollbar">
                 <!-- Header -->
                 <div class="mb-4 sm:mb-6 text-center">
-                  <div class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-3 sm:mb-4">
+                  <div
+                    class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-3 sm:mb-4"
+                  >
                     <Megaphone class="h-5 w-5 sm:h-6 sm:w-6 text-violet-400" />
                   </div>
                   <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">
@@ -234,7 +230,9 @@
                       </select>
                     </div>
                   </div>
-                  <p class="text-xs text-zinc-500 -mt-2">${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views</p>
+                  <p class="text-xs text-zinc-500 -mt-2">
+                    ${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views
+                  </p>
 
                   <!-- Budget and Min Views Row -->
                   <div class="grid grid-cols-2 gap-3 sm:gap-4">
@@ -294,16 +292,20 @@
                   <!-- Allowed Platforms -->
                   <div class="space-y-1.5 sm:space-y-2">
                     <label class="block text-xs sm:text-sm font-medium text-zinc-300">Allowed Platforms</label>
-                    <div class="flex flex-wrap gap-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800">
+                    <div
+                      class="flex flex-wrap gap-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800"
+                    >
                       <button
                         v-for="platform in availablePlatforms"
                         :key="platform.value"
                         type="button"
                         @click="togglePlatform(platform.value)"
                         class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all"
-                        :class="campaignForm.allowed_platforms.includes(platform.value)
-                          ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-300'"
+                        :class="
+                          campaignForm.allowed_platforms.includes(platform.value)
+                            ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                            : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-300'
+                        "
                       >
                         {{ platform.label }}
                       </button>
@@ -313,16 +315,20 @@
                   <!-- Payment Methods -->
                   <div class="space-y-1.5 sm:space-y-2">
                     <label class="block text-xs sm:text-sm font-medium text-zinc-300">Payment Methods</label>
-                    <div class="flex flex-wrap gap-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800">
+                    <div
+                      class="flex flex-wrap gap-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800"
+                    >
                       <button
                         v-for="method in availablePaymentMethods"
                         :key="method.value"
                         type="button"
                         @click="togglePaymentMethod(method.value)"
                         class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all"
-                        :class="campaignForm.payment_methods.includes(method.value)
-                          ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-300'"
+                        :class="
+                          campaignForm.payment_methods.includes(method.value)
+                            ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                            : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-300'
+                        "
                       >
                         {{ method.label }}
                       </button>
@@ -332,11 +338,14 @@
                   <!-- Cover Image -->
                   <div class="space-y-1.5 sm:space-y-2">
                     <label class="block text-xs sm:text-sm font-medium text-zinc-300">Cover Image</label>
-                    
+
                     <!-- Image Preview -->
-                    <div v-if="campaignForm.cover_image_url || coverImagePreview" class="relative w-full h-32 rounded-lg sm:rounded-xl overflow-hidden bg-zinc-900/50 border border-zinc-800">
-                      <img 
-                        :src="coverImagePreview || campaignForm.cover_image_url" 
+                    <div
+                      v-if="campaignForm.cover_image_url || coverImagePreview"
+                      class="relative w-full h-32 rounded-lg sm:rounded-xl overflow-hidden bg-zinc-900/50 border border-zinc-800"
+                    >
+                      <img
+                        :src="coverImagePreview || campaignForm.cover_image_url"
                         class="w-full h-full object-cover"
                         @error="handleImageError"
                       />
@@ -395,7 +404,9 @@
                       :disabled="saving || !campaignForm.title"
                       class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                     >
-                      <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+                      <div
+                        class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+                      />
                       <span v-if="saving" class="relative flex items-center justify-center">
                         <Loader2 class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2 animate-spin" />
                         Saving...
@@ -431,10 +442,14 @@
               <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div class="bg-muted/30 rounded-lg p-3 text-center">
                   <div class="text-lg font-bold text-green-500">${{ formatCpm(selectedCampaign?.cpm || 0) }}</div>
-                  <div class="text-[11px] text-muted-foreground">per {{ formatViews(selectedCampaign?.cpm_views || 1000) }} views</div>
+                  <div class="text-[11px] text-muted-foreground">
+                    per {{ formatViews(selectedCampaign?.cpm_views || 1000) }} views
+                  </div>
                 </div>
                 <div class="bg-muted/30 rounded-lg p-3 text-center">
-                  <div class="text-lg font-bold text-foreground">${{ formatBudget(selectedCampaign?.budget || 0) }}</div>
+                  <div class="text-lg font-bold text-foreground">
+                    ${{ formatBudget(selectedCampaign?.budget || 0) }}
+                  </div>
                   <div class="text-[11px] text-muted-foreground">budget</div>
                 </div>
                 <div class="bg-muted/30 rounded-lg p-3 text-center">
@@ -470,30 +485,50 @@
                   <div class="flex items-start justify-between gap-4">
                     <!-- Clipper Info -->
                     <div class="flex items-start gap-3 flex-1 min-w-0">
-                      <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0">
-                        <img v-if="participant.clipper_profile?.avatar_url" :src="participant.clipper_profile.avatar_url" class="w-full h-full object-cover" />
+                      <div
+                        class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0"
+                      >
+                        <img
+                          v-if="participant.clipper_profile?.avatar_url"
+                          :src="participant.clipper_profile.avatar_url"
+                          class="w-full h-full object-cover"
+                        />
                         <User v-else class="w-5 h-5 text-primary" />
                       </div>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2 flex-wrap">
                           <span class="font-medium text-foreground">
-                            {{ participant.clipper_profile?.display_name || participant.user?.display_name || participant.user?.email }}
+                            {{
+                              participant.clipper_profile?.display_name ||
+                              participant.user?.display_name ||
+                              participant.user?.email
+                            }}
                           </span>
                           <CheckCircle v-if="participant.clipper_profile?.is_verified" class="w-4 h-4 text-blue-500" />
-                          <Badge v-if="participant.clipper_profile?.experience_level" variant="outline" class="text-[10px]">
+                          <Badge
+                            v-if="participant.clipper_profile?.experience_level"
+                            variant="outline"
+                            class="text-[10px]"
+                          >
                             {{ participant.clipper_profile.experience_level }}
                           </Badge>
                         </div>
-                        
+
                         <!-- Stats Row -->
-                        <div v-if="participant.clipper_profile" class="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                        <div
+                          v-if="participant.clipper_profile"
+                          class="flex items-center gap-3 mt-1 text-xs text-muted-foreground"
+                        >
                           <span>{{ participant.clipper_profile.total_campaigns_completed }} campaigns</span>
                           <span>{{ participant.clipper_profile.total_clips_delivered }} clips</span>
                           <span>{{ participant.clipper_profile.total_endorsements }} endorsements</span>
                         </div>
-                        
+
                         <!-- Tags -->
-                        <div v-if="participant.clipper_profile?.specialty_tags?.length" class="flex flex-wrap gap-1 mt-2">
+                        <div
+                          v-if="participant.clipper_profile?.specialty_tags?.length"
+                          class="flex flex-wrap gap-1 mt-2"
+                        >
                           <span
                             v-for="tag in participant.clipper_profile.specialty_tags.slice(0, 4)"
                             :key="tag"
@@ -504,14 +539,17 @@
                         </div>
 
                         <!-- Application Note -->
-                        <div v-if="participant.application_note" class="mt-2 p-2 bg-muted/30 rounded text-xs text-muted-foreground italic">
+                        <div
+                          v-if="participant.application_note"
+                          class="mt-2 p-2 bg-muted/30 rounded text-xs text-muted-foreground italic"
+                        >
                           "{{ participant.application_note }}"
                         </div>
 
                         <div class="text-[11px] text-muted-foreground mt-2">
                           Applied {{ formatDate(participant.inserted_at) }}
-                          <router-link 
-                            v-if="participant.clipper_profile?.slug" 
+                          <router-link
+                            v-if="participant.clipper_profile?.slug"
                             :to="`/clippers/${participant.clipper_profile.slug}`"
                             class="ml-2 text-primary hover:underline"
                           >
@@ -525,10 +563,20 @@
                     <div class="flex items-center gap-2 flex-shrink-0">
                       <Badge :variant="getParticipantStatusVariant(participant.status)">{{ participant.status }}</Badge>
                       <template v-if="isAdmin && participant.status === 'pending'">
-                        <Button size="sm" variant="outline" class="text-green-500" @click="approveParticipantAction(participant)">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          class="text-green-500"
+                          @click="approveParticipantAction(participant)"
+                        >
                           <Check class="w-3.5 h-3.5" />
                         </Button>
-                        <Button size="sm" variant="outline" class="text-destructive" @click="rejectParticipantAction(participant)">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          class="text-destructive"
+                          @click="rejectParticipantAction(participant)"
+                        >
                           <X class="w-3.5 h-3.5" />
                         </Button>
                       </template>
@@ -556,12 +604,17 @@
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-2 mb-1">
                         <component :is="getPlatformIcon(submission.platform)" class="w-4 h-4 text-muted-foreground" />
-                        <a :href="submission.clip_url" target="_blank" class="text-sm text-primary hover:underline truncate">
+                        <a
+                          :href="submission.clip_url"
+                          target="_blank"
+                          class="text-sm text-primary hover:underline truncate"
+                        >
                           {{ truncateUrl(submission.clip_url) }}
                         </a>
                       </div>
                       <div class="text-xs text-muted-foreground">
-                        by {{ submission.user?.display_name || submission.user?.email }} · {{ submission.view_count.toLocaleString() }} views
+                        by {{ submission.user?.display_name || submission.user?.email }} ·
+                        {{ submission.view_count.toLocaleString() }} views
                       </div>
                     </div>
                     <div class="flex items-center gap-2">
@@ -574,9 +627,9 @@
                           <X class="w-3.5 h-3.5" />
                         </Button>
                       </template>
-                      <Button 
-                        v-if="isAdmin && submission.status === 'verified'" 
-                        size="sm" 
+                      <Button
+                        v-if="isAdmin && submission.status === 'verified'"
+                        size="sm"
                         @click="openPaymentDialog(submission)"
                       >
                         <DollarSign class="w-3.5 h-3.5 mr-1" />
@@ -601,13 +654,17 @@
           @click.self="showDeleteDialog = false"
         >
           <Transition name="dialog" appear>
-            <div class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden">
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
+            >
               <!-- Decorative top accent -->
               <div class="h-1 w-full bg-gradient-to-r from-red-500 via-rose-500 to-pink-500" />
 
               <div class="p-5 sm:p-6">
                 <div class="mb-5 text-center">
-                  <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-red-500/30 mb-4">
+                  <div
+                    class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-red-500/30 mb-4"
+                  >
                     <Trash2 class="h-6 w-6 text-red-400" />
                   </div>
                   <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Delete Campaign</h2>
@@ -616,7 +673,9 @@
 
                 <div class="mb-5 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
                   <p class="text-sm text-zinc-300 text-center">
-                    Are you sure you want to delete "<span class="font-medium text-white">{{ campaignToDelete?.title }}</span>"?
+                    Are you sure you want to delete "
+                    <span class="font-medium text-white">{{ campaignToDelete?.title }}</span>
+                    "?
                   </p>
                 </div>
 
@@ -655,13 +714,17 @@
           @click.self="showPaymentDialog = false"
         >
           <Transition name="dialog" appear>
-            <div class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden">
+            <div
+              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
+            >
               <!-- Decorative top accent -->
               <div class="h-1 w-full bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500" />
 
               <div class="p-5 sm:p-6">
                 <div class="mb-5 text-center">
-                  <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 mb-4">
+                  <div
+                    class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 mb-4"
+                  >
                     <DollarSign class="h-6 w-6 text-green-400" />
                   </div>
                   <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Create Payment</h2>
@@ -681,7 +744,9 @@
                       class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all text-sm"
                     />
                     <p class="text-xs text-zinc-500">
-                      Suggested: <span class="text-green-400 font-medium">${{ calculateSuggestedPayment().toFixed(2) }}</span> based on CPM
+                      Suggested:
+                      <span class="text-green-400 font-medium">${{ calculateSuggestedPayment().toFixed(2) }}</span>
+                      based on CPM
                     </p>
                   </div>
                 </div>
@@ -715,592 +780,630 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue';
-import {
-  Megaphone, Plus, DollarSign, Wallet, Users, Eye, Pencil, MoreVertical,
-  Play, Pause, CheckCircle, Trash2, Loader2, User, Check, X,
-  Music2, Instagram, Twitter, Youtube, Globe, Upload
-} from 'lucide-vue-next';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  listOrganizationCampaigns, createCampaign, updateCampaign, deleteCampaign,
-  pauseCampaign, activateCampaign, completeCampaign,
-  listCampaignParticipants, approveParticipant, rejectParticipant,
-  listCampaignSubmissions, verifySubmission, rejectSubmission, createPayment,
-  uploadCampaignCoverImage,
-  type Campaign, type CampaignParticipant, type CampaignSubmission,
-  getPlatformDisplayName
-} from '@/services/campaignApi';
-import { CLIPPER_PLATFORMS, PAYMENT_METHOD_TYPES } from '@/services/clipperProfileApi';
-import { useToast } from '@/composables/useToast';
+  import { ref, reactive, onMounted, watch } from 'vue';
+  import {
+    Megaphone,
+    Plus,
+    DollarSign,
+    Wallet,
+    Users,
+    Eye,
+    Pencil,
+    MoreVertical,
+    Play,
+    Pause,
+    CheckCircle,
+    Trash2,
+    Loader2,
+    User,
+    Check,
+    X,
+    Music2,
+    Instagram,
+    Twitter,
+    Youtube,
+    Globe,
+    Upload,
+  } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
+  import { Input } from '@/components/ui/input';
+  import { Label } from '@/components/ui/label';
+  import { Textarea } from '@/components/ui/textarea';
+  import { Checkbox } from '@/components/ui/checkbox';
+  import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+  } from '@/components/ui/dialog';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
+  import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+  import {
+    listOrganizationCampaigns,
+    createCampaign,
+    updateCampaign,
+    deleteCampaign,
+    pauseCampaign,
+    activateCampaign,
+    completeCampaign,
+    listCampaignParticipants,
+    approveParticipant,
+    rejectParticipant,
+    listCampaignSubmissions,
+    verifySubmission,
+    rejectSubmission,
+    createPayment,
+    uploadCampaignCoverImage,
+    type Campaign,
+    type CampaignParticipant,
+    type CampaignSubmission,
+    getPlatformDisplayName,
+  } from '@/services/campaignApi';
+  import { CLIPPER_PLATFORMS, PAYMENT_METHOD_TYPES } from '@/services/clipperProfileApi';
+  import { useToast } from '@/composables/useToast';
 
-const props = defineProps<{
-  organizationId: string;
-  isAdmin: boolean;
-}>();
+  const props = defineProps<{
+    organizationId: string;
+    isAdmin: boolean;
+  }>();
 
-const { toast } = useToast();
+  const { toast } = useToast();
 
-const loading = ref(true);
-const saving = ref(false);
-const deleting = ref(false);
-const campaigns = ref<Campaign[]>([]);
+  const loading = ref(true);
+  const saving = ref(false);
+  const deleting = ref(false);
+  const campaigns = ref<Campaign[]>([]);
 
-const showCampaignDialog = ref(false);
-const showDetailDialog = ref(false);
-const showDeleteDialog = ref(false);
-const showPaymentDialog = ref(false);
+  const showCampaignDialog = ref(false);
+  const showDetailDialog = ref(false);
+  const showDeleteDialog = ref(false);
+  const showPaymentDialog = ref(false);
 
-const editingCampaign = ref<Campaign | null>(null);
-const selectedCampaign = ref<Campaign | null>(null);
-const campaignToDelete = ref<Campaign | null>(null);
+  const editingCampaign = ref<Campaign | null>(null);
+  const selectedCampaign = ref<Campaign | null>(null);
+  const campaignToDelete = ref<Campaign | null>(null);
 
-const detailTab = ref('overview');
-const participants = ref<CampaignParticipant[]>([]);
-const submissions = ref<CampaignSubmission[]>([]);
-const loadingParticipants = ref(false);
-const loadingSubmissions = ref(false);
+  const detailTab = ref('overview');
+  const participants = ref<CampaignParticipant[]>([]);
+  const submissions = ref<CampaignSubmission[]>([]);
+  const loadingParticipants = ref(false);
+  const loadingSubmissions = ref(false);
 
-const paymentSubmission = ref<CampaignSubmission | null>(null);
-const paymentAmount = ref(0);
-const creatingPayment = ref(false);
+  const paymentSubmission = ref<CampaignSubmission | null>(null);
+  const paymentAmount = ref(0);
+  const creatingPayment = ref(false);
 
-// Cover image upload
-const coverImageInput = ref<HTMLInputElement | null>(null);
-const coverImagePreview = ref('');
-const uploadingCoverImage = ref(false);
+  // Cover image upload
+  const coverImageInput = ref<HTMLInputElement | null>(null);
+  const coverImagePreview = ref('');
+  const uploadingCoverImage = ref(false);
 
-const availablePlatforms = CLIPPER_PLATFORMS;
-const availablePaymentMethods = PAYMENT_METHOD_TYPES;
+  const availablePlatforms = CLIPPER_PLATFORMS;
+  const availablePaymentMethods = PAYMENT_METHOD_TYPES;
 
-const campaignForm = reactive({
-  title: '',
-  description: '',
-  cpm: 0,
-  cpm_views: 1000,
-  budget: 0,
-  min_views_for_payment: 1000,
-  join_type: 'open' as 'open' | 'application_required',
-  allowed_platforms: [] as string[],
-  payment_methods: [] as string[],
-  cover_image_url: '',
-  starts_at: '',
-  ends_at: ''
-});
-
-const getPlatformIcon = (platform: string) => {
-  const icons: Record<string, typeof Music2> = {
-    tiktok: Music2,
-    instagram: Instagram,
-    x: Twitter,
-    youtube: Youtube
-  };
-  return icons[platform] || Globe;
-};
-
-const formatCpm = (cpm: string | number) => {
-  const value = typeof cpm === 'string' ? parseFloat(cpm) : cpm;
-  return value.toFixed(2);
-};
-
-const formatViews = (views: number) => {
-  if (views >= 1000000) return `${(views / 1000000).toFixed(0)}M`;
-  if (views >= 1000) return `${(views / 1000).toFixed(0)}K`;
-  return views.toString();
-};
-
-const formatBudget = (budget: string | number) => {
-  const value = typeof budget === 'string' ? parseFloat(budget) : budget;
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
-  return value.toFixed(0);
-};
-
-const formatDate = (dateStr: string) => {
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
-
-const truncateUrl = (url: string) => {
-  return url.length > 50 ? url.substring(0, 50) + '...' : url;
-};
-
-const getStatusVariant = (status: string) => {
-  const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-    active: 'default',
-    paused: 'secondary',
-    completed: 'outline',
-    draft: 'secondary'
-  };
-  return variants[status] || 'secondary';
-};
-
-const getParticipantStatusVariant = (status: string) => {
-  const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-    approved: 'default',
-    pending: 'secondary',
-    rejected: 'destructive',
-    removed: 'destructive'
-  };
-  return variants[status] || 'secondary';
-};
-
-const getSubmissionStatusVariant = (status: string) => {
-  const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-    verified: 'default',
-    pending: 'secondary',
-    rejected: 'destructive',
-    paid: 'default'
-  };
-  return variants[status] || 'secondary';
-};
-
-// Cover image upload functions
-const triggerCoverImageUpload = () => {
-  coverImageInput.value?.click();
-};
-
-const handleCoverImageSelect = async (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-
-  // Validate file type
-  if (!file.type.startsWith('image/')) {
-    toast({ title: 'Error', description: 'Please select an image file' });
-    return;
-  }
-
-  // Show preview immediately
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    coverImagePreview.value = e.target?.result as string;
-  };
-  reader.readAsDataURL(file);
-
-  // Upload to server
-  uploadingCoverImage.value = true;
-  try {
-    const response = await uploadCampaignCoverImage(Number(props.organizationId), file);
-    if (response.success && response.url) {
-      campaignForm.cover_image_url = response.url;
-      toast({ title: 'Success', description: 'Cover image uploaded' });
-    } else {
-      toast({ title: 'Error', description: response.error || 'Failed to upload image' });
-      coverImagePreview.value = '';
-    }
-  } catch (error) {
-    console.error('Failed to upload cover image:', error);
-    toast({ title: 'Error', description: 'Failed to upload image' });
-    coverImagePreview.value = '';
-  } finally {
-    uploadingCoverImage.value = false;
-    // Reset input so same file can be selected again
-    input.value = '';
-  }
-};
-
-const clearCoverImage = () => {
-  campaignForm.cover_image_url = '';
-  coverImagePreview.value = '';
-};
-
-const handleImageError = (event: Event) => {
-  const img = event.target as HTMLImageElement;
-  img.style.display = 'none';
-};
-
-const togglePlatform = (platform: string) => {
-  const idx = campaignForm.allowed_platforms.indexOf(platform);
-  if (idx >= 0) {
-    campaignForm.allowed_platforms.splice(idx, 1);
-  } else {
-    campaignForm.allowed_platforms.push(platform);
-  }
-};
-
-const togglePaymentMethod = (method: string) => {
-  const idx = campaignForm.payment_methods.indexOf(method);
-  if (idx >= 0) {
-    campaignForm.payment_methods.splice(idx, 1);
-  } else {
-    campaignForm.payment_methods.push(method);
-  }
-};
-
-const loadCampaigns = async () => {
-  if (!props.organizationId) return;
-  
-  loading.value = true;
-  try {
-    const response = await listOrganizationCampaigns(Number(props.organizationId));
-    if (response.success) {
-      campaigns.value = response.campaigns;
-    }
-  } catch (error) {
-    console.error('Failed to load campaigns:', error);
-    toast({ title: 'Error', description: 'Failed to load campaigns' });
-  } finally {
-    loading.value = false;
-  }
-};
-
-const openCreateDialog = () => {
-  editingCampaign.value = null;
-  coverImagePreview.value = '';
-  Object.assign(campaignForm, {
+  const campaignForm = reactive({
     title: '',
     description: '',
     cpm: 0,
     cpm_views: 1000,
     budget: 0,
     min_views_for_payment: 1000,
-    join_type: 'open',
-    allowed_platforms: ['tiktok', 'instagram', 'youtube'],
-    payment_methods: ['paypal'],
+    join_type: 'open' as 'open' | 'application_required',
+    allowed_platforms: [] as string[],
+    payment_methods: [] as string[],
     cover_image_url: '',
     starts_at: '',
-    ends_at: ''
+    ends_at: '',
   });
-  showCampaignDialog.value = true;
-};
 
-const editCampaign = (campaign: Campaign) => {
-  editingCampaign.value = campaign;
-  coverImagePreview.value = '';
-  Object.assign(campaignForm, {
-    title: campaign.title,
-    description: campaign.description || '',
-    cpm: parseFloat(campaign.cpm),
-    cpm_views: campaign.cpm_views || 1000,
-    budget: parseFloat(campaign.budget),
-    min_views_for_payment: campaign.min_views_for_payment,
-    join_type: campaign.join_type,
-    allowed_platforms: [...campaign.allowed_platforms],
-    payment_methods: [...campaign.payment_methods],
-    cover_image_url: campaign.cover_image_url || '',
-    starts_at: campaign.starts_at ? campaign.starts_at.slice(0, 16) : '',
-    ends_at: campaign.ends_at ? campaign.ends_at.slice(0, 16) : ''
-  });
-  showCampaignDialog.value = true;
-};
-
-const saveCampaign = async () => {
-  saving.value = true;
-  try {
-    const data = {
-      title: campaignForm.title,
-      description: campaignForm.description || undefined,
-      cpm: campaignForm.cpm,
-      cpm_views: campaignForm.cpm_views,
-      budget: campaignForm.budget,
-      min_views_for_payment: campaignForm.min_views_for_payment,
-      join_type: campaignForm.join_type,
-      allowed_platforms: campaignForm.allowed_platforms,
-      payment_methods: campaignForm.payment_methods,
-      cover_image_url: campaignForm.cover_image_url || undefined,
-      starts_at: campaignForm.starts_at || undefined,
-      ends_at: campaignForm.ends_at || undefined
+  const getPlatformIcon = (platform: string) => {
+    const icons: Record<string, typeof Music2> = {
+      tiktok: Music2,
+      instagram: Instagram,
+      x: Twitter,
+      youtube: Youtube,
     };
+    return icons[platform] || Globe;
+  };
 
-    let response;
-    if (editingCampaign.value) {
-      response = await updateCampaign(Number(props.organizationId), editingCampaign.value.id, data);
+  const formatCpm = (cpm: string | number) => {
+    const value = typeof cpm === 'string' ? parseFloat(cpm) : cpm;
+    return value.toFixed(2);
+  };
+
+  const formatViews = (views: number) => {
+    if (views >= 1000000) return `${(views / 1000000).toFixed(0)}M`;
+    if (views >= 1000) return `${(views / 1000).toFixed(0)}K`;
+    return views.toString();
+  };
+
+  const formatBudget = (budget: string | number) => {
+    const value = typeof budget === 'string' ? parseFloat(budget) : budget;
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+    return value.toFixed(0);
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const truncateUrl = (url: string) => {
+    return url.length > 50 ? url.substring(0, 50) + '...' : url;
+  };
+
+  const getStatusVariant = (status: string) => {
+    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+      active: 'default',
+      paused: 'secondary',
+      completed: 'outline',
+      draft: 'secondary',
+    };
+    return variants[status] || 'secondary';
+  };
+
+  const getParticipantStatusVariant = (status: string) => {
+    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+      approved: 'default',
+      pending: 'secondary',
+      rejected: 'destructive',
+      removed: 'destructive',
+    };
+    return variants[status] || 'secondary';
+  };
+
+  const getSubmissionStatusVariant = (status: string) => {
+    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+      verified: 'default',
+      pending: 'secondary',
+      rejected: 'destructive',
+      paid: 'default',
+    };
+    return variants[status] || 'secondary';
+  };
+
+  // Cover image upload functions
+  const triggerCoverImageUpload = () => {
+    coverImageInput.value?.click();
+  };
+
+  const handleCoverImageSelect = async (event: Event) => {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Error', description: 'Please select an image file' });
+      return;
+    }
+
+    // Show preview immediately
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      coverImagePreview.value = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+
+    // Upload to server
+    uploadingCoverImage.value = true;
+    try {
+      const response = await uploadCampaignCoverImage(Number(props.organizationId), file);
+      if (response.success && response.url) {
+        campaignForm.cover_image_url = response.url;
+        toast({ title: 'Success', description: 'Cover image uploaded' });
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to upload image' });
+        coverImagePreview.value = '';
+      }
+    } catch (error) {
+      console.error('Failed to upload cover image:', error);
+      toast({ title: 'Error', description: 'Failed to upload image' });
+      coverImagePreview.value = '';
+    } finally {
+      uploadingCoverImage.value = false;
+      // Reset input so same file can be selected again
+      input.value = '';
+    }
+  };
+
+  const clearCoverImage = () => {
+    campaignForm.cover_image_url = '';
+    coverImagePreview.value = '';
+  };
+
+  const handleImageError = (event: Event) => {
+    const img = event.target as HTMLImageElement;
+    img.style.display = 'none';
+  };
+
+  const togglePlatform = (platform: string) => {
+    const idx = campaignForm.allowed_platforms.indexOf(platform);
+    if (idx >= 0) {
+      campaignForm.allowed_platforms.splice(idx, 1);
     } else {
-      response = await createCampaign(Number(props.organizationId), data);
+      campaignForm.allowed_platforms.push(platform);
     }
+  };
 
-    if (response.success) {
-      toast({ title: 'Success', description: `Campaign ${editingCampaign.value ? 'updated' : 'created'}` });
-      showCampaignDialog.value = false;
-      await loadCampaigns();
+  const togglePaymentMethod = (method: string) => {
+    const idx = campaignForm.payment_methods.indexOf(method);
+    if (idx >= 0) {
+      campaignForm.payment_methods.splice(idx, 1);
     } else {
-      toast({ title: 'Error', description: response.error || 'Failed to save campaign' });
+      campaignForm.payment_methods.push(method);
     }
-  } catch (error) {
-    console.error('Failed to save campaign:', error);
-    toast({ title: 'Error', description: 'Failed to save campaign' });
-  } finally {
-    saving.value = false;
-  }
-};
+  };
 
-const viewCampaign = async (campaign: Campaign) => {
-  selectedCampaign.value = campaign;
-  detailTab.value = 'overview';
-  showDetailDialog.value = true;
-  await loadParticipants();
-  await loadSubmissions();
-};
+  const loadCampaigns = async () => {
+    if (!props.organizationId) return;
 
-const loadParticipants = async () => {
-  if (!selectedCampaign.value) return;
-  
-  loadingParticipants.value = true;
-  try {
-    const response = await listCampaignParticipants(
-      Number(props.organizationId),
-      selectedCampaign.value.id
-    );
-    if (response.success) {
-      participants.value = response.participants;
+    loading.value = true;
+    try {
+      const response = await listOrganizationCampaigns(Number(props.organizationId));
+      if (response.success) {
+        campaigns.value = response.campaigns;
+      }
+    } catch (error) {
+      console.error('Failed to load campaigns:', error);
+      toast({ title: 'Error', description: 'Failed to load campaigns' });
+    } finally {
+      loading.value = false;
     }
-  } catch (error) {
-    console.error('Failed to load participants:', error);
-  } finally {
-    loadingParticipants.value = false;
-  }
-};
+  };
 
-const loadSubmissions = async () => {
-  if (!selectedCampaign.value) return;
-  
-  loadingSubmissions.value = true;
-  try {
-    const response = await listCampaignSubmissions(
-      Number(props.organizationId),
-      selectedCampaign.value.id
-    );
-    if (response.success) {
-      submissions.value = response.submissions;
+  const openCreateDialog = () => {
+    editingCampaign.value = null;
+    coverImagePreview.value = '';
+    Object.assign(campaignForm, {
+      title: '',
+      description: '',
+      cpm: 0,
+      cpm_views: 1000,
+      budget: 0,
+      min_views_for_payment: 1000,
+      join_type: 'open',
+      allowed_platforms: ['tiktok', 'instagram', 'youtube'],
+      payment_methods: ['paypal'],
+      cover_image_url: '',
+      starts_at: '',
+      ends_at: '',
+    });
+    showCampaignDialog.value = true;
+  };
+
+  const editCampaign = (campaign: Campaign) => {
+    editingCampaign.value = campaign;
+    coverImagePreview.value = '';
+    Object.assign(campaignForm, {
+      title: campaign.title,
+      description: campaign.description || '',
+      cpm: parseFloat(campaign.cpm),
+      cpm_views: campaign.cpm_views || 1000,
+      budget: parseFloat(campaign.budget),
+      min_views_for_payment: campaign.min_views_for_payment,
+      join_type: campaign.join_type,
+      allowed_platforms: [...campaign.allowed_platforms],
+      payment_methods: [...campaign.payment_methods],
+      cover_image_url: campaign.cover_image_url || '',
+      starts_at: campaign.starts_at ? campaign.starts_at.slice(0, 16) : '',
+      ends_at: campaign.ends_at ? campaign.ends_at.slice(0, 16) : '',
+    });
+    showCampaignDialog.value = true;
+  };
+
+  const saveCampaign = async () => {
+    saving.value = true;
+    try {
+      const data = {
+        title: campaignForm.title,
+        description: campaignForm.description || undefined,
+        cpm: campaignForm.cpm,
+        cpm_views: campaignForm.cpm_views,
+        budget: campaignForm.budget,
+        min_views_for_payment: campaignForm.min_views_for_payment,
+        join_type: campaignForm.join_type,
+        allowed_platforms: campaignForm.allowed_platforms,
+        payment_methods: campaignForm.payment_methods,
+        cover_image_url: campaignForm.cover_image_url || undefined,
+        starts_at: campaignForm.starts_at || undefined,
+        ends_at: campaignForm.ends_at || undefined,
+      };
+
+      let response;
+      if (editingCampaign.value) {
+        response = await updateCampaign(Number(props.organizationId), editingCampaign.value.id, data);
+      } else {
+        response = await createCampaign(Number(props.organizationId), data);
+      }
+
+      if (response.success) {
+        toast({ title: 'Success', description: `Campaign ${editingCampaign.value ? 'updated' : 'created'}` });
+        showCampaignDialog.value = false;
+        await loadCampaigns();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to save campaign' });
+      }
+    } catch (error) {
+      console.error('Failed to save campaign:', error);
+      toast({ title: 'Error', description: 'Failed to save campaign' });
+    } finally {
+      saving.value = false;
     }
-  } catch (error) {
-    console.error('Failed to load submissions:', error);
-  } finally {
-    loadingSubmissions.value = false;
-  }
-};
+  };
 
-const confirmDeleteCampaign = (campaign: Campaign) => {
-  campaignToDelete.value = campaign;
-  showDeleteDialog.value = true;
-};
+  const viewCampaign = async (campaign: Campaign) => {
+    selectedCampaign.value = campaign;
+    detailTab.value = 'overview';
+    showDetailDialog.value = true;
+    await loadParticipants();
+    await loadSubmissions();
+  };
 
-const deleteCampaignAction = async () => {
-  if (!campaignToDelete.value) return;
-  
-  deleting.value = true;
-  try {
-    const response = await deleteCampaign(Number(props.organizationId), campaignToDelete.value.id);
-    if (response.success) {
-      toast({ title: 'Deleted', description: 'Campaign deleted successfully' });
-      showDeleteDialog.value = false;
-      await loadCampaigns();
-    } else {
-      toast({ title: 'Error', description: response.error || 'Failed to delete campaign' });
+  const loadParticipants = async () => {
+    if (!selectedCampaign.value) return;
+
+    loadingParticipants.value = true;
+    try {
+      const response = await listCampaignParticipants(Number(props.organizationId), selectedCampaign.value.id);
+      if (response.success) {
+        participants.value = response.participants;
+      }
+    } catch (error) {
+      console.error('Failed to load participants:', error);
+    } finally {
+      loadingParticipants.value = false;
     }
-  } catch (error) {
-    console.error('Failed to delete campaign:', error);
-    toast({ title: 'Error', description: 'Failed to delete campaign' });
-  } finally {
-    deleting.value = false;
-  }
-};
+  };
 
-const pauseCampaignAction = async (campaign: Campaign) => {
-  try {
-    const response = await pauseCampaign(Number(props.organizationId), campaign.id);
-    if (response.success) {
-      toast({ title: 'Success', description: 'Campaign paused' });
-      await loadCampaigns();
+  const loadSubmissions = async () => {
+    if (!selectedCampaign.value) return;
+
+    loadingSubmissions.value = true;
+    try {
+      const response = await listCampaignSubmissions(Number(props.organizationId), selectedCampaign.value.id);
+      if (response.success) {
+        submissions.value = response.submissions;
+      }
+    } catch (error) {
+      console.error('Failed to load submissions:', error);
+    } finally {
+      loadingSubmissions.value = false;
     }
-  } catch (error) {
-    console.error('Failed to pause campaign:', error);
-    toast({ title: 'Error', description: 'Failed to pause campaign' });
-  }
-};
+  };
 
-const activateCampaignAction = async (campaign: Campaign) => {
-  try {
-    const response = await activateCampaign(Number(props.organizationId), campaign.id);
-    if (response.success) {
-      toast({ title: 'Success', description: 'Campaign activated' });
-      await loadCampaigns();
+  const confirmDeleteCampaign = (campaign: Campaign) => {
+    campaignToDelete.value = campaign;
+    showDeleteDialog.value = true;
+  };
+
+  const deleteCampaignAction = async () => {
+    if (!campaignToDelete.value) return;
+
+    deleting.value = true;
+    try {
+      const response = await deleteCampaign(Number(props.organizationId), campaignToDelete.value.id);
+      if (response.success) {
+        toast({ title: 'Deleted', description: 'Campaign deleted successfully' });
+        showDeleteDialog.value = false;
+        await loadCampaigns();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to delete campaign' });
+      }
+    } catch (error) {
+      console.error('Failed to delete campaign:', error);
+      toast({ title: 'Error', description: 'Failed to delete campaign' });
+    } finally {
+      deleting.value = false;
     }
-  } catch (error) {
-    console.error('Failed to activate campaign:', error);
-    toast({ title: 'Error', description: 'Failed to activate campaign' });
-  }
-};
+  };
 
-const completeCampaignAction = async (campaign: Campaign) => {
-  try {
-    const response = await completeCampaign(Number(props.organizationId), campaign.id);
-    if (response.success) {
-      toast({ title: 'Success', description: 'Campaign completed' });
-      await loadCampaigns();
+  const pauseCampaignAction = async (campaign: Campaign) => {
+    try {
+      const response = await pauseCampaign(Number(props.organizationId), campaign.id);
+      if (response.success) {
+        toast({ title: 'Success', description: 'Campaign paused' });
+        await loadCampaigns();
+      }
+    } catch (error) {
+      console.error('Failed to pause campaign:', error);
+      toast({ title: 'Error', description: 'Failed to pause campaign' });
     }
-  } catch (error) {
-    console.error('Failed to complete campaign:', error);
-    toast({ title: 'Error', description: 'Failed to complete campaign' });
-  }
-};
+  };
 
-const approveParticipantAction = async (participant: CampaignParticipant) => {
-  if (!selectedCampaign.value) return;
-  try {
-    const response = await approveParticipant(
-      Number(props.organizationId),
-      selectedCampaign.value.id,
-      participant.id
-    );
-    if (response.success) {
-      toast({ title: 'Success', description: 'Participant approved' });
-      await loadParticipants();
+  const activateCampaignAction = async (campaign: Campaign) => {
+    try {
+      const response = await activateCampaign(Number(props.organizationId), campaign.id);
+      if (response.success) {
+        toast({ title: 'Success', description: 'Campaign activated' });
+        await loadCampaigns();
+      }
+    } catch (error) {
+      console.error('Failed to activate campaign:', error);
+      toast({ title: 'Error', description: 'Failed to activate campaign' });
     }
-  } catch (error) {
-    console.error('Failed to approve participant:', error);
-    toast({ title: 'Error', description: 'Failed to approve participant' });
-  }
-};
+  };
 
-const rejectParticipantAction = async (participant: CampaignParticipant) => {
-  if (!selectedCampaign.value) return;
-  try {
-    const response = await rejectParticipant(
-      Number(props.organizationId),
-      selectedCampaign.value.id,
-      participant.id
-    );
-    if (response.success) {
-      toast({ title: 'Success', description: 'Participant rejected' });
-      await loadParticipants();
+  const completeCampaignAction = async (campaign: Campaign) => {
+    try {
+      const response = await completeCampaign(Number(props.organizationId), campaign.id);
+      if (response.success) {
+        toast({ title: 'Success', description: 'Campaign completed' });
+        await loadCampaigns();
+      }
+    } catch (error) {
+      console.error('Failed to complete campaign:', error);
+      toast({ title: 'Error', description: 'Failed to complete campaign' });
     }
-  } catch (error) {
-    console.error('Failed to reject participant:', error);
-    toast({ title: 'Error', description: 'Failed to reject participant' });
-  }
-};
+  };
 
-const verifySubmissionAction = async (submission: CampaignSubmission) => {
-  try {
-    const response = await verifySubmission(Number(props.organizationId), submission.id);
-    if (response.success) {
-      toast({ title: 'Success', description: 'Submission verified' });
-      await loadSubmissions();
+  const approveParticipantAction = async (participant: CampaignParticipant) => {
+    if (!selectedCampaign.value) return;
+    try {
+      const response = await approveParticipant(
+        Number(props.organizationId),
+        selectedCampaign.value.id,
+        participant.id
+      );
+      if (response.success) {
+        toast({ title: 'Success', description: 'Participant approved' });
+        await loadParticipants();
+      }
+    } catch (error) {
+      console.error('Failed to approve participant:', error);
+      toast({ title: 'Error', description: 'Failed to approve participant' });
     }
-  } catch (error) {
-    console.error('Failed to verify submission:', error);
-    toast({ title: 'Error', description: 'Failed to verify submission' });
-  }
-};
+  };
 
-const rejectSubmissionAction = async (submission: CampaignSubmission) => {
-  try {
-    const response = await rejectSubmission(Number(props.organizationId), submission.id, 'Rejected by admin');
-    if (response.success) {
-      toast({ title: 'Success', description: 'Submission rejected' });
-      await loadSubmissions();
+  const rejectParticipantAction = async (participant: CampaignParticipant) => {
+    if (!selectedCampaign.value) return;
+    try {
+      const response = await rejectParticipant(Number(props.organizationId), selectedCampaign.value.id, participant.id);
+      if (response.success) {
+        toast({ title: 'Success', description: 'Participant rejected' });
+        await loadParticipants();
+      }
+    } catch (error) {
+      console.error('Failed to reject participant:', error);
+      toast({ title: 'Error', description: 'Failed to reject participant' });
     }
-  } catch (error) {
-    console.error('Failed to reject submission:', error);
-    toast({ title: 'Error', description: 'Failed to reject submission' });
-  }
-};
+  };
 
-const openPaymentDialog = (submission: CampaignSubmission) => {
-  paymentSubmission.value = submission;
-  paymentAmount.value = calculateSuggestedPayment();
-  showPaymentDialog.value = true;
-};
-
-const calculateSuggestedPayment = () => {
-  if (!paymentSubmission.value || !selectedCampaign.value) return 0;
-  const cpm = parseFloat(selectedCampaign.value.cpm);
-  const cpmViews = selectedCampaign.value.cpm_views || 1000;
-  return (paymentSubmission.value.view_count / cpmViews) * cpm;
-};
-
-const createPaymentAction = async () => {
-  if (!paymentSubmission.value) return;
-  
-  creatingPayment.value = true;
-  try {
-    const response = await createPayment(
-      Number(props.organizationId),
-      paymentSubmission.value.id,
-      paymentAmount.value
-    );
-    if (response.success) {
-      toast({ title: 'Success', description: 'Payment created' });
-      showPaymentDialog.value = false;
-      await loadSubmissions();
-    } else {
-      toast({ title: 'Error', description: response.error || 'Failed to create payment' });
+  const verifySubmissionAction = async (submission: CampaignSubmission) => {
+    try {
+      const response = await verifySubmission(Number(props.organizationId), submission.id);
+      if (response.success) {
+        toast({ title: 'Success', description: 'Submission verified' });
+        await loadSubmissions();
+      }
+    } catch (error) {
+      console.error('Failed to verify submission:', error);
+      toast({ title: 'Error', description: 'Failed to verify submission' });
     }
-  } catch (error) {
-    console.error('Failed to create payment:', error);
-    toast({ title: 'Error', description: 'Failed to create payment' });
-  } finally {
-    creatingPayment.value = false;
-  }
-};
+  };
 
-watch(() => props.organizationId, () => {
-  if (props.organizationId) {
-    loadCampaigns();
-  }
-}, { immediate: true });
+  const rejectSubmissionAction = async (submission: CampaignSubmission) => {
+    try {
+      const response = await rejectSubmission(Number(props.organizationId), submission.id, 'Rejected by admin');
+      if (response.success) {
+        toast({ title: 'Success', description: 'Submission rejected' });
+        await loadSubmissions();
+      }
+    } catch (error) {
+      console.error('Failed to reject submission:', error);
+      toast({ title: 'Error', description: 'Failed to reject submission' });
+    }
+  };
 
-onMounted(() => {
-  if (props.organizationId) {
-    loadCampaigns();
-  }
-});
+  const openPaymentDialog = (submission: CampaignSubmission) => {
+    paymentSubmission.value = submission;
+    paymentAmount.value = calculateSuggestedPayment();
+    showPaymentDialog.value = true;
+  };
+
+  const calculateSuggestedPayment = () => {
+    if (!paymentSubmission.value || !selectedCampaign.value) return 0;
+    const cpm = parseFloat(selectedCampaign.value.cpm);
+    const cpmViews = selectedCampaign.value.cpm_views || 1000;
+    return (paymentSubmission.value.view_count / cpmViews) * cpm;
+  };
+
+  const createPaymentAction = async () => {
+    if (!paymentSubmission.value) return;
+
+    creatingPayment.value = true;
+    try {
+      const response = await createPayment(
+        Number(props.organizationId),
+        paymentSubmission.value.id,
+        paymentAmount.value
+      );
+      if (response.success) {
+        toast({ title: 'Success', description: 'Payment created' });
+        showPaymentDialog.value = false;
+        await loadSubmissions();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to create payment' });
+      }
+    } catch (error) {
+      console.error('Failed to create payment:', error);
+      toast({ title: 'Error', description: 'Failed to create payment' });
+    } finally {
+      creatingPayment.value = false;
+    }
+  };
+
+  watch(
+    () => props.organizationId,
+    () => {
+      if (props.organizationId) {
+        loadCampaigns();
+      }
+    },
+    { immediate: true }
+  );
+
+  onMounted(() => {
+    if (props.organizationId) {
+      loadCampaigns();
+    }
+  });
 </script>
 
 <style scoped>
-/* Modal backdrop transition */
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.3s ease;
-}
+  /* Modal backdrop transition */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.3s ease;
+  }
 
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
 
-/* Dialog transition */
-.dialog-enter-active {
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
+  /* Dialog transition */
+  .dialog-enter-active {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
 
-.dialog-leave-active {
-  transition: all 0.2s ease-in;
-}
+  .dialog-leave-active {
+    transition: all 0.2s ease-in;
+  }
 
-.dialog-enter-from {
-  opacity: 0;
-  transform: scale(0.95) translateY(10px);
-}
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
 
-.dialog-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
-}
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
 
-/* Custom scrollbar */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
+  /* Custom scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgb(63 63 70);
-  border-radius: 3px;
-}
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgb(63 63 70);
+    border-radius: 3px;
+  }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgb(82 82 91);
-}
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgb(82 82 91);
+  }
 </style>

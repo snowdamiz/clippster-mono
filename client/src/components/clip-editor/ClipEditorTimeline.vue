@@ -1,17 +1,18 @@
 <template>
-  <div class="bg-[#0c0c0c] transition-all duration-300 ease-in-out">
-    <div class="pt-2 px-3 pb-1 flex flex-col max-h-[55vh] gap-2">
-      <!-- Timeline Header (compact, CapCut-like) -->
+  <div class="transition-all duration-300 ease-in-out h-full">
+    <div class="pt-2 px-3 pb-1 flex flex-col h-full gap-2">
+      <!-- Timeline Header - Redesigned CapCut Style -->
       <div class="flex items-center justify-between pr-2 flex-shrink-0 text-white/70 text-[12px]">
-        <div class="flex items-center gap-1.5">
-          <!-- Timeline Toolbar -->
-          <div class="flex items-center gap-1 bg-[#121212] rounded-md px-2 py-1 border border-white/[0.02]">
-            <!-- Tools -->
+        <div class="flex items-center gap-2">
+          <!-- Selection & Edit Tools Group -->
+          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
             <button
               @click="setTool('move')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isMoveTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isMoveTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Move Tool (V)"
             >
@@ -20,8 +21,10 @@
             <button
               @click="setTool('razor')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isRazorTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isRazorTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Razor Tool (C)"
             >
@@ -30,8 +33,10 @@
             <button
               @click="setTool('ripple')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isRippleTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isRippleTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Ripple Edit (B)"
             >
@@ -40,8 +45,10 @@
             <button
               @click="setTool('roll')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isRollTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isRollTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Roll Edit (N)"
             >
@@ -50,8 +57,10 @@
             <button
               @click="setTool('slip')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isSlipTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isSlipTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Slip Tool (Y)"
             >
@@ -60,30 +69,32 @@
             <button
               @click="setTool('slide')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isSlideTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isSlideTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Slide Tool (U)"
             >
               <BoxSelect :size="14" />
             </button>
+          </div>
 
-            <div class="w-px h-5 bg-white/10 mx-1"></div>
-
-            <!-- Actions -->
+          <!-- Actions Group -->
+          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
             <button
               @click="performCutAtPlayhead"
-              class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-orange-300 hover:bg-orange-500/10"
+              class="p-1.5 rounded-md transition-all duration-150 text-orange-400/70 hover:text-orange-300 hover:bg-orange-500/15"
               title="Split at playhead (Ctrl+K)"
             >
-              <Scissors :size="14" class="opacity-50" />
+              <Scissors :size="14" />
               <span class="sr-only">Split</span>
             </button>
-            <div class="w-px h-5 bg-white/10 mx-1"></div>
+            <div class="w-px h-4 bg-white/8 mx-0.5"></div>
             <button
               @click="emit('undo')"
               :disabled="!canUndo"
-              class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-blue-300 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-blue-300 hover:bg-blue-500/15 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               title="Undo (Ctrl+Z)"
             >
               <Undo2 :size="14" />
@@ -91,12 +102,15 @@
             <button
               @click="emit('redo')"
               :disabled="!canRedo"
-              class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-blue-300 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-blue-300 hover:bg-blue-500/15 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               title="Redo (Ctrl+Y)"
             >
               <Redo2 :size="14" />
             </button>
-            <div class="w-px h-5 bg-white/10 mx-1"></div>
+          </div>
+
+          <!-- Playback Controls Group -->
+          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
             <button
               @mousedown="startContinuousSeeking('reverse')"
               @mouseup="stopContinuousSeeking"
@@ -104,12 +118,12 @@
               @touchstart="startContinuousSeeking('reverse')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
+                'p-1.5 rounded-md transition-all duration-150',
                 isSeeking && seekDirection === 'reverse'
-                  ? 'text-amber-300 bg-amber-500/20'
-                  : 'text-white/60 hover:text-amber-300 hover:bg-amber-500/10',
+                  ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+                  : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
               ]"
-              :title="'Seek backward (← arrow key)'"
+              title="Seek backward (← arrow key)"
             >
               <Rewind :size="14" />
             </button>
@@ -120,209 +134,278 @@
               @touchstart="startContinuousSeeking('forward')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
+                'p-1.5 rounded-md transition-all duration-150',
                 isSeeking && seekDirection === 'forward'
-                  ? 'text-amber-300 bg-amber-500/20'
-                  : 'text-white/60 hover:text-amber-300 hover:bg-amber-500/10',
+                  ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+                  : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
               ]"
-              :title="'Seek forward (→ arrow key)'"
+              title="Seek forward (→ arrow key)"
             >
               <FastForward :size="14" />
             </button>
           </div>
-          <!-- Zoom Controls -->
-          <div class="flex items-center gap-1 bg-[#121212] rounded-md px-2 py-1 border border-white/[0.02] relative group/zoom">
+        </div>
+
+        <!-- Right Side Controls -->
+        <div class="flex items-center gap-2">
+          <!-- Snap Settings -->
+          <div class="relative group/snap">
+            <button
+              class="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border transition-all duration-150"
+              :class="
+                snapEnabled
+                  ? 'text-violet-300 bg-violet-500/15 border-violet-500/30 shadow-[0_0_8px_rgba(139,92,246,0.15)]'
+                  : 'text-white/50 bg-[#161618] border-white/[0.04] hover:bg-white/8'
+              "
+              @click="snapMenuOpen = !snapMenuOpen"
+            >
+              <Magnet :size="12" :class="snapEnabled ? 'text-violet-400' : 'text-white/40'" />
+              <span class="font-medium">Snap</span>
+              <ChevronDown :size="10" :class="snapEnabled ? 'text-violet-400/60' : 'text-white/30'" />
+            </button>
+            <!-- Snap options dropdown -->
+            <div
+              v-if="snapMenuOpen"
+              class="absolute right-0 top-full mt-1.5 bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 min-w-[190px] z-[100]"
+              @mouseleave="snapMenuOpen = false"
+            >
+              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">
+                Snap Settings
+              </div>
+              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
+                <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+                <span class="text-sm text-white/80">Enable Snapping</span>
+              </label>
+              <div class="h-px bg-white/8 my-1"></div>
+              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Snap To</div>
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.playhead"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
+                <span class="text-sm text-white/80">Playhead</span>
+              </label>
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.segmentEdges"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
+                <span class="text-sm text-white/80">Segment Edges</span>
+              </label>
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.markers"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
+                <span class="text-sm text-white/80">Markers</span>
+              </label>
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.grid"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
+                <span class="text-sm text-white/80">Grid (1s intervals)</span>
+              </label>
+              <div class="h-px bg-white/8 my-1"></div>
+              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Behavior</div>
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.magnetic"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
+                <span class="text-sm text-white/80">Magnetic Timeline</span>
+              </label>
+              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
+                <input type="checkbox" v-model="frameSnapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+                <span class="text-sm text-white/80">Snap to Frames</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Segment Count Badge -->
+          <span
+            v-if="sortedTrimSegments.length > 1"
+            class="text-[11px] text-violet-300 bg-violet-500/15 px-2.5 py-1.5 rounded-lg font-medium border border-violet-500/20"
+          >
+            {{ sortedTrimSegments.length }} segments
+          </span>
+
+          <!-- Duration Badge -->
+          <span
+            class="text-[11px] text-white/60 bg-[#161618] px-2.5 py-1.5 rounded-lg font-mono tabular-nums border border-white/[0.04]"
+          >
+            {{ formatTime(totalDuration) }}
+          </span>
+
+          <!-- Zoom Controls Group (far right) -->
+          <div
+            class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04] relative group/zoom"
+          >
             <button
               @click="zoomOut"
               :disabled="zoomLevel <= MIN_ZOOM"
-              class="p-1 rounded-md transition-colors duration-150 text-white/60 hover:text-white hover:bg-white/10 disabled:text-white/20 disabled:cursor-not-allowed"
+              class="p-1 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/10 disabled:text-white/15 disabled:cursor-not-allowed"
               title="Zoom out"
             >
               <Minus :size="13" />
             </button>
             <button
               @click="zoomMenuOpen = !zoomMenuOpen"
-              class="text-[11px] text-white/60 font-mono tabular-nums min-w-[46px] text-center select-none px-1 hover:text-white transition-colors cursor-pointer"
+              class="text-[11px] text-white/70 font-mono tabular-nums min-w-[52px] text-center select-none px-1.5 py-0.5 rounded hover:bg-white/8 transition-colors cursor-pointer"
               title="Select zoom level"
             >
               {{ getZoomDisplayText() }}
             </button>
-            
+
             <!-- Zoom Presets Dropdown -->
             <div
               v-if="zoomMenuOpen"
-              class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] z-[100]"
+              class="absolute top-full right-0 mt-1.5 bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 min-w-[150px] z-[100]"
               @mouseleave="zoomMenuOpen = false"
             >
-              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider">Zoom Presets</div>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10 flex items-center justify-between" @click="() => { zoomToFit(); zoomMenuOpen = false; }">
+              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">Zoom Presets</div>
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80"
+                @click="
+                  () => {
+                    zoomToFit();
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>Fit to Screen</span>
-                <span class="text-white/30 text-xs">Z</span>
+                <span class="text-white/30 text-xs font-mono">Z</span>
               </button>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10 flex items-center justify-between" @click="() => { zoomToSelection(); zoomMenuOpen = false; }">
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80"
+                @click="
+                  () => {
+                    zoomToSelection();
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>Fit Selection</span>
-                <span class="text-white/30 text-xs">⇧Z</span>
+                <span class="text-white/30 text-xs font-mono">⇧Z</span>
               </button>
-              <div class="h-px bg-white/10 my-1"></div>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10" @click="() => { zoomLevel = 1.0; zoomMenuOpen = false; }">
+              <div class="h-px bg-white/8 my-1"></div>
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                @click="
+                  () => {
+                    zoomLevel = 1.0;
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>100% (Baseline)</span>
               </button>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10" @click="() => { zoomLevel = 2.0; zoomMenuOpen = false; }">
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                @click="
+                  () => {
+                    zoomLevel = 2.0;
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>200%</span>
               </button>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10" @click="() => { zoomLevel = 5.0; zoomMenuOpen = false; }">
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                @click="
+                  () => {
+                    zoomLevel = 5.0;
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>500%</span>
               </button>
             </div>
 
             <button
               @click="zoomIn"
-              class="p-1 rounded-md transition-colors duration-150 text-white/60 hover:text-white hover:bg-white/10"
+              class="p-1 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/10"
               title="Zoom in"
             >
               <Plus :size="13" />
             </button>
           </div>
         </div>
-        <div class="flex items-center gap-1.5">
-          <!-- Snap Settings Dropdown -->
-          <div class="relative group/snap">
-            <button
-              class="flex items-center gap-1.5 text-[11px] bg-white/[0.04] px-2 py-1 rounded-md border border-white/10 hover:bg-white/[0.08] transition-colors"
-              :class="snapEnabled ? 'text-violet-300' : 'text-white/60'"
-              @click="snapMenuOpen = !snapMenuOpen"
-            >
-              <Magnet :size="12" :class="snapEnabled ? 'text-violet-400' : 'text-white/40'" />
-              <span>Snap</span>
-              <ChevronDown :size="10" class="text-white/40" />
-            </button>
-            <!-- Snap options dropdown -->
-            <div
-              v-if="snapMenuOpen"
-              class="absolute right-0 top-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px] z-[100]"
-              @mouseleave="snapMenuOpen = false"
-            >
-              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider">Snap Settings</div>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer">
-                <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Enable Snapping</span>
-              </label>
-              <div class="h-px bg-white/10 my-1"></div>
-              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider">Snap To</div>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.playhead" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Playhead</span>
-              </label>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.segmentEdges" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Segment Edges</span>
-              </label>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.markers" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Markers</span>
-              </label>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.grid" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Grid (1s intervals)</span>
-              </label>
-              <div class="h-px bg-white/10 my-1"></div>
-              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider">Behavior</div>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.magnetic" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Magnetic Timeline</span>
-              </label>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer">
-                <input type="checkbox" v-model="frameSnapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Snap to Frames</span>
-              </label>
-            </div>
-          </div>
-          <span
-            v-if="sortedTrimSegments.length > 1"
-            class="text-[11px] text-violet-300/80 bg-violet-500/10 px-2.5 py-1 rounded-md"
-          >
-            {{ sortedTrimSegments.length }} segments
-          </span>
-          <span class="text-[11px] text-white/50 bg-white/[0.04] px-2 py-1 rounded-md">
-            {{ formatTime(totalDuration) }}
-          </span>
-        </div>
-      </div>
-
-      <!-- Timeline Minimap (shows when zoomed in) -->
-      <div
-        v-if="zoomLevel > 1.5 && totalDuration > 0"
-        class="h-6 bg-[#0a0a0a] border-b border-white/[0.06] relative cursor-pointer mx-2 rounded-sm overflow-hidden"
-        @click="onMinimapClick"
-        @mousedown="onMinimapDragStart"
-        title="Click to navigate, drag to scroll"
-      >
-        <!-- Minimap segments -->
-        <div class="absolute inset-0 flex items-center">
-          <template v-if="editorMode">
-            <div
-              v-for="source in primaryVideoSources"
-              :key="'mini-' + source.id"
-              class="absolute h-3 bg-cyan-600/60 rounded-sm"
-              :style="{
-                left: `${(source.start_time / totalDuration) * 100}%`,
-                width: `${((source.end_time - source.start_time) / totalDuration) * 100}%`,
-              }"
-            ></div>
-          </template>
-          <template v-else>
-            <div
-              v-for="segment in sortedTrimSegments"
-              :key="'mini-' + segment.id"
-              class="absolute h-3 bg-violet-600/60 rounded-sm"
-              :style="{
-                left: `${(segment.startTime / totalDuration) * 100}%`,
-                width: `${((segment.endTime - segment.startTime) / totalDuration) * 100}%`,
-              }"
-            ></div>
-          </template>
-          <!-- Audio tracks in minimap -->
-          <div
-            v-for="track in audioTracks"
-            :key="'mini-audio-' + track.id"
-            class="absolute h-2 bg-emerald-600/40 rounded-sm"
-            :style="{
-              left: `${(track.startTime / totalDuration) * 100}%`,
-              width: `${((track.endTime - track.startTime) / totalDuration) * 100}%`,
-              top: '60%',
-            }"
-          ></div>
-        </div>
-        <!-- Viewport indicator -->
-        <div
-          class="absolute top-0 bottom-0 bg-white/10 border border-white/30 rounded-sm"
-          :style="minimapViewportStyle"
-        ></div>
-        <!-- Playhead indicator -->
-        <div
-          class="absolute top-0 bottom-0 w-0.5 bg-red-500"
-          :style="{ left: `${(currentTime / totalDuration) * 100}%` }"
-        ></div>
       </div>
 
       <!-- Timeline Tracks Container -->
       <div
         ref="timelineScrollContainer"
-        class="bg-[#0c0c0c] rounded-md relative overflow-y-auto overflow-x-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#333] scrollbar-track-[#0c0c0c]"
+        class="bg-[#0d0d0d] rounded-lg relative overflow-y-auto overflow-x-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#3a3a3a] scrollbar-track-[#0d0d0d] border border-white/[0.03] flex flex-col"
         :style="{ cursor: getTimelineCursor() }"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
         @click="onTimelineContainerClick"
         @wheel="onTimelineWheel"
+        @scroll="onTimelineScroll"
       >
         <!-- Marquee Selection Rectangle -->
         <div
           v-if="marqueeStyle"
-          class="absolute border-2 border-blue-500 bg-blue-500/20 pointer-events-none z-[100]"
+          class="absolute border-2 border-cyan-500 bg-cyan-500/15 pointer-events-none z-[100] rounded"
           :style="marqueeStyle"
         ></div>
+
+        <!-- Drag Ghost Element - positioned via direct DOM manipulation for zero-lag dragging -->
+        <div
+          ref="dragGhostRef"
+          v-show="dragGhostState?.visible"
+          class="fixed pointer-events-none z-[1000] rounded-md shadow-2xl opacity-90"
+          :class="{
+            'bg-violet-600/80 border-2 border-violet-400': dragGhostState?.color === 'violet',
+            'bg-cyan-600/80 border-2 border-cyan-400': dragGhostState?.color === 'cyan',
+            'bg-emerald-600/80 border-2 border-emerald-400': dragGhostState?.color === 'emerald',
+            'bg-amber-600/80 border-2 border-amber-400': dragGhostState?.color === 'amber',
+            'bg-rose-600/80 border-2 border-rose-400': dragGhostState?.color === 'rose',
+          }"
+          :style="{
+            left: `${dragGhostState?.initialLeft ?? 0}px`,
+            top: `${dragGhostState?.initialTop ?? 0}px`,
+            width: `${dragGhostState?.width ?? 100}px`,
+            height: `${dragGhostState?.height ?? 36}px`,
+            willChange: 'transform',
+          }"
+        >
+          <div class="flex items-center justify-center h-full px-2">
+            <span class="text-xs text-white font-medium truncate drop-shadow-md">
+              {{ dragGhostState?.label || '' }}
+            </span>
+          </div>
+        </div>
         <!-- Horizontal scroller for ruler + tracks -->
-        <div class="pb-1">
+        <div class="pb-1 flex-1">
           <!-- Timeline Content Wrapper - handles zoom width -->
           <div
             ref="contentWrapperRef"
@@ -330,16 +413,18 @@
             :class="{ dragging: isDragging || isResizing }"
             :style="{ width: `${Math.max(1, zoomLevel) * 100}%`, minHeight: '100%' }"
           >
-            <!-- Full-width Timestamp Ruler -->
+            <!-- Full-width Timestamp Ruler - Enhanced -->
             <div
-              class="h-7 border-b border-white/[0.06] flex items-center bg-[#0c0c0c] sticky top-0 z-50 timeline-ruler"
+              class="h-8 border-b border-white/[0.08] flex items-center bg-gradient-to-b from-[#141416] to-[#0d0d0d] sticky top-0 z-[80] timeline-ruler"
               @wheel="onRulerWheel"
               title="Scroll to zoom"
             >
               <!-- Track label spacer - matches track header width -->
               <div
-                class="w-[100px] h-full flex items-center justify-start flex-shrink-0 sticky left-0 z-[70] bg-[#0c0c0c] border-r border-white/[0.08]"
-              ></div>
+                class="w-[120px] h-full flex items-center justify-start pl-3 gap-2 flex-shrink-0 sticky left-0 z-[90] bg-gradient-to-b from-[#141416] to-[#0d0d0d] border-r border-white/[0.06]"
+              >
+                <span class="text-[10px] font-medium text-white/50 uppercase tracking-wider">Timeline</span>
+              </div>
               <!-- Continuous ruler ticks across full duration -->
               <div
                 ref="rulerContentRef"
@@ -351,12 +436,19 @@
                     v-for="tick in rulerTicks"
                     :key="tick.key"
                     class="absolute flex flex-col items-center"
-                    :style="{ left: `${tick.percent}%`, transform: 'translateX(-50%)', bottom: '0' }"
+                    :style="{
+                      left: `${tick.percent}%`,
+                      transform: tick.time === 0 ? 'translateX(0)' : 'translateX(-50%)',
+                      bottom: '0',
+                    }"
                   >
-                    <div class="w-px bg-foreground/20 timeline-tick" :class="tick.isMajor ? 'h-4' : 'h-2'"></div>
+                    <div
+                      class="timeline-tick"
+                      :class="tick.isMajor ? 'w-px h-4 bg-white/30' : 'w-px h-2 bg-white/15'"
+                    ></div>
                     <span
                       v-if="tick.isMajor"
-                      class="text-[10px] text-foreground/40 whitespace-nowrap font-normal mt-0.5"
+                      class="text-[11px] text-white/50 whitespace-nowrap font-medium tabular-nums mt-0.5"
                     >
                       {{ formatTime(tick.time) }}
                     </span>
@@ -381,7 +473,8 @@
                     class="w-6 h-6 flex items-center justify-center rounded-full transition-all duration-150"
                     :style="{
                       backgroundColor: marker.color || '#eab308',
-                      boxShadow: props.selectedMarkerId === marker.id ? `0 4px 6px -1px ${marker.color || '#eab308'}80` : 'none',
+                      boxShadow:
+                        props.selectedMarkerId === marker.id ? `0 4px 6px -1px ${marker.color || '#eab308'}80` : 'none',
                       opacity: props.selectedMarkerId === marker.id ? 1 : 0.8,
                     }"
                   >
@@ -457,9 +550,9 @@
               v-for="layerGroup in visualLayers"
               :key="`layer-${layerGroup.layer}`"
               :data-layer-track="layerGroup.layer"
-              class="flex items-center h-10 relative"
+              class="flex items-center h-11 relative border-b border-white/[0.04]"
               :class="{
-                'bg-purple-500/10 ring-2 ring-purple-500/50':
+                'bg-purple-500/10 ring-2 ring-purple-500/40 ring-inset':
                   (isDragging &&
                     dragInfo?.type &&
                     ['text', 'sticker', 'watermark'].includes(dragInfo.type) &&
@@ -468,13 +561,16 @@
               }"
             >
               <div
-                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
-                <div class="font-medium">Layer {{ layerGroup.layer }}</div>
+                <div class="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
+                  <span class="text-[10px] font-bold text-purple-400">{{ layerGroup.layer }}</span>
+                </div>
+                <span class="font-medium text-white/60">Layer</span>
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
-                
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+
                 <!-- Extended timeline area indicator (beyond source videos) -->
                 <div
                   v-if="sourcesEndTime > 0 && totalDuration > sourcesEndTime"
@@ -499,7 +595,7 @@
                     @mousedown="(e) => onSourceMouseDown(e, overlayItem.item)"
                     @click.stop="selectItem('source', overlayItem.item.id)"
                   >
-                    <div class="absolute inset-0 bg-[#1a1a1a]"></div>
+                    <div class="absolute inset-0 bg-[#161618]"></div>
                     <span
                       class="relative z-10 text-xs text-cyan-400 font-medium truncate px-1 drop-shadow-sm pointer-events-none"
                     >
@@ -513,7 +609,16 @@
                       :value="kf.value"
                       :is-selected="selectedKeyframeId === kf.id"
                       :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'source', overlayItem.item.endTime - overlayItem.item.startTime)"
+                      @mousedown.stop="
+                        (e) =>
+                          startKeyframeDrag(
+                            e,
+                            kf,
+                            overlayItem.item.id,
+                            'source',
+                            overlayItem.item.endTime - overlayItem.item.startTime
+                          )
+                      "
                     />
                     <!-- Left resize handle -->
                     <div
@@ -570,7 +675,16 @@
                       :value="kf.value"
                       :is-selected="selectedKeyframeId === kf.id"
                       :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'sticker', overlayItem.item.endTime - overlayItem.item.startTime)"
+                      @mousedown.stop="
+                        (e) =>
+                          startKeyframeDrag(
+                            e,
+                            kf,
+                            overlayItem.item.id,
+                            'sticker',
+                            overlayItem.item.endTime - overlayItem.item.startTime
+                          )
+                      "
                     />
                     <!-- Left resize handle -->
                     <div
@@ -621,7 +735,16 @@
                       :value="kf.value"
                       :is-selected="selectedKeyframeId === kf.id"
                       :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'text', overlayItem.item.endTime - overlayItem.item.startTime)"
+                      @mousedown.stop="
+                        (e) =>
+                          startKeyframeDrag(
+                            e,
+                            kf,
+                            overlayItem.item.id,
+                            'text',
+                            overlayItem.item.endTime - overlayItem.item.startTime
+                          )
+                      "
                     />
                     <!-- Left resize handle -->
                     <div
@@ -672,7 +795,16 @@
                       :value="kf.value"
                       :is-selected="selectedKeyframeId === kf.id"
                       :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'watermark', overlayItem.item.endTime - overlayItem.item.startTime)"
+                      @mousedown.stop="
+                        (e) =>
+                          startKeyframeDrag(
+                            e,
+                            kf,
+                            overlayItem.item.id,
+                            'watermark',
+                            overlayItem.item.endTime - overlayItem.item.startTime
+                          )
+                      "
                     />
                     <!-- Left resize handle -->
                     <div
@@ -700,18 +832,18 @@
             <!-- Legacy single tracks (kept for backward compatibility if no layers defined) -->
             <div
               v-if="textOverlays.length > 0 && visualOverlayLayers.length === 0"
-              class="flex items-center h-12 relative"
+              class="flex items-center h-11 relative border-b border-white/[0.04]"
             >
               <div
-                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
-                <div class="font-medium flex items-center gap-1">
-                  <Type :size="12" />
-                  Text
+                <div class="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
+                  <Type :size="11" class="text-amber-400" />
                 </div>
+                <span class="font-medium text-white/60">Text</span>
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 <div
                   v-for="overlay in textOverlays"
                   :key="overlay.id"
@@ -733,7 +865,9 @@
                     :value="kf.value"
                     :is-selected="selectedKeyframeId === kf.id"
                     :style="{ left: `${(kf.time / (overlay.endTime - overlay.startTime)) * 100}%` }"
-                    @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlay.id, 'text', overlay.endTime - overlay.startTime)"
+                    @mousedown.stop="
+                      (e) => startKeyframeDrag(e, kf, overlay.id, 'text', overlay.endTime - overlay.startTime)
+                    "
                   />
                   <!-- Left resize handle -->
                   <div
@@ -753,17 +887,17 @@
               </div>
             </div>
 
-            <div v-if="effects.length > 0" class="flex items-center h-12 relative">
+            <div v-if="effects.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
               <div
-                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
-                <div class="font-medium flex items-center gap-1">
-                  <Sparkles :size="12" />
-                  Effects
+                <div class="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+                  <Sparkles :size="11" class="text-cyan-400" />
                 </div>
+                <span class="font-medium text-white/60">Effects</span>
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 <div
                   v-for="effect in effects"
                   :key="effect.id"
@@ -797,17 +931,17 @@
               </div>
             </div>
 
-            <div v-if="filterSegments.length > 0" class="flex items-center h-12 relative">
+            <div v-if="filterSegments.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
               <div
-                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
-                <div class="font-medium flex items-center gap-1">
-                  <Palette :size="12" />
-                  Filters
+                <div class="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
+                  <Palette :size="11" class="text-sky-400" />
                 </div>
+                <span class="font-medium text-white/60">Filters</span>
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 <div
                   v-for="filterSeg in filterSegments"
                   :key="filterSeg.id"
@@ -843,42 +977,47 @@
 
             <!-- Source Track (Primary Video - Editor Mode) -->
             <template v-if="editorMode">
-              <div class="flex items-center h-[72px] relative">
+              <div class="flex items-center h-[72px] relative border-b border-white/[0.04]">
                 <div
-                  class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                  class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
                 >
-                  <!-- Track controls row (CapCut style: icons in a row) -->
-                  <div class="flex items-center gap-1 text-white/50 mb-1">
+                  <!-- Track type icon and label -->
+                  <div class="flex items-center gap-2 mb-1.5">
+                    <div class="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
+                      <Film :size="11" class="text-violet-400" />
+                    </div>
+                    <span class="font-medium text-white/70">Video</span>
+                  </div>
+                  <!-- Track controls row -->
+                  <div class="flex items-center gap-0.5 text-white/40">
                     <button
                       @click.stop="toggleVideoTrackState('isLocked')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'"
-                      :class="{ 'text-cyan-400': videoTrackState.isLocked }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isLocked }"
                     >
-                      <Lock v-if="videoTrackState.isLocked" :size="13" />
-                      <Unlock v-else :size="13" />
+                      <Lock v-if="videoTrackState.isLocked" :size="12" />
+                      <Unlock v-else :size="12" />
                     </button>
                     <button
                       @click.stop="toggleVideoTrackState('isHidden')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
-                      :class="{ 'text-cyan-400': videoTrackState.isHidden }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isHidden }"
                     >
-                      <EyeOff v-if="videoTrackState.isHidden" :size="13" />
-                      <Eye v-else :size="13" />
+                      <EyeOff v-if="videoTrackState.isHidden" :size="12" />
+                      <Eye v-else :size="12" />
                     </button>
                     <button
                       @click.stop="toggleVideoTrackState('isMuted')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'"
-                      :class="{ 'text-cyan-400': videoTrackState.isMuted }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isMuted }"
                     >
-                      <VolumeX v-if="videoTrackState.isMuted" :size="13" />
-                      <Volume2 v-else :size="13" />
+                      <VolumeX v-if="videoTrackState.isMuted" :size="12" />
+                      <Volume2 v-else :size="12" />
                     </button>
                   </div>
-                  <!-- Track label -->
-                  <span class="text-[11px] text-white/60 truncate">Source</span>
                 </div>
                 <div
                   ref="videoTrackContentRef"
@@ -889,8 +1028,8 @@
                   @drop.prevent="onTimelineDrop"
                 >
                   <!-- Background - split into source area and extended area -->
-                  <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
-                  
+                  <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+
                   <!-- Extended timeline area indicator (beyond source videos) -->
                   <div
                     v-if="sourcesEndTime > 0 && totalDuration > sourcesEndTime"
@@ -915,7 +1054,7 @@
 
                   <!-- Ghost preview showing original position during drag -->
                   <div
-                    v-if="dragPreview && dragPreview.type === 'source' && isDraggingSource"
+                    v-if="dragGhostState?.visible && dragGhostState?.type === 'source' && isDraggingSource"
                     class="absolute top-0 bottom-0 rounded-md border-2 border-dashed border-cyan-500/40 bg-cyan-500/10 pointer-events-none z-10"
                     :style="getGhostPreviewStyle('source')"
                   ></div>
@@ -956,12 +1095,9 @@
                     @contextmenu.prevent="onSourceContextMenu($event, source)"
                   >
                     <!-- Video thumbnails background (filmstrip style) -->
-                    <div class="absolute inset-0 bg-[#1a1a1a] flex overflow-hidden">
+                    <div class="absolute inset-0 bg-[#161618] flex overflow-hidden">
                       <!-- Loading placeholder skeleton -->
-                      <div
-                        v-if="!source.source_thumbnail"
-                        class="absolute inset-0 flex items-center justify-center"
-                      >
+                      <div v-if="!source.source_thumbnail" class="absolute inset-0 flex items-center justify-center">
                         <div class="flex gap-1">
                           <div class="w-8 h-full bg-white/5 animate-pulse"></div>
                           <div class="w-8 h-full bg-white/5 animate-pulse delay-75"></div>
@@ -1010,46 +1146,51 @@
 
             <!-- Single Video Track (Clip Mode) -->
             <template v-else>
-              <div class="flex items-center h-[72px] relative">
+              <div class="flex items-center h-[72px] relative border-b border-white/[0.04]">
                 <div
-                  class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                  class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
                 >
-                  <!-- Track controls row (CapCut style: icons in a row) -->
-                  <div class="flex items-center gap-1 text-white/50 mb-1">
+                  <!-- Track type icon and label -->
+                  <div class="flex items-center gap-2 mb-1.5">
+                    <div class="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
+                      <Film :size="11" class="text-violet-400" />
+                    </div>
+                    <span class="font-medium text-white/70">Video</span>
+                  </div>
+                  <!-- Track controls row -->
+                  <div class="flex items-center gap-0.5 text-white/40">
                     <button
                       @click.stop="toggleVideoTrackState('isLocked')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'"
-                      :class="{ 'text-cyan-400': videoTrackState.isLocked }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isLocked }"
                     >
-                      <Lock v-if="videoTrackState.isLocked" :size="13" />
-                      <Unlock v-else :size="13" />
+                      <Lock v-if="videoTrackState.isLocked" :size="12" />
+                      <Unlock v-else :size="12" />
                     </button>
                     <button
                       @click.stop="toggleVideoTrackState('isHidden')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
-                      :class="{ 'text-cyan-400': videoTrackState.isHidden }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isHidden }"
                     >
-                      <EyeOff v-if="videoTrackState.isHidden" :size="13" />
-                      <Eye v-else :size="13" />
+                      <EyeOff v-if="videoTrackState.isHidden" :size="12" />
+                      <Eye v-else :size="12" />
                     </button>
                     <button
                       @click.stop="toggleVideoTrackState('isMuted')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'"
-                      :class="{ 'text-cyan-400': videoTrackState.isMuted }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isMuted }"
                     >
-                      <VolumeX v-if="videoTrackState.isMuted" :size="13" />
-                      <Volume2 v-else :size="13" />
+                      <VolumeX v-if="videoTrackState.isMuted" :size="12" />
+                      <Volume2 v-else :size="12" />
                     </button>
                   </div>
-                  <!-- Track label -->
-                  <span class="text-[11px] text-white/60 truncate">Cover</span>
                 </div>
                 <div ref="videoTrackContentRef" class="flex-1 h-full relative" @click="onTrackContentClick">
                   <!-- Background -->
-                  <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                  <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
 
                   <!-- Clip Mode: Trim Segments -->
                   <template v-for="(segmentLayout, _index) in segmentLayouts" :key="segmentLayout.segment.id">
@@ -1081,7 +1222,7 @@
                     >
                       <div class="absolute inset-0 bg-black flex overflow-hidden">
                         <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
-                        <div class="absolute inset-0 bg-[#1a1a1a]"></div>
+                        <div class="absolute inset-0 bg-[#161618]"></div>
                       </div>
                       <canvas
                         :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
@@ -1098,81 +1239,116 @@
             <div
               v-for="(track, trackIndex) in audioTracks"
               :key="track.id"
-              class="flex items-center h-12 relative"
+              class="flex items-center relative transition-all duration-200 border-b border-white/[0.04]"
               :class="{
-                'bg-blue-500/10 ring-2 ring-blue-500/50':
+                'bg-emerald-500/10 ring-2 ring-emerald-500/40 ring-inset':
                   isDragging && dragInfo?.type === 'audio' && dragInfo?.targetTrackOrder === track.trackOrder,
+                'h-6': track.isHidden,
+                'h-12': !track.isHidden,
+                'opacity-50': track.isHidden,
+                'opacity-40': !track.isHidden && (track.isMuted || (hasAnySoloedAudioTrack && !track.isSolo)),
               }"
             >
               <div
-                class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-emerald-500"
               >
-                <!-- Track controls row -->
-                <div class="flex items-center gap-1 text-white/50 mb-1">
-                  <!-- Drag handle for track reordering -->
-                  <div
-                    class="p-0.5 cursor-grab hover:text-white active:cursor-grabbing"
-                    title="Drag to reorder track"
-                    @mousedown="(e) => onTrackReorderStart(e, 'audio', track.id, track.trackOrder ?? trackIndex)"
-                  >
-                    <GripVertical :size="13" />
+                <!-- Hidden view: single row with icon, name, and show button -->
+                <div v-if="track.isHidden" class="flex items-center gap-1.5">
+                  <div class="w-4 h-4 rounded bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                    <Music :size="9" class="text-emerald-400" />
                   </div>
-                  <button
-                    @click.stop="toggleTrackCollapse('audio', track.id)"
-                    class="p-0.5 hover:text-white"
-                    :title="isTrackCollapsed('audio', track.id) ? 'Expand' : 'Collapse'"
-                  >
-                    <ChevronRight v-if="isTrackCollapsed('audio', track.id)" :size="13" />
-                    <ChevronDown v-else :size="13" />
-                  </button>
-                  <button
-                    @click.stop="emit('toggleAudioLock', track.id)"
-                    class="p-0.5 hover:text-white"
-                    :title="track.isLocked ? 'Unlock' : 'Lock'"
-                    :class="{ 'text-cyan-400': track.isLocked }"
-                  >
-                    <Lock v-if="track.isLocked" :size="13" />
-                    <Unlock v-else :size="13" />
-                  </button>
+                  <span class="font-medium text-white/60 truncate text-[9px] flex-1 min-w-0">{{ track.name }}</span>
                   <button
                     @click.stop="emit('toggleAudioHidden', track.id)"
-                    class="p-0.5 hover:text-white"
-                    :title="track.isHidden ? 'Show' : 'Hide'"
-                    :class="{ 'text-cyan-400': track.isHidden }"
+                    class="p-0.5 rounded hover:bg-white/10 transition-colors text-emerald-400 bg-emerald-500/15 flex-shrink-0"
+                    title="Show"
                   >
-                    <EyeOff v-if="track.isHidden" :size="13" />
-                    <Eye v-else :size="13" />
-                  </button>
-                  <button
-                    @click.stop="emit('toggleAudioMute', track.id)"
-                    class="p-0.5 hover:text-white"
-                    :title="track.isMuted ? 'Unmute' : 'Mute'"
-                    :class="{ 'text-cyan-400': track.isMuted }"
-                  >
-                    <VolumeX v-if="track.isMuted" :size="13" />
-                    <Volume2 v-else :size="13" />
-                  </button>
-                  <button
-                    @click.stop="emit('toggleAudioSolo', track.id)"
-                    class="p-0.5 hover:text-white"
-                    :title="track.isSolo ? 'Unsolo' : 'Solo'"
-                    :class="{ 'text-amber-400': track.isSolo }"
-                  >
-                    <Headphones :size="13" />
+                    <EyeOff :size="10" />
                   </button>
                 </div>
-                <!-- Track label -->
-                <span class="text-[11px] text-white/60 truncate">{{ track.name }}</span>
+                <!-- Normal view: full controls -->
+                <template v-else>
+                  <!-- Track type icon and label -->
+                  <div class="flex items-center gap-2 mb-1">
+                    <div class="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
+                      <Music :size="11" class="text-emerald-400" />
+                    </div>
+                    <div class="track-label-text-container min-w-0 flex-1 overflow-hidden" :title="track.name">
+                      <span class="track-label-text font-medium text-white/60 text-[10px] whitespace-nowrap">
+                        <span>{{ track.name }}</span>
+                        <span class="track-label-text-duplicate" aria-hidden="true">{{ track.name }}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <!-- Track controls row -->
+                  <div class="flex items-center gap-0.5 text-white/40">
+                    <!-- Drag handle for track reordering -->
+                    <div
+                      class="p-0.5 cursor-grab hover:text-white active:cursor-grabbing"
+                      title="Drag to reorder track"
+                      @mousedown="(e) => onTrackReorderStart(e, 'audio', track.id, track.trackOrder ?? trackIndex)"
+                    >
+                      <GripVertical :size="11" />
+                    </div>
+                    <button
+                      @click.stop="emit('toggleAudioLock', track.id)"
+                      class="p-0.5 rounded hover:bg-white/10 transition-colors"
+                      :title="track.isLocked ? 'Unlock' : 'Lock'"
+                      :class="{ 'text-emerald-400 bg-emerald-500/15': track.isLocked }"
+                    >
+                      <Lock v-if="track.isLocked" :size="11" />
+                      <Unlock v-else :size="11" />
+                    </button>
+                    <button
+                      @click.stop="emit('toggleAudioHidden', track.id)"
+                      class="p-0.5 rounded hover:bg-white/10 transition-colors"
+                      :title="track.isHidden ? 'Show' : 'Hide'"
+                      :class="{ 'text-emerald-400 bg-emerald-500/15': track.isHidden }"
+                    >
+                      <EyeOff v-if="track.isHidden" :size="11" />
+                      <Eye v-else :size="11" />
+                    </button>
+                    <button
+                      @click.stop="emit('toggleAudioMute', track.id)"
+                      class="p-0.5 rounded hover:bg-white/10 transition-colors"
+                      :title="track.isMuted ? 'Unmute' : 'Mute'"
+                      :class="{ 'text-emerald-400 bg-emerald-500/15': track.isMuted }"
+                    >
+                      <VolumeX v-if="track.isMuted" :size="11" />
+                      <Volume2 v-else :size="11" />
+                    </button>
+                    <button
+                      @click.stop="emit('toggleAudioSolo', track.id)"
+                      class="p-0.5 rounded hover:bg-white/10 transition-colors"
+                      :title="track.isSolo ? 'Unsolo' : 'Solo'"
+                      :class="{ 'text-amber-400 bg-amber-500/15': track.isSolo }"
+                    >
+                      <Headphones :size="11" />
+                    </button>
+                  </div>
+                </template>
               </div>
               <div
                 :ref="(el) => setSegmentRef(el, 'audio', track.id)"
                 class="flex-1 h-full relative"
                 @click="onTrackContentClick"
               >
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+
+                <!-- Hidden state: show simplified bar -->
+                <div v-if="track.isHidden" class="absolute inset-x-0 top-1 bottom-1 pointer-events-none">
+                  <div
+                    class="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-emerald-500/15"
+                    :style="{
+                      left: `${(track.startTime / duration) * 100}%`,
+                      width: `${((track.endTime - track.startTime) / duration) * 100}%`,
+                    }"
+                  ></div>
+                </div>
 
                 <!-- Render audio track as visual segments that split at video segment boundaries -->
                 <template
+                  v-if="!track.isHidden"
                   v-for="(visualSeg, segIdx) in getAudioVisualSegments(track)"
                   :key="`${track.id}-vis-${segIdx}`"
                 >
@@ -1229,7 +1405,7 @@
                     >
                       <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                     </div>
-                    
+
                     <!-- Fade In overlay and handle (CapCut style - bottom corner triangle) -->
                     <div
                       v-if="visualSeg.isFirst && track.fadeIn > 0"
@@ -1251,13 +1427,15 @@
                       title="Drag to adjust fade in"
                     >
                       <!-- Triangle handle pointing right -->
-                      <div class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center">
+                      <div
+                        class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center"
+                      >
                         <svg width="8" height="8" viewBox="0 0 8 8" fill="white">
                           <polygon points="2,1 6,4 2,7" />
                         </svg>
                       </div>
                     </div>
-                    
+
                     <!-- Fade Out overlay and handle (CapCut style - bottom corner triangle) -->
                     <div
                       v-if="visualSeg.isLast && track.fadeOut > 0"
@@ -1279,7 +1457,9 @@
                       title="Drag to adjust fade out"
                     >
                       <!-- Triangle handle pointing left -->
-                      <div class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center">
+                      <div
+                        class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center"
+                      >
                         <svg width="8" height="8" viewBox="0 0 8 8" fill="white">
                           <polygon points="6,1 2,4 6,7" />
                         </svg>
@@ -1294,15 +1474,15 @@
             <div
               v-for="n in PLACEHOLDER_BOTTOM_COUNT"
               :key="'placeholder-bottom-' + n"
-              class="flex items-center h-10 relative"
+              class="flex items-center h-8 relative"
             >
               <div
-                class="track-label w-[100px] h-full sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               ></div>
-              <div class="flex-1 h-full relative bg-[#111]"></div>
+              <div class="flex-1 h-full relative bg-[#111111]"></div>
             </div>
 
-            <!-- Playhead Line (CapCut style - orange/amber thin line) -->
+            <!-- Playhead Line (CapCut style - triangular head with gradient line) -->
             <div
               v-if="totalDuration > 0"
               class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group playhead-line flex flex-col items-center"
@@ -1313,16 +1493,39 @@
               }"
               :style="{
                 '--playhead-position': effectivePlayheadPosition,
-                width: '12px',
-                marginLeft: '-6px',
+                width: '16px',
+                marginLeft: '-8px',
               }"
               @mousedown="onPlayheadMouseDown"
+              @wheel="onRulerWheel"
             >
-              <!-- The line (CapCut style - thin amber/orange line) -->
+              <!-- Triangular head (CapCut signature style) -->
+              <div class="relative flex-shrink-0 playhead-child flex justify-center" style="width: 16px">
+                <svg width="14" height="10" viewBox="0 0 14 10">
+                  <polygon points="7,10 0,0 14,0" class="fill-amber-500 group-hover:fill-amber-400 transition-colors" />
+                </svg>
+              </div>
+              <!-- The line (gradient from amber to orange) -->
               <div
-                class="flex-1 bg-amber-500 group-hover:bg-amber-400 playhead-line-inner playhead-child shadow-[0_0_4px_rgba(245,158,11,0.5)]"
-                style="width: 2px"
+                class="flex-1 playhead-line-inner playhead-child"
+                style="
+                  width: 1px;
+                  background: linear-gradient(to bottom, rgb(245, 158, 11), rgb(249, 115, 22));
+                  box-shadow:
+                    0 0 8px rgba(245, 158, 11, 0.5),
+                    0 0 4px rgba(249, 115, 22, 0.3);
+                "
               ></div>
+              <!-- Time tooltip on hover -->
+              <div
+                class="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none"
+              >
+                <div
+                  class="bg-black/90 text-amber-400 text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded whitespace-nowrap border border-amber-500/30"
+                >
+                  {{ formatTime(currentTime) }}
+                </div>
+              </div>
             </div>
 
             <!-- Snap Indicator Line (shows when segment edge is snapping to another edge) -->
@@ -1334,12 +1537,9 @@
                 '--snap-position': snapIndicatorPosition,
               }"
             >
-              <div 
-                class="absolute inset-0 w-0.5 shadow-lg"
-                :class="snapIndicatorColorClass"
-              ></div>
+              <div class="absolute inset-0 w-0.5 shadow-lg" :class="snapIndicatorColorClass"></div>
             </div>
-            
+
             <!-- Trim Preview Tooltip - shows time during resize -->
             <div
               v-if="trimPreviewInfo"
@@ -1350,12 +1550,18 @@
                 transform: 'translateX(-50%)',
               }"
             >
-              <div class="bg-black/90 text-white text-xs px-2 py-1 rounded shadow-lg border border-green-500/50 whitespace-nowrap">
+              <div
+                class="bg-black/90 text-white text-xs px-2 py-1 rounded shadow-lg border border-green-500/50 whitespace-nowrap"
+              >
                 <span class="text-green-400 font-mono">{{ trimPreviewInfo.formattedTime }}</span>
-                <span class="text-white/60 ml-1 text-[10px]">{{ trimPreviewInfo.handle === 'left' ? 'IN' : 'OUT' }}</span>
+                <span class="text-white/60 ml-1 text-[10px]">
+                  {{ trimPreviewInfo.handle === 'left' ? 'IN' : 'OUT' }}
+                </span>
               </div>
               <!-- Arrow pointing down -->
-              <div class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-green-500/50"></div>
+              <div
+                class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-green-500/50"
+              ></div>
             </div>
           </div>
           <!-- end contentWrapper -->
@@ -1382,7 +1588,7 @@
     <Teleport to="body">
       <div
         v-if="sourceContextMenu.visible"
-        class="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[220px]"
+        class="fixed z-[9999] bg-[#161618] border border-white/10 rounded-lg shadow-xl py-1 min-w-[220px]"
         :style="{ left: `${sourceContextMenu.x}px`, top: `${sourceContextMenu.y}px` }"
         @click.stop
       >
@@ -1414,7 +1620,12 @@
         <!-- Edit Operations with Shortcuts -->
         <button
           class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
-          @click="() => { closeSourceContextMenu(); copySelectedItems(); }"
+          @click="
+            () => {
+              closeSourceContextMenu();
+              copySelectedItems();
+            }
+          "
         >
           <span class="flex items-center gap-2">
             <span>Copy</span>
@@ -1423,7 +1634,12 @@
         </button>
         <button
           class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
-          @click="() => { closeSourceContextMenu(); duplicateSelectedItems(); }"
+          @click="
+            () => {
+              closeSourceContextMenu();
+              duplicateSelectedItems();
+            }
+          "
         >
           <span class="flex items-center gap-2">
             <span>Duplicate</span>
@@ -1477,7 +1693,12 @@
         <!-- Split/Cut Option -->
         <button
           class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
-          @click="() => { closeSourceContextMenu(); performCutAtPlayhead(); }"
+          @click="
+            () => {
+              closeSourceContextMenu();
+              performCutAtPlayhead();
+            }
+          "
         >
           <span class="flex items-center gap-2">
             <Scissors :size="14" />
@@ -1498,7 +1719,9 @@
             <span class="text-white/40 text-xs">{{ getSourceSpeed(sourceContextMenu.source) }}x</span>
           </button>
           <!-- Speed submenu -->
-          <div class="absolute left-full top-0 ml-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] hidden group-hover/speed:block max-h-[300px] overflow-y-auto">
+          <div
+            class="absolute left-full top-0 ml-1 bg-[#161618] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] hidden group-hover/speed:block max-h-[300px] overflow-y-auto"
+          >
             <!-- Reverse speeds -->
             <div class="px-2 py-1 text-[10px] text-white/40 uppercase tracking-wider">Reverse</div>
             <button
@@ -1551,7 +1774,7 @@
       <!-- Segment Context Menu (Clip Mode) -->
       <div
         v-if="segmentContextMenu.visible"
-        class="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px]"
+        class="fixed z-[9999] bg-[#161618] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px]"
         :style="{ left: `${segmentContextMenu.x}px`, top: `${segmentContextMenu.y}px` }"
         @click.stop
       >
@@ -1570,8 +1793,18 @@
     <div
       v-if="sourceContextMenu.visible || segmentContextMenu.visible"
       class="fixed inset-0 z-[9998]"
-      @click="() => { closeSourceContextMenu(); closeSegmentContextMenu(); }"
-      @contextmenu.prevent="() => { closeSourceContextMenu(); closeSegmentContextMenu(); }"
+      @click="
+        () => {
+          closeSourceContextMenu();
+          closeSegmentContextMenu();
+        }
+      "
+      @contextmenu.prevent="
+        () => {
+          closeSourceContextMenu();
+          closeSegmentContextMenu();
+        }
+      "
     ></div>
   </div>
   <!-- end outer bg container -->
@@ -1621,8 +1854,14 @@
   } from 'lucide-vue-next';
   import { useTimelineTools, type TimelineTool } from '@/composables/useTimelineTools';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+  import { useToast } from '@/composables/useToast';
   import { waveformService, useWaveform, type WaveformPeak, type AudioData } from '@/services/waveformService';
-  import { renderWaveform, renderAudioTrackWaveform, WAVEFORM_COLORS, createThrottledRenderer } from '@/utils/waveformRenderer';
+  import {
+    renderWaveform,
+    renderAudioTrackWaveform,
+    WAVEFORM_COLORS,
+    createThrottledRenderer,
+  } from '@/utils/waveformRenderer';
   import type { Track, Keyframe, ItemType } from '@/types/timeline-model';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
   import KeyframeMarker from './KeyframeMarker.vue';
@@ -1656,6 +1895,8 @@
     targetTrackOrder?: number;
     targetLayer?: number;
     targetTrackIndex?: number;
+    currentDeltaX?: number; // Current drag delta X (for final position calculation)
+    currentDeltaY?: number; // Current drag delta Y (for final position calculation)
   }
 
   interface ResizeInfo {
@@ -1678,17 +1919,10 @@
   // Minimum segment duration after a split (in seconds)
   const MIN_SEGMENT_DURATION = 0.1;
 
-  interface SegmentTick {
-    time: number;
-    positionInSegment: number;
-    isMajor: boolean;
-  }
-
   interface SegmentLayout {
     segment: TrimSegment;
     startPercent: number;
     widthPercent: number;
-    ticks: SegmentTick[];
     effectiveStartTime: number; // Cumulative time from start of timeline
     effectiveEndTime: number; // Cumulative time at end of this segment
   }
@@ -1738,7 +1972,16 @@
       regions?: Array<{ id: string; startTime: number; endTime: number; label?: string; color?: string }>;
       // Clip transitions and effects (from EffectsTab)
       clipTransitions?: Array<{ id: string; transitionType: string; positionIndex: number; duration: number }>;
-      clipEffects?: Array<{ id: string; effectType: string; startTime: number; endTime: number; intensity: number; isEnabled: boolean }>;
+      clipEffects?: Array<{
+        id: string;
+        effectType: string;
+        startTime: number;
+        endTime: number;
+        intensity: number;
+        isEnabled: boolean;
+      }>;
+      // Video track mute state from parent
+      isVideoMuted?: boolean;
     }>(),
     {
       audioGainDb: 0,
@@ -1759,19 +2002,14 @@
       regions: () => [],
       clipTransitions: () => [],
       clipEffects: () => [],
+      isVideoMuted: false,
     }
   );
 
-  const {
-    activeTool,
-    setTool,
-    isMoveTool,
-    isRazorTool,
-    isRippleTool,
-    isRollTool,
-    isSlipTool,
-    isSlideTool,
-  } = useTimelineTools();
+  const { activeTool, setTool, isMoveTool, isRazorTool, isRippleTool, isRollTool, isSlipTool, isSlideTool } =
+    useTimelineTools();
+
+  const { loading: toastLoading, success: toastSuccess, error: toastError, removeToast } = useToast();
 
   function getTimelineCursor() {
     if (isRazorTool.value) return 'text'; // Razor often looks like a I-beam or specialized cursor
@@ -1847,10 +2085,30 @@
         sourceName: string | null;
       }
     ): void;
-    (e: 'rippleEdit', data: { type: ItemType; id: string; newStartTime: number; newEndTime: number; delta: number }): void;
-    (e: 'rollEdit', data: { type: ItemType; leftItemId: string; rightItemId: string; newRollTime: number; originalRollTime: number }): void;
-    (e: 'slipEdit', data: { type: ItemType; itemId: string; delta: number; originalTrimStart: number; originalTrimEnd: number | null }): void;
-    (e: 'slideEdit', data: { type: ItemType; itemId: string; leftNeighborId: string; rightNeighborId: string; delta: number; originalStartTime: number; originalEndTime: number }): void;
+    (
+      e: 'rippleEdit',
+      data: { type: ItemType; id: string; newStartTime: number; newEndTime: number; delta: number }
+    ): void;
+    (
+      e: 'rollEdit',
+      data: { type: ItemType; leftItemId: string; rightItemId: string; newRollTime: number; originalRollTime: number }
+    ): void;
+    (
+      e: 'slipEdit',
+      data: { type: ItemType; itemId: string; delta: number; originalTrimStart: number; originalTrimEnd: number | null }
+    ): void;
+    (
+      e: 'slideEdit',
+      data: {
+        type: ItemType;
+        itemId: string;
+        leftNeighborId: string;
+        rightNeighborId: string;
+        delta: number;
+        originalStartTime: number;
+        originalEndTime: number;
+      }
+    ): void;
     (e: 'updateKeyframeTime', data: { itemId: string; keyframeId: string; time: number; type: ItemType }): void;
     (e: 'keyframe-select', data: { itemId: string; keyframeId: string; type: ItemType }): void;
     // J-K-L playback control events
@@ -1877,7 +2135,11 @@
     (e: 'clearBeatMarkers'): void;
     // Region/range events (work area with start/end)
     (e: 'addRegion', startTime: number, endTime: number, label?: string, color?: string): void;
-    (e: 'updateRegion', regionId: string, updates: { startTime?: number; endTime?: number; label?: string; color?: string }): void;
+    (
+      e: 'updateRegion',
+      regionId: string,
+      updates: { startTime?: number; endTime?: number; label?: string; color?: string }
+    ): void;
     (e: 'deleteRegion', regionId: string): void;
     // In/Out point events (work area)
     (e: 'setInPoint', time: number): void;
@@ -1888,7 +2150,11 @@
     // Audio fade events
     (e: 'updateAudioFade', trackId: string, fadeType: 'fadeIn' | 'fadeOut', duration: number): void;
     // Audio ducking events (auto-lower music under speech)
-    (e: 'enableAudioDucking', trackId: string, options: { threshold: number; reduction: number; attack: number; release: number }): void;
+    (
+      e: 'enableAudioDucking',
+      trackId: string,
+      options: { threshold: number; reduction: number; attack: number; release: number }
+    ): void;
     (e: 'disableAudioDucking', trackId: string): void;
     // Audio normalization events
     (e: 'normalizeAudio', trackId: string, targetLevel: number): void;
@@ -1902,7 +2168,12 @@
     (e: 'reorderTrack', trackType: 'audio' | 'overlay', trackId: string, newOrder: number): void;
     // Speed keyframe events
     (e: 'addSpeedKeyframe', sourceId: string, time: number, speed: number): void;
-    (e: 'updateSpeedKeyframe', sourceId: string, keyframeId: string, updates: { time?: number; speed?: number; easing?: string }): void;
+    (
+      e: 'updateSpeedKeyframe',
+      sourceId: string,
+      keyframeId: string,
+      updates: { time?: number; speed?: number; easing?: string }
+    ): void;
     (e: 'deleteSpeedKeyframe', sourceId: string, keyframeId: string): void;
     // Freeze point events
     (e: 'addFreezePoint', sourceId: string, time: number, duration: number): void;
@@ -1916,17 +2187,18 @@
   const unifiedVideoTracks = computed(() => {
     if (!props.tracks) return [];
     // Filter video tracks and sort by orderIndex descending (highest index on top)
-    return props.tracks
-      .filter(t => t.type === 'video')
-      .sort((a, b) => b.orderIndex - a.orderIndex);
+    return props.tracks.filter((t) => t.type === 'video').sort((a, b) => b.orderIndex - a.orderIndex);
   });
 
   const unifiedAudioTracks = computed(() => {
     if (!props.tracks) return [];
     // Filter audio tracks and sort by orderIndex ascending (usually audio tracks stack downwards)
-    return props.tracks
-      .filter(t => t.type === 'audio')
-      .sort((a, b) => a.orderIndex - b.orderIndex);
+    return props.tracks.filter((t) => t.type === 'audio').sort((a, b) => a.orderIndex - b.orderIndex);
+  });
+
+  // Computed: Check if any audio track has solo enabled (for visual dimming of other tracks)
+  const hasAnySoloedAudioTrack = computed(() => {
+    return props.audioTracks.some((t) => t.isSolo);
   });
 
   // Computed: detect transitions between overlapping sources in editor mode
@@ -1969,10 +2241,23 @@
     isHidden: false,
   });
 
+  // Sync videoTrackState.isMuted with prop from parent
+  watch(
+    () => props.isVideoMuted,
+    (newValue) => {
+      videoTrackState.isMuted = newValue;
+    },
+    { immediate: true }
+  );
+
   function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
+    // Emit event to parent for actual functionality (parent will update prop)
+    if (prop === 'isMuted') {
+      emit('toggleVideoMute', 'main');
+      return; // Don't toggle locally - parent will update via prop
+    }
+    // For non-mute properties, toggle locally
     videoTrackState[prop] = !videoTrackState[prop];
-    // Optionally, emit an event to notify the parent component
-    // emit('videoTrackStateChanged', videoTrackState);
   }
 
   // Zoom system: 0% = fit-to-width (full video visible), positive % = zoomed in
@@ -1997,11 +2282,15 @@
   function zoomIn() {
     const step = getZoomStep();
     zoomLevel.value = zoomLevel.value + step;
+    ticksZoomLevel.value = zoomLevel.value; // Sync immediately for button clicks
+    nextTick(updateVisibleTimeRange);
   }
 
   function zoomOut() {
     const step = getZoomStep();
     zoomLevel.value = Math.max(MIN_ZOOM.value, zoomLevel.value - step);
+    ticksZoomLevel.value = zoomLevel.value; // Sync immediately for button clicks
+    nextTick(updateVisibleTimeRange);
   }
 
   // Calculate fit-to-width zoom level (baseline = 0%)
@@ -2024,6 +2313,7 @@
     baselineZoom.value = fitZoom;
     MIN_ZOOM.value = fitZoom;
     zoomLevel.value = fitZoom; // Start at 0% (fit-to-width)
+    ticksZoomLevel.value = fitZoom; // Sync ticks zoom level
   }
 
   // Zoom to fit all content in view
@@ -2032,75 +2322,79 @@
     baselineZoom.value = fitZoom;
     MIN_ZOOM.value = fitZoom;
     zoomLevel.value = fitZoom;
-    
+    ticksZoomLevel.value = fitZoom; // Sync immediately
+
     // Reset scroll to start
     nextTick(() => {
       const scrollContainer = timelineScrollContainer.value;
       if (scrollContainer) {
         scrollContainer.scrollLeft = 0;
       }
+      updateVisibleTimeRange();
     });
   }
 
   // Zoom to focus on selected segment(s)
   function zoomToSelection() {
     if (!selectedItemKey.value) return;
-    
+
     const [type, id] = selectedItemKey.value.split('_');
     let startTime = 0;
     let endTime = 0;
-    
+
     // Find the selected item's time range
     if (type === 'source') {
-      const source = props.videoSources?.find(s => s.id === id);
+      const source = props.videoSources?.find((s) => s.id === id);
       if (source) {
         startTime = source.start_time;
         endTime = source.end_time;
       }
     } else if (type === 'trim') {
-      const segment = props.trimSegments.find(s => s.id === id);
+      const segment = props.trimSegments.find((s) => s.id === id);
       if (segment) {
         startTime = segment.startTime;
         endTime = segment.endTime;
       }
     } else if (type === 'audio') {
-      const track = props.audioTracks.find(t => t.id === id);
+      const track = props.audioTracks.find((t) => t.id === id);
       if (track) {
         startTime = track.startTime;
         endTime = track.endTime;
       }
     } else if (type === 'text') {
-      const overlay = props.textOverlays.find(t => t.id === id);
+      const overlay = props.textOverlays.find((t) => t.id === id);
       if (overlay) {
         startTime = overlay.startTime;
         endTime = overlay.endTime;
       }
     }
-    
+
     if (endTime <= startTime) return;
-    
+
     const duration = endTime - startTime;
     const totalDur = props.editorMode ? props.duration : totalDuration.value;
     if (totalDur <= 0) return;
-    
+
     // Calculate zoom to show selection with some padding (20% on each side)
     const paddedDuration = duration * 1.4;
     const targetZoom = totalDur / paddedDuration;
-    
+
     zoomLevel.value = Math.max(MIN_ZOOM.value, targetZoom);
-    
+    ticksZoomLevel.value = zoomLevel.value; // Sync immediately
+
     // Scroll to center the selection
     nextTick(() => {
       const scrollContainer = timelineScrollContainer.value;
       const contentWrapper = contentWrapperRef.value;
       if (!scrollContainer || !contentWrapper) return;
-      
+
       const contentWidth = contentWrapper.offsetWidth;
       const containerWidth = scrollContainer.clientWidth;
-      const selectionCenter = ((startTime + endTime) / 2) / totalDur;
-      const targetScrollLeft = (selectionCenter * contentWidth) - (containerWidth / 2);
-      
+      const selectionCenter = (startTime + endTime) / 2 / totalDur;
+      const targetScrollLeft = selectionCenter * contentWidth - containerWidth / 2;
+
       scrollContainer.scrollLeft = Math.max(0, targetScrollLeft);
+      updateVisibleTimeRange();
     });
   }
 
@@ -2113,6 +2407,16 @@
     const zoomPercent = Math.round((zoomLevel.value / baselineZoom.value - 1) * 100);
     return `${zoomPercent}%`;
   }
+
+  // Sync ticksZoomLevel when zoomLevel changes from direct assignments (dropdown buttons)
+  // This catches cases where zoomLevel is set directly in the template
+  watch(zoomLevel, (newZoom) => {
+    // Only sync if not in an active scroll-to-zoom gesture
+    // (scroll-to-zoom handles ticksZoomLevel via debouncing in applyPendingZoom)
+    if (!isZooming.value && !pendingZoom) {
+      ticksZoomLevel.value = newZoom;
+    }
+  });
 
   // Continuous seeking state
   const isSeeking = ref(false);
@@ -2131,6 +2435,7 @@
     originalEndTime: number;
     originalTrackIndex: number;
     targetTrackIndex: number;
+    currentDeltaX?: number; // Current snap-adjusted delta for final position calculation
   } | null>(null);
 
   // Source context menu state
@@ -2157,8 +2462,8 @@
    */
   function trackRecentAction(id: string, label: string, icon?: string) {
     // Remove if already exists
-    recentActions.value = recentActions.value.filter(a => a.id !== id);
-    
+    recentActions.value = recentActions.value.filter((a) => a.id !== id);
+
     // Add to front
     recentActions.value.unshift({
       id,
@@ -2166,7 +2471,7 @@
       icon,
       timestamp: Date.now(),
     });
-    
+
     // Limit to max
     if (recentActions.value.length > MAX_RECENT_ACTIONS) {
       recentActions.value = recentActions.value.slice(0, MAX_RECENT_ACTIONS);
@@ -2186,7 +2491,7 @@
   function executeRecentAction(actionId: string) {
     closeSourceContextMenu();
     closeSegmentContextMenu();
-    
+
     switch (actionId) {
       case 'copy':
         copySelectedItems();
@@ -2242,43 +2547,49 @@
     itemDuration: number;
   } | null>(null);
 
-  function startKeyframeDrag(e: MouseEvent, keyframe: Keyframe, itemId: string, itemType: ItemType, itemDuration: number) {
+  function startKeyframeDrag(
+    e: MouseEvent,
+    keyframe: Keyframe,
+    itemId: string,
+    itemType: ItemType,
+    itemDuration: number
+  ) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     keyframeDragState.value = {
       id: keyframe.id,
       itemId,
       itemType,
       startX: e.clientX,
       originalTime: keyframe.time,
-      itemDuration
+      itemDuration,
     };
-    
+
     // Select the keyframe on drag start
     selectKeyframe(keyframe.id, e);
-    
+
     document.addEventListener('mousemove', onKeyframeDragMove);
     document.addEventListener('mouseup', onKeyframeDragEnd);
   }
 
   function onKeyframeDragMove(e: MouseEvent) {
     if (!keyframeDragState.value) return;
-    
+
     const { startX, originalTime, itemDuration, itemId, id, itemType } = keyframeDragState.value;
     const deltaX = e.clientX - startX;
-    
+
     // Calculate track width for pixel-to-time conversion
     const trackContentWidth = getTrackContentWidth();
-    
+
     // Calculate delta time based on global timeline scale
     const deltaTime = (deltaX / trackContentWidth) * props.duration;
-    
+
     let newTime = originalTime + deltaTime;
-    
+
     // Clamp to item duration (0 to itemDuration)
     newTime = Math.max(0, Math.min(itemDuration, newTime));
-    
+
     // Emit update event
     emit('updateKeyframeTime', { itemId, keyframeId: id, time: newTime, type: itemType });
   }
@@ -2307,6 +2618,21 @@
     trimEnd?: number;
   } | null>(null);
 
+  // Ghost element for drag visualization - uses direct DOM manipulation for zero-lag dragging
+  // This completely bypasses Vue's reactivity system during drag for true 60fps performance
+  const dragGhostRef = ref<HTMLDivElement | null>(null);
+  const dragGhostState = ref<{
+    visible: boolean;
+    type: ItemType;
+    id: string;
+    initialLeft: number;
+    initialTop: number;
+    width: number;
+    height: number;
+    label: string;
+    color: string;
+  } | null>(null);
+
   // Ripple Edit State
   const rippleState = ref<{
     type: ItemType;
@@ -2321,18 +2647,20 @@
     trackId: string;
     originalOrder: number;
     startY: number;
+    lastEmittedOrder: number;
+    maxOrder: number;
   } | null>(null);
 
   // Trim preview state - shows frame time during resize
   const trimPreviewInfo = computed(() => {
     if (!isResizing.value || !resizeInfo.value || !dragPreview.value) return null;
-    
+
     const handle = resizeInfo.value.handle;
     const time = handle === 'left' ? dragPreview.value.startTime : dragPreview.value.endTime;
-    
+
     // Calculate position for the preview tooltip
     const percent = (time / totalDuration.value) * 100;
-    
+
     return {
       time,
       formattedTime: formatTime(time),
@@ -2345,10 +2673,10 @@
   // Computed: IDs of segments that will be affected by ripple edit
   const rippleAffectedIds = computed(() => {
     if (!rippleState.value) return new Set<string>();
-    
+
     const affected = new Set<string>();
     const edgeTime = rippleState.value.originalEdgeTime;
-    
+
     if (props.editorMode) {
       // Editor mode: check video sources
       for (const source of props.videoSources) {
@@ -2364,14 +2692,14 @@
         }
       }
     }
-    
+
     return affected;
   });
 
   // Computed: IDs of segments that are overlapping/colliding with other segments
   const collidingSegmentIds = computed(() => {
     const colliding = new Set<string>();
-    
+
     if (props.editorMode) {
       // Editor mode: check video sources for overlaps
       const sources = props.videoSources;
@@ -2401,7 +2729,7 @@
         }
       }
     }
-    
+
     // Also check audio tracks for overlaps within the same track order
     const audioByOrder = new Map<number, typeof props.audioTracks>();
     for (const track of props.audioTracks) {
@@ -2411,7 +2739,7 @@
       }
       audioByOrder.get(order)!.push(track);
     }
-    
+
     for (const [, tracks] of audioByOrder) {
       for (let i = 0; i < tracks.length; i++) {
         for (let j = i + 1; j < tracks.length; j++) {
@@ -2424,7 +2752,7 @@
         }
       }
     }
-    
+
     return colliding;
   });
 
@@ -2502,6 +2830,113 @@
     emit('seek', time);
   }, 16);
 
+  // ============================================
+  // PERFORMANCE: Interaction state flags
+  // ============================================
+
+  // Track when user is actively zooming (to skip expensive renders)
+  const isZooming = ref(false);
+  let zoomEndTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Debounced zoom level for ruler ticks - updates after zoom gesture settles
+  // This prevents expensive tick recalculation on every scroll frame
+  const ticksZoomLevel = ref(1.0);
+  let ticksZoomTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Pending zoom state for batching via requestAnimationFrame
+  let pendingZoom: {
+    newZoom: number;
+    logicalPosition: number;
+    cursorXInContainer: number;
+    scrollContainer: HTMLElement;
+  } | null = null;
+  let zoomRAFId: number | null = null;
+
+  /**
+   * Apply pending zoom changes in a single animation frame
+   * This batches multiple zoom events for smoother visual updates
+   */
+  function applyPendingZoom() {
+    if (!pendingZoom) {
+      zoomRAFId = null;
+      return;
+    }
+
+    const { newZoom, logicalPosition, cursorXInContainer, scrollContainer } = pendingZoom;
+    pendingZoom = null;
+    zoomRAFId = null;
+
+    // Apply the zoom immediately for visual feedback
+    zoomLevel.value = newZoom;
+
+    // Debounce the ticks zoom level update (ruler recalculation)
+    if (ticksZoomTimeout) {
+      clearTimeout(ticksZoomTimeout);
+    }
+    ticksZoomTimeout = setTimeout(() => {
+      ticksZoomLevel.value = newZoom;
+      ticksZoomTimeout = null;
+    }, 100);
+
+    // Adjust scroll to keep cursor position stable
+    nextTick(() => {
+      const newContentWidth = scrollContainer.scrollWidth;
+      const newContentX = logicalPosition * newContentWidth;
+      const newScrollLeft = newContentX - cursorXInContainer;
+      scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
+      // Update visible time range after scroll adjustment
+      updateVisibleTimeRange();
+    });
+  }
+
+  /**
+   * Queue a zoom update to be applied in the next animation frame
+   * This batches multiple rapid zoom events (like trackpad pinch) for performance
+   */
+  function queueZoomUpdate(
+    newZoom: number,
+    logicalPosition: number,
+    cursorXInContainer: number,
+    scrollContainer: HTMLElement
+  ) {
+    // Mark as zooming to suppress waveform renders
+    isZooming.value = true;
+
+    // Clear any pending zoom end timeout
+    if (zoomEndTimeout) {
+      clearTimeout(zoomEndTimeout);
+    }
+
+    // Schedule zoom end after user stops zooming (200ms idle for smoother experience)
+    zoomEndTimeout = setTimeout(() => {
+      isZooming.value = false;
+      zoomEndTimeout = null;
+      // Sync ticks zoom level when zoom ends
+      ticksZoomLevel.value = zoomLevel.value;
+      // Update visible time range for virtualized rendering
+      updateVisibleTimeRange();
+      // Trigger a final waveform render after zoom completes
+      debouncedRenderAllWaveforms();
+    }, 200);
+
+    // Store the pending zoom (latest values win)
+    pendingZoom = { newZoom, logicalPosition, cursorXInContainer, scrollContainer };
+
+    // Schedule the zoom to be applied in the next animation frame
+    if (!zoomRAFId) {
+      zoomRAFId = requestAnimationFrame(applyPendingZoom);
+    }
+  }
+
+  // Debounced full waveform rendering (100ms delay for expensive operations)
+  const debouncedRenderAllWaveforms = debounce(() => {
+    // Don't render if still in an active interaction
+    if (isZooming.value || isDragging.value || isResizing.value) return;
+    renderAllWaveforms();
+    renderAllAudioWaveforms();
+    renderAllSourceWaveforms();
+  }, 100);
+
   // Virtual scrolling state - only render visible track portions
   const virtualScrollState = ref({
     visibleStartTime: 0,
@@ -2517,7 +2952,7 @@
     const { visibleStartTime, visibleEndTime, bufferTime } = virtualScrollState.value;
     const bufferedStart = visibleStartTime - bufferTime;
     const bufferedEnd = visibleEndTime + bufferTime;
-    
+
     // Item is visible if it overlaps with the buffered viewport
     return endTime >= bufferedStart && startTime <= bufferedEnd;
   }
@@ -2527,25 +2962,33 @@
    */
   function updateVisibleTimeRange() {
     if (!timelineScrollContainer.value) return;
-    
+
     const container = timelineScrollContainer.value;
     const scrollLeft = container.scrollLeft;
     const viewportWidth = container.clientWidth;
     const contentWidth = container.scrollWidth;
-    
+
     if (contentWidth <= 0) return;
-    
+
     const totalDur = props.editorMode ? props.duration : totalDuration.value;
     const scrollPercent = scrollLeft / contentWidth;
     const viewportPercent = viewportWidth / contentWidth;
-    
+
     virtualScrollState.value.visibleStartTime = scrollPercent * totalDur;
     virtualScrollState.value.visibleEndTime = (scrollPercent + viewportPercent) * totalDur;
   }
 
+  /**
+   * Handle scroll events on the timeline container
+   * Updates visible time range for virtualized tick rendering
+   */
+  function onTimelineScroll() {
+    updateVisibleTimeRange();
+  }
+
   // Screen reader announcements for accessibility
   const screenReaderAnnouncement = ref('');
-  
+
   /**
    * Announce a message to screen readers using ARIA live region
    */
@@ -2580,7 +3023,7 @@
 
   // High contrast mode for accessibility
   const highContrastMode = ref(false);
-  
+
   /**
    * Toggle high contrast mode for better visibility
    */
@@ -2608,7 +3051,11 @@
 
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
-  
+
+  // Optimistic playhead position during drag (avoids round-trip lag)
+  // This is the time value we're dragging to, updated immediately during drag
+  const optimisticDragTime = ref<number | null>(null);
+
   // Inertial scrolling state for playhead
   const playheadVelocity = ref(0);
   const lastPlayheadDragTime = ref(0);
@@ -2633,11 +3080,11 @@
 
   // Smooth playhead animation state
   const smoothPlayheadPosition = ref(0);
-  
+
   // J-K-L playback speed state (industry standard shuttle control)
   // -4 to 4: negative = reverse, 0 = stopped, positive = forward
   const jklPlaybackSpeed = ref(0);
-  
+
   // Track collapse state (local UI state)
   const collapsedTracks = ref<Set<string>>(new Set()); // Set of "trackType_trackId" keys
 
@@ -2660,12 +3107,15 @@
     const key = trackId ? `${trackType}_${trackId}` : trackType;
     const customHeight = trackHeights.value.get(key);
     if (customHeight) return customHeight;
-    
+
     // Return default based on track type
     switch (trackType) {
-      case 'video': return DEFAULT_VIDEO_TRACK_HEIGHT;
-      case 'audio': return DEFAULT_AUDIO_TRACK_HEIGHT;
-      default: return DEFAULT_OVERLAY_TRACK_HEIGHT;
+      case 'video':
+        return DEFAULT_VIDEO_TRACK_HEIGHT;
+      case 'audio':
+        return DEFAULT_AUDIO_TRACK_HEIGHT;
+      default:
+        return DEFAULT_OVERLAY_TRACK_HEIGHT;
     }
   }
 
@@ -2685,7 +3135,7 @@
     const key = trackId ? `${trackType}_${trackId}` : trackType;
     const customColor = trackColors.value.get(key);
     if (customColor) return customColor;
-    
+
     // Return default color based on index
     return DEFAULT_TRACK_COLORS[index % DEFAULT_TRACK_COLORS.length];
   }
@@ -2741,7 +3191,7 @@
   function onTrackHeightResizeStart(e: MouseEvent, trackType: string, trackId?: string) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     isResizingTrackHeight.value = true;
     trackHeightResizeInfo.value = {
       trackType,
@@ -2749,22 +3199,18 @@
       startY: e.clientY,
       startHeight: getTrackHeight(trackType, trackId),
     };
-    
+
     document.addEventListener('mousemove', onTrackHeightResizeMove);
     document.addEventListener('mouseup', onTrackHeightResizeEnd);
   }
 
   function onTrackHeightResizeMove(e: MouseEvent) {
     if (!isResizingTrackHeight.value || !trackHeightResizeInfo.value) return;
-    
+
     const deltaY = e.clientY - trackHeightResizeInfo.value.startY;
     const newHeight = trackHeightResizeInfo.value.startHeight + deltaY;
-    
-    setTrackHeight(
-      trackHeightResizeInfo.value.trackType,
-      trackHeightResizeInfo.value.trackId,
-      newHeight
-    );
+
+    setTrackHeight(trackHeightResizeInfo.value.trackType, trackHeightResizeInfo.value.trackId, newHeight);
   }
 
   function onTrackHeightResizeEnd() {
@@ -2786,13 +3232,13 @@
   // Computed marquee rectangle style
   const marqueeStyle = computed(() => {
     if (!marqueeSelection.value || !marqueeSelection.value.active) return null;
-    
+
     const { startX, startY, currentX, currentY } = marqueeSelection.value;
     const left = Math.min(startX, currentX);
     const top = Math.min(startY, currentY);
     const width = Math.abs(currentX - startX);
     const height = Math.abs(currentY - startY);
-    
+
     return {
       left: `${left}px`,
       top: `${top}px`,
@@ -2801,80 +3247,11 @@
     };
   });
 
-  // Computed minimap viewport style (shows visible area in minimap)
-  const minimapViewportStyle = computed(() => {
-    if (!timelineScrollContainer.value || totalDuration.value <= 0) {
-      return { left: '0%', width: '100%' };
-    }
-    
-    const container = timelineScrollContainer.value;
-    const contentWidth = container.scrollWidth;
-    const viewportWidth = container.clientWidth;
-    const scrollLeft = container.scrollLeft;
-    
-    if (contentWidth <= 0) return { left: '0%', width: '100%' };
-    
-    const leftPercent = (scrollLeft / contentWidth) * 100;
-    const widthPercent = (viewportWidth / contentWidth) * 100;
-    
-    return {
-      left: `${leftPercent}%`,
-      width: `${Math.min(100, widthPercent)}%`,
-    };
-  });
-  
-  /**
-   * Handle click on minimap to navigate to that position
-   */
-  function onMinimapClick(e: MouseEvent) {
-    if (!timelineScrollContainer.value) return;
-    
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const clickPercent = (e.clientX - rect.left) / rect.width;
-    
-    // Scroll to center the clicked position
-    const container = timelineScrollContainer.value;
-    const contentWidth = container.scrollWidth;
-    const viewportWidth = container.clientWidth;
-    
-    const targetScroll = (clickPercent * contentWidth) - (viewportWidth / 2);
-    container.scrollLeft = Math.max(0, Math.min(contentWidth - viewportWidth, targetScroll));
-  }
-
-  /**
-   * Start dragging on minimap to scroll timeline
-   */
-  function onMinimapDragStart(e: MouseEvent) {
-    e.preventDefault();
-    
-    const onMove = (moveEvent: MouseEvent) => {
-      if (!timelineScrollContainer.value) return;
-      
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const clickPercent = Math.max(0, Math.min(1, (moveEvent.clientX - rect.left) / rect.width));
-      
-      const container = timelineScrollContainer.value;
-      const contentWidth = container.scrollWidth;
-      const viewportWidth = container.clientWidth;
-      
-      const targetScroll = (clickPercent * contentWidth) - (viewportWidth / 2);
-      container.scrollLeft = Math.max(0, Math.min(contentWidth - viewportWidth, targetScroll));
-    };
-    
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-    
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }
-
   function isTrackCollapsed(trackType: string, trackId?: string): boolean {
     const key = trackId ? `${trackType}_${trackId}` : trackType;
     return collapsedTracks.value.has(key);
   }
-  
+
   function toggleTrackCollapse(trackType: 'video' | 'audio' | 'overlay', trackId?: string) {
     const key = trackId ? `${trackType}_${trackId}` : trackType;
     if (collapsedTracks.value.has(key)) {
@@ -2889,11 +3266,11 @@
   const hoverLinePosition = ref(0);
   const timelineBounds = ref({ top: 0, bottom: 0, left: 0 });
 
-  // Track label width constant (matches the w-[100px] class = 100px)
-  const TRACK_LABEL_WIDTH = 100;
+  // Track label width constant (matches the w-[120px] class = 120px)
+  const TRACK_LABEL_WIDTH = 120;
 
   // Snap configuration
-  const SNAP_THRESHOLD_PX = 8; // Pixels distance to trigger snapping
+  const SNAP_THRESHOLD_PX = 5; // Pixels distance to trigger snapping
   const snapEnabled = ref(true);
   const snapMenuOpen = ref(false);
   const snapPreferences = ref({
@@ -2905,7 +3282,7 @@
   });
 
   // Magnetic timeline threshold (larger than regular snap for attraction effect)
-  const MAGNETIC_THRESHOLD_PX = 20; // Pixels distance for magnetic attraction
+  const MAGNETIC_THRESHOLD_PX = 12; // Pixels distance for magnetic attraction
 
   // Snap state for visual indicator
   const activeSnapTime = ref<number | null>(null); // Time position where snap is occurring
@@ -2967,20 +3344,49 @@
     const maxScale = 10; // Don't amplify more than 10x
     const finalScale = Math.min(scaleFactor, maxScale);
 
-    return peaks.map(peak => ({
+    return peaks.map((peak) => ({
       min: peak.min * finalScale,
       max: peak.max * finalScale,
     }));
   }
 
-  // Color mappings
-  const colorMap: Record<string, { bg: string; border: string }> = {
-    violet: { bg: 'rgba(139, 92, 246, 0.4), rgba(139, 92, 246, 0.5)', border: 'rgba(139, 92, 246, 0.6)' },
-    emerald: { bg: 'rgba(16, 185, 129, 0.4), rgba(16, 185, 129, 0.5)', border: 'rgba(16, 185, 129, 0.6)' },
-    amber: { bg: 'rgba(245, 158, 11, 0.4), rgba(245, 158, 11, 0.5)', border: 'rgba(245, 158, 11, 0.6)' },
-    pink: { bg: 'rgba(236, 72, 153, 0.4), rgba(236, 72, 153, 0.5)', border: 'rgba(236, 72, 153, 0.6)' },
-    cyan: { bg: 'rgba(6, 182, 212, 0.4), rgba(6, 182, 212, 0.5)', border: 'rgba(6, 182, 212, 0.6)' },
-    rose: { bg: 'rgba(244, 63, 94, 0.4), rgba(244, 63, 94, 0.5)', border: 'rgba(244, 63, 94, 0.6)' },
+  // Color mappings - Enhanced gradients for CapCut style
+  const colorMap: Record<string, { bg: string; border: string; glow: string }> = {
+    violet: {
+      bg: 'rgba(139, 92, 246, 0.35), rgba(99, 102, 241, 0.45)',
+      border: 'rgba(139, 92, 246, 0.7)',
+      glow: 'rgba(139, 92, 246, 0.3)',
+    },
+    emerald: {
+      bg: 'rgba(16, 185, 129, 0.35), rgba(20, 184, 166, 0.45)',
+      border: 'rgba(16, 185, 129, 0.7)',
+      glow: 'rgba(16, 185, 129, 0.3)',
+    },
+    amber: {
+      bg: 'rgba(245, 158, 11, 0.35), rgba(251, 146, 60, 0.45)',
+      border: 'rgba(245, 158, 11, 0.7)',
+      glow: 'rgba(245, 158, 11, 0.3)',
+    },
+    pink: {
+      bg: 'rgba(236, 72, 153, 0.35), rgba(244, 114, 182, 0.45)',
+      border: 'rgba(236, 72, 153, 0.7)',
+      glow: 'rgba(236, 72, 153, 0.3)',
+    },
+    cyan: {
+      bg: 'rgba(6, 182, 212, 0.35), rgba(34, 211, 238, 0.45)',
+      border: 'rgba(6, 182, 212, 0.7)',
+      glow: 'rgba(6, 182, 212, 0.3)',
+    },
+    rose: {
+      bg: 'rgba(244, 63, 94, 0.35), rgba(251, 113, 133, 0.45)',
+      border: 'rgba(244, 63, 94, 0.7)',
+      glow: 'rgba(244, 63, 94, 0.3)',
+    },
+    sky: {
+      bg: 'rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.45)',
+      border: 'rgba(14, 165, 233, 0.7)',
+      glow: 'rgba(14, 165, 233, 0.3)',
+    },
   };
 
   // Sorted trim segments by start time - creates a default segment if none exist
@@ -3030,7 +3436,7 @@
   // Timeline grows automatically when any item extends beyond current duration
   const totalDuration = computed(() => {
     let maxEndTime = 0;
-    
+
     if (props.editorMode) {
       // Start with video sources end time
       if (props.videoSources && props.videoSources.length > 0) {
@@ -3040,37 +3446,37 @@
           maxEndTime = Math.max(maxEndTime, props.videoSources[0].source_duration || 0);
         }
       }
-      
+
       // Include audio tracks
       if (props.audioTracks && props.audioTracks.length > 0) {
         const maxAudioEnd = props.audioTracks.reduce((max, track) => Math.max(max, track.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxAudioEnd);
       }
-      
+
       // Include text overlays
       if (props.textOverlays && props.textOverlays.length > 0) {
         const maxTextEnd = props.textOverlays.reduce((max, overlay) => Math.max(max, overlay.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxTextEnd);
       }
-      
+
       // Include stickers
       if (props.stickers && props.stickers.length > 0) {
         const maxStickerEnd = props.stickers.reduce((max, sticker) => Math.max(max, sticker.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxStickerEnd);
       }
-      
+
       // Include watermarks
       if (props.watermarks && props.watermarks.length > 0) {
         const maxWatermarkEnd = props.watermarks.reduce((max, wm) => Math.max(max, wm.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxWatermarkEnd);
       }
-      
+
       // Include effects
       if (props.effects && props.effects.length > 0) {
         const maxEffectEnd = props.effects.reduce((max, effect) => Math.max(max, effect.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxEffectEnd);
       }
-      
+
       // Minimum 5 minutes if nothing exists, or add 10% padding for extension room
       if (maxEndTime === 0) {
         return 300;
@@ -3279,13 +3685,16 @@
       });
   });
 
-  // Ruler ticks spanning full timeline
+  // Ruler ticks spanning full timeline - VIRTUALIZED
+  // Uses debounced ticksZoomLevel for performance - only recalculates after zoom settles
+  // Only generates ticks for the visible viewport + buffer to prevent DOM bloat
   const rulerTicks = computed(() => {
     const timelineDuration = totalDuration.value;
     if (timelineDuration <= 0) return [];
 
-    // Determine optimal intervals based on visible duration (duration / zoom)
-    const visibleDuration = timelineDuration / zoomLevel.value;
+    // Use debounced zoom level for tick calculations to prevent recalc on every scroll frame
+    const effectiveZoom = ticksZoomLevel.value;
+    const visibleDuration = timelineDuration / effectiveZoom;
     let majorInterval: number;
     let minorInterval: number;
 
@@ -3327,10 +3736,31 @@
       minorInterval = 60;
     }
 
+    // When actively zooming, show only major ticks for performance
+    // This dramatically reduces DOM updates during scroll-to-zoom
+    const showMinorTicks = !isZooming.value;
+    const tickInterval = showMinorTicks ? minorInterval : majorInterval;
+
+    // VIRTUALIZATION: Only generate ticks for the visible time range + buffer
+    // This prevents thousands of DOM elements when zoomed in far
+    const { visibleStartTime, visibleEndTime, bufferTime } = virtualScrollState.value;
+
+    // Add buffer on each side for smooth scrolling (prevents popping)
+    const renderStartTime = Math.max(0, visibleStartTime - bufferTime);
+    const renderEndTime = Math.min(timelineDuration, visibleEndTime + bufferTime);
+
+    // Align start time to tick interval for consistent positioning
+    const alignedStartTime = Math.floor(renderStartTime / tickInterval) * tickInterval;
+
+    // Safety cap: limit maximum number of ticks to prevent extreme cases
+    const MAX_TICKS = 300;
+
     const ticks: { key: string; time: number; percent: number; isMajor: boolean }[] = [];
-    for (let t = 0; t <= timelineDuration + 0.0001; t += minorInterval) {
+    for (let t = alignedStartTime; t <= renderEndTime + 0.0001 && ticks.length < MAX_TICKS; t += tickInterval) {
+      // Skip ticks outside the timeline bounds
+      if (t < 0 || t > timelineDuration) continue;
+
       const percent = (t / timelineDuration) * 100;
-      if (percent < -0.1 || percent > 100.1) continue;
       const isMajor = Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
       ticks.push({
         key: `${t.toFixed(3)}`,
@@ -3344,83 +3774,13 @@
   });
 
   // Calculate segment layouts (segments are butted up against each other)
+  // NOTE: Tick generation removed for performance - ruler ticks are rendered separately
   const segmentLayouts = computed((): SegmentLayout[] => {
     const timelineDuration = totalDuration.value;
     if (timelineDuration <= 0) return [];
 
-    // Determine optimal intervals based on visible duration (duration / zoom)
-    // More zoom = smaller visible duration = more granular ticks for precise editing
-    const visibleDuration = timelineDuration / zoomLevel.value;
-    let majorInterval: number;
-    let minorInterval: number;
-
-    // The thresholds are based on what's comfortable to read on screen
-    // More granular intervals when zoomed in for precise frame-level editing
-    if (visibleDuration < 0.5) {
-      // Extremely zoomed: major every 0.1s, minor every 0.02s (frame-level precision)
-      majorInterval = 0.1;
-      minorInterval = 0.02;
-    } else if (visibleDuration < 1) {
-      // Very zoomed: major every 0.25s, minor every 0.05s
-      majorInterval = 0.25;
-      minorInterval = 0.05;
-    } else if (visibleDuration < 2) {
-      // Highly zoomed: major every 0.5s, minor every 0.1s
-      majorInterval = 0.5;
-      minorInterval = 0.1;
-    } else if (visibleDuration < 5) {
-      // Zoomed: major every 1s, minor every 0.2s
-      majorInterval = 1;
-      minorInterval = 0.2;
-    } else if (visibleDuration < 10) {
-      // Moderately zoomed: major every 2s, minor every 0.5s
-      majorInterval = 2;
-      minorInterval = 0.5;
-    } else if (visibleDuration < 20) {
-      // Slightly zoomed: major every 5s, minor every 1s
-      majorInterval = 5;
-      minorInterval = 1;
-    } else if (visibleDuration < 45) {
-      // Normal view: major every 10s, minor every 2s
-      majorInterval = 10;
-      minorInterval = 2;
-    } else if (visibleDuration < 90) {
-      // Slightly zoomed out: major every 15s, minor every 5s
-      majorInterval = 15;
-      minorInterval = 5;
-    } else if (visibleDuration < 180) {
-      // Zoomed out: major every 30s, minor every 10s
-      majorInterval = 30;
-      minorInterval = 10;
-    } else if (visibleDuration < 600) {
-      // Very zoomed out: major every 60s (1 min), minor every 15s
-      majorInterval = 60;
-      minorInterval = 15;
-    } else if (visibleDuration < 1800) {
-      // Long timeline: major every 2 min, minor every 30s
-      majorInterval = 120;
-      minorInterval = 30;
-    } else {
-      // Very long timeline: major every 5 min, minor every 1 min
-      majorInterval = 300;
-      minorInterval = 60;
-    }
-
     // Editor mode: create a single linear timeline layout (no segment gaps)
     if (props.editorMode) {
-      const ticks: SegmentTick[] = [];
-      for (let t = minorInterval; t < timelineDuration; t += minorInterval) {
-        const posInSegment = (t / timelineDuration) * 100;
-        if (posInSegment > 0.5 && posInSegment < 99.5) {
-          const isMajor = Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
-          ticks.push({
-            time: t,
-            positionInSegment: posInSegment,
-            isMajor,
-          });
-        }
-      }
-
       return [
         {
           segment: {
@@ -3431,7 +3791,6 @@
           },
           startPercent: 0,
           widthPercent: 100,
-          ticks,
           effectiveStartTime: 0,
           effectiveEndTime: timelineDuration,
         },
@@ -3458,40 +3817,10 @@
       const effectiveStartTime = cumulativeTime;
       const effectiveEndTime = cumulativeTime + segmentDuration;
 
-      // Generate ticks for this segment using the consistent intervals
-      const ticks: SegmentTick[] = [];
-
-      // Generate intermediate ticks using effective times
-      // Start from the first interval after effectiveStartTime
-      const startTick = Math.ceil(effectiveStartTime / minorInterval) * minorInterval;
-
-      // Calculate minimum distance from edges based on duration (shorter clips = tighter margins)
-      const edgeMargin = Math.min(0.3, segmentDuration * 0.05);
-
-      for (let t = startTick; t < effectiveEndTime; t += minorInterval) {
-        // Skip if too close to start or end
-        if (Math.abs(t - effectiveStartTime) < edgeMargin || Math.abs(t - effectiveEndTime) < edgeMargin) {
-          continue;
-        }
-
-        const posInSegment = ((t - effectiveStartTime) / segmentDuration) * 100;
-        // Only include ticks in the middle of the segment (not at edges)
-        if (posInSegment > 1 && posInSegment < 99) {
-          // Use a small epsilon for floating point comparison
-          const isMajor = Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
-          ticks.push({
-            time: t, // This is now the effective time
-            positionInSegment: posInSegment,
-            isMajor,
-          });
-        }
-      }
-
       layouts.push({
         segment,
         startPercent: currentPercent,
         widthPercent,
-        ticks,
         effectiveStartTime,
         effectiveEndTime,
       });
@@ -3518,7 +3847,7 @@
   }
 
   function getAudioVisualSegments(track: AudioTrack): AudioVisualSegment[] {
-    // Use preview position during drag/resize
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     const preview = dragPreview.value;
     const usePreview = preview && preview.type === 'audio' && preview.id === track.id;
 
@@ -3673,7 +4002,11 @@
 
   // Methods
   function formatTime(seconds: number): string {
-    if (isNaN(seconds) || !isFinite(seconds)) return '0:00.00';
+    if (isNaN(seconds) || !isFinite(seconds)) return '0';
+
+    // Special case: show just "0" for the first timestamp
+    if (seconds === 0) return '0';
+
     const mins = Math.floor(seconds / 60);
     const secs = seconds - mins * 60;
     const secsWithHundredths = secs.toFixed(2); // always show hundredths
@@ -3728,7 +4061,7 @@
     // Get the original position from dragSourceInfo or dragInfo
     let originalStartTime = 0;
     let originalEndTime = 0;
-    
+
     if (type === 'source' && dragSourceInfo.value) {
       originalStartTime = dragSourceInfo.value.originalStartTime;
       originalEndTime = dragSourceInfo.value.originalEndTime;
@@ -3738,13 +4071,13 @@
     } else {
       return { display: 'none' };
     }
-    
+
     const duration = props.editorMode ? props.duration : totalDuration.value;
     if (duration <= 0) return { display: 'none' };
-    
+
     const left = (originalStartTime / duration) * 100;
     const width = ((originalEndTime - originalStartTime) / duration) * 100;
-    
+
     return {
       left: `${left}%`,
       width: `${Math.max(width, 0.5)}%`,
@@ -3755,6 +4088,9 @@
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${track.id}`;
 
+    // Check if this audio track is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === 'audio' && dragInfo.value?.id === track.id;
+
     return {
       left: `${visualSeg.leftPercent}%`,
       width: `${Math.max(visualSeg.widthPercent, 0.5)}%`,
@@ -3762,6 +4098,8 @@
       borderColor: isSelected ? '#3b82f6' : colors.border,
       borderWidth: '1px',
       borderStyle: 'solid',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -3783,7 +4121,7 @@
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${track.id}`;
 
-    // Use preview position during drag/resize, otherwise use actual track position
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     const preview = dragPreview.value;
     const usePreview = preview && preview.type === 'audio' && preview.id === track.id;
 
@@ -3798,6 +4136,9 @@
     const leftPercent = (startTime / totalDuration.value) * 100;
     const widthPercent = (trackDuration / effectiveDuration) * 100;
 
+    // Check if this audio track is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === 'audio' && dragInfo.value?.id === track.id;
+
     return {
       left: `${leftPercent}%`,
       width: `${Math.max(widthPercent, 1)}%`,
@@ -3805,27 +4146,29 @@
       borderColor: isSelected ? '#3b82f6' : colors.border,
       borderWidth: '1px',
       borderStyle: 'solid',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
   function selectItem(type: ItemType, id: string, autoSelectLinked: boolean = true) {
     selectedItemKey.value = `${type}_${id}`;
-    
+
     // Linked selection: auto-select linked audio when selecting video source
     if (autoSelectLinked && type === 'source' && props.editorMode) {
       // Find any audio tracks linked to this source
-      const linkedAudio = props.audioTracks.filter(track => track.linkedSourceId === id);
+      const linkedAudio = props.audioTracks.filter((track) => track.linkedSourceId === id);
       if (linkedAudio.length > 0) {
         // Emit selection for linked audio tracks (add to selection)
-        linkedAudio.forEach(track => {
+        linkedAudio.forEach((track) => {
           emit('sourceSelect', track.id, { shift: false, ctrl: true });
         });
       }
     }
-    
+
     // Reverse: when selecting audio, also select linked video source
     if (autoSelectLinked && type === 'audio') {
-      const audioTrack = props.audioTracks.find(t => t.id === id);
+      const audioTrack = props.audioTracks.find((t) => t.id === id);
       if (audioTrack?.linkedSourceId) {
         // Also select the linked video source
         emit('sourceSelect', audioTrack.linkedSourceId, { shift: false, ctrl: true });
@@ -3847,17 +4190,24 @@
     const isSourceDragging = type === 'source' && isDraggingSource.value && dragSourceInfo.value?.sourceId === id;
 
     if (isDragging.value && dragInfo.value?.type === type && dragInfo.value?.id === id) {
-      classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'border-2', 'border-blue-400', 'dragging');
+      classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'dragging');
     } else if (isResizing.value && resizeInfo.value?.type === type && resizeInfo.value?.id === id) {
-      classes.push('cursor-ew-resize', 'z-30', 'shadow-2xl', 'border-2', 'border-green-400', 'resizing');
+      classes.push('cursor-ew-resize', 'z-30', 'shadow-xl', 'resizing');
     } else if (isSourceDragging) {
-      classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'border-2', 'border-blue-400', 'dragging');
+      classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'dragging');
     } else {
-      classes.push('cursor-grab', 'hover:cursor-grab', 'transition-all', 'duration-200', 'ease-out');
+      classes.push(
+        'cursor-grab',
+        'hover:cursor-grab',
+        'transition-all',
+        'duration-150',
+        'ease-out',
+        'hover:brightness-110'
+      );
     }
 
     if (isDeleted) {
-      classes.push('opacity-30');
+      classes.push('opacity-25', 'grayscale');
     }
 
     if (selectedItemKey.value === key) {
@@ -3866,12 +4216,12 @@
 
     // Ripple preview: highlight segments that will be affected by ripple edit
     if (rippleAffectedIds.value.has(id)) {
-      classes.push('ring-2', 'ring-orange-400/60', 'ring-offset-1', 'ring-offset-black', 'ripple-affected');
+      classes.push('ring-2', 'ring-orange-400/70', 'ring-offset-1', 'ring-offset-black', 'ripple-affected');
     }
 
     // Collision indicator: highlight segments that overlap with other segments
     if (collidingSegmentIds.value.has(id)) {
-      classes.push('ring-2', 'ring-red-500/70', 'ring-offset-1', 'ring-offset-black', 'collision-warning');
+      classes.push('ring-2', 'ring-red-500/80', 'ring-offset-1', 'ring-offset-black', 'collision-warning');
     }
 
     return classes;
@@ -3886,13 +4236,20 @@
     const colors = colorMap[color] || colorMap.violet;
     const isSelected = selectedItemKey.value === `${type}_${id}`;
 
+    // Check if this segment is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === type && dragInfo.value?.id === id;
+
     return {
       left: `${layout.startPercent}%`,
       width: `${layout.widthPercent}%`,
-      background: `linear-gradient(to right, ${colors.bg})`,
-      borderColor: isSelected ? '#3b82f6' : colors.border,
-      borderWidth: '1px',
+      background: `linear-gradient(135deg, ${colors.bg})`,
+      borderColor: isSelected ? 'rgba(255, 255, 255, 0.6)' : colors.border,
+      borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
+      borderRadius: '6px',
+      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -3900,7 +4257,7 @@
   function effectiveTimeToVisualPercent(effectiveTime: number): number {
     // Editor mode: simple linear mapping (no segment gaps)
     if (props.editorMode) {
-      const duration = props.duration || 300;
+      const duration = totalDuration.value || props.duration || 300;
       if (duration <= 0) return 0;
       return (effectiveTime / duration) * 100;
     }
@@ -4002,7 +4359,7 @@
     const colors = colorMap[color] || colorMap.violet;
     const isSelected = selectedItemKey.value === `${type}_${id}`;
 
-    // Use preview position during drag/resize
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     const preview = dragPreview.value;
     const usePreview = preview && preview.type === type && preview.id === id;
 
@@ -4014,13 +4371,20 @@
     const rightPercent = effectiveTimeToVisualPercent(actualEndTime);
     const widthPercent = Math.max(rightPercent - leftPercent, 1);
 
+    // Check if this item is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === type && dragInfo.value?.id === id;
+
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
-      background: `linear-gradient(to right, ${colors.bg})`,
-      borderColor: isSelected ? '#3b82f6' : colors.border,
-      borderWidth: '1px',
+      background: `linear-gradient(135deg, ${colors.bg})`,
+      borderColor: isSelected ? 'rgba(255, 255, 255, 0.6)' : colors.border,
+      borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
+      borderRadius: '6px',
+      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -4028,7 +4392,7 @@
     const colors = colorMap.rose; // Use rose/pink for filters
     const isSelected = selectedItemKey.value === `filter_${filterSeg.id}`;
 
-    // Use preview position during drag/resize
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     const preview = dragPreview.value;
     const usePreview = preview && preview.type === 'filter' && preview.id === filterSeg.id;
 
@@ -4040,13 +4404,20 @@
     const rightPercent = effectiveTimeToVisualPercent(endTime);
     const widthPercent = Math.max(rightPercent - leftPercent, 1);
 
+    // Check if this item is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === 'filter' && dragInfo.value?.id === filterSeg.id;
+
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
-      background: `linear-gradient(to right, ${colors.bg})`,
-      borderColor: isSelected ? '#3b82f6' : colors.border,
-      borderWidth: '1px',
+      background: `linear-gradient(135deg, ${colors.bg})`,
+      borderColor: isSelected ? 'rgba(255, 255, 255, 0.6)' : colors.border,
+      borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
+      borderRadius: '6px',
+      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -4084,7 +4455,7 @@
   // Snap-to-edge utility functions
   type SnapEdgeType = 'segment-start' | 'segment-end' | 'playhead' | 'marker' | 'grid';
   type SnapTrackType = 'video' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter' | 'system';
-  
+
   interface SnapTarget {
     time: number;
     type: SnapEdgeType;
@@ -4104,7 +4475,8 @@
    */
   function getSnapTargets(excludeId?: string): SnapTarget[] {
     const targets: SnapTarget[] = [];
-    const preview = dragPreview.value;
+    // Only use preview for resize operations (drag uses CSS transforms now)
+    const preview = isResizing.value ? dragPreview.value : null;
 
     if (props.editorMode) {
       // Editor mode: collect video source edges
@@ -4136,7 +4508,7 @@
     // Cross-track snapping: Collect edges from audio tracks
     for (const track of props.audioTracks) {
       if (track.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'audio' && preview.id === track.id;
       const startTime = isPreviewing ? preview.startTime : track.startTime;
       const endTime = isPreviewing ? preview.endTime : track.endTime;
@@ -4148,7 +4520,7 @@
     // Cross-track snapping: Collect edges from text overlays
     for (const overlay of props.textOverlays) {
       if (overlay.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'text' && preview.id === overlay.id;
       const startTime = isPreviewing ? preview.startTime : overlay.startTime;
       const endTime = isPreviewing ? preview.endTime : overlay.endTime;
@@ -4160,7 +4532,7 @@
     // Cross-track snapping: Collect edges from stickers
     for (const sticker of props.stickers) {
       if (sticker.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'sticker' && preview.id === sticker.id;
       const startTime = isPreviewing ? preview.startTime : sticker.startTime;
       const endTime = isPreviewing ? preview.endTime : sticker.endTime;
@@ -4172,7 +4544,7 @@
     // Cross-track snapping: Collect edges from watermarks
     for (const watermark of props.watermarks) {
       if (watermark.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'watermark' && preview.id === watermark.id;
       const startTime = isPreviewing ? preview.startTime : watermark.startTime;
       const endTime = isPreviewing ? preview.endTime : watermark.endTime;
@@ -4184,7 +4556,7 @@
     // Cross-track snapping: Collect edges from effects
     for (const effect of props.effects) {
       if (effect.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'effect' && preview.id === effect.id;
       const startTime = isPreviewing ? preview.startTime : effect.startTime;
       const endTime = isPreviewing ? preview.endTime : effect.endTime;
@@ -4196,7 +4568,7 @@
     // Cross-track snapping: Collect edges from filter segments
     for (const filter of props.filterSegments) {
       if (filter.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'filter' && preview.id === filter.id;
       const startTime = isPreviewing ? preview.startTime : filter.startTime;
       const endTime = isPreviewing ? preview.endTime : filter.endTime;
@@ -4236,7 +4608,7 @@
 
     // Filter out segment edges if not enabled
     if (!snapPreferences.value.segmentEdges) {
-      return targets.filter(t => t.type !== 'segment-start' && t.type !== 'segment-end');
+      return targets.filter((t) => t.type !== 'segment-start' && t.type !== 'segment-end');
     }
 
     return targets;
@@ -4381,14 +4753,17 @@
   function onTrackContentClick(e: MouseEvent) {
     selectedItemKey.value = null;
 
+    // Use contentWrapperRef for consistency with playhead position calculation
     if (!contentWrapperRef.value) return;
 
-    const contentRect = contentWrapperRef.value.getBoundingClientRect();
-    // Account for the track label width - timeline content starts after labels
-    const timelineLeft = contentRect.left + TRACK_LABEL_WIDTH;
-    const timelineWidth = contentRect.width - TRACK_LABEL_WIDTH;
-    const x = e.clientX - timelineLeft;
-    const percent = Math.max(0, Math.min(1, x / timelineWidth));
+    const wrapperRect = contentWrapperRef.value.getBoundingClientRect();
+    const cursorXInWrapper = e.clientX - wrapperRect.left;
+
+    // Account for the 120px track label area
+    const contentAreaX = cursorXInWrapper - TRACK_LABEL_WIDTH;
+    const contentAreaWidth = wrapperRect.width - TRACK_LABEL_WIDTH;
+
+    const percent = Math.max(0, Math.min(1, contentAreaX / contentAreaWidth));
     const time = clickPositionToTime(percent);
 
     emit('seek', Math.max(0, time));
@@ -4414,14 +4789,17 @@
   }
 
   function onRulerClick(e: MouseEvent) {
+    // Use contentWrapperRef for consistency with playhead position calculation
     if (!contentWrapperRef.value) return;
 
-    const contentRect = contentWrapperRef.value.getBoundingClientRect();
-    // Account for the track label width - timeline content starts after labels
-    const timelineLeft = contentRect.left + TRACK_LABEL_WIDTH;
-    const timelineWidth = contentRect.width - TRACK_LABEL_WIDTH;
-    const x = e.clientX - timelineLeft;
-    const percent = Math.max(0, Math.min(1, x / timelineWidth));
+    const wrapperRect = contentWrapperRef.value.getBoundingClientRect();
+    const cursorXInWrapper = e.clientX - wrapperRect.left;
+
+    // Account for the 120px track label area
+    const contentAreaX = cursorXInWrapper - TRACK_LABEL_WIDTH;
+    const contentAreaWidth = wrapperRect.width - TRACK_LABEL_WIDTH;
+
+    const percent = Math.max(0, Math.min(1, contentAreaX / contentAreaWidth));
     const time = clickPositionToTime(percent);
 
     emit('seek', Math.max(0, time));
@@ -4482,7 +4860,7 @@
    */
   function copySelectedItems() {
     const itemKeys: string[] = [];
-    
+
     // Collect selected items from both modes
     if (props.editorMode && props.selectedSourceIds && props.selectedSourceIds.size > 0) {
       // Editor mode: collect selected sources
@@ -4498,7 +4876,7 @@
       // Single selection fallback
       itemKeys.push(selectedItemKey.value);
     }
-    
+
     if (itemKeys.length > 0) {
       emit('copyItems', itemKeys);
     }
@@ -4534,7 +4912,7 @@
    */
   function duplicateSelectedItems() {
     const itemKeys: string[] = [];
-    
+
     // Collect selected items from both modes
     if (props.editorMode && props.selectedSourceIds && props.selectedSourceIds.size > 0) {
       for (const sourceId of props.selectedSourceIds) {
@@ -4547,7 +4925,7 @@
     } else if (selectedItemKey.value) {
       itemKeys.push(selectedItemKey.value);
     }
-    
+
     if (itemKeys.length > 0) {
       emit('duplicateItems', itemKeys);
     }
@@ -4565,7 +4943,7 @@
    */
   function groupSelectedItems() {
     const itemKeys: string[] = [];
-    
+
     if (props.editorMode && props.selectedSourceIds && props.selectedSourceIds.size > 1) {
       for (const sourceId of props.selectedSourceIds) {
         itemKeys.push(`source_${sourceId}`);
@@ -4575,7 +4953,7 @@
         itemKeys.push(`trim_${segmentId}`);
       }
     }
-    
+
     if (itemKeys.length > 1) {
       emit('groupItems', itemKeys);
     }
@@ -4596,13 +4974,13 @@
    * Add a speed keyframe to a video source at the current playhead position
    */
   function addSpeedKeyframeAtPlayhead(sourceId: string, speed: number = 1.0) {
-    const source = props.videoSources.find(s => s.id === sourceId);
+    const source = props.videoSources.find((s) => s.id === sourceId);
     if (!source) return;
-    
+
     // Calculate time relative to source start
     const relativeTime = props.currentTime - source.start_time;
-    if (relativeTime < 0 || relativeTime > (source.end_time - source.start_time)) return;
-    
+    if (relativeTime < 0 || relativeTime > source.end_time - source.start_time) return;
+
     emit('addSpeedKeyframe', sourceId, relativeTime, speed);
   }
 
@@ -4610,13 +4988,13 @@
    * Add a freeze point at the current playhead position
    */
   function addFreezePointAtPlayhead(sourceId: string, duration: number = 1.0) {
-    const source = props.videoSources.find(s => s.id === sourceId);
+    const source = props.videoSources.find((s) => s.id === sourceId);
     if (!source) return;
-    
+
     // Calculate time relative to source start
     const relativeTime = props.currentTime - source.start_time;
-    if (relativeTime < 0 || relativeTime > (source.end_time - source.start_time)) return;
-    
+    if (relativeTime < 0 || relativeTime > source.end_time - source.start_time) return;
+
     emit('addFreezePoint', sourceId, relativeTime, duration);
   }
 
@@ -4626,14 +5004,19 @@
   function onTrackReorderStart(e: MouseEvent, trackType: 'audio' | 'overlay', trackId: string, currentOrder: number) {
     e.preventDefault();
     e.stopPropagation();
-    
+
+    // Calculate max order for clamping based on track type
+    const maxOrder = trackType === 'audio' ? Math.max(0, props.audioTracks.length - 1) : 0; // Overlay tracks use layers, not order
+
     trackReorderState.value = {
       trackType,
       trackId,
       originalOrder: currentOrder,
       startY: e.clientY,
+      lastEmittedOrder: currentOrder,
+      maxOrder,
     };
-    
+
     document.addEventListener('mousemove', onTrackReorderMove);
     document.addEventListener('mouseup', onTrackReorderEnd);
   }
@@ -4643,19 +5026,22 @@
    */
   function onTrackReorderMove(e: MouseEvent) {
     if (!trackReorderState.value) return;
-    
-    // Calculate how many track positions to move based on Y delta
+
+    // Calculate total delta from the ORIGINAL start position (never update startY)
     const deltaY = e.clientY - trackReorderState.value.startY;
     const trackHeight = 48; // Approximate track height
     const positionDelta = Math.round(deltaY / trackHeight);
-    
-    if (positionDelta !== 0) {
-      const newOrder = trackReorderState.value.originalOrder + positionDelta;
-      // Emit reorder event for live preview
-      emit('reorderTrack', trackReorderState.value.trackType, trackReorderState.value.trackId, newOrder);
-      // Update start position for next delta calculation
-      trackReorderState.value.startY = e.clientY;
-      trackReorderState.value.originalOrder = newOrder;
+
+    // Calculate new order from the ORIGINAL order (never update originalOrder)
+    const rawNewOrder = trackReorderState.value.originalOrder + positionDelta;
+
+    // Clamp to valid range before emitting
+    const clampedOrder = Math.max(0, Math.min(trackReorderState.value.maxOrder, rawNewOrder));
+
+    // Only emit if the clamped order differs from the last emitted value
+    if (clampedOrder !== trackReorderState.value.lastEmittedOrder) {
+      emit('reorderTrack', trackReorderState.value.trackType, trackReorderState.value.trackId, clampedOrder);
+      trackReorderState.value.lastEmittedOrder = clampedOrder;
     }
   }
 
@@ -4675,11 +5061,11 @@
     // Only start marquee if clicking on empty area (not on a segment)
     if ((e.target as HTMLElement).closest('.clip-segment')) return;
     if (!timelineScrollContainer.value) return;
-    
+
     const rect = timelineScrollContainer.value.getBoundingClientRect();
     const x = e.clientX - rect.left + timelineScrollContainer.value.scrollLeft;
     const y = e.clientY - rect.top + timelineScrollContainer.value.scrollTop;
-    
+
     marqueeSelection.value = {
       active: true,
       startX: x,
@@ -4687,7 +5073,7 @@
       currentX: x,
       currentY: y,
     };
-    
+
     document.addEventListener('mousemove', onTimelineMarqueeMove);
     document.addEventListener('mouseup', onTimelineMarqueeEnd);
   }
@@ -4697,11 +5083,11 @@
    */
   function onTimelineMarqueeMove(e: MouseEvent) {
     if (!marqueeSelection.value || !timelineScrollContainer.value) return;
-    
+
     const rect = timelineScrollContainer.value.getBoundingClientRect();
     const x = e.clientX - rect.left + timelineScrollContainer.value.scrollLeft;
     const y = e.clientY - rect.top + timelineScrollContainer.value.scrollTop;
-    
+
     marqueeSelection.value.currentX = x;
     marqueeSelection.value.currentY = y;
   }
@@ -4716,17 +5102,17 @@
       document.removeEventListener('mouseup', onTimelineMarqueeEnd);
       return;
     }
-    
+
     const { startX, startY, currentX, currentY } = marqueeSelection.value;
     const left = Math.min(startX, currentX);
     const right = Math.max(startX, currentX);
     const top = Math.min(startY, currentY);
     const bottom = Math.max(startY, currentY);
-    
+
     // Only process if marquee is larger than 10px (avoid accidental clicks)
     if (right - left > 10 && bottom - top > 10) {
       const selectedIds: string[] = [];
-      
+
       // Check each source segment for intersection with marquee
       if (props.editorMode) {
         for (const source of primaryVideoSources.value) {
@@ -4734,20 +5120,20 @@
           if (segmentEl) {
             const segRect = segmentEl.getBoundingClientRect();
             const containerRect = timelineScrollContainer.value!.getBoundingClientRect();
-            
+
             // Convert segment rect to container-relative coordinates
             const segLeft = segRect.left - containerRect.left + timelineScrollContainer.value!.scrollLeft;
             const segRight = segRect.right - containerRect.left + timelineScrollContainer.value!.scrollLeft;
             const segTop = segRect.top - containerRect.top + timelineScrollContainer.value!.scrollTop;
             const segBottom = segRect.bottom - containerRect.top + timelineScrollContainer.value!.scrollTop;
-            
+
             // Check intersection
             if (segLeft < right && segRight > left && segTop < bottom && segBottom > top) {
               selectedIds.push(source.id);
             }
           }
         }
-        
+
         // Emit multi-select events for each selected source
         if (selectedIds.length > 0) {
           // First source without modifier, rest with ctrl to add to selection
@@ -4757,7 +5143,7 @@
         }
       }
     }
-    
+
     marqueeSelection.value = null;
     document.removeEventListener('mousemove', onTimelineMarqueeMove);
     document.removeEventListener('mouseup', onTimelineMarqueeEnd);
@@ -4769,10 +5155,10 @@
   function onFadeHandleMouseDown(e: MouseEvent, trackId: string, fadeType: 'fadeIn' | 'fadeOut', track: AudioTrack) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const trackDuration = track.endTime - track.startTime;
     const originalFade = fadeType === 'fadeIn' ? track.fadeIn : track.fadeOut;
-    
+
     fadeHandleState.value = {
       trackId,
       fadeType,
@@ -4781,26 +5167,26 @@
       trackDuration,
       trackElement: e.currentTarget as HTMLElement,
     };
-    
+
     document.addEventListener('mousemove', onFadeHandleMouseMove);
     document.addEventListener('mouseup', onFadeHandleMouseUp);
   }
 
   function onFadeHandleMouseMove(e: MouseEvent) {
     if (!fadeHandleState.value) return;
-    
+
     const { trackId, fadeType, startX, originalFade, trackDuration, trackElement } = fadeHandleState.value;
-    
+
     // Get the parent track element to calculate width
     const parentEl = trackElement?.closest('.clip-segment') as HTMLElement;
     if (!parentEl) return;
-    
+
     const trackWidth = parentEl.offsetWidth;
     const deltaX = e.clientX - startX;
-    
+
     // Convert pixel delta to time delta
     const timeDelta = (deltaX / trackWidth) * trackDuration;
-    
+
     // Calculate new fade duration
     let newFade: number;
     if (fadeType === 'fadeIn') {
@@ -4810,7 +5196,7 @@
       // Dragging left increases fade out (negative delta)
       newFade = Math.max(0, Math.min(trackDuration * 0.5, originalFade - timeDelta));
     }
-    
+
     // Emit the update
     emit('updateAudioFade', trackId, fadeType, newFade);
   }
@@ -4824,7 +5210,10 @@
   /**
    * Enable audio ducking for a track (auto-lower music under speech)
    */
-  function enableAudioDucking(trackId: string, options?: { threshold?: number; reduction?: number; attack?: number; release?: number }) {
+  function enableAudioDucking(
+    trackId: string,
+    options?: { threshold?: number; reduction?: number; attack?: number; release?: number }
+  ) {
     const defaultOptions = {
       threshold: -20, // dB threshold for ducking trigger
       reduction: -12, // dB reduction when ducking
@@ -5077,18 +5466,21 @@
     e.stopPropagation();
 
     isDraggingPlayhead.value = true;
-    
+
+    // Initialize optimistic drag time with current position to avoid flicker
+    optimisticDragTime.value = props.currentTime;
+
     // Initialize velocity tracking for inertial scrolling
     playheadVelocity.value = 0;
     lastPlayheadDragTime.value = performance.now();
     lastPlayheadDragX.value = e.clientX;
-    
+
     // Cancel any ongoing inertial animation
     if (inertialAnimationId) {
       cancelAnimationFrame(inertialAnimationId);
       inertialAnimationId = null;
     }
-    
+
     // Initialize audio scrubbing if enabled
     if (audioScrubEnabled.value) {
       initAudioScrubbing();
@@ -5154,17 +5546,18 @@
     const x = cursorX - timelineLeft;
     const percent = Math.max(0, Math.min(1, x / timelineWidth));
     let time = clickPositionToTime(percent);
-    
+
     // Frame-accurate scrubbing: snap to nearest frame when enabled
     if (frameSnapEnabled.value) {
       const frameDuration = 1 / frameRate;
       time = Math.round(time / frameDuration) * frameDuration;
     }
-    
+
     // Track velocity for inertial scrolling
     const now = performance.now();
     const dt = now - lastPlayheadDragTime.value;
-    if (dt > 0 && dt < 100) { // Only track if reasonable time delta
+    if (dt > 0 && dt < 100) {
+      // Only track if reasonable time delta
       const dx = cursorX - lastPlayheadDragX.value;
       // Convert pixel velocity to time velocity
       const pixelVelocity = dx / dt; // pixels per ms
@@ -5174,29 +5567,41 @@
     }
     lastPlayheadDragTime.value = now;
     lastPlayheadDragX.value = cursorX;
-    
+
     // Play audio scrub preview at the current position
     playScrubAudio(time);
-    
-    emit('seek', Math.max(0, time));
+
+    // Set optimistic drag time BEFORE emitting seek to avoid round-trip lag
+    // This ensures the playhead visually follows the cursor immediately
+    const clampedTime = Math.max(0, time);
+    optimisticDragTime.value = clampedTime;
+
+    emit('seek', clampedTime);
   }
 
   function onPlayheadDragEnd() {
     isDraggingPlayhead.value = false;
 
+    // Clear optimistic drag time - playhead will now use props.currentTime
+    optimisticDragTime.value = null;
+
     document.removeEventListener('mousemove', onPlayheadDragMove);
     document.removeEventListener('mouseup', onPlayheadDragEnd);
-    
+
     // Stop audio scrubbing
     stopAudioScrubbing();
-    
-    // Apply inertial scrolling if velocity is significant
-    const velocity = playheadVelocity.value;
-    if (Math.abs(velocity) > 0.5) { // Minimum velocity threshold
-      applyInertialScrolling(velocity);
+
+    // Reset velocity - disable inertial scrolling as it causes position jumps
+    // when dragging between segments in editor mode
+    playheadVelocity.value = 0;
+
+    // Cancel any ongoing inertial animation
+    if (inertialAnimationId) {
+      cancelAnimationFrame(inertialAnimationId);
+      inertialAnimationId = null;
     }
   }
-  
+
   /**
    * Apply inertial scrolling with smooth deceleration
    */
@@ -5205,19 +5610,19 @@
     const minVelocity = 0.1; // Stop when velocity drops below this
     let velocity = initialVelocity;
     let lastTime = performance.now();
-    
+
     function animate() {
       const now = performance.now();
       const dt = (now - lastTime) / 1000; // Convert to seconds
       lastTime = now;
-      
+
       // Apply velocity to current time
       const newTime = Math.max(0, Math.min(totalDuration.value, props.currentTime + velocity * dt));
       emit('seek', newTime);
-      
+
       // Apply friction
       velocity *= friction;
-      
+
       // Continue animation if velocity is still significant
       if (Math.abs(velocity) > minVelocity && newTime > 0 && newTime < totalDuration.value) {
         inertialAnimationId = requestAnimationFrame(animate);
@@ -5225,7 +5630,7 @@
         inertialAnimationId = null;
       }
     }
-    
+
     inertialAnimationId = requestAnimationFrame(animate);
   }
 
@@ -5234,23 +5639,23 @@
    */
   async function initAudioScrubbing() {
     if (scrubAudioContext) return; // Already initialized
-    
+
     try {
       scrubAudioContext = new AudioContext();
-      
+
       // Try to load audio from the video source
       const videoSrc = props.videoSrc || props.videoPath;
       if (!videoSrc) return;
-      
+
       let audioUrl = videoSrc;
-      
+
       // Convert local file path to streaming URL if needed
       if (!videoSrc.startsWith('http') && !videoSrc.startsWith('data:')) {
         const port = await invoke<number>('get_video_server_port');
         const encodedPath = btoa(unescape(encodeURIComponent(videoSrc)));
         audioUrl = `http://localhost:${port}/video/${encodedPath}`;
       }
-      
+
       const response = await fetch(audioUrl);
       const arrayBuffer = await response.arrayBuffer();
       scrubAudioBuffer = await scrubAudioContext.decodeAudioData(arrayBuffer);
@@ -5266,12 +5671,12 @@
    */
   function playScrubAudio(time: number) {
     if (!audioScrubEnabled.value || !scrubAudioContext || !scrubAudioBuffer) return;
-    
+
     // Throttle audio playback to avoid overlapping snippets
     const now = performance.now();
     if (now - lastScrubTime < SCRUB_SNIPPET_DURATION * 800) return; // 80% of snippet duration
     lastScrubTime = now;
-    
+
     // Stop any currently playing scrub audio
     if (scrubSourceNode) {
       try {
@@ -5281,17 +5686,17 @@
       }
       scrubSourceNode = null;
     }
-    
+
     // Clamp time to valid range
     const startTime = Math.max(0, Math.min(time, scrubAudioBuffer.duration - SCRUB_SNIPPET_DURATION));
     if (startTime < 0 || startTime >= scrubAudioBuffer.duration) return;
-    
+
     try {
       // Create a new source node for this snippet
       scrubSourceNode = scrubAudioContext.createBufferSource();
       scrubSourceNode.buffer = scrubAudioBuffer;
       scrubSourceNode.connect(scrubAudioContext.destination);
-      
+
       // Play a short snippet starting at the scrub position
       scrubSourceNode.start(0, startTime, SCRUB_SNIPPET_DURATION);
     } catch (err) {
@@ -5331,11 +5736,12 @@
     _preview?: { type: ItemType; id: string; startTime: number; endTime: number } | null
   ): Record<string, string> {
     const isSelected = selectedItemKey.value === `source_${source.id}`;
-    
-    // Check for drag/resize preview
+
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     let startTime = source.start_time;
     let endTime = source.end_time;
-    
+
+    // Apply position preview for resize or drag operations
     if (_preview && _preview.type === 'source' && _preview.id === source.id) {
       startTime = _preview.startTime;
       endTime = _preview.endTime;
@@ -5362,29 +5768,30 @@
       }
     }
 
-    // Apply Slide Adjustment (Visual)
+    // Apply Slide Adjustment (Visual) - slide tool uses ghost element
     if (slideState.value && slideState.value.type === 'source') {
-        if (source.id === slideState.value.id) {
-            // Target moves by delta (handled by _preview check normally, but be explicit)
-            startTime = slideState.value.originalStartTime + slideState.value.delta;
-            endTime = slideState.value.originalEndTime + slideState.value.delta;
-        } else if (source.id === slideState.value.leftNeighborId) {
-            // Left neighbor end changes
-            endTime += slideState.value.delta;
-        } else if (source.id === slideState.value.rightNeighborId) {
-            // Right neighbor start changes
-            startTime += slideState.value.delta;
-        }
+      if (source.id === slideState.value.leftNeighborId) {
+        // Left neighbor end changes
+        endTime += slideState.value.delta;
+      } else if (source.id === slideState.value.rightNeighborId) {
+        // Right neighbor start changes
+        startTime += slideState.value.delta;
+      }
     }
 
-    const duration = props.duration || 300;
+    const duration = totalDuration.value || props.duration || 300;
     const leftPercent = (startTime / duration) * 100;
     const widthPercent = ((endTime - startTime) / duration) * 100;
+
+    // Check if this source is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDraggingSource.value && dragSourceInfo.value?.sourceId === source.id;
 
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
       borderColor: isSelected ? '#06b6d4' : 'transparent', // Cyan-500
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -5404,7 +5811,7 @@
   function onSourceClick(e: MouseEvent, source: VideoEditorSource) {
     // Select the source (with multi-select support via modifier keys)
     selectItem('source', source.id);
-    
+
     // Emit multi-select event with modifier keys for parent to handle
     emit('sourceSelect', source.id, {
       shift: e.shiftKey,
@@ -5426,15 +5833,37 @@
 
   function onSourceMouseDown(e: MouseEvent, source: VideoEditorSource) {
     if (e.button !== 0) return;
-    
+
     // Prevent editing if track is locked
     if (videoTrackState.isLocked) {
       return;
     }
-    
+
     e.preventDefault();
 
     selectItem('source', source.id);
+
+    // Capture the clicked element's position for ghost
+    const targetEl = e.currentTarget as HTMLElement;
+    const rect = targetEl.getBoundingClientRect();
+
+    // Initialize ghost state and position
+    dragGhostState.value = {
+      visible: true,
+      type: 'source',
+      id: source.id,
+      initialLeft: rect.left,
+      initialTop: rect.top,
+      width: rect.width,
+      height: rect.height,
+      label: source.source_name || 'Video',
+      color: 'cyan',
+    };
+
+    // Reset ghost transform
+    if (dragGhostRef.value) {
+      dragGhostRef.value.style.transform = 'translateX(0px)';
+    }
 
     isDraggingSource.value = true;
     dragSourceInfo.value = {
@@ -5456,6 +5885,7 @@
 
     const rect = videoTrackContentRef.value.getBoundingClientRect();
     const deltaX = e.clientX - dragSourceInfo.value.startX;
+    const deltaY = e.clientY - dragSourceInfo.value.startY;
     const deltaTime = (deltaX / rect.width) * props.duration;
 
     // Detect which layer the mouse is currently over by checking all layer elements
@@ -5487,7 +5917,6 @@
 
     // Fallback: If no existing layers found or not over any track, use pixel-based calculation
     if (!foundLayer) {
-      const deltaY = e.clientY - dragSourceInfo.value.startY;
       const LAYER_HEIGHT = 40;
       const trackOffset = Math.round(-deltaY / LAYER_HEIGHT);
       targetTrackIndex = Math.max(0, dragSourceInfo.value.originalTrackIndex + trackOffset);
@@ -5513,148 +5942,66 @@
       newStartTime = props.duration - duration;
     }
 
-    // Apply snapping for video sources
-    // Source track (track_index 0): ALWAYS snap to nearest segment edge, no free positioning
-    // Layers (track_index > 0): Optional snap within threshold
-    if (targetTrackIndex === 0) {
-      // Source track: Force snap to nearest segment edge
-      const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
-      if (snapResult.didSnap) {
-        newStartTime = snapResult.startTime;
-        newEndTime = snapResult.endTime;
-        activeSnapTime.value = snapResult.snapTime;
-        activeSnapTrackType.value = snapResult.snapTrackType;
-      } else {
-        // If no snap found, find the closest segment edge and snap to it
-        const targets = getSnapTargets(dragSourceInfo.value.sourceId);
-        let closestTarget: { time: number; distance: number; trackType?: string } | null = null;
-
-        // Check both start and end edges
-        for (const target of targets) {
-          if (target.type === 'segment-start' || target.type === 'segment-end') {
-            const distanceToStart = Math.abs(newStartTime - target.time);
-            const distanceToEnd = Math.abs(newEndTime - target.time);
-
-            if (!closestTarget || distanceToStart < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToStart, trackType: target.trackType };
-            }
-            if (distanceToEnd < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToEnd, trackType: target.trackType };
-            }
-          }
-        }
-
-        // Snap to closest edge
-        if (closestTarget) {
-          // Determine if we should snap start or end
-          const distanceToStart = Math.abs(newStartTime - closestTarget.time);
-          const distanceToEnd = Math.abs(newEndTime - closestTarget.time);
-
-          if (distanceToStart < distanceToEnd) {
-            // Snap start edge
-            newStartTime = closestTarget.time;
-            newEndTime = newStartTime + duration;
-          } else {
-            // Snap end edge
-            newEndTime = closestTarget.time;
-            newStartTime = newEndTime - duration;
-          }
-          activeSnapTime.value = closestTarget.time;
-          activeSnapTrackType.value = closestTarget.trackType || null;
-        }
-      }
+    // Apply snapping for video sources - optional snap within threshold for all tracks
+    // Both Source track (track_index 0) and Layers use the same threshold-based snapping
+    const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
+    if (snapResult.didSnap) {
+      newStartTime = snapResult.startTime;
+      newEndTime = snapResult.endTime;
+      activeSnapTime.value = snapResult.snapTime;
+      activeSnapTrackType.value = snapResult.snapTrackType;
     } else {
-      // Layers: Optional snap within threshold (existing behavior)
-      const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
-      if (snapResult.didSnap) {
-        newStartTime = snapResult.startTime;
-        newEndTime = snapResult.endTime;
-        activeSnapTime.value = snapResult.snapTime;
-        activeSnapTrackType.value = snapResult.snapTrackType;
-      } else {
-        activeSnapTime.value = null;
-        activeSnapTrackType.value = null;
-      }
+      activeSnapTime.value = null;
+      activeSnapTrackType.value = null;
     }
 
-    // Update local preview state (no database call) for smooth dragging
-    dragPreview.value = {
-      type: 'source',
-      id: dragSourceInfo.value.sourceId,
-      startTime: newStartTime,
-      endTime: newEndTime,
-    };
+    // Calculate snap-adjusted deltaX for visual transform
+    const snapDelta = newStartTime - dragSourceInfo.value.originalStartTime;
+    const snapAdjustedDeltaX = (snapDelta / props.duration) * rect.width;
+
+    // Store the snap-adjusted delta for onSourceDragEnd
+    dragSourceInfo.value.currentDeltaX = snapAdjustedDeltaX;
+
+    // DIRECT DOM MANIPULATION - bypasses Vue reactivity completely for zero-lag dragging
+    // Only horizontal movement - segments stay within their track
+    if (dragGhostRef.value) {
+      dragGhostRef.value.style.transform = `translateX(${snapAdjustedDeltaX}px)`;
+    }
   }
 
   function onSourceDragEnd() {
+    // Remove event listeners immediately to prevent further drag events
+    document.removeEventListener('mousemove', onSourceDragMove);
+    document.removeEventListener('mouseup', onSourceDragEnd);
+
     // Commit the final position to database only on drag end
-    if (dragPreview.value && dragPreview.value.type === 'source' && dragSourceInfo.value) {
-      let finalStartTime = dragPreview.value.startTime;
-      let finalEndTime = dragPreview.value.endTime;
+    if (dragSourceInfo.value && videoTrackContentRef.value) {
+      const rect = videoTrackContentRef.value.getBoundingClientRect();
+      const deltaX = dragSourceInfo.value.currentDeltaX ?? 0;
+      const deltaTime = (deltaX / rect.width) * props.duration;
+      const duration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
 
-      console.log(
-        '[onSourceDragEnd] Initial position:',
-        finalStartTime,
-        '-',
-        finalEndTime,
-        'targetTrackIndex:',
-        dragSourceInfo.value.targetTrackIndex
-      );
+      let finalStartTime = dragSourceInfo.value.originalStartTime + deltaTime;
+      let finalEndTime = finalStartTime + duration;
 
-      // Source track (track_index 0): Force final snap to nearest segment edge (ignore threshold)
-      if (dragSourceInfo.value.targetTrackIndex === 0) {
-        const duration = finalEndTime - finalStartTime;
-        const targets = getSnapTargets(dragSourceInfo.value.sourceId);
-        console.log('[onSourceDragEnd] Source track - finding closest from', targets.length, 'targets');
-        let closestTarget: { time: number; distance: number; edge: 'start' | 'end' } | null = null;
-
-        // Find the absolute closest segment edge (no threshold)
-        for (const target of targets) {
-          if (target.type === 'segment-start' || target.type === 'segment-end') {
-            const distanceToStart = Math.abs(finalStartTime - target.time);
-            const distanceToEnd = Math.abs(finalEndTime - target.time);
-
-            if (!closestTarget || distanceToStart < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToStart, edge: 'start' };
-            }
-            if (distanceToEnd < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToEnd, edge: 'end' };
-            }
-          }
-        }
-
-        console.log('[onSourceDragEnd] Closest target:', closestTarget);
-
-        if (closestTarget) {
-          if (closestTarget.edge === 'start') {
-            // Snap our start edge to the target
-            finalStartTime = closestTarget.time;
-            finalEndTime = finalStartTime + duration;
-            console.log(
-              '[onSourceDragEnd] Snapped START to',
-              closestTarget.time,
-              'new position:',
-              finalStartTime,
-              '-',
-              finalEndTime
-            );
-          } else {
-            // Snap our end edge to the target
-            finalEndTime = closestTarget.time;
-            finalStartTime = finalEndTime - duration;
-            console.log(
-              '[onSourceDragEnd] Snapped END to',
-              closestTarget.time,
-              'new position:',
-              finalStartTime,
-              '-',
-              finalEndTime
-            );
-          }
-        } else {
-          console.log('[onSourceDragEnd] NO TARGETS FOUND - keeping position:', finalStartTime, '-', finalEndTime);
-        }
+      // Clamp to timeline bounds
+      if (finalStartTime < 0) {
+        finalStartTime = 0;
+        finalEndTime = duration;
       }
+      if (finalEndTime > props.duration) {
+        finalEndTime = props.duration;
+        finalStartTime = props.duration - duration;
+      }
+
+      // Set dragPreview to final position BEFORE emitting and clearing isDraggingSource
+      // This ensures the segment renders at the new position immediately while props update
+      dragPreview.value = {
+        type: 'source',
+        id: dragSourceInfo.value.sourceId,
+        startTime: finalStartTime,
+        endTime: finalEndTime,
+      };
 
       const updates: Partial<VideoEditorSource> = {
         start_time: finalStartTime,
@@ -5669,13 +6016,17 @@
       emit('updateSource', dragSourceInfo.value.sourceId, updates);
     }
 
+    // Hide ghost immediately, but keep dragPreview set so segment shows at new position
+    dragGhostState.value = null;
     isDraggingSource.value = false;
     dragSourceInfo.value = null;
-    dragPreview.value = null;
     activeSnapTime.value = null;
     activeSnapTrackType.value = null;
-    document.removeEventListener('mousemove', onSourceDragMove);
-    document.removeEventListener('mouseup', onSourceDragEnd);
+
+    // Clear dragPreview after a delay to allow props to propagate from parent
+    setTimeout(() => {
+      dragPreview.value = null;
+    }, 100);
   }
 
   // Segment context menu state (for Clip Mode)
@@ -5705,6 +6056,9 @@
     closeSegmentContextMenu();
 
     isExtractingAudio.value = true;
+
+    // Show loading toast
+    const loadingToastId = toastLoading('Extracting Audio', 'Processing segment');
 
     try {
       console.log('[ClipEditorTimeline] Extracting audio from segment:', segment.id);
@@ -5745,8 +6099,15 @@
         endTime: audioEndTime,
         sourceName: 'Extracted Audio',
       });
+
+      // Remove loading toast and show success
+      removeToast(loadingToastId);
+      toastSuccess('Audio Extracted', 'Audio track added to timeline');
     } catch (error) {
       console.error('[ClipEditorTimeline] Failed to extract audio:', error);
+      // Remove loading toast and show error
+      removeToast(loadingToastId);
+      toastError('Extraction Failed', error instanceof Error ? error.message : 'Failed to extract audio');
     } finally {
       isExtractingAudio.value = false;
     }
@@ -5772,6 +6133,9 @@
     closeSourceContextMenu();
 
     isExtractingAudio.value = true;
+
+    // Show loading toast
+    const loadingToastId = toastLoading('Extracting Audio', `Processing "${source.source_name || 'video'}"`);
 
     try {
       console.log('[ClipEditorTimeline] Extracting audio from source:', source.id);
@@ -5831,8 +6195,15 @@
         endTime: audioEndTime,
         sourceName: source.source_name,
       });
+
+      // Remove loading toast and show success
+      removeToast(loadingToastId);
+      toastSuccess('Audio Extracted', 'Audio track added to timeline');
     } catch (error) {
       console.error('[ClipEditorTimeline] Failed to extract audio:', error);
+      // Remove loading toast and show error
+      removeToast(loadingToastId);
+      toastError('Extraction Failed', error instanceof Error ? error.message : 'Failed to extract audio');
     } finally {
       isExtractingAudio.value = false;
     }
@@ -5850,21 +6221,23 @@
   // J/L Cut functions
   function hasAudioOffset(source: VideoEditorSource | null): boolean {
     if (!source) return false;
-    return (source.audio_trim_start !== undefined && source.audio_trim_start !== null) ||
-           (source.audio_trim_end !== undefined && source.audio_trim_end !== null);
+    return (
+      (source.audio_trim_start !== undefined && source.audio_trim_start !== null) ||
+      (source.audio_trim_end !== undefined && source.audio_trim_end !== null)
+    );
   }
 
   function applyJCut() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // J-cut: Audio from this clip starts 0.5s earlier than video
     // This means audio_trim_start is less than trim_start
     const jCutOffset = 0.5; // Default 0.5 second audio lead
     const newAudioTrimStart = Math.max(0, (source.trim_start || 0) - jCutOffset);
-    
+
     emit('updateSource', source.id, {
       audio_trim_start: newAudioTrimStart,
       audio_trim_end: source.trim_end, // Keep video trim end for audio
@@ -5873,17 +6246,17 @@
 
   function applyLCut() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // L-cut: Audio from this clip extends 0.5s beyond video
     // This means audio_trim_end is greater than trim_end
     const lCutOffset = 0.5; // Default 0.5 second audio extension
-    const sourceDuration = source.source_duration || (source.end_time - source.start_time);
+    const sourceDuration = source.source_duration || source.end_time - source.start_time;
     const currentTrimEnd = source.trim_end ?? sourceDuration;
     const newAudioTrimEnd = Math.min(sourceDuration, currentTrimEnd + lCutOffset);
-    
+
     emit('updateSource', source.id, {
       audio_trim_start: source.trim_start, // Keep video trim start for audio
       audio_trim_end: newAudioTrimEnd,
@@ -5892,10 +6265,10 @@
 
   function resetAudioTrim() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // Reset audio trim to match video trim (sync audio with video)
     emit('updateSource', source.id, {
       audio_trim_start: null,
@@ -5908,8 +6281,10 @@
    * Creates a still image segment from the current video frame
    */
   // Thumbnail cache for filmstrip thumbnails (sourceId -> cached thumbnail data)
-  const thumbnailCache = ref<Map<string, { thumbnails: { width: number; bgPosition: number }[]; zoomLevel: number; containerWidth: number }>>(new Map());
-  
+  const thumbnailCache = ref<
+    Map<string, { thumbnails: { width: number; bgPosition: number }[]; zoomLevel: number; containerWidth: number }>
+  >(new Map());
+
   // Thumbnail loading state (sourceId -> loading status)
   const thumbnailLoadingState = ref<Map<string, boolean>>(new Map());
 
@@ -5935,57 +6310,62 @@
   /**
    * Generate filmstrip thumbnail positions for a video source
    * Uses caching and adaptive density based on zoom level
+   * PERFORMANCE: Caps maximum thumbnails to prevent DOM bloat at high zoom
    */
   function getFilmstripThumbnails(source: VideoEditorSource): { width: number; bgPosition: number }[] {
     const THUMB_WIDTH = getAdaptiveThumbnailWidth(); // Adaptive density based on zoom
+    const MAX_THUMBNAILS = 50; // Cap to prevent performance issues at high zoom
     const duration = source.end_time - source.start_time;
     const totalDur = props.editorMode ? props.duration : totalDuration.value;
-    
+
     if (totalDur <= 0 || duration <= 0) return [];
-    
+
     // Calculate the pixel width of this source segment
     const segmentWidthPercent = (duration / totalDur) * 100;
     const containerWidth = contentWrapperRef.value?.offsetWidth || 1000;
     const segmentWidth = (segmentWidthPercent / 100) * containerWidth * zoomLevel.value;
-    
+
     // Check cache - invalidate if zoom level or container width changed significantly
     const cacheKey = source.id;
     const cached = thumbnailCache.value.get(cacheKey);
-    if (cached && 
-        Math.abs(cached.zoomLevel - zoomLevel.value) < 0.1 && 
-        Math.abs(cached.containerWidth - containerWidth) < 50) {
+    if (
+      cached &&
+      Math.abs(cached.zoomLevel - zoomLevel.value) < 0.1 &&
+      Math.abs(cached.containerWidth - containerWidth) < 50
+    ) {
       return cached.thumbnails;
     }
-    
-    // Calculate number of thumbnails needed
-    const numThumbs = Math.max(1, Math.ceil(segmentWidth / THUMB_WIDTH));
+
+    // Calculate number of thumbnails needed - CAPPED for performance
+    const rawNumThumbs = Math.max(1, Math.ceil(segmentWidth / THUMB_WIDTH));
+    const numThumbs = Math.min(rawNumThumbs, MAX_THUMBNAILS);
     const actualThumbWidth = segmentWidth / numThumbs;
-    
+
     // Generate thumbnail data
     const thumbnails: { width: number; bgPosition: number }[] = [];
     const sourceDuration = source.source_duration || duration;
     const trimStart = source.trim_start || 0;
-    
+
     for (let i = 0; i < numThumbs; i++) {
       // Calculate the time position within the source for this thumbnail
       const timeOffset = (i / numThumbs) * duration;
       const sourceTime = trimStart + timeOffset;
       // Convert to percentage position in the thumbnail image (0-100)
       const bgPosition = sourceDuration > 0 ? (sourceTime / sourceDuration) * 100 : 0;
-      
+
       thumbnails.push({
         width: actualThumbWidth,
         bgPosition: Math.min(100, Math.max(0, bgPosition)),
       });
     }
-    
+
     // Cache the result
     thumbnailCache.value.set(cacheKey, {
       thumbnails,
       zoomLevel: zoomLevel.value,
       containerWidth,
     });
-    
+
     return thumbnails;
   }
 
@@ -6001,10 +6381,10 @@
    */
   function setSourceSpeed(speed: number) {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // Emit update to change the source speed
     emit('updateSource', source.id, { speed });
   }
@@ -6014,23 +6394,23 @@
    */
   function openSpeedCurveEditor() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // Emit event to open speed curve editor in parent component
     emit('openSpeedCurveEditor', source.id);
   }
 
   function addFreezeFrame() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // Calculate the time within the source where the playhead is
     const playheadTime = props.currentTime;
-    
+
     // Check if playhead is within this source's time range
     if (playheadTime < source.start_time || playheadTime > source.end_time) {
       // Playhead is not within this source - use the source's start time
@@ -6044,7 +6424,7 @@
       // Calculate the corresponding time in the source video
       const offsetInTimeline = playheadTime - source.start_time;
       const sourceTime = (source.trim_start ?? 0) + offsetInTimeline;
-      
+
       emit('freezeFrame', {
         sourceId: source.id,
         time: sourceTime,
@@ -6124,24 +6504,27 @@
   function onRulerWheel(event: WheelEvent) {
     event.preventDefault();
 
-    if (!timelineScrollContainer.value || !rulerContentRef.value) return;
+    if (!timelineScrollContainer.value || !contentWrapperRef.value) return;
 
     const scrollContainer = timelineScrollContainer.value;
-    const rulerContent = rulerContentRef.value;
+    const contentWrapper = contentWrapperRef.value;
     const containerRect = scrollContainer.getBoundingClientRect();
 
-    // Get ruler content bounds to calculate hover position for seeking
-    const rulerRect = rulerContent.getBoundingClientRect();
-    const cursorXInRuler = event.clientX - rulerRect.left;
+    // Get content wrapper bounds to calculate hover position for seeking
+    // Use contentWrapperRef for consistency with playhead position calculation
+    const wrapperRect = contentWrapper.getBoundingClientRect();
+    const cursorXInWrapper = event.clientX - wrapperRect.left;
+
+    // Account for the 120px track label area
+    const contentAreaX = cursorXInWrapper - TRACK_LABEL_WIDTH;
+    const contentAreaWidth = wrapperRect.width - TRACK_LABEL_WIDTH;
 
     // Detect pinch-to-zoom gesture (trackpad pinch sets ctrlKey)
     const isPinchGesture = event.ctrlKey;
-    
+
     // For regular scroll (not pinch), seek playhead to cursor position
-    if (!isPinchGesture && cursorXInRuler >= 0 && cursorXInRuler <= rulerRect.width) {
-      const playheadOffset = 15; // pixels to the left of cursor
-      const offsetX = Math.max(0, cursorXInRuler - playheadOffset);
-      const percent = offsetX / rulerRect.width;
+    if (!isPinchGesture && contentAreaX >= 0 && contentAreaX <= contentAreaWidth) {
+      const percent = contentAreaX / contentAreaWidth;
       const time = clickPositionToTime(percent);
       emit('seek', Math.max(0, time));
     }
@@ -6162,7 +6545,7 @@
     // Apply zoom with dynamic step based on current zoom level
     const oldZoom = zoomLevel.value;
     const step = getZoomStep();
-    
+
     // For pinch gestures, use deltaY directly for smoother zoom
     // Pinch out (spread fingers) = negative deltaY = zoom in
     // Pinch in (pinch fingers) = positive deltaY = zoom out
@@ -6174,23 +6557,15 @@
       // Regular scroll wheel
       delta = event.deltaY > 0 ? -step : step;
     }
-    
+
     const newZoom = Math.max(MIN_ZOOM.value, oldZoom + delta);
 
     if (newZoom === oldZoom) return;
 
-    zoomLevel.value = newZoom;
-
-    // After zoom, adjust scroll to keep cursor position stable (playhead is now at cursor)
-    nextTick(() => {
-      const newContentWidth = scrollContainer.scrollWidth;
-      const newContentX = logicalPosition * newContentWidth;
-      const newScrollLeft = newContentX - cursorXInContainer;
-
-      scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
-    });
+    // Use batched zoom update via requestAnimationFrame for performance
+    queueZoomUpdate(newZoom, logicalPosition, cursorXInContainer, scrollContainer);
   }
-  
+
   /**
    * Handle wheel events on the timeline container for pinch-to-zoom
    * This allows pinch gestures anywhere on the timeline, not just the ruler
@@ -6198,65 +6573,99 @@
   function onTimelineWheel(event: WheelEvent) {
     // Only handle pinch-to-zoom gestures (ctrlKey is set by trackpad pinch)
     if (!event.ctrlKey) return;
-    
+
     event.preventDefault();
-    
+
     if (!timelineScrollContainer.value) return;
-    
+
     const scrollContainer = timelineScrollContainer.value;
     const containerRect = scrollContainer.getBoundingClientRect();
-    
+
     // Cursor position relative to the scroll container's viewport
     const cursorXInContainer = event.clientX - containerRect.left;
-    
+
     // Current scroll position and content width
     const scrollLeft = scrollContainer.scrollLeft;
     const contentWidth = scrollContainer.scrollWidth;
-    
+
     // Position in the full content (scroll + cursor offset)
     const contentX = scrollLeft + cursorXInContainer;
-    
+
     // Calculate the "logical" position (0-1 range, independent of zoom)
     const logicalPosition = contentX / contentWidth;
-    
+
     // Apply zoom - pinch out = zoom in, pinch in = zoom out
     const oldZoom = zoomLevel.value;
     const delta = -event.deltaY * 0.01; // Invert and scale for natural pinch behavior
     const newZoom = Math.max(MIN_ZOOM.value, oldZoom + delta);
-    
+
     if (newZoom === oldZoom) return;
-    
-    zoomLevel.value = newZoom;
-    
-    // After zoom, adjust scroll to keep cursor position stable
-    nextTick(() => {
-      const newContentWidth = scrollContainer.scrollWidth;
-      const newContentX = logicalPosition * newContentWidth;
-      const newScrollLeft = newContentX - cursorXInContainer;
-      
-      scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
-    });
+
+    // Use batched zoom update via requestAnimationFrame for performance
+    queueZoomUpdate(newZoom, logicalPosition, cursorXInContainer, scrollContainer);
   }
 
   // Segment dragging
   function onSegmentMouseDown(e: MouseEvent, type: ItemType, id: string, item: any) {
     if (e.button !== 0) return;
-    
+
     // Check if track is locked - prevent editing
     if (type === 'trim' || type === 'source') {
       if (videoTrackState.isLocked) return;
     } else if (type === 'audio') {
       // Check if this specific audio track is locked
-      const audioTrack = props.audioTracks.find(t => t.id === id);
+      const audioTrack = props.audioTracks.find((t) => t.id === id);
       if (audioTrack?.isLocked) return;
     }
-    
+
     e.preventDefault();
     e.stopPropagation();
 
     const trackContentWidth = getTrackContentWidth();
     const originalLayer = ['text', 'sticker', 'watermark'].includes(type) ? (item.layer ?? 0) : undefined;
     const originalTrackIndex = type === 'source' ? (item.track_index ?? 0) : undefined;
+
+    // Capture the clicked element's position for ghost
+    const targetEl = e.currentTarget as HTMLElement;
+    const rect = targetEl.getBoundingClientRect();
+
+    // Determine color based on type
+    const colorMap: Record<string, string> = {
+      trim: 'violet',
+      source: 'cyan',
+      audio: 'emerald',
+      text: 'amber',
+      sticker: 'rose',
+      watermark: 'violet',
+      effect: 'cyan',
+      filter: 'rose',
+    };
+
+    // Get label for ghost
+    let label = '';
+    if (type === 'audio') label = item.name || 'Audio';
+    else if (type === 'text') label = item.text?.substring(0, 20) || 'Text';
+    else if (type === 'source') label = item.source_name || 'Video';
+    else if (type === 'trim') label = 'Segment';
+    else label = type.charAt(0).toUpperCase() + type.slice(1);
+
+    // Initialize ghost state and position
+    dragGhostState.value = {
+      visible: true,
+      type,
+      id,
+      initialLeft: rect.left,
+      initialTop: rect.top,
+      width: rect.width,
+      height: rect.height,
+      label,
+      color: colorMap[type] || 'violet',
+    };
+
+    // Reset ghost transform
+    if (dragGhostRef.value) {
+      dragGhostRef.value.style.transform = 'translateX(0px)';
+    }
 
     isDragging.value = true;
     dragInfo.value = {
@@ -6283,7 +6692,6 @@
     const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
     const deltaX = e.clientX - dragInfo.value.startX;
     const deltaY = e.clientY - dragInfo.value.startY;
-    const deltaPercent = (deltaX / dragInfo.value.trackContentWidth) * 100;
 
     // For audio tracks, detect which track row the mouse is over
     if (dragInfo.value.type === 'audio' && dragInfo.value.originalTrackOrder !== undefined) {
@@ -6310,79 +6718,75 @@
 
     // SLIP TOOL LOGIC
     if (isSlipTool.value && dragInfo.value.type === 'source') {
-        const item = dragInfo.value.item as VideoEditorSource;
-        const deltaX = e.clientX - dragInfo.value.startX;
-        // Slip delta is inverted: dragging right slips content left (earlier in source), so we subtract delta
-        // But typically dragging content: drag right -> see earlier content -> start_time decreases.
-        // Wait, standard NLE:
-        // Drag rect right -> clip stays, content moves right? No, usually "Slip" moves the "window" over the content.
-        // Dragging right: Window moves right relative to content?
-        // Let's stick to: Drag right -> delta positive.
-        // Content time = Time - start + trim_start.
-        // If we slip by +delta (right):
-        // new_trim_start = old_trim_start - delta?
-        // Let's visualize:
-        // [   Source Content   ]
-        //     [ Segment ]
-        // Drag Segment Mouse Right -> We want to see "earlier" content?
-        // Usually, dragging the clip visual representation with slip tool:
-        // Drag Right -> The content shifts right. Meaning we see earlier frames at the start.
-        // So trim_start decreases.
-        // So delta is negative of drag delta?
-        // Let's use: delta = -(pixelDelta / pixelsPerSecond).
-        
-        const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
-        const slipDelta = -deltaTime;
+      const item = dragInfo.value.item as VideoEditorSource;
+      const deltaX = e.clientX - dragInfo.value.startX;
+      // Slip delta is inverted: dragging right slips content left (earlier in source), so we subtract delta
+      // But typically dragging content: drag right -> see earlier content -> start_time decreases.
+      // Wait, standard NLE:
+      // Drag rect right -> clip stays, content moves right? No, usually "Slip" moves the "window" over the content.
+      // Dragging right: Window moves right relative to content?
+      // Let's stick to: Drag right -> delta positive.
+      // Content time = Time - start + trim_start.
+      // If we slip by +delta (right):
+      // new_trim_start = old_trim_start - delta?
+      // Let's visualize:
+      // [   Source Content   ]
+      //     [ Segment ]
+      // Drag Segment Mouse Right -> We want to see "earlier" content?
+      // Usually, dragging the clip visual representation with slip tool:
+      // Drag Right -> The content shifts right. Meaning we see earlier frames at the start.
+      // So trim_start decreases.
+      // So delta is negative of drag delta?
+      // Let's use: delta = -(pixelDelta / pixelsPerSecond).
 
-        slipState.value = {
-            type: 'source',
-            id: dragInfo.value.id,
-            delta: slipDelta,
-            originalTrimStart: item.trim_start,
-            originalTrimEnd: item.trim_end
-        };
-        
-        // Position doesn't change for slip
-        return;
+      const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+      const slipDelta = -deltaTime;
+
+      slipState.value = {
+        type: 'source',
+        id: dragInfo.value.id,
+        delta: slipDelta,
+        originalTrimStart: item.trim_start,
+        originalTrimEnd: item.trim_end,
+      };
+
+      // Position doesn't change for slip
+      return;
     }
 
     // SLIDE TOOL LOGIC
     if (isSlideTool.value && dragInfo.value.type === 'source' && props.videoSources) {
-        const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
-        
-        // Identify neighbors
-        // This relies on sorting.
-        const sortedSources = [...props.videoSources].sort((a, b) => a.start_time - b.start_time);
-        const currentIndex = sortedSources.findIndex(s => s.id === dragInfo.value?.id);
-        
-        let leftNeighborId = '';
-        let rightNeighborId = '';
-        
-        if (currentIndex > 0) leftNeighborId = sortedSources[currentIndex - 1].id;
-        if (currentIndex < sortedSources.length - 1) rightNeighborId = sortedSources[currentIndex + 1].id;
-        
-        if (leftNeighborId && rightNeighborId) {
-             slideState.value = {
-                type: 'source',
-                id: dragInfo.value.id,
-                leftNeighborId,
-                rightNeighborId,
-                delta: deltaTime,
-                originalStartTime: dragInfo.value.originalStartTime,
-                originalEndTime: dragInfo.value.originalEndTime
-             };
-             
-             // Update preview position
-             const newStartTime = dragInfo.value.originalStartTime + deltaTime;
-             const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
-             dragPreview.value = {
-                type: 'source',
-                id: dragInfo.value.id,
-                startTime: newStartTime,
-                endTime: newStartTime + itemDuration
-             };
-             return;
+      const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+
+      // Identify neighbors
+      // This relies on sorting.
+      const sortedSources = [...props.videoSources].sort((a, b) => a.start_time - b.start_time);
+      const currentIndex = sortedSources.findIndex((s) => s.id === dragInfo.value?.id);
+
+      let leftNeighborId = '';
+      let rightNeighborId = '';
+
+      if (currentIndex > 0) leftNeighborId = sortedSources[currentIndex - 1].id;
+      if (currentIndex < sortedSources.length - 1) rightNeighborId = sortedSources[currentIndex + 1].id;
+
+      if (leftNeighborId && rightNeighborId) {
+        slideState.value = {
+          type: 'source',
+          id: dragInfo.value.id,
+          leftNeighborId,
+          rightNeighborId,
+          delta: deltaTime,
+          originalStartTime: dragInfo.value.originalStartTime,
+          originalEndTime: dragInfo.value.originalEndTime,
+        };
+
+        // DIRECT DOM MANIPULATION - bypasses Vue reactivity for smooth dragging
+        // Only horizontal movement - segments stay within their track
+        if (dragGhostRef.value) {
+          dragGhostRef.value.style.transform = `translateX(${deltaX}px)`;
         }
+        return;
+      }
     }
 
     // For visual overlays, detect which layer the mouse is over
@@ -6396,8 +6800,10 @@
       dragInfo.value.targetLayer = Math.max(0, targetLayer);
     }
 
+    // Calculate snapped position for snap line indicator (but don't update dragPreview)
     let newStartTime: number;
     let newEndTime: number;
+    let snapAdjustedDeltaX = deltaX;
 
     // For trim segments and audio, use linear calculation (they have different coordinate systems)
     if (dragInfo.value.type === 'trim') {
@@ -6414,7 +6820,7 @@
         newStartTime = props.duration - itemDuration;
       }
 
-      // Apply snapping for trim segments
+      // Apply snapping for trim segments - calculate snap for visual feedback
       const snapResult = applySnapToSegment(newStartTime, newEndTime, dragInfo.value.id);
       if (snapResult.didSnap) {
         // Re-apply bounds after snapping
@@ -6430,6 +6836,9 @@
         }
         activeSnapTime.value = snapResult.snapTime;
         activeSnapTrackType.value = snapResult.snapTrackType;
+        // Adjust visual deltaX to account for snap
+        const snapDelta = newStartTime - dragInfo.value.originalStartTime;
+        snapAdjustedDeltaX = (snapDelta / props.duration) * dragInfo.value.trackContentWidth;
       } else {
         activeSnapTime.value = null;
         activeSnapTrackType.value = null;
@@ -6454,6 +6863,9 @@
         }
         activeSnapTime.value = snapResult.snapTime;
         activeSnapTrackType.value = snapResult.snapTrackType;
+        // Adjust visual deltaX to account for snap
+        const snapDelta = newStartTime - dragInfo.value.originalStartTime;
+        snapAdjustedDeltaX = (snapDelta / totalDuration.value) * dragInfo.value.trackContentWidth;
       } else {
         activeSnapTime.value = null;
         activeSnapTrackType.value = null;
@@ -6461,6 +6873,7 @@
     } else {
       // For text, sticker, effect, filter - CapCut-style free positioning
       // These overlay items can extend beyond the source video duration
+      const deltaPercent = (deltaX / dragInfo.value.trackContentWidth) * 100;
       // Calculate original visual position and new visual position
       const originalStartPercent = effectiveTimeToVisualPercent(dragInfo.value.originalStartTime);
       const newStartPercent = Math.max(0, originalStartPercent + deltaPercent);
@@ -6486,136 +6899,209 @@
         }
         activeSnapTime.value = snapResult.snapTime;
         activeSnapTrackType.value = snapResult.snapTrackType;
+        // Adjust visual deltaX to account for snap
+        const snappedPercent = effectiveTimeToVisualPercent(newStartTime);
+        const originalPercent = effectiveTimeToVisualPercent(dragInfo.value.originalStartTime);
+        snapAdjustedDeltaX = ((snappedPercent - originalPercent) / 100) * dragInfo.value.trackContentWidth;
       } else {
         activeSnapTime.value = null;
         activeSnapTrackType.value = null;
       }
     }
 
-    // Update local preview state (no database call)
-    dragPreview.value = {
-      type: dragInfo.value.type,
-      id: dragInfo.value.id,
-      startTime: newStartTime,
-      endTime: newEndTime,
-    };
+    // Store the final delta for use in onDragEnd (minimal reactive update)
+    dragInfo.value.currentDeltaX = snapAdjustedDeltaX;
+    dragInfo.value.currentDeltaY = deltaY;
+
+    // DIRECT DOM MANIPULATION - bypasses Vue reactivity completely for zero-lag dragging
+    // Only horizontal movement - segments stay within their track
+    if (dragGhostRef.value) {
+      dragGhostRef.value.style.transform = `translateX(${snapAdjustedDeltaX}px)`;
+    }
   }
 
   function onDragEnd() {
+    // Remove event listeners immediately to prevent further drag events
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+
     // Commit the final position to database with undo/redo support
     if (dragInfo.value) {
-      
       // Handle Slip Edit End
       if (isSlipTool.value && slipState.value) {
-          emit('slipEdit', {
-              type: slipState.value.type,
-              itemId: slipState.value.id,
-              delta: slipState.value.delta,
-              originalTrimStart: slipState.value.originalTrimStart,
-              originalTrimEnd: slipState.value.originalTrimEnd
-          });
-          
+        emit('slipEdit', {
+          type: slipState.value.type,
+          itemId: slipState.value.id,
+          delta: slipState.value.delta,
+          originalTrimStart: slipState.value.originalTrimStart,
+          originalTrimEnd: slipState.value.originalTrimEnd,
+        });
+
+        // Delay cleanup until Vue has processed the update
+        nextTick(() => {
           isDragging.value = false;
           dragInfo.value = null;
           slipState.value = null;
-          document.removeEventListener('mousemove', onDragMove);
-          document.removeEventListener('mouseup', onDragEnd);
-          return;
+          dragGhostState.value = null;
+          debouncedRenderAllWaveforms();
+        });
+        return;
       }
 
       // Handle Slide Edit End
       if (isSlideTool.value && slideState.value) {
-          emit('slideEdit', {
-              type: slideState.value.type,
-              itemId: slideState.value.id,
-              leftNeighborId: slideState.value.leftNeighborId,
-              rightNeighborId: slideState.value.rightNeighborId,
-              delta: slideState.value.delta,
-              originalStartTime: slideState.value.originalStartTime,
-              originalEndTime: slideState.value.originalEndTime
-          });
+        emit('slideEdit', {
+          type: slideState.value.type,
+          itemId: slideState.value.id,
+          leftNeighborId: slideState.value.leftNeighborId,
+          rightNeighborId: slideState.value.rightNeighborId,
+          delta: slideState.value.delta,
+          originalStartTime: slideState.value.originalStartTime,
+          originalEndTime: slideState.value.originalEndTime,
+        });
 
+        // Delay cleanup until Vue has processed the update
+        nextTick(() => {
           isDragging.value = false;
           dragInfo.value = null;
           slideState.value = null;
-          dragPreview.value = null; // Clear preview
-          document.removeEventListener('mousemove', onDragMove);
-          document.removeEventListener('mouseup', onDragEnd);
-          return;
+          dragGhostState.value = null;
+          debouncedRenderAllWaveforms();
+        });
+        return;
       }
 
-      if (dragPreview.value) {
-      const type = dragPreview.value.type;
-
-      // For video sources with cross-track dragging
+      // Compute final position from stored delta
+      const deltaX = dragInfo.value.currentDeltaX ?? 0;
       if (
-        type === 'source' &&
-        dragInfo.value.targetTrackIndex !== undefined &&
+        deltaX !== 0 ||
+        dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder ||
+        dragInfo.value.targetLayer !== dragInfo.value.originalLayer ||
         dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex
       ) {
-        // Video source was dragged to a different track
-        emit('updateSource', dragPreview.value.id, {
-          start_time: dragPreview.value.startTime,
-          end_time: dragPreview.value.endTime,
-          track_index: dragInfo.value.targetTrackIndex,
-        });
-      } else if (
-        type === 'audio' &&
-        dragInfo.value.targetTrackOrder !== undefined &&
-        dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder
-      ) {
-        // Audio was dragged to a different track
-        emit('updateAudioTrack', dragPreview.value.id, {
-          startTime: dragPreview.value.startTime,
-          endTime: dragPreview.value.endTime,
-          trackOrder: dragInfo.value.targetTrackOrder,
-        });
-      } else if (['text', 'sticker', 'watermark'].includes(type)) {
-        // Visual overlays always use direct update to preserve layer property
-        const currentLayer = dragInfo.value.targetLayer ?? dragInfo.value.originalLayer ?? 0;
-        const updateData: any = {
-          startTime: dragPreview.value.startTime,
-          endTime: dragPreview.value.endTime,
-          layer: currentLayer,
+        const type = dragInfo.value.type;
+        const id = dragInfo.value.id;
+        const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
+
+        let newStartTime: number;
+        let newEndTime: number;
+
+        // Calculate final time based on item type
+        if (type === 'trim') {
+          const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+          newStartTime = dragInfo.value.originalStartTime + deltaTime;
+          newEndTime = newStartTime + itemDuration;
+
+          // Clamp to bounds
+          if (newStartTime < 0) {
+            newStartTime = 0;
+            newEndTime = itemDuration;
+          }
+          if (newEndTime > props.duration) {
+            newEndTime = props.duration;
+            newStartTime = props.duration - itemDuration;
+          }
+        } else if (type === 'audio') {
+          const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * totalDuration.value;
+          newStartTime = dragInfo.value.originalStartTime + deltaTime;
+          newEndTime = newStartTime + itemDuration;
+
+          if (newStartTime < 0) {
+            newStartTime = 0;
+            newEndTime = itemDuration;
+          }
+        } else {
+          // For text, sticker, effect, filter, source - CapCut-style free positioning
+          const deltaPercent = (deltaX / dragInfo.value.trackContentWidth) * 100;
+          const originalStartPercent = effectiveTimeToVisualPercent(dragInfo.value.originalStartTime);
+          const newStartPercent = Math.max(0, originalStartPercent + deltaPercent);
+
+          newStartTime = visualPercentToEffectiveTime(newStartPercent);
+          newEndTime = newStartTime + itemDuration;
+
+          if (newStartTime < 0) {
+            newStartTime = 0;
+            newEndTime = itemDuration;
+          }
+        }
+
+        // Set dragPreview to final position BEFORE emitting and clearing isDragging
+        // This ensures the segment renders at the new position immediately while props update
+        dragPreview.value = {
+          type,
+          id,
+          startTime: newStartTime,
+          endTime: newEndTime,
         };
 
-        if (type === 'text') {
-          emit('updateTextOverlay', dragPreview.value.id, updateData);
-        } else if (type === 'sticker') {
-          emit('updateSticker', dragPreview.value.id, updateData);
-        } else if (type === 'watermark') {
-          emit('updateWatermark', dragPreview.value.id, updateData);
+        // For video sources with cross-track dragging
+        if (
+          type === 'source' &&
+          dragInfo.value.targetTrackIndex !== undefined &&
+          dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex
+        ) {
+          // Video source was dragged to a different track
+          emit('updateSource', id, {
+            start_time: newStartTime,
+            end_time: newEndTime,
+            track_index: dragInfo.value.targetTrackIndex,
+          });
+        } else if (
+          type === 'audio' &&
+          dragInfo.value.targetTrackOrder !== undefined &&
+          dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder
+        ) {
+          // Audio was dragged to a different track
+          emit('updateAudioTrack', id, {
+            startTime: newStartTime,
+            endTime: newEndTime,
+            trackOrder: dragInfo.value.targetTrackOrder,
+          });
+        } else if (['text', 'sticker', 'watermark'].includes(type)) {
+          // Visual overlays always use direct update to preserve layer property
+          const currentLayer = dragInfo.value.targetLayer ?? dragInfo.value.originalLayer ?? 0;
+          const updateData: any = {
+            startTime: newStartTime,
+            endTime: newEndTime,
+            layer: currentLayer,
+          };
+
+          if (type === 'text') {
+            emit('updateTextOverlay', id, updateData);
+          } else if (type === 'sticker') {
+            emit('updateSticker', id, updateData);
+          } else if (type === 'watermark') {
+            emit('updateWatermark', id, updateData);
+          }
+        } else if (['effect', 'audio', 'filter'].includes(type)) {
+          // For track types that support undo/redo, emit moveTrack event
+          emit('moveTrack', {
+            type,
+            id,
+            originalStartTime: dragInfo.value.originalStartTime,
+            originalEndTime: dragInfo.value.originalEndTime,
+            newStartTime,
+            newEndTime,
+          });
+        } else {
+          // For other types (trim, source), use direct update
+          emitUpdate(type, id, newStartTime, newEndTime);
         }
-      } else if (['effect', 'audio', 'filter'].includes(type)) {
-        // For track types that support undo/redo, emit moveTrack event
-        emit('moveTrack', {
-          type,
-          id: dragPreview.value.id,
-          originalStartTime: dragInfo.value.originalStartTime,
-          originalEndTime: dragInfo.value.originalEndTime,
-          newStartTime: dragPreview.value.startTime,
-          newEndTime: dragPreview.value.endTime,
-        });
-      } else {
-        // For other types (trim, source), use direct update
-        emitUpdate(
-          dragPreview.value.type,
-          dragPreview.value.id,
-          dragPreview.value.startTime,
-          dragPreview.value.endTime
-        );
       }
     }
-    }
 
+    // Hide ghost immediately, but keep dragPreview set so segment shows at new position
+    dragGhostState.value = null;
     isDragging.value = false;
     dragInfo.value = null;
-    dragPreview.value = null;
     activeSnapTime.value = null;
     activeSnapTrackType.value = null;
 
-    document.removeEventListener('mousemove', onDragMove);
-    document.removeEventListener('mouseup', onDragEnd);
+    // Clear dragPreview after a delay to allow props to propagate from parent
+    setTimeout(() => {
+      dragPreview.value = null;
+      debouncedRenderAllWaveforms();
+    }, 100);
   }
 
   // Segment resizing
@@ -6742,7 +7228,7 @@
       const deltaX = e.clientX - resizeInfo.value.startX;
       const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * props.duration;
       const originalTrimStart = source.trim_start ?? 0;
-      const originalTrimEnd = source.trim_end ?? (originalTrimStart + (source.end_time - source.start_time));
+      const originalTrimEnd = source.trim_end ?? originalTrimStart + (source.end_time - source.start_time);
       const sourceDuration = source.source_duration || Infinity;
 
       if (resizeInfo.value.handle === 'left') {
@@ -6760,15 +7246,15 @@
         if (snapResult.didSnap && snapResult.time >= 0) {
           const snappedDelta = snapResult.time - resizeInfo.value.originalStartTime;
           const snappedTrimStart = originalTrimStart + snappedDelta;
-          
+
           if (snappedTrimStart >= 0) {
             newStartTime = snapResult.time;
             newTrimStart = snappedTrimStart;
             activeSnapTime.value = snapResult.time;
             activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
           } else {
-             activeSnapTime.value = null;
-             activeSnapTrackType.value = null;
+            activeSnapTime.value = null;
+            activeSnapTrackType.value = null;
           }
         } else {
           activeSnapTime.value = null;
@@ -6782,41 +7268,41 @@
           activeSnapTime.value = null;
           activeSnapTrackType.value = null;
         }
-        
+
         newTrimEnd = originalTrimEnd;
       } else {
         // Right handle
         newEndTime = Math.min(props.duration, resizeInfo.value.originalEndTime + deltaTime);
-                // Calculate newTrimEnd
+        // Calculate newTrimEnd
         const baseTrimEnd = originalTrimEnd ?? sourceDuration;
         newTrimEnd = baseTrimEnd + (newEndTime - resizeInfo.value.originalEndTime);
 
         // Constrain trim_end <= sourceDuration
         if (newTrimEnd !== undefined && newTrimEnd > sourceDuration) {
-            newTrimEnd = sourceDuration;
-            newEndTime = resizeInfo.value.originalEndTime + (sourceDuration - baseTrimEnd);
+          newTrimEnd = sourceDuration;
+          newEndTime = resizeInfo.value.originalEndTime + (sourceDuration - baseTrimEnd);
         }
 
         // Apply snapping to the right edge
         const snapResult = applySnapToTime(newEndTime, resizeInfo.value.id);
         if (snapResult.didSnap && snapResult.time <= props.duration) {
-             const snappedDelta = snapResult.time - resizeInfo.value.originalEndTime;
-             // Ensure we have a valid base for snapped calculation
-             const baseTrimEnd = originalTrimEnd ?? sourceDuration;
-             const snappedTrimEnd = baseTrimEnd + snappedDelta;
-             
-             if (snappedTrimEnd <= sourceDuration) {
-                 newEndTime = snapResult.time;
-                 newTrimEnd = snappedTrimEnd;
-                 activeSnapTime.value = snapResult.time;
-                 activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
-             } else {
-                 activeSnapTime.value = null;
-                 activeSnapTrackType.value = null;
-             }
+          const snappedDelta = snapResult.time - resizeInfo.value.originalEndTime;
+          // Ensure we have a valid base for snapped calculation
+          const baseTrimEnd = originalTrimEnd ?? sourceDuration;
+          const snappedTrimEnd = baseTrimEnd + snappedDelta;
+
+          if (snappedTrimEnd <= sourceDuration) {
+            newEndTime = snapResult.time;
+            newTrimEnd = snappedTrimEnd;
+            activeSnapTime.value = snapResult.time;
+            activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
+          } else {
+            activeSnapTime.value = null;
+            activeSnapTrackType.value = null;
+          }
         } else {
-             activeSnapTime.value = null;
-             activeSnapTrackType.value = null;
+          activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
 
         // Min duration check
@@ -6826,7 +7312,7 @@
           activeSnapTime.value = null;
           activeSnapTrackType.value = null;
         }
-        
+
         newTrimStart = originalTrimStart;
       }
     } else {
@@ -6894,7 +7380,7 @@
     if (isRippleTool.value) {
       let delta = 0;
       let originalEdgeTime = 0;
-      
+
       if (resizeInfo.value.handle === 'left') {
         delta = newStartTime - resizeInfo.value.originalStartTime;
         originalEdgeTime = resizeInfo.value.originalStartTime;
@@ -6907,7 +7393,7 @@
         type: resizeInfo.value.type,
         id: resizeInfo.value.id,
         delta,
-        originalEdgeTime
+        originalEdgeTime,
       };
     }
 
@@ -6926,11 +7412,12 @@
         leftId = itemId;
         originalRollTime = resizeInfo.value.originalEndTime;
         newRollTime = newEndTime;
-        
+
         // Find right neighbor
-        const neighbor = props.videoSources.find(s => Math.abs(s.start_time - originalRollTime) < 0.01 && s.id !== itemId);
+        const neighbor = props.videoSources.find(
+          (s) => Math.abs(s.start_time - originalRollTime) < 0.01 && s.id !== itemId
+        );
         if (neighbor) rightId = neighbor.id;
-        
       } else {
         // Dragging the boundary between Neighbor (Left) and Item (Right)
         rightId = itemId;
@@ -6938,7 +7425,9 @@
         newRollTime = newStartTime;
 
         // Find left neighbor
-        const neighbor = props.videoSources.find(s => Math.abs(s.end_time - originalRollTime) < 0.01 && s.id !== itemId);
+        const neighbor = props.videoSources.find(
+          (s) => Math.abs(s.end_time - originalRollTime) < 0.01 && s.id !== itemId
+        );
         if (neighbor) leftId = neighbor.id;
       }
 
@@ -6949,7 +7438,7 @@
           rightItemId: rightId,
           originalRollTime,
           newRollTime,
-          activeHandle: handle
+          activeHandle: handle,
         };
       }
     }
@@ -6965,7 +7454,7 @@
           id: dragPreview.value.id,
           newStartTime: dragPreview.value.startTime,
           newEndTime: dragPreview.value.endTime,
-          delta: rippleState.value.delta
+          delta: rippleState.value.delta,
         });
       } else if (isRollTool.value && rollState.value) {
         // Emit Roll Edit event
@@ -6974,7 +7463,7 @@
           leftItemId: rollState.value.leftItemId,
           rightItemId: rollState.value.rightItemId,
           newRollTime: rollState.value.newRollTime,
-          originalRollTime: rollState.value.originalRollTime
+          originalRollTime: rollState.value.originalRollTime,
         });
       } else if (dragPreview.value.type === 'source') {
         // Source Resize with trims
@@ -6982,14 +7471,14 @@
           start_time: dragPreview.value.startTime,
           end_time: dragPreview.value.endTime,
           trim_start: dragPreview.value.trimStart,
-          trim_end: dragPreview.value.trimEnd
+          trim_end: dragPreview.value.trimEnd,
         });
       } else {
         // Standard Resize
         emitUpdate(
-          dragPreview.value.type, 
-          dragPreview.value.id, 
-          dragPreview.value.startTime, 
+          dragPreview.value.type,
+          dragPreview.value.id,
+          dragPreview.value.startTime,
           dragPreview.value.endTime
         );
       }
@@ -7005,6 +7494,11 @@
 
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onResizeEnd);
+
+    // Trigger final waveform render after resize completes
+    nextTick(() => {
+      debouncedRenderAllWaveforms();
+    });
   }
 
   function emitUpdate(type: ItemType, id: string, startTime: number, endTime: number) {
@@ -7055,7 +7549,9 @@
       const isWithinSegment = props.currentTime >= segment.startTime && props.currentTime <= segment.endTime;
       const playheadRatio = isWithinSegment
         ? (props.currentTime - segment.startTime) / segmentDuration
-        : props.currentTime < segment.startTime ? 0 : 1;
+        : props.currentTime < segment.startTime
+          ? 0
+          : 1;
 
       // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
       const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
@@ -7110,7 +7606,7 @@
     try {
       console.log('[ClipEditorTimeline] Loading waveform for source:', sourceId);
       await waveformService.loadAudio(sourcePath);
-      
+
       // Render the waveform after loading
       nextTick(() => {
         renderSourceWaveform(sourceId);
@@ -7194,7 +7690,7 @@
     try {
       console.log('[loadAudioWaveform] Loading audio for track:', trackId);
       await waveformService.loadAudio(audioSrc);
-      
+
       // Render the waveform
       nextTick(() => renderAudioWaveform(trackId));
     } catch (err) {
@@ -7337,12 +7833,15 @@
   );
 
   // Watch for waveform and segment changes
+  // Uses debounced rendering and skips during active interactions
   watch(
     [waveformData, isWaveformLoaded, () => props.currentTime, zoomLevel, sortedTrimSegments],
     () => {
       if (isWaveformLoaded.value && waveformData.value) {
+        // Skip render during active interactions - will render when interaction ends
+        if (isZooming.value || isDragging.value || isResizing.value) return;
         nextTick(() => {
-          renderAllWaveforms();
+          debouncedRenderAllWaveforms();
         });
       }
     },
@@ -7354,8 +7853,10 @@
     () => props.audioGainDb,
     () => {
       if (isWaveformLoaded.value && waveformData.value) {
+        // Skip during interactions - render when idle
+        if (isZooming.value || isDragging.value || isResizing.value) return;
         nextTick(() => {
-          renderAllWaveforms();
+          debouncedRenderAllWaveforms();
         });
       }
     }
@@ -7365,8 +7866,10 @@
   watch(
     () => props.trackDbValues,
     () => {
+      // Skip during interactions
+      if (isZooming.value || isDragging.value || isResizing.value) return;
       nextTick(() => {
-        renderAllAudioWaveforms();
+        debouncedRenderWaveforms();
       });
     },
     { deep: true }
@@ -7392,24 +7895,34 @@
       });
 
       // Re-render all audio waveforms to reflect any property changes (volume, etc.)
+      // Skip during active interactions
+      if (isZooming.value || isDragging.value || isResizing.value) return;
       nextTick(() => {
-        renderAllAudioWaveforms();
+        debouncedRenderWaveforms();
       });
     },
     { deep: true, immediate: true }
   );
 
   // Watch for current time and zoom level changes to update audio waveforms
+  // This is a high-frequency watcher - use debouncing and skip during interactions
   watch([() => props.currentTime, zoomLevel], () => {
+    // Skip render during active zoom/drag - will render when interaction ends
+    if (isZooming.value || isDragging.value || isResizing.value) return;
     nextTick(() => {
-      renderAllAudioWaveforms();
+      debouncedRenderWaveforms();
     });
   });
 
   // Watch for drag preview changes to re-render audio waveforms when segments split/merge
+  // Only render when drag ends (dragPreview becomes null) or for structural changes
   watch(
     dragPreview,
-    () => {
+    (newVal, oldVal) => {
+      // Skip during active drag - the segment visuals update via dragPreview styles
+      // Only render when drag ends (newVal is null) to show final state
+      if (newVal !== null) return;
+
       // Use nextTick + requestAnimationFrame to ensure canvas refs are set up after DOM update
       nextTick(() => {
         requestAnimationFrame(() => {
@@ -7442,18 +7955,23 @@
       });
 
       // Re-render all source waveforms after DOM updates
+      // Skip during active interactions
+      if (isZooming.value || isDragging.value || isResizing.value) return;
       nextTick(() => {
-        renderAllSourceWaveforms();
+        debouncedRenderWaveforms();
       });
     },
     { deep: true, immediate: true }
   );
 
   // Watch for current time and zoom changes to update source waveforms (for playhead position)
+  // This is a high-frequency watcher - skip during interactions
   watch([() => props.currentTime, zoomLevel], () => {
     if (props.editorMode) {
+      // Skip during active interactions - will render when interaction ends
+      if (isZooming.value || isDragging.value || isResizing.value) return;
       nextTick(() => {
-        renderAllSourceWaveforms();
+        debouncedRenderWaveforms();
       });
     }
   });
@@ -7472,7 +7990,7 @@
     const contentWidth = contentWrapper.offsetWidth;
 
     // Calculate playhead pixel position within content
-    // This matches the CSS: left: calc(80px + (100% - 80px) * position)
+    // This matches the CSS: left: calc(120px + (100% - 120px) * position)
     const trackAreaWidth = contentWidth - TRACK_LABEL_WIDTH;
     const playheadX = TRACK_LABEL_WIDTH + trackAreaWidth * playheadRatio;
 
@@ -7581,9 +8099,14 @@
 
   // The effective playhead position used in the template
   const effectivePlayheadPosition = computed(() => {
-    // During dragging, always use computed position directly (no animation)
-    if (isDraggingPlayhead.value) {
-      return playheadPosition.value;
+    // During dragging, use optimistic position to avoid round-trip lag
+    // This shows the playhead exactly where the user is dragging, not where
+    // the video has caught up to (which can lag behind during fast dragging)
+    if (isDraggingPlayhead.value && optimisticDragTime.value !== null) {
+      const duration = props.editorMode ? props.duration : totalDuration.value;
+      if (duration > 0) {
+        return Math.min(1, Math.max(0, optimisticDragTime.value / duration));
+      }
     }
     // During playback, use smooth animated position
     if (props.isPlaying) {
@@ -7594,9 +8117,10 @@
   });
 
   // Computed position for snap indicator line (0-1 range like playhead)
+  // Must use totalDuration.value to match segment positioning via effectiveTimeToVisualPercent
   const snapIndicatorPosition = computed(() => {
     if (activeSnapTime.value === null) return null;
-    const duration = props.editorMode ? props.duration : totalDuration.value;
+    const duration = totalDuration.value;
     if (duration <= 0) return null;
     return activeSnapTime.value / duration;
   });
@@ -7773,7 +8297,11 @@
     }
 
     // Perform cut at playhead with X key or Ctrl+K
-    if ((event.key === 'x' || event.key === 'X') || ((event.ctrlKey || event.metaKey) && (event.key === 'k' || event.key === 'K'))) {
+    if (
+      event.key === 'x' ||
+      event.key === 'X' ||
+      ((event.ctrlKey || event.metaKey) && (event.key === 'k' || event.key === 'K'))
+    ) {
       event.preventDefault();
       performCutAtPlayhead();
     }
@@ -7875,7 +8403,7 @@
           break;
       }
     }
-    
+
     // Shift+Z for zoom to selection
     if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
       if (event.key.toLowerCase() === 'z') {
@@ -7898,11 +8426,13 @@
     // Handle arrow keys for frame-by-frame seeking (precise millisecond navigation)
     // In editor mode, use props.duration (editor timeline duration)
     // In clip mode, use the clip duration from clipEnd - clipStart
-    const maxDuration = props.editorMode 
-      ? (props.duration || totalDuration.value) 
-      : (props.clipEnd && props.clipStart !== undefined ? props.clipEnd - props.clipStart : totalDuration.value);
+    const maxDuration = props.editorMode
+      ? props.duration || totalDuration.value
+      : props.clipEnd && props.clipStart !== undefined
+        ? props.clipEnd - props.clipStart
+        : totalDuration.value;
     const frameTime = 1 / 30; // Assume 30fps for frame-accurate stepping
-    
+
     if (!isCutToolActive.value && maxDuration > 0) {
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
@@ -8006,6 +8536,8 @@
       setupResizeObserver();
       // Initialize zoom to fit-to-width
       initializeZoom();
+      // Initialize visible time range for virtualized rendering
+      updateVisibleTimeRange();
       if (props.videoSrc) {
         loadWaveformFromVideo(props.videoSrc);
       }
@@ -8027,6 +8559,15 @@
     stopContinuousSeeking();
     // Clean up audio scrubbing
     cleanupAudioScrubbing();
+    // Clean up zoom-related RAF and timeouts
+    if (zoomRAFId) {
+      cancelAnimationFrame(zoomRAFId);
+      zoomRAFId = null;
+    }
+    if (zoomEndTimeout) {
+      clearTimeout(zoomEndTimeout);
+      zoomEndTimeout = null;
+    }
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
     document.removeEventListener('mousemove', onResizeMove);
@@ -8046,6 +8587,8 @@
     backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     user-select: none;
+    /* Performance: contain layout to prevent reflows from affecting parent */
+    contain: layout style;
   }
 
   /* Sticky track labels - prevent sub-pixel jitter during scroll */
@@ -8055,8 +8598,25 @@
     -webkit-backface-visibility: hidden;
   }
 
+  /* Timeline content wrapper - optimize for zoom transforms */
+  .timeline-content-wrapper {
+    /* Promote to compositor layer for smoother width changes during zoom */
+    will-change: width;
+    transform: translateZ(0);
+    /* CSS containment for performance - prevents layout thrashing */
+    contain: layout style;
+  }
+
   .timeline-tick {
-    transition: all 0.2s ease;
+    /* Remove transition during rapid updates for performance */
+    transition: none;
+    /* Each tick is independent - prevent layout recalculation cascade */
+    contain: layout style;
+  }
+
+  /* Track content areas - contain layout to prevent reflows */
+  .track-label {
+    contain: layout style;
   }
 
   /* Clip segment animations */
@@ -8066,6 +8626,8 @@
       box-shadow 0.2s ease-out,
       border-color 0.15s ease;
     will-change: transform, box-shadow;
+    /* CSS containment - each segment is visually independent */
+    contain: layout style;
   }
 
   /* No transitions during drag for smoother performance */
@@ -8108,11 +8670,6 @@
     cursor: grabbing !important;
   }
 
-  /* Add 6px left offset to all segments to align with playhead minimum position */
-  .clip-segment {
-    margin-left: 6px;
-  }
-
   /* Smooth transitions for non-dragging states */
   .clip-segment:not(.dragging) {
     transition:
@@ -8137,13 +8694,13 @@
   }
 
   /* Playhead positioning using CSS custom property */
-  /* Label width is w-[100px] = 100px, track content is the remaining width */
+  /* Label width is w-[120px] = 120px, track content is the remaining width */
   .playhead-line {
     --playhead-position: 0;
-    left: calc(100px + max(6px, (100% - 100px) * var(--playhead-position)));
+    left: calc(120px + (100% - 120px) * var(--playhead-position));
     will-change: left;
-    /* Smooth transition for seeks (when paused) */
-    transition: left 100ms ease-out;
+    /* No transition for immediate positioning */
+    transition: none;
     /* Force single compositing layer for all children */
     contain: layout style;
   }
@@ -8256,7 +8813,7 @@
   /* Snap indicator line positioning - uses same calculation as playhead */
   .snap-indicator-line {
     --snap-position: 0;
-    left: calc(80px + (100% - 80px) * var(--snap-position));
+    left: calc(120px + (100% - 120px) * var(--snap-position));
     will-change: left;
     animation: snap-pulse 0.8s ease-in-out infinite;
   }
@@ -8269,5 +8826,51 @@
     50% {
       opacity: 1;
     }
+  }
+
+  /* Track label text scrolling marquee for long names */
+  .track-label-text-container {
+    position: relative;
+    max-width: 60px;
+  }
+
+  .track-label-text {
+    display: inline-flex;
+    gap: 24px; /* Gap between original and duplicate text */
+  }
+
+  /* Hide duplicate by default */
+  .track-label-text-duplicate {
+    display: none;
+  }
+
+  /* On hover, show duplicate and animate */
+  .track-label-text-container:hover .track-label-text-duplicate {
+    display: inline;
+  }
+
+  .track-label-text-container:hover .track-label-text {
+    animation: marquee-scroll 3s linear infinite;
+  }
+
+  @keyframes marquee-scroll {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(calc(-50% - 12px)); /* Account for half the gap */
+    }
+  }
+
+  /* Mask to fade edges for smooth scroll appearance */
+  .track-label-text-container::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    background: linear-gradient(to right, transparent, #0e0e10);
+    pointer-events: none;
   }
 </style>
