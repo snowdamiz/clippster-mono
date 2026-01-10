@@ -101,7 +101,11 @@ export class SplitCommand extends BaseCommand {
 
       // Perform the split in database
       try {
-        await splitVideoEditorSource(this.data.editorProjectId, this.data.segmentIndex, this.data.cutTime);
+        await splitVideoEditorSource(
+          this.data.editorProjectId,
+          this.data.segmentIndex,
+          this.data.cutTime
+        );
       } catch (splitError) {
         console.error('[SplitCommand] Editor mode split failed:', splitError);
         throw splitError;
@@ -172,7 +176,11 @@ export class SplitCommand extends BaseCommand {
   async undo(): Promise<void> {
     if (this.editorMode) {
       // Editor mode: Restore to before state
-      if (!this.data.editorProjectId || !this.data.beforeSources || this.data.segmentIndex === undefined) {
+      if (
+        !this.data.editorProjectId ||
+        !this.data.beforeSources ||
+        this.data.segmentIndex === undefined
+      ) {
         throw new Error('Cannot undo: missing editor data');
       }
 
@@ -624,15 +632,15 @@ export interface MoveCommandData {
   type: 'watermark' | 'text' | 'sticker' | 'effect' | 'audio' | 'filter';
   itemId: string;
   editId: string;
-  
+
   // Original position (for undo)
   originalStartTime: number;
   originalEndTime: number;
-  
+
   // New position (for execute/redo)
   newStartTime: number;
   newEndTime: number;
-  
+
   // Callback for reloading UI
   onReload?: () => Promise<void>;
 }
@@ -652,7 +660,7 @@ export class MoveCommand extends BaseCommand {
   async execute(): Promise<void> {
     // Update the item to the new position
     await this.updateItemPosition(this.data.newStartTime, this.data.newEndTime);
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -661,7 +669,7 @@ export class MoveCommand extends BaseCommand {
   async undo(): Promise<void> {
     // Restore the item to the original position
     await this.updateItemPosition(this.data.originalStartTime, this.data.originalEndTime);
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -670,19 +678,34 @@ export class MoveCommand extends BaseCommand {
   private async updateItemPosition(startTime: number, endTime: number): Promise<void> {
     switch (this.data.type) {
       case 'watermark':
-        await updateVideoEditorWatermark(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorWatermark(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       case 'text':
-        await updateVideoEditorTextOverlay(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorTextOverlay(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       case 'sticker':
-        await updateVideoEditorSticker(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorSticker(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       case 'effect':
-        await updateVideoEditorEffect(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorEffect(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       case 'audio':
-        await updateVideoEditorAudioTrack(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorAudioTrack(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       case 'filter':
         // Filters are stored differently - would need special handling
@@ -698,17 +721,17 @@ export class MoveCommand extends BaseCommand {
 export interface ExtractAudioCommandData {
   editId: string;
   sourceId: string;
-  
+
   // Audio track data
   filePath: string;
   name: string;
   startTime: number;
   endTime: number;
   trackOrder: number;
-  
+
   // State for undo
   createdAudioTrackId?: string;
-  
+
   // Callback for reloading UI
   onReload?: () => Promise<void>;
 }
@@ -727,7 +750,7 @@ export class ExtractAudioCommand extends BaseCommand {
 
   async execute(): Promise<void> {
     console.log('[ExtractAudioCommand] Creating audio track');
-    
+
     let createdId: string;
 
     if (this.editorMode) {
@@ -759,19 +782,20 @@ export class ExtractAudioCommand extends BaseCommand {
         track_order: this.data.trackOrder,
         is_muted: 0,
         is_solo: 0,
+        source_id: this.data.sourceId, // 'main' for clip mode extracted audio
       });
       createdId = newTrack.id;
     }
-    
+
     this.data.createdAudioTrackId = createdId;
-    
+
     // Mark the source as having audio extracted (only if it's a real source ID, not 'main' from clip mode)
     if (this.data.sourceId !== 'main') {
       await updateVideoEditorSource(this.data.sourceId, { audio_extracted: true });
     }
-    
+
     console.log('[ExtractAudioCommand] Audio track created:', createdId);
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -781,23 +805,26 @@ export class ExtractAudioCommand extends BaseCommand {
     if (!this.data.createdAudioTrackId) {
       throw new Error('Cannot undo: no audio track ID');
     }
-    
-    console.log('[ExtractAudioCommand] Undoing - deleting audio track:', this.data.createdAudioTrackId);
-    
+
+    console.log(
+      '[ExtractAudioCommand] Undoing - deleting audio track:',
+      this.data.createdAudioTrackId
+    );
+
     // Delete the audio track
     if (this.editorMode) {
       await deleteVideoEditorAudioTrack(this.data.createdAudioTrackId);
     } else {
       await deleteClipAudioTrack(this.data.createdAudioTrackId);
     }
-    
+
     // Unmark the source (only if it's a real source ID)
     if (this.data.sourceId !== 'main') {
       await updateVideoEditorSource(this.data.sourceId, { audio_extracted: false });
     }
-    
+
     console.log('[ExtractAudioCommand] Undo complete');
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -811,10 +838,10 @@ export interface AddItemCommandData {
   type: 'sticker' | 'text' | 'watermark';
   editId: string;
   itemData: Record<string, unknown>;
-  
+
   // State for undo
   createdItemId?: string;
-  
+
   // Callback for reloading UI
   onReload?: () => Promise<void>;
 }
@@ -833,9 +860,9 @@ export class AddItemCommand extends BaseCommand {
 
   async execute(): Promise<void> {
     console.log(`[AddItemCommand] Adding ${this.data.type}`);
-    
+
     let createdItem: { id: string };
-    
+
     switch (this.data.type) {
       case 'sticker':
         createdItem = await createVideoEditorSticker(this.data.editId, this.data.itemData);
@@ -849,10 +876,10 @@ export class AddItemCommand extends BaseCommand {
       default:
         throw new Error(`Unknown item type: ${this.data.type}`);
     }
-    
+
     this.data.createdItemId = createdItem.id;
     console.log(`[AddItemCommand] ${this.data.type} created:`, createdItem.id);
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -862,9 +889,9 @@ export class AddItemCommand extends BaseCommand {
     if (!this.data.createdItemId) {
       throw new Error('Cannot undo: no item ID');
     }
-    
+
     console.log(`[AddItemCommand] Undoing - deleting ${this.data.type}:`, this.data.createdItemId);
-    
+
     switch (this.data.type) {
       case 'sticker':
         await deleteVideoEditorSticker(this.data.createdItemId);
@@ -876,9 +903,9 @@ export class AddItemCommand extends BaseCommand {
         await deleteVideoEditorWatermark(this.data.createdItemId);
         break;
     }
-    
+
     console.log(`[AddItemCommand] Undo complete`);
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -892,19 +919,19 @@ export interface ResizeCommandData {
   type: 'watermark' | 'text' | 'sticker' | 'effect' | 'audio' | 'filter' | 'source';
   itemId: string;
   editId: string;
-  
+
   // Original position (for undo)
   originalStartTime: number;
   originalEndTime: number;
   originalTrimStart?: number;
   originalTrimEnd?: number;
-  
+
   // New position (for execute/redo)
   newStartTime: number;
   newEndTime: number;
   newTrimStart?: number;
   newTrimEnd?: number;
-  
+
   // Callback for reloading UI
   onReload?: () => Promise<void>;
 }
@@ -928,7 +955,7 @@ export class ResizeCommand extends BaseCommand {
       this.data.newTrimStart,
       this.data.newTrimEnd
     );
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -941,7 +968,7 @@ export class ResizeCommand extends BaseCommand {
       this.data.originalTrimStart,
       this.data.originalTrimEnd
     );
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -964,19 +991,34 @@ export class ResizeCommand extends BaseCommand {
         await updateVideoEditorSource(this.data.itemId, sourceUpdate);
         break;
       case 'watermark':
-        await updateVideoEditorWatermark(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorWatermark(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       case 'text':
-        await updateVideoEditorTextOverlay(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorTextOverlay(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       case 'sticker':
-        await updateVideoEditorSticker(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorSticker(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       case 'effect':
-        await updateVideoEditorEffect(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorEffect(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       case 'audio':
-        await updateVideoEditorAudioTrack(this.data.itemId, { start_time: startTime, end_time: endTime });
+        await updateVideoEditorAudioTrack(this.data.itemId, {
+          start_time: startTime,
+          end_time: endTime,
+        });
         break;
       default:
         console.warn(`[ResizeCommand] Unknown type: ${this.data.type}`);
@@ -1020,7 +1062,9 @@ export class RippleEditCommand extends BaseCommand {
   }
 
   async execute(): Promise<void> {
-    console.log(`[RippleEditCommand] Executing ripple edit on ${this.data.itemId} with delta ${this.data.delta}`);
+    console.log(
+      `[RippleEditCommand] Executing ripple edit on ${this.data.itemId} with delta ${this.data.delta}`
+    );
 
     // 1. Resize the target item
     if (this.editorMode) {
@@ -1041,12 +1085,17 @@ export class RippleEditCommand extends BaseCommand {
         // Let's assume we can parse index from ID or find it.
         const segmentIndex = parseInt(this.data.itemId.replace('segment-', ''));
         if (!isNaN(segmentIndex)) {
-           // Clip mode ripple is implicit in the sequence structure usually,
-           // but if we are storing start/end times explicitly in DB, we update them.
-           // However, `updateClipSegment` updates a specific segment.
-           // `getClipSegmentsByClipId` returns them in order.
-           // We'll need to shift subsequent segments.
-           await updateClipSegment(this.data.clipId, segmentIndex, this.data.newStartTime, this.data.newEndTime);
+          // Clip mode ripple is implicit in the sequence structure usually,
+          // but if we are storing start/end times explicitly in DB, we update them.
+          // However, `updateClipSegment` updates a specific segment.
+          // `getClipSegmentsByClipId` returns them in order.
+          // We'll need to shift subsequent segments.
+          await updateClipSegment(
+            this.data.clipId,
+            segmentIndex,
+            this.data.newStartTime,
+            this.data.newEndTime
+          );
         }
       }
     }
@@ -1068,7 +1117,7 @@ export class RippleEditCommand extends BaseCommand {
 
       const allSources = await getVideoEditorSourcesByProjectId(this.data.projectId);
       // Filter out self
-      const otherSources = allSources.filter(s => s.id !== this.data.itemId);
+      const otherSources = allSources.filter((s) => s.id !== this.data.itemId);
 
       // Determine the threshold time for shifting
       // Generally, anything that starts after the modified item should shift.
@@ -1082,32 +1131,37 @@ export class RippleEditCommand extends BaseCommand {
             id: source.id,
             type: 'source',
             oldStart: source.start_time,
-            oldEnd: source.end_time
+            oldEnd: source.end_time,
           });
 
           // Update
           await updateVideoEditorSource(source.id, {
             start_time: source.start_time + this.data.delta,
-            end_time: source.end_time + this.data.delta
+            end_time: source.end_time + this.data.delta,
           });
         }
       }
     } else if (!this.editorMode && this.data.clipId && this.data.type === 'trim') {
-       // Clip mode ripple
-       const segments = await getClipSegmentsByClipId(this.data.clipId);
-       const segmentIndex = parseInt(this.data.itemId.replace('segment-', ''));
+      // Clip mode ripple
+      const segments = await getClipSegmentsByClipId(this.data.clipId);
+      const segmentIndex = parseInt(this.data.itemId.replace('segment-', ''));
 
-       for (let i = segmentIndex + 1; i < segments.length; i++) {
-         const seg = segments[i];
-         this.data.shiftedItems.push({
-           id: `segment-${i}`,
-           type: 'trim',
-           oldStart: seg.start_time,
-           oldEnd: seg.end_time
-         });
+      for (let i = segmentIndex + 1; i < segments.length; i++) {
+        const seg = segments[i];
+        this.data.shiftedItems.push({
+          id: `segment-${i}`,
+          type: 'trim',
+          oldStart: seg.start_time,
+          oldEnd: seg.end_time,
+        });
 
-         await updateClipSegment(this.data.clipId, i, seg.start_time + this.data.delta, seg.end_time + this.data.delta);
-       }
+        await updateClipSegment(
+          this.data.clipId,
+          i,
+          seg.start_time + this.data.delta,
+          seg.end_time + this.data.delta
+        );
+      }
     }
 
     if (this.data.onReload) {
@@ -1130,7 +1184,12 @@ export class RippleEditCommand extends BaseCommand {
       if (this.data.clipId && this.data.type === 'trim') {
         const segmentIndex = parseInt(this.data.itemId.replace('segment-', ''));
         if (!isNaN(segmentIndex)) {
-           await updateClipSegment(this.data.clipId, segmentIndex, this.data.originalStartTime, this.data.originalEndTime);
+          await updateClipSegment(
+            this.data.clipId,
+            segmentIndex,
+            this.data.originalStartTime,
+            this.data.originalEndTime
+          );
         }
       }
     }
@@ -1141,11 +1200,11 @@ export class RippleEditCommand extends BaseCommand {
         if (item.type === 'source') {
           await updateVideoEditorSource(item.id, {
             start_time: item.oldStart,
-            end_time: item.oldEnd
+            end_time: item.oldEnd,
           });
         } else if (item.type === 'trim' && this.data.clipId) {
-           const idx = parseInt(item.id.replace('segment-', ''));
-           await updateClipSegment(this.data.clipId, idx, item.oldStart, item.oldEnd);
+          const idx = parseInt(item.id.replace('segment-', ''));
+          await updateClipSegment(this.data.clipId, idx, item.oldStart, item.oldEnd);
         }
       }
     }
@@ -1156,7 +1215,10 @@ export class RippleEditCommand extends BaseCommand {
   }
 }
 
-export function createRippleEditCommand(editorMode: boolean, data: RippleEditCommandData): RippleEditCommand {
+export function createRippleEditCommand(
+  editorMode: boolean,
+  data: RippleEditCommandData
+): RippleEditCommand {
   return new RippleEditCommand(editorMode, data);
 }
 
@@ -1176,7 +1238,7 @@ export interface RollEditCommandData {
 
   // Undo state
   originalRollTime: number;
-  
+
   // For restoring exact trims if needed (optional but good for robustness)
   leftSourceSnapshot?: { end: number; trimEnd: number | null };
   rightSourceSnapshot?: { start: number; trimStart: number };
@@ -1199,26 +1261,28 @@ export class RollEditCommand extends BaseCommand {
   async execute(): Promise<void> {
     const { leftItemId, rightItemId, newRollTime, originalRollTime } = this.data;
     const delta = newRollTime - originalRollTime;
-    
-    console.log(`[RollEditCommand] Rolling cut from ${originalRollTime.toFixed(2)}s to ${newRollTime.toFixed(2)}s (delta: ${delta.toFixed(2)}s)`);
+
+    console.log(
+      `[RollEditCommand] Rolling cut from ${originalRollTime.toFixed(2)}s to ${newRollTime.toFixed(2)}s (delta: ${delta.toFixed(2)}s)`
+    );
 
     if (this.editorMode && this.data.type === 'source') {
       if (!this.data.projectId) throw new Error('Project ID required for editor roll edit');
 
       // 1. Update Left Source (End moves)
-      // Need current state to calculate trims properly? 
+      // Need current state to calculate trims properly?
       // Actually, we can fetch them or assume the caller passed snapshots.
       // But simple update logic:
       // Left Source: end_time = newRollTime. trim_end += delta.
-      
+
       // We need to fetch to get current trim_end if not provided, but updateVideoEditorSource is a patch.
       // Ideally we read the source first to be safe, but let's assume we can calculate if we trust the inputs.
       // Better to fetch to ensure data integrity regarding trim limits?
       // For now, let's assume the UI logic validated the constraints and we just apply the delta.
-      
+
       const sources = await getVideoEditorSourcesByProjectId(this.data.projectId);
-      const leftSource = sources.find(s => s.id === leftItemId);
-      const rightSource = sources.find(s => s.id === rightItemId);
+      const leftSource = sources.find((s) => s.id === leftItemId);
+      const rightSource = sources.find((s) => s.id === rightItemId);
 
       if (!leftSource || !rightSource) throw new Error('Sources not found for roll edit');
 
@@ -1227,19 +1291,22 @@ export class RollEditCommand extends BaseCommand {
         this.data.leftSourceSnapshot = { end: leftSource.end_time, trimEnd: leftSource.trim_end };
       }
       if (!this.data.rightSourceSnapshot) {
-        this.data.rightSourceSnapshot = { start: rightSource.start_time, trimStart: rightSource.trim_start };
+        this.data.rightSourceSnapshot = {
+          start: rightSource.start_time,
+          trimStart: rightSource.trim_start,
+        };
       }
 
       // Update Left Source
       // end_time becomes newRollTime
       // trim_end increases by delta (delta is new - old)
-      // Note: trim_end might be null (implicit end of file). If so, we must calculate it? 
+      // Note: trim_end might be null (implicit end of file). If so, we must calculate it?
       // Actually, if trim_end is null, it means "play until end". If we are rolling, we definitely define a specific end.
       // But typically clips adjacent on timeline have explicit trims if they are being rolled.
-      // If left source trim_end is null, we assume it was playing full length. 
+      // If left source trim_end is null, we assume it was playing full length.
       // We need to know where it effectively ended to add delta.
       // effective trim_end = trim_start + (end_time - start_time).
-      
+
       let leftTrimEnd = leftSource.trim_end;
       if (leftTrimEnd === null || leftTrimEnd === undefined) {
         leftTrimEnd = leftSource.trim_start + (leftSource.end_time - leftSource.start_time);
@@ -1248,41 +1315,40 @@ export class RollEditCommand extends BaseCommand {
 
       await updateVideoEditorSource(leftItemId, {
         end_time: newRollTime,
-        trim_end: newLeftTrimEnd
+        trim_end: newLeftTrimEnd,
       });
 
       // Update Right Source
       // start_time becomes newRollTime
       // trim_start increases by delta
       const newRightTrimStart = rightSource.trim_start + delta;
-      
+
       await updateVideoEditorSource(rightItemId, {
         start_time: newRollTime,
-        trim_start: newRightTrimStart
+        trim_start: newRightTrimStart,
       });
-
     } else if (!this.editorMode && this.data.type === 'trim' && this.data.clipId) {
       // Clip Mode (Trim Segments)
       // Segments are typically just start/end relative to clip.
       // Left segment: endTime = newRollTime
       // Right segment: startTime = newRollTime
-      
+
       // We need indices for clip segments usually.
       // Assuming IDs contain index or we can map them.
       // The updateClipSegment function takes index.
       const leftIndex = parseInt(leftItemId.replace('segment-', ''));
       const rightIndex = parseInt(rightItemId.replace('segment-', ''));
-      
+
       if (!isNaN(leftIndex) && !isNaN(rightIndex)) {
         // Need to fetch to get current other bounds?
         // updateClipSegment requires both start and end.
         const segments = await getClipSegmentsByClipId(this.data.clipId);
         const leftSeg = segments[leftIndex];
         const rightSeg = segments[rightIndex];
-        
+
         if (leftSeg && rightSeg) {
-           await updateClipSegment(this.data.clipId, leftIndex, leftSeg.start_time, newRollTime);
-           await updateClipSegment(this.data.clipId, rightIndex, newRollTime, rightSeg.end_time);
+          await updateClipSegment(this.data.clipId, leftIndex, leftSeg.start_time, newRollTime);
+          await updateClipSegment(this.data.clipId, rightIndex, newRollTime, rightSeg.end_time);
         }
       }
     }
@@ -1294,35 +1360,36 @@ export class RollEditCommand extends BaseCommand {
 
   async undo(): Promise<void> {
     console.log(`[RollEditCommand] Undoing roll edit`);
-    
+
     if (this.editorMode && this.data.type === 'source') {
-      const { leftItemId, rightItemId, leftSourceSnapshot, rightSourceSnapshot, originalRollTime } = this.data;
-      
+      const { leftItemId, rightItemId, leftSourceSnapshot, rightSourceSnapshot, originalRollTime } =
+        this.data;
+
       if (leftSourceSnapshot) {
         await updateVideoEditorSource(leftItemId, {
           end_time: originalRollTime,
-          trim_end: leftSourceSnapshot.trimEnd
+          trim_end: leftSourceSnapshot.trimEnd,
         });
       }
-      
+
       if (rightSourceSnapshot) {
         await updateVideoEditorSource(rightItemId, {
           start_time: originalRollTime,
-          trim_start: rightSourceSnapshot.trimStart
+          trim_start: rightSourceSnapshot.trimStart,
         });
       }
     } else if (!this.editorMode && this.data.type === 'trim' && this.data.clipId) {
       const { leftItemId, rightItemId, originalRollTime } = this.data;
       const leftIndex = parseInt(leftItemId.replace('segment-', ''));
       const rightIndex = parseInt(rightItemId.replace('segment-', ''));
-      
+
       const segments = await getClipSegmentsByClipId(this.data.clipId);
       const leftSeg = segments[leftIndex];
       const rightSeg = segments[rightIndex];
-      
+
       if (leftSeg && rightSeg) {
-         await updateClipSegment(this.data.clipId, leftIndex, leftSeg.start_time, originalRollTime);
-         await updateClipSegment(this.data.clipId, rightIndex, originalRollTime, rightSeg.end_time);
+        await updateClipSegment(this.data.clipId, leftIndex, leftSeg.start_time, originalRollTime);
+        await updateClipSegment(this.data.clipId, rightIndex, originalRollTime, rightSeg.end_time);
       }
     }
 
@@ -1332,7 +1399,10 @@ export class RollEditCommand extends BaseCommand {
   }
 }
 
-export function createRollEditCommand(editorMode: boolean, data: RollEditCommandData): RollEditCommand {
+export function createRollEditCommand(
+  editorMode: boolean,
+  data: RollEditCommandData
+): RollEditCommand {
   return new RollEditCommand(editorMode, data);
 }
 
@@ -1344,14 +1414,14 @@ export interface SlipEditCommandData {
   itemId: string;
   editId?: string;
   clipId?: string;
-  
+
   // The slip amount (change in source content time)
   delta: number;
-  
+
   // Undo state
   originalTrimStart: number;
   originalTrimEnd: number | null;
-  
+
   onReload?: () => Promise<void>;
 }
 
@@ -1368,7 +1438,7 @@ export class SlipEditCommand extends BaseCommand {
 
   async execute(): Promise<void> {
     console.log(`[SlipEditCommand] Slipping ${this.data.itemId} by ${this.data.delta}s`);
-    
+
     const { originalTrimStart, originalTrimEnd, delta } = this.data;
     const newTrimStart = Math.max(0, originalTrimStart + delta);
     // If trimEnd is null (implicit), we must resolve it first in UI logic usually, but here we can keep it null if we want?
@@ -1377,7 +1447,7 @@ export class SlipEditCommand extends BaseCommand {
     // Actually, if trim_end is null, we can't really slip "later" easily without knowing max duration.
     // Assuming UI passed valid originalTrimEnd or we treat null as "end of file" which might effectively prevent slipping forward if maxed out.
     // For now, let's just update what we have.
-    
+
     let newTrimEnd = originalTrimEnd;
     if (originalTrimEnd !== null && originalTrimEnd !== undefined) {
       newTrimEnd = originalTrimEnd + delta;
@@ -1386,7 +1456,7 @@ export class SlipEditCommand extends BaseCommand {
     if (this.editorMode && this.data.type === 'source') {
       await updateVideoEditorSource(this.data.itemId, {
         trim_start: newTrimStart,
-        trim_end: newTrimEnd
+        trim_end: newTrimEnd,
       });
     } else {
       // Clip mode slip not typically supported on simple trim segments unless they have "source" media handle logic
@@ -1400,16 +1470,16 @@ export class SlipEditCommand extends BaseCommand {
       // So slipping means start_time += delta, end_time += delta.
       // BUT this does not change its position in the timeline sequence because that is implicit.
       // So yes, for Clip Mode, updateClipSegment with shifted times.
-      
+
       if (this.data.clipId && this.data.type === 'trim') {
         const segmentIndex = parseInt(this.data.itemId.replace('segment-', ''));
         if (!isNaN(segmentIndex)) {
-           // We need to pass the full new times.
-           // originalTrimStart is actually start_time in clip mode
-           // originalTrimEnd is end_time
-           if (newTrimEnd !== null) {
-             await updateClipSegment(this.data.clipId, segmentIndex, newTrimStart, newTrimEnd);
-           }
+          // We need to pass the full new times.
+          // originalTrimStart is actually start_time in clip mode
+          // originalTrimEnd is end_time
+          if (newTrimEnd !== null) {
+            await updateClipSegment(this.data.clipId, segmentIndex, newTrimStart, newTrimEnd);
+          }
         }
       }
     }
@@ -1426,13 +1496,18 @@ export class SlipEditCommand extends BaseCommand {
     if (this.editorMode && this.data.type === 'source') {
       await updateVideoEditorSource(this.data.itemId, {
         trim_start: originalTrimStart,
-        trim_end: originalTrimEnd
+        trim_end: originalTrimEnd,
       });
     } else {
       if (this.data.clipId && this.data.type === 'trim') {
         const segmentIndex = parseInt(this.data.itemId.replace('segment-', ''));
         if (!isNaN(segmentIndex) && originalTrimEnd !== null) {
-           await updateClipSegment(this.data.clipId, segmentIndex, originalTrimStart, originalTrimEnd);
+          await updateClipSegment(
+            this.data.clipId,
+            segmentIndex,
+            originalTrimStart,
+            originalTrimEnd
+          );
         }
       }
     }
@@ -1443,7 +1518,10 @@ export class SlipEditCommand extends BaseCommand {
   }
 }
 
-export function createSlipEditCommand(editorMode: boolean, data: SlipEditCommandData): SlipEditCommand {
+export function createSlipEditCommand(
+  editorMode: boolean,
+  data: SlipEditCommandData
+): SlipEditCommand {
   return new SlipEditCommand(editorMode, data);
 }
 
@@ -1490,24 +1568,28 @@ export class SlideEditCommand extends BaseCommand {
       if (!this.data.projectId) throw new Error('Project ID required for editor slide edit');
 
       const sources = await getVideoEditorSourcesByProjectId(this.data.projectId);
-      const targetSource = sources.find(s => s.id === itemId);
-      const leftSource = sources.find(s => s.id === leftNeighborId);
-      const rightSource = sources.find(s => s.id === rightNeighborId);
+      const targetSource = sources.find((s) => s.id === itemId);
+      const leftSource = sources.find((s) => s.id === leftNeighborId);
+      const rightSource = sources.find((s) => s.id === rightNeighborId);
 
-      if (!targetSource || !leftSource || !rightSource) throw new Error('Sources not found for slide edit');
+      if (!targetSource || !leftSource || !rightSource)
+        throw new Error('Sources not found for slide edit');
 
       // Capture snapshots if missing
       if (!this.data.leftNeighborSnapshot) {
         this.data.leftNeighborSnapshot = { end: leftSource.end_time, trimEnd: leftSource.trim_end };
       }
       if (!this.data.rightNeighborSnapshot) {
-        this.data.rightNeighborSnapshot = { start: rightSource.start_time, trimStart: rightSource.trim_start };
+        this.data.rightNeighborSnapshot = {
+          start: rightSource.start_time,
+          trimStart: rightSource.trim_start,
+        };
       }
 
       // 1. Move the Target Source
       await updateVideoEditorSource(itemId, {
         start_time: targetSource.start_time + delta,
-        end_time: targetSource.end_time + delta
+        end_time: targetSource.end_time + delta,
       });
 
       // 2. Adjust Left Neighbor (End changes)
@@ -1519,7 +1601,7 @@ export class SlideEditCommand extends BaseCommand {
       }
       await updateVideoEditorSource(leftNeighborId, {
         end_time: leftSource.end_time + delta,
-        trim_end: leftTrimEnd + delta
+        trim_end: leftTrimEnd + delta,
       });
 
       // 3. Adjust Right Neighbor (Start changes)
@@ -1527,9 +1609,8 @@ export class SlideEditCommand extends BaseCommand {
       // trim_start += delta
       await updateVideoEditorSource(rightNeighborId, {
         start_time: rightSource.start_time + delta,
-        trim_start: rightSource.trim_start + delta
+        trim_start: rightSource.trim_start + delta,
       });
-
     } else {
       // Clip mode slide
       // Not fully implemented for segments usually, but follows same logic if segment IDs are indices
@@ -1543,21 +1624,29 @@ export class SlideEditCommand extends BaseCommand {
 
   async undo(): Promise<void> {
     console.log(`[SlideEditCommand] Undoing slide edit`);
-    
+
     if (this.editorMode && this.data.type === 'source') {
-      const { itemId, leftNeighborId, rightNeighborId, originalStartTime, originalEndTime, leftNeighborSnapshot, rightNeighborSnapshot } = this.data;
+      const {
+        itemId,
+        leftNeighborId,
+        rightNeighborId,
+        originalStartTime,
+        originalEndTime,
+        leftNeighborSnapshot,
+        rightNeighborSnapshot,
+      } = this.data;
 
       // Restore Target
       await updateVideoEditorSource(itemId, {
         start_time: originalStartTime,
-        end_time: originalEndTime
+        end_time: originalEndTime,
       });
 
       // Restore Left
       if (leftNeighborSnapshot) {
         await updateVideoEditorSource(leftNeighborId, {
           end_time: originalStartTime, // Left ends where target started
-          trim_end: leftNeighborSnapshot.trimEnd
+          trim_end: leftNeighborSnapshot.trimEnd,
         });
       }
 
@@ -1565,7 +1654,7 @@ export class SlideEditCommand extends BaseCommand {
       if (rightNeighborSnapshot) {
         await updateVideoEditorSource(rightNeighborId, {
           start_time: originalEndTime, // Right starts where target ended
-          trim_start: rightNeighborSnapshot.trimStart
+          trim_start: rightNeighborSnapshot.trimStart,
         });
       }
     }
@@ -1576,7 +1665,10 @@ export class SlideEditCommand extends BaseCommand {
   }
 }
 
-export function createSlideEditCommand(editorMode: boolean, data: SlideEditCommandData): SlideEditCommand {
+export function createSlideEditCommand(
+  editorMode: boolean,
+  data: SlideEditCommandData
+): SlideEditCommand {
   return new SlideEditCommand(editorMode, data);
 }
 
@@ -1586,13 +1678,13 @@ export function createSlideEditCommand(editorMode: boolean, data: SlideEditComma
 export interface LayerChangeCommandData {
   type: 'sticker' | 'text' | 'watermark' | 'source';
   itemId: string;
-  
+
   // Original layer (for undo)
   originalLayer: number;
-  
+
   // New layer (for execute/redo)
   newLayer: number;
-  
+
   // Callback for reloading UI
   onReload?: () => Promise<void>;
 }
@@ -1611,7 +1703,7 @@ export class LayerChangeCommand extends BaseCommand {
 
   async execute(): Promise<void> {
     await this.updateItemLayer(this.data.newLayer);
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -1619,7 +1711,7 @@ export class LayerChangeCommand extends BaseCommand {
 
   async undo(): Promise<void> {
     await this.updateItemLayer(this.data.originalLayer);
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -1663,7 +1755,10 @@ export function createMoveCommand(data: MoveCommandData): MoveCommand {
   return new MoveCommand(data);
 }
 
-export function createExtractAudioCommand(editorMode: boolean, data: ExtractAudioCommandData): ExtractAudioCommand {
+export function createExtractAudioCommand(
+  editorMode: boolean,
+  data: ExtractAudioCommandData
+): ExtractAudioCommand {
   return new ExtractAudioCommand(editorMode, data);
 }
 
@@ -1688,13 +1783,13 @@ export interface UpdateOverlayPropertyCommandData {
   itemId?: string; // Not needed for subtitle (global settings)
   property: 'position' | 'scale' | 'rotation' | 'width' | 'maxWidth';
   aspectRatio: string; // e.g., '9:16', '16:9', '1:1'
-  
+
   // Original value (for undo)
   originalValue: number | { x: number; y: number };
-  
+
   // New value (for execute/redo)
   newValue: number | { x: number; y: number };
-  
+
   // Callback for reloading UI
   onReload?: () => Promise<void>;
 }
@@ -1708,16 +1803,17 @@ export class UpdateOverlayPropertyCommand extends BaseCommand {
   private data: UpdateOverlayPropertyCommandData;
 
   constructor(editorMode: boolean, data: UpdateOverlayPropertyCommandData) {
-    const valueStr = typeof data.newValue === 'object' 
-      ? `(${data.newValue.x.toFixed(1)}, ${data.newValue.y.toFixed(1)})`
-      : data.newValue.toFixed(1);
+    const valueStr =
+      typeof data.newValue === 'object'
+        ? `(${data.newValue.x.toFixed(1)}, ${data.newValue.y.toFixed(1)})`
+        : data.newValue.toFixed(1);
     super(editorMode, `Update ${data.type} ${data.property} to ${valueStr}`);
     this.data = data;
   }
 
   async execute(): Promise<void> {
     await this.updateProperty(this.data.newValue);
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -1725,7 +1821,7 @@ export class UpdateOverlayPropertyCommand extends BaseCommand {
 
   async undo(): Promise<void> {
     await this.updateProperty(this.data.originalValue);
-    
+
     if (this.data.onReload) {
       await this.data.onReload();
     }
@@ -1734,7 +1830,7 @@ export class UpdateOverlayPropertyCommand extends BaseCommand {
   private async updateProperty(value: number | { x: number; y: number }): Promise<void> {
     // For clip mode, these updates are handled through the reactive state in ClipEditorDialog
     // For editor mode, we need to update the database records
-    
+
     if (!this.editorMode) {
       // Clip mode: Updates are handled through reactive state, no database changes needed
       // The onReload callback will trigger the UI update
@@ -1745,7 +1841,9 @@ export class UpdateOverlayPropertyCommand extends BaseCommand {
     if (this.data.type === 'subtitle') {
       // Subtitle settings are global, handled differently
       // Would need to update video_editor_subtitle_settings table
-      console.warn('[UpdateOverlayPropertyCommand] Subtitle updates not yet implemented for editor mode');
+      console.warn(
+        '[UpdateOverlayPropertyCommand] Subtitle updates not yet implemented for editor mode'
+      );
       return;
     }
 
@@ -1755,10 +1853,10 @@ export class UpdateOverlayPropertyCommand extends BaseCommand {
 
     // Build the update object based on property type
     const update: Record<string, unknown> = {};
-    
+
     // Get the ratio config key for this aspect ratio
     const ratioKey = `ratio_configs.${this.data.aspectRatio}`;
-    
+
     switch (this.data.property) {
       case 'position':
         if (typeof value === 'object') {
@@ -1805,7 +1903,7 @@ export class UpdateOverlayPropertyCommand extends BaseCommand {
     if (!(other instanceof UpdateOverlayPropertyCommand)) {
       return false;
     }
-    
+
     // Can merge if same type, item, property, and aspect ratio
     return (
       this.data.type === other.data.type &&
@@ -1823,10 +1921,10 @@ export class UpdateOverlayPropertyCommand extends BaseCommand {
     if (!(other instanceof UpdateOverlayPropertyCommand)) {
       throw new Error('Cannot merge with non-UpdateOverlayPropertyCommand');
     }
-    
+
     // Keep our original value, but update to the other command's new value
     this.data.newValue = other.data.newValue;
-    
+
     // Note: description is readonly, so we can't update it after construction
     // The description will reflect the first value, but the actual command will use the merged value
   }

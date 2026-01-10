@@ -291,7 +291,13 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { save } from '@tauri-apps/plugin-dialog';
-  import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource, type IntroOutro } from '@/services/database';
+  import {
+    getClipBuilds,
+    deleteClipBuild,
+    type ClipBuild,
+    type VideoEditorSource,
+    type IntroOutro,
+  } from '@/services/database';
   import { resolveWatermarkById } from '@/services/database/watermarks';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import { trackEvent } from '@/services/analytics';
@@ -811,7 +817,11 @@
       const introAny = effectiveIntro as any;
       introPath = introAny.filePath ?? introAny.file_path ?? null;
       introDuration = effectiveIntro.duration ?? null;
-      console.log('[ExportTab] Using intro:', effectiveIntro.name, props.creatorDefaultIntro ? '(creator profile)' : '(manually added)');
+      console.log(
+        '[ExportTab] Using intro:',
+        effectiveIntro.name,
+        props.creatorDefaultIntro ? '(creator profile)' : '(manually added)'
+      );
 
       // Download org intro if needed (only for AppliedIntroOutro with org asset properties)
       const appliedIntro = effectiveIntro as AppliedIntroOutro;
@@ -844,7 +854,11 @@
       const outroAny = effectiveOutro as any;
       outroPath = outroAny.filePath ?? outroAny.file_path ?? null;
       outroDuration = effectiveOutro.duration ?? null;
-      console.log('[ExportTab] Using outro:', effectiveOutro.name, props.creatorDefaultOutro ? '(creator profile)' : '(manually added)');
+      console.log(
+        '[ExportTab] Using outro:',
+        effectiveOutro.name,
+        props.creatorDefaultOutro ? '(creator profile)' : '(manually added)'
+      );
 
       // Download org outro if needed (only for AppliedIntroOutro with org asset properties)
       const appliedOutro = effectiveOutro as AppliedIntroOutro;

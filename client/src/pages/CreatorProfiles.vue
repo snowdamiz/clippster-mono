@@ -201,9 +201,7 @@
                         {{ getCreatorStatusLabel(creator) }}
                       </div>
                       <!-- Live status for monitorable creators (pumpfun/kick) (only shown when Live Clip feature is enabled) -->
-                      <template
-                        v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)"
-                      >
+                      <template v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)">
                         <div
                           v-if="isCreatorCheckingLive(creator)"
                           class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted text-muted-foreground text-[12px]"
@@ -231,9 +229,7 @@
                       </template>
                       <!-- Platform count (shown when Live Clip is disabled or no pumpfun link) -->
                       <span v-else class="text-[12px] text-muted-foreground">
-                        {{ creator.platform_links.length }} platform{{
-                          creator.platform_links.length !== 1 ? 's' : ''
-                        }}
+                        {{ creator.platform_links.length }} platform{{ creator.platform_links.length !== 1 ? 's' : '' }}
                         linked
                       </span>
                     </div>
@@ -282,10 +278,7 @@
                         v-if="isLiveClipEnabled && hasMonitorableLink(creator)"
                         class="w-px h-5 bg-border/60 mx-1"
                       ></div>
-                      <div
-                        v-if="isLiveClipEnabled && hasMonitorableLink(creator)"
-                        class="flex items-center gap-1"
-                      >
+                      <div v-if="isLiveClipEnabled && hasMonitorableLink(creator)" class="flex items-center gap-1">
                         <template v-if="!isCreatorMonitored(creator)">
                           <button
                             @click.stop="startCreatorMonitoring(creator, false)"
@@ -544,7 +537,8 @@
 
       const entry = monitoredStreamers.value.get(streamerId)?.streamer;
       const displayName = entry?.displayName || monitorableLink.display_name || creator.name;
-      const profileImage = entry?.profileImageUrl || monitorableLink.profile_image_url || getCreatorProfileImage(creator);
+      const profileImage =
+        entry?.profileImageUrl || monitorableLink.profile_image_url || getCreatorProfileImage(creator);
 
       // Determine the platform for the watch dialog
       const platform = monitorableLink.platform === 'kick' ? 'Kick' : 'PumpFun';
@@ -637,13 +631,8 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const { success, error: showError } = useToast();
-  const {
-    activeSessions,
-    monitoredStreamers,
-    startMonitoring,
-    stopMonitoring,
-    hasDvrRecording,
-  } = useLivestreamMonitoring();
+  const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, hasDvrRecording } =
+    useLivestreamMonitoring();
   const { isLiveClipEnabled } = useFeatureFlags();
   const livestreamStore = useLivestreamStore();
 
@@ -659,7 +648,9 @@
   const creatorToDownload = ref<DisplayCreatorProfile | null>(null);
 
   // Live status tracking (by platform_id for pumpfun/kick links)
-  const liveStatusMap = ref<Map<string, { isLive: boolean; viewerCount?: number; profileImageUrl?: string; isChecking: boolean }>>(new Map());
+  const liveStatusMap = ref<
+    Map<string, { isLive: boolean; viewerCount?: number; profileImageUrl?: string; isChecking: boolean }>
+  >(new Map());
   const liveStatusInterval = ref<number | null>(null);
 
   // Auto DVR status tracking (by streamer_id, for when not actively monitoring)
@@ -707,7 +698,8 @@
 
   async function checkAllLiveStatuses() {
     const pumpfunLinksToCheck: { platformId: string; mintId: string }[] = [];
-    const kickLinksToCheck: { linkId: string; platformId: string; channelSlug: string; hasProfileImage: boolean }[] = [];
+    const kickLinksToCheck: { linkId: string; platformId: string; channelSlug: string; hasProfileImage: boolean }[] =
+      [];
 
     for (const creator of creators.value) {
       for (const link of creator.platform_links) {
@@ -715,13 +707,13 @@
         if (link.monitored_streamer_id && monitoredStreamers.value.has(link.monitored_streamer_id)) {
           continue;
         }
-        
+
         if (link.platform === 'pumpfun') {
           pumpfunLinksToCheck.push({ platformId: link.platform_id, mintId: link.platform_id });
         } else if (link.platform === 'kick') {
-          kickLinksToCheck.push({ 
-            linkId: link.id, 
-            platformId: link.platform_id, 
+          kickLinksToCheck.push({
+            linkId: link.id,
+            platformId: link.platform_id,
             channelSlug: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
           });
@@ -806,14 +798,17 @@
     try {
       // Load local profiles
       const localProfiles = await getAllCreatorProfiles();
-      console.log('[CreatorProfiles] Loaded local profiles:', localProfiles.map(p => ({
-        name: p.name,
-        links: p.platform_links.map(l => ({ 
-          platform: l.platform, 
-          hasImage: !!l.profile_image_url,
-          url: l.profile_image_url 
+      console.log(
+        '[CreatorProfiles] Loaded local profiles:',
+        localProfiles.map((p) => ({
+          name: p.name,
+          links: p.platform_links.map((l) => ({
+            platform: l.platform,
+            hasImage: !!l.profile_image_url,
+            url: l.profile_image_url,
+          })),
         }))
-      })));
+      );
 
       const displayProfiles: DisplayCreatorProfile[] = localProfiles.map((p) => ({
         ...p,

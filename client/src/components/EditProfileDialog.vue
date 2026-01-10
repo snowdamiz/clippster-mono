@@ -18,7 +18,9 @@
                   <UserCircle class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-violet-400" />
                 </div>
                 <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">Edit Profile</h2>
-                <p class="text-zinc-400 text-xs sm:text-sm mt-1">Build your public portfolio to attract organizations</p>
+                <p class="text-zinc-400 text-xs sm:text-sm mt-1">
+                  Build your public portfolio to attract organizations
+                </p>
               </div>
 
               <div v-if="loading" class="flex items-center justify-center py-16">
@@ -27,9 +29,11 @@
 
               <div v-else class="space-y-6">
                 <!-- Profile Visibility Toggle -->
-                <div 
+                <div
                   class="flex items-center justify-between p-3 sm:p-4 rounded-xl border"
-                  :class="profile.is_public ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-zinc-800/50 border-zinc-700'"
+                  :class="
+                    profile.is_public ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-zinc-800/50 border-zinc-700'
+                  "
                 >
                   <div class="flex items-center gap-3">
                     <div :class="profile.is_public ? 'text-emerald-400' : 'text-zinc-400'">
@@ -51,7 +55,7 @@
                 <!-- Basic Info Section -->
                 <div class="space-y-4">
                   <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Basic Information</h3>
-                  
+
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div class="space-y-1.5 sm:space-y-2">
                       <label class="block text-xs sm:text-sm font-medium text-zinc-300">Display Name</label>
@@ -62,7 +66,7 @@
                         placeholder="Your public name"
                       />
                     </div>
-                    
+
                     <div class="space-y-1.5 sm:space-y-2">
                       <label class="block text-xs sm:text-sm font-medium text-zinc-300">Profile URL Slug</label>
                       <div class="flex items-center">
@@ -93,23 +97,25 @@
                     <div class="flex items-center gap-4">
                       <!-- Avatar Preview -->
                       <div class="relative">
-                        <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-zinc-800 border-2 border-zinc-700 overflow-hidden flex items-center justify-center">
-                          <img 
-                            v-if="profile.avatar_url" 
-                            :src="profile.avatar_url" 
+                        <div
+                          class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-zinc-800 border-2 border-zinc-700 overflow-hidden flex items-center justify-center"
+                        >
+                          <img
+                            v-if="profile.avatar_url"
+                            :src="profile.avatar_url"
                             class="w-full h-full object-cover"
-                            @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
+                            @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
                           />
                           <UserCircle v-else class="w-10 h-10 text-zinc-500" />
                         </div>
-                        <div 
-                          v-if="uploadingAvatar" 
+                        <div
+                          v-if="uploadingAvatar"
                           class="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center"
                         >
                           <Loader2 class="w-5 h-5 animate-spin text-white" />
                         </div>
                       </div>
-                      
+
                       <!-- Upload Button -->
                       <div class="flex-1">
                         <input
@@ -119,7 +125,7 @@
                           class="hidden"
                           @change="handleAvatarUpload"
                         />
-                        <button 
+                        <button
                           @click="($refs.avatarInputRef as HTMLInputElement)?.click()"
                           :disabled="uploadingAvatar"
                           class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs sm:text-sm font-medium rounded-lg border border-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -127,9 +133,7 @@
                           <Upload class="w-4 h-4" />
                           {{ profile.avatar_url ? 'Change Avatar' : 'Upload Avatar' }}
                         </button>
-                        <p class="text-xs text-zinc-500 mt-1">
-                          JPEG, PNG, GIF, or WebP. Max 5MB.
-                        </p>
+                        <p class="text-xs text-zinc-500 mt-1">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
                       </div>
                     </div>
                   </div>
@@ -137,8 +141,10 @@
 
                 <!-- Experience & Availability -->
                 <div class="space-y-4">
-                  <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Experience & Availability</h3>
-                  
+                  <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">
+                    Experience & Availability
+                  </h3>
+
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div class="space-y-1.5 sm:space-y-2">
                       <label class="block text-xs sm:text-sm font-medium text-zinc-300">Experience Level</label>
@@ -164,7 +170,9 @@
                     </div>
                   </div>
 
-                  <div class="flex items-center justify-between p-3 sm:p-4 bg-zinc-800/50 rounded-xl border border-zinc-700">
+                  <div
+                    class="flex items-center justify-between p-3 sm:p-4 bg-zinc-800/50 rounded-xl border border-zinc-700"
+                  >
                     <div>
                       <div class="font-medium text-white text-sm">Looking for Work</div>
                       <div class="text-xs text-zinc-400">Show that you're available for new campaigns</div>
@@ -185,9 +193,11 @@
                         :key="tag.value"
                         @click="toggleTag('specialty_tags', tag.value)"
                         class="px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
-                        :class="profile.specialty_tags?.includes(tag.value) 
-                          ? 'bg-violet-600 text-white' 
-                          : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'"
+                        :class="
+                          profile.specialty_tags?.includes(tag.value)
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                        "
                       >
                         {{ tag.label }}
                       </button>
@@ -202,9 +212,11 @@
                         :key="tag.value"
                         @click="toggleTag('content_style_tags', tag.value)"
                         class="px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
-                        :class="profile.content_style_tags?.includes(tag.value) 
-                          ? 'bg-violet-600 text-white' 
-                          : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'"
+                        :class="
+                          profile.content_style_tags?.includes(tag.value)
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                        "
                       >
                         {{ tag.label }}
                       </button>
@@ -219,9 +231,11 @@
                         :key="platform.value"
                         @click="toggleTag('preferred_platforms', platform.value)"
                         class="px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
-                        :class="profile.preferred_platforms?.includes(platform.value) 
-                          ? 'bg-violet-600 text-white' 
-                          : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'"
+                        :class="
+                          profile.preferred_platforms?.includes(platform.value)
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                        "
                       >
                         {{ platform.label }}
                       </button>
@@ -236,9 +250,11 @@
                         :key="lang.code"
                         @click="toggleTag('languages', lang.code)"
                         class="px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
-                        :class="profile.languages?.includes(lang.code) 
-                          ? 'bg-violet-600 text-white' 
-                          : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'"
+                        :class="
+                          profile.languages?.includes(lang.code)
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                        "
                       >
                         {{ lang.name }}
                       </button>
@@ -260,7 +276,10 @@
                   </div>
 
                   <!-- Channel Link Form -->
-                  <div v-if="showChannelLinkForm" class="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700 space-y-3">
+                  <div
+                    v-if="showChannelLinkForm"
+                    class="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700 space-y-3"
+                  >
                     <div class="space-y-1.5">
                       <label class="block text-xs font-medium text-zinc-300">Platform</label>
                       <select
@@ -309,7 +328,10 @@
                   </div>
 
                   <!-- Channel Links List -->
-                  <div v-if="channelLinks.length === 0 && !showChannelLinkForm" class="text-center py-6 bg-zinc-800/30 rounded-xl border border-zinc-800">
+                  <div
+                    v-if="channelLinks.length === 0 && !showChannelLinkForm"
+                    class="text-center py-6 bg-zinc-800/30 rounded-xl border border-zinc-800"
+                  >
                     <Link2 class="w-8 h-8 mx-auto mb-2 text-zinc-600" />
                     <p class="text-xs text-zinc-500">Add links to your clip channels</p>
                   </div>
@@ -330,10 +352,16 @@
                         </div>
                       </div>
                       <div class="flex items-center gap-1">
-                        <button @click="editChannelLinkItem(link)" class="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors">
+                        <button
+                          @click="editChannelLinkItem(link)"
+                          class="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors"
+                        >
                           <Pencil class="w-3.5 h-3.5" />
                         </button>
-                        <button @click="confirmDeleteChannelLink(link)" class="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded transition-colors">
+                        <button
+                          @click="confirmDeleteChannelLink(link)"
+                          class="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded transition-colors"
+                        >
                           <Trash2 class="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -349,7 +377,10 @@
                       <p class="text-xs text-zinc-500 mt-0.5">Showcase up to 3 of your best clips (max 100MB each)</p>
                     </div>
                     <button
-                      @click="showPortfolioClipForm = true; loadAvailableClips()"
+                      @click="
+                        showPortfolioClipForm = true;
+                        loadAvailableClips();
+                      "
                       :disabled="portfolioClips.length >= 3"
                       class="flex items-center gap-1 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -359,9 +390,12 @@
                   </div>
 
                   <!-- Add Clip Options -->
-                  <div v-if="showPortfolioClipForm && !showClipSelector" class="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700 space-y-4">
+                  <div
+                    v-if="showPortfolioClipForm && !showClipSelector"
+                    class="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700 space-y-4"
+                  >
                     <div class="text-sm font-medium text-zinc-300 text-center">Choose how to add a clip</div>
-                    
+
                     <!-- Option 1: Select from existing clips -->
                     <button
                       @click="showClipSelector = true"
@@ -441,15 +475,18 @@
                         class="bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-700 hover:border-violet-500/50 rounded-lg overflow-hidden transition-all text-left disabled:opacity-50"
                       >
                         <div class="aspect-video bg-zinc-900 relative">
-                          <img 
-                            v-if="getClipThumbnail(clip)" 
-                            :src="getClipThumbnail(clip)!" 
+                          <img
+                            v-if="getClipThumbnail(clip)"
+                            :src="getClipThumbnail(clip)!"
                             class="w-full h-full object-cover"
                           />
                           <div v-else class="w-full h-full flex items-center justify-center">
                             <Video class="w-5 h-5 text-zinc-600" />
                           </div>
-                          <div v-if="savingPortfolioClip" class="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <div
+                            v-if="savingPortfolioClip"
+                            class="absolute inset-0 bg-black/50 flex items-center justify-center"
+                          >
                             <Loader2 class="w-5 h-5 text-white animate-spin" />
                           </div>
                         </div>
@@ -460,7 +497,10 @@
                     </div>
 
                     <button
-                      @click="showClipSelector = false; showPortfolioClipForm = false"
+                      @click="
+                        showClipSelector = false;
+                        showPortfolioClipForm = false;
+                      "
                       class="w-full px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm font-medium rounded-lg transition-colors"
                     >
                       Cancel
@@ -468,23 +508,25 @@
                   </div>
 
                   <!-- Portfolio Clips List -->
-                  <div v-if="portfolioClips.length === 0 && !showPortfolioClipForm" class="text-center py-6 bg-zinc-800/30 rounded-xl border border-zinc-800">
+                  <div
+                    v-if="portfolioClips.length === 0 && !showPortfolioClipForm"
+                    class="text-center py-6 bg-zinc-800/30 rounded-xl border border-zinc-800"
+                  >
                     <Video class="w-8 h-8 mx-auto mb-2 text-zinc-600" />
                     <p class="text-xs text-zinc-500">Add clips to showcase your work</p>
                   </div>
 
-                  <div v-else-if="portfolioClips.length > 0 && !showPortfolioClipForm" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div
+                    v-else-if="portfolioClips.length > 0 && !showPortfolioClipForm"
+                    class="grid grid-cols-1 sm:grid-cols-3 gap-3"
+                  >
                     <div
                       v-for="clip in portfolioClips"
                       :key="clip.id"
                       class="bg-zinc-800/50 rounded-xl border border-zinc-700 overflow-hidden"
                     >
                       <div class="aspect-video bg-zinc-900 relative">
-                        <img 
-                          v-if="clip.thumbnail_url" 
-                          :src="clip.thumbnail_url" 
-                          class="w-full h-full object-cover"
-                        />
+                        <img v-if="clip.thumbnail_url" :src="clip.thumbnail_url" class="w-full h-full object-cover" />
                         <div v-else class="w-full h-full flex items-center justify-center">
                           <Video class="w-6 h-6 text-zinc-600" />
                         </div>
@@ -497,7 +539,10 @@
                           </span>
                           <span v-else class="text-[10px] text-zinc-500">&nbsp;</span>
                           <div class="flex items-center gap-0.5">
-                            <button @click="confirmDeletePortfolioClip(clip)" class="p-1 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded transition-colors">
+                            <button
+                              @click="confirmDeletePortfolioClip(clip)"
+                              class="p-1 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded transition-colors"
+                            >
                               <Trash2 class="w-3 h-3" />
                             </button>
                           </div>
@@ -510,7 +555,8 @@
                 <!-- Delete Confirmation -->
                 <div v-if="showDeleteConfirm" class="p-4 bg-red-500/10 rounded-xl border border-red-500/30 space-y-3">
                   <p class="text-sm text-red-400">
-                    Are you sure you want to delete this {{ deleteType === 'channel' ? 'channel link' : 'portfolio clip' }}?
+                    Are you sure you want to delete this
+                    {{ deleteType === 'channel' ? 'channel link' : 'portfolio clip' }}?
                   </p>
                   <div class="flex gap-2">
                     <button
@@ -536,7 +582,10 @@
                 </div>
 
                 <!-- Success Display -->
-                <div v-if="success" class="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                <div
+                  v-if="success"
+                  class="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-emerald-500/10 border border-emerald-500/30"
+                >
                   <p class="text-emerald-400 text-xs sm:text-sm">{{ success }}</p>
                 </div>
 
@@ -576,16 +625,47 @@
 
 <script setup lang="ts">
   import { ref, reactive, watch } from 'vue';
-  import { Loader2, UserCircle, Globe, Lock, Plus, Link2, Video, Pencil, Trash2, Music2, Instagram, Twitter, Youtube, Twitch, Upload } from 'lucide-vue-next';
+  import {
+    Loader2,
+    UserCircle,
+    Globe,
+    Lock,
+    Plus,
+    Link2,
+    Video,
+    Pencil,
+    Trash2,
+    Music2,
+    Instagram,
+    Twitter,
+    Youtube,
+    Twitch,
+    Upload,
+  } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
-    getMyClipperProfile, updateMyClipperProfile,
-    listChannelLinks, createChannelLink, updateChannelLink, deleteChannelLink,
-    listPortfolioClips, createPortfolioClip, updatePortfolioClip, deletePortfolioClip, uploadPortfolioClip,
+    getMyClipperProfile,
+    updateMyClipperProfile,
+    listChannelLinks,
+    createChannelLink,
+    updateChannelLink,
+    deleteChannelLink,
+    listPortfolioClips,
+    createPortfolioClip,
+    updatePortfolioClip,
+    deletePortfolioClip,
+    uploadPortfolioClip,
     uploadClipperAvatar,
-    type ClipperProfile, type ChannelLink, type PortfolioClip,
-    EXPERIENCE_LEVELS, SPECIALTY_TAGS, CONTENT_STYLE_TAGS, PREFERRED_PLATFORMS, LANGUAGES, CHANNEL_PLATFORMS,
-    getPlatformLabel
+    type ClipperProfile,
+    type ChannelLink,
+    type PortfolioClip,
+    EXPERIENCE_LEVELS,
+    SPECIALTY_TAGS,
+    CONTENT_STYLE_TAGS,
+    PREFERRED_PLATFORMS,
+    LANGUAGES,
+    CHANNEL_PLATFORMS,
+    getPlatformLabel,
   } from '@/services/clipperProfilesApi';
   import { getAllClipsWithBuilds, getRawVideosByProjectId, type Clip, type ClipBuild } from '@/services/database';
   import { invoke } from '@tauri-apps/api/core';
@@ -616,7 +696,7 @@
   const channelLinkForm = reactive({
     platform: '',
     url: '',
-    username: ''
+    username: '',
   });
 
   // Portfolio Clips state
@@ -627,7 +707,7 @@
   const portfolioClipForm = reactive({
     title: '',
     video_url: '',
-    thumbnail_url: ''
+    thumbnail_url: '',
   });
 
   // Clip selection state
@@ -666,7 +746,7 @@
     timezone: '',
     total_campaigns_completed: 0,
     total_clips_delivered: 0,
-    total_endorsements: 0
+    total_endorsements: 0,
   });
 
   const resetForm = () => {
@@ -685,7 +765,7 @@
       timezone: '',
       total_campaigns_completed: 0,
       total_clips_delivered: 0,
-      total_endorsements: 0
+      total_endorsements: 0,
     });
     channelLinks.value = [];
     portfolioClips.value = [];
@@ -733,13 +813,11 @@
     try {
       const clips = await getAllClipsWithBuilds();
       // Filter to only clips with completed builds that have file paths
-      const filteredClips = clips.filter(clip => 
-        clip.builds?.some(build => 
-          build.status === 'completed' && build.file_path
-        )
+      const filteredClips = clips.filter((clip) =>
+        clip.builds?.some((build) => build.status === 'completed' && build.file_path)
       );
       availableClips.value = filteredClips;
-      
+
       // Load thumbnails asynchronously
       for (const clip of filteredClips) {
         loadClipThumbnail(clip);
@@ -755,10 +833,11 @@
   const getThumbnailPathForVideoFile = async (videoPath: string): Promise<string | null> => {
     try {
       const basePath = await getStoragePath('thumbnails');
-      const videoFileName = videoPath
-        .split(/[/\\]/)
-        .pop()
-        ?.replace(/\.[^.]+$/, '') || '';
+      const videoFileName =
+        videoPath
+          .split(/[/\\]/)
+          .pop()
+          ?.replace(/\.[^.]+$/, '') || '';
       return `${basePath}/${videoFileName}_thumb.jpg`;
     } catch {
       return null;
@@ -782,37 +861,37 @@
 
   // Load thumbnail for a single clip
   const loadClipThumbnail = async (clip: ClipWithBuilds) => {
-    const completedBuild = clip.builds?.find(b => b.status === 'completed' && (b.output_paths || b.file_path));
+    const completedBuild = clip.builds?.find((b) => b.status === 'completed' && (b.output_paths || b.file_path));
     if (!completedBuild) return;
-    
+
     const buildFilePath = getBuildOutputPath(completedBuild);
     if (!buildFilePath) return;
-    
+
     try {
       // Try multiple sources for thumbnail in order of preference:
       // 1. Build's thumbnail_path (from clip_builds table)
       // 2. Clip's built_thumbnail_path (from clips table - set by Rust backend)
       // 3. Derived from video file path ({filename}_thumb.jpg)
       // 4. Raw video thumbnail from project (fallback)
-      
+
       const thumbnailSources: string[] = [];
-      
+
       // 1. Build's thumbnail_path
       if (completedBuild.thumbnail_path) {
         thumbnailSources.push(completedBuild.thumbnail_path);
       }
-      
+
       // 2. Clip's built_thumbnail_path (set by Rust backend during build)
       if (clip.built_thumbnail_path) {
         thumbnailSources.push(clip.built_thumbnail_path);
       }
-      
+
       // 3. Derived from video file path (use the built output path)
       const derivedPath = await getThumbnailPathForVideoFile(buildFilePath);
       if (derivedPath) {
         thumbnailSources.push(derivedPath);
       }
-      
+
       // Try each source until one works
       for (const thumbnailPath of thumbnailSources) {
         try {
@@ -826,7 +905,7 @@
           // Try next source
         }
       }
-      
+
       // 4. Fallback: Try raw video thumbnail from project
       if (clip.project_id) {
         try {
@@ -858,7 +937,7 @@
 
   // Get file path for a clip's best build
   const getClipFilePath = (clip: ClipWithBuilds): string | null => {
-    const completedBuild = clip.builds?.find(b => b.status === 'completed' && (b.output_paths || b.file_path));
+    const completedBuild = clip.builds?.find((b) => b.status === 'completed' && (b.output_paths || b.file_path));
     if (!completedBuild) return null;
     return getBuildOutputPath(completedBuild);
   };
@@ -963,7 +1042,7 @@
       x: Twitter,
       youtube: Youtube,
       twitch: Twitch,
-      kick: Music2
+      kick: Music2,
     };
     return icons[platform] || Link2;
   };
@@ -1031,7 +1110,7 @@
     Object.assign(channelLinkForm, {
       platform: link.platform,
       url: link.url,
-      username: link.username || ''
+      username: link.username || '',
     });
     showChannelLinkForm.value = true;
   };
@@ -1074,7 +1153,7 @@
     Object.assign(portfolioClipForm, {
       title: clip.title || '',
       video_url: clip.video_url,
-      thumbnail_url: clip.thumbnail_url || ''
+      thumbnail_url: clip.thumbnail_url || '',
     });
     showPortfolioClipForm.value = true;
   };
@@ -1126,7 +1205,10 @@
     }
   };
 
-  const toggleTag = (field: 'specialty_tags' | 'content_style_tags' | 'preferred_platforms' | 'languages', value: string) => {
+  const toggleTag = (
+    field: 'specialty_tags' | 'content_style_tags' | 'preferred_platforms' | 'languages',
+    value: string
+  ) => {
     const arr = (profile[field] as string[]) || [];
     const idx = arr.indexOf(value);
     if (idx >= 0) {

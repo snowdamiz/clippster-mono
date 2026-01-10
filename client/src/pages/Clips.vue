@@ -1563,20 +1563,20 @@
       // Try multiple sources for thumbnail in order of preference:
       // 1. Clip's built_thumbnail_path (set by Rust backend during build)
       // 2. Thumbnail from thumbnails table (clip detection thumbnail)
-      
+
       const thumbnailSources: string[] = [];
-      
+
       // 1. Clip's built_thumbnail_path (set by Rust backend during build)
       if (clip.built_thumbnail_path) {
         thumbnailSources.push(clip.built_thumbnail_path);
       }
-      
+
       // 2. Thumbnail from thumbnails table
       const thumbnail = await getThumbnailByClipId(clip.id);
       if (thumbnail && thumbnail.file_path) {
         thumbnailSources.push(thumbnail.file_path);
       }
-      
+
       // Try each source until one works
       for (const thumbnailPath of thumbnailSources) {
         try {

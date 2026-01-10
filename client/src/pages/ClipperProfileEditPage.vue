@@ -12,7 +12,7 @@
 
       <div v-else class="max-w-3xl space-y-8 pt-4">
         <!-- Profile Visibility Banner -->
-        <div 
+        <div
           class="flex items-center justify-between p-4 rounded-xl border"
           :class="profile.is_public ? 'bg-green-500/10 border-green-500/30' : 'bg-muted/30 border-border'"
         >
@@ -26,7 +26,9 @@
                 {{ profile.is_public ? 'Profile is Public' : 'Profile is Private' }}
               </div>
               <div class="text-sm text-muted-foreground">
-                {{ profile.is_public ? 'Organizations can find you in the directory' : 'Only you can see your profile' }}
+                {{
+                  profile.is_public ? 'Organizations can find you in the directory' : 'Only you can see your profile'
+                }}
               </div>
             </div>
           </div>
@@ -36,26 +38,37 @@
         <!-- Basic Info Section -->
         <div class="space-y-4">
           <h3 class="text-lg font-semibold text-foreground">Basic Information</h3>
-          
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="space-y-2">
               <Label>Display Name</Label>
-              <Input v-model="profile.display_name" placeholder="Your public name" @blur="saveProfile" />
+              <Input
+                :model-value="profile.display_name ?? ''"
+                @update:model-value="profile.display_name = String($event)"
+                placeholder="Your public name"
+                @blur="saveProfile"
+              />
             </div>
-            
+
             <div class="space-y-2">
               <Label>Profile URL Slug</Label>
               <div class="flex items-center gap-2">
                 <span class="text-sm text-muted-foreground">/clipper/</span>
-                <Input v-model="profile.slug" placeholder="your-slug" @blur="saveProfile" />
+                <Input
+                  :model-value="profile.slug ?? ''"
+                  @update:model-value="profile.slug = String($event)"
+                  placeholder="your-slug"
+                  @blur="saveProfile"
+                />
               </div>
             </div>
           </div>
 
           <div class="space-y-2">
             <Label>Bio</Label>
-            <Textarea 
-              v-model="profile.bio" 
+            <Textarea
+              :model-value="profile.bio ?? ''"
+              @update:model-value="profile.bio = String($event)"
               placeholder="Tell organizations about yourself and your clipping style..."
               class="min-h-[100px]"
               @blur="saveProfile"
@@ -68,25 +81,25 @@
             <div class="flex items-center gap-4">
               <!-- Avatar Preview -->
               <div class="relative">
-                <div 
+                <div
                   class="w-20 h-20 rounded-full bg-muted border-2 border-border overflow-hidden flex items-center justify-center"
                 >
-                  <img 
-                    v-if="profile.avatar_url" 
-                    :src="profile.avatar_url" 
+                  <img
+                    v-if="profile.avatar_url"
+                    :src="profile.avatar_url"
                     class="w-full h-full object-cover"
-                    @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
+                    @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
                   />
                   <UserCircle v-else class="w-12 h-12 text-muted-foreground" />
                 </div>
-                <div 
-                  v-if="uploadingAvatar" 
+                <div
+                  v-if="uploadingAvatar"
                   class="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center"
                 >
                   <Loader2 class="w-6 h-6 animate-spin text-white" />
                 </div>
               </div>
-              
+
               <!-- Upload Button -->
               <div class="flex-1">
                 <input
@@ -96,18 +109,16 @@
                   class="hidden"
                   @change="handleAvatarUpload"
                 />
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   @click="($refs.avatarInput as HTMLInputElement)?.click()"
                   :disabled="uploadingAvatar"
                 >
                   <Upload class="w-4 h-4 mr-2" />
                   {{ profile.avatar_url ? 'Change Avatar' : 'Upload Avatar' }}
                 </Button>
-                <p class="text-xs text-muted-foreground mt-1">
-                  JPEG, PNG, GIF, or WebP. Max 5MB.
-                </p>
+                <p class="text-xs text-muted-foreground mt-1">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
               </div>
             </div>
           </div>
@@ -116,11 +127,19 @@
         <!-- Experience & Availability -->
         <div class="space-y-4">
           <h3 class="text-lg font-semibold text-foreground">Experience & Availability</h3>
-          
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="space-y-2">
               <Label>Experience Level</Label>
-              <Select v-model="profile.experience_level" @update:modelValue="saveProfile">
+              <Select
+                :model-value="profile.experience_level ?? undefined"
+                @update:modelValue="
+                  (v: unknown) => {
+                    profile.experience_level = String(v);
+                    saveProfile();
+                  }
+                "
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select level" />
                 </SelectTrigger>
@@ -134,7 +153,12 @@
 
             <div class="space-y-2">
               <Label>Timezone</Label>
-              <Input v-model="profile.timezone" placeholder="America/New_York" @blur="saveProfile" />
+              <Input
+                :model-value="profile.timezone ?? ''"
+                @update:model-value="profile.timezone = String($event)"
+                placeholder="America/New_York"
+                @blur="saveProfile"
+              />
             </div>
           </div>
 
@@ -159,9 +183,11 @@
                 :key="tag.value"
                 @click="toggleTag('specialty_tags', tag.value)"
                 class="px-3 py-1.5 rounded-full text-sm transition-colors"
-                :class="profile.specialty_tags.includes(tag.value) 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+                :class="
+                  (profile.specialty_tags ?? []).includes(tag.value)
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                "
               >
                 {{ tag.label }}
               </button>
@@ -176,9 +202,11 @@
                 :key="tag.value"
                 @click="toggleTag('content_style_tags', tag.value)"
                 class="px-3 py-1.5 rounded-full text-sm transition-colors"
-                :class="profile.content_style_tags.includes(tag.value) 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+                :class="
+                  (profile.content_style_tags ?? []).includes(tag.value)
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                "
               >
                 {{ tag.label }}
               </button>
@@ -193,9 +221,11 @@
                 :key="platform.value"
                 @click="toggleTag('preferred_platforms', platform.value)"
                 class="px-3 py-1.5 rounded-full text-sm transition-colors"
-                :class="profile.preferred_platforms.includes(platform.value) 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+                :class="
+                  (profile.preferred_platforms ?? []).includes(platform.value)
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                "
               >
                 {{ platform.label }}
               </button>
@@ -210,9 +240,11 @@
                 :key="lang.code"
                 @click="toggleTag('languages', lang.code)"
                 class="px-3 py-1.5 rounded-full text-sm transition-colors"
-                :class="profile.languages.includes(lang.code) 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+                :class="
+                  (profile.languages ?? []).includes(lang.code)
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                "
               >
                 {{ lang.name }}
               </button>
@@ -287,11 +319,7 @@
               class="bg-card border border-border/60 rounded-xl overflow-hidden"
             >
               <div class="aspect-video bg-muted relative">
-                <img 
-                  v-if="clip.thumbnail_url" 
-                  :src="clip.thumbnail_url" 
-                  class="w-full h-full object-cover"
-                />
+                <img v-if="clip.thumbnail_url" :src="clip.thumbnail_url" class="w-full h-full object-cover" />
                 <div v-else class="w-full h-full flex items-center justify-center">
                   <Video class="w-8 h-8 text-muted-foreground/50" />
                 </div>
@@ -418,9 +446,7 @@
       <DialogContent class="max-w-sm">
         <DialogHeader>
           <DialogTitle>Confirm Delete</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete this {{ deleteType }}?
-          </DialogDescription>
+          <DialogDescription>Are you sure you want to delete this {{ deleteType }}?</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" @click="showDeleteDialog = false">Cancel</Button>
@@ -435,303 +461,340 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue';
-import {
-  UserCircle, Globe, Lock, Plus, Link2, Video, Pencil, Trash2, Loader2,
-  Music2, Instagram, Twitter, Youtube, Twitch, Upload
-} from 'lucide-vue-next';
-import PageLayout from '@/components/PageLayout.vue';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  getMyClipperProfile, updateMyClipperProfile,
-  listChannelLinks, createChannelLink, updateChannelLink, deleteChannelLink,
-  listPortfolioClips, createPortfolioClip, updatePortfolioClip, deletePortfolioClip,
-  uploadClipperAvatar,
-  type ClipperProfile, type ChannelLink, type PortfolioClip,
-  EXPERIENCE_LEVELS, SPECIALTY_TAGS, CONTENT_STYLE_TAGS, PREFERRED_PLATFORMS, LANGUAGES, CHANNEL_PLATFORMS,
-  getPlatformLabel
-} from '@/services/clipperProfilesApi';
-import { useToast } from '@/composables/useToast';
+  import { ref, reactive, onMounted } from 'vue';
+  import {
+    UserCircle,
+    Globe,
+    Lock,
+    Plus,
+    Link2,
+    Video,
+    Pencil,
+    Trash2,
+    Loader2,
+    Music2,
+    Instagram,
+    Twitter,
+    Youtube,
+    Twitch,
+    Upload,
+  } from 'lucide-vue-next';
+  import PageLayout from '@/components/PageLayout.vue';
+  import { Button } from '@/components/ui/button';
+  import { Input } from '@/components/ui/input';
+  import { Label } from '@/components/ui/label';
+  import { Textarea } from '@/components/ui/textarea';
+  import { Switch } from '@/components/ui/switch';
+  import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+  } from '@/components/ui/dialog';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+  import {
+    getMyClipperProfile,
+    updateMyClipperProfile,
+    listChannelLinks,
+    createChannelLink,
+    updateChannelLink,
+    deleteChannelLink,
+    listPortfolioClips,
+    createPortfolioClip,
+    updatePortfolioClip,
+    deletePortfolioClip,
+    uploadClipperAvatar,
+    type ClipperProfile,
+    type ChannelLink,
+    type PortfolioClip,
+    EXPERIENCE_LEVELS,
+    SPECIALTY_TAGS,
+    CONTENT_STYLE_TAGS,
+    PREFERRED_PLATFORMS,
+    LANGUAGES,
+    CHANNEL_PLATFORMS,
+    getPlatformLabel,
+  } from '@/services/clipperProfilesApi';
+  import { useToast } from '@/composables/useToast';
 
-const { toast } = useToast();
+  const { toast } = useToast();
 
-const loading = ref(true);
-const profile = reactive<Partial<ClipperProfile>>({
-  display_name: '',
-  bio: '',
-  avatar_url: '',
-  slug: '',
-  is_public: false,
-  looking_for_work: false,
-  experience_level: '',
-  specialty_tags: [],
-  content_style_tags: [],
-  preferred_platforms: [],
-  languages: [],
-  timezone: '',
-  total_campaigns_completed: 0,
-  total_clips_delivered: 0,
-  total_endorsements: 0
-});
+  const loading = ref(true);
+  const profile = reactive<Partial<ClipperProfile>>({
+    display_name: '',
+    bio: '',
+    avatar_url: '',
+    slug: '',
+    is_public: false,
+    looking_for_work: false,
+    experience_level: '',
+    specialty_tags: [],
+    content_style_tags: [],
+    preferred_platforms: [],
+    languages: [],
+    timezone: '',
+    total_campaigns_completed: 0,
+    total_clips_delivered: 0,
+    total_endorsements: 0,
+  });
 
-const channelLinks = ref<ChannelLink[]>([]);
-const portfolioClips = ref<PortfolioClip[]>([]);
+  const channelLinks = ref<ChannelLink[]>([]);
+  const portfolioClips = ref<PortfolioClip[]>([]);
 
-// Avatar upload state
-const uploadingAvatar = ref(false);
-const avatarInput = ref<HTMLInputElement | null>(null);
+  // Avatar upload state
+  const uploadingAvatar = ref(false);
+  const avatarInput = ref<HTMLInputElement | null>(null);
 
-const showChannelLinkDialog = ref(false);
-const showPortfolioClipDialog = ref(false);
-const showDeleteDialog = ref(false);
+  const showChannelLinkDialog = ref(false);
+  const showPortfolioClipDialog = ref(false);
+  const showDeleteDialog = ref(false);
 
-const editingChannelLink = ref<ChannelLink | null>(null);
-const editingPortfolioClip = ref<PortfolioClip | null>(null);
-const savingChannelLink = ref(false);
-const savingPortfolioClip = ref(false);
-const deleting = ref(false);
-const deleteType = ref<'channel link' | 'portfolio clip'>('channel link');
-const deleteTarget = ref<ChannelLink | PortfolioClip | null>(null);
+  const editingChannelLink = ref<ChannelLink | null>(null);
+  const editingPortfolioClip = ref<PortfolioClip | null>(null);
+  const savingChannelLink = ref(false);
+  const savingPortfolioClip = ref(false);
+  const deleting = ref(false);
+  const deleteType = ref<'channel link' | 'portfolio clip'>('channel link');
+  const deleteTarget = ref<ChannelLink | PortfolioClip | null>(null);
 
-const channelLinkForm = reactive({
-  platform: '',
-  url: '',
-  username: ''
-});
+  const channelLinkForm = reactive({
+    platform: '',
+    url: '',
+    username: '',
+  });
 
-const portfolioClipForm = reactive({
-  title: '',
-  video_url: '',
-  thumbnail_url: ''
-});
+  const portfolioClipForm = reactive({
+    title: '',
+    video_url: '',
+    thumbnail_url: '',
+  });
 
-const getPlatformIcon = (platform: string) => {
-  const icons: Record<string, typeof Music2> = {
-    tiktok: Music2,
-    instagram: Instagram,
-    x: Twitter,
-    youtube: Youtube,
-    twitch: Twitch,
-    kick: Music2
+  const getPlatformIcon = (platform: string) => {
+    const icons: Record<string, typeof Music2> = {
+      tiktok: Music2,
+      instagram: Instagram,
+      x: Twitter,
+      youtube: Youtube,
+      twitch: Twitch,
+      kick: Music2,
+    };
+    return icons[platform] || Link2;
   };
-  return icons[platform] || Link2;
-};
 
-const formatDuration = (seconds: number) => {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
-const loadProfile = async () => {
-  loading.value = true;
-  try {
-    const response = await getMyClipperProfile();
-    if (response.success) {
-      Object.assign(profile, response.profile);
+  const loadProfile = async () => {
+    loading.value = true;
+    try {
+      const response = await getMyClipperProfile();
+      if (response.success) {
+        Object.assign(profile, response.profile);
+      }
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+      toast({ title: 'Error', description: 'Failed to load profile' });
+    } finally {
+      loading.value = false;
     }
-  } catch (error) {
-    console.error('Failed to load profile:', error);
-    toast({ title: 'Error', description: 'Failed to load profile' });
-  } finally {
-    loading.value = false;
-  }
-};
+  };
 
-const loadChannelLinks = async () => {
-  try {
-    const response = await listChannelLinks();
-    if (response.success) {
-      channelLinks.value = response.channel_links;
+  const loadChannelLinks = async () => {
+    try {
+      const response = await listChannelLinks();
+      if (response.success) {
+        channelLinks.value = response.channel_links;
+      }
+    } catch (error) {
+      console.error('Failed to load channel links:', error);
     }
-  } catch (error) {
-    console.error('Failed to load channel links:', error);
-  }
-};
+  };
 
-const loadPortfolioClips = async () => {
-  try {
-    const response = await listPortfolioClips();
-    if (response.success) {
-      portfolioClips.value = response.portfolio_clips;
+  const loadPortfolioClips = async () => {
+    try {
+      const response = await listPortfolioClips();
+      if (response.success) {
+        portfolioClips.value = response.portfolio_clips;
+      }
+    } catch (error) {
+      console.error('Failed to load portfolio clips:', error);
     }
-  } catch (error) {
-    console.error('Failed to load portfolio clips:', error);
-  }
-};
+  };
 
-const saveProfile = async () => {
-  try {
-    const response = await updateMyClipperProfile(profile);
-    if (response.success) {
-      Object.assign(profile, response.profile);
+  const saveProfile = async () => {
+    try {
+      const response = await updateMyClipperProfile(profile);
+      if (response.success) {
+        Object.assign(profile, response.profile);
+      }
+    } catch (error) {
+      console.error('Failed to save profile:', error);
+      toast({ title: 'Error', description: 'Failed to save profile' });
     }
-  } catch (error) {
-    console.error('Failed to save profile:', error);
-    toast({ title: 'Error', description: 'Failed to save profile' });
-  }
-};
+  };
 
-const toggleTag = (field: 'specialty_tags' | 'content_style_tags' | 'preferred_platforms' | 'languages', value: string) => {
-  const arr = profile[field] as string[];
-  const idx = arr.indexOf(value);
-  if (idx >= 0) {
-    arr.splice(idx, 1);
-  } else {
-    arr.push(value);
-  }
-  saveProfile();
-};
-
-// Avatar Upload
-const handleAvatarUpload = async (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-
-  uploadingAvatar.value = true;
-  try {
-    const response = await uploadClipperAvatar(file);
-    if (response.success && response.avatar_url) {
-      profile.avatar_url = response.avatar_url;
-      toast({ title: 'Success', description: 'Avatar uploaded successfully' });
+  const toggleTag = (
+    field: 'specialty_tags' | 'content_style_tags' | 'preferred_platforms' | 'languages',
+    value: string
+  ) => {
+    const arr = profile[field] as string[];
+    const idx = arr.indexOf(value);
+    if (idx >= 0) {
+      arr.splice(idx, 1);
     } else {
-      toast({ title: 'Error', description: response.error || 'Failed to upload avatar' });
+      arr.push(value);
     }
-  } catch (error) {
-    console.error('Failed to upload avatar:', error);
-    toast({ title: 'Error', description: 'Failed to upload avatar' });
-  } finally {
-    uploadingAvatar.value = false;
-    // Reset the input so the same file can be selected again
-    if (input) input.value = '';
-  }
-};
+    saveProfile();
+  };
 
-// Channel Links
-const openAddChannelLink = () => {
-  editingChannelLink.value = null;
-  Object.assign(channelLinkForm, { platform: '', url: '', username: '' });
-  showChannelLinkDialog.value = true;
-};
+  // Avatar Upload
+  const handleAvatarUpload = async (event: Event) => {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
 
-const editChannelLink = (link: ChannelLink) => {
-  editingChannelLink.value = link;
-  Object.assign(channelLinkForm, {
-    platform: link.platform,
-    url: link.url,
-    username: link.username || ''
+    uploadingAvatar.value = true;
+    try {
+      const response = await uploadClipperAvatar(file);
+      if (response.success && response.avatar_url) {
+        profile.avatar_url = response.avatar_url;
+        toast({ title: 'Success', description: 'Avatar uploaded successfully' });
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to upload avatar' });
+      }
+    } catch (error) {
+      console.error('Failed to upload avatar:', error);
+      toast({ title: 'Error', description: 'Failed to upload avatar' });
+    } finally {
+      uploadingAvatar.value = false;
+      // Reset the input so the same file can be selected again
+      if (input) input.value = '';
+    }
+  };
+
+  // Channel Links
+  const openAddChannelLink = () => {
+    editingChannelLink.value = null;
+    Object.assign(channelLinkForm, { platform: '', url: '', username: '' });
+    showChannelLinkDialog.value = true;
+  };
+
+  const editChannelLink = (link: ChannelLink) => {
+    editingChannelLink.value = link;
+    Object.assign(channelLinkForm, {
+      platform: link.platform,
+      url: link.url,
+      username: link.username || '',
+    });
+    showChannelLinkDialog.value = true;
+  };
+
+  const saveChannelLink = async () => {
+    savingChannelLink.value = true;
+    try {
+      let response;
+      if (editingChannelLink.value) {
+        response = await updateChannelLink(editingChannelLink.value.id, channelLinkForm);
+      } else {
+        response = await createChannelLink(channelLinkForm);
+      }
+      if (response.success) {
+        showChannelLinkDialog.value = false;
+        await loadChannelLinks();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to save' });
+      }
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to save channel link' });
+    } finally {
+      savingChannelLink.value = false;
+    }
+  };
+
+  const confirmDeleteChannelLink = (link: ChannelLink) => {
+    deleteType.value = 'channel link';
+    deleteTarget.value = link;
+    showDeleteDialog.value = true;
+  };
+
+  // Portfolio Clips
+  const openAddPortfolioClip = () => {
+    editingPortfolioClip.value = null;
+    Object.assign(portfolioClipForm, { title: '', video_url: '', thumbnail_url: '' });
+    showPortfolioClipDialog.value = true;
+  };
+
+  const editPortfolioClip = (clip: PortfolioClip) => {
+    editingPortfolioClip.value = clip;
+    Object.assign(portfolioClipForm, {
+      title: clip.title || '',
+      video_url: clip.video_url,
+      thumbnail_url: clip.thumbnail_url || '',
+    });
+    showPortfolioClipDialog.value = true;
+  };
+
+  const savePortfolioClip = async () => {
+    savingPortfolioClip.value = true;
+    try {
+      let response;
+      if (editingPortfolioClip.value) {
+        response = await updatePortfolioClip(editingPortfolioClip.value.id, portfolioClipForm);
+      } else {
+        response = await createPortfolioClip(portfolioClipForm);
+      }
+      if (response.success) {
+        showPortfolioClipDialog.value = false;
+        await loadPortfolioClips();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to save' });
+      }
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to save portfolio clip' });
+    } finally {
+      savingPortfolioClip.value = false;
+    }
+  };
+
+  const confirmDeletePortfolioClip = (clip: PortfolioClip) => {
+    deleteType.value = 'portfolio clip';
+    deleteTarget.value = clip;
+    showDeleteDialog.value = true;
+  };
+
+  const confirmDelete = async () => {
+    deleting.value = true;
+    try {
+      let response;
+      if (deleteType.value === 'channel link') {
+        response = await deleteChannelLink((deleteTarget.value as ChannelLink).id);
+        if (response.success) await loadChannelLinks();
+      } else {
+        response = await deletePortfolioClip((deleteTarget.value as PortfolioClip).id);
+        if (response.success) await loadPortfolioClips();
+      }
+      showDeleteDialog.value = false;
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to delete' });
+    } finally {
+      deleting.value = false;
+    }
+  };
+
+  onMounted(() => {
+    loadProfile();
+    loadChannelLinks();
+    loadPortfolioClips();
   });
-  showChannelLinkDialog.value = true;
-};
-
-const saveChannelLink = async () => {
-  savingChannelLink.value = true;
-  try {
-    let response;
-    if (editingChannelLink.value) {
-      response = await updateChannelLink(editingChannelLink.value.id, channelLinkForm);
-    } else {
-      response = await createChannelLink(channelLinkForm);
-    }
-    if (response.success) {
-      showChannelLinkDialog.value = false;
-      await loadChannelLinks();
-    } else {
-      toast({ title: 'Error', description: response.error || 'Failed to save' });
-    }
-  } catch (error) {
-    toast({ title: 'Error', description: 'Failed to save channel link' });
-  } finally {
-    savingChannelLink.value = false;
-  }
-};
-
-const confirmDeleteChannelLink = (link: ChannelLink) => {
-  deleteType.value = 'channel link';
-  deleteTarget.value = link;
-  showDeleteDialog.value = true;
-};
-
-// Portfolio Clips
-const openAddPortfolioClip = () => {
-  editingPortfolioClip.value = null;
-  Object.assign(portfolioClipForm, { title: '', video_url: '', thumbnail_url: '' });
-  showPortfolioClipDialog.value = true;
-};
-
-const editPortfolioClip = (clip: PortfolioClip) => {
-  editingPortfolioClip.value = clip;
-  Object.assign(portfolioClipForm, {
-    title: clip.title || '',
-    video_url: clip.video_url,
-    thumbnail_url: clip.thumbnail_url || ''
-  });
-  showPortfolioClipDialog.value = true;
-};
-
-const savePortfolioClip = async () => {
-  savingPortfolioClip.value = true;
-  try {
-    let response;
-    if (editingPortfolioClip.value) {
-      response = await updatePortfolioClip(editingPortfolioClip.value.id, portfolioClipForm);
-    } else {
-      response = await createPortfolioClip(portfolioClipForm);
-    }
-    if (response.success) {
-      showPortfolioClipDialog.value = false;
-      await loadPortfolioClips();
-    } else {
-      toast({ title: 'Error', description: response.error || 'Failed to save' });
-    }
-  } catch (error) {
-    toast({ title: 'Error', description: 'Failed to save portfolio clip' });
-  } finally {
-    savingPortfolioClip.value = false;
-  }
-};
-
-const confirmDeletePortfolioClip = (clip: PortfolioClip) => {
-  deleteType.value = 'portfolio clip';
-  deleteTarget.value = clip;
-  showDeleteDialog.value = true;
-};
-
-const confirmDelete = async () => {
-  deleting.value = true;
-  try {
-    let response;
-    if (deleteType.value === 'channel link') {
-      response = await deleteChannelLink((deleteTarget.value as ChannelLink).id);
-      if (response.success) await loadChannelLinks();
-    } else {
-      response = await deletePortfolioClip((deleteTarget.value as PortfolioClip).id);
-      if (response.success) await loadPortfolioClips();
-    }
-    showDeleteDialog.value = false;
-  } catch (error) {
-    toast({ title: 'Error', description: 'Failed to delete' });
-  } finally {
-    deleting.value = false;
-  }
-};
-
-onMounted(() => {
-  loadProfile();
-  loadChannelLinks();
-  loadPortfolioClips();
-});
 </script>
 
 <style scoped>
-.clipper-profile-edit-page {
-  height: 100%;
-}
+  .clipper-profile-edit-page {
+    height: 100%;
+  }
 </style>

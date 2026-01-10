@@ -67,12 +67,12 @@
                 v-if="campaign.cover_image_url"
                 :src="campaign.cover_image_url"
                 class="w-full h-full object-cover"
-                @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
+                @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
               />
               <div v-else class="w-full h-full flex items-center justify-center">
                 <Megaphone class="w-10 h-10 text-primary/30" />
               </div>
-              
+
               <!-- Organization Badge -->
               <div
                 v-if="campaign.organization"
@@ -96,7 +96,9 @@
             <!-- Content -->
             <div class="p-4 space-y-3">
               <div>
-                <h3 class="font-semibold text-[15px] text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+                <h3
+                  class="font-semibold text-[15px] text-foreground line-clamp-1 group-hover:text-primary transition-colors"
+                >
                   {{ campaign.title }}
                 </h3>
                 <p v-if="campaign.description" class="text-[13px] text-muted-foreground line-clamp-2 mt-1">
@@ -105,7 +107,10 @@
               </div>
 
               <!-- Creator Profiles -->
-              <div v-if="campaign.creator_profiles && campaign.creator_profiles.length > 0" class="flex items-center gap-1">
+              <div
+                v-if="campaign.creator_profiles && campaign.creator_profiles.length > 0"
+                class="flex items-center gap-1"
+              >
                 <span class="text-[11px] text-muted-foreground mr-1">Creators:</span>
                 <div class="flex -space-x-1.5">
                   <div
@@ -114,8 +119,15 @@
                     class="w-6 h-6 rounded-full border-2 border-card overflow-hidden bg-muted"
                     :title="profile.name"
                   >
-                    <img v-if="profile.profile_image_url" :src="profile.profile_image_url" class="w-full h-full object-cover" />
-                    <div v-else class="w-full h-full flex items-center justify-center text-[10px] font-medium text-muted-foreground">
+                    <img
+                      v-if="profile.profile_image_url"
+                      :src="profile.profile_image_url"
+                      class="w-full h-full object-cover"
+                    />
+                    <div
+                      v-else
+                      class="w-full h-full flex items-center justify-center text-[10px] font-medium text-muted-foreground"
+                    >
                       {{ profile.name?.charAt(0) }}
                     </div>
                   </div>
@@ -158,104 +170,112 @@
     </PageLayout>
 
     <!-- Campaign Detail Dialog -->
-    <CampaignDetailDialog
-      v-model:open="showDetailDialog"
-      :campaign="selectedCampaign"
-      @joined="onCampaignJoined"
-    />
+    <CampaignDetailDialog v-model:open="showDetailDialog" :campaign="selectedCampaign" @joined="onCampaignJoined" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
-import { Megaphone, Search, Building2, Users, DollarSign, Music2, Instagram, Twitter, Youtube, Globe } from 'lucide-vue-next';
-import PageLayout from '@/components/PageLayout.vue';
-import { Input } from '@/components/ui/input';
-import CampaignDetailDialog from '@/components/campaigns/CampaignDetailDialog.vue';
-import { listActiveCampaigns, type Campaign, getPlatformDisplayName } from '@/services/campaignApi';
-import { useToast } from '@/composables/useToast';
+  import { ref, computed, onMounted } from 'vue';
+  import {
+    Megaphone,
+    Search,
+    Building2,
+    Users,
+    DollarSign,
+    Music2,
+    Instagram,
+    Twitter,
+    Youtube,
+    Globe,
+  } from 'lucide-vue-next';
+  import PageLayout from '@/components/PageLayout.vue';
+  import { Input } from '@/components/ui/input';
+  import CampaignDetailDialog from '@/components/campaigns/CampaignDetailDialog.vue';
+  import { listActiveCampaigns, type Campaign, getPlatformDisplayName } from '@/services/campaignApi';
+  import { useToast } from '@/composables/useToast';
 
-const { toast } = useToast();
+  const { toast } = useToast();
 
-const loading = ref(true);
-const campaigns = ref<Campaign[]>([]);
-const searchQuery = ref('');
-const showDetailDialog = ref(false);
-const selectedCampaign = ref<Campaign | null>(null);
+  const loading = ref(true);
+  const campaigns = ref<Campaign[]>([]);
+  const searchQuery = ref('');
+  const showDetailDialog = ref(false);
+  const selectedCampaign = ref<Campaign | null>(null);
 
-const filteredCampaigns = computed(() => {
-  if (!searchQuery.value) return campaigns.value;
-  
-  const query = searchQuery.value.toLowerCase();
-  return campaigns.value.filter(c => 
-    c.title.toLowerCase().includes(query) ||
-    c.description?.toLowerCase().includes(query) ||
-    c.organization?.name.toLowerCase().includes(query)
-  );
-});
+  const filteredCampaigns = computed(() => {
+    if (!searchQuery.value) return campaigns.value;
 
-const getPlatformIcon = (platform: string) => {
-  const icons: Record<string, typeof Music2> = {
-    tiktok: Music2,
-    instagram: Instagram,
-    x: Twitter,
-    youtube: Youtube
-  };
-  return icons[platform] || Globe;
-};
-
-const formatCpm = (cpm: string | number) => {
-  const value = typeof cpm === 'string' ? parseFloat(cpm) : cpm;
-  return value.toFixed(2);
-};
-
-const formatBudget = (budget: string | number) => {
-  const value = typeof budget === 'string' ? parseFloat(budget) : budget;
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(1)}K`;
-  }
-  return value.toFixed(0);
-};
-
-const viewCampaign = (campaign: Campaign) => {
-  selectedCampaign.value = campaign;
-  showDetailDialog.value = true;
-};
-
-const onCampaignJoined = () => {
-  toast({
-    title: 'Joined Campaign',
-    description: 'You can now submit clips to this campaign'
+    const query = searchQuery.value.toLowerCase();
+    return campaigns.value.filter(
+      (c) =>
+        c.title.toLowerCase().includes(query) ||
+        c.description?.toLowerCase().includes(query) ||
+        c.organization?.name.toLowerCase().includes(query)
+    );
   });
-  loadCampaigns();
-};
 
-const loadCampaigns = async () => {
-  loading.value = true;
-  try {
-    const response = await listActiveCampaigns();
-    if (response.success) {
-      campaigns.value = response.campaigns;
+  const getPlatformIcon = (platform: string) => {
+    const icons: Record<string, typeof Music2> = {
+      tiktok: Music2,
+      instagram: Instagram,
+      x: Twitter,
+      youtube: Youtube,
+    };
+    return icons[platform] || Globe;
+  };
+
+  const formatCpm = (cpm: string | number) => {
+    const value = typeof cpm === 'string' ? parseFloat(cpm) : cpm;
+    return value.toFixed(2);
+  };
+
+  const formatBudget = (budget: string | number) => {
+    const value = typeof budget === 'string' ? parseFloat(budget) : budget;
+    if (value >= 1000) {
+      return `${(value / 1000).toFixed(1)}K`;
     }
-  } catch (error) {
-    console.error('Failed to load campaigns:', error);
-    toast({
-      title: 'Error',
-      description: 'Failed to load campaigns',
-      variant: 'destructive'
-    });
-  } finally {
-    loading.value = false;
-  }
-};
+    return value.toFixed(0);
+  };
 
-onMounted(() => {
-  loadCampaigns();
-});
+  const viewCampaign = (campaign: Campaign) => {
+    selectedCampaign.value = campaign;
+    showDetailDialog.value = true;
+  };
+
+  const onCampaignJoined = () => {
+    toast({
+      title: 'Joined Campaign',
+      description: 'You can now submit clips to this campaign',
+    });
+    loadCampaigns();
+  };
+
+  const loadCampaigns = async () => {
+    loading.value = true;
+    try {
+      const response = await listActiveCampaigns();
+      if (response.success) {
+        campaigns.value = response.campaigns;
+      }
+    } catch (error) {
+      console.error('Failed to load campaigns:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load campaigns',
+        type: 'error',
+      });
+    } finally {
+      loading.value = false;
+    }
+  };
+
+  onMounted(() => {
+    loadCampaigns();
+  });
 </script>
 
 <style scoped>
-.campaigns-page {
-  @apply h-full;
-}
+  .campaigns-page {
+    @apply h-full;
+  }
 </style>

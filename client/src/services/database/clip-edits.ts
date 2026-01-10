@@ -26,6 +26,7 @@ export interface ClipAudioTrackRecord {
   track_order: number;
   is_muted: number;
   is_solo: number;
+  source_id?: string; // ID of source video if audio was extracted ('main' for clip mode)
   created_at: number;
 }
 
@@ -162,8 +163,8 @@ export async function createAudioTrack(
 
   await db.execute(
     `INSERT INTO clip_audio_tracks 
-     (id, clip_edit_id, file_path, name, start_time, end_time, volume, pan, fade_in, fade_out, track_order, is_muted, is_solo, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, clip_edit_id, file_path, name, start_time, end_time, volume, pan, fade_in, fade_out, track_order, is_muted, is_solo, source_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       clipEditId,
@@ -178,6 +179,7 @@ export async function createAudioTrack(
       data.track_order || 0,
       data.is_muted || 0,
       data.is_solo || 0,
+      data.source_id || null,
       now,
     ]
   );
@@ -196,6 +198,7 @@ export async function createAudioTrack(
     track_order: data.track_order || 0,
     is_muted: data.is_muted || 0,
     is_solo: data.is_solo || 0,
+    source_id: data.source_id,
     created_at: now,
   };
 }

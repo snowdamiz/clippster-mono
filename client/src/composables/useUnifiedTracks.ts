@@ -1,10 +1,5 @@
 import { computed, Ref } from 'vue';
-import type { 
-  Track, 
-  TimelineItem, 
-  TimelineItemType, 
-  Keyframe 
-} from '@/types/timeline-model';
+import type { Track, TimelineItem, TimelineItemType, Keyframe } from '@/types/timeline-model';
 import type {
   AudioTrack,
   TextOverlay,
@@ -22,7 +17,7 @@ import type {
   VideoEditorTextOverlayRecord,
   VideoEditorStickerRecord,
   VideoEditorWatermarkRecord,
-  VideoEditorEffectRecord
+  VideoEditorEffectRecord,
 } from '@/services/database';
 import { TimelineAdapter } from '@/services/timeline-adapter';
 
@@ -52,13 +47,13 @@ export function useUnifiedTracks(options: UseUnifiedTracksOptions) {
     filterSegments,
     videoSources,
     duration,
-    trimSegments
+    trimSegments,
   } = options;
 
   const unifiedTracks = computed<Track[]>(() => {
     // Current implementation relies on the TimelineAdapter which is designed for Editor Mode
     // For Clip Mode, we might need a different strategy or adapt the adapter
-    
+
     if (editorMode.value) {
       // Map frontend types to database record types for the adapter
       // This logic is extracted from ClipEditorDialog.vue to be reusable
@@ -71,6 +66,7 @@ export function useUnifiedTracks(options: UseUnifiedTracksOptions) {
         start_time: t.startTime,
         end_time: t.endTime,
         volume: t.volume,
+        pan: t.pan ?? 0,
         fade_in: t.fadeIn,
         fade_out: t.fadeOut,
         track_order: t.trackOrder,
@@ -93,7 +89,7 @@ export function useUnifiedTracks(options: UseUnifiedTracksOptions) {
         preview_height: t.previewHeight,
         layer: t.layer,
         created_at: 0,
-        keyframes: t.keyframes ? JSON.stringify(t.keyframes) : undefined // Ensure keyframes are passed
+        keyframes: t.keyframes ? JSON.stringify(t.keyframes) : undefined, // Ensure keyframes are passed
       }));
 
       const stickerRecords: VideoEditorStickerRecord[] = stickers.value.map((s) => ({
@@ -111,7 +107,7 @@ export function useUnifiedTracks(options: UseUnifiedTracksOptions) {
         per_ratio_configs_data: s.perRatioConfigs ? JSON.stringify(s.perRatioConfigs) : undefined,
         layer: s.layer,
         created_at: 0,
-        keyframes: s.keyframes ? JSON.stringify(s.keyframes) : undefined
+        keyframes: s.keyframes ? JSON.stringify(s.keyframes) : undefined,
       }));
 
       const watermarkRecords: VideoEditorWatermarkRecord[] = watermarks.value.map((w) => ({
@@ -129,7 +125,7 @@ export function useUnifiedTracks(options: UseUnifiedTracksOptions) {
         per_ratio_configs_data: w.perRatioConfigs ? JSON.stringify(w.perRatioConfigs) : undefined,
         layer: w.layer,
         created_at: 0,
-        keyframes: w.keyframes ? JSON.stringify(w.keyframes) : undefined
+        keyframes: w.keyframes ? JSON.stringify(w.keyframes) : undefined,
       }));
 
       const effectRecords: VideoEditorEffectRecord[] = effects.value.map((e) => ({
@@ -157,11 +153,11 @@ export function useUnifiedTracks(options: UseUnifiedTracksOptions) {
       // Clip Mode Implementation (Future Phase: Adapt Clip Mode to Unified Model)
       // For now, return empty or implement basic mapping if needed by the renderer
       // Currently ClipEditorTimeline handles its own rendering for clip mode
-      return []; 
+      return [];
     }
   });
 
   return {
-    unifiedTracks
+    unifiedTracks,
   };
 }

@@ -240,12 +240,9 @@ export interface DeleteResponse {
 /**
  * List all active campaigns (marketplace view)
  */
-export async function listActiveCampaigns(
-  limit = 50,
-  offset = 0
-): Promise<ListCampaignsResponse> {
+export async function listActiveCampaigns(limit = 50, offset = 0): Promise<ListCampaignsResponse> {
   const response = await api.get('/campaigns', {
-    params: { limit, offset }
+    params: { limit, offset },
   });
   return response.data;
 }
@@ -266,7 +263,7 @@ export async function applyToCampaign(
   applicationNote?: string
 ): Promise<ParticipantResponse> {
   const response = await api.post(`/campaigns/${campaignId}/apply`, {
-    application_note: applicationNote
+    application_note: applicationNote,
   });
   return response.data;
 }
@@ -283,7 +280,7 @@ export async function submitClip(
   const response = await api.post(`/campaigns/${campaignId}/submissions`, {
     clip_url: clipUrl,
     platform,
-    social_account_id: socialAccountId
+    social_account_id: socialAccountId,
   });
   return response.data;
 }
@@ -293,7 +290,7 @@ export async function submitClip(
  */
 export async function listMyCampaigns(status?: string): Promise<ListCampaignsResponse> {
   const response = await api.get('/user/campaigns', {
-    params: { status }
+    params: { status },
   });
   return response.data;
 }
@@ -301,11 +298,9 @@ export async function listMyCampaigns(status?: string): Promise<ListCampaignsRes
 /**
  * List submissions for the current user
  */
-export async function listMySubmissions(
-  campaignId?: number
-): Promise<ListSubmissionsResponse> {
+export async function listMySubmissions(campaignId?: number): Promise<ListSubmissionsResponse> {
   const response = await api.get('/user/submissions', {
-    params: { campaign_id: campaignId }
+    params: { campaign_id: campaignId },
   });
   return response.data;
 }
@@ -330,7 +325,7 @@ export async function listOrganizationCampaigns(
   status?: string
 ): Promise<ListCampaignsResponse> {
   const response = await api.get(`/organizations/${organizationId}/campaigns`, {
-    params: { status }
+    params: { status },
   });
   return response.data;
 }
@@ -382,10 +377,7 @@ export async function updateCampaign(
     ends_at: string;
   }>
 ): Promise<CampaignResponse> {
-  const response = await api.put(
-    `/organizations/${organizationId}/campaigns/${campaignId}`,
-    data
-  );
+  const response = await api.put(`/organizations/${organizationId}/campaigns/${campaignId}`, data);
   return response.data;
 }
 
@@ -396,9 +388,7 @@ export async function deleteCampaign(
   organizationId: number,
   campaignId: number
 ): Promise<DeleteResponse> {
-  const response = await api.delete(
-    `/organizations/${organizationId}/campaigns/${campaignId}`
-  );
+  const response = await api.delete(`/organizations/${organizationId}/campaigns/${campaignId}`);
   return response.data;
 }
 
@@ -409,9 +399,7 @@ export async function pauseCampaign(
   organizationId: number,
   campaignId: number
 ): Promise<CampaignResponse> {
-  const response = await api.post(
-    `/organizations/${organizationId}/campaigns/${campaignId}/pause`
-  );
+  const response = await api.post(`/organizations/${organizationId}/campaigns/${campaignId}/pause`);
   return response.data;
 }
 
@@ -637,16 +625,12 @@ export async function uploadCampaignCoverImage(
     formData.append('asset_type', 'image');
     formData.append('name', `campaign-cover-${Date.now()}`);
 
-    const response = await api.post(
-      `/organizations/${organizationId}/assets`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 120000, // 2 minutes
-      }
-    );
+    const response = await api.post(`/organizations/${organizationId}/assets`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 120000, // 2 minutes
+    });
 
     if (response.data.success && response.data.asset?.url) {
       return {
@@ -677,12 +661,12 @@ export async function uploadCampaignCoverImage(
  */
 export function detectPlatformFromUrl(url: string): string | null {
   const urlLower = url.toLowerCase();
-  
+
   if (urlLower.includes('tiktok.com')) return 'tiktok';
   if (urlLower.includes('instagram.com')) return 'instagram';
   if (urlLower.includes('x.com') || urlLower.includes('twitter.com')) return 'x';
   if (urlLower.includes('youtube.com') || urlLower.includes('youtu.be')) return 'youtube';
-  
+
   return null;
 }
 
@@ -710,7 +694,7 @@ export function getPlatformDisplayName(platform: string): string {
     tiktok: 'TikTok',
     instagram: 'Instagram',
     x: 'X (Twitter)',
-    youtube: 'YouTube'
+    youtube: 'YouTube',
   };
   return names[platform] || platform;
 }
@@ -723,7 +707,7 @@ export function getPlatformIcon(platform: string): string {
     tiktok: 'Music2',
     instagram: 'Instagram',
     x: 'Twitter',
-    youtube: 'Youtube'
+    youtube: 'Youtube',
   };
   return icons[platform] || 'Globe';
 }
@@ -743,7 +727,9 @@ export async function getCampaignsByCreatorProfile(
  * Get campaign details by ID (for applying assets during build).
  * Returns campaign with global assets.
  */
-export async function getCampaignById(campaignId: number): Promise<{ success: boolean; campaign?: Campaign; error?: string }> {
+export async function getCampaignById(
+  campaignId: number
+): Promise<{ success: boolean; campaign?: Campaign; error?: string }> {
   const response = await api.get(`/campaigns/${campaignId}`);
   return response.data;
 }

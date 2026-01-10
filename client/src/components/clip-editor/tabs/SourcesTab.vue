@@ -352,7 +352,7 @@
       const clipDuration =
         clip.clipEndTime != null && clip.clipStartTime != null
           ? clip.clipEndTime - clip.clipStartTime
-          : clip.duration ?? 0;
+          : (clip.duration ?? 0);
       const start = clip.clipStartTime ?? 0;
       const target = clipDuration > 0 ? start + clipDuration / 2 : start + 0.5;
       const timestampSeconds = Math.max(0, target);
@@ -423,7 +423,7 @@
           thumbnailPath: v.thumbnail_path,
           duration: v.duration,
           projectId: normalizeId(v.project_id),
-          projectName: projectNames.value.get(normalizeId(v.project_id) || '') || v.project_name || null,
+          projectName: projectNames.value.get(normalizeId(v.project_id) || '') || null,
         }));
 
         // Build a lookup of first raw video per project (for detected clips)
