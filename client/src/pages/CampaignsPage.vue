@@ -104,6 +104,30 @@
                 </p>
               </div>
 
+              <!-- Creator Profiles -->
+              <div v-if="campaign.creator_profiles && campaign.creator_profiles.length > 0" class="flex items-center gap-1">
+                <span class="text-[11px] text-muted-foreground mr-1">Creators:</span>
+                <div class="flex -space-x-1.5">
+                  <div
+                    v-for="(profile, idx) in campaign.creator_profiles.slice(0, 4)"
+                    :key="profile.id"
+                    class="w-6 h-6 rounded-full border-2 border-card overflow-hidden bg-muted"
+                    :title="profile.name"
+                  >
+                    <img v-if="profile.profile_image_url" :src="profile.profile_image_url" class="w-full h-full object-cover" />
+                    <div v-else class="w-full h-full flex items-center justify-center text-[10px] font-medium text-muted-foreground">
+                      {{ profile.name?.charAt(0) }}
+                    </div>
+                  </div>
+                  <div
+                    v-if="campaign.creator_profiles.length > 4"
+                    class="w-6 h-6 rounded-full border-2 border-card bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground"
+                  >
+                    +{{ campaign.creator_profiles.length - 4 }}
+                  </div>
+                </div>
+              </div>
+
               <!-- Platforms -->
               <div class="flex flex-wrap gap-1.5">
                 <div

@@ -15,10 +15,28 @@ export interface CampaignOrganization {
   logo_url: string | null;
 }
 
+export interface CampaignAsset {
+  id: number;
+  asset_type: string;
+  name: string;
+  url: string;
+  thumbnail_url: string | null;
+  duration: string | null;
+  width: number | null;
+  height: number | null;
+  file_size: number | null;
+  mime_type: string | null;
+}
+
 export interface CampaignCreatorProfile {
   id: number;
   name: string;
   profile_image_url: string | null;
+  description?: string | null;
+  watermark_settings?: Record<string, unknown> | null;
+  intro?: CampaignAsset | null;
+  outro?: CampaignAsset | null;
+  watermark?: CampaignAsset | null;
 }
 
 export interface Campaign {
@@ -39,10 +57,19 @@ export interface Campaign {
   status: 'draft' | 'active' | 'paused' | 'completed';
   starts_at: string | null;
   ends_at: string | null;
+  global_watermarks: Record<string, number> | null;
+  global_intro_id: number | null;
+  global_outro_id: number | null;
+  require_watermark: boolean;
+  require_intro: boolean;
+  require_outro: boolean;
   inserted_at: string;
   updated_at: string;
   organization?: CampaignOrganization;
   creator_profile?: CampaignCreatorProfile | null;
+  global_intro?: CampaignAsset | null;
+  global_outro?: CampaignAsset | null;
+  creator_profiles?: CampaignCreatorProfile[];
   participants_count?: number;
   joined_at?: string;
 }
@@ -699,4 +726,77 @@ export function getPlatformIcon(platform: string): string {
     youtube: 'Youtube'
   };
   return icons[platform] || 'Globe';
+}
+
+// ============================================
+// Campaign Creator Profiles API
+// ============================================
+
+export interface ListCreatorProfilesResponse {
+  success: boolean;
+  creator_profiles: CampaignCreatorProfile[];
+  error?: string;
+}
+
+export interface CreatorProfileResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * List creator profiles assigned to a campaign
+ */
+export async function listCampaignCreatorProfiles(
+  organizationId: number,
+  campaignId: number
+): Promise<ListCreatorProfilesResponse> {
+  const response = await api.get(
+    `/organizations/${organizationId}/campaigns/${campaignId}/creator-profiles`
+  );
+  return response.data;
+}
+
+/**
+ * Add a creator profile to a campaign
+ */
+export async function addCreatorProfileToCampaign(
+  organizationId: number,
+  campaignId: number,
+  creatorProfileId: number
+): Promise<CreatorProfileResponse> {
+  const response = await api.post(
+    `/organizations/${organizationId}/campaigns/${campaignId}/creator-profiles`,
+    { creator_profile_id: creatorProfileId }
+  );
+  return response.data;
+}
+
+/**
+ * Remove a creator profile from a campaign
+ */
+export async function removeCreatorProfileFromCampaign(
+  organizationId: number,
+  campaignId: number,
+  creatorProfileId: number
+): Promise<CreatorProfileResponse> {
+  const response = await api.delete(
+    `/organizations/${organizationId}/campaigns/${campaignId}/creator-profiles/${creatorProfileId}`
+  );
+  return response.data;
+}
+
+/**
+ * Set all creator profiles for a campaign (replaces existing)
+ */
+export async function setCampaignCreatorProfiles(
+  organizationId: number,
+  campaignId: number,
+  creatorProfileIds: number[]
+): Promise<CreatorProfileResponse> {
+  const response = await api.put(
+    `/organizations/${organizationId}/campaigns/${campaignId}/creator-profiles`,
+    { creator_profile_ids: creatorProfileIds }
+  );
+  return response.data;
 }

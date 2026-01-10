@@ -329,6 +329,47 @@
                     </div>
                   </div>
 
+                  <!-- Creator Profiles -->
+                  <div class="space-y-1.5 sm:space-y-2">
+                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">
+                      Creator Profiles
+                      <span class="text-zinc-500 font-normal ml-1">(clippers can clip these creators)</span>
+                    </label>
+                    <div v-if="loadingProfiles" class="flex items-center justify-center py-4">
+                      <Loader2 class="w-5 h-5 animate-spin text-zinc-500" />
+                    </div>
+                    <div v-else-if="availableCreatorProfiles.length === 0" class="p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800 text-center">
+                      <p class="text-zinc-500 text-xs">No creator profiles available. Create profiles in the Creator Profiles tab first.</p>
+                    </div>
+                    <div v-else class="space-y-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800 max-h-48 overflow-y-auto">
+                      <button
+                        v-for="profile in availableCreatorProfiles"
+                        :key="profile.id"
+                        type="button"
+                        @click="toggleCreatorProfile(profile.id)"
+                        class="w-full flex items-center gap-3 p-2 rounded-lg transition-all text-left"
+                        :class="selectedCreatorProfileIds.includes(profile.id)
+                          ? 'bg-violet-500/20 border border-violet-500/30'
+                          : 'bg-zinc-800/50 border border-zinc-700 hover:bg-zinc-700/50'"
+                      >
+                        <div class="w-8 h-8 rounded-full bg-zinc-700 overflow-hidden flex-shrink-0">
+                          <img v-if="profile.profile_image_url" :src="profile.profile_image_url" class="w-full h-full object-cover" />
+                          <User v-else class="w-full h-full p-1.5 text-zinc-500" />
+                        </div>
+                        <div class="flex-1 min-w-0">
+                          <div class="text-sm font-medium text-white truncate">{{ profile.name }}</div>
+                          <div v-if="profile.description" class="text-xs text-zinc-500 truncate">{{ profile.description }}</div>
+                        </div>
+                        <div v-if="selectedCreatorProfileIds.includes(profile.id)" class="flex-shrink-0">
+                          <Check class="w-4 h-4 text-violet-400" />
+                        </div>
+                      </button>
+                    </div>
+                    <p class="text-xs text-zinc-500">
+                      {{ selectedCreatorProfileIds.length }} profile(s) selected. Each profile includes their watermarks, intro/outro videos.
+                    </p>
+                  </div>
+
                   <!-- Cover Image -->
                   <div class="space-y-1.5 sm:space-y-2">
                     <label class="block text-xs sm:text-sm font-medium text-zinc-300">Cover Image</label>
@@ -735,10 +776,12 @@ import {
   pauseCampaign, activateCampaign, completeCampaign,
   listCampaignParticipants, approveParticipant, rejectParticipant,
   listCampaignSubmissions, verifySubmission, rejectSubmission, createPayment,
-  uploadCampaignCoverImage,
-  type Campaign, type CampaignParticipant, type CampaignSubmission,
+  uploadCampaignCoverImage, setCampaignCreatorProfiles,
+  type Campaign, type CampaignParticipant, type CampaignSubmission, type CampaignCreatorProfile,
   getPlatformDisplayName
 } from '@/services/campaignApi';
+import { listOrganizationCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
+import { listOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
 import { CLIPPER_PLATFORMS, PAYMENT_METHOD_TYPES } from '@/services/clipperProfileApi';
 import { useToast } from '@/composables/useToast';
 
@@ -780,6 +823,12 @@ const uploadingCoverImage = ref(false);
 
 const availablePlatforms = CLIPPER_PLATFORMS;
 const availablePaymentMethods = PAYMENT_METHOD_TYPES;
+
+// Creator profiles and assets for campaign assignment
+const availableCreatorProfiles = ref<ServerOrganizationCreatorProfile[]>([]);
+const availableAssets = ref<ServerOrganizationAsset[]>([]);
+const loadingProfiles = ref(false);
+const selectedCreatorProfileIds = ref<number[]>([]);
 
 const campaignForm = reactive({
   title: '',
@@ -951,9 +1000,42 @@ const loadCampaigns = async () => {
   }
 };
 
-const openCreateDialog = () => {
+const loadCreatorProfilesAndAssets = async () => {
+  if (!props.organizationId) return;
+  
+  loadingProfiles.value = true;
+  try {
+    const [profilesRes, assetsRes] = await Promise.all([
+      listOrganizationCreatorProfiles(props.organizationId),
+      listOrganizationAssets(props.organizationId)
+    ]);
+    
+    if (profilesRes.success) {
+      availableCreatorProfiles.value = profilesRes.profiles;
+    }
+    if (assetsRes.success) {
+      availableAssets.value = assetsRes.assets;
+    }
+  } catch (error) {
+    console.error('Failed to load creator profiles/assets:', error);
+  } finally {
+    loadingProfiles.value = false;
+  }
+};
+
+const toggleCreatorProfile = (profileId: number) => {
+  const idx = selectedCreatorProfileIds.value.indexOf(profileId);
+  if (idx >= 0) {
+    selectedCreatorProfileIds.value.splice(idx, 1);
+  } else {
+    selectedCreatorProfileIds.value.push(profileId);
+  }
+};
+
+const openCreateDialog = async () => {
   editingCampaign.value = null;
   coverImagePreview.value = '';
+  selectedCreatorProfileIds.value = [];
   Object.assign(campaignForm, {
     title: '',
     description: '',
@@ -969,11 +1051,13 @@ const openCreateDialog = () => {
     ends_at: ''
   });
   showCampaignDialog.value = true;
+  await loadCreatorProfilesAndAssets();
 };
 
-const editCampaign = (campaign: Campaign) => {
+const editCampaign = async (campaign: Campaign) => {
   editingCampaign.value = campaign;
   coverImagePreview.value = '';
+  selectedCreatorProfileIds.value = campaign.creator_profiles?.map(p => p.id) || [];
   Object.assign(campaignForm, {
     title: campaign.title,
     description: campaign.description || '',
@@ -989,6 +1073,7 @@ const editCampaign = (campaign: Campaign) => {
     ends_at: campaign.ends_at ? campaign.ends_at.slice(0, 16) : ''
   });
   showCampaignDialog.value = true;
+  await loadCreatorProfilesAndAssets();
 };
 
 const saveCampaign = async () => {
@@ -1016,7 +1101,16 @@ const saveCampaign = async () => {
       response = await createCampaign(Number(props.organizationId), data);
     }
 
-    if (response.success) {
+    if (response.success && response.campaign) {
+      // Save creator profiles assignment
+      if (selectedCreatorProfileIds.value.length > 0) {
+        await setCampaignCreatorProfiles(
+          Number(props.organizationId),
+          response.campaign.id,
+          selectedCreatorProfileIds.value
+        );
+      }
+      
       toast({ title: 'Success', description: `Campaign ${editingCampaign.value ? 'updated' : 'created'}` });
       showCampaignDialog.value = false;
       await loadCampaigns();

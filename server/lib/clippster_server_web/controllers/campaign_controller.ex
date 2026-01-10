@@ -276,7 +276,9 @@ defmodule ClippsterServerWeb.CampaignController do
       attrs = params
         |> Map.take(["title", "description", "cover_image_url", "creator_profile_id",
                      "budget", "cpm", "min_views_for_payment", "join_type",
-                     "allowed_platforms", "payment_methods", "status"])
+                     "allowed_platforms", "payment_methods", "status",
+                     "global_watermarks", "global_intro_id", "global_outro_id",
+                     "require_watermark", "require_intro", "require_outro"])
         |> maybe_add_dates(params)
 
       case Campaigns.update_campaign(campaign, attrs, user) do
@@ -405,6 +407,112 @@ defmodule ClippsterServerWeb.CampaignController do
         case Campaigns.complete_campaign(campaign, user) do
           {:ok, updated} ->
             json(conn, %{success: true, campaign: serialize_campaign(updated)})
+
+          {:error, :unauthorized} ->
+            conn
+            |> put_status(403)
+            |> json(%{success: false, error: "Not authorized"})
+        end
+    end
+  end
+
+  # ============================================================================
+  # Campaign Creator Profiles
+  # ============================================================================
+
+  @doc """
+  List creator profiles assigned to a campaign.
+  """
+  def list_creator_profiles(conn, %{"organization_id" => org_id, "id" => campaign_id}) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_member?(org_id, user.id) do
+      campaign_profiles = Campaigns.list_campaign_creator_profiles(campaign_id)
+
+      json(conn, %{
+        success: true,
+        creator_profiles: Enum.map(campaign_profiles, fn ccp ->
+          serialize_creator_profile(ccp.creator_profile)
+        end)
+      })
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not a member of this organization"})
+    end
+  end
+
+  @doc """
+  Add a creator profile to a campaign.
+  """
+  def add_creator_profile(conn, %{"organization_id" => _org_id, "id" => campaign_id, "creator_profile_id" => profile_id}) do
+    user = conn.assigns.current_user
+
+    case Campaigns.get_campaign(campaign_id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Campaign not found"})
+
+      campaign ->
+        case Campaigns.add_creator_profile_to_campaign(campaign, profile_id, user) do
+          {:ok, _} ->
+            json(conn, %{success: true, message: "Creator profile added to campaign"})
+
+          {:error, :unauthorized} ->
+            conn
+            |> put_status(403)
+            |> json(%{success: false, error: "Not authorized"})
+
+          {:error, changeset} ->
+            conn
+            |> put_status(422)
+            |> json(%{success: false, error: format_errors(changeset)})
+        end
+    end
+  end
+
+  @doc """
+  Remove a creator profile from a campaign.
+  """
+  def remove_creator_profile(conn, %{"organization_id" => _org_id, "id" => campaign_id, "creator_profile_id" => profile_id}) do
+    user = conn.assigns.current_user
+
+    case Campaigns.get_campaign(campaign_id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Campaign not found"})
+
+      campaign ->
+        case Campaigns.remove_creator_profile_from_campaign(campaign, profile_id, user) do
+          {:ok, _} ->
+            json(conn, %{success: true, message: "Creator profile removed from campaign"})
+
+          {:error, :unauthorized} ->
+            conn
+            |> put_status(403)
+            |> json(%{success: false, error: "Not authorized"})
+        end
+    end
+  end
+
+  @doc """
+  Set all creator profiles for a campaign (replaces existing).
+  """
+  def set_creator_profiles(conn, %{"organization_id" => _org_id, "id" => campaign_id, "creator_profile_ids" => profile_ids}) do
+    user = conn.assigns.current_user
+
+    case Campaigns.get_campaign(campaign_id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Campaign not found"})
+
+      campaign ->
+        case Campaigns.set_campaign_creator_profiles(campaign, profile_ids, user) do
+          {:ok, _} ->
+            json(conn, %{success: true, message: "Creator profiles updated"})
 
           {:error, :unauthorized} ->
             conn
@@ -732,6 +840,12 @@ defmodule ClippsterServerWeb.CampaignController do
       status: campaign.status,
       starts_at: campaign.starts_at,
       ends_at: campaign.ends_at,
+      global_watermarks: campaign.global_watermarks,
+      global_intro_id: campaign.global_intro_id,
+      global_outro_id: campaign.global_outro_id,
+      require_watermark: campaign.require_watermark,
+      require_intro: campaign.require_intro,
+      require_outro: campaign.require_outro,
       inserted_at: campaign.inserted_at,
       updated_at: campaign.updated_at,
       organization: if(Ecto.assoc_loaded?(campaign.organization), do: %{
@@ -743,7 +857,10 @@ defmodule ClippsterServerWeb.CampaignController do
         id: campaign.creator_profile.id,
         name: campaign.creator_profile.name,
         profile_image_url: campaign.creator_profile.profile_image_url
-      }, else: nil)
+      }, else: nil),
+      global_intro: if(campaign.global_intro_id && Ecto.assoc_loaded?(campaign.global_intro) && campaign.global_intro, do: serialize_asset(campaign.global_intro), else: nil),
+      global_outro: if(campaign.global_outro_id && Ecto.assoc_loaded?(campaign.global_outro) && campaign.global_outro, do: serialize_asset(campaign.global_outro), else: nil),
+      creator_profiles: if(Ecto.assoc_loaded?(campaign.creator_profiles), do: Enum.map(campaign.creator_profiles, &serialize_creator_profile/1), else: [])
     }
   end
 
@@ -850,6 +967,36 @@ defmodule ClippsterServerWeb.CampaignController do
         id: payment.campaign.id,
         title: payment.campaign.title
       }, else: nil)
+    }
+  end
+
+  defp serialize_creator_profile(nil), do: nil
+  defp serialize_creator_profile(profile) do
+    %{
+      id: profile.id,
+      name: profile.name,
+      description: profile.description,
+      profile_image_url: profile.profile_image_url,
+      watermark_settings: profile.watermark_settings,
+      intro: if(Ecto.assoc_loaded?(profile.intro) && profile.intro, do: serialize_asset(profile.intro), else: nil),
+      outro: if(Ecto.assoc_loaded?(profile.outro) && profile.outro, do: serialize_asset(profile.outro), else: nil),
+      watermark: if(Ecto.assoc_loaded?(profile.watermark) && profile.watermark, do: serialize_asset(profile.watermark), else: nil)
+    }
+  end
+
+  defp serialize_asset(nil), do: nil
+  defp serialize_asset(asset) do
+    %{
+      id: asset.id,
+      asset_type: asset.asset_type,
+      name: asset.name,
+      url: asset.url,
+      thumbnail_url: asset.thumbnail_url,
+      duration: asset.duration,
+      width: asset.width,
+      height: asset.height,
+      file_size: asset.file_size,
+      mime_type: asset.mime_type
     }
   end
 

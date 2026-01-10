@@ -6,8 +6,8 @@ defmodule ClippsterServer.Campaigns.Campaign do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias ClippsterServer.Organizations.{Organization, OrganizationCreatorProfile}
-  alias ClippsterServer.Campaigns.{CampaignParticipant, CampaignSubmission, CampaignPayment}
+  alias ClippsterServer.Organizations.{Organization, OrganizationCreatorProfile, OrganizationAsset}
+  alias ClippsterServer.Campaigns.{CampaignParticipant, CampaignSubmission, CampaignPayment, CampaignCreatorProfile}
 
   @join_types ~w(open application_required)
   @statuses ~w(draft active paused completed)
@@ -29,12 +29,20 @@ defmodule ClippsterServer.Campaigns.Campaign do
     field :status, :string, default: "draft"
     field :starts_at, :utc_datetime
     field :ends_at, :utc_datetime
+    field :global_watermarks, :map, default: %{}
+    field :require_watermark, :boolean, default: false
+    field :require_intro, :boolean, default: false
+    field :require_outro, :boolean, default: false
 
     belongs_to :organization, Organization
     belongs_to :creator_profile, OrganizationCreatorProfile
+    belongs_to :global_intro, OrganizationAsset, foreign_key: :global_intro_id
+    belongs_to :global_outro, OrganizationAsset, foreign_key: :global_outro_id
     has_many :participants, CampaignParticipant
     has_many :submissions, CampaignSubmission
     has_many :payments, CampaignPayment
+    has_many :campaign_creator_profiles, CampaignCreatorProfile
+    has_many :creator_profiles, through: [:campaign_creator_profiles, :creator_profile]
 
     timestamps(type: :utc_datetime)
   end
@@ -59,7 +67,13 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :payment_methods,
       :status,
       :starts_at,
-      :ends_at
+      :ends_at,
+      :global_watermarks,
+      :global_intro_id,
+      :global_outro_id,
+      :require_watermark,
+      :require_intro,
+      :require_outro
     ])
     |> validate_required([:organization_id, :title])
     |> validate_length(:title, min: 3, max: 200)
@@ -75,6 +89,8 @@ defmodule ClippsterServer.Campaigns.Campaign do
     |> validate_dates()
     |> foreign_key_constraint(:organization_id)
     |> foreign_key_constraint(:creator_profile_id)
+    |> foreign_key_constraint(:global_intro_id)
+    |> foreign_key_constraint(:global_outro_id)
   end
 
   @doc """
@@ -96,7 +112,13 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :payment_methods,
       :status,
       :starts_at,
-      :ends_at
+      :ends_at,
+      :global_watermarks,
+      :global_intro_id,
+      :global_outro_id,
+      :require_watermark,
+      :require_intro,
+      :require_outro
     ])
     |> validate_length(:title, min: 3, max: 200)
     |> validate_length(:description, max: 5000)
@@ -110,6 +132,8 @@ defmodule ClippsterServer.Campaigns.Campaign do
     |> validate_payment_methods()
     |> validate_dates()
     |> foreign_key_constraint(:creator_profile_id)
+    |> foreign_key_constraint(:global_intro_id)
+    |> foreign_key_constraint(:global_outro_id)
   end
 
   @doc """

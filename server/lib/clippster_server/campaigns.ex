@@ -10,6 +10,7 @@ defmodule ClippsterServer.Campaigns do
   alias ClippsterServer.Organizations.{Organization, OrganizationProfileAssignment}
   alias ClippsterServer.Campaigns.{
     Campaign,
+    CampaignCreatorProfile,
     CampaignParticipant,
     CampaignSubmission,
     CampaignPayment,
@@ -88,8 +89,24 @@ defmodule ClippsterServer.Campaigns do
     |> order_by([c], desc: c.inserted_at)
     |> limit(^limit)
     |> offset(^offset)
-    |> preload([:organization, :creator_profile])
+    |> preload([:organization, :creator_profile, :creator_profiles, :global_intro, :global_outro])
     |> Repo.all()
+  end
+
+  @doc """
+  Gets a campaign with all creator profiles and global assets.
+  """
+  def get_campaign_with_assets(id) do
+    Campaign
+    |> where([c], c.id == ^id)
+    |> preload([
+      :organization,
+      :creator_profile,
+      :global_intro,
+      :global_outro,
+      creator_profiles: [:intro, :outro, :watermark]
+    ])
+    |> Repo.one()
   end
 
   @doc """
@@ -158,6 +175,80 @@ defmodule ClippsterServer.Campaigns do
     else
       {:error, :unauthorized}
     end
+  end
+
+  # ============================================================================
+  # Campaign Creator Profiles
+  # ============================================================================
+
+  @doc """
+  Adds a creator profile to a campaign.
+  """
+  def add_creator_profile_to_campaign(%Campaign{} = campaign, creator_profile_id, %User{} = user) do
+    if Organizations.is_admin?(campaign.organization_id, user.id) do
+      %CampaignCreatorProfile{}
+      |> CampaignCreatorProfile.create_changeset(%{
+        campaign_id: campaign.id,
+        creator_profile_id: creator_profile_id
+      })
+      |> Repo.insert()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Removes a creator profile from a campaign.
+  """
+  def remove_creator_profile_from_campaign(%Campaign{} = campaign, creator_profile_id, %User{} = user) do
+    if Organizations.is_admin?(campaign.organization_id, user.id) do
+      from(ccp in CampaignCreatorProfile,
+        where: ccp.campaign_id == ^campaign.id and ccp.creator_profile_id == ^creator_profile_id
+      )
+      |> Repo.delete_all()
+
+      {:ok, :removed}
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Sets the creator profiles for a campaign (replaces all existing).
+  """
+  def set_campaign_creator_profiles(%Campaign{} = campaign, creator_profile_ids, %User{} = user) do
+    if Organizations.is_admin?(campaign.organization_id, user.id) do
+      Repo.transaction(fn ->
+        # Remove all existing
+        from(ccp in CampaignCreatorProfile, where: ccp.campaign_id == ^campaign.id)
+        |> Repo.delete_all()
+
+        # Add new ones
+        Enum.each(creator_profile_ids, fn profile_id ->
+          %CampaignCreatorProfile{}
+          |> CampaignCreatorProfile.create_changeset(%{
+            campaign_id: campaign.id,
+            creator_profile_id: profile_id
+          })
+          |> Repo.insert!()
+        end)
+
+        :ok
+      end)
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Lists creator profiles for a campaign.
+  """
+  def list_campaign_creator_profiles(campaign_id) do
+    from(ccp in CampaignCreatorProfile,
+      where: ccp.campaign_id == ^campaign_id,
+      preload: [creator_profile: [:intro, :outro, :watermark]]
+    )
+    |> Repo.all()
   end
 
   # ============================================================================

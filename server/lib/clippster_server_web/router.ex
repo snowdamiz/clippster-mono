@@ -364,6 +364,12 @@ defmodule ClippsterServerWeb.Router do
     post "/organizations/:organization_id/campaigns/:id/activate", CampaignController, :activate
     post "/organizations/:organization_id/campaigns/:id/complete", CampaignController, :complete
 
+    # Campaign creator profiles
+    get "/organizations/:organization_id/campaigns/:id/creator-profiles", CampaignController, :list_creator_profiles
+    post "/organizations/:organization_id/campaigns/:id/creator-profiles", CampaignController, :add_creator_profile
+    put "/organizations/:organization_id/campaigns/:id/creator-profiles", CampaignController, :set_creator_profiles
+    delete "/organizations/:organization_id/campaigns/:id/creator-profiles/:creator_profile_id", CampaignController, :remove_creator_profile
+
     # Campaign participants
     get "/organizations/:organization_id/campaigns/:id/participants", CampaignController, :list_participants
     post "/organizations/:organization_id/campaigns/:id/participants/:participant_id/approve", CampaignController, :approve_participant
