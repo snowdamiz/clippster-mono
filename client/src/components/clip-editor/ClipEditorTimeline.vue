@@ -568,7 +568,7 @@
                 </div>
                 <span class="font-medium text-white/60">Layer</span>
               </div>
-              <div class="flex-1 h-full relative" @click="onTrackContentClick">
+              <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
                 <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
 
                 <!-- Extended timeline area indicator (beyond source videos) -->
@@ -842,7 +842,7 @@
                 </div>
                 <span class="font-medium text-white/60">Text</span>
               </div>
-              <div class="flex-1 h-full relative" @click="onTrackContentClick">
+              <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
                 <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 <div
                   v-for="overlay in textOverlays"
@@ -896,7 +896,7 @@
                 </div>
                 <span class="font-medium text-white/60">Effects</span>
               </div>
-              <div class="flex-1 h-full relative" @click="onTrackContentClick">
+              <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
                 <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 <div
                   v-for="effect in effects"
@@ -940,7 +940,7 @@
                 </div>
                 <span class="font-medium text-white/60">Filters</span>
               </div>
-              <div class="flex-1 h-full relative" @click="onTrackContentClick">
+              <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
                 <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 <div
                   v-for="filterSeg in filterSegments"
@@ -1021,7 +1021,7 @@
                 </div>
                 <div
                   ref="videoTrackContentRef"
-                  class="flex-1 h-full relative"
+                  class="flex-1 h-full relative z-[10]"
                   @click="onTrackContentClick"
                   @mousedown="onTimelineMarqueeStart"
                   @dragover.prevent="onTimelineDragOver"
@@ -1072,9 +1072,9 @@
                     :class="[
                       getSegmentClasses('source', source.id),
                       isCutToolActive && cutHoverInfo?.segmentId === source.id
-                        ? 'cursor-crosshair z-65 shadow-xl border-orange-400 ring-2 ring-orange-400/50'
+                        ? 'cursor-crosshair z-[35] shadow-xl border-orange-400 ring-2 ring-orange-400/50'
                         : isCutToolActive
-                          ? 'cursor-crosshair z-62 border-cyan-500'
+                          ? 'cursor-crosshair z-[30] border-cyan-500'
                           : 'cursor-pointer border-cyan-500',
                       // Multi-select visual feedback
                       props.selectedSourceIds?.has(source.id)
@@ -1188,7 +1188,7 @@
                     </button>
                   </div>
                 </div>
-                <div ref="videoTrackContentRef" class="flex-1 h-full relative" @click="onTrackContentClick">
+                <div ref="videoTrackContentRef" class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
                   <!-- Background -->
                   <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
 
@@ -1330,7 +1330,7 @@
               </div>
               <div
                 :ref="(el) => setSegmentRef(el, 'audio', track.id)"
-                class="flex-1 h-full relative"
+                class="flex-1 h-full relative z-[10]"
                 @click="onTrackContentClick"
               >
                 <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
@@ -1479,13 +1479,13 @@
               <div
                 class="track-label w-[120px] h-full sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               ></div>
-              <div class="flex-1 h-full relative bg-[#111111]"></div>
+              <div class="flex-1 h-full relative z-[10] bg-[#111111]"></div>
             </div>
 
             <!-- Playhead Line (CapCut style - triangular head with gradient line) -->
             <div
               v-if="totalDuration > 0"
-              class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group playhead-line flex flex-col items-center"
+              class="absolute top-0 bottom-0 z-[75] cursor-ew-resize group playhead-line flex flex-col items-center"
               :class="{
                 'cursor-grabbing': isDraggingPlayhead,
                 'playhead-dragging': isDraggingPlayhead,
