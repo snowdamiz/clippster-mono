@@ -291,7 +291,13 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { save } from '@tauri-apps/plugin-dialog';
-  import { getClipBuilds, deleteClipBuild, type ClipBuild, type VideoEditorSource } from '@/services/database';
+  import {
+    getClipBuilds,
+    deleteClipBuild,
+    type ClipBuild,
+    type VideoEditorSource,
+    type IntroOutro,
+  } from '@/services/database';
   import { resolveWatermarkById } from '@/services/database/watermarks';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import { trackEvent } from '@/services/analytics';
@@ -435,6 +441,9 @@
     currentOutro?: AppliedIntroOutro | null;
     // Creator profile watermark settings
     creatorProfileWatermarkSettings?: any | null;
+    // Creator profile default intro/outro (used as fallback when currentIntro/Outro not set)
+    creatorDefaultIntro?: IntroOutro | null;
+    creatorDefaultOutro?: IntroOutro | null;
   }>();
 
   const emit = defineEmits<{
@@ -775,57 +784,88 @@
           },
         ];
 
-    // Handle org assets: download on-demand if current intro/outro is an org asset
-    let introPath = props.currentIntro?.filePath ?? null;
-    let outroPath = props.currentOutro?.filePath ?? null;
-    const introDuration = props.currentIntro?.duration ?? null;
-    const outroDuration = props.currentOutro?.duration ?? null;
+    // Handle intro/outro: creator profile defaults take precedence (mandatory), then manually added
+    // Creator profile intro/outro MUST be applied when set - they are mandatory defaults
+    let introPath: string | null = null;
+    let outroPath: string | null = null;
+    let introDuration: number | null = null;
+    let outroDuration: number | null = null;
 
-    // Download org intro if needed
-    if (props.currentIntro?.isOrgAsset && props.currentIntro.serverId) {
-      console.log('[ExportTab] Downloading org intro asset on-demand:', props.currentIntro.name);
-      const introResult = await ensureAssetDownloaded({
-        id: props.currentIntro.serverId,
-        name: props.currentIntro.name,
-        asset_type: 'intro',
-        url: props.currentIntro.serverUrl || props.currentIntro.filePath,
-        organization_id: Number(props.currentIntro.organization_id),
-        organization_name: props.currentIntro.organization_name || undefined,
-        duration: props.currentIntro.duration || undefined,
-        thumbnail_url: props.currentIntro.thumbnailUrl || undefined,
-        inserted_at: props.currentIntro.created_at,
-        updated_at: props.currentIntro.updated_at,
-      } as ServerOrganizationAsset);
+    // Determine effective intro (creatorDefaultIntro takes precedence - mandatory when set)
+    const effectiveIntro = props.creatorDefaultIntro || props.currentIntro;
+    const effectiveOutro = props.creatorDefaultOutro || props.currentOutro;
 
-      if (introResult.success && introResult.filePath) {
-        introPath = introResult.filePath;
-        console.log('[ExportTab] Org intro downloaded to:', introPath);
-      } else {
-        throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+    if (effectiveIntro) {
+      // Handle both AppliedIntroOutro (filePath) and IntroOutro (file_path) formats
+      const introAny = effectiveIntro as any;
+      introPath = introAny.filePath ?? introAny.file_path ?? null;
+      introDuration = effectiveIntro.duration ?? null;
+      console.log(
+        '[ExportTab] Using intro:',
+        effectiveIntro.name,
+        props.creatorDefaultIntro ? '(creator profile)' : '(manually added)'
+      );
+
+      // Download org intro if needed (only for AppliedIntroOutro with org asset properties)
+      const appliedIntro = effectiveIntro as AppliedIntroOutro;
+      if (appliedIntro.isOrgAsset && appliedIntro.serverId) {
+        console.log('[ExportTab] Downloading org intro asset on-demand:', appliedIntro.name);
+        const introResult = await ensureAssetDownloaded({
+          id: appliedIntro.serverId,
+          name: appliedIntro.name,
+          asset_type: 'intro',
+          url: appliedIntro.serverUrl || appliedIntro.filePath,
+          organization_id: Number(appliedIntro.organization_id),
+          organization_name: appliedIntro.organization_name || undefined,
+          duration: appliedIntro.duration || undefined,
+          thumbnail_url: appliedIntro.thumbnailUrl || undefined,
+          inserted_at: appliedIntro.created_at,
+          updated_at: appliedIntro.updated_at,
+        } as ServerOrganizationAsset);
+
+        if (introResult.success && introResult.filePath) {
+          introPath = introResult.filePath;
+          console.log('[ExportTab] Org intro downloaded to:', introPath);
+        } else {
+          throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+        }
       }
     }
 
-    // Download org outro if needed
-    if (props.currentOutro?.isOrgAsset && props.currentOutro.serverId) {
-      console.log('[ExportTab] Downloading org outro asset on-demand:', props.currentOutro.name);
-      const outroResult = await ensureAssetDownloaded({
-        id: props.currentOutro.serverId,
-        name: props.currentOutro.name,
-        asset_type: 'outro',
-        url: props.currentOutro.serverUrl || props.currentOutro.filePath,
-        organization_id: Number(props.currentOutro.organization_id),
-        organization_name: props.currentOutro.organization_name || undefined,
-        duration: props.currentOutro.duration || undefined,
-        thumbnail_url: props.currentOutro.thumbnailUrl || undefined,
-        inserted_at: props.currentOutro.created_at,
-        updated_at: props.currentOutro.updated_at,
-      } as ServerOrganizationAsset);
+    if (effectiveOutro) {
+      // Handle both AppliedIntroOutro (filePath) and IntroOutro (file_path) formats
+      const outroAny = effectiveOutro as any;
+      outroPath = outroAny.filePath ?? outroAny.file_path ?? null;
+      outroDuration = effectiveOutro.duration ?? null;
+      console.log(
+        '[ExportTab] Using outro:',
+        effectiveOutro.name,
+        props.creatorDefaultOutro ? '(creator profile)' : '(manually added)'
+      );
 
-      if (outroResult.success && outroResult.filePath) {
-        outroPath = outroResult.filePath;
-        console.log('[ExportTab] Org outro downloaded to:', outroPath);
-      } else {
-        throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+      // Download org outro if needed (only for AppliedIntroOutro with org asset properties)
+      const appliedOutro = effectiveOutro as AppliedIntroOutro;
+      if (appliedOutro.isOrgAsset && appliedOutro.serverId) {
+        console.log('[ExportTab] Downloading org outro asset on-demand:', appliedOutro.name);
+        const outroResult = await ensureAssetDownloaded({
+          id: appliedOutro.serverId,
+          name: appliedOutro.name,
+          asset_type: 'outro',
+          url: appliedOutro.serverUrl || appliedOutro.filePath,
+          organization_id: Number(appliedOutro.organization_id),
+          organization_name: appliedOutro.organization_name || undefined,
+          duration: appliedOutro.duration || undefined,
+          thumbnail_url: appliedOutro.thumbnailUrl || undefined,
+          inserted_at: appliedOutro.created_at,
+          updated_at: appliedOutro.updated_at,
+        } as ServerOrganizationAsset);
+
+        if (outroResult.success && outroResult.filePath) {
+          outroPath = outroResult.filePath;
+          console.log('[ExportTab] Org outro downloaded to:', outroPath);
+        } else {
+          throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+        }
       }
     }
 

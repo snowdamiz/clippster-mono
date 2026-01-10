@@ -259,6 +259,8 @@ export async function addPlatformLink(
 export async function updatePlatformLink(
   id: string,
   updates: Partial<{
+    platform: CreatorPlatformLink['platform'];
+    platform_id: string;
     display_name: string | null;
     profile_image_url: string | null;
     monitored_streamer_id: string | null;
@@ -268,6 +270,18 @@ export async function updatePlatformLink(
   const db = await getDatabase();
   const fields: string[] = [];
   const values: any[] = [];
+
+  console.log(`[DB] updatePlatformLink called for ${id}`, updates);
+
+  if (updates.platform !== undefined) {
+    fields.push('platform = ?');
+    values.push(updates.platform);
+  }
+
+  if (updates.platform_id !== undefined) {
+    fields.push('platform_id = ?');
+    values.push(updates.platform_id);
+  }
 
   if (updates.display_name !== undefined) {
     fields.push('display_name = ?');

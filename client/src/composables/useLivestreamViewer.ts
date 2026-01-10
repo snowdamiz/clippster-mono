@@ -19,10 +19,20 @@ import {
   type CreatorProfileWithLinks,
 } from '@/services/database';
 import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
-import type { LiveStatus, LiveSession, SegmentEventPayload, SupportedLivestreamPlatform } from '@/types/livestream';
+import type {
+  LiveStatus,
+  LiveSession,
+  SegmentEventPayload,
+  SupportedLivestreamPlatform,
+} from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
 import { useHlsPlayback } from './useHlsPlayback';
-import { checkKickLivestream, startKickRecording, stopKickRecording } from '@/services/kick';
+import {
+  checkKickLivestream,
+  startKickRecording,
+  stopKickRecording,
+  extractChannelSlug,
+} from '@/services/kick';
 
 // PumpFun LiveKit API endpoints
 const PUMPFUN_LIVESTREAM_API = 'https://livestream-api.pump.fun';
@@ -114,8 +124,14 @@ const MUTED_STORAGE_KEY = 'livestream-viewer-muted';
 
 export function useLivestreamViewer() {
   // Get the monitoring composable to access active sessions
-  const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, dvrSessions, getKickDvrSession } =
-    useLivestreamMonitoring();
+  const {
+    activeSessions,
+    monitoredStreamers,
+    startMonitoring,
+    stopMonitoring,
+    dvrSessions,
+    getKickDvrSession,
+  } = useLivestreamMonitoring();
 
   // HLS Playback composable for reliable live streaming with DVR
   const hlsPlayback = useHlsPlayback();
@@ -308,14 +324,20 @@ export function useLivestreamViewer() {
     console.log('[LiveViewer] loadCreatorProfile called for mintId:', mintId);
     try {
       let profile = await getCreatorProfileByPlatformId('pumpfun', mintId);
-      console.log('[LiveViewer] Profile lookup result:', profile ? `Found: ${profile.name}` : 'Not found');
+      console.log(
+        '[LiveViewer] Profile lookup result:',
+        profile ? `Found: ${profile.name}` : 'Not found'
+      );
 
       // Fallback: some stream IDs include a trailing "pump" suffix; try without it
       if (!profile && mintId.toLowerCase().endsWith('pump')) {
         const trimmedMint = mintId.slice(0, -4);
         console.log('[LiveViewer] Retry profile lookup without pump suffix:', trimmedMint);
         profile = await getCreatorProfileByPlatformId('pumpfun', trimmedMint);
-        console.log('[LiveViewer] Fallback lookup result:', profile ? `Found: ${profile.name}` : 'Not found');
+        console.log(
+          '[LiveViewer] Fallback lookup result:',
+          profile ? `Found: ${profile.name}` : 'Not found'
+        );
       }
 
       // Last-resort: check org-assigned creator profiles (server-side) for the current user
@@ -363,9 +385,7 @@ export function useLivestreamViewer() {
                     perRatio[ratio] = {
                       ...ratioCfg,
                       watermarkId:
-                        ratioCfg.watermarkId != null
-                          ? `org-asset-${ratioCfg.watermarkId}`
-                          : null,
+                        ratioCfg.watermarkId != null ? `org-asset-${ratioCfg.watermarkId}` : null,
                     };
                   } else {
                     perRatio[ratio] = cfg;
@@ -412,15 +432,15 @@ export function useLivestreamViewer() {
           console.warn('[LiveViewer] Failed to query org-assigned profiles', err);
         }
       }
-      
+
       if (profile) {
         state.value.creatorProfile = profile;
-        
+
         console.log('[LiveViewer] Profile watermark data:', {
           watermark_id: profile.watermark_id,
           watermark_settings: profile.watermark_settings,
         });
-        
+
         // Parse watermark settings - stored per-aspect-ratio
         if (profile.watermark_settings) {
           try {
@@ -481,7 +501,10 @@ export function useLivestreamViewer() {
           }
         } else {
           // No watermark_settings at all, use top-level watermark_id
-          console.log('[LiveViewer] No watermark_settings, using top-level watermark_id:', profile.watermark_id);
+          console.log(
+            '[LiveViewer] No watermark_settings, using top-level watermark_id:',
+            profile.watermark_id
+          );
           state.value.watermarkId = profile.watermark_id;
           state.value.watermarkSettings = profile.watermark_id
             ? {
@@ -491,7 +514,7 @@ export function useLivestreamViewer() {
               }
             : null;
         }
-        
+
         console.log('[LiveViewer] Final watermark state:', {
           watermarkId: state.value.watermarkId,
           watermarkSettings: state.value.watermarkSettings,
@@ -507,12 +530,14 @@ export function useLivestreamViewer() {
   // Connect to Kick livestream using yt-dlp recording (bypasses origin restrictions)
   // Kick's CDN validates JWT tokens server-side, so we use yt-dlp to capture to local HLS
   async function connectToKick(
-    channelSlug: string,
+    channelInput: string,
     streamerId: string,
     displayName: string,
     profileImageUrl?: string
   ) {
     try {
+      // Extract channel slug from URL if needed (e.g., "https://kick.com/jerzynft" -> "jerzynft")
+      const channelSlug = extractChannelSlug(channelInput) || channelInput;
       console.log('[LiveViewer] Connecting to Kick channel:', channelSlug);
 
       // Check if stream is live and get stream info
@@ -525,8 +550,8 @@ export function useLivestreamViewer() {
       }
 
       state.value.viewerCount = kickStatus.viewerCount || 0;
-      state.value.recordingStartTime = kickStatus.startedAt 
-        ? new Date(kickStatus.startedAt).getTime() 
+      state.value.recordingStartTime = kickStatus.startedAt
+        ? new Date(kickStatus.startedAt).getTime()
         : Date.now();
 
       // Check if there's an existing DVR session for this streamer (Auto DVR)
@@ -562,21 +587,21 @@ export function useLivestreamViewer() {
         // Get the output directory for HLS playback
         outputDir = await invoke<string>('get_kick_session_output_dir', { sessionId });
       }
-      
+
       console.log('[LiveViewer] Kick HLS output dir:', outputDir);
 
       // Initialize HLS playback with the local recording output
       if (hlsVideoElement.value) {
         state.value.dvrStartTime = Date.now();
         state.value.kickEmbedUrl = null;
-        
+
         // Store the output dir for HLS playback
         hlsOutputDir.value = outputDir;
-        
+
         // Use the HLS playback composable for local Kick stream
         // This will poll for the playlist to become available
         await hlsPlayback.initialize(hlsVideoElement.value, outputDir);
-        
+
         state.value.connectionState = 'connected';
         state.value.isBuffering = false;
         state.value.playbackMode = 'hls';
@@ -601,7 +626,10 @@ export function useLivestreamViewer() {
         hlsPlayback.play();
         state.value.isPlaying = true;
 
-        console.log('[LiveViewer] Connected to Kick stream via yt-dlp', existingDvrSession ? '(using existing DVR)' : '(new recording)');
+        console.log(
+          '[LiveViewer] Connected to Kick stream via yt-dlp',
+          existingDvrSession ? '(using existing DVR)' : '(new recording)'
+        );
       } else {
         throw new Error('HLS video element not available');
       }
@@ -609,11 +637,12 @@ export function useLivestreamViewer() {
       console.error('[LiveViewer] Failed to connect to Kick:', error);
       state.value.connectionState = 'failed';
       state.value.connectionError = error instanceof Error ? error.message : 'Connection failed';
-      
+
       // Clean up recording if it was started (only for temp recordings)
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
-          await stopKickRecording(channelSlug);
+          const cleanupSlug = extractChannelSlug(channelInput) || channelInput;
+          await stopKickRecording(cleanupSlug);
         } catch {
           // Ignore cleanup errors
         }
@@ -802,7 +831,11 @@ export function useLivestreamViewer() {
 
       // Check if the participant has tracks we need
       participant.trackPublications.forEach((publication) => {
-        if (publication.kind === Track.Kind.Video && !publication.isSubscribed && !remoteVideoTrack) {
+        if (
+          publication.kind === Track.Kind.Video &&
+          !publication.isSubscribed &&
+          !remoteVideoTrack
+        ) {
           publication.setSubscribed(true);
         }
       });
@@ -1116,22 +1149,32 @@ export function useLivestreamViewer() {
         const previousCount = state.value.availableSegments.length;
         state.value.availableSegments = segments;
         state.value.totalRecordedDuration = segments[segments.length - 1].endTime;
-        
+
         // Track segment progress for stall detection
         if (segments.length > lastSegmentCount) {
           lastSegmentCount = segments.length;
           lastSegmentTime = Date.now();
-          
+
           // Log segment update only when count changes
           if (segments.length !== previousCount) {
-            console.log('[LiveViewer] Segments updated:', segments.length, 
-              'Duration:', segments[segments.length - 1].endTime.toFixed(1) + 's');
+            console.log(
+              '[LiveViewer] Segments updated:',
+              segments.length,
+              'Duration:',
+              segments[segments.length - 1].endTime.toFixed(1) + 's'
+            );
           }
         } else {
           // Check for segment stall - no new segments for too long
           const timeSinceLastSegment = Date.now() - lastSegmentTime;
-          if (timeSinceLastSegment > SEGMENT_STALL_THRESHOLD && !isRestartingRecorder && !isIntentionalDisconnect) {
-            console.warn(`[LiveViewer] No new segments for ${(timeSinceLastSegment / 1000).toFixed(0)}s, checking stream status...`);
+          if (
+            timeSinceLastSegment > SEGMENT_STALL_THRESHOLD &&
+            !isRestartingRecorder &&
+            !isIntentionalDisconnect
+          ) {
+            console.warn(
+              `[LiveViewer] No new segments for ${(timeSinceLastSegment / 1000).toFixed(0)}s, checking stream status...`
+            );
             checkAndRestartRecorderIfNeeded();
           }
         }
@@ -1147,51 +1190,55 @@ export function useLivestreamViewer() {
   // Check if stream is still live and restart recorder if needed
   async function checkAndRestartRecorderIfNeeded() {
     if (isRestartingRecorder || isIntentionalDisconnect) return;
-    
+
     const channelSlug = state.value.mintId; // For Kick, mintId is the channel slug
     const streamerId = state.value.streamerId;
-    
+
     if (!channelSlug || !streamerId) {
       console.warn('[LiveViewer] Cannot restart recorder: missing channelSlug or streamerId');
       return;
     }
 
     isRestartingRecorder = true;
-    
+
     try {
       const kickStatus = await checkKickLivestream(channelSlug);
-      
+
       if (kickStatus.isLive) {
-        console.log('[LiveViewer] Stream is still live but segments stalled, restarting recorder...');
+        console.log(
+          '[LiveViewer] Stream is still live but segments stalled, restarting recorder...'
+        );
         state.value.isBuffering = true;
-        
+
         // Stop existing recording first
         try {
           await stopKickRecording(channelSlug);
         } catch (stopError) {
           console.warn('[LiveViewer] Error stopping old recording:', stopError);
         }
-        
+
         // Wait a moment for cleanup
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
         // Start new recording
         const newSessionId = `kick-view-${channelSlug}-${Date.now()}`;
         state.value.tempSessionId = newSessionId;
-        
+
         try {
           await startKickRecording(channelSlug, streamerId, newSessionId, 1);
-          
-          const newOutputDir = await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId });
+
+          const newOutputDir = await invoke<string>('get_kick_session_output_dir', {
+            sessionId: newSessionId,
+          });
           console.log('[LiveViewer] Recorder restarted, new output dir:', newOutputDir);
-          
+
           // Reset segment tracking
           lastSegmentCount = 0;
           lastSegmentTime = Date.now();
-          
+
           // Update output dir and reinitialize playback
           hlsOutputDir.value = newOutputDir;
-          
+
           if (hlsVideoElement.value) {
             await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
             hlsPlayback.play();
@@ -1237,10 +1284,10 @@ export function useLivestreamViewer() {
       const ps = hlsPlayback.state.value;
       state.value.isPlaying = ps.isPlaying;
       state.value.isBuffering = ps.isBuffering || !isHlsReady.value;
-      
+
       // Clamp UI playback position to displayed duration to avoid end-jumps when new segments append
       const safeDuration = Math.max(displayDuration, 0.001);
-      
+
       // Don't overwrite playback position while actively seeking - let the seek target stick
       if (!isSeekingActive) {
         const clampedPosition = Math.min(ps.currentTime, Math.max(0, safeDuration - 0.25));
@@ -1252,16 +1299,16 @@ export function useLivestreamViewer() {
         start: Math.max(0, Math.min(r.start, safeDuration)),
         end: Math.max(0, Math.min(r.end, safeDuration)),
       }));
-      
+
       // Latency is the delay from real-time (HLS segments are ~5s behind WebRTC)
-      state.value.latencyMs = 5000 + (ps.latency * 1000);
+      state.value.latencyMs = 5000 + ps.latency * 1000;
 
       // Timeline always reflects actual HLS content duration
       const actualHlsDuration = ps.duration > 0 ? ps.duration : 0;
       const nowTs = Date.now();
       const dtSeconds = Math.max(0, (nowTs - lastDisplayUpdate) / 1000);
       lastDisplayUpdate = nowTs;
-      
+
       // Smoothly advance displayed duration to avoid playhead jump when new segments are appended
       // BUT if we're far behind actual (e.g., reconnecting), snap immediately to avoid slow catch-up
       const durationGap = actualHlsDuration - displayDuration;
@@ -1276,33 +1323,33 @@ export function useLivestreamViewer() {
         // If actual shrinks (shouldn't), snap down
         displayDuration = actualHlsDuration;
       }
-      
+
       // Start playback only after we have a safer initial buffer (>= 12s)
       const MIN_BUFFER_DURATION = 12;
-      
+
       if (actualHlsDuration >= MIN_BUFFER_DURATION) {
         // HLS has enough content for smooth playback
         state.value.liveEdgeTime = displayDuration;
         state.value.totalRecordedDuration = displayDuration;
-        
+
         // Mark HLS as ready once we have enough buffer
         if (!isHlsReady.value) {
           isHlsReady.value = true;
           state.value.isBuffering = false;
           hlsPlayback.play();
         }
-        
+
         // Don't override isAtLiveEdge while actively seeking
         if (!isSeekingActive) {
           // Check if at live edge (within 2 seconds of end)
-          state.value.isAtLiveEdge = ps.isAtLiveEdge || (ps.currentTime >= ps.duration - 2);
+          state.value.isAtLiveEdge = ps.isAtLiveEdge || ps.currentTime >= ps.duration - 2;
         }
       } else if (actualHlsDuration > 0) {
         // HLS has some content but not enough for smooth playback
         state.value.liveEdgeTime = displayDuration;
         state.value.totalRecordedDuration = displayDuration;
         state.value.isBuffering = true;
-        
+
         // Keep paused while buffering up the initial window to avoid start-stop
         if (!isHlsReady.value && state.value.isPlaying) {
           hlsPlayback.pause();
@@ -1435,37 +1482,39 @@ export function useLivestreamViewer() {
       code: number | null;
     }>('recorder-exit', async (event) => {
       const { streamerId, channelSlug } = event.payload;
-      
+
       // Only handle if this is our current stream and we're still supposed to be connected
       if (streamerId !== state.value.streamerId || isIntentionalDisconnect) {
         return;
       }
 
       console.log('[LiveViewer] Recorder exited unexpectedly, checking if stream is still live...');
-      
+
       // Check if stream is still live
       try {
         const kickStatus = await checkKickLivestream(channelSlug);
-        
+
         if (kickStatus.isLive) {
           console.log('[LiveViewer] Stream is still live, attempting to restart recording...');
           state.value.isBuffering = true;
-          
+
           // Restart the recording with a new session
           const newSessionId = `kick-view-${channelSlug}-${Date.now()}`;
           state.value.tempSessionId = newSessionId;
-          
+
           try {
             await startKickRecording(channelSlug, streamerId, newSessionId, 1);
-            
+
             // Get the new output directory
-            const newOutputDir = await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId });
-            
+            const newOutputDir = await invoke<string>('get_kick_session_output_dir', {
+              sessionId: newSessionId,
+            });
+
             console.log('[LiveViewer] Recording restarted, new output dir:', newOutputDir);
-            
+
             // Update the HLS output dir - this will trigger the watcher to reinitialize playback
             hlsOutputDir.value = newOutputDir;
-            
+
             // Reinitialize HLS playback with the new recording
             if (hlsVideoElement.value) {
               await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
@@ -1590,7 +1639,7 @@ export function useLivestreamViewer() {
     state.value.playbackPosition = 0;
     state.value.bufferedRanges = [];
     state.value.isAtLiveEdge = true;
-    
+
     // Reset HLS ready state and seeking flag
     isHlsReady.value = false;
     isSeekingActive = false;
@@ -1682,17 +1731,17 @@ export function useLivestreamViewer() {
     } else {
       // Clamp to valid range
       const clampedTime = Math.max(0, Math.min(time, hlsDuration > 0 ? hlsDuration - 0.5 : time));
-      
+
       // Set seeking flag to prevent sync interval from overwriting position
       isSeekingActive = true;
-      
+
       // Immediately update UI state to reflect seek target
       state.value.playbackPosition = clampedTime;
       state.value.isAtLiveEdge = false;
-      
+
       await ensureHlsPlaying();
       await hlsPlayback.seek(clampedTime);
-      
+
       // Keep the seek flag active briefly to let the video element catch up
       setTimeout(() => {
         isSeekingActive = false;
@@ -1707,16 +1756,16 @@ export function useLivestreamViewer() {
     // Position at 2 segments (8s) from end for optimal live viewing
     const duration = hlsPlayback.state.value.duration;
     const livePosition = Math.max(0, duration - 8);
-    
+
     // Set seeking flag to prevent sync interval from overwriting position
     isSeekingActive = true;
-    
+
     // Immediately update UI state
     state.value.playbackPosition = livePosition;
     state.value.isAtLiveEdge = true;
-    
+
     await hlsPlayback.seek(livePosition);
-    
+
     // Keep the seek flag active briefly to let the video element catch up
     setTimeout(() => {
       isSeekingActive = false;

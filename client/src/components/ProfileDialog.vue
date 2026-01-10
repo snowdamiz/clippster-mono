@@ -574,7 +574,7 @@
               </button>
               <button
                 @click="handleSubmit"
-                :disabled="!isValid || saving"
+                :disabled="!isValid || saving || fetchingProfileImage"
                 class="px-5 py-2.5 text-white rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 :class="
                   mode === 'organization'
@@ -582,8 +582,16 @@
                     : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500'
                 "
               >
-                <Loader2 v-if="saving" class="h-4 w-4 animate-spin" />
-                {{ saving ? 'Saving...' : isEditing ? 'Update Profile' : 'Create Profile' }}
+                <Loader2 v-if="saving || fetchingProfileImage" class="h-4 w-4 animate-spin" />
+                {{
+                  saving
+                    ? 'Saving...'
+                    : fetchingProfileImage
+                      ? 'Fetching Info...'
+                      : isEditing
+                        ? 'Update Profile'
+                        : 'Create Profile'
+                }}
               </button>
             </div>
           </div>
@@ -666,6 +674,7 @@
     is_primary: boolean;
     id?: number | string; // Present if existing link
     isNew?: boolean;
+    monitored_streamer_id?: string | null;
   }
 
   // Unified asset type for both modes
@@ -867,6 +876,7 @@
               profile_image_url: link.profile_image_url || '',
               is_primary: link.is_primary,
               isNew: false,
+              monitored_streamer_id: null,
             })),
           };
         } else if (props.mode === 'local' && props.creator) {
@@ -886,6 +896,7 @@
               profile_image_url: link.profile_image_url || '',
               is_primary: Boolean(link.is_primary),
               isNew: false,
+              monitored_streamer_id: link.monitored_streamer_id,
             })),
           };
         } else {
@@ -1553,6 +1564,55 @@
       }
     }
 
+    // Helper to process a single link (create or update)
+    const processLink = async (creatorId: string, link: PlatformLinkInput) => {
+      let monitoredStreamerId: string | null = null;
+
+      // Resolve monitored streamer for supported platforms
+      if (link.platform === 'pumpfun' || link.platform === 'kick') {
+        try {
+          const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
+          if (existing) {
+            monitoredStreamerId = existing.id;
+          } else {
+            monitoredStreamerId = await createMonitoredStreamer(
+              link.platform_id.trim(),
+              link.display_name.trim() || formData.value.name.trim(),
+              link.profile_image_url || undefined,
+              5, // segment duration
+              formData.value.auto_dvr_enabled,
+              link.platform
+            );
+          }
+        } catch (err) {
+          console.warn('[ProfileDialog] Failed to resolve monitored_streamer:', err);
+        }
+      }
+
+      if (link.id && !link.isNew) {
+        // Update existing link
+        await dbUpdatePlatformLink(String(link.id), {
+          platform: link.platform,
+          platform_id: link.platform_id.trim(),
+          display_name: link.display_name.trim() || null,
+          profile_image_url: link.profile_image_url || null,
+          monitored_streamer_id: monitoredStreamerId,
+          is_primary: link.is_primary,
+        });
+      } else {
+        // Create new link
+        await dbAddPlatformLink(
+          creatorId,
+          link.platform,
+          link.platform_id.trim(),
+          link.display_name.trim() || null,
+          link.profile_image_url || null,
+          monitoredStreamerId,
+          link.is_primary
+        );
+      }
+    };
+
     if (isEditing.value && props.creator) {
       // Update existing creator
       await updateCreatorProfile(props.creator.id, {
@@ -1567,53 +1627,17 @@
         auto_dvr_enabled: formData.value.auto_dvr_enabled ? 1 : 0,
       });
 
-      // Handle platform links
-      const formIds = new Set(validLinks.filter((l) => l.id && !l.isNew).map((l) => l.id));
-
       // Delete removed links
+      const formIds = new Set(validLinks.filter((l) => l.id && !l.isNew).map((l) => String(l.id)));
       for (const link of props.creator.platform_links) {
         if (!formIds.has(link.id)) {
           await dbDeletePlatformLink(link.id);
         }
       }
 
-      // Add new links and create monitored_streamer for pumpfun/kick
+      // Process all links (add or update)
       for (const link of validLinks) {
-        if (link.isNew || !link.id) {
-          // Create monitored_streamer for pumpfun/kick platforms
-          let monitoredStreamerId: string | null = null;
-          if (link.platform === 'pumpfun' || link.platform === 'kick') {
-            try {
-              // First check if a monitored_streamer already exists for this platform_id
-              const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
-              if (existing) {
-                monitoredStreamerId = existing.id;
-              } else {
-                // Create new monitored_streamer
-                monitoredStreamerId = await createMonitoredStreamer(
-                  link.platform_id.trim(),
-                  link.display_name.trim() || formData.value.name.trim(),
-                  link.profile_image_url || undefined,
-                  5, // segment duration
-                  formData.value.auto_dvr_enabled, // auto_dvr from form
-                  link.platform // platform type
-                );
-              }
-            } catch (err) {
-              console.warn('[ProfileDialog] Failed to create monitored_streamer:', err);
-            }
-          }
-
-          await dbAddPlatformLink(
-            props.creator.id,
-            link.platform,
-            link.platform_id.trim(),
-            link.display_name.trim() || null,
-            link.profile_image_url || null,
-            monitoredStreamerId, // Pass the monitored_streamer_id
-            link.is_primary
-          );
-        }
+        await processLink(props.creator.id, link);
       }
 
       showSuccess('Creator Updated', `"${formData.value.name}" has been updated`);
@@ -1630,41 +1654,9 @@
         formData.value.auto_dvr_enabled
       );
 
-      // Add platform links and create monitored_streamer for pumpfun/kick
+      // Add platform links
       for (const link of validLinks) {
-        // Create monitored_streamer for pumpfun/kick platforms
-        let monitoredStreamerId: string | null = null;
-        if (link.platform === 'pumpfun' || link.platform === 'kick') {
-          try {
-            // First check if a monitored_streamer already exists for this platform_id
-            const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
-            if (existing) {
-              monitoredStreamerId = existing.id;
-            } else {
-              // Create new monitored_streamer
-              monitoredStreamerId = await createMonitoredStreamer(
-                link.platform_id.trim(),
-                link.display_name.trim() || formData.value.name.trim(),
-                link.profile_image_url || undefined,
-                5, // segment duration
-                formData.value.auto_dvr_enabled, // auto_dvr from form
-                link.platform // platform type
-              );
-            }
-          } catch (err) {
-            console.warn('[ProfileDialog] Failed to create monitored_streamer:', err);
-          }
-        }
-
-        await dbAddPlatformLink(
-          creatorId,
-          link.platform,
-          link.platform_id.trim(),
-          link.display_name.trim() || null,
-          link.profile_image_url || null,
-          monitoredStreamerId, // Pass the monitored_streamer_id
-          link.is_primary
-        );
+        await processLink(creatorId, link);
       }
 
       showSuccess('Creator Created', `"${formData.value.name}" has been added`);

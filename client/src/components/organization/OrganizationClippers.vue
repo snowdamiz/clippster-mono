@@ -1,25 +1,34 @@
 <template>
   <div class="organization-clippers">
+    <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-xl font-semibold text-foreground">Find Clippers</h2>
-        <p class="text-sm text-muted-foreground">Browse talented clippers for your campaigns</p>
+        <h2 class="text-base font-semibold text-foreground">Find Clippers</h2>
+        <p class="text-sm text-muted-foreground mt-0.5">Browse talented clippers for your campaigns</p>
       </div>
       <div class="flex gap-1 bg-muted/50 rounded-lg p-1">
         <button
           @click="activeView = 'directory'"
-          class="px-3 py-1.5 text-sm rounded-md transition-colors"
-          :class="activeView === 'directory' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+          class="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5"
+          :class="
+            activeView === 'directory'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          "
         >
-          <Users class="w-4 h-4 inline mr-1.5" />
+          <Users class="w-4 h-4" />
           Directory
         </button>
         <button
           @click="activeView = 'leaderboard'"
-          class="px-3 py-1.5 text-sm rounded-md transition-colors"
-          :class="activeView === 'leaderboard' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+          class="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5"
+          :class="
+            activeView === 'leaderboard'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          "
         >
-          <Trophy class="w-4 h-4 inline mr-1.5" />
+          <Trophy class="w-4 h-4" />
           Leaderboard
         </button>
       </div>
@@ -32,7 +41,11 @@
         <AlertTriangle class="w-5 h-5 text-amber-500 flex-shrink-0" />
         <div>
           <p class="text-sm font-medium text-amber-600 dark:text-amber-400">Leaderboard In Progress</p>
-          <p class="text-xs text-muted-foreground">View tracking not yet implemented. See <code class="bg-muted px-1 rounded">docs/Leaderboard_TODO.md</code> for remaining tasks.</p>
+          <p class="text-xs text-muted-foreground">
+            View tracking not yet implemented. See
+            <code class="bg-muted px-1 rounded">docs/Leaderboard_TODO.md</code>
+            for remaining tasks.
+          </p>
         </div>
       </div>
 
@@ -44,20 +57,28 @@
             <button
               @click="switchLeaderboardPeriod('weekly')"
               class="px-3 py-1 text-sm rounded-md transition-colors"
-              :class="leaderboardPeriod === 'weekly' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+              :class="
+                leaderboardPeriod === 'weekly'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              "
             >
               Weekly
             </button>
             <button
               @click="switchLeaderboardPeriod('monthly')"
               class="px-3 py-1 text-sm rounded-md transition-colors"
-              :class="leaderboardPeriod === 'monthly' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+              :class="
+                leaderboardPeriod === 'monthly'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              "
             >
               Monthly
             </button>
           </div>
         </div>
-        
+
         <div v-if="loadingLeaderboard" class="space-y-3">
           <div v-for="i in 10" :key="i" class="flex items-center gap-4 p-3 bg-muted/20 rounded-lg animate-pulse">
             <div class="w-8 h-8 rounded-full bg-muted/40"></div>
@@ -81,12 +102,13 @@
             class="flex items-center gap-4 p-3 rounded-lg transition-colors bg-muted/20 hover:bg-muted/30"
           >
             <!-- Rank -->
-            <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm"
+            <div
+              class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm"
               :class="{
                 'bg-amber-500 text-white': index === 0,
                 'bg-gray-400 text-white': index === 1,
                 'bg-amber-700 text-white': index === 2,
-                'bg-muted text-muted-foreground': index > 2
+                'bg-muted text-muted-foreground': index > 2,
               }"
             >
               {{ index + 1 }}
@@ -94,18 +116,25 @@
 
             <!-- Avatar & Name -->
             <div class="flex items-center gap-3 flex-1 min-w-0">
-              <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0">
-                <img v-if="entry.clipper_profile?.avatar_url" :src="entry.clipper_profile.avatar_url" class="w-full h-full object-cover" />
+              <div
+                class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0"
+              >
+                <img
+                  v-if="entry.clipper_profile?.avatar_url"
+                  :src="entry.clipper_profile.avatar_url"
+                  class="w-full h-full object-cover"
+                />
                 <UserCircle v-else class="w-5 h-5 text-primary" />
               </div>
               <div class="min-w-0">
                 <div class="font-medium text-foreground truncate flex items-center gap-1.5">
                   {{ entry.clipper_profile?.display_name || 'Anonymous Clipper' }}
-                  <CheckCircle v-if="entry.clipper_profile?.is_verified" class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                  <CheckCircle
+                    v-if="entry.clipper_profile?.is_verified"
+                    class="w-3.5 h-3.5 text-blue-500 flex-shrink-0"
+                  />
                 </div>
-                <div class="text-xs text-muted-foreground">
-                  {{ entry.clips_delivered }} clips
-                </div>
+                <div class="text-xs text-muted-foreground">{{ entry.clips_delivered }} clips</div>
               </div>
             </div>
 
@@ -163,13 +192,35 @@
             <Label class="text-xs">Specialties</Label>
             <div class="flex flex-wrap gap-1">
               <button
-                v-for="tag in SPECIALTY_TAGS.slice(0, 6)"
+                v-for="tag in SPECIALTY_TAGS"
                 :key="tag.value"
                 @click="toggleFilter('specialty_tags', tag.value)"
                 class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
-                :class="filters.specialty_tags.includes(tag.value) 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+                :class="
+                  filters.specialty_tags.includes(tag.value)
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                "
+              >
+                {{ tag.label }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Content Style Tags -->
+          <div class="space-y-1.5">
+            <Label class="text-xs">Content Style</Label>
+            <div class="flex flex-wrap gap-1">
+              <button
+                v-for="tag in CONTENT_STYLE_TAGS"
+                :key="tag.value"
+                @click="toggleFilter('content_style_tags', tag.value)"
+                class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
+                :class="
+                  filters.content_style_tags.includes(tag.value)
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                "
               >
                 {{ tag.label }}
               </button>
@@ -185,33 +236,68 @@
                 :key="platform.value"
                 @click="toggleFilter('preferred_platforms', platform.value)"
                 class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
-                :class="filters.preferred_platforms.includes(platform.value) 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+                :class="
+                  filters.preferred_platforms.includes(platform.value)
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                "
               >
                 {{ platform.label }}
               </button>
             </div>
           </div>
 
-          <Button variant="outline" size="sm" class="w-full text-xs" @click="clearFilters">
-            Clear Filters
-          </Button>
+          <!-- Languages -->
+          <div class="space-y-1.5">
+            <Label class="text-xs">Languages</Label>
+            <div class="flex flex-wrap gap-1">
+              <button
+                v-for="lang in LANGUAGES"
+                :key="lang.code"
+                @click="toggleFilter('languages', lang.code)"
+                class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
+                :class="
+                  filters.languages.includes(lang.code)
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                "
+              >
+                {{ lang.name }}
+              </button>
+            </div>
+          </div>
+
+          <Button variant="outline" size="sm" class="w-full text-xs" @click="clearFilters">Clear Filters</Button>
         </div>
       </div>
 
       <!-- Clippers Grid -->
       <div class="flex-1">
-        <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          <div v-for="i in 6" :key="i" class="bg-card border border-border/60 rounded-xl p-4 animate-pulse">
-            <div class="flex items-center gap-3 mb-3">
-              <div class="w-10 h-10 rounded-full bg-muted/40"></div>
-              <div class="space-y-2">
-                <div class="h-4 bg-muted/40 rounded w-24"></div>
-                <div class="h-3 bg-muted/30 rounded w-16"></div>
+        <div v-if="loading" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div
+            v-for="i in 6"
+            :key="i"
+            class="bg-gradient-to-br from-card to-card/80 border border-border/60 rounded-xl overflow-hidden animate-pulse"
+          >
+            <div class="p-4 pb-3">
+              <div class="flex items-start gap-3.5">
+                <div class="w-14 h-14 rounded-xl bg-muted/40"></div>
+                <div class="flex-1 space-y-2 pt-1">
+                  <div class="h-4 bg-muted/40 rounded w-32"></div>
+                  <div class="h-3 bg-muted/30 rounded w-20"></div>
+                  <div class="h-3 bg-muted/30 rounded w-full"></div>
+                </div>
               </div>
             </div>
-            <div class="h-10 bg-muted/30 rounded"></div>
+            <div class="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/20">
+              <div class="flex items-center justify-between">
+                <div class="flex gap-1.5">
+                  <div class="h-6 bg-muted/30 rounded w-16"></div>
+                  <div class="h-6 bg-muted/30 rounded w-16"></div>
+                </div>
+                <div class="h-6 bg-muted/30 rounded w-24"></div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -221,54 +307,84 @@
           <p class="text-sm text-muted-foreground">Try adjusting your filters</p>
         </div>
 
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          <router-link
-            v-for="clipper in clippers"
-            :key="clipper.id"
-            :to="`/clippers/${clipper.slug}`"
-            class="block"
-          >
-            <div class="bg-card border border-border/60 rounded-xl p-4 hover:border-primary/30 hover:shadow-md transition-all h-full">
-              <!-- Header -->
-              <div class="flex items-start gap-3 mb-2">
-                <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="w-full h-full object-cover" />
-                  <UserCircle v-else class="w-5 h-5 text-primary" />
-                </div>
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-1.5">
-                    <span class="font-semibold text-sm text-foreground truncate">{{ clipper.display_name || 'Unnamed' }}</span>
-                    <CheckCircle v-if="clipper.is_verified" class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+        <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <router-link v-for="clipper in clippers" :key="clipper.id" :to="`/clippers/${clipper.slug}`" class="block">
+            <div
+              class="group relative bg-gradient-to-br from-card to-card/80 border border-border/60 rounded-xl overflow-hidden hover:border-border hover:shadow-lg hover:shadow-black/5 transition-all duration-200 h-full"
+            >
+              <!-- Top Section: Avatar & Name -->
+              <div class="p-4 pb-3">
+                <div class="flex items-start gap-3.5">
+                  <!-- Avatar -->
+                  <div class="relative flex-shrink-0">
+                    <div
+                      class="w-14 h-14 rounded-xl bg-muted flex items-center justify-center overflow-hidden ring-2 ring-border/30 ring-offset-2 ring-offset-card"
+                    >
+                      <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="w-full h-full object-cover" />
+                      <div
+                        v-else
+                        class="absolute inset-0 bg-gradient-to-br from-primary/25 via-primary/15 to-primary/20"
+                      ></div>
+                      <UserCircle v-if="!clipper.avatar_url" class="h-7 w-7 text-muted-foreground/40 relative z-10" />
+                    </div>
+                    <!-- Available badge on avatar -->
+                    <div v-if="clipper.looking_for_work" class="absolute -bottom-1 -right-1">
+                      <div
+                        class="w-5 h-5 rounded-full bg-green-500/20 border-2 border-card flex items-center justify-center"
+                        title="Available for work"
+                      >
+                        <CheckCircle class="w-2.5 h-2.5 text-green-400" />
+                      </div>
+                    </div>
                   </div>
-                  <div class="text-[11px] text-muted-foreground">
-                    {{ getExperienceLevelLabel(clipper.experience_level || '') }}
+
+                  <!-- Name & Bio -->
+                  <div class="flex-1 min-w-0 pt-0.5">
+                    <div class="flex items-center gap-1.5">
+                      <h3 class="font-semibold text-foreground truncate text-[15px] leading-tight">
+                        {{ clipper.display_name || 'Unnamed' }}
+                      </h3>
+                      <CheckCircle v-if="clipper.is_verified" class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                    </div>
+                    <div class="text-xs text-muted-foreground mt-0.5">
+                      {{ getExperienceLevelLabel(clipper.experience_level || '') }}
+                    </div>
+                    <p v-if="clipper.bio" class="text-xs text-muted-foreground line-clamp-2 mt-1 leading-relaxed">
+                      {{ clipper.bio }}
+                    </p>
+                    <p v-else class="text-xs text-muted-foreground/50 italic mt-1">No bio</p>
                   </div>
-                </div>
-                <div v-if="clipper.looking_for_work" class="px-1.5 py-0.5 bg-green-500/10 text-green-500 text-[9px] font-medium rounded">
-                  Available
                 </div>
               </div>
 
-              <!-- Bio -->
-              <p v-if="clipper.bio" class="text-xs text-muted-foreground line-clamp-2 mb-2">
-                {{ clipper.bio }}
-              </p>
+              <!-- Bottom Section: Tags & Stats -->
+              <div class="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/20">
+                <div class="flex items-center justify-between gap-3">
+                  <!-- Tags -->
+                  <div class="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+                    <template v-if="clipper.specialty_tags?.length">
+                      <span
+                        v-for="tag in clipper.specialty_tags.slice(0, 3)"
+                        :key="tag"
+                        class="px-2 py-1 rounded-md text-xs font-medium bg-muted/50 text-muted-foreground border border-border/50"
+                      >
+                        {{ getSpecialtyTagLabel(tag) }}
+                      </span>
+                      <span v-if="clipper.specialty_tags.length > 3" class="text-xs text-muted-foreground px-1.5">
+                        +{{ clipper.specialty_tags.length - 3 }} more
+                      </span>
+                    </template>
+                    <span v-else class="text-xs text-muted-foreground/60">No specialties</span>
+                  </div>
 
-              <!-- Tags -->
-              <div v-if="clipper.specialty_tags?.length" class="flex flex-wrap gap-1 mb-2">
-                <span
-                  v-for="tag in clipper.specialty_tags.slice(0, 3)"
-                  :key="tag"
-                  class="px-1.5 py-0.5 bg-muted/50 text-muted-foreground text-[9px] rounded"
-                >
-                  {{ getSpecialtyTagLabel(tag) }}
-                </span>
-              </div>
-
-              <!-- Stats -->
-              <div class="flex items-center gap-3 text-[10px] text-muted-foreground">
-                <span>{{ clipper.total_campaigns_completed }} campaigns</span>
-                <span>{{ clipper.total_endorsements }} endorsements</span>
+                  <!-- Stats Badge -->
+                  <div
+                    class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium flex-shrink-0 bg-primary/10 text-primary border border-primary/20"
+                  >
+                    <Trophy class="w-3.5 h-3.5" />
+                    <span>{{ clipper.total_campaigns_completed }} campaigns</span>
+                  </div>
+                </div>
               </div>
             </div>
           </router-link>
@@ -279,136 +395,153 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue';
-import { Users, Trophy, UserCircle, CheckCircle, AlertTriangle } from 'lucide-vue-next';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  listClippers, getLeaderboard,
-  type ClipperProfile,
-  EXPERIENCE_LEVELS, SPECIALTY_TAGS, PREFERRED_PLATFORMS,
-  getExperienceLevelLabel, getSpecialtyTagLabel
-} from '@/services/clipperProfilesApi';
+  import { ref, reactive, onMounted } from 'vue';
+  import { Users, Trophy, UserCircle, CheckCircle, AlertTriangle } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import { Label } from '@/components/ui/label';
+  import { Switch } from '@/components/ui/switch';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+  import {
+    listClippers,
+    getLeaderboard,
+    type ClipperProfile,
+    EXPERIENCE_LEVELS,
+    SPECIALTY_TAGS,
+    CONTENT_STYLE_TAGS,
+    PREFERRED_PLATFORMS,
+    LANGUAGES,
+    getExperienceLevelLabel,
+    getSpecialtyTagLabel,
+    getContentStyleTagLabel,
+    getLanguageName,
+  } from '@/services/clipperProfilesApi';
 
-// View state
-const activeView = ref<'directory' | 'leaderboard'>('directory');
+  // View state
+  const activeView = ref<'directory' | 'leaderboard'>('directory');
 
-// Directory state
-const loading = ref(true);
-const clippers = ref<ClipperProfile[]>([]);
+  // Directory state
+  const loading = ref(true);
+  const clippers = ref<ClipperProfile[]>([]);
 
-// Leaderboard state
-const loadingLeaderboard = ref(true);
-const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
-const leaderboardEntries = ref<LeaderboardEntry[]>([]);
+  // Leaderboard state
+  const loadingLeaderboard = ref(true);
+  const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
+  const leaderboardEntries = ref<LeaderboardEntry[]>([]);
 
-interface LeaderboardEntry {
-  id: number;
-  rank: number;
-  clips_delivered: number;
-  total_views: number;
-  clipper_profile?: {
+  interface LeaderboardEntry {
     id: number;
-    user_id: number;
-    display_name: string | null;
-    avatar_url: string | null;
-    slug: string | null;
-    is_verified: boolean;
+    rank: number;
+    clips_delivered: number;
+    total_views: number;
+    clipper_profile?: {
+      id: number;
+      user_id: number;
+      display_name: string | null;
+      avatar_url: string | null;
+      slug: string | null;
+      is_verified: boolean;
+    };
+  }
+
+  const formatViews = (views: number): string => {
+    if (views >= 1000000) {
+      return (views / 1000000).toFixed(1) + 'M';
+    } else if (views >= 1000) {
+      return (views / 1000).toFixed(1) + 'K';
+    }
+    return views.toString();
   };
-}
 
-const formatViews = (views: number): string => {
-  if (views >= 1000000) {
-    return (views / 1000000).toFixed(1) + 'M';
-  } else if (views >= 1000) {
-    return (views / 1000).toFixed(1) + 'K';
-  }
-  return views.toString();
-};
+  const switchLeaderboardPeriod = (period: 'weekly' | 'monthly') => {
+    if (leaderboardPeriod.value !== period) {
+      leaderboardPeriod.value = period;
+      loadLeaderboard();
+    }
+  };
 
-const switchLeaderboardPeriod = (period: 'weekly' | 'monthly') => {
-  if (leaderboardPeriod.value !== period) {
-    leaderboardPeriod.value = period;
+  const loadLeaderboard = async () => {
+    loadingLeaderboard.value = true;
+    try {
+      const response = await getLeaderboard(leaderboardPeriod.value);
+      if (response.success) {
+        leaderboardEntries.value = response.entries.map((entry: any, index: number) => ({
+          ...entry,
+          total_views: entry.total_views || 0,
+          rank: index + 1,
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to load leaderboard:', error);
+    } finally {
+      loadingLeaderboard.value = false;
+    }
+  };
+
+  const filters = reactive({
+    looking_for_work: false,
+    verified_only: false,
+    experience_level: 'any',
+    specialty_tags: [] as string[],
+    content_style_tags: [] as string[],
+    preferred_platforms: [] as string[],
+    languages: [] as string[],
+  });
+
+  const loadClippers = async () => {
+    loading.value = true;
+    try {
+      const response = await listClippers({
+        looking_for_work: filters.looking_for_work || undefined,
+        verified_only: filters.verified_only || undefined,
+        experience_level: filters.experience_level !== 'any' ? filters.experience_level : undefined,
+        specialty_tags: filters.specialty_tags.length ? filters.specialty_tags : undefined,
+        content_style_tags: filters.content_style_tags.length ? filters.content_style_tags : undefined,
+        preferred_platforms: filters.preferred_platforms.length ? filters.preferred_platforms : undefined,
+        languages: filters.languages.length ? filters.languages : undefined,
+      });
+      if (response.success) {
+        clippers.value = response.profiles;
+      }
+    } catch (error) {
+      console.error('Failed to load clippers:', error);
+    } finally {
+      loading.value = false;
+    }
+  };
+
+  const toggleFilter = (
+    field: 'specialty_tags' | 'content_style_tags' | 'preferred_platforms' | 'languages',
+    value: string
+  ) => {
+    const arr = filters[field];
+    const idx = arr.indexOf(value);
+    if (idx >= 0) {
+      arr.splice(idx, 1);
+    } else {
+      arr.push(value);
+    }
+    loadClippers();
+  };
+
+  const clearFilters = () => {
+    filters.looking_for_work = false;
+    filters.verified_only = false;
+    filters.experience_level = 'any';
+    filters.specialty_tags = [];
+    filters.content_style_tags = [];
+    filters.preferred_platforms = [];
+    filters.languages = [];
+    loadClippers();
+  };
+
+  onMounted(() => {
+    loadClippers();
     loadLeaderboard();
-  }
-};
-
-const loadLeaderboard = async () => {
-  loadingLeaderboard.value = true;
-  try {
-    const response = await getLeaderboard(leaderboardPeriod.value);
-    if (response.success) {
-      leaderboardEntries.value = response.entries.map((entry: any, index: number) => ({
-        ...entry,
-        total_views: entry.total_views || 0,
-        rank: index + 1
-      }));
-    }
-  } catch (error) {
-    console.error('Failed to load leaderboard:', error);
-  } finally {
-    loadingLeaderboard.value = false;
-  }
-};
-
-const filters = reactive({
-  looking_for_work: false,
-  verified_only: false,
-  experience_level: 'any',
-  specialty_tags: [] as string[],
-  preferred_platforms: [] as string[]
-});
-
-const loadClippers = async () => {
-  loading.value = true;
-  try {
-    const response = await listClippers({
-      looking_for_work: filters.looking_for_work || undefined,
-      verified_only: filters.verified_only || undefined,
-      experience_level: filters.experience_level !== 'any' ? filters.experience_level : undefined,
-      specialty_tags: filters.specialty_tags.length ? filters.specialty_tags : undefined,
-      preferred_platforms: filters.preferred_platforms.length ? filters.preferred_platforms : undefined
-    });
-    if (response.success) {
-      clippers.value = response.profiles;
-    }
-  } catch (error) {
-    console.error('Failed to load clippers:', error);
-  } finally {
-    loading.value = false;
-  }
-};
-
-const toggleFilter = (field: 'specialty_tags' | 'preferred_platforms', value: string) => {
-  const arr = filters[field];
-  const idx = arr.indexOf(value);
-  if (idx >= 0) {
-    arr.splice(idx, 1);
-  } else {
-    arr.push(value);
-  }
-  loadClippers();
-};
-
-const clearFilters = () => {
-  filters.looking_for_work = false;
-  filters.verified_only = false;
-  filters.experience_level = 'any';
-  filters.specialty_tags = [];
-  filters.preferred_platforms = [];
-  loadClippers();
-};
-
-onMounted(() => {
-  loadClippers();
-  loadLeaderboard();
-});
+  });
 </script>
 
 <style scoped>
-.organization-clippers {
-  @apply h-full;
-}
+  .organization-clippers {
+    height: 100%;
+  }
 </style>

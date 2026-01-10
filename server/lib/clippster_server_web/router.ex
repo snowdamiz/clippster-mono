@@ -328,6 +328,7 @@ defmodule ClippsterServerWeb.Router do
     # ============================================================================
     get "/user/clipper-profile", ClipperProfilesController, :show_own
     put "/user/clipper-profile", ClipperProfilesController, :update_own
+    post "/user/clipper-profile/avatar", ClipperProfilesController, :upload_avatar
     
     # Channel links
     get "/user/clipper-profile/channel-links", ClipperProfilesController, :list_channel_links
@@ -338,6 +339,7 @@ defmodule ClippsterServerWeb.Router do
     # Portfolio clips
     get "/user/clipper-profile/portfolio-clips", ClipperProfilesController, :list_portfolio_clips
     post "/user/clipper-profile/portfolio-clips", ClipperProfilesController, :create_portfolio_clip
+    post "/user/clipper-profile/portfolio-clips/upload", ClipperProfilesController, :upload_portfolio_clip
     put "/user/clipper-profile/portfolio-clips/:id", ClipperProfilesController, :update_portfolio_clip
     delete "/user/clipper-profile/portfolio-clips/:id", ClipperProfilesController, :delete_portfolio_clip
 

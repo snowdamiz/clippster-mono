@@ -21,7 +21,9 @@
         <div class="bg-card border border-border/60 rounded-xl p-6">
           <div class="flex items-start gap-6">
             <!-- Avatar -->
-            <div class="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+            <div
+              class="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0"
+            >
               <img v-if="profile.avatar_url" :src="profile.avatar_url" class="w-full h-full object-cover" />
               <UserCircle v-else class="w-12 h-12 text-primary" />
             </div>
@@ -80,7 +82,7 @@
                   <div class="text-xs text-muted-foreground">Endorsements</div>
                 </div>
               </div>
-              
+
               <!-- Action Buttons (for org members) -->
               <div class="flex gap-2">
                 <Button @click="openMessageDialog" size="sm">
@@ -171,8 +173,8 @@
                 <div v-else class="w-full h-full flex items-center justify-center">
                   <Video class="w-8 h-8 text-muted-foreground/50" />
                 </div>
-                <a 
-                  :href="clip.video_url" 
+                <a
+                  :href="clip.video_url"
                   target="_blank"
                   class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 hover:opacity-100 transition-opacity"
                 >
@@ -190,11 +192,7 @@
         <div v-if="profile.endorsements?.length" class="bg-card border border-border/60 rounded-xl p-4">
           <h3 class="font-semibold text-foreground mb-3">Endorsements</h3>
           <div class="space-y-4">
-            <div
-              v-for="endorsement in profile.endorsements"
-              :key="endorsement.id"
-              class="p-4 bg-muted/30 rounded-lg"
-            >
+            <div v-for="endorsement in profile.endorsements" :key="endorsement.id" class="p-4 bg-muted/30 rounded-lg">
               <div class="flex items-start justify-between mb-2">
                 <div>
                   <div class="font-medium text-foreground">{{ endorsement.organization?.name || 'Organization' }}</div>
@@ -206,9 +204,7 @@
                   <Star v-for="i in endorsement.rating" :key="i" class="w-4 h-4 text-amber-500 fill-amber-500" />
                 </div>
               </div>
-              <p v-if="endorsement.content" class="text-sm text-muted-foreground">
-                "{{ endorsement.content }}"
-              </p>
+              <p v-if="endorsement.content" class="text-sm text-muted-foreground">"{{ endorsement.content }}"</p>
             </div>
           </div>
         </div>
@@ -220,15 +216,13 @@
       <DialogContent class="max-w-md">
         <DialogHeader>
           <DialogTitle>Message {{ profile?.display_name }}</DialogTitle>
-          <DialogDescription>
-            Start a conversation with this clipper
-          </DialogDescription>
+          <DialogDescription>Start a conversation with this clipper</DialogDescription>
         </DialogHeader>
         <div class="space-y-4">
           <div class="space-y-2">
             <Label>Message</Label>
-            <Textarea 
-              v-model="messageContent" 
+            <Textarea
+              v-model="messageContent"
               placeholder="Hi! I'd like to discuss a potential collaboration..."
               rows="4"
             />
@@ -249,9 +243,7 @@
       <DialogContent class="max-w-md">
         <DialogHeader>
           <DialogTitle>Endorse {{ profile?.display_name }}</DialogTitle>
-          <DialogDescription>
-            Leave a public endorsement for this clipper
-          </DialogDescription>
+          <DialogDescription>Leave a public endorsement for this clipper</DialogDescription>
         </DialogHeader>
         <div class="space-y-4">
           <div class="space-y-2">
@@ -263,8 +255,8 @@
                 @click="endorsementRating = i"
                 class="p-1 hover:scale-110 transition-transform"
               >
-                <Star 
-                  class="w-6 h-6" 
+                <Star
+                  class="w-6 h-6"
                   :class="i <= endorsementRating ? 'text-amber-500 fill-amber-500' : 'text-muted-foreground'"
                 />
               </button>
@@ -272,8 +264,8 @@
           </div>
           <div class="space-y-2">
             <Label>Endorsement (optional)</Label>
-            <Textarea 
-              v-model="endorsementContent" 
+            <Textarea
+              v-model="endorsementContent"
               placeholder="Great clipper! Delivered high-quality content on time..."
               rows="3"
               maxlength="300"
@@ -294,149 +286,175 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import {
-  UserCircle, CheckCircle, Star, Clock, MessageCircle, Briefcase,
-  ExternalLink, Video, Play, Loader2,
-  Music2, Instagram, Twitter, Youtube, Twitch, Link2
-} from 'lucide-vue-next';
-import PageLayout from '@/components/PageLayout.vue';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import {
-  getClipperBySlug, createEndorsement,
-  type ClipperProfile,
-  getExperienceLevelLabel, getSpecialtyTagLabel, getContentStyleTagLabel,
-  getPlatformLabel, getLanguageName, getBadgeLabel, getBadgeColor
-} from '@/services/clipperProfilesApi';
-import { useToast } from '@/composables/useToast';
+  import { ref, onMounted } from 'vue';
+  import { useRoute, useRouter } from 'vue-router';
+  import {
+    UserCircle,
+    CheckCircle,
+    Star,
+    Clock,
+    MessageCircle,
+    Briefcase,
+    ExternalLink,
+    Video,
+    Play,
+    Loader2,
+    Music2,
+    Instagram,
+    Twitter,
+    Youtube,
+    Twitch,
+    Link2,
+  } from 'lucide-vue-next';
+  import PageLayout from '@/components/PageLayout.vue';
+  import { Button } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
+  import { Label } from '@/components/ui/label';
+  import { Textarea } from '@/components/ui/textarea';
+  import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+  } from '@/components/ui/dialog';
+  import {
+    getClipperBySlug,
+    createEndorsement,
+    type ClipperProfile,
+    getExperienceLevelLabel,
+    getSpecialtyTagLabel,
+    getContentStyleTagLabel,
+    getPlatformLabel,
+    getLanguageName,
+    getBadgeLabel,
+    getBadgeColor,
+  } from '@/services/clipperProfilesApi';
+  import { useToast } from '@/composables/useToast';
 
-const route = useRoute();
-const router = useRouter();
-const { toast } = useToast();
+  const route = useRoute();
+  const router = useRouter();
+  const { toast } = useToast();
 
-const loading = ref(true);
-const profile = ref<ClipperProfile | null>(null);
+  const loading = ref(true);
+  const profile = ref<ClipperProfile | null>(null);
 
-// Message dialog state
-const showMessageDialog = ref(false);
-const messageContent = ref('');
-const sendingMessage = ref(false);
+  // Message dialog state
+  const showMessageDialog = ref(false);
+  const messageContent = ref('');
+  const sendingMessage = ref(false);
 
-// Endorsement dialog state
-const showEndorsementDialog = ref(false);
-const endorsementContent = ref('');
-const endorsementRating = ref(0);
-const submittingEndorsement = ref(false);
+  // Endorsement dialog state
+  const showEndorsementDialog = ref(false);
+  const endorsementContent = ref('');
+  const endorsementRating = ref(0);
+  const submittingEndorsement = ref(false);
 
-const openMessageDialog = () => {
-  messageContent.value = '';
-  showMessageDialog.value = true;
-};
+  const openMessageDialog = () => {
+    messageContent.value = '';
+    showMessageDialog.value = true;
+  };
 
-const openEndorsementDialog = () => {
-  endorsementContent.value = '';
-  endorsementRating.value = 0;
-  showEndorsementDialog.value = true;
-};
+  const openEndorsementDialog = () => {
+    endorsementContent.value = '';
+    endorsementRating.value = 0;
+    showEndorsementDialog.value = true;
+  };
 
-const sendMessage = async () => {
-  if (!profile.value || !messageContent.value.trim()) return;
-  
-  sendingMessage.value = true;
-  try {
-    // For now, redirect to messages page with the clipper's user ID
-    // The messaging system will handle creating the conversation
-    router.push(`/messages?to=${profile.value.user_id}&message=${encodeURIComponent(messageContent.value)}`);
-    showMessageDialog.value = false;
-  } catch (error) {
-    console.error('Failed to send message:', error);
-    toast({
-      title: 'Error',
-      description: 'Failed to send message. Please try again.'
-    });
-  } finally {
-    sendingMessage.value = false;
-  }
-};
+  const sendMessage = async () => {
+    if (!profile.value || !messageContent.value.trim()) return;
 
-const submitEndorsement = async () => {
-  if (!profile.value || endorsementRating.value === 0) return;
-  
-  submittingEndorsement.value = true;
-  try {
-    // Note: organizationId would need to be selected by the user if they belong to multiple orgs
-    // For now, we'll pass 0 and let the backend handle it or show an error
-    const response = await createEndorsement(profile.value.slug!, 0, {
-      content: endorsementContent.value || undefined,
-      rating: endorsementRating.value
-    });
-    
-    if (response.success) {
-      toast({
-        title: 'Endorsement Submitted',
-        description: 'Your endorsement has been added to this clipper\'s profile.'
-      });
-      showEndorsementDialog.value = false;
-      // Reload profile to show new endorsement
-      loadProfile();
-    } else {
+    sendingMessage.value = true;
+    try {
+      // For now, redirect to messages page with the clipper's user ID
+      // The messaging system will handle creating the conversation
+      router.push(`/messages?to=${profile.value.user_id}&message=${encodeURIComponent(messageContent.value)}`);
+      showMessageDialog.value = false;
+    } catch (error) {
+      console.error('Failed to send message:', error);
       toast({
         title: 'Error',
-        description: response.error || 'Failed to submit endorsement.'
+        description: 'Failed to send message. Please try again.',
       });
+    } finally {
+      sendingMessage.value = false;
     }
-  } catch (error) {
-    console.error('Failed to submit endorsement:', error);
-    toast({
-      title: 'Error',
-      description: 'Failed to submit endorsement. Please try again.'
-    });
-  } finally {
-    submittingEndorsement.value = false;
-  }
-};
-
-const getPlatformIcon = (platform: string) => {
-  const icons: Record<string, typeof Music2> = {
-    tiktok: Music2,
-    instagram: Instagram,
-    x: Twitter,
-    youtube: Youtube,
-    twitch: Twitch,
-    kick: Music2
   };
-  return icons[platform] || Link2;
-};
 
-const loadProfile = async () => {
-  const slug = route.params.slug as string;
-  if (!slug) return;
+  const submitEndorsement = async () => {
+    if (!profile.value || endorsementRating.value === 0) return;
 
-  loading.value = true;
-  try {
-    const response = await getClipperBySlug(slug);
-    if (response.success) {
-      profile.value = response.profile;
+    submittingEndorsement.value = true;
+    try {
+      // Note: organizationId would need to be selected by the user if they belong to multiple orgs
+      // For now, we'll pass 0 and let the backend handle it or show an error
+      const response = await createEndorsement(profile.value.slug!, 0, {
+        content: endorsementContent.value || undefined,
+        rating: endorsementRating.value,
+      });
+
+      if (response.success) {
+        toast({
+          title: 'Endorsement Submitted',
+          description: "Your endorsement has been added to this clipper's profile.",
+        });
+        showEndorsementDialog.value = false;
+        // Reload profile to show new endorsement
+        loadProfile();
+      } else {
+        toast({
+          title: 'Error',
+          description: response.error || 'Failed to submit endorsement.',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to submit endorsement:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to submit endorsement. Please try again.',
+      });
+    } finally {
+      submittingEndorsement.value = false;
     }
-  } catch (error) {
-    console.error('Failed to load profile:', error);
-  } finally {
-    loading.value = false;
-  }
-};
+  };
 
-onMounted(() => {
-  loadProfile();
-});
+  const getPlatformIcon = (platform: string) => {
+    const icons: Record<string, typeof Music2> = {
+      tiktok: Music2,
+      instagram: Instagram,
+      x: Twitter,
+      youtube: Youtube,
+      twitch: Twitch,
+      kick: Music2,
+    };
+    return icons[platform] || Link2;
+  };
+
+  const loadProfile = async () => {
+    const slug = route.params.slug as string;
+    if (!slug) return;
+
+    loading.value = true;
+    try {
+      const response = await getClipperBySlug(slug);
+      if (response.success) {
+        profile.value = response.profile;
+      }
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+    } finally {
+      loading.value = false;
+    }
+  };
+
+  onMounted(() => {
+    loadProfile();
+  });
 </script>
 
 <style scoped>
-.clipper-public-profile-page {
-  @apply h-full;
-}
+  .clipper-public-profile-page {
+    height: 100%;
+  }
 </style>

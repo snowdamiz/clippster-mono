@@ -24,6 +24,7 @@ export interface LiveStatus {
   roomName?: string;
   regionUrl?: string;
   token?: string;
+  profileImageUrl?: string;
   raw?: Record<string, any>;
 }
 

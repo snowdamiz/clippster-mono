@@ -101,7 +101,7 @@ export const EXPERIENCE_LEVELS = [
   { value: 'beginner', label: 'Beginner' },
   { value: 'intermediate', label: 'Intermediate' },
   { value: 'experienced', label: 'Experienced' },
-  { value: 'professional', label: 'Professional' }
+  { value: 'professional', label: 'Professional' },
 ];
 
 export const SPECIALTY_TAGS = [
@@ -117,7 +117,7 @@ export const SPECIALTY_TAGS = [
   { value: 'educational', label: 'Educational' },
   { value: 'asmr', label: 'ASMR' },
   { value: 'creative', label: 'Creative' },
-  { value: 'podcasts', label: 'Podcasts' }
+  { value: 'podcasts', label: 'Podcasts' },
 ];
 
 export const CONTENT_STYLE_TAGS = [
@@ -129,7 +129,7 @@ export const CONTENT_STYLE_TAGS = [
   { value: 'highlights', label: 'Highlights' },
   { value: 'reactions', label: 'Reactions' },
   { value: 'compilations', label: 'Compilations' },
-  { value: 'dramatic', label: 'Dramatic' }
+  { value: 'dramatic', label: 'Dramatic' },
 ];
 
 export const PREFERRED_PLATFORMS = [
@@ -138,7 +138,7 @@ export const PREFERRED_PLATFORMS = [
   { value: 'youtube', label: 'YouTube' },
   { value: 'x', label: 'X (Twitter)' },
   { value: 'facebook', label: 'Facebook' },
-  { value: 'snapchat', label: 'Snapchat' }
+  { value: 'snapchat', label: 'Snapchat' },
 ];
 
 export const CHANNEL_PLATFORMS = [
@@ -147,7 +147,7 @@ export const CHANNEL_PLATFORMS = [
   { value: 'instagram', label: 'Instagram' },
   { value: 'x', label: 'X (Twitter)' },
   { value: 'kick', label: 'Kick' },
-  { value: 'twitch', label: 'Twitch' }
+  { value: 'twitch', label: 'Twitch' },
 ];
 
 export const LANGUAGES = [
@@ -167,7 +167,7 @@ export const LANGUAGES = [
   { code: 'tr', name: 'Turkish' },
   { code: 'vi', name: 'Vietnamese' },
   { code: 'th', name: 'Thai' },
-  { code: 'id', name: 'Indonesian' }
+  { code: 'id', name: 'Indonesian' },
 ];
 
 // ============================================================================
@@ -237,7 +237,9 @@ export async function getMyClipperProfile(): Promise<ProfileResponse> {
   return response.data;
 }
 
-export async function updateMyClipperProfile(data: Partial<ClipperProfile>): Promise<ProfileResponse> {
+export async function updateMyClipperProfile(
+  data: Partial<ClipperProfile>
+): Promise<ProfileResponse> {
   const response = await api.put('/user/clipper-profile', data);
   return response.data;
 }
@@ -261,11 +263,14 @@ export async function createChannelLink(data: {
   return response.data;
 }
 
-export async function updateChannelLink(id: number, data: {
-  url?: string;
-  username?: string;
-  display_order?: number;
-}): Promise<ChannelLinkResponse> {
+export async function updateChannelLink(
+  id: number,
+  data: {
+    url?: string;
+    username?: string;
+    display_order?: number;
+  }
+): Promise<ChannelLinkResponse> {
   const response = await api.put(`/user/clipper-profile/channel-links/${id}`, data);
   return response.data;
 }
@@ -296,14 +301,17 @@ export async function createPortfolioClip(data: {
   return response.data;
 }
 
-export async function updatePortfolioClip(id: number, data: {
-  title?: string;
-  video_url?: string;
-  thumbnail_url?: string;
-  duration?: number;
-  file_size?: number;
-  display_order?: number;
-}): Promise<PortfolioClipResponse> {
+export async function updatePortfolioClip(
+  id: number,
+  data: {
+    title?: string;
+    video_url?: string;
+    thumbnail_url?: string;
+    duration?: number;
+    file_size?: number;
+    display_order?: number;
+  }
+): Promise<PortfolioClipResponse> {
   const response = await api.put(`/user/clipper-profile/portfolio-clips/${id}`, data);
   return response.data;
 }
@@ -311,6 +319,117 @@ export async function updatePortfolioClip(id: number, data: {
 export async function deletePortfolioClip(id: number): Promise<DeleteResponse> {
   const response = await api.delete(`/user/clipper-profile/portfolio-clips/${id}`);
   return response.data;
+}
+
+interface UploadPortfolioClipResponse {
+  success: boolean;
+  portfolio_clip?: PortfolioClip;
+  error?: string;
+}
+
+/**
+ * Upload a portfolio clip video file to R2 storage.
+ * Max file size: 100MB
+ */
+export async function uploadPortfolioClip(
+  file: File,
+  title?: string,
+  thumbnail?: File
+): Promise<UploadPortfolioClipResponse> {
+  // Validate file size (100MB max)
+  const MAX_SIZE = 100 * 1024 * 1024; // 100MB in bytes
+  if (file.size > MAX_SIZE) {
+    return {
+      success: false,
+      error: `File size exceeds 100MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
+    };
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (title) {
+      formData.append('title', title);
+    }
+    if (thumbnail) {
+      formData.append('thumbnail', thumbnail);
+    }
+
+    const response = await api.post<UploadPortfolioClipResponse>(
+      '/user/clipper-profile/portfolio-clips/upload',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[ClipperProfilesApi] Failed to upload portfolio clip:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to upload portfolio clip',
+    };
+  }
+}
+
+// ============================================================================
+// Avatar Upload API
+// ============================================================================
+
+interface UploadAvatarResponse {
+  success: boolean;
+  profile?: ClipperProfile;
+  avatar_url?: string;
+  error?: string;
+}
+
+/**
+ * Upload an avatar image to R2 storage.
+ * Max file size: 5MB
+ * Allowed types: JPEG, PNG, GIF, WebP
+ */
+export async function uploadClipperAvatar(file: File): Promise<UploadAvatarResponse> {
+  // Validate file size (5MB max)
+  const MAX_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+  if (file.size > MAX_SIZE) {
+    return {
+      success: false,
+      error: `File size exceeds 5MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
+    };
+  }
+
+  // Validate file type
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) {
+    return {
+      success: false,
+      error: 'Invalid file type. Allowed: JPEG, PNG, GIF, WebP',
+    };
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await api.post<UploadAvatarResponse>(
+      '/user/clipper-profile/avatar',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[ClipperProfilesApi] Failed to upload avatar:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to upload avatar',
+    };
+  }
 }
 
 // ============================================================================
@@ -329,7 +448,7 @@ export interface DirectoryFilters {
 
 export async function listClippers(filters?: DirectoryFilters): Promise<ProfilesResponse> {
   const params = new URLSearchParams();
-  
+
   if (filters) {
     if (filters.looking_for_work !== undefined) {
       params.append('looking_for_work', String(filters.looking_for_work));
@@ -365,7 +484,9 @@ export async function getClipperBySlug(slug: string): Promise<ProfileResponse> {
   return response.data;
 }
 
-export async function getLeaderboard(period: 'weekly' | 'monthly' = 'weekly'): Promise<LeaderboardResponse> {
+export async function getLeaderboard(
+  period: 'weekly' | 'monthly' = 'weekly'
+): Promise<LeaderboardResponse> {
   const response = await api.get(`/clippers/leaderboard?period=${period}`);
   return response.data;
 }
@@ -385,7 +506,7 @@ export async function createEndorsement(
 ): Promise<EndorsementResponse> {
   const response = await api.post(`/clippers/${slug}/endorsements`, {
     organization_id: organizationId,
-    ...data
+    ...data,
   });
   return response.data;
 }
@@ -395,32 +516,34 @@ export async function createEndorsement(
 // ============================================================================
 
 export function getExperienceLevelLabel(value: string): string {
-  return EXPERIENCE_LEVELS.find(l => l.value === value)?.label || value;
+  return EXPERIENCE_LEVELS.find((l) => l.value === value)?.label || value;
 }
 
 export function getSpecialtyTagLabel(value: string): string {
-  return SPECIALTY_TAGS.find(t => t.value === value)?.label || value;
+  return SPECIALTY_TAGS.find((t) => t.value === value)?.label || value;
 }
 
 export function getContentStyleTagLabel(value: string): string {
-  return CONTENT_STYLE_TAGS.find(t => t.value === value)?.label || value;
+  return CONTENT_STYLE_TAGS.find((t) => t.value === value)?.label || value;
 }
 
 export function getPlatformLabel(value: string): string {
-  return PREFERRED_PLATFORMS.find(p => p.value === value)?.label || 
-         CHANNEL_PLATFORMS.find(p => p.value === value)?.label || 
-         value;
+  return (
+    PREFERRED_PLATFORMS.find((p) => p.value === value)?.label ||
+    CHANNEL_PLATFORMS.find((p) => p.value === value)?.label ||
+    value
+  );
 }
 
 export function getLanguageName(code: string): string {
-  return LANGUAGES.find(l => l.code === code)?.name || code;
+  return LANGUAGES.find((l) => l.code === code)?.name || code;
 }
 
 export function getBadgeLabel(badgeType: string): string {
   const labels: Record<string, string> = {
     verified: 'Verified Clipper',
     top_clipper: 'Top Clipper',
-    rising_star: 'Rising Star'
+    rising_star: 'Rising Star',
   };
   return labels[badgeType] || badgeType;
 }
@@ -429,7 +552,7 @@ export function getBadgeColor(badgeType: string): string {
   const colors: Record<string, string> = {
     verified: 'text-blue-500',
     top_clipper: 'text-amber-500',
-    rising_star: 'text-purple-500'
+    rising_star: 'text-purple-500',
   };
   return colors[badgeType] || 'text-muted-foreground';
 }

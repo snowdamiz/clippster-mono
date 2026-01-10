@@ -484,8 +484,8 @@
   import { Clock, ChevronDown, X, AlertTriangle, Download, Video, Search, Loader2, RotateCcw } from 'lucide-vue-next';
   import { getCreatorProfileByPlatformId } from '@/services/database';
   import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
-  import { useAuthStore } from '@/stores/auth';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
+  import { useAuthStore } from '@/stores/auth';
 
   const router = useRouter();
   const { gates } = useSubscriptionGate();
@@ -495,15 +495,25 @@
   const platformStore = usePlatformStore();
   const authStore = useAuthStore();
 
+  // Component state
+  const searchInput = ref('');
+  const showDownloadDialog = ref(false);
+  const clipToDownload = ref<PlatformClip | null>(null);
+  const downloadStarting = ref(false);
+  const showRecentDropdown = ref(false);
+  const selectedTimeRange = ref({ startTime: 0, endTime: 0 });
+  const nextSegmentNumber = ref(1);
+  const autoSegment = ref(false);
+  const autoSegmentDuration = ref(30);
+  const currentPage = ref(1);
+  const clipsPerPage = 20;
+
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(null);
-  const currentPlatformConfig = computed(() =>
-    detectedPlatform.value ? platformConfigs[detectedPlatform.value] : null
-  );
+  const currentPlatformConfig = computed(() => platformConfigs[detectedPlatform.value || platformStore.activePlatform]);
 
-  // Detect platform from input (similar to LiveClip.vue)
   function detectPlatform() {
-    const val = searchInput.value.trim();
+    const val = searchInput.value?.trim();
 
     if (!val) {
       detectedPlatform.value = null;
@@ -549,7 +559,8 @@
   // Initialize
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
-    platformStore.refreshRecentSearchesMetadata();
+    await platformStore.refreshRecentSearchMetadata();
+    detectPlatform();
 
     // Check for query params (from Creator Profiles navigation)
     const queryPlatform = route.query.platform as string | undefined;
@@ -591,19 +602,6 @@
       showRecentDropdown.value = false;
     }
   }
-
-  // Component state
-  const searchInput = ref('');
-  const showDownloadDialog = ref(false);
-  const clipToDownload = ref<PlatformClip | null>(null);
-  const downloadStarting = ref(false);
-  const showRecentDropdown = ref(false);
-  const selectedTimeRange = ref({ startTime: 0, endTime: 0 });
-  const nextSegmentNumber = ref(1);
-  const autoSegment = ref(false);
-  const autoSegmentDuration = ref(30);
-  const currentPage = ref(1);
-  const clipsPerPage = 20;
 
   // Computed properties for the unified download UI
   // Use a generous tolerance (5 seconds or 1% of duration) to account for slider precision
