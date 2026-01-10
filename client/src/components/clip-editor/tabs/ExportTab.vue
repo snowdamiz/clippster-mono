@@ -778,14 +778,31 @@
           },
         ];
 
-    // Handle intro/outro: creator profile defaults take precedence (mandatory), then manually added
+    // Handle intro/outro: creator profile defaults take precedence (mandatory), then campaign assets, then manually added
     // Creator profile intro/outro MUST be applied when set - they are mandatory defaults
     let introPath: string | null = null;
     let outroPath: string | null = null;
     let introDuration: number | null = null;
     let outroDuration: number | null = null;
 
-    // Determine effective intro (creatorDefaultIntro takes precedence - mandatory when set)
+    // Check for campaign assets if no creator profile assets are set
+    let campaignAssets: {
+      introPath: string | null;
+      introDuration: number | null;
+      outroPath: string | null;
+      outroDuration: number | null;
+      watermarkUrl: string | null;
+      watermarkSettings: Record<string, any> | null;
+    } | null = null;
+    if (!props.creatorDefaultIntro && !props.creatorDefaultOutro && props.clipId) {
+      const { getCampaignAssetsForBuild } = await import('@/services/campaignAssets');
+      campaignAssets = await getCampaignAssetsForBuild(props.clipId, effectiveAspectRatios.value[0] || '9:16');
+      if (campaignAssets) {
+        console.log('[ExportTab] Campaign assets found for clip:', props.clipId);
+      }
+    }
+
+    // Determine effective intro (creatorDefaultIntro takes precedence, then campaign, then manually added)
     const effectiveIntro = props.creatorDefaultIntro || props.currentIntro;
     const effectiveOutro = props.creatorDefaultOutro || props.currentOutro;
 
@@ -853,6 +870,22 @@
           throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
         }
       }
+    }
+
+    // Apply campaign assets as fallback if no intro/outro from creator profile or manual selection
+    if (campaignAssets) {
+      if (!introPath && campaignAssets.introPath) {
+        introPath = campaignAssets.introPath;
+        introDuration = campaignAssets.introDuration;
+        console.log('[ExportTab] Using campaign intro:', introPath);
+      }
+      if (!outroPath && campaignAssets.outroPath) {
+        outroPath = campaignAssets.outroPath;
+        outroDuration = campaignAssets.outroDuration;
+        console.log('[ExportTab] Using campaign outro:', outroPath);
+      }
+      // Campaign watermark settings could be applied here if needed
+      // For now, watermarks are handled separately via the watermarks prop
     }
 
     // Ensure subtitle settings have all required fields with defaults

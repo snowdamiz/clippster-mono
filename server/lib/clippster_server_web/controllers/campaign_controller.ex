@@ -112,6 +112,24 @@ defmodule ClippsterServerWeb.CampaignController do
   end
 
   @doc """
+  List campaigns the current user has joined that include a specific creator profile.
+  Used by LiveClip to check if a creator is part of any campaigns.
+  """
+  def campaigns_by_creator_profile(conn, %{"creator_profile_id" => creator_profile_id}) do
+    user = conn.assigns.current_user
+
+    participants = Campaigns.list_user_campaigns_by_creator_profile(user.id, creator_profile_id)
+
+    json(conn, %{
+      success: true,
+      campaigns: Enum.map(participants, fn p ->
+        serialize_campaign(p.campaign)
+        |> Map.put(:joined_at, p.inserted_at)
+      end)
+    })
+  end
+
+  @doc """
   List submissions for the current user.
   """
   def my_submissions(conn, params) do

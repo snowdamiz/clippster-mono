@@ -393,6 +393,14 @@
         @close="showCreditWarningDialog = false"
         @confirm="confirmCreditWarning"
       />
+
+      <!-- Campaign Selection Dialog -->
+      <CampaignSelectionDialog
+        :is-open="showCampaignDialog"
+        :campaigns="availableCampaigns"
+        @select="handleCampaignSelect"
+        @cancel="handleCampaignCancel"
+      />
     </div>
   </PageLayout>
 </template>
@@ -422,8 +430,10 @@
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import CampaignSelectionDialog from '@/components/campaigns/CampaignSelectionDialog.vue';
   // import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
+  import { getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
   import { useLivestreamStore } from '@/stores/livestream';
   import {
     getAllMonitoredStreamers,
@@ -471,6 +481,13 @@
   const searchResults = ref<TokenSearchResult[]>([]);
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
+
+  // Campaign selection state
+  const showCampaignDialog = ref(false);
+  const availableCampaigns = ref<Campaign[]>([]);
+  const pendingCampaignAction = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
+  const pendingWatchAction = ref<ExtendedStreamer | null>(null);
+  const selectedCampaignForSession = ref<Campaign | null>(null);
 
   // Global livestream store for watch dialog
   const livestreamStore = useLivestreamStore();
@@ -719,8 +736,25 @@
   }
 
   // Open watch dialog for a live streamer (uses global store for PIP persistence)
-  function openWatchDialog(streamer: ExtendedStreamer) {
+  async function openWatchDialog(streamer: ExtendedStreamer) {
     if (!streamer.isLive) return;
+
+    // Check if this creator is part of any campaigns the user has joined
+    if (streamer.creatorProfileId) {
+      try {
+        const response = await getCampaignsByCreatorProfile(streamer.creatorProfileId);
+        if (response.success && response.campaigns.length > 0) {
+          // Show campaign selection dialog for watch mode
+          availableCampaigns.value = response.campaigns;
+          pendingWatchAction.value = streamer;
+          showCampaignDialog.value = true;
+          return;
+        }
+      } catch (error) {
+        console.error('[LiveClip] Failed to check campaigns for watch:', error);
+      }
+    }
+
     livestreamStore.openWatchDialog(
       streamer.mintId,
       streamer.id,
@@ -1132,7 +1166,68 @@
       }
     }
 
+    // Check if this creator is part of any campaigns the user has joined
+    if (streamer.creatorProfileId) {
+      try {
+        const response = await getCampaignsByCreatorProfile(streamer.creatorProfileId);
+        if (response.success && response.campaigns.length > 0) {
+          // Show campaign selection dialog
+          availableCampaigns.value = response.campaigns;
+          pendingCampaignAction.value = { streamer, detectClips };
+          showCampaignDialog.value = true;
+          return;
+        }
+      } catch (error) {
+        console.error('[LiveClip] Failed to check campaigns:', error);
+        // Continue without campaign context if check fails
+      }
+    }
+
     await executeStartStreamer(streamer, detectClips);
+  }
+
+  function handleCampaignSelect(campaign: Campaign | null) {
+    selectedCampaignForSession.value = campaign;
+    showCampaignDialog.value = false;
+    
+    // Handle pending start action (Record/Auto-detect)
+    if (pendingCampaignAction.value) {
+      const { streamer, detectClips } = pendingCampaignAction.value;
+      pendingCampaignAction.value = null;
+      
+      // Store campaign context in livestream store for later use
+      if (campaign) {
+        livestreamStore.setSessionCampaign(streamer.id, campaign);
+      }
+      
+      executeStartStreamer(streamer, detectClips);
+      return;
+    }
+
+    // Handle pending watch action
+    if (pendingWatchAction.value) {
+      const streamer = pendingWatchAction.value;
+      pendingWatchAction.value = null;
+
+      // Store campaign context in livestream store for later use
+      if (campaign) {
+        livestreamStore.setSessionCampaign(streamer.id, campaign);
+      }
+
+      livestreamStore.openWatchDialog(
+        streamer.mintId,
+        streamer.id,
+        streamer.displayName,
+        streamer.profileImageUrl,
+        streamer.platform
+      );
+    }
+  }
+
+  function handleCampaignCancel() {
+    showCampaignDialog.value = false;
+    pendingCampaignAction.value = null;
+    pendingWatchAction.value = null;
   }
 
   function confirmCreditWarning() {

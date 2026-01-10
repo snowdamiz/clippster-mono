@@ -1,6 +1,7 @@
 <template>
+  <Teleport to="body">
   <Transition name="modal">
-    <div v-if="show" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div v-if="show" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="$emit('close')"></div>
       <Transition name="dialog" appear>
         <div
@@ -361,6 +362,7 @@
       </Transition>
     </div>
   </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

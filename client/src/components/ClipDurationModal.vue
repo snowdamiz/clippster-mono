@@ -210,6 +210,7 @@
   import { createClipVersion } from '@/services/database/clip-versions';
   import { updateClip } from '@/services/database/clips';
   import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
+  import { useLivestreamStore } from '@/stores/livestream';
 
   interface SegmentInfo {
     segmentNumber: number;
@@ -232,6 +233,7 @@
     displayName?: string;
     mintId?: string; // Also used as session identifier for DVR mode
     isTempRecording?: boolean;
+    streamerId?: string; // For campaign context lookup
   }
 
   interface Emits {
@@ -243,6 +245,7 @@
   const emit = defineEmits<Emits>();
 
   const router = useRouter();
+  const livestreamStore = useLivestreamStore();
 
   // State
   const hidden = ref(false);
@@ -457,12 +460,17 @@
 
       // Save clip to database with a default version so workspace can load it
       try {
+        // Get campaign ID from store if this streamer is associated with a campaign
+        const sessionCampaign = props.streamerId ? livestreamStore.getSessionCampaign(props.streamerId) : undefined;
+        const campaignId = sessionCampaign?.id;
+
         const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: finalClipName,
           duration: selectedDuration.value,
           startTime: clipStartTime,
           endTime: clipEndTime,
           thumbnailPath: thumbnailFilePath || undefined,
+          campaignId,
         });
 
         // Get or create a manual session for this project (needed for FK constraint on clip_versions)

@@ -374,6 +374,7 @@
               :display-name="props.displayName"
               :mint-id="props.mintId"
               :is-temp-recording="viewer.state.value.isTempRecording"
+              :streamer-id="props.streamerId"
               @close="showClipModal = false"
               @clip-created="handleClipCreated"
             />
@@ -419,6 +420,7 @@
   import { createClipVersion } from '@/services/database/clip-versions';
   import { updateClip } from '@/services/database/clips';
   import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
+  import { useLivestreamStore } from '@/stores/livestream';
 
   interface Props {
     modelValue: boolean;
@@ -454,6 +456,7 @@
 
   // Composable
   const viewer = useLivestreamViewer();
+  const livestreamStore = useLivestreamStore();
 
   // UI State
   const isFullscreen = ref(false);
@@ -821,12 +824,17 @@
 
       // Save clip to database
       try {
+        // Get campaign ID from store if this streamer is associated with a campaign
+        const sessionCampaign = livestreamStore.getSessionCampaign(props.streamerId);
+        const campaignId = sessionCampaign?.id;
+
         const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: clipName,
           duration: QUICK_CLIP_DURATION,
           startTime: clipStartTime,
           endTime: clipEndTime,
           thumbnailPath: thumbnailFilePath || undefined,
+          campaignId,
         });
 
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);

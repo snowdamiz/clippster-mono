@@ -728,6 +728,26 @@ export function getPlatformIcon(platform: string): string {
   return icons[platform] || 'Globe';
 }
 
+/**
+ * Get campaigns the current user has joined that include a specific creator profile.
+ * Used by LiveClip to check if a creator is part of any campaigns.
+ */
+export async function getCampaignsByCreatorProfile(
+  creatorProfileId: number
+): Promise<ListCampaignsResponse> {
+  const response = await api.get(`/user/campaigns/by-creator/${creatorProfileId}`);
+  return response.data;
+}
+
+/**
+ * Get campaign details by ID (for applying assets during build).
+ * Returns campaign with global assets.
+ */
+export async function getCampaignById(campaignId: number): Promise<{ success: boolean; campaign?: Campaign; error?: string }> {
+  const response = await api.get(`/campaigns/${campaignId}`);
+  return response.data;
+}
+
 // ============================================
 // Campaign Creator Profiles API
 // ============================================

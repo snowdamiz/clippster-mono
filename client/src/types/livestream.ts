@@ -14,6 +14,7 @@ export interface MonitoredStreamer {
   streamThumbnailUrl?: string;
   segmentDurationMinutes?: number;
   autoDvr?: boolean; // When enabled, temp recording starts automatically when streamer goes live
+  creatorProfileId?: number; // ID of the associated creator profile (for campaign integration)
 }
 
 export interface LiveStatus {

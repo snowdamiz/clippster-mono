@@ -402,7 +402,7 @@ defmodule ClippsterServer.Campaigns do
       where: p.user_id == ^user_id and p.status == "approved",
       join: c in Campaign, on: c.id == p.campaign_id,
       order_by: [desc: p.inserted_at],
-      preload: [campaign: [:organization, :creator_profile]]
+      preload: [campaign: [:organization, :creator_profile, :creator_profiles, :global_intro, :global_outro]]
 
     query = if status do
       where(query, [p, c], c.status == ^status)
@@ -411,6 +411,23 @@ defmodule ClippsterServer.Campaigns do
     end
 
     Repo.all(query)
+  end
+
+  @doc """
+  Lists campaigns a user has joined that include a specific creator profile.
+  """
+  def list_user_campaigns_by_creator_profile(user_id, creator_profile_id) do
+    from(p in CampaignParticipant,
+      where: p.user_id == ^user_id and p.status == "approved",
+      join: c in Campaign, on: c.id == p.campaign_id,
+      join: ccp in CampaignCreatorProfile, on: ccp.campaign_id == c.id,
+      where: ccp.creator_profile_id == ^creator_profile_id,
+      where: c.status == "active",
+      order_by: [desc: p.inserted_at],
+      preload: [campaign: [:organization, :creator_profile, :creator_profiles, :global_intro, :global_outro]],
+      distinct: true
+    )
+    |> Repo.all()
   end
 
   defp already_participant?(campaign_id, user_id) do

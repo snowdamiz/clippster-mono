@@ -308,6 +308,7 @@ defmodule ClippsterServerWeb.Router do
 
     # User's campaigns and submissions
     get "/user/campaigns", CampaignController, :my_campaigns
+    get "/user/campaigns/by-creator/:creator_profile_id", CampaignController, :campaigns_by_creator_profile
     get "/user/submissions", CampaignController, :my_submissions
     get "/user/earnings", CampaignController, :my_earnings
 

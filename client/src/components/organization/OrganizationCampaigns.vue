@@ -370,6 +370,114 @@
                     </p>
                   </div>
 
+                  <!-- Global Campaign Assets -->
+                  <div class="space-y-3 p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
+                    <div class="flex items-center justify-between">
+                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">
+                        Global Campaign Assets
+                      </label>
+                      <span class="text-[10px] text-zinc-500">Applied to all clips</span>
+                    </div>
+                    
+                    <p class="text-xs text-zinc-500 -mt-1">
+                      These assets apply to ALL clips for this campaign, regardless of creator profile.
+                    </p>
+
+                    <!-- Global Intro -->
+                    <div class="space-y-1.5">
+                      <div class="flex items-center justify-between">
+                        <label class="text-xs text-zinc-400">Intro Video</label>
+                        <label class="flex items-center gap-1.5 text-xs text-zinc-500">
+                          <input
+                            type="checkbox"
+                            v-model="campaignForm.require_intro"
+                            class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-800 text-violet-500 focus:ring-violet-500/50"
+                          />
+                          Required
+                        </label>
+                      </div>
+                      <select
+                        v-model="campaignForm.global_intro_id"
+                        class="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                      >
+                        <option :value="null">No intro</option>
+                        <option
+                          v-for="asset in availableAssets.filter(a => a.asset_type === 'intro')"
+                          :key="asset.id"
+                          :value="asset.id"
+                        >
+                          {{ asset.name }}
+                        </option>
+                      </select>
+                    </div>
+
+                    <!-- Global Outro -->
+                    <div class="space-y-1.5">
+                      <div class="flex items-center justify-between">
+                        <label class="text-xs text-zinc-400">Outro Video</label>
+                        <label class="flex items-center gap-1.5 text-xs text-zinc-500">
+                          <input
+                            type="checkbox"
+                            v-model="campaignForm.require_outro"
+                            class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-800 text-violet-500 focus:ring-violet-500/50"
+                          />
+                          Required
+                        </label>
+                      </div>
+                      <select
+                        v-model="campaignForm.global_outro_id"
+                        class="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                      >
+                        <option :value="null">No outro</option>
+                        <option
+                          v-for="asset in availableAssets.filter(a => a.asset_type === 'outro')"
+                          :key="asset.id"
+                          :value="asset.id"
+                        >
+                          {{ asset.name }}
+                        </option>
+                      </select>
+                    </div>
+
+                    <!-- Global Watermarks -->
+                    <div class="space-y-1.5">
+                      <div class="flex items-center justify-between">
+                        <label class="text-xs text-zinc-400">Watermarks (per aspect ratio)</label>
+                        <label class="flex items-center gap-1.5 text-xs text-zinc-500">
+                          <input
+                            type="checkbox"
+                            v-model="campaignForm.require_watermark"
+                            class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-800 text-violet-500 focus:ring-violet-500/50"
+                          />
+                          Required
+                        </label>
+                      </div>
+                      
+                      <!-- Watermark Selection Summary -->
+                      <div class="flex items-center gap-2">
+                        <div class="flex-1 px-3 py-2 bg-zinc-900/80 border border-zinc-700 rounded-lg">
+                          <div class="flex items-center gap-2 text-xs">
+                            <span class="text-zinc-400">Configured:</span>
+                            <span v-if="hasAnyWatermarkConfigured" class="text-violet-400">
+                              {{ getConfiguredWatermarkRatios() }}
+                            </span>
+                            <span v-else class="text-zinc-500">None</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          @click="openWatermarkPositionPicker"
+                          class="px-3 py-2 bg-violet-500/20 hover:bg-violet-500/30 text-violet-400 text-xs font-medium rounded-lg border border-violet-500/30 transition-colors"
+                        >
+                          Configure Positions
+                        </button>
+                      </div>
+                      <p class="text-[10px] text-zinc-500">
+                        Set watermark images and positions for each aspect ratio (16:9, 9:16, 1:1, 4:5)
+                      </p>
+                    </div>
+                  </div>
+
                   <!-- Cover Image -->
                   <div class="space-y-1.5 sm:space-y-2">
                     <label class="block text-xs sm:text-sm font-medium text-zinc-300">Cover Image</label>
@@ -752,11 +860,19 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Watermark Position Picker -->
+    <WatermarkPositionPicker
+      :show="showWatermarkPositionPicker"
+      :settings="campaignForm.global_watermark_settings || undefined"
+      @close="showWatermarkPositionPicker = false"
+      @save="handleWatermarkSettingsSave"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted, watch } from 'vue';
 import {
   Megaphone, Plus, DollarSign, Wallet, Users, Eye, Pencil, MoreVertical,
   Play, Pause, CheckCircle, Trash2, Loader2, User, Check, X,
@@ -784,6 +900,7 @@ import { listOrganizationCreatorProfiles, type ServerOrganizationCreatorProfile 
 import { listOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
 import { CLIPPER_PLATFORMS, PAYMENT_METHOD_TYPES } from '@/services/clipperProfileApi';
 import { useToast } from '@/composables/useToast';
+import WatermarkPositionPicker, { type CreatorWatermarkSettings } from '@/components/WatermarkPositionPicker.vue';
 
 const props = defineProps<{
   organizationId: string;
@@ -801,6 +918,7 @@ const showCampaignDialog = ref(false);
 const showDetailDialog = ref(false);
 const showDeleteDialog = ref(false);
 const showPaymentDialog = ref(false);
+const showWatermarkPositionPicker = ref(false);
 
 const editingCampaign = ref<Campaign | null>(null);
 const selectedCampaign = ref<Campaign | null>(null);
@@ -842,7 +960,15 @@ const campaignForm = reactive({
   payment_methods: [] as string[],
   cover_image_url: '',
   starts_at: '',
-  ends_at: ''
+  ends_at: '',
+  // Global assets
+  global_intro_id: null as number | null,
+  global_outro_id: null as number | null,
+  global_watermarks: {} as Record<string, any>,
+  global_watermark_settings: null as CreatorWatermarkSettings | null,
+  require_watermark: false,
+  require_intro: false,
+  require_outro: false
 });
 
 const getPlatformIcon = (platform: string) => {
@@ -1032,6 +1158,39 @@ const toggleCreatorProfile = (profileId: number) => {
   }
 };
 
+const setWatermark = (aspectRatio: string, value: string) => {
+  if (value && value !== 'null') {
+    campaignForm.global_watermarks[aspectRatio] = parseInt(value);
+  } else {
+    delete campaignForm.global_watermarks[aspectRatio];
+  }
+};
+
+// Watermark position picker helpers
+const hasAnyWatermarkConfigured = computed(() => {
+  if (!campaignForm.global_watermark_settings) return false;
+  const settings = campaignForm.global_watermark_settings;
+  return ['16:9', '9:16', '1:1', '4:5'].some(ratio => settings[ratio as keyof CreatorWatermarkSettings] !== null);
+});
+
+const getConfiguredWatermarkRatios = () => {
+  if (!campaignForm.global_watermark_settings) return '';
+  const settings = campaignForm.global_watermark_settings;
+  const configured = ['16:9', '9:16', '1:1', '4:5'].filter(
+    ratio => settings[ratio as keyof CreatorWatermarkSettings] !== null
+  );
+  return configured.join(', ');
+};
+
+const openWatermarkPositionPicker = () => {
+  showWatermarkPositionPicker.value = true;
+};
+
+const handleWatermarkSettingsSave = (settings: CreatorWatermarkSettings) => {
+  campaignForm.global_watermark_settings = settings;
+  showWatermarkPositionPicker.value = false;
+};
+
 const openCreateDialog = async () => {
   editingCampaign.value = null;
   coverImagePreview.value = '';
@@ -1048,7 +1207,14 @@ const openCreateDialog = async () => {
     payment_methods: ['paypal'],
     cover_image_url: '',
     starts_at: '',
-    ends_at: ''
+    ends_at: '',
+    global_intro_id: null,
+    global_outro_id: null,
+    global_watermarks: {},
+    global_watermark_settings: null,
+    require_watermark: false,
+    require_intro: false,
+    require_outro: false
   });
   showCampaignDialog.value = true;
   await loadCreatorProfilesAndAssets();
@@ -1070,7 +1236,14 @@ const editCampaign = async (campaign: Campaign) => {
     payment_methods: [...campaign.payment_methods],
     cover_image_url: campaign.cover_image_url || '',
     starts_at: campaign.starts_at ? campaign.starts_at.slice(0, 16) : '',
-    ends_at: campaign.ends_at ? campaign.ends_at.slice(0, 16) : ''
+    ends_at: campaign.ends_at ? campaign.ends_at.slice(0, 16) : '',
+    global_intro_id: campaign.global_intro_id || null,
+    global_outro_id: campaign.global_outro_id || null,
+    global_watermarks: campaign.global_watermarks || {},
+    global_watermark_settings: (campaign.global_watermarks as unknown as CreatorWatermarkSettings) || null,
+    require_watermark: campaign.require_watermark || false,
+    require_intro: campaign.require_intro || false,
+    require_outro: campaign.require_outro || false
   });
   showCampaignDialog.value = true;
   await loadCreatorProfilesAndAssets();
@@ -1091,7 +1264,13 @@ const saveCampaign = async () => {
       payment_methods: campaignForm.payment_methods,
       cover_image_url: campaignForm.cover_image_url || undefined,
       starts_at: campaignForm.starts_at || undefined,
-      ends_at: campaignForm.ends_at || undefined
+      ends_at: campaignForm.ends_at || undefined,
+      global_intro_id: campaignForm.global_intro_id,
+      global_outro_id: campaignForm.global_outro_id,
+      global_watermarks: campaignForm.global_watermark_settings || campaignForm.global_watermarks,
+      require_watermark: campaignForm.require_watermark,
+      require_intro: campaignForm.require_intro,
+      require_outro: campaignForm.require_outro
     };
 
     let response;

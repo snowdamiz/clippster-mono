@@ -14,6 +14,7 @@ export async function createClip(
     introId?: string;
     outroId?: string;
     thumbnailPath?: string;
+    campaignId?: number;
   }
 ): Promise<string> {
   const db = await getDatabase();
@@ -22,7 +23,7 @@ export async function createClip(
   const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO clips (id, project_id, name, file_path, built_thumbnail_path, duration, start_time, end_time, order_index, intro_id, outro_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO clips (id, project_id, name, file_path, built_thumbnail_path, duration, start_time, end_time, order_index, intro_id, outro_id, campaign_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       projectId,
@@ -35,6 +36,7 @@ export async function createClip(
       options?.orderIndex || null,
       options?.introId || null,
       options?.outroId || null,
+      options?.campaignId || null,
       userId,
       now,
       now,
@@ -48,6 +50,15 @@ export async function getClip(id: string): Promise<Clip | null> {
   const db = await getDatabase();
   const result = await db.select<Clip[]>('SELECT * FROM clips WHERE id = ?', [id]);
   return result[0] || null;
+}
+
+export async function getClipCampaignId(clipId: string): Promise<number | null> {
+  const db = await getDatabase();
+  const result = await db.select<{ campaign_id: number | null }[]>(
+    'SELECT campaign_id FROM clips WHERE id = ?',
+    [clipId]
+  );
+  return result[0]?.campaign_id || null;
 }
 
 export async function getAllClips(): Promise<Clip[]> {
