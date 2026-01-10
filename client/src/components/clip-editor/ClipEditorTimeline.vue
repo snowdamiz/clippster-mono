@@ -1239,76 +1239,94 @@
             <div
               v-for="(track, trackIndex) in audioTracks"
               :key="track.id"
-              class="flex items-center h-12 relative"
+              class="flex items-center relative transition-all duration-200"
               :class="{
                 'bg-emerald-500/10 ring-2 ring-emerald-500/40 ring-inset':
                   isDragging && dragInfo?.type === 'audio' && dragInfo?.targetTrackOrder === track.trackOrder,
+                'h-6': track.isHidden,
+                'h-12': !track.isHidden,
+                'opacity-50': track.isHidden,
+                'opacity-40': !track.isHidden && (track.isMuted || (hasAnySoloedAudioTrack && !track.isSolo)),
               }"
             >
               <div
                 class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-emerald-500"
               >
-                <!-- Track type icon and label -->
-                <div class="flex items-center gap-2 mb-1">
-                  <div class="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
-                    <Music :size="11" class="text-emerald-400" />
+                <!-- Hidden view: single row with icon, name, and show button -->
+                <div v-if="track.isHidden" class="flex items-center gap-1.5">
+                  <div class="w-4 h-4 rounded bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                    <Music :size="9" class="text-emerald-400" />
                   </div>
-                  <span class="font-medium text-white/60 truncate text-[10px] max-w-[60px]">{{ track.name }}</span>
-                </div>
-                <!-- Track controls row -->
-                <div class="flex items-center gap-0.5 text-white/40">
-                  <!-- Drag handle for track reordering -->
-                  <div
-                    class="p-0.5 cursor-grab hover:text-white active:cursor-grabbing"
-                    title="Drag to reorder track"
-                    @mousedown="(e) => onTrackReorderStart(e, 'audio', track.id, track.trackOrder ?? trackIndex)"
-                  >
-                    <GripVertical :size="11" />
-                  </div>
-                  <button
-                    @click.stop="toggleTrackCollapse('audio', track.id)"
-                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
-                    :title="isTrackCollapsed('audio', track.id) ? 'Expand' : 'Collapse'"
-                  >
-                    <ChevronRight v-if="isTrackCollapsed('audio', track.id)" :size="11" />
-                    <ChevronDown v-else :size="11" />
-                  </button>
-                  <button
-                    @click.stop="emit('toggleAudioLock', track.id)"
-                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
-                    :title="track.isLocked ? 'Unlock' : 'Lock'"
-                    :class="{ 'text-emerald-400 bg-emerald-500/15': track.isLocked }"
-                  >
-                    <Lock v-if="track.isLocked" :size="11" />
-                    <Unlock v-else :size="11" />
-                  </button>
+                  <span class="font-medium text-white/60 truncate text-[9px] flex-1 min-w-0">{{ track.name }}</span>
                   <button
                     @click.stop="emit('toggleAudioHidden', track.id)"
-                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
-                    :title="track.isHidden ? 'Show' : 'Hide'"
-                    :class="{ 'text-emerald-400 bg-emerald-500/15': track.isHidden }"
+                    class="p-0.5 rounded hover:bg-white/10 transition-colors text-emerald-400 bg-emerald-500/15 flex-shrink-0"
+                    title="Show"
                   >
-                    <EyeOff v-if="track.isHidden" :size="11" />
-                    <Eye v-else :size="11" />
-                  </button>
-                  <button
-                    @click.stop="emit('toggleAudioMute', track.id)"
-                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
-                    :title="track.isMuted ? 'Unmute' : 'Mute'"
-                    :class="{ 'text-emerald-400 bg-emerald-500/15': track.isMuted }"
-                  >
-                    <VolumeX v-if="track.isMuted" :size="11" />
-                    <Volume2 v-else :size="11" />
-                  </button>
-                  <button
-                    @click.stop="emit('toggleAudioSolo', track.id)"
-                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
-                    :title="track.isSolo ? 'Unsolo' : 'Solo'"
-                    :class="{ 'text-amber-400 bg-amber-500/15': track.isSolo }"
-                  >
-                    <Headphones :size="11" />
+                    <EyeOff :size="10" />
                   </button>
                 </div>
+                <!-- Normal view: full controls -->
+                <template v-else>
+                  <!-- Track type icon and label -->
+                  <div class="flex items-center gap-2 mb-1">
+                    <div class="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
+                      <Music :size="11" class="text-emerald-400" />
+                    </div>
+                    <div class="track-label-text-container min-w-0 flex-1 overflow-hidden" :title="track.name">
+                      <span class="track-label-text font-medium text-white/60 text-[10px] whitespace-nowrap">
+                        <span>{{ track.name }}</span>
+                        <span class="track-label-text-duplicate" aria-hidden="true">{{ track.name }}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <!-- Track controls row -->
+                  <div class="flex items-center gap-0.5 text-white/40">
+                    <!-- Drag handle for track reordering -->
+                    <div
+                      class="p-0.5 cursor-grab hover:text-white active:cursor-grabbing"
+                      title="Drag to reorder track"
+                      @mousedown="(e) => onTrackReorderStart(e, 'audio', track.id, track.trackOrder ?? trackIndex)"
+                    >
+                      <GripVertical :size="11" />
+                    </div>
+                    <button
+                      @click.stop="emit('toggleAudioLock', track.id)"
+                      class="p-0.5 rounded hover:bg-white/10 transition-colors"
+                      :title="track.isLocked ? 'Unlock' : 'Lock'"
+                      :class="{ 'text-emerald-400 bg-emerald-500/15': track.isLocked }"
+                    >
+                      <Lock v-if="track.isLocked" :size="11" />
+                      <Unlock v-else :size="11" />
+                    </button>
+                    <button
+                      @click.stop="emit('toggleAudioHidden', track.id)"
+                      class="p-0.5 rounded hover:bg-white/10 transition-colors"
+                      :title="track.isHidden ? 'Show' : 'Hide'"
+                      :class="{ 'text-emerald-400 bg-emerald-500/15': track.isHidden }"
+                    >
+                      <EyeOff v-if="track.isHidden" :size="11" />
+                      <Eye v-else :size="11" />
+                    </button>
+                    <button
+                      @click.stop="emit('toggleAudioMute', track.id)"
+                      class="p-0.5 rounded hover:bg-white/10 transition-colors"
+                      :title="track.isMuted ? 'Unmute' : 'Mute'"
+                      :class="{ 'text-emerald-400 bg-emerald-500/15': track.isMuted }"
+                    >
+                      <VolumeX v-if="track.isMuted" :size="11" />
+                      <Volume2 v-else :size="11" />
+                    </button>
+                    <button
+                      @click.stop="emit('toggleAudioSolo', track.id)"
+                      class="p-0.5 rounded hover:bg-white/10 transition-colors"
+                      :title="track.isSolo ? 'Unsolo' : 'Solo'"
+                      :class="{ 'text-amber-400 bg-amber-500/15': track.isSolo }"
+                    >
+                      <Headphones :size="11" />
+                    </button>
+                  </div>
+                </template>
               </div>
               <div
                 :ref="(el) => setSegmentRef(el, 'audio', track.id)"
@@ -1317,8 +1335,20 @@
               >
                 <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
 
+                <!-- Hidden state: show simplified bar -->
+                <div v-if="track.isHidden" class="absolute inset-x-0 top-1 bottom-1 pointer-events-none">
+                  <div
+                    class="absolute top-1/2 -translate-y-1/2 h-1 rounded-full bg-emerald-500/15"
+                    :style="{
+                      left: `${(track.startTime / duration) * 100}%`,
+                      width: `${((track.endTime - track.startTime) / duration) * 100}%`,
+                    }"
+                  ></div>
+                </div>
+
                 <!-- Render audio track as visual segments that split at video segment boundaries -->
                 <template
+                  v-if="!track.isHidden"
                   v-for="(visualSeg, segIdx) in getAudioVisualSegments(track)"
                   :key="`${track.id}-vis-${segIdx}`"
                 >
@@ -1950,6 +1980,8 @@
         intensity: number;
         isEnabled: boolean;
       }>;
+      // Video track mute state from parent
+      isVideoMuted?: boolean;
     }>(),
     {
       audioGainDb: 0,
@@ -1970,6 +2002,7 @@
       regions: () => [],
       clipTransitions: () => [],
       clipEffects: () => [],
+      isVideoMuted: false,
     }
   );
 
@@ -2163,6 +2196,11 @@
     return props.tracks.filter((t) => t.type === 'audio').sort((a, b) => a.orderIndex - b.orderIndex);
   });
 
+  // Computed: Check if any audio track has solo enabled (for visual dimming of other tracks)
+  const hasAnySoloedAudioTrack = computed(() => {
+    return props.audioTracks.some((t) => t.isSolo);
+  });
+
   // Computed: detect transitions between overlapping sources in editor mode
   const sourceTransitions = computed<VideoEditorTransition[]>(() => {
     if (!props.editorMode || props.videoSources.length < 2) {
@@ -2203,10 +2241,23 @@
     isHidden: false,
   });
 
+  // Sync videoTrackState.isMuted with prop from parent
+  watch(
+    () => props.isVideoMuted,
+    (newValue) => {
+      videoTrackState.isMuted = newValue;
+    },
+    { immediate: true }
+  );
+
   function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
+    // Emit event to parent for actual functionality (parent will update prop)
+    if (prop === 'isMuted') {
+      emit('toggleVideoMute', 'main');
+      return; // Don't toggle locally - parent will update via prop
+    }
+    // For non-mute properties, toggle locally
     videoTrackState[prop] = !videoTrackState[prop];
-    // Optionally, emit an event to notify the parent component
-    // emit('videoTrackStateChanged', videoTrackState);
   }
 
   // Zoom system: 0% = fit-to-width (full video visible), positive % = zoomed in
@@ -2596,6 +2647,8 @@
     trackId: string;
     originalOrder: number;
     startY: number;
+    lastEmittedOrder: number;
+    maxOrder: number;
   } | null>(null);
 
   // Trim preview state - shows frame time during resize
@@ -4952,11 +5005,16 @@
     e.preventDefault();
     e.stopPropagation();
 
+    // Calculate max order for clamping based on track type
+    const maxOrder = trackType === 'audio' ? Math.max(0, props.audioTracks.length - 1) : 0; // Overlay tracks use layers, not order
+
     trackReorderState.value = {
       trackType,
       trackId,
       originalOrder: currentOrder,
       startY: e.clientY,
+      lastEmittedOrder: currentOrder,
+      maxOrder,
     };
 
     document.addEventListener('mousemove', onTrackReorderMove);
@@ -4969,18 +5027,21 @@
   function onTrackReorderMove(e: MouseEvent) {
     if (!trackReorderState.value) return;
 
-    // Calculate how many track positions to move based on Y delta
+    // Calculate total delta from the ORIGINAL start position (never update startY)
     const deltaY = e.clientY - trackReorderState.value.startY;
     const trackHeight = 48; // Approximate track height
     const positionDelta = Math.round(deltaY / trackHeight);
 
-    if (positionDelta !== 0) {
-      const newOrder = trackReorderState.value.originalOrder + positionDelta;
-      // Emit reorder event for live preview
-      emit('reorderTrack', trackReorderState.value.trackType, trackReorderState.value.trackId, newOrder);
-      // Update start position for next delta calculation
-      trackReorderState.value.startY = e.clientY;
-      trackReorderState.value.originalOrder = newOrder;
+    // Calculate new order from the ORIGINAL order (never update originalOrder)
+    const rawNewOrder = trackReorderState.value.originalOrder + positionDelta;
+
+    // Clamp to valid range before emitting
+    const clampedOrder = Math.max(0, Math.min(trackReorderState.value.maxOrder, rawNewOrder));
+
+    // Only emit if the clamped order differs from the last emitted value
+    if (clampedOrder !== trackReorderState.value.lastEmittedOrder) {
+      emit('reorderTrack', trackReorderState.value.trackType, trackReorderState.value.trackId, clampedOrder);
+      trackReorderState.value.lastEmittedOrder = clampedOrder;
     }
   }
 
@@ -5881,68 +5942,17 @@
       newStartTime = props.duration - duration;
     }
 
-    // Apply snapping for video sources
-    // Source track (track_index 0): ALWAYS snap to nearest segment edge, no free positioning
-    // Layers (track_index > 0): Optional snap within threshold
-    if (targetTrackIndex === 0) {
-      // Source track: Force snap to nearest segment edge
-      const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
-      if (snapResult.didSnap) {
-        newStartTime = snapResult.startTime;
-        newEndTime = snapResult.endTime;
-        activeSnapTime.value = snapResult.snapTime;
-        activeSnapTrackType.value = snapResult.snapTrackType;
-      } else {
-        // If no snap found, find the closest segment edge and snap to it
-        const targets = getSnapTargets(dragSourceInfo.value.sourceId);
-        let closestTarget: { time: number; distance: number; trackType?: string } | null = null;
-
-        // Check both start and end edges
-        for (const target of targets) {
-          if (target.type === 'segment-start' || target.type === 'segment-end') {
-            const distanceToStart = Math.abs(newStartTime - target.time);
-            const distanceToEnd = Math.abs(newEndTime - target.time);
-
-            if (!closestTarget || distanceToStart < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToStart, trackType: target.trackType };
-            }
-            if (distanceToEnd < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToEnd, trackType: target.trackType };
-            }
-          }
-        }
-
-        // Snap to closest edge
-        if (closestTarget) {
-          // Determine if we should snap start or end
-          const distanceToStart = Math.abs(newStartTime - closestTarget.time);
-          const distanceToEnd = Math.abs(newEndTime - closestTarget.time);
-
-          if (distanceToStart < distanceToEnd) {
-            // Snap start edge
-            newStartTime = closestTarget.time;
-            newEndTime = newStartTime + duration;
-          } else {
-            // Snap end edge
-            newEndTime = closestTarget.time;
-            newStartTime = newEndTime - duration;
-          }
-          activeSnapTime.value = closestTarget.time;
-          activeSnapTrackType.value = closestTarget.trackType || null;
-        }
-      }
+    // Apply snapping for video sources - optional snap within threshold for all tracks
+    // Both Source track (track_index 0) and Layers use the same threshold-based snapping
+    const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
+    if (snapResult.didSnap) {
+      newStartTime = snapResult.startTime;
+      newEndTime = snapResult.endTime;
+      activeSnapTime.value = snapResult.snapTime;
+      activeSnapTrackType.value = snapResult.snapTrackType;
     } else {
-      // Layers: Optional snap within threshold (existing behavior)
-      const snapResult = applySnapToSegment(newStartTime, newEndTime, dragSourceInfo.value.sourceId);
-      if (snapResult.didSnap) {
-        newStartTime = snapResult.startTime;
-        newEndTime = snapResult.endTime;
-        activeSnapTime.value = snapResult.snapTime;
-        activeSnapTrackType.value = snapResult.snapTrackType;
-      } else {
-        activeSnapTime.value = null;
-        activeSnapTrackType.value = null;
-      }
+      activeSnapTime.value = null;
+      activeSnapTrackType.value = null;
     }
 
     // Calculate snap-adjusted deltaX for visual transform
@@ -5982,70 +5992,6 @@
       if (finalEndTime > props.duration) {
         finalEndTime = props.duration;
         finalStartTime = props.duration - duration;
-      }
-
-      console.log(
-        '[onSourceDragEnd] Initial position:',
-        finalStartTime,
-        '-',
-        finalEndTime,
-        'targetTrackIndex:',
-        dragSourceInfo.value.targetTrackIndex
-      );
-
-      // Source track (track_index 0): Force final snap to nearest segment edge (ignore threshold)
-      if (dragSourceInfo.value.targetTrackIndex === 0) {
-        const duration = finalEndTime - finalStartTime;
-        const targets = getSnapTargets(dragSourceInfo.value.sourceId);
-        console.log('[onSourceDragEnd] Source track - finding closest from', targets.length, 'targets');
-        let closestTarget: { time: number; distance: number; edge: 'start' | 'end' } | null = null;
-
-        // Find the absolute closest segment edge (no threshold)
-        for (const target of targets) {
-          if (target.type === 'segment-start' || target.type === 'segment-end') {
-            const distanceToStart = Math.abs(finalStartTime - target.time);
-            const distanceToEnd = Math.abs(finalEndTime - target.time);
-
-            if (!closestTarget || distanceToStart < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToStart, edge: 'start' };
-            }
-            if (distanceToEnd < closestTarget.distance) {
-              closestTarget = { time: target.time, distance: distanceToEnd, edge: 'end' };
-            }
-          }
-        }
-
-        console.log('[onSourceDragEnd] Closest target:', closestTarget);
-
-        if (closestTarget) {
-          if (closestTarget.edge === 'start') {
-            // Snap our start edge to the target
-            finalStartTime = closestTarget.time;
-            finalEndTime = finalStartTime + duration;
-            console.log(
-              '[onSourceDragEnd] Snapped START to',
-              closestTarget.time,
-              'new position:',
-              finalStartTime,
-              '-',
-              finalEndTime
-            );
-          } else {
-            // Snap our end edge to the target
-            finalEndTime = closestTarget.time;
-            finalStartTime = finalEndTime - duration;
-            console.log(
-              '[onSourceDragEnd] Snapped END to',
-              closestTarget.time,
-              'new position:',
-              finalStartTime,
-              '-',
-              finalEndTime
-            );
-          }
-        } else {
-          console.log('[onSourceDragEnd] NO TARGETS FOUND - keeping position:', finalStartTime, '-', finalEndTime);
-        }
       }
 
       // Set dragPreview to final position BEFORE emitting and clearing isDraggingSource
@@ -8880,5 +8826,51 @@
     50% {
       opacity: 1;
     }
+  }
+
+  /* Track label text scrolling marquee for long names */
+  .track-label-text-container {
+    position: relative;
+    max-width: 60px;
+  }
+
+  .track-label-text {
+    display: inline-flex;
+    gap: 24px; /* Gap between original and duplicate text */
+  }
+
+  /* Hide duplicate by default */
+  .track-label-text-duplicate {
+    display: none;
+  }
+
+  /* On hover, show duplicate and animate */
+  .track-label-text-container:hover .track-label-text-duplicate {
+    display: inline;
+  }
+
+  .track-label-text-container:hover .track-label-text {
+    animation: marquee-scroll 3s linear infinite;
+  }
+
+  @keyframes marquee-scroll {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(calc(-50% - 12px)); /* Account for half the gap */
+    }
+  }
+
+  /* Mask to fade edges for smooth scroll appearance */
+  .track-label-text-container::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    background: linear-gradient(to right, transparent, #0e0e10);
+    pointer-events: none;
   }
 </style>

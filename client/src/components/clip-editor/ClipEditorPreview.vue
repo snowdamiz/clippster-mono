@@ -301,11 +301,11 @@
   import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2, Check } from 'lucide-vue-next';
   import TrackRenderer from './TrackRenderer.vue';
   import { AnimationService } from '@/services/AnimationService';
-  import type { 
-    TextOverlay, 
-    Sticker, 
-    FilterSettings, 
-    ManualFramingConfigs, 
+  import type {
+    TextOverlay,
+    Sticker,
+    FilterSettings,
+    ManualFramingConfigs,
     ClipWatermark,
     ClipWatermarkRatioConfig,
     ClipSubtitleSettings,
@@ -406,6 +406,10 @@
       tracks?: Track[];
       // Selected item IDs for unified renderer
       selectedItemIds?: Set<string>;
+      // User-controlled video mute state (from timeline mute button)
+      isVideoMuted?: boolean;
+      // Audio tracks to check if audio was extracted from video
+      audioTracks?: Array<{ id: string; name?: string; linkedSourceId?: string; startTime: number; endTime: number }>;
     }>(),
     {
       watermarks: () => [],
@@ -421,6 +425,8 @@
       videoSources: () => [],
       tracks: () => [],
       selectedItemIds: () => new Set(),
+      isVideoMuted: false,
+      audioTracks: () => [],
     }
   );
 
@@ -464,13 +470,13 @@
   function handleTrackItemResizeStart(event: MouseEvent, item: TimelineItem, handle: 'tl' | 'tr' | 'bl' | 'br') {
     // Map unified resize to legacy handlers
     if (item.type === 'sticker') {
-      const sticker = props.stickers.find(s => s.id === item.id);
+      const sticker = props.stickers.find((s) => s.id === item.id);
       if (sticker) startStickerResize(event, sticker);
     } else if (item.type === 'watermark') {
-      const watermark = props.watermarks.find(w => w.id === item.id);
+      const watermark = props.watermarks.find((w) => w.id === item.id);
       if (watermark) startWatermarkResize(event, watermark);
     } else if (item.type === 'text') {
-      const side = (handle === 'tr' || handle === 'br') ? 'right' : 'left';
+      const side = handle === 'tr' || handle === 'br' ? 'right' : 'left';
       startResize(event, item.id, side);
     }
   }
@@ -498,7 +504,7 @@
     stickerRotateState.centerX = centerX;
     stickerRotateState.centerY = centerY;
     stickerRotateState.startRotation = currentRotation;
-    
+
     // Calculate initial angle
     const startAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * (180 / Math.PI);
     stickerRotateState.startAngle = startAngle;
@@ -578,6 +584,40 @@
   watch(preloadVideoRef, (el) => {
     if (el) el.playbackRate = playbackRate.value;
   });
+
+  // Watch for video mute state changes from parent (timeline mute button)
+  watch(
+    () => props.isVideoMuted,
+    (muted) => {
+      // Sync internal mute state with prop
+      isMuted.value = muted;
+      // Use updateVideoMuteState to properly handle both user mute and auto-mute from extracted audio
+      const currentTime = videoRef.value?.currentTime ?? 0;
+      updateVideoMuteState(currentTime);
+    }
+  );
+
+  // Watch for video sources changes to update auto-mute state when audio is extracted
+  watch(
+    () => props.videoSources,
+    () => {
+      // When videoSources change (e.g., audio_extracted flag set), update mute state
+      const currentTime = videoRef.value?.currentTime ?? 0;
+      updateVideoMuteState(currentTime);
+    },
+    { deep: true }
+  );
+
+  // Watch for audio tracks changes (for clip mode) to update auto-mute state
+  watch(
+    () => props.audioTracks,
+    () => {
+      // When audioTracks change (e.g., audio extracted from main video), update mute state
+      const currentTime = videoRef.value?.currentTime ?? 0;
+      updateVideoMuteState(currentTime);
+    },
+    { deep: true }
+  );
 
   // Track the preload src when it changes (avoid side effects in computed)
   // IMPORTANT: Also reset preloadVideoReady when src changes, so we don't swap to stale content
@@ -1005,9 +1045,7 @@
     // Exclude the main video track (index 0) because it is rendered by the specialized main video player
     // to support seamless looping, preloading, and complex crossfades that TrackRenderer doesn't handle yet.
     // In TimelineAdapter, video tracks have IDs starting with 'track-video-'
-    return props.tracks
-      .filter(t => t.id !== 'track-video-0')
-      .sort((a, b) => a.orderIndex - b.orderIndex);
+    return props.tracks.filter((t) => t.id !== 'track-video-0').sort((a, b) => a.orderIndex - b.orderIndex);
   });
 
   // Track selection state
@@ -1015,14 +1053,14 @@
   const effectiveSelectedItemIds = computed(() => {
     // Start with explicitly selected items from prop
     const set = new Set<string>(props.selectedItemIds);
-    
+
     // Add currently interacting items
     if (dragState.id) set.add(dragState.id);
     if (resizeState.id) set.add(resizeState.id);
     if (stickerResizeState.id) set.add(stickerResizeState.id);
     if (watermarkResizeState.id) set.add(watermarkResizeState.id);
     if (stickerRotateState.id) set.add(stickerRotateState.id);
-    
+
     return set;
   });
 
@@ -1030,25 +1068,25 @@
   const unifiedScaleOverrides = computed(() => {
     return {
       ...localStickerScales.value,
-      ...localWatermarkScales.value
+      ...localWatermarkScales.value,
     };
   });
 
   const unifiedRotationOverrides = computed(() => {
     return {
-      ...localStickerRotations.value
+      ...localStickerRotations.value,
     };
   });
 
   const unifiedWidthOverrides = computed(() => {
     return {
-      ...localDragWidths.value
+      ...localDragWidths.value,
     };
   });
 
   const unifiedPositionOverrides = computed(() => {
     return {
-      ...localDragPositions.value
+      ...localDragPositions.value,
     };
   });
 
@@ -1101,7 +1139,7 @@
       }
       // TODO: Handle generic video PiP drag
     } else if (item.type === 'watermark') {
-         if (item.originalData) startWatermarkDrag(e, item.originalData);
+      if (item.originalData) startWatermarkDrag(e, item.originalData);
     }
   }
 
@@ -2222,7 +2260,7 @@
     if (dragState.type && dragState.id && dragState.type !== 'subtitle') {
       // Update local position for immediate feedback
       localDragPositions.value[dragState.id] = { x: newX / 100, y: newY / 100 }; // Store as 0-1 normalized
-      
+
       emit('updateOverlayPosition', dragState.type, dragState.id, { x: newX, y: newY });
     }
   }
@@ -2231,7 +2269,7 @@
     // Emit completion event for undo/redo before clearing state
     if (dragState.type && dragState.id && dragState.type !== 'subtitle') {
       emit('overlayDragEnd', dragState.type, dragState.id);
-      
+
       // Clear local position override
       delete localDragPositions.value[dragState.id];
     }
@@ -2480,17 +2518,50 @@
   }
 
   // Check if current playback position is in a segment with extracted audio and mute accordingly
+  // Also respects user's explicit mute setting from the timeline
+  // Works in both editor mode (checks video sources) and clip mode (checks audio tracks)
   function updateVideoMuteState(currentTime: number) {
-    if (!videoRef.value || !props.videoSources || props.videoSources.length === 0) return;
+    if (!videoRef.value) return;
 
-    // Find which video source is currently playing based on timeline position
+    // If user has explicitly muted, always mute
+    if (props.isVideoMuted) {
+      videoRef.value.muted = true;
+      if (preloadVideoRef.value) {
+        preloadVideoRef.value.muted = true;
+      }
+      return;
+    }
+
     let shouldMute = false;
-    for (const source of props.videoSources) {
-      if (currentTime >= source.start_time && currentTime < source.end_time) {
-        // Check if this source has audio extracted (use snake_case as returned from DB)
-        if ((source as any).audio_extracted === true) {
+
+    if (props.editorMode) {
+      // Editor mode: check if current video source has audio_extracted flag
+      if (props.videoSources && props.videoSources.length > 0) {
+        for (const source of props.videoSources) {
+          if (currentTime >= source.start_time && currentTime < source.end_time) {
+            // Check if this source has audio extracted (use snake_case as returned from DB)
+            // Database stores as 1/0, so use truthy check instead of strict equality
+            if ((source as any).audio_extracted) {
+              shouldMute = true;
+              break;
+            }
+          }
+        }
+      }
+    } else {
+      // Clip mode: check if any audio track was extracted from the main video
+      // In clip mode, linkedSourceId may be 'main' or undefined (for older tracks)
+      // Also check track name for "Extracted" pattern as fallback
+      if (props.audioTracks && props.audioTracks.length > 0) {
+        const hasExtractedAudio = props.audioTracks.some((track) => {
+          // Check linkedSourceId first (for tracks created with the link)
+          if (track.linkedSourceId === 'main') return true;
+          // Fallback: check if track name indicates extraction
+          const trackName = (track as any).name || '';
+          return trackName.includes('Extracted') || trackName.includes('(Audio)');
+        });
+        if (hasExtractedAudio) {
           shouldMute = true;
-          break;
         }
       }
     }
@@ -2538,10 +2609,11 @@
     if (videoRef.value && !isDraggingProgress.value) {
       const currentVideoTime = videoRef.value.currentTime;
 
-      // In editor mode, check if current source has audio extracted and mute accordingly
-      if (props.editorMode) {
-        updateVideoMuteState(currentVideoTime);
+      // Check if video should be muted (works in both editor and clip mode)
+      updateVideoMuteState(currentVideoTime);
 
+      // In editor mode, handle time updates differently
+      if (props.editorMode) {
         // Only emit time updates from main video when it's the active video (index 0)
         // When activeVideoIndex === 1, the preload video is active and handles time updates
         if (activeVideoIndex.value === 0) {
@@ -3123,7 +3195,7 @@
 
     // Get the scale factor for this container size
     const scale = overlayScaleFactor.value;
-    
+
     // Scale all size-related properties
     // We only apply the base container scale. Animation scale is handled by TrackRenderer transform.
     const finalFontSize = Math.round((overlayStyle?.fontSize || 24) * scale);
@@ -3138,7 +3210,7 @@
 
     const style: Record<string, string> = {
       // Layout/Transform/Opacity handled by TrackRenderer via getItemStyle
-      
+
       // Text Content Styles
       fontFamily: overlayStyle?.fontFamily || 'sans-serif',
       fontSize: `${finalFontSize}px`,
@@ -3182,7 +3254,6 @@
 
     return style;
   }
-
 
   // Get the position, scale, and rotation for a sticker, respecting per-ratio configs
   function getStickerConfigForRatio(sticker: Sticker): {

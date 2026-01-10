@@ -93,6 +93,8 @@
                   :active-transition="activeTransition"
                   :video-sources="videoSources"
                   :tracks="timelineTracks"
+                  :is-video-muted="isVideoMuted"
+                  :audio-tracks="audioTracks"
                   @time-update="onPreviewTimeUpdate"
                   @toggle-play="togglePlay"
                   @video-element-ready="onVideoElementReady"
@@ -130,8 +132,8 @@
               <div v-if="selectedKeyframe" class="p-4 border-b border-white/10 bg-[#121212]">
                 <div class="flex justify-between items-center mb-2">
                   <h3 class="text-xs font-semibold text-white/70 uppercase tracking-wider">Keyframe Editor</h3>
-                  <button 
-                    @click="selectedKeyframe = null" 
+                  <button
+                    @click="selectedKeyframe = null"
                     class="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white transition-colors"
                     title="Close Inspector"
                   >
@@ -185,7 +187,7 @@
                   @update-track-db="updateTrackDb"
                   @update-track-pan="updateTrackPan"
                   @add-keyframe="addKeyframe"
-                  @update-audio-effects="(effects) => audioEffects = effects"
+                  @update-audio-effects="(effects) => (audioEffects = effects)"
                 />
 
                 <!-- Overlays Tab (Text + Stickers) -->
@@ -344,6 +346,7 @@
               :selected-marker-id="selectedMarkerId"
               :clip-transitions="clipTransitions"
               :clip-effects="clipEffects"
+              :is-video-muted="isVideoMuted"
               @seek="seekTo"
               @undo="performUndo"
               @redo="performRedo"
@@ -393,6 +396,7 @@
               @ungroup-items="handleUngroupItems"
               @reorder-track="handleReorderTrack"
               @toggle-track-collapse="handleToggleTrackCollapse"
+              @toggle-video-mute="handleToggleVideoMute"
               @toggle-audio-lock="handleToggleAudioLock"
               @toggle-audio-mute="handleToggleAudioMute"
               @toggle-audio-solo="handleToggleAudioSolo"
@@ -417,7 +421,11 @@
       </div>
 
       <!-- Speed Curve Editor Dialog -->
-      <div v-if="showSpeedCurveEditor" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeSpeedCurveEditor">
+      <div
+        v-if="showSpeedCurveEditor"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+        @click.self="closeSpeedCurveEditor"
+      >
         <div class="bg-[#1a1a1a] rounded-lg border border-white/10 shadow-2xl w-[600px] max-w-[90vw]">
           <SpeedCurveEditor
             v-if="speedCurveEditorSourceId"
@@ -425,8 +433,12 @@
             :duration="getSpeedCurveDuration()"
             :speed-keyframes="speedCurveKeyframes"
             @close="closeSpeedCurveEditor"
-            @add-keyframe="(time: number, speed: number) => handleAddSpeedKeyframe(speedCurveEditorSourceId!, time, speed)"
-            @update-keyframe="(kfId: string, updates: any) => handleUpdateSpeedKeyframe(speedCurveEditorSourceId!, kfId, updates)"
+            @add-keyframe="
+              (time: number, speed: number) => handleAddSpeedKeyframe(speedCurveEditorSourceId!, time, speed)
+            "
+            @update-keyframe="
+              (kfId: string, updates: any) => handleUpdateSpeedKeyframe(speedCurveEditorSourceId!, kfId, updates)
+            "
             @delete-keyframe="(kfId: string) => handleDeleteSpeedKeyframe(speedCurveEditorSourceId!, kfId)"
             @apply-preset="handleApplySpeedPreset"
           />
@@ -566,7 +578,16 @@
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { ensureAssetDownloaded } from '@/services/orgAssetSync';
-  import type { VideoEditorSource, VideoEditorTab, SourceItem, VideoEditorTransition, IntroOutro, ClipTransition, ClipEffect, AudioTrackEffect } from '@/types';
+  import type {
+    VideoEditorSource,
+    VideoEditorTab,
+    SourceItem,
+    VideoEditorTransition,
+    IntroOutro,
+    ClipTransition,
+    ClipEffect,
+    AudioTrackEffect,
+  } from '@/types';
   import { calculateCrossfadeOpacity } from '@/types';
 
   // Disable attribute inheritance since this component renders a Teleport root
@@ -781,6 +802,7 @@
   const activeTab = ref<ClipEditorTab>('media');
   const activeEditorTab = ref<VideoEditorTab>('media'); // For editor mode
   const isPlaying = ref(false);
+  const isVideoMuted = ref(false);
   const previewTime = ref(0);
 
   // Video editor mode state
@@ -843,7 +865,7 @@
   const effects = ref<Effect[]>([]);
   const watermarks = ref<ClipWatermark[]>([]);
   const filterSegments = ref<FilterSegment[]>([]);
-  
+
   // Effects & Transitions
   const clipTransitions = ref<ClipTransition[]>([]);
   const clipEffects = ref<ClipEffect[]>([]);
@@ -1158,7 +1180,7 @@
         duration: editorDuration.value,
       }).tracks;
     }
-    
+
     // In clip mode, we rely on ClipEditorTimeline's legacy rendering for now
     return [];
   });
@@ -1425,12 +1447,14 @@
     if (trimSegments.value.length === 0) {
       // No segments defined, use the full clip as a single segment
       const duration = props.clipEndTime - props.clipStartTime;
-      return [{ 
-        start_time: props.clipStartTime, 
-        end_time: props.clipEndTime, 
-        duration, 
-        transcript: '' 
-      }];
+      return [
+        {
+          start_time: props.clipStartTime,
+          end_time: props.clipEndTime,
+          duration,
+          transcript: '',
+        },
+      ];
     }
 
     // Convert relative segment times back to absolute times
@@ -1716,7 +1740,13 @@
   }
 
   // Handle adding project media (from MediaTab)
-  async function onAddProjectMedia(media: { id: string; media_type: string; file_path: string; file_name: string; duration: number | null }) {
+  async function onAddProjectMedia(media: {
+    id: string;
+    media_type: string;
+    file_path: string;
+    file_name: string;
+    duration: number | null;
+  }) {
     if (media.media_type === 'video') {
       // Add video to timeline as a source
       await onAddSource({
@@ -2269,7 +2299,15 @@
             trackOrder: t.track_order,
             isMuted: t.is_muted === 1,
             isSolo: t.is_solo === 1,
+            linkedSourceId: t.source_id, // 'main' if extracted from main video
           }));
+        }
+
+        // Set up audio elements for any new tracks that don't have one yet
+        for (const track of audioTracks.value) {
+          if (!audioElements.value.has(track.id)) {
+            await setupAudioElement(track);
+          }
         }
       };
 
@@ -2353,8 +2391,8 @@
       const rippleCommand = new RippleEditCommand(editorMode.value, {
         type: data.type,
         itemId: data.id,
-        editId: editorMode.value ? (videoEditorEditId.value || undefined) : undefined,
-        clipId: !editorMode.value ? (props.clipId || undefined) : undefined,
+        editId: editorMode.value ? videoEditorEditId.value || undefined : undefined,
+        clipId: !editorMode.value ? props.clipId || undefined : undefined,
         projectId: editorProjectId.value || undefined,
         newStartTime: data.newStartTime,
         newEndTime: data.newEndTime,
@@ -2366,18 +2404,18 @@
 
       await commandHistory.executeCommand(rippleCommand);
       undoRedoTrigger.value++;
-      
+
       // Optimistic update for UI responsiveness
       if (editorMode.value && data.type === 'source') {
-        const source = videoSources.value.find(s => s.id === data.id);
+        const source = videoSources.value.find((s) => s.id === data.id);
         if (source) {
           source.start_time = data.newStartTime;
           source.end_time = data.newEndTime;
-          
+
           // Shift other sources optimistically
           // This should match the logic in the command
           const threshold = Math.min(originalStartTime, originalEndTime);
-          videoSources.value.forEach(s => {
+          videoSources.value.forEach((s) => {
             if (s.id !== data.id && s.start_time >= threshold) {
               s.start_time += data.delta;
               s.end_time += data.delta;
@@ -2388,7 +2426,6 @@
 
       await reloadCallback(); // Ensure consistent state
       triggerAutoSave();
-
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to execute ripple edit:', error);
     }
@@ -2412,7 +2449,7 @@
       if (editorMode.value && data.type === 'source') {
         const leftSource = videoSources.value.find((s) => s.id === data.leftItemId);
         const rightSource = videoSources.value.find((s) => s.id === data.rightItemId);
-        
+
         if (leftSource) {
           leftSourceSnapshot = { end: leftSource.end_time, trimEnd: leftSource.trim_end };
         }
@@ -2440,8 +2477,8 @@
         type: data.type,
         leftItemId: data.leftItemId,
         rightItemId: data.rightItemId,
-        editId: editorMode.value ? (videoEditorEditId.value || undefined) : undefined,
-        clipId: !editorMode.value ? (props.clipId || undefined) : undefined,
+        editId: editorMode.value ? videoEditorEditId.value || undefined : undefined,
+        clipId: !editorMode.value ? props.clipId || undefined : undefined,
         projectId: editorProjectId.value || undefined,
         newRollTime: data.newRollTime,
         originalRollTime: data.originalRollTime,
@@ -2478,7 +2515,6 @@
 
       await reloadCallback(); // Ensure consistent state
       triggerAutoSave();
-
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to execute roll edit:', error);
     }
@@ -2512,8 +2548,8 @@
       const slipCommand = new SlipEditCommand(editorMode.value, {
         type: data.type,
         itemId: data.itemId,
-        editId: editorMode.value ? (videoEditorEditId.value || undefined) : undefined,
-        clipId: !editorMode.value ? (props.clipId || undefined) : undefined,
+        editId: editorMode.value ? videoEditorEditId.value || undefined : undefined,
+        clipId: !editorMode.value ? props.clipId || undefined : undefined,
         delta: data.delta,
         originalTrimStart: data.originalTrimStart,
         originalTrimEnd: data.originalTrimEnd,
@@ -2556,7 +2592,7 @@
     else if (data.type === 'sticker') item = stickers.value.find((i) => i.id === data.itemId);
     else if (data.type === 'watermark') item = watermarks.value.find((i) => i.id === data.itemId);
     else if (data.type === 'audio') item = audioTracks.value.find((i) => i.id === data.itemId);
-    
+
     if (item && item.keyframes) {
       const keyframe = item.keyframes.find((k: Keyframe) => k.id === data.keyframeId);
       if (keyframe) {
@@ -2564,9 +2600,9 @@
           id: data.keyframeId,
           itemId: data.itemId,
           type: data.type as any,
-          keyframe: { ...keyframe } // Copy to avoid direct mutation
+          keyframe: { ...keyframe }, // Copy to avoid direct mutation
         };
-        // Switch to the appropriate tab so the inspector makes sense in context, 
+        // Switch to the appropriate tab so the inspector makes sense in context,
         // or we can show it as an overlay/side panel.
         // For now, let's keep the current tab but show the inspector in a dedicated area or replace the tab content?
         // Better: Set a flag or use a computed property to show inspector INSTEAD of the tab content or alongside it.
@@ -2581,12 +2617,12 @@
 
   async function updateKeyframe(updates: Partial<TimelineKeyframe>) {
     if (!selectedKeyframe.value) return;
-    
+
     const { itemId, type, id } = selectedKeyframe.value;
-    
+
     // Update local state first
     selectedKeyframe.value.keyframe = { ...selectedKeyframe.value.keyframe, ...updates };
-    
+
     // Update the item's keyframes
     if (type === 'text') {
       const item = textOverlays.value.find((i) => i.id === itemId);
@@ -2633,9 +2669,9 @@
 
   async function deleteKeyframe() {
     if (!selectedKeyframe.value) return;
-    
+
     const { itemId, type, id } = selectedKeyframe.value;
-    
+
     if (type === 'text') {
       const item = textOverlays.value.find((i) => i.id === itemId);
       if (item && item.keyframes) {
@@ -2661,7 +2697,7 @@
         await updateAudioTrackLocal(itemId, { keyframes: newKeyframes });
       }
     }
-    
+
     selectedKeyframe.value = null;
   }
 
@@ -2706,7 +2742,7 @@
         await updateAudioTrackLocal(data.itemId, { keyframes: newKeyframes });
       }
     }
-    
+
     triggerAutoSave();
   }
 
@@ -2743,8 +2779,8 @@
           itemId: data.itemId,
           leftNeighborId: data.leftNeighborId,
           rightNeighborId: data.rightNeighborId,
-          editId: editorMode.value ? (videoEditorEditId.value || undefined) : undefined,
-          clipId: !editorMode.value ? (props.clipId || undefined) : undefined,
+          editId: editorMode.value ? videoEditorEditId.value || undefined : undefined,
+          clipId: !editorMode.value ? props.clipId || undefined : undefined,
           projectId: editorProjectId.value || undefined,
           delta: data.delta,
           originalStartTime: data.originalStartTime,
@@ -2765,23 +2801,24 @@
           // Specifically, it changes the OUT point of the left clip and the IN point of the right clip
           // while keeping the middle clip's duration constant but moving its position.
           // Wait, Standard Slide tool:
-          // "The Slide tool moves a clip in the timeline, but keeps the duration of the clip the same. 
+          // "The Slide tool moves a clip in the timeline, but keeps the duration of the clip the same.
           // The adjacent clips grow or shrink to accommodate the move."
-          
+
           // Update middle clip position
           source.start_time += data.delta;
           source.end_time += data.delta;
-          
+
           // Update left neighbor end time (and trim_end)
           leftNeighbor.end_time += data.delta;
           // Assuming left neighbor trim_end needs adjustment if it's not the last clip
           // If left neighbor is just extending/shrinking, we adjust its trim_end
           if (leftNeighbor.trim_end !== null) {
-             leftNeighbor.trim_end += data.delta;
+            leftNeighbor.trim_end += data.delta;
           } else {
-             // If implicit, we might need to set it explicit or just leave it if it's raw video?
-             // Usually we set it.
-             leftNeighbor.trim_end = (leftNeighbor.source_duration || (leftNeighbor.end_time - leftNeighbor.start_time)) + data.delta;
+            // If implicit, we might need to set it explicit or just leave it if it's raw video?
+            // Usually we set it.
+            leftNeighbor.trim_end =
+              (leftNeighbor.source_duration || leftNeighbor.end_time - leftNeighbor.start_time) + data.delta;
           }
 
           // Update right neighbor start time (and trim_start)
@@ -3981,7 +4018,7 @@
       // Reset crossfade state when seeking
       crossfadeStarted.value = false;
       lastCrossfadeTransitionId.value = null;
-      
+
       // IMPORTANT: Reset shouldResumePlayback at start of seek
       // Only set to true if video was actually playing (prevents auto-play bugs)
       const actuallyPlaying = videoElement.value ? !videoElement.value.paused : false;
@@ -4002,7 +4039,7 @@
           // Different source - update the source ID and reset video state
           const oldSourceId = currentVideoSourceId.value;
           const oldSource = oldSourceId ? videoSources.value.find((s) => s.id === oldSourceId) : null;
-          
+
           // Use the shouldResumePlayback ref that was set above
           const wasPlaying = shouldResumePlayback.value;
 
@@ -4095,7 +4132,7 @@
           } else {
             // Different video file - the watch on editorVideoSrc will handle the source change
             // Add a safety timeout in case the watch fails to complete
-            // Note: We intentionally do NOT auto-play in the safety timeout - 
+            // Note: We intentionally do NOT auto-play in the safety timeout -
             // if we reach this point, something went wrong and auto-play would be unexpected
             setTimeout(() => {
               if (isSeeking.value && pendingSeekTime.value !== null && videoElement.value) {
@@ -4453,9 +4490,13 @@
     const track = audioTracks.value.find((t) => t.id === trackId);
     if (!gainNode || !track) return;
 
+    // Check if any track is soloed
+    const hasSoloedTrack = audioTracks.value.some((t) => t.isSolo);
+    const isMutedBySolo = hasSoloedTrack && !track.isSolo;
+
     const dbValue = trackDbValues.value[trackId] ?? 0;
     const linearGain = Math.pow(10, dbValue / 20);
-    gainNode.gain.value = track.isMuted ? 0 : track.volume * linearGain;
+    gainNode.gain.value = track.isMuted || isMutedBySolo ? 0 : track.volume * linearGain;
   }
 
   // Sync audio tracks with video playback
@@ -4473,13 +4514,24 @@
       relativeTime = videoTime - props.clipStartTime;
     }
 
+    // Check if any track is soloed
+    const hasSoloedTrack = audioTracks.value.some((t) => t.isSolo);
+
     audioTracks.value.forEach((track) => {
       const audio = audioElements.value.get(track.id);
       if (!audio) return;
 
+      // Determine if track should be muted based on solo state
+      // If any track is soloed, only soloed tracks should play
+      const isMutedBySolo = hasSoloedTrack && !track.isSolo;
+
       // Check if this track should be playing at current time
       const shouldPlay =
-        relativeTime >= track.startTime && relativeTime <= track.endTime && isPlaying.value && !track.isMuted;
+        relativeTime >= track.startTime &&
+        relativeTime <= track.endTime &&
+        isPlaying.value &&
+        !track.isMuted &&
+        !isMutedBySolo;
 
       // Calculate the audio position within its range
       const audioTime = relativeTime - track.startTime;
@@ -4509,6 +4561,15 @@
   function applyFades(track: AudioTrack, currentTime: number) {
     const gainNode = gainNodes.value.get(track.id);
     if (!gainNode) return;
+
+    // Check if track is muted or muted by solo
+    const hasSoloedTrack = audioTracks.value.some((t) => t.isSolo);
+    const isMutedBySolo = hasSoloedTrack && !track.isSolo;
+
+    if (track.isMuted || isMutedBySolo) {
+      gainNode.gain.value = 0;
+      return;
+    }
 
     const dbValue = trackDbValues.value[track.id] ?? 0;
     const baseLinearGain = Math.pow(10, dbValue / 20);
@@ -4543,6 +4604,36 @@
       audioContext.value.close();
       audioContext.value = null;
     }
+  }
+
+  // Immediately apply mute/solo state to all audio tracks
+  // This ensures audio stops/starts immediately when mute/solo is toggled
+  function applyMuteSoloState() {
+    const hasSoloedTrack = audioTracks.value.some((t) => t.isSolo);
+
+    audioTracks.value.forEach((track) => {
+      const audio = audioElements.value.get(track.id);
+      const gainNode = gainNodes.value.get(track.id);
+      if (!audio || !gainNode) return;
+
+      const isMutedBySolo = hasSoloedTrack && !track.isSolo;
+      const shouldBeMuted = track.isMuted || isMutedBySolo;
+
+      // Update gain immediately
+      if (shouldBeMuted) {
+        gainNode.gain.value = 0;
+        // Pause the audio element to stop playback
+        if (!audio.paused) {
+          audio.pause();
+        }
+      } else {
+        // Restore gain based on volume and dB settings
+        const dbValue = trackDbValues.value[track.id] ?? 0;
+        const linearGain = Math.pow(10, dbValue / 20);
+        gainNode.gain.value = track.volume * linearGain;
+        // Note: We don't auto-resume here - syncAudioWithVideo will handle playback start
+      }
+    });
   }
 
   async function updateAudioTrackLocal(trackId: string, updates: Partial<AudioTrack>) {
@@ -4593,18 +4684,20 @@
       Object.assign(track, updates);
     } else {
       // For non-time changes or clip mode, update directly
-      const updateData = {
-        name: updates.name,
-        start_time: updates.startTime,
-        end_time: updates.endTime,
-        volume: updates.volume,
-        pan: updates.pan,
-        fade_in: updates.fadeIn,
-        fade_out: updates.fadeOut,
-        track_order: updates.trackOrder,
-        is_muted: updates.isMuted ? 1 : 0,
-        is_solo: updates.isSolo ? 1 : 0,
-      };
+      // Only include fields that are actually being updated
+      const updateData: Record<string, any> = {};
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.startTime !== undefined) updateData.start_time = updates.startTime;
+      if (updates.endTime !== undefined) updateData.end_time = updates.endTime;
+      if (updates.volume !== undefined) updateData.volume = updates.volume;
+      if (updates.pan !== undefined) updateData.pan = updates.pan;
+      if (updates.fadeIn !== undefined) updateData.fade_in = updates.fadeIn;
+      if (updates.fadeOut !== undefined) updateData.fade_out = updates.fadeOut;
+      if (updates.trackOrder !== undefined) updateData.track_order = updates.trackOrder;
+      if (updates.isMuted !== undefined) updateData.is_muted = updates.isMuted ? 1 : 0;
+      if (updates.isSolo !== undefined) updateData.is_solo = updates.isSolo ? 1 : 0;
+      if (updates.isLocked !== undefined) updateData.is_locked = updates.isLocked ? 1 : 0;
+      if (updates.isHidden !== undefined) updateData.is_hidden = updates.isHidden ? 1 : 0;
 
       // Use appropriate database function based on mode
       if (editorMode.value) {
@@ -4616,9 +4709,14 @@
       Object.assign(track, updates);
     }
 
-    // Update audio gain if volume or mute changed
-    if (updates.volume !== undefined || updates.isMuted !== undefined) {
-      updateAudioGain(trackId);
+    // Update audio gain if volume, mute, or solo changed
+    if (updates.volume !== undefined || updates.isMuted !== undefined || updates.isSolo !== undefined) {
+      // For solo changes, we need to update gain for ALL tracks since solo affects other tracks
+      if (updates.isSolo !== undefined) {
+        audioTracks.value.forEach((t) => updateAudioGain(t.id));
+      } else {
+        updateAudioGain(trackId);
+      }
     }
   }
 
@@ -7113,7 +7211,7 @@
   // Speed Ramping
   function handleAddSpeedKeyframe(sourceId: string, time: number, speed: number) {
     if (!editorMode.value) return;
-    const source = videoSources.value.find(s => s.id === sourceId);
+    const source = videoSources.value.find((s) => s.id === sourceId);
     if (!source) return;
 
     // Add keyframe to source data (would be persisted to DB)
@@ -7130,9 +7228,9 @@
   }
 
   function handleOpenSpeedCurveEditor(sourceId: string) {
-    const source = videoSources.value.find(s => s.id === sourceId);
+    const source = videoSources.value.find((s) => s.id === sourceId);
     if (!source) return;
-    
+
     speedCurveEditorSourceId.value = sourceId;
     // Load keyframes for this source
     // speedCurveKeyframes.value = source.speed_keyframes || [];
@@ -7146,8 +7244,8 @@
 
   function getSpeedCurveDuration(): number {
     if (!speedCurveEditorSourceId.value) return 0;
-    const source = videoSources.value.find(s => s.id === speedCurveEditorSourceId.value);
-    return source ? (source.end_time - source.start_time) : 0;
+    const source = videoSources.value.find((s) => s.id === speedCurveEditorSourceId.value);
+    return source ? source.end_time - source.start_time : 0;
   }
 
   function handleApplySpeedPreset(keyframes: any[]) {
@@ -7351,14 +7449,14 @@
       startTime,
       endTime,
       label: label || 'Region',
-      color: color || '#4F9DFF' // Default blue
+      color: color || '#4F9DFF', // Default blue
     };
     regions.value.push(newRegion);
     console.log('[ClipEditorDialog] Added region:', newRegion);
   }
 
   function handleUpdateRegion(regionId: string, updates: any) {
-    const index = regions.value.findIndex(r => r.id === regionId);
+    const index = regions.value.findIndex((r) => r.id === regionId);
     if (index !== -1) {
       regions.value[index] = { ...regions.value[index], ...updates };
       console.log('[ClipEditorDialog] Updated region:', regions.value[index]);
@@ -7366,7 +7464,7 @@
   }
 
   function handleDeleteRegion(regionId: string) {
-    const index = regions.value.findIndex(r => r.id === regionId);
+    const index = regions.value.findIndex((r) => r.id === regionId);
     if (index !== -1) {
       regions.value.splice(index, 1);
       console.log('[ClipEditorDialog] Deleted region:', regionId);
@@ -7376,23 +7474,23 @@
   // Track Management
   function handleReorderTrack(trackType: 'audio' | 'overlay', trackId: string, newOrder: number) {
     console.log('[ClipEditorDialog] Reorder track:', { trackType, trackId, newOrder });
-    
+
     if (trackType === 'audio') {
-      const track = audioTracks.value.find(t => t.id === trackId);
+      const track = audioTracks.value.find((t) => t.id === trackId);
       if (!track) return;
-      
+
       const oldOrder = track.trackOrder;
       if (oldOrder === newOrder) return; // No change
-      
+
       // Clamp newOrder to valid range
       const maxOrder = audioTracks.value.length - 1;
       const clampedNewOrder = Math.max(0, Math.min(maxOrder, newOrder));
-      
+
       // Shift other tracks to make room
       // If moving down (oldOrder < newOrder): shift tracks in between up
       // If moving up (oldOrder > newOrder): shift tracks in between down
       const updates: { id: string; trackOrder: number }[] = [];
-      
+
       for (const t of audioTracks.value) {
         if (t.id === trackId) {
           // The track being moved
@@ -7412,10 +7510,10 @@
           }
         }
       }
-      
+
       // Sort audioTracks by trackOrder for consistent rendering
       audioTracks.value.sort((a, b) => a.trackOrder - b.trackOrder);
-      
+
       // Persist all changes to DB
       for (const update of updates) {
         updateAudioTrack(update.id, { track_order: update.trackOrder });
@@ -7432,32 +7530,48 @@
     // Save to user preferences
   }
 
+  function handleToggleVideoMute() {
+    isVideoMuted.value = !isVideoMuted.value;
+    // The mute state is passed to ClipEditorPreview via isVideoMuted prop
+    // The preview component will handle muting both main and preload video elements
+  }
+
   function handleToggleAudioLock(trackId: string) {
-    const track = audioTracks.value.find(t => t.id === trackId);
+    const track = audioTracks.value.find((t) => t.id === trackId);
     if (track) {
       const newLockedState = !track.isLocked;
       updateAudioTrackLocal(trackId, { isLocked: newLockedState });
     }
   }
 
-  function handleToggleAudioMute(trackId: string) {
-    const track = audioTracks.value.find(t => t.id === trackId);
+  async function handleToggleAudioMute(trackId: string) {
+    const track = audioTracks.value.find((t) => t.id === trackId);
     if (track) {
       const newMutedState = !track.isMuted;
+      // Update local state immediately for responsive UI
+      track.isMuted = newMutedState;
+      // Apply mute state immediately before DB update
+      applyMuteSoloState();
+      // Then persist to database (don't await to keep UI responsive)
       updateAudioTrackLocal(trackId, { isMuted: newMutedState });
     }
   }
 
-  function handleToggleAudioSolo(trackId: string) {
-    const track = audioTracks.value.find(t => t.id === trackId);
+  async function handleToggleAudioSolo(trackId: string) {
+    const track = audioTracks.value.find((t) => t.id === trackId);
     if (track) {
       const newSoloState = !track.isSolo;
+      // Update local state immediately for responsive UI
+      track.isSolo = newSoloState;
+      // Apply solo state immediately to all tracks before DB update
+      applyMuteSoloState();
+      // Then persist to database (don't await to keep UI responsive)
       updateAudioTrackLocal(trackId, { isSolo: newSoloState });
     }
   }
 
   function handleToggleAudioHidden(trackId: string) {
-    const track = audioTracks.value.find(t => t.id === trackId);
+    const track = audioTracks.value.find((t) => t.id === trackId);
     if (track) {
       const newHiddenState = !track.isHidden;
       updateAudioTrackLocal(trackId, { isHidden: newHiddenState });
@@ -7470,11 +7584,11 @@
 
   async function handleDetectBeatMarkers(audioTrackId?: string) {
     console.log('[ClipEditorDialog] Detecting beat markers for:', audioTrackId || 'main video');
-    
+
     let url = '';
-    
+
     if (audioTrackId) {
-      const track = audioTracksWithStreamingUrls.value.find(t => t.id === audioTrackId);
+      const track = audioTracksWithStreamingUrls.value.find((t) => t.id === audioTrackId);
       if (track) {
         url = track.filePath;
       }
@@ -7482,7 +7596,7 @@
       // Use main video audio
       url = effectiveVideoSrc.value || '';
     }
-    
+
     if (!url) {
       console.warn('[ClipEditorDialog] No audio source found for beat detection');
       return;
@@ -7492,29 +7606,28 @@
       // Create offline context to decode audio
       // We assume standard sample rate, or use the context's default
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      
+
       console.log('[ClipEditorDialog] Fetching audio for analysis:', url);
       const response = await fetch(url);
       const arrayBuffer = await response.arrayBuffer();
-      
+
       console.log('[ClipEditorDialog] Decoding audio data...');
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      
+
       const channelData = audioBuffer.getChannelData(0); // Use first channel
       const sampleRate = audioBuffer.sampleRate;
-      
+
       console.log('[ClipEditorDialog] Sending to worker for beat detection...');
       const beats = await detectBeats(channelData, sampleRate, 0.5); // 0.5 sensitivity
-      
+
       console.log('[ClipEditorDialog] Beat detection complete. Found beats:', beats.length);
-      
+
       // Convert to markers
       beatMarkers.value = beats.map((b, index) => ({
         id: `beat-${Date.now()}-${index}`,
         time: b.time,
-        confidence: b.confidence
+        confidence: b.confidence,
       }));
-      
     } catch (error) {
       console.error('[ClipEditorDialog] Beat detection failed:', error);
     }
