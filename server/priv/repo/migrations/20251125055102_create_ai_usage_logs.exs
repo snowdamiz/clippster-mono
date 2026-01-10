@@ -6,7 +6,7 @@ defmodule ClippsterServer.Repo.Migrations.CreateAiUsageLogs do
       add :user_id, references(:users, on_delete: :nothing), null: false
       add :project_id, :string
       add :provider, :string, null: false # "openrouter", "whisper"
-      add :model, :string                 # "openai/gpt-4o-mini", "whisper-1"
+      add :model, :string                 # "z-ai/glm-4.7, "whisper-1"
       add :input_tokens, :integer
       add :output_tokens, :integer
       add :total_tokens, :integer

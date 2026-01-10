@@ -655,8 +655,16 @@
   async function onDetectClipsConfirmed(
     _promptId: string,
     promptContent: string,
-    organizationId: number | null = null
+    organizationId: number | null = null,
+    multimodal: boolean = false
   ) {
+    console.log('[ProjectWorkspaceDialog] === DETECT CLIPS CONFIRMED ===');
+    console.log('[ProjectWorkspaceDialog] _promptId:', _promptId);
+    console.log('[ProjectWorkspaceDialog] promptContent length:', promptContent?.length);
+    console.log('[ProjectWorkspaceDialog] organizationId:', organizationId);
+    console.log('[ProjectWorkspaceDialog] multimodal:', multimodal);
+    console.log('[ProjectWorkspaceDialog] arguments count:', arguments.length);
+    
     if (!props.project) {
       console.error('[ProjectWorkspaceDialog] No project available');
       return;
@@ -734,6 +742,7 @@
           overlapSeconds: 30,
           forceReprocess: false,
           organizationId: organizationId,
+          multimodal: multimodal,
         });
 
         if (result.success) {

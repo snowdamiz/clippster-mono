@@ -3864,7 +3864,8 @@
   async function onProjectDetectClipsConfirmed(
     _promptId: string,
     promptContent: string,
-    organizationId: number | null = null
+    organizationId: number | null = null,
+    multimodal: boolean = false
   ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
@@ -3912,6 +3913,7 @@
               overlapSeconds: 30,
               forceReprocess: false,
               organizationId: organizationId,
+              multimodal: multimodal,
             });
 
             if (result.success) {
