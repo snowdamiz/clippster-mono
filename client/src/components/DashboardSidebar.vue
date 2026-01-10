@@ -528,7 +528,7 @@
 
   /* ===== Footer ===== */
   .sidebar-footer {
-    padding: 0.25rem;
+    padding: 0.3rem;
     border-top: 1px solid var(--sidebar-border);
     display: flex;
     flex-direction: column;
@@ -551,7 +551,7 @@
     align-items: center;
     gap: 0.5rem;
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: 0.5rem 0.5rem;
     border-radius: 6px;
     background: transparent;
     border: none;
@@ -583,7 +583,7 @@
 
   .sidebar-user__avatar-text {
     font-size: 0.625rem;
-    font-weight: 600;
+    font-weight: 800;
     color: #0a0a0b;
     text-transform: uppercase;
   }

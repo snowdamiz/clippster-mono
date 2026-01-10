@@ -31,7 +31,7 @@
         </div>
       </div>
       <div class="page-header__actions">
-        <slot name="actions"></slot>
+        <!-- <slot name="actions"></slot> -->
       </div>
     </header>
     <!-- Content -->
@@ -64,8 +64,6 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.8rem;
-    /* padding: 3rem 1.5rem 1rem 1.5rem; */
-    /* margin: -4rem -1.5rem 1.5rem -1.5rem; */
     border-bottom: 1px solid var(--page-header-border);
     background-color: var(--sidebar-bg);
   }
@@ -73,7 +71,7 @@
   .page-header__left {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 0.3rem;
     margin-left: 0.1rem;
   }
 
@@ -85,14 +83,13 @@
     width: 30px;
     height: 30px;
     flex-shrink: 0;
-    background-color: var(--page-icon-bg);
     border-radius: 8px;
     transition: background-color 150ms ease;
   }
 
   .page-header__icon-img {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     filter: invert(0);
   }
 

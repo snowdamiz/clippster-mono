@@ -721,7 +721,7 @@
   .titlebar-divider {
     width: 1px;
     height: 16px;
-    background-color: #3c3c3c;
+    background-color: var(--sidebar-border);
     margin-right: 6px;
   }
 
@@ -742,38 +742,38 @@
     left: 0;
     right: 0;
     z-index: 99999;
-    border-bottom: 1px solid #3c3c3c;
+    border-bottom: 1px solid var(--sidebar-border);
     box-sizing: border-box;
   }
 
   .titlebar-dark {
     background: #0a0a0b;
-    border-bottom-color: #333;
+    border-bottom-color: var(--sidebar-border);
   }
 
   /* Linux-specific styling */
   .titlebar-linux {
     background: #0a0a0b;
-    border-bottom: 1px solid #3c3c3c;
+    border-bottom: 1px solid var(--sidebar-border);
     height: 32px;
   }
 
   .titlebar-linux.titlebar-dark {
     background: #0a0a0b;
-    border-bottom-color: #333;
+    border-bottom-color: var(--sidebar-border);
   }
 
   /* macOS-specific styling */
   .titlebar-macos {
     background: #0a0a0b;
-    border-bottom: 1px solid #3c3c3c;
+    border-bottom: 1px solid var(--sidebar-border);
     height: 32px;
     margin-right: -12px;
   }
 
   .titlebar-macos.titlebar-dark {
     background: #0a0a0b;
-    border-bottom-color: #333;
+    border-bottom-color: var(--sidebar-border);
   }
 
   .titlebar-drag-region {
@@ -946,12 +946,12 @@
   /* Windows-specific styling */
   .titlebar-windows {
     background: #0a0a0b;
-    border-bottom: 1px solid #3c3c3c;
+    border-bottom: 1px solid var(--sidebar-border);
   }
 
   .titlebar-windows.titlebar-dark {
     background: #0a0a0b;
-    border-bottom-color: #333;
+    border-bottom-color: var(--sidebar-border);
   }
 
   .titlebar-controls-windows {
@@ -1036,14 +1036,14 @@
   @media (prefers-color-scheme: dark) {
     .titlebar-macos:not(.titlebar-dark) {
       background: #0a0a0b;
-      border-bottom-color: #333;
+      border-bottom-color: var(--sidebar-border);
     }
   }
 
   @media (prefers-color-scheme: light) {
     .titlebar-macos:not(.titlebar-dark) {
       background: rgba(248, 248, 248, 0.9);
-      border-bottom-color: rgba(0, 0, 0, 0.15);
+      border-bottom-color: var(--sidebar-border);
     }
   }
 </style>
