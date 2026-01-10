@@ -788,6 +788,7 @@
   const videoServerPort = ref<number | null>(null);
   const isSeeking = ref(false); // Flag to prevent time update feedback loops
   const pendingSeekTime = ref<number | null>(null); // Time to seek to after video source changes
+  const shouldResumePlayback = ref(false); // Whether to resume playback after seek completes
   const currentVideoSourceId = ref<string | null>(null); // Track which source is loaded
   const transitionCanvasRef = ref<HTMLCanvasElement | null>(null); // Canvas for transition frame (fallback)
   const showTransitionFrame = ref(false); // Whether to show the transition frame overlay (fallback)
@@ -3980,6 +3981,11 @@
       // Reset crossfade state when seeking
       crossfadeStarted.value = false;
       lastCrossfadeTransitionId.value = null;
+      
+      // IMPORTANT: Reset shouldResumePlayback at start of seek
+      // Only set to true if video was actually playing (prevents auto-play bugs)
+      const actuallyPlaying = videoElement.value ? !videoElement.value.paused : false;
+      shouldResumePlayback.value = isPlaying.value && actuallyPlaying;
 
       // Find the source that contains this time
       // Sort sources to handle overlaps consistently (prefer earlier source)
@@ -3996,7 +4002,9 @@
           // Different source - update the source ID and reset video state
           const oldSourceId = currentVideoSourceId.value;
           const oldSource = oldSourceId ? videoSources.value.find((s) => s.id === oldSourceId) : null;
-          const wasPlaying = isPlaying.value;
+          
+          // Use the shouldResumePlayback ref that was set above
+          const wasPlaying = shouldResumePlayback.value;
 
           // Pause playback while switching sources to prevent the old video from continuing
           if (videoElement.value && !videoElement.value.paused) {
@@ -4087,17 +4095,14 @@
           } else {
             // Different video file - the watch on editorVideoSrc will handle the source change
             // Add a safety timeout in case the watch fails to complete
+            // Note: We intentionally do NOT auto-play in the safety timeout - 
+            // if we reach this point, something went wrong and auto-play would be unexpected
             setTimeout(() => {
               if (isSeeking.value && pendingSeekTime.value !== null && videoElement.value) {
                 console.warn('[seekTo] Safety timeout - applying pending seek directly');
                 videoElement.value.currentTime = pendingSeekTime.value;
                 pendingSeekTime.value = null;
                 isSeeking.value = false;
-
-                // Resume playback if it was playing
-                if (isPlaying.value) {
-                  videoElement.value.play().catch(() => {});
-                }
               }
             }, 3000);
           }
@@ -7527,7 +7532,9 @@
   function onVideoLoaded() {
     if (!editorMode.value || !videoElement.value) return;
 
-    const wasPlaying = isPlaying.value;
+    // Use shouldResumePlayback ref that was set at the start of seekTo
+    // This properly tracks whether video was playing before the seek started
+    const wasPlaying = shouldResumePlayback.value;
     const source = activeVideoSource.value;
 
     if (source) {
@@ -7561,9 +7568,10 @@
       }
     }
 
-    // Clear seeking flag
+    // Clear seeking flag and reset shouldResumePlayback
     setTimeout(() => {
       isSeeking.value = false;
+      shouldResumePlayback.value = false;
     }, 50);
   }
 

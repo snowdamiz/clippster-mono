@@ -1,17 +1,18 @@
 <template>
-  <div class="bg-[#0c0c0c] transition-all duration-300 ease-in-out">
-    <div class="pt-2 px-3 pb-1 flex flex-col max-h-[55vh] gap-2">
-      <!-- Timeline Header (compact, CapCut-like) -->
+  <div class="transition-all duration-300 ease-in-out h-full">
+    <div class="pt-2 px-3 pb-1 flex flex-col h-full gap-2">
+      <!-- Timeline Header - Redesigned CapCut Style -->
       <div class="flex items-center justify-between pr-2 flex-shrink-0 text-white/70 text-[12px]">
-        <div class="flex items-center gap-1.5">
-          <!-- Timeline Toolbar -->
-          <div class="flex items-center gap-1 bg-[#121212] rounded-md px-2 py-1 border border-white/[0.02]">
-            <!-- Tools -->
+        <div class="flex items-center gap-2">
+          <!-- Selection & Edit Tools Group -->
+          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
             <button
               @click="setTool('move')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isMoveTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isMoveTool 
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
+                  : 'text-white/50 hover:text-white hover:bg-white/8'
               ]"
               title="Move Tool (V)"
             >
@@ -20,8 +21,10 @@
             <button
               @click="setTool('razor')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isRazorTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isRazorTool 
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
+                  : 'text-white/50 hover:text-white hover:bg-white/8'
               ]"
               title="Razor Tool (C)"
             >
@@ -30,8 +33,10 @@
             <button
               @click="setTool('ripple')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isRippleTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isRippleTool 
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
+                  : 'text-white/50 hover:text-white hover:bg-white/8'
               ]"
               title="Ripple Edit (B)"
             >
@@ -40,8 +45,10 @@
             <button
               @click="setTool('roll')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isRollTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isRollTool 
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
+                  : 'text-white/50 hover:text-white hover:bg-white/8'
               ]"
               title="Roll Edit (N)"
             >
@@ -50,8 +57,10 @@
             <button
               @click="setTool('slip')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isSlipTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isSlipTool 
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
+                  : 'text-white/50 hover:text-white hover:bg-white/8'
               ]"
               title="Slip Tool (Y)"
             >
@@ -60,30 +69,32 @@
             <button
               @click="setTool('slide')"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
-                isSlideTool ? 'text-violet-300 bg-violet-500/20' : 'text-white/60 hover:text-white hover:bg-white/10'
+                'p-1.5 rounded-md transition-all duration-150',
+                isSlideTool 
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
+                  : 'text-white/50 hover:text-white hover:bg-white/8'
               ]"
               title="Slide Tool (U)"
             >
               <BoxSelect :size="14" />
             </button>
+          </div>
 
-            <div class="w-px h-5 bg-white/10 mx-1"></div>
-
-            <!-- Actions -->
+          <!-- Actions Group -->
+          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
             <button
               @click="performCutAtPlayhead"
-              class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-orange-300 hover:bg-orange-500/10"
+              class="p-1.5 rounded-md transition-all duration-150 text-orange-400/70 hover:text-orange-300 hover:bg-orange-500/15"
               title="Split at playhead (Ctrl+K)"
             >
-              <Scissors :size="14" class="opacity-50" />
+              <Scissors :size="14" />
               <span class="sr-only">Split</span>
             </button>
-            <div class="w-px h-5 bg-white/10 mx-1"></div>
+            <div class="w-px h-4 bg-white/8 mx-0.5"></div>
             <button
               @click="emit('undo')"
               :disabled="!canUndo"
-              class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-blue-300 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-blue-300 hover:bg-blue-500/15 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               title="Undo (Ctrl+Z)"
             >
               <Undo2 :size="14" />
@@ -91,12 +102,15 @@
             <button
               @click="emit('redo')"
               :disabled="!canRedo"
-              class="p-1.5 rounded-md transition-colors duration-150 text-white/60 hover:text-blue-300 hover:bg-blue-500/10 disabled:text-white/20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-blue-300 hover:bg-blue-500/15 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               title="Redo (Ctrl+Y)"
             >
               <Redo2 :size="14" />
             </button>
-            <div class="w-px h-5 bg-white/10 mx-1"></div>
+          </div>
+
+          <!-- Playback Controls Group -->
+          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
             <button
               @mousedown="startContinuousSeeking('reverse')"
               @mouseup="stopContinuousSeeking"
@@ -104,12 +118,12 @@
               @touchstart="startContinuousSeeking('reverse')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
+                'p-1.5 rounded-md transition-all duration-150',
                 isSeeking && seekDirection === 'reverse'
-                  ? 'text-amber-300 bg-amber-500/20'
-                  : 'text-white/60 hover:text-amber-300 hover:bg-amber-500/10',
+                  ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+                  : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
               ]"
-              :title="'Seek backward (← arrow key)'"
+              title="Seek backward (← arrow key)"
             >
               <Rewind :size="14" />
             </button>
@@ -120,29 +134,101 @@
               @touchstart="startContinuousSeeking('forward')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1.5 rounded-md transition-colors duration-150',
+                'p-1.5 rounded-md transition-all duration-150',
                 isSeeking && seekDirection === 'forward'
-                  ? 'text-amber-300 bg-amber-500/20'
-                  : 'text-white/60 hover:text-amber-300 hover:bg-amber-500/10',
+                  ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+                  : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
               ]"
-              :title="'Seek forward (→ arrow key)'"
+              title="Seek forward (→ arrow key)"
             >
               <FastForward :size="14" />
             </button>
           </div>
-          <!-- Zoom Controls -->
-          <div class="flex items-center gap-1 bg-[#121212] rounded-md px-2 py-1 border border-white/[0.02] relative group/zoom">
+        </div>
+        
+        <!-- Right Side Controls -->
+        <div class="flex items-center gap-2">
+          <!-- Snap Settings -->
+          <div class="relative group/snap">
+            <button
+              class="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border transition-all duration-150"
+              :class="snapEnabled 
+                ? 'text-violet-300 bg-violet-500/15 border-violet-500/30 shadow-[0_0_8px_rgba(139,92,246,0.15)]' 
+                : 'text-white/50 bg-[#161618] border-white/[0.04] hover:bg-white/8'"
+              @click="snapMenuOpen = !snapMenuOpen"
+            >
+              <Magnet :size="12" :class="snapEnabled ? 'text-violet-400' : 'text-white/40'" />
+              <span class="font-medium">Snap</span>
+              <ChevronDown :size="10" :class="snapEnabled ? 'text-violet-400/60' : 'text-white/30'" />
+            </button>
+            <!-- Snap options dropdown -->
+            <div
+              v-if="snapMenuOpen"
+              class="absolute right-0 top-full mt-1.5 bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 min-w-[190px] z-[100]"
+              @mouseleave="snapMenuOpen = false"
+            >
+              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">Snap Settings</div>
+              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
+                <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+                <span class="text-sm text-white/80">Enable Snapping</span>
+              </label>
+              <div class="h-px bg-white/8 my-1"></div>
+              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Snap To</div>
+              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
+                <input type="checkbox" v-model="snapPreferences.playhead" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+                <span class="text-sm text-white/80">Playhead</span>
+              </label>
+              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
+                <input type="checkbox" v-model="snapPreferences.segmentEdges" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+                <span class="text-sm text-white/80">Segment Edges</span>
+              </label>
+              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
+                <input type="checkbox" v-model="snapPreferences.markers" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+                <span class="text-sm text-white/80">Markers</span>
+              </label>
+              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
+                <input type="checkbox" v-model="snapPreferences.grid" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+                <span class="text-sm text-white/80">Grid (1s intervals)</span>
+              </label>
+              <div class="h-px bg-white/8 my-1"></div>
+              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Behavior</div>
+              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
+                <input type="checkbox" v-model="snapPreferences.magnetic" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+                <span class="text-sm text-white/80">Magnetic Timeline</span>
+              </label>
+              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
+                <input type="checkbox" v-model="frameSnapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+                <span class="text-sm text-white/80">Snap to Frames</span>
+              </label>
+            </div>
+          </div>
+          
+          <!-- Segment Count Badge -->
+          <span
+            v-if="sortedTrimSegments.length > 1"
+            class="text-[11px] text-violet-300 bg-violet-500/15 px-2.5 py-1.5 rounded-lg font-medium border border-violet-500/20"
+          >
+            {{ sortedTrimSegments.length }} segments
+          </span>
+          
+          <!-- Duration Badge -->
+          <span class="text-[11px] text-white/60 bg-[#161618] px-2.5 py-1.5 rounded-lg font-mono tabular-nums border border-white/[0.04]">
+            {{ formatTime(totalDuration) }}
+          </span>
+          
+          <!-- Zoom Controls Group (far right) -->
+          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04] relative group/zoom">
             <button
               @click="zoomOut"
               :disabled="zoomLevel <= MIN_ZOOM"
-              class="p-1 rounded-md transition-colors duration-150 text-white/60 hover:text-white hover:bg-white/10 disabled:text-white/20 disabled:cursor-not-allowed"
+              class="p-1 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/10 disabled:text-white/15 disabled:cursor-not-allowed"
               title="Zoom out"
             >
               <Minus :size="13" />
             </button>
             <button
               @click="zoomMenuOpen = !zoomMenuOpen"
-              class="text-[11px] text-white/60 font-mono tabular-nums min-w-[46px] text-center select-none px-1 hover:text-white transition-colors cursor-pointer"
+              class="text-[11px] text-white/70 font-mono tabular-nums min-w-[52px] text-center select-none px-1.5 py-0.5 rounded hover:bg-white/8 transition-colors cursor-pointer"
               title="Select zoom level"
             >
               {{ getZoomDisplayText() }}
@@ -151,164 +237,46 @@
             <!-- Zoom Presets Dropdown -->
             <div
               v-if="zoomMenuOpen"
-              class="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] z-[100]"
+              class="absolute top-full right-0 mt-1.5 bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 min-w-[150px] z-[100]"
               @mouseleave="zoomMenuOpen = false"
             >
-              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider">Zoom Presets</div>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10 flex items-center justify-between" @click="() => { zoomToFit(); zoomMenuOpen = false; }">
+              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">Zoom Presets</div>
+              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80" @click="() => { zoomToFit(); zoomMenuOpen = false; }">
                 <span>Fit to Screen</span>
-                <span class="text-white/30 text-xs">Z</span>
+                <span class="text-white/30 text-xs font-mono">Z</span>
               </button>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10 flex items-center justify-between" @click="() => { zoomToSelection(); zoomMenuOpen = false; }">
+              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80" @click="() => { zoomToSelection(); zoomMenuOpen = false; }">
                 <span>Fit Selection</span>
-                <span class="text-white/30 text-xs">⇧Z</span>
+                <span class="text-white/30 text-xs font-mono">⇧Z</span>
               </button>
-              <div class="h-px bg-white/10 my-1"></div>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10" @click="() => { zoomLevel = 1.0; zoomMenuOpen = false; }">
+              <div class="h-px bg-white/8 my-1"></div>
+              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80" @click="() => { zoomLevel = 1.0; zoomMenuOpen = false; }">
                 <span>100% (Baseline)</span>
               </button>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10" @click="() => { zoomLevel = 2.0; zoomMenuOpen = false; }">
+              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80" @click="() => { zoomLevel = 2.0; zoomMenuOpen = false; }">
                 <span>200%</span>
               </button>
-              <button class="w-full px-3 py-1.5 text-left text-sm hover:bg-white/10" @click="() => { zoomLevel = 5.0; zoomMenuOpen = false; }">
+              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80" @click="() => { zoomLevel = 5.0; zoomMenuOpen = false; }">
                 <span>500%</span>
               </button>
             </div>
 
             <button
               @click="zoomIn"
-              class="p-1 rounded-md transition-colors duration-150 text-white/60 hover:text-white hover:bg-white/10"
+              class="p-1 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/10"
               title="Zoom in"
             >
               <Plus :size="13" />
             </button>
           </div>
         </div>
-        <div class="flex items-center gap-1.5">
-          <!-- Snap Settings Dropdown -->
-          <div class="relative group/snap">
-            <button
-              class="flex items-center gap-1.5 text-[11px] bg-white/[0.04] px-2 py-1 rounded-md border border-white/10 hover:bg-white/[0.08] transition-colors"
-              :class="snapEnabled ? 'text-violet-300' : 'text-white/60'"
-              @click="snapMenuOpen = !snapMenuOpen"
-            >
-              <Magnet :size="12" :class="snapEnabled ? 'text-violet-400' : 'text-white/40'" />
-              <span>Snap</span>
-              <ChevronDown :size="10" class="text-white/40" />
-            </button>
-            <!-- Snap options dropdown -->
-            <div
-              v-if="snapMenuOpen"
-              class="absolute right-0 top-full mt-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px] z-[100]"
-              @mouseleave="snapMenuOpen = false"
-            >
-              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider">Snap Settings</div>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer">
-                <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Enable Snapping</span>
-              </label>
-              <div class="h-px bg-white/10 my-1"></div>
-              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider">Snap To</div>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.playhead" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Playhead</span>
-              </label>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.segmentEdges" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Segment Edges</span>
-              </label>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.markers" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Markers</span>
-              </label>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.grid" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Grid (1s intervals)</span>
-              </label>
-              <div class="h-px bg-white/10 my-1"></div>
-              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider">Behavior</div>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer" :class="!snapEnabled && 'opacity-50'">
-                <input type="checkbox" v-model="snapPreferences.magnetic" :disabled="!snapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Magnetic Timeline</span>
-              </label>
-              <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 cursor-pointer">
-                <input type="checkbox" v-model="frameSnapEnabled" class="accent-violet-500 h-3 w-3" />
-                <span class="text-sm text-white/80">Snap to Frames</span>
-              </label>
-            </div>
-          </div>
-          <span
-            v-if="sortedTrimSegments.length > 1"
-            class="text-[11px] text-violet-300/80 bg-violet-500/10 px-2.5 py-1 rounded-md"
-          >
-            {{ sortedTrimSegments.length }} segments
-          </span>
-          <span class="text-[11px] text-white/50 bg-white/[0.04] px-2 py-1 rounded-md">
-            {{ formatTime(totalDuration) }}
-          </span>
-        </div>
       </div>
 
-      <!-- Timeline Minimap (shows when zoomed in) -->
-      <div
-        v-if="zoomLevel > 1.5 && totalDuration > 0"
-        class="h-6 bg-[#0a0a0a] border-b border-white/[0.06] relative cursor-pointer mx-2 rounded-sm overflow-hidden"
-        @click="onMinimapClick"
-        @mousedown="onMinimapDragStart"
-        title="Click to navigate, drag to scroll"
-      >
-        <!-- Minimap segments -->
-        <div class="absolute inset-0 flex items-center">
-          <template v-if="editorMode">
-            <div
-              v-for="source in primaryVideoSources"
-              :key="'mini-' + source.id"
-              class="absolute h-3 bg-cyan-600/60 rounded-sm"
-              :style="{
-                left: `${(source.start_time / totalDuration) * 100}%`,
-                width: `${((source.end_time - source.start_time) / totalDuration) * 100}%`,
-              }"
-            ></div>
-          </template>
-          <template v-else>
-            <div
-              v-for="segment in sortedTrimSegments"
-              :key="'mini-' + segment.id"
-              class="absolute h-3 bg-violet-600/60 rounded-sm"
-              :style="{
-                left: `${(segment.startTime / totalDuration) * 100}%`,
-                width: `${((segment.endTime - segment.startTime) / totalDuration) * 100}%`,
-              }"
-            ></div>
-          </template>
-          <!-- Audio tracks in minimap -->
-          <div
-            v-for="track in audioTracks"
-            :key="'mini-audio-' + track.id"
-            class="absolute h-2 bg-emerald-600/40 rounded-sm"
-            :style="{
-              left: `${(track.startTime / totalDuration) * 100}%`,
-              width: `${((track.endTime - track.startTime) / totalDuration) * 100}%`,
-              top: '60%',
-            }"
-          ></div>
-        </div>
-        <!-- Viewport indicator -->
-        <div
-          class="absolute top-0 bottom-0 bg-white/10 border border-white/30 rounded-sm"
-          :style="minimapViewportStyle"
-        ></div>
-        <!-- Playhead indicator -->
-        <div
-          class="absolute top-0 bottom-0 w-0.5 bg-red-500"
-          :style="{ left: `${(currentTime / totalDuration) * 100}%` }"
-        ></div>
-      </div>
 
       <!-- Timeline Tracks Container -->
       <div
         ref="timelineScrollContainer"
-        class="bg-[#0c0c0c] rounded-md relative overflow-y-auto overflow-x-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#333] scrollbar-track-[#0c0c0c]"
+        class="bg-[#0d0d0d] rounded-lg relative overflow-y-auto overflow-x-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#3a3a3a] scrollbar-track-[#0d0d0d] border border-white/[0.03] flex flex-col"
         :style="{ cursor: getTimelineCursor() }"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
@@ -318,11 +286,11 @@
         <!-- Marquee Selection Rectangle -->
         <div
           v-if="marqueeStyle"
-          class="absolute border-2 border-blue-500 bg-blue-500/20 pointer-events-none z-[100]"
+          class="absolute border-2 border-cyan-500 bg-cyan-500/15 pointer-events-none z-[100] rounded"
           :style="marqueeStyle"
         ></div>
         <!-- Horizontal scroller for ruler + tracks -->
-        <div class="pb-1">
+        <div class="pb-1 flex-1">
           <!-- Timeline Content Wrapper - handles zoom width -->
           <div
             ref="contentWrapperRef"
@@ -330,16 +298,18 @@
             :class="{ dragging: isDragging || isResizing }"
             :style="{ width: `${Math.max(1, zoomLevel) * 100}%`, minHeight: '100%' }"
           >
-            <!-- Full-width Timestamp Ruler -->
+            <!-- Full-width Timestamp Ruler - Enhanced -->
             <div
-              class="h-7 border-b border-white/[0.06] flex items-center bg-[#0c0c0c] sticky top-0 z-50 timeline-ruler"
+              class="h-8 border-b border-white/[0.08] flex items-center bg-gradient-to-b from-[#141416] to-[#0d0d0d] sticky top-0 z-50 timeline-ruler"
               @wheel="onRulerWheel"
               title="Scroll to zoom"
             >
               <!-- Track label spacer - matches track header width -->
               <div
-                class="w-[100px] h-full flex items-center justify-start flex-shrink-0 sticky left-0 z-[70] bg-[#0c0c0c] border-r border-white/[0.08]"
-              ></div>
+                class="w-[120px] h-full flex items-center justify-start pl-3 gap-2 flex-shrink-0 sticky left-0 z-[70] bg-gradient-to-b from-[#141416] to-[#0d0d0d] border-r border-white/[0.06]"
+              >
+                <span class="text-[10px] font-medium text-white/50 uppercase tracking-wider">Timeline</span>
+              </div>
               <!-- Continuous ruler ticks across full duration -->
               <div
                 ref="rulerContentRef"
@@ -351,12 +321,19 @@
                     v-for="tick in rulerTicks"
                     :key="tick.key"
                     class="absolute flex flex-col items-center"
-                    :style="{ left: `${tick.percent}%`, transform: 'translateX(-50%)', bottom: '0' }"
+                    :style="{ 
+                      left: `${tick.percent}%`, 
+                      transform: tick.time === 0 ? 'translateX(0)' : 'translateX(-50%)', 
+                      bottom: '0' 
+                    }"
                   >
-                    <div class="w-px bg-foreground/20 timeline-tick" :class="tick.isMajor ? 'h-4' : 'h-2'"></div>
+                    <div 
+                      class="timeline-tick" 
+                      :class="tick.isMajor ? 'w-px h-4 bg-white/30' : 'w-px h-2 bg-white/15'"
+                    ></div>
                     <span
                       v-if="tick.isMajor"
-                      class="text-[10px] text-foreground/40 whitespace-nowrap font-normal mt-0.5"
+                      class="text-[11px] text-white/50 whitespace-nowrap font-medium tabular-nums mt-0.5"
                     >
                       {{ formatTime(tick.time) }}
                     </span>
@@ -457,9 +434,9 @@
               v-for="layerGroup in visualLayers"
               :key="`layer-${layerGroup.layer}`"
               :data-layer-track="layerGroup.layer"
-              class="flex items-center h-10 relative"
+              class="flex items-center h-11 relative"
               :class="{
-                'bg-purple-500/10 ring-2 ring-purple-500/50':
+                'bg-purple-500/10 ring-2 ring-purple-500/40 ring-inset':
                   (isDragging &&
                     dragInfo?.type &&
                     ['text', 'sticker', 'watermark'].includes(dragInfo.type) &&
@@ -468,12 +445,15 @@
               }"
             >
               <div
-                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
-                <div class="font-medium">Layer {{ layerGroup.layer }}</div>
+                <div class="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
+                  <span class="text-[10px] font-bold text-purple-400">{{ layerGroup.layer }}</span>
+                </div>
+                <span class="font-medium text-white/60">Layer</span>
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 
                 <!-- Extended timeline area indicator (beyond source videos) -->
                 <div
@@ -499,7 +479,7 @@
                     @mousedown="(e) => onSourceMouseDown(e, overlayItem.item)"
                     @click.stop="selectItem('source', overlayItem.item.id)"
                   >
-                    <div class="absolute inset-0 bg-[#1a1a1a]"></div>
+                    <div class="absolute inset-0 bg-[#161618]"></div>
                     <span
                       class="relative z-10 text-xs text-cyan-400 font-medium truncate px-1 drop-shadow-sm pointer-events-none"
                     >
@@ -700,18 +680,18 @@
             <!-- Legacy single tracks (kept for backward compatibility if no layers defined) -->
             <div
               v-if="textOverlays.length > 0 && visualOverlayLayers.length === 0"
-              class="flex items-center h-12 relative"
+              class="flex items-center h-11 relative"
             >
               <div
-                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
-                <div class="font-medium flex items-center gap-1">
-                  <Type :size="12" />
-                  Text
+                <div class="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
+                  <Type :size="11" class="text-amber-400" />
                 </div>
+                <span class="font-medium text-white/60">Text</span>
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 <div
                   v-for="overlay in textOverlays"
                   :key="overlay.id"
@@ -753,17 +733,17 @@
               </div>
             </div>
 
-            <div v-if="effects.length > 0" class="flex items-center h-12 relative">
+            <div v-if="effects.length > 0" class="flex items-center h-11 relative">
               <div
-                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
-                <div class="font-medium flex items-center gap-1">
-                  <Sparkles :size="12" />
-                  Effects
+                <div class="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+                  <Sparkles :size="11" class="text-cyan-400" />
                 </div>
+                <span class="font-medium text-white/60">Effects</span>
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 <div
                   v-for="effect in effects"
                   :key="effect.id"
@@ -797,17 +777,17 @@
               </div>
             </div>
 
-            <div v-if="filterSegments.length > 0" class="flex items-center h-12 relative">
+            <div v-if="filterSegments.length > 0" class="flex items-center h-11 relative">
               <div
-                class="track-label w-[100px] h-full pl-2 flex items-center justify-start text-xs text-white/50 sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
-                <div class="font-medium flex items-center gap-1">
-                  <Palette :size="12" />
-                  Filters
+                <div class="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
+                  <Palette :size="11" class="text-sky-400" />
                 </div>
+                <span class="font-medium text-white/60">Filters</span>
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                 <div
                   v-for="filterSeg in filterSegments"
                   :key="filterSeg.id"
@@ -845,40 +825,45 @@
             <template v-if="editorMode">
               <div class="flex items-center h-[72px] relative">
                 <div
-                  class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                  class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
                 >
-                  <!-- Track controls row (CapCut style: icons in a row) -->
-                  <div class="flex items-center gap-1 text-white/50 mb-1">
+                  <!-- Track type icon and label -->
+                  <div class="flex items-center gap-2 mb-1.5">
+                    <div class="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
+                      <Film :size="11" class="text-violet-400" />
+                    </div>
+                    <span class="font-medium text-white/70">Video</span>
+                  </div>
+                  <!-- Track controls row -->
+                  <div class="flex items-center gap-0.5 text-white/40">
                     <button
                       @click.stop="toggleVideoTrackState('isLocked')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'"
-                      :class="{ 'text-cyan-400': videoTrackState.isLocked }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isLocked }"
                     >
-                      <Lock v-if="videoTrackState.isLocked" :size="13" />
-                      <Unlock v-else :size="13" />
+                      <Lock v-if="videoTrackState.isLocked" :size="12" />
+                      <Unlock v-else :size="12" />
                     </button>
                     <button
                       @click.stop="toggleVideoTrackState('isHidden')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
-                      :class="{ 'text-cyan-400': videoTrackState.isHidden }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isHidden }"
                     >
-                      <EyeOff v-if="videoTrackState.isHidden" :size="13" />
-                      <Eye v-else :size="13" />
+                      <EyeOff v-if="videoTrackState.isHidden" :size="12" />
+                      <Eye v-else :size="12" />
                     </button>
                     <button
                       @click.stop="toggleVideoTrackState('isMuted')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'"
-                      :class="{ 'text-cyan-400': videoTrackState.isMuted }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isMuted }"
                     >
-                      <VolumeX v-if="videoTrackState.isMuted" :size="13" />
-                      <Volume2 v-else :size="13" />
+                      <VolumeX v-if="videoTrackState.isMuted" :size="12" />
+                      <Volume2 v-else :size="12" />
                     </button>
                   </div>
-                  <!-- Track label -->
-                  <span class="text-[11px] text-white/60 truncate">Source</span>
                 </div>
                 <div
                   ref="videoTrackContentRef"
@@ -889,7 +874,7 @@
                   @drop.prevent="onTimelineDrop"
                 >
                   <!-- Background - split into source area and extended area -->
-                  <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                  <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
                   
                   <!-- Extended timeline area indicator (beyond source videos) -->
                   <div
@@ -956,7 +941,7 @@
                     @contextmenu.prevent="onSourceContextMenu($event, source)"
                   >
                     <!-- Video thumbnails background (filmstrip style) -->
-                    <div class="absolute inset-0 bg-[#1a1a1a] flex overflow-hidden">
+                    <div class="absolute inset-0 bg-[#161618] flex overflow-hidden">
                       <!-- Loading placeholder skeleton -->
                       <div
                         v-if="!source.source_thumbnail"
@@ -1012,44 +997,49 @@
             <template v-else>
               <div class="flex items-center h-[72px] relative">
                 <div
-                  class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                  class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
                 >
-                  <!-- Track controls row (CapCut style: icons in a row) -->
-                  <div class="flex items-center gap-1 text-white/50 mb-1">
+                  <!-- Track type icon and label -->
+                  <div class="flex items-center gap-2 mb-1.5">
+                    <div class="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
+                      <Film :size="11" class="text-violet-400" />
+                    </div>
+                    <span class="font-medium text-white/70">Video</span>
+                  </div>
+                  <!-- Track controls row -->
+                  <div class="flex items-center gap-0.5 text-white/40">
                     <button
                       @click.stop="toggleVideoTrackState('isLocked')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isLocked ? 'Unlock' : 'Lock'"
-                      :class="{ 'text-cyan-400': videoTrackState.isLocked }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isLocked }"
                     >
-                      <Lock v-if="videoTrackState.isLocked" :size="13" />
-                      <Unlock v-else :size="13" />
+                      <Lock v-if="videoTrackState.isLocked" :size="12" />
+                      <Unlock v-else :size="12" />
                     </button>
                     <button
                       @click.stop="toggleVideoTrackState('isHidden')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
-                      :class="{ 'text-cyan-400': videoTrackState.isHidden }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isHidden }"
                     >
-                      <EyeOff v-if="videoTrackState.isHidden" :size="13" />
-                      <Eye v-else :size="13" />
+                      <EyeOff v-if="videoTrackState.isHidden" :size="12" />
+                      <Eye v-else :size="12" />
                     </button>
                     <button
                       @click.stop="toggleVideoTrackState('isMuted')"
-                      class="p-0.5 hover:text-white"
+                      class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'"
-                      :class="{ 'text-cyan-400': videoTrackState.isMuted }"
+                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isMuted }"
                     >
-                      <VolumeX v-if="videoTrackState.isMuted" :size="13" />
-                      <Volume2 v-else :size="13" />
+                      <VolumeX v-if="videoTrackState.isMuted" :size="12" />
+                      <Volume2 v-else :size="12" />
                     </button>
                   </div>
-                  <!-- Track label -->
-                  <span class="text-[11px] text-white/60 truncate">Cover</span>
                 </div>
                 <div ref="videoTrackContentRef" class="flex-1 h-full relative" @click="onTrackContentClick">
                   <!-- Background -->
-                  <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                  <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
 
                   <!-- Clip Mode: Trim Segments -->
                   <template v-for="(segmentLayout, _index) in segmentLayouts" :key="segmentLayout.segment.id">
@@ -1081,7 +1071,7 @@
                     >
                       <div class="absolute inset-0 bg-black flex overflow-hidden">
                         <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
-                        <div class="absolute inset-0 bg-[#1a1a1a]"></div>
+                        <div class="absolute inset-0 bg-[#161618]"></div>
                       </div>
                       <canvas
                         :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
@@ -1100,76 +1090,81 @@
               :key="track.id"
               class="flex items-center h-12 relative"
               :class="{
-                'bg-blue-500/10 ring-2 ring-blue-500/50':
+                'bg-emerald-500/10 ring-2 ring-emerald-500/40 ring-inset':
                   isDragging && dragInfo?.type === 'audio' && dragInfo?.targetTrackOrder === track.trackOrder,
               }"
             >
               <div
-                class="track-label w-[100px] h-full pl-2 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-emerald-500"
               >
+                <!-- Track type icon and label -->
+                <div class="flex items-center gap-2 mb-1">
+                  <div class="w-5 h-5 rounded bg-emerald-500/20 flex items-center justify-center">
+                    <Music :size="11" class="text-emerald-400" />
+                  </div>
+                  <span class="font-medium text-white/60 truncate text-[10px] max-w-[60px]">{{ track.name }}</span>
+                </div>
                 <!-- Track controls row -->
-                <div class="flex items-center gap-1 text-white/50 mb-1">
+                <div class="flex items-center gap-0.5 text-white/40">
                   <!-- Drag handle for track reordering -->
                   <div
                     class="p-0.5 cursor-grab hover:text-white active:cursor-grabbing"
                     title="Drag to reorder track"
                     @mousedown="(e) => onTrackReorderStart(e, 'audio', track.id, track.trackOrder ?? trackIndex)"
                   >
-                    <GripVertical :size="13" />
+                    <GripVertical :size="11" />
                   </div>
                   <button
                     @click.stop="toggleTrackCollapse('audio', track.id)"
-                    class="p-0.5 hover:text-white"
+                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
                     :title="isTrackCollapsed('audio', track.id) ? 'Expand' : 'Collapse'"
                   >
-                    <ChevronRight v-if="isTrackCollapsed('audio', track.id)" :size="13" />
-                    <ChevronDown v-else :size="13" />
+                    <ChevronRight v-if="isTrackCollapsed('audio', track.id)" :size="11" />
+                    <ChevronDown v-else :size="11" />
                   </button>
                   <button
                     @click.stop="emit('toggleAudioLock', track.id)"
-                    class="p-0.5 hover:text-white"
+                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
                     :title="track.isLocked ? 'Unlock' : 'Lock'"
-                    :class="{ 'text-cyan-400': track.isLocked }"
+                    :class="{ 'text-emerald-400 bg-emerald-500/15': track.isLocked }"
                   >
-                    <Lock v-if="track.isLocked" :size="13" />
-                    <Unlock v-else :size="13" />
+                    <Lock v-if="track.isLocked" :size="11" />
+                    <Unlock v-else :size="11" />
                   </button>
                   <button
                     @click.stop="emit('toggleAudioHidden', track.id)"
-                    class="p-0.5 hover:text-white"
+                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
                     :title="track.isHidden ? 'Show' : 'Hide'"
-                    :class="{ 'text-cyan-400': track.isHidden }"
+                    :class="{ 'text-emerald-400 bg-emerald-500/15': track.isHidden }"
                   >
-                    <EyeOff v-if="track.isHidden" :size="13" />
-                    <Eye v-else :size="13" />
+                    <EyeOff v-if="track.isHidden" :size="11" />
+                    <Eye v-else :size="11" />
                   </button>
                   <button
                     @click.stop="emit('toggleAudioMute', track.id)"
-                    class="p-0.5 hover:text-white"
+                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
                     :title="track.isMuted ? 'Unmute' : 'Mute'"
-                    :class="{ 'text-cyan-400': track.isMuted }"
+                    :class="{ 'text-emerald-400 bg-emerald-500/15': track.isMuted }"
                   >
-                    <VolumeX v-if="track.isMuted" :size="13" />
-                    <Volume2 v-else :size="13" />
+                    <VolumeX v-if="track.isMuted" :size="11" />
+                    <Volume2 v-else :size="11" />
                   </button>
                   <button
                     @click.stop="emit('toggleAudioSolo', track.id)"
-                    class="p-0.5 hover:text-white"
+                    class="p-0.5 rounded hover:bg-white/10 transition-colors"
                     :title="track.isSolo ? 'Unsolo' : 'Solo'"
-                    :class="{ 'text-amber-400': track.isSolo }"
+                    :class="{ 'text-amber-400 bg-amber-500/15': track.isSolo }"
                   >
-                    <Headphones :size="13" />
+                    <Headphones :size="11" />
                   </button>
                 </div>
-                <!-- Track label -->
-                <span class="text-[11px] text-white/60 truncate">{{ track.name }}</span>
               </div>
               <div
                 :ref="(el) => setSegmentRef(el, 'audio', track.id)"
                 class="flex-1 h-full relative"
                 @click="onTrackContentClick"
               >
-                <div class="absolute inset-0 bg-[#111] cursor-pointer"></div>
+                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
 
                 <!-- Render audio track as visual segments that split at video segment boundaries -->
                 <template
@@ -1294,15 +1289,15 @@
             <div
               v-for="n in PLACEHOLDER_BOTTOM_COUNT"
               :key="'placeholder-bottom-' + n"
-              class="flex items-center h-10 relative"
+              class="flex items-center h-8 relative"
             >
               <div
-                class="track-label w-[100px] h-full sticky left-0 z-[70] bg-[#0c0c0c] flex-shrink-0 border-r border-white/[0.08]"
+                class="track-label w-[120px] h-full sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               ></div>
-              <div class="flex-1 h-full relative bg-[#111]"></div>
+              <div class="flex-1 h-full relative bg-[#111111]"></div>
             </div>
 
-            <!-- Playhead Line (CapCut style - orange/amber thin line) -->
+            <!-- Playhead Line (CapCut style - triangular head with gradient line) -->
             <div
               v-if="totalDuration > 0"
               class="absolute top-0 bottom-0 z-[60] cursor-ew-resize group playhead-line flex flex-col items-center"
@@ -1313,16 +1308,34 @@
               }"
               :style="{
                 '--playhead-position': effectivePlayheadPosition,
-                width: '12px',
-                marginLeft: '-6px',
+                width: '16px',
+                marginLeft: '-8px',
               }"
               @mousedown="onPlayheadMouseDown"
+              @wheel="onRulerWheel"
             >
-              <!-- The line (CapCut style - thin amber/orange line) -->
+              <!-- Triangular head (CapCut signature style) -->
+              <div class="relative flex-shrink-0 playhead-child flex justify-center" style="width: 16px;">
+                <svg width="14" height="10" viewBox="0 0 14 10">
+                  <polygon 
+                    points="7,10 0,0 14,0" 
+                    class="fill-amber-500 group-hover:fill-amber-400 transition-colors"
+                  />
+                </svg>
+              </div>
+              <!-- The line (gradient from amber to orange) -->
               <div
-                class="flex-1 bg-amber-500 group-hover:bg-amber-400 playhead-line-inner playhead-child shadow-[0_0_4px_rgba(245,158,11,0.5)]"
-                style="width: 2px"
+                class="flex-1 playhead-line-inner playhead-child"
+                style="width: 1px; background: linear-gradient(to bottom, rgb(245, 158, 11), rgb(249, 115, 22)); box-shadow: 0 0 8px rgba(245, 158, 11, 0.5), 0 0 4px rgba(249, 115, 22, 0.3);"
               ></div>
+              <!-- Time tooltip on hover -->
+              <div 
+                class="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none"
+              >
+                <div class="bg-black/90 text-amber-400 text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded whitespace-nowrap border border-amber-500/30">
+                  {{ formatTime(currentTime) }}
+                </div>
+              </div>
             </div>
 
             <!-- Snap Indicator Line (shows when segment edge is snapping to another edge) -->
@@ -1382,7 +1395,7 @@
     <Teleport to="body">
       <div
         v-if="sourceContextMenu.visible"
-        class="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[220px]"
+        class="fixed z-[9999] bg-[#161618] border border-white/10 rounded-lg shadow-xl py-1 min-w-[220px]"
         :style="{ left: `${sourceContextMenu.x}px`, top: `${sourceContextMenu.y}px` }"
         @click.stop
       >
@@ -1498,7 +1511,7 @@
             <span class="text-white/40 text-xs">{{ getSourceSpeed(sourceContextMenu.source) }}x</span>
           </button>
           <!-- Speed submenu -->
-          <div class="absolute left-full top-0 ml-1 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] hidden group-hover/speed:block max-h-[300px] overflow-y-auto">
+          <div class="absolute left-full top-0 ml-1 bg-[#161618] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] hidden group-hover/speed:block max-h-[300px] overflow-y-auto">
             <!-- Reverse speeds -->
             <div class="px-2 py-1 text-[10px] text-white/40 uppercase tracking-wider">Reverse</div>
             <button
@@ -1551,7 +1564,7 @@
       <!-- Segment Context Menu (Clip Mode) -->
       <div
         v-if="segmentContextMenu.visible"
-        class="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px]"
+        class="fixed z-[9999] bg-[#161618] border border-white/10 rounded-lg shadow-xl py-1 min-w-[180px]"
         :style="{ left: `${segmentContextMenu.x}px`, top: `${segmentContextMenu.y}px` }"
         @click.stop
       >
@@ -2502,6 +2515,83 @@
     emit('seek', time);
   }, 16);
 
+  // ============================================
+  // PERFORMANCE: Interaction state flags
+  // ============================================
+  
+  // Track when user is actively zooming (to skip expensive renders)
+  const isZooming = ref(false);
+  let zoomEndTimeout: ReturnType<typeof setTimeout> | null = null;
+  
+  // Pending zoom state for batching via requestAnimationFrame
+  let pendingZoom: { newZoom: number; logicalPosition: number; cursorXInContainer: number; scrollContainer: HTMLElement } | null = null;
+  let zoomRAFId: number | null = null;
+
+  /**
+   * Apply pending zoom changes in a single animation frame
+   * This batches multiple zoom events for smoother visual updates
+   */
+  function applyPendingZoom() {
+    if (!pendingZoom) {
+      zoomRAFId = null;
+      return;
+    }
+    
+    const { newZoom, logicalPosition, cursorXInContainer, scrollContainer } = pendingZoom;
+    pendingZoom = null;
+    zoomRAFId = null;
+    
+    // Apply the zoom
+    zoomLevel.value = newZoom;
+    
+    // Adjust scroll to keep cursor position stable
+    nextTick(() => {
+      const newContentWidth = scrollContainer.scrollWidth;
+      const newContentX = logicalPosition * newContentWidth;
+      const newScrollLeft = newContentX - cursorXInContainer;
+      scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
+    });
+  }
+
+  /**
+   * Queue a zoom update to be applied in the next animation frame
+   * This batches multiple rapid zoom events (like trackpad pinch) for performance
+   */
+  function queueZoomUpdate(newZoom: number, logicalPosition: number, cursorXInContainer: number, scrollContainer: HTMLElement) {
+    // Mark as zooming to suppress waveform renders
+    isZooming.value = true;
+    
+    // Clear any pending zoom end timeout
+    if (zoomEndTimeout) {
+      clearTimeout(zoomEndTimeout);
+    }
+    
+    // Schedule zoom end after user stops zooming (150ms idle)
+    zoomEndTimeout = setTimeout(() => {
+      isZooming.value = false;
+      zoomEndTimeout = null;
+      // Trigger a final waveform render after zoom completes
+      debouncedRenderAllWaveforms();
+    }, 150);
+    
+    // Store the pending zoom (latest values win)
+    pendingZoom = { newZoom, logicalPosition, cursorXInContainer, scrollContainer };
+    
+    // Schedule the zoom to be applied in the next animation frame
+    if (!zoomRAFId) {
+      zoomRAFId = requestAnimationFrame(applyPendingZoom);
+    }
+  }
+
+  // Debounced full waveform rendering (100ms delay for expensive operations)
+  const debouncedRenderAllWaveforms = debounce(() => {
+    // Don't render if still in an active interaction
+    if (isZooming.value || isDragging.value || isResizing.value) return;
+    renderAllWaveforms();
+    renderAllAudioWaveforms();
+    renderAllSourceWaveforms();
+  }, 100);
+
   // Virtual scrolling state - only render visible track portions
   const virtualScrollState = ref({
     visibleStartTime: 0,
@@ -2608,6 +2698,10 @@
 
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
+  
+  // Optimistic playhead position during drag (avoids round-trip lag)
+  // This is the time value we're dragging to, updated immediately during drag
+  const optimisticDragTime = ref<number | null>(null);
   
   // Inertial scrolling state for playhead
   const playheadVelocity = ref(0);
@@ -2801,75 +2895,6 @@
     };
   });
 
-  // Computed minimap viewport style (shows visible area in minimap)
-  const minimapViewportStyle = computed(() => {
-    if (!timelineScrollContainer.value || totalDuration.value <= 0) {
-      return { left: '0%', width: '100%' };
-    }
-    
-    const container = timelineScrollContainer.value;
-    const contentWidth = container.scrollWidth;
-    const viewportWidth = container.clientWidth;
-    const scrollLeft = container.scrollLeft;
-    
-    if (contentWidth <= 0) return { left: '0%', width: '100%' };
-    
-    const leftPercent = (scrollLeft / contentWidth) * 100;
-    const widthPercent = (viewportWidth / contentWidth) * 100;
-    
-    return {
-      left: `${leftPercent}%`,
-      width: `${Math.min(100, widthPercent)}%`,
-    };
-  });
-  
-  /**
-   * Handle click on minimap to navigate to that position
-   */
-  function onMinimapClick(e: MouseEvent) {
-    if (!timelineScrollContainer.value) return;
-    
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const clickPercent = (e.clientX - rect.left) / rect.width;
-    
-    // Scroll to center the clicked position
-    const container = timelineScrollContainer.value;
-    const contentWidth = container.scrollWidth;
-    const viewportWidth = container.clientWidth;
-    
-    const targetScroll = (clickPercent * contentWidth) - (viewportWidth / 2);
-    container.scrollLeft = Math.max(0, Math.min(contentWidth - viewportWidth, targetScroll));
-  }
-
-  /**
-   * Start dragging on minimap to scroll timeline
-   */
-  function onMinimapDragStart(e: MouseEvent) {
-    e.preventDefault();
-    
-    const onMove = (moveEvent: MouseEvent) => {
-      if (!timelineScrollContainer.value) return;
-      
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const clickPercent = Math.max(0, Math.min(1, (moveEvent.clientX - rect.left) / rect.width));
-      
-      const container = timelineScrollContainer.value;
-      const contentWidth = container.scrollWidth;
-      const viewportWidth = container.clientWidth;
-      
-      const targetScroll = (clickPercent * contentWidth) - (viewportWidth / 2);
-      container.scrollLeft = Math.max(0, Math.min(contentWidth - viewportWidth, targetScroll));
-    };
-    
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-    
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }
-
   function isTrackCollapsed(trackType: string, trackId?: string): boolean {
     const key = trackId ? `${trackType}_${trackId}` : trackType;
     return collapsedTracks.value.has(key);
@@ -2889,8 +2914,8 @@
   const hoverLinePosition = ref(0);
   const timelineBounds = ref({ top: 0, bottom: 0, left: 0 });
 
-  // Track label width constant (matches the w-[100px] class = 100px)
-  const TRACK_LABEL_WIDTH = 100;
+  // Track label width constant (matches the w-[120px] class = 120px)
+  const TRACK_LABEL_WIDTH = 120;
 
   // Snap configuration
   const SNAP_THRESHOLD_PX = 8; // Pixels distance to trigger snapping
@@ -2973,14 +2998,43 @@
     }));
   }
 
-  // Color mappings
-  const colorMap: Record<string, { bg: string; border: string }> = {
-    violet: { bg: 'rgba(139, 92, 246, 0.4), rgba(139, 92, 246, 0.5)', border: 'rgba(139, 92, 246, 0.6)' },
-    emerald: { bg: 'rgba(16, 185, 129, 0.4), rgba(16, 185, 129, 0.5)', border: 'rgba(16, 185, 129, 0.6)' },
-    amber: { bg: 'rgba(245, 158, 11, 0.4), rgba(245, 158, 11, 0.5)', border: 'rgba(245, 158, 11, 0.6)' },
-    pink: { bg: 'rgba(236, 72, 153, 0.4), rgba(236, 72, 153, 0.5)', border: 'rgba(236, 72, 153, 0.6)' },
-    cyan: { bg: 'rgba(6, 182, 212, 0.4), rgba(6, 182, 212, 0.5)', border: 'rgba(6, 182, 212, 0.6)' },
-    rose: { bg: 'rgba(244, 63, 94, 0.4), rgba(244, 63, 94, 0.5)', border: 'rgba(244, 63, 94, 0.6)' },
+  // Color mappings - Enhanced gradients for CapCut style
+  const colorMap: Record<string, { bg: string; border: string; glow: string }> = {
+    violet: { 
+      bg: 'rgba(139, 92, 246, 0.35), rgba(99, 102, 241, 0.45)', 
+      border: 'rgba(139, 92, 246, 0.7)',
+      glow: 'rgba(139, 92, 246, 0.3)'
+    },
+    emerald: { 
+      bg: 'rgba(16, 185, 129, 0.35), rgba(20, 184, 166, 0.45)', 
+      border: 'rgba(16, 185, 129, 0.7)',
+      glow: 'rgba(16, 185, 129, 0.3)'
+    },
+    amber: { 
+      bg: 'rgba(245, 158, 11, 0.35), rgba(251, 146, 60, 0.45)', 
+      border: 'rgba(245, 158, 11, 0.7)',
+      glow: 'rgba(245, 158, 11, 0.3)'
+    },
+    pink: { 
+      bg: 'rgba(236, 72, 153, 0.35), rgba(244, 114, 182, 0.45)', 
+      border: 'rgba(236, 72, 153, 0.7)',
+      glow: 'rgba(236, 72, 153, 0.3)'
+    },
+    cyan: { 
+      bg: 'rgba(6, 182, 212, 0.35), rgba(34, 211, 238, 0.45)', 
+      border: 'rgba(6, 182, 212, 0.7)',
+      glow: 'rgba(6, 182, 212, 0.3)'
+    },
+    rose: { 
+      bg: 'rgba(244, 63, 94, 0.35), rgba(251, 113, 133, 0.45)', 
+      border: 'rgba(244, 63, 94, 0.7)',
+      glow: 'rgba(244, 63, 94, 0.3)'
+    },
+    sky: { 
+      bg: 'rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.45)', 
+      border: 'rgba(14, 165, 233, 0.7)',
+      glow: 'rgba(14, 165, 233, 0.3)'
+    },
   };
 
   // Sorted trim segments by start time - creates a default segment if none exist
@@ -3673,7 +3727,11 @@
 
   // Methods
   function formatTime(seconds: number): string {
-    if (isNaN(seconds) || !isFinite(seconds)) return '0:00.00';
+    if (isNaN(seconds) || !isFinite(seconds)) return '0';
+    
+    // Special case: show just "0" for the first timestamp
+    if (seconds === 0) return '0';
+    
     const mins = Math.floor(seconds / 60);
     const secs = seconds - mins * 60;
     const secsWithHundredths = secs.toFixed(2); // always show hundredths
@@ -3847,17 +3905,17 @@
     const isSourceDragging = type === 'source' && isDraggingSource.value && dragSourceInfo.value?.sourceId === id;
 
     if (isDragging.value && dragInfo.value?.type === type && dragInfo.value?.id === id) {
-      classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'border-2', 'border-blue-400', 'dragging');
+      classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'dragging');
     } else if (isResizing.value && resizeInfo.value?.type === type && resizeInfo.value?.id === id) {
-      classes.push('cursor-ew-resize', 'z-30', 'shadow-2xl', 'border-2', 'border-green-400', 'resizing');
+      classes.push('cursor-ew-resize', 'z-30', 'shadow-xl', 'resizing');
     } else if (isSourceDragging) {
-      classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'border-2', 'border-blue-400', 'dragging');
+      classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'dragging');
     } else {
-      classes.push('cursor-grab', 'hover:cursor-grab', 'transition-all', 'duration-200', 'ease-out');
+      classes.push('cursor-grab', 'hover:cursor-grab', 'transition-all', 'duration-150', 'ease-out', 'hover:brightness-110');
     }
 
     if (isDeleted) {
-      classes.push('opacity-30');
+      classes.push('opacity-25', 'grayscale');
     }
 
     if (selectedItemKey.value === key) {
@@ -3866,12 +3924,12 @@
 
     // Ripple preview: highlight segments that will be affected by ripple edit
     if (rippleAffectedIds.value.has(id)) {
-      classes.push('ring-2', 'ring-orange-400/60', 'ring-offset-1', 'ring-offset-black', 'ripple-affected');
+      classes.push('ring-2', 'ring-orange-400/70', 'ring-offset-1', 'ring-offset-black', 'ripple-affected');
     }
 
     // Collision indicator: highlight segments that overlap with other segments
     if (collidingSegmentIds.value.has(id)) {
-      classes.push('ring-2', 'ring-red-500/70', 'ring-offset-1', 'ring-offset-black', 'collision-warning');
+      classes.push('ring-2', 'ring-red-500/80', 'ring-offset-1', 'ring-offset-black', 'collision-warning');
     }
 
     return classes;
@@ -3889,10 +3947,12 @@
     return {
       left: `${layout.startPercent}%`,
       width: `${layout.widthPercent}%`,
-      background: `linear-gradient(to right, ${colors.bg})`,
-      borderColor: isSelected ? '#3b82f6' : colors.border,
-      borderWidth: '1px',
+      background: `linear-gradient(135deg, ${colors.bg})`,
+      borderColor: isSelected ? 'rgba(255, 255, 255, 0.6)' : colors.border,
+      borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
+      borderRadius: '6px',
+      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
     };
   }
 
@@ -3900,7 +3960,7 @@
   function effectiveTimeToVisualPercent(effectiveTime: number): number {
     // Editor mode: simple linear mapping (no segment gaps)
     if (props.editorMode) {
-      const duration = props.duration || 300;
+      const duration = totalDuration.value || props.duration || 300;
       if (duration <= 0) return 0;
       return (effectiveTime / duration) * 100;
     }
@@ -4017,10 +4077,12 @@
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
-      background: `linear-gradient(to right, ${colors.bg})`,
-      borderColor: isSelected ? '#3b82f6' : colors.border,
-      borderWidth: '1px',
+      background: `linear-gradient(135deg, ${colors.bg})`,
+      borderColor: isSelected ? 'rgba(255, 255, 255, 0.6)' : colors.border,
+      borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
+      borderRadius: '6px',
+      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
     };
   }
 
@@ -4043,10 +4105,12 @@
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
-      background: `linear-gradient(to right, ${colors.bg})`,
-      borderColor: isSelected ? '#3b82f6' : colors.border,
-      borderWidth: '1px',
+      background: `linear-gradient(135deg, ${colors.bg})`,
+      borderColor: isSelected ? 'rgba(255, 255, 255, 0.6)' : colors.border,
+      borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
+      borderRadius: '6px',
+      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
     };
   }
 
@@ -4381,14 +4445,17 @@
   function onTrackContentClick(e: MouseEvent) {
     selectedItemKey.value = null;
 
+    // Use contentWrapperRef for consistency with playhead position calculation
     if (!contentWrapperRef.value) return;
 
-    const contentRect = contentWrapperRef.value.getBoundingClientRect();
-    // Account for the track label width - timeline content starts after labels
-    const timelineLeft = contentRect.left + TRACK_LABEL_WIDTH;
-    const timelineWidth = contentRect.width - TRACK_LABEL_WIDTH;
-    const x = e.clientX - timelineLeft;
-    const percent = Math.max(0, Math.min(1, x / timelineWidth));
+    const wrapperRect = contentWrapperRef.value.getBoundingClientRect();
+    const cursorXInWrapper = e.clientX - wrapperRect.left;
+    
+    // Account for the 120px track label area
+    const contentAreaX = cursorXInWrapper - TRACK_LABEL_WIDTH;
+    const contentAreaWidth = wrapperRect.width - TRACK_LABEL_WIDTH;
+    
+    const percent = Math.max(0, Math.min(1, contentAreaX / contentAreaWidth));
     const time = clickPositionToTime(percent);
 
     emit('seek', Math.max(0, time));
@@ -4414,14 +4481,17 @@
   }
 
   function onRulerClick(e: MouseEvent) {
+    // Use contentWrapperRef for consistency with playhead position calculation
     if (!contentWrapperRef.value) return;
 
-    const contentRect = contentWrapperRef.value.getBoundingClientRect();
-    // Account for the track label width - timeline content starts after labels
-    const timelineLeft = contentRect.left + TRACK_LABEL_WIDTH;
-    const timelineWidth = contentRect.width - TRACK_LABEL_WIDTH;
-    const x = e.clientX - timelineLeft;
-    const percent = Math.max(0, Math.min(1, x / timelineWidth));
+    const wrapperRect = contentWrapperRef.value.getBoundingClientRect();
+    const cursorXInWrapper = e.clientX - wrapperRect.left;
+    
+    // Account for the 120px track label area
+    const contentAreaX = cursorXInWrapper - TRACK_LABEL_WIDTH;
+    const contentAreaWidth = wrapperRect.width - TRACK_LABEL_WIDTH;
+    
+    const percent = Math.max(0, Math.min(1, contentAreaX / contentAreaWidth));
     const time = clickPositionToTime(percent);
 
     emit('seek', Math.max(0, time));
@@ -5078,6 +5148,9 @@
 
     isDraggingPlayhead.value = true;
     
+    // Initialize optimistic drag time with current position to avoid flicker
+    optimisticDragTime.value = props.currentTime;
+    
     // Initialize velocity tracking for inertial scrolling
     playheadVelocity.value = 0;
     lastPlayheadDragTime.value = performance.now();
@@ -5178,11 +5251,19 @@
     // Play audio scrub preview at the current position
     playScrubAudio(time);
     
-    emit('seek', Math.max(0, time));
+    // Set optimistic drag time BEFORE emitting seek to avoid round-trip lag
+    // This ensures the playhead visually follows the cursor immediately
+    const clampedTime = Math.max(0, time);
+    optimisticDragTime.value = clampedTime;
+    
+    emit('seek', clampedTime);
   }
 
   function onPlayheadDragEnd() {
     isDraggingPlayhead.value = false;
+    
+    // Clear optimistic drag time - playhead will now use props.currentTime
+    optimisticDragTime.value = null;
 
     document.removeEventListener('mousemove', onPlayheadDragMove);
     document.removeEventListener('mouseup', onPlayheadDragEnd);
@@ -5190,10 +5271,14 @@
     // Stop audio scrubbing
     stopAudioScrubbing();
     
-    // Apply inertial scrolling if velocity is significant
-    const velocity = playheadVelocity.value;
-    if (Math.abs(velocity) > 0.5) { // Minimum velocity threshold
-      applyInertialScrolling(velocity);
+    // Reset velocity - disable inertial scrolling as it causes position jumps
+    // when dragging between segments in editor mode
+    playheadVelocity.value = 0;
+    
+    // Cancel any ongoing inertial animation
+    if (inertialAnimationId) {
+      cancelAnimationFrame(inertialAnimationId);
+      inertialAnimationId = null;
     }
   }
   
@@ -5377,7 +5462,7 @@
         }
     }
 
-    const duration = props.duration || 300;
+    const duration = totalDuration.value || props.duration || 300;
     const leftPercent = (startTime / duration) * 100;
     const widthPercent = ((endTime - startTime) / duration) * 100;
 
@@ -6124,24 +6209,27 @@
   function onRulerWheel(event: WheelEvent) {
     event.preventDefault();
 
-    if (!timelineScrollContainer.value || !rulerContentRef.value) return;
+    if (!timelineScrollContainer.value || !contentWrapperRef.value) return;
 
     const scrollContainer = timelineScrollContainer.value;
-    const rulerContent = rulerContentRef.value;
+    const contentWrapper = contentWrapperRef.value;
     const containerRect = scrollContainer.getBoundingClientRect();
 
-    // Get ruler content bounds to calculate hover position for seeking
-    const rulerRect = rulerContent.getBoundingClientRect();
-    const cursorXInRuler = event.clientX - rulerRect.left;
+    // Get content wrapper bounds to calculate hover position for seeking
+    // Use contentWrapperRef for consistency with playhead position calculation
+    const wrapperRect = contentWrapper.getBoundingClientRect();
+    const cursorXInWrapper = event.clientX - wrapperRect.left;
+    
+    // Account for the 120px track label area
+    const contentAreaX = cursorXInWrapper - TRACK_LABEL_WIDTH;
+    const contentAreaWidth = wrapperRect.width - TRACK_LABEL_WIDTH;
 
     // Detect pinch-to-zoom gesture (trackpad pinch sets ctrlKey)
     const isPinchGesture = event.ctrlKey;
     
     // For regular scroll (not pinch), seek playhead to cursor position
-    if (!isPinchGesture && cursorXInRuler >= 0 && cursorXInRuler <= rulerRect.width) {
-      const playheadOffset = 15; // pixels to the left of cursor
-      const offsetX = Math.max(0, cursorXInRuler - playheadOffset);
-      const percent = offsetX / rulerRect.width;
+    if (!isPinchGesture && contentAreaX >= 0 && contentAreaX <= contentAreaWidth) {
+      const percent = contentAreaX / contentAreaWidth;
       const time = clickPositionToTime(percent);
       emit('seek', Math.max(0, time));
     }
@@ -6179,16 +6267,8 @@
 
     if (newZoom === oldZoom) return;
 
-    zoomLevel.value = newZoom;
-
-    // After zoom, adjust scroll to keep cursor position stable (playhead is now at cursor)
-    nextTick(() => {
-      const newContentWidth = scrollContainer.scrollWidth;
-      const newContentX = logicalPosition * newContentWidth;
-      const newScrollLeft = newContentX - cursorXInContainer;
-
-      scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
-    });
+    // Use batched zoom update via requestAnimationFrame for performance
+    queueZoomUpdate(newZoom, logicalPosition, cursorXInContainer, scrollContainer);
   }
   
   /**
@@ -6226,16 +6306,8 @@
     
     if (newZoom === oldZoom) return;
     
-    zoomLevel.value = newZoom;
-    
-    // After zoom, adjust scroll to keep cursor position stable
-    nextTick(() => {
-      const newContentWidth = scrollContainer.scrollWidth;
-      const newContentX = logicalPosition * newContentWidth;
-      const newScrollLeft = newContentX - cursorXInContainer;
-      
-      scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
-    });
+    // Use batched zoom update via requestAnimationFrame for performance
+    queueZoomUpdate(newZoom, logicalPosition, cursorXInContainer, scrollContainer);
   }
 
   // Segment dragging
@@ -6520,6 +6592,8 @@
           slipState.value = null;
           document.removeEventListener('mousemove', onDragMove);
           document.removeEventListener('mouseup', onDragEnd);
+          // Trigger final waveform render after slip edit
+          nextTick(() => debouncedRenderAllWaveforms());
           return;
       }
 
@@ -6541,6 +6615,8 @@
           dragPreview.value = null; // Clear preview
           document.removeEventListener('mousemove', onDragMove);
           document.removeEventListener('mouseup', onDragEnd);
+          // Trigger final waveform render after slide edit
+          nextTick(() => debouncedRenderAllWaveforms());
           return;
       }
 
@@ -6616,6 +6692,11 @@
 
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
+    
+    // Trigger final waveform render after drag completes
+    nextTick(() => {
+      debouncedRenderAllWaveforms();
+    });
   }
 
   // Segment resizing
@@ -7005,6 +7086,11 @@
 
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onResizeEnd);
+    
+    // Trigger final waveform render after resize completes
+    nextTick(() => {
+      debouncedRenderAllWaveforms();
+    });
   }
 
   function emitUpdate(type: ItemType, id: string, startTime: number, endTime: number) {
@@ -7337,12 +7423,15 @@
   );
 
   // Watch for waveform and segment changes
+  // Uses debounced rendering and skips during active interactions
   watch(
     [waveformData, isWaveformLoaded, () => props.currentTime, zoomLevel, sortedTrimSegments],
     () => {
       if (isWaveformLoaded.value && waveformData.value) {
+        // Skip render during active interactions - will render when interaction ends
+        if (isZooming.value || isDragging.value || isResizing.value) return;
         nextTick(() => {
-          renderAllWaveforms();
+          debouncedRenderAllWaveforms();
         });
       }
     },
@@ -7354,8 +7443,10 @@
     () => props.audioGainDb,
     () => {
       if (isWaveformLoaded.value && waveformData.value) {
+        // Skip during interactions - render when idle
+        if (isZooming.value || isDragging.value || isResizing.value) return;
         nextTick(() => {
-          renderAllWaveforms();
+          debouncedRenderAllWaveforms();
         });
       }
     }
@@ -7365,8 +7456,10 @@
   watch(
     () => props.trackDbValues,
     () => {
+      // Skip during interactions
+      if (isZooming.value || isDragging.value || isResizing.value) return;
       nextTick(() => {
-        renderAllAudioWaveforms();
+        debouncedRenderWaveforms();
       });
     },
     { deep: true }
@@ -7392,24 +7485,34 @@
       });
 
       // Re-render all audio waveforms to reflect any property changes (volume, etc.)
+      // Skip during active interactions
+      if (isZooming.value || isDragging.value || isResizing.value) return;
       nextTick(() => {
-        renderAllAudioWaveforms();
+        debouncedRenderWaveforms();
       });
     },
     { deep: true, immediate: true }
   );
 
   // Watch for current time and zoom level changes to update audio waveforms
+  // This is a high-frequency watcher - use debouncing and skip during interactions
   watch([() => props.currentTime, zoomLevel], () => {
+    // Skip render during active zoom/drag - will render when interaction ends
+    if (isZooming.value || isDragging.value || isResizing.value) return;
     nextTick(() => {
-      renderAllAudioWaveforms();
+      debouncedRenderWaveforms();
     });
   });
 
   // Watch for drag preview changes to re-render audio waveforms when segments split/merge
+  // Only render when drag ends (dragPreview becomes null) or for structural changes
   watch(
     dragPreview,
-    () => {
+    (newVal, oldVal) => {
+      // Skip during active drag - the segment visuals update via dragPreview styles
+      // Only render when drag ends (newVal is null) to show final state
+      if (newVal !== null) return;
+      
       // Use nextTick + requestAnimationFrame to ensure canvas refs are set up after DOM update
       nextTick(() => {
         requestAnimationFrame(() => {
@@ -7442,18 +7545,23 @@
       });
 
       // Re-render all source waveforms after DOM updates
+      // Skip during active interactions
+      if (isZooming.value || isDragging.value || isResizing.value) return;
       nextTick(() => {
-        renderAllSourceWaveforms();
+        debouncedRenderWaveforms();
       });
     },
     { deep: true, immediate: true }
   );
 
   // Watch for current time and zoom changes to update source waveforms (for playhead position)
+  // This is a high-frequency watcher - skip during interactions
   watch([() => props.currentTime, zoomLevel], () => {
     if (props.editorMode) {
+      // Skip during active interactions - will render when interaction ends
+      if (isZooming.value || isDragging.value || isResizing.value) return;
       nextTick(() => {
-        renderAllSourceWaveforms();
+        debouncedRenderWaveforms();
       });
     }
   });
@@ -7472,7 +7580,7 @@
     const contentWidth = contentWrapper.offsetWidth;
 
     // Calculate playhead pixel position within content
-    // This matches the CSS: left: calc(80px + (100% - 80px) * position)
+    // This matches the CSS: left: calc(120px + (100% - 120px) * position)
     const trackAreaWidth = contentWidth - TRACK_LABEL_WIDTH;
     const playheadX = TRACK_LABEL_WIDTH + trackAreaWidth * playheadRatio;
 
@@ -7581,9 +7689,14 @@
 
   // The effective playhead position used in the template
   const effectivePlayheadPosition = computed(() => {
-    // During dragging, always use computed position directly (no animation)
-    if (isDraggingPlayhead.value) {
-      return playheadPosition.value;
+    // During dragging, use optimistic position to avoid round-trip lag
+    // This shows the playhead exactly where the user is dragging, not where
+    // the video has caught up to (which can lag behind during fast dragging)
+    if (isDraggingPlayhead.value && optimisticDragTime.value !== null) {
+      const duration = props.editorMode ? props.duration : totalDuration.value;
+      if (duration > 0) {
+        return Math.min(1, Math.max(0, optimisticDragTime.value / duration));
+      }
     }
     // During playback, use smooth animated position
     if (props.isPlaying) {
@@ -8027,6 +8140,15 @@
     stopContinuousSeeking();
     // Clean up audio scrubbing
     cleanupAudioScrubbing();
+    // Clean up zoom-related RAF and timeouts
+    if (zoomRAFId) {
+      cancelAnimationFrame(zoomRAFId);
+      zoomRAFId = null;
+    }
+    if (zoomEndTimeout) {
+      clearTimeout(zoomEndTimeout);
+      zoomEndTimeout = null;
+    }
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
     document.removeEventListener('mousemove', onResizeMove);
@@ -8108,11 +8230,6 @@
     cursor: grabbing !important;
   }
 
-  /* Add 6px left offset to all segments to align with playhead minimum position */
-  .clip-segment {
-    margin-left: 6px;
-  }
-
   /* Smooth transitions for non-dragging states */
   .clip-segment:not(.dragging) {
     transition:
@@ -8137,13 +8254,13 @@
   }
 
   /* Playhead positioning using CSS custom property */
-  /* Label width is w-[100px] = 100px, track content is the remaining width */
+  /* Label width is w-[120px] = 120px, track content is the remaining width */
   .playhead-line {
     --playhead-position: 0;
-    left: calc(100px + max(6px, (100% - 100px) * var(--playhead-position)));
+    left: calc(120px + (100% - 120px) * var(--playhead-position));
     will-change: left;
-    /* Smooth transition for seeks (when paused) */
-    transition: left 100ms ease-out;
+    /* No transition for immediate positioning */
+    transition: none;
     /* Force single compositing layer for all children */
     contain: layout style;
   }
@@ -8256,7 +8373,7 @@
   /* Snap indicator line positioning - uses same calculation as playhead */
   .snap-indicator-line {
     --snap-position: 0;
-    left: calc(80px + (100% - 80px) * var(--snap-position));
+    left: calc(120px + (100% - 120px) * var(--snap-position));
     will-change: left;
     animation: snap-pulse 0.8s ease-in-out infinite;
   }
