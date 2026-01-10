@@ -1,203 +1,261 @@
 <template>
-  <aside class="fixed pt-8 left-0 top-0 h-full w-64 bg-muted/12 border-r border-border">
+  <aside class="sidebar" :class="{ 'sidebar--native': isNativeEnvironment }">
     <!-- Bug Report Dialog -->
     <BugReportDialog
       :show="showBugReportDialog"
       @close="showBugReportDialog = false"
       @submitted="handleBugReportSubmitted"
     />
-    <!-- Logo/Brand - only show in web environment, not in native app -->
-    <div v-if="!isNativeEnvironment" class="h-16 px-6 flex items-center border-b border-border">
-      <img src="/logo.svg" alt="Clippster" class="h-7 w-auto" />
-    </div>
-    <!-- Navigation -->
-    <nav class="p-3">
-      <ul class="space-y-1">
-        <template v-for="(item, index) in visibleNavigationItems" :key="item.path">
-          <!-- Category Label -->
-          <li v-if="item.category && shouldShowCategory(item.category, index)" class="pt-4 pb-2 px-3">
-            <span class="text-xs font-semibold text-white/90 uppercase tracking-wider">
-              {{ item.category }}
-            </span>
-          </li>
-          <!-- Navigation Item -->
-          <li>
-            <router-link
-              v-if="!item.action"
-              :to="item.path"
-              class="nav-link"
-              :class="{ 'nav-link-active': isActive(item.path) }"
-            >
-              <div class="relative">
-                <div
-                  v-if="item.useImage"
-                  class="h-5 w-5 transition-all"
-                  :class="{
-                    'brightness-0 invert': isActive(item.path),
-                  }"
-                  :style="{
-                    backgroundColor: 'currentColor',
-                    maskImage: `url(${item.icon})`,
-                    WebkitMaskImage: `url(${item.icon})`,
-                    maskSize: 'contain',
-                    WebkitMaskSize: 'contain',
-                    maskRepeat: 'no-repeat',
-                    WebkitMaskRepeat: 'no-repeat',
-                    maskPosition: 'center',
-                    WebkitMaskPosition: 'center',
-                  }"
-                ></div>
-                <svg
-                  v-else-if="item.name === 'PumpFun'"
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="h-5 w-5"
-                  :fill="isActive(item.path) ? 'white' : 'currentColor'"
-                  viewBox="0 0 24 24"
-                >
-                  <path :d="item.icon as string" />
-                </svg>
-                <component v-else :is="item.icon as string" class="h-5 w-5" />
-                <!-- Unread badge for Messages -->
-                <span
-                  v-if="item.name === 'Messages' && totalUnreadMessages > 0"
-                  class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold bg-red-500 text-white rounded-full"
-                >
-                  {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
-                </span>
-              </div>
-              <span>{{ item.name }}</span>
-            </router-link>
 
-            <!-- Dialog Action Item -->
-            <button v-else @click="handleDialogAction(item)" class="nav-link w-full text-left">
-              <div
-                v-if="item.useImage"
-                class="h-5 w-5 transition-all"
-                :style="{
-                  backgroundColor: 'currentColor',
-                  maskImage: `url(${item.icon})`,
-                  WebkitMaskImage: `url(${item.icon})`,
-                  maskSize: 'contain',
-                  WebkitMaskSize: 'contain',
-                  maskRepeat: 'no-repeat',
-                  WebkitMaskRepeat: 'no-repeat',
-                  maskPosition: 'center',
-                  WebkitMaskPosition: 'center',
-                }"
-              ></div>
-              <component v-else :is="item.icon as string" class="h-5 w-5" />
-              <span>{{ item.name }}</span>
-            </button>
-          </li>
-        </template>
-      </ul>
-    </nav>
-    <!-- User info and logout at bottom -->
-    <div class="absolute bottom-0 w-64 border-t border-border">
-      <!-- Credit Balance - Hidden for org members with AI disabled -->
-      <div v-if="isAIAllowed" class="px-2 pb-2 pt-2">
-        <button
-          @click="handleCreditClick"
-          class="credit-balance-card w-full"
-          :title="authStore.isAuthenticated ? 'View Billing & Subscription' : 'Sign in to view credits'"
-        >
-          <div class="credit-balance-header">
-            <div class="credit-left">
-              <div class="credit-icon-wrapper">
-                <DollarSign class="credit-icon" />
-              </div>
-              <span class="credit-label">Credits</span>
-            </div>
-
-            <div v-if="!loadingBalance" class="credit-right">
-              <div v-if="authStore.isAuthenticated">
-                <div v-if="typeof hoursRemaining === 'string'" class="credit-value-wrapper">
-                  <span class="credit-value unlimited">∞</span>
-                </div>
-                <div v-else class="credit-value-wrapper">
-                  <span class="credit-value">
-                    {{ typeof hoursRemaining === 'number' ? Math.round(hoursRemaining) : hoursRemaining }}
-                  </span>
-                  <span class="credit-unit">min</span>
-                </div>
-              </div>
-              <div v-else class="credit-sign-in-prompt">
-                <span class="credit-sign-in-text">Sign in</span>
-              </div>
-            </div>
-
-            <div v-else class="credit-right">
-              <div class="credit-loading">
-                <div class="loading-spinner"></div>
-              </div>
-            </div>
-          </div>
-        </button>
+    <!-- ===== Header Section ===== -->
+    <div v-if="!isNativeEnvironment" class="sidebar-header">
+      <div class="sidebar-logo">
+        <img src="/logo.svg" alt="Clippster" class="sidebar-logo__image" />
+        <span class="sidebar-logo__text">Clippster</span>
       </div>
-      <!-- User info -->
-      <div :class="authStore.isAuthenticated ? 'px-4 pb-4 pt-4' : 'px-2 pb-2 pt-2'" class="border-t border-border">
-        <div v-if="authStore.isAuthenticated" class="flex items-center justify-between gap-2 min-w-0">
-          <div class="flex items-center gap-2 min-w-0">
-            <button 
-              @click="router.push('/clipper-profile')"
-              class="p-1.5 rounded-md hover:bg-primary/10 transition-colors text-muted-foreground hover:text-primary"
-              title="Clipper Profile"
-            >
-              <UserCircle class="w-4 h-4" />
-            </button>
-            <span class="font-mono text-xs text-primary truncate min-w-0" :title="formattedAddress">
-              {{ formattedAddress }}
-            </span>
-          </div>
-          <button @click="handleDisconnect" class="disconnect-btn flex-shrink-0">{{ disconnectButtonText }}</button>
+    </div>
+
+    <!-- ===== Navigation Section ===== -->
+    <nav class="sidebar-nav">
+      <div class="sidebar-nav__scroll">
+        <div class="sidebar-nav__content">
+          <template v-for="group in sortedNavigationGroups" :key="group.key">
+            <div v-if="getVisibleGroupItems(group.items).length > 0" class="sidebar-nav-group">
+              <!-- Group Label -->
+              <div v-if="group.label" class="sidebar-nav-group__label">
+                {{ group.label }}
+              </div>
+
+              <!-- Navigation Items -->
+              <ul class="sidebar-nav-group__items">
+                <li v-for="item in getVisibleGroupItems(group.items)" :key="item.path">
+                  <router-link
+                    :to="item.path"
+                    class="sidebar-nav-item"
+                    :class="{ 'sidebar-nav-item--active': isActive(item.path) }"
+                  >
+                    <div class="sidebar-nav-item__icon">
+                      <div
+                        v-if="item.useImage"
+                        class="sidebar-nav-item__custom-icon"
+                        :style="{
+                          maskImage: `url(${item.icon})`,
+                          WebkitMaskImage: `url(${item.icon})`,
+                        }"
+                      />
+                      <component v-else :is="item.icon as Component" class="w-[18px] h-[18px]" />
+                      <!-- Unread badge for Messages -->
+                      <span v-if="item.name === 'Messages' && totalUnreadMessages > 0" class="sidebar-nav-item__badge">
+                        {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
+                      </span>
+                    </div>
+                    <span class="sidebar-nav-item__text">{{ item.name }}</span>
+                  </router-link>
+                </li>
+              </ul>
+            </div>
+          </template>
         </div>
-        <div v-else class="flex items-center justify-center">
-          <button @click="showAuthModal" class="sign-in-btn">Sign In</button>
-        </div>
+      </div>
+    </nav>
+
+    <!-- ===== Footer Section ===== -->
+    <div class="sidebar-footer">
+      <!-- User Profile Section -->
+      <div class="sidebar-user">
+        <template v-if="authStore.isAuthenticated">
+          <DropdownMenu>
+            <DropdownMenuTrigger class="sidebar-user__trigger">
+              <div class="sidebar-user__avatar">
+                <span class="sidebar-user__avatar-text">{{ userInitials }}</span>
+              </div>
+              <span class="sidebar-user__name" :title="formattedAddress">
+                {{ formattedAddress }}
+              </span>
+              <ChevronRight class="sidebar-user__chevron" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="end" :side-offset="12" class="sidebar-dropdown">
+              <DropdownMenuLabel class="sidebar-dropdown__label">
+                {{ formattedAddress }}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator class="sidebar-dropdown__separator" />
+              <!-- Credits Display -->
+              <DropdownMenuItem
+                v-if="isAIAllowed"
+                class="sidebar-dropdown__item sidebar-dropdown__credits"
+                @click="router.push('/billing')"
+              >
+                <Zap class="w-4 h-4 mr-2 text-sidebar-accent" />
+                <span class="sidebar-dropdown__credits-label">Credits</span>
+                <span v-if="!loadingBalance" class="sidebar-dropdown__credits-value">
+                  <template v-if="typeof hoursRemaining === 'string'">Unlimited</template>
+                  <template v-else>{{ Math.round(hoursRemaining as number) }} min</template>
+                </span>
+                <span v-else class="sidebar-dropdown__credits-loading"></span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator v-if="isAIAllowed" class="sidebar-dropdown__separator" />
+              <DropdownMenuItem class="sidebar-dropdown__item" @click="router.push('/clipper-profile')">
+                <UserCircle class="w-4 h-4 mr-2" />
+                Clipper Profile
+              </DropdownMenuItem>
+              <DropdownMenuSeparator class="sidebar-dropdown__separator" />
+              <!-- Admin Link (conditional) -->
+              <DropdownMenuItem
+                v-if="authStore.user?.is_admin"
+                class="sidebar-dropdown__item"
+                @click="router.push('/admin')"
+              >
+                <Settings class="w-4 h-4 mr-2" />
+                Admin
+              </DropdownMenuItem>
+              <!-- Bug Report -->
+              <DropdownMenuItem class="sidebar-dropdown__item" @click="showBugReportDialog = true">
+                <Bug class="w-4 h-4 mr-2" />
+                Bug Report
+              </DropdownMenuItem>
+              <DropdownMenuSeparator class="sidebar-dropdown__separator" />
+              <DropdownMenuItem class="sidebar-dropdown__item sidebar-dropdown__item--danger" @click="handleDisconnect">
+                <LogOut class="w-4 h-4 mr-2" />
+                {{ disconnectButtonText }}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </template>
+        <template v-else>
+          <button class="sidebar-signin-btn" @click="showAuthModal">Sign In</button>
+        </template>
       </div>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useMessagingStore } from '@/stores/messaging';
   import { useWallet } from '@/composables/useWallet';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
-  import { navigationItems } from '@/config/navigation';
+  import { getSortedNavigationGroups, type NavigationItem } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
   import api from '@/services/api';
-  import { DollarSign, UserCircle } from 'lucide-vue-next';
+  import { Zap, UserCircle, ChevronRight, LogOut, Settings, Bug } from 'lucide-vue-next';
 
+  // ===== Composables & Stores =====
   const route = useRoute();
   const router = useRouter();
   const authStore = useAuthStore();
   const messagingStore = useMessagingStore();
   const { formatAddress } = useWallet();
-
-  // Total unread messages count from messaging store
-  const totalUnreadMessages = computed(() => messagingStore.totalUnread);
   const { isAIAllowed } = useAIPermission();
   const { isLiveClipEnabled, initialize: initFeatureFlags } = useFeatureFlags();
 
+  // ===== Emits =====
   const emit = defineEmits<{
     'show-auth-modal': [];
   }>();
 
+  // ===== Reactive State =====
   const hoursRemaining = ref<number | 'unlimited'>(0);
   const loadingBalance = ref(false);
   const isNativeEnvironment = ref(false);
-
-  // Timer reference for cleanup
+  const showBugReportDialog = ref(false);
+  const userOrganizations = ref<any[]>([]);
   let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
-  // Track user's organizations
-  const userOrganizations = ref<any[]>([]);
+  // ===== Computed Properties =====
+  const totalUnreadMessages = computed(() => messagingStore.totalUnread);
 
-  // Load user's organizations
+  const sortedNavigationGroups = computed(() => getSortedNavigationGroups());
+
+  const isOrgAccountOwner = computed(() => {
+    return authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+  });
+
+  const formattedAddress = computed(() => {
+    if (!authStore.isAuthenticated) return '';
+    if (authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) && authStore.email) {
+      return authStore.email;
+    }
+    return formatAddress(authStore.walletAddress ?? '');
+  });
+
+  const userInitials = computed(() => {
+    if (!authStore.isAuthenticated) return '';
+    const email = authStore.email;
+    if (email) {
+      return email.slice(0, 2).toUpperCase();
+    }
+    const wallet = authStore.walletAddress;
+    if (wallet) {
+      return wallet.slice(0, 2).toUpperCase();
+    }
+    return '??';
+  });
+
+  const disconnectButtonText = computed(() => {
+    return authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) ? 'Sign Out' : 'Disconnect';
+  });
+
+  // ===== Navigation Filtering =====
+  function getVisibleGroupItems(items: NavigationItem[]): NavigationItem[] {
+    return items.filter((item) => {
+      // Hide Admin and Bug Report from navigation - they're now in the profile dropdown
+      if (item.name === 'Admin' || item.name === 'Bug Report') {
+        return false;
+      }
+      // Check admin-only items
+      if (item.adminOnly) {
+        return authStore.user?.is_admin === true;
+      }
+      // Check organization owner-only items
+      if (item.orgOnly) {
+        return isOrgAccountOwner.value;
+      }
+      // Check organization member items
+      if (item.orgMember) {
+        if (isOrgAccountOwner.value) return true;
+        return userOrganizations.value.length > 0;
+      }
+      // Hide Live when feature is disabled
+      if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function isActive(path: string): boolean {
+    if (path === '/organizations') {
+      return route.path.startsWith('/organizations') || route.path.startsWith('/organization/');
+    }
+    return route.path.startsWith(path);
+  }
+
+  // ===== Event Handlers =====
+  function handleDisconnect() {
+    authStore.logout();
+    router.push('/');
+  }
+
+  function showAuthModal() {
+    emit('show-auth-modal');
+  }
+
+  function handleBugReportSubmitted() {
+    console.log('Bug report submitted successfully');
+  }
+
+  // ===== Data Fetching =====
   async function loadUserOrganizations() {
     if (!authStore.isAuthenticated) {
       userOrganizations.value = [];
@@ -213,48 +271,35 @@
     }
   }
 
-  // Check if user is an organization account owner
-  const isOrgAccountOwner = computed(() => {
-    return authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
-  });
-
-  // Filter navigation items based on admin/org status and feature flags
-  const visibleNavigationItems = computed(() => {
-    const filtered = navigationItems.filter((item) => {
-      // Check admin-only items
-      if (item.adminOnly) {
-        return authStore.user?.is_admin === true;
-      }
-      // Check organization owner-only items
-      if (item.orgOnly) {
-        return isOrgAccountOwner.value;
-      }
-      // Check organization member items (show if user is member of any org)
-      if (item.orgMember) {
-        // For org account owners, always show Organizations
-        if (isOrgAccountOwner.value) return true;
-        return userOrganizations.value.length > 0;
-      }
-      // Hide Clip Live when feature is disabled
-      if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
-        return false;
-      }
-      return true;
-    });
-
-    // For organization account owners, move Organizations to the top
-    if (isOrgAccountOwner.value) {
-      const orgIndex = filtered.findIndex((item) => item.path === '/organizations');
-      if (orgIndex > 0) {
-        const [orgItem] = filtered.splice(orgIndex, 1);
-        filtered.unshift(orgItem);
-      }
+  async function fetchBalance() {
+    if (!authStore.isAuthenticated) {
+      hoursRemaining.value = 0;
+      return;
     }
 
-    return filtered;
-  });
+    loadingBalance.value = true;
+    try {
+      const response = await api.get('/credits/balance');
+      if (response.data.success) {
+        hoursRemaining.value = response.data.balance.hours_remaining;
+      }
+    } catch (error) {
+      console.error('Failed to fetch balance:', error);
+    } finally {
+      loadingBalance.value = false;
+    }
+  }
 
-  // Watch for auth changes and load organizations
+  function handleAuthStateChanged(event: CustomEvent) {
+    console.log('[DashboardSidebar] Auth state changed, refetching balance. User ID:', event.detail?.userId);
+    if (event.detail?.userId === null) {
+      hoursRemaining.value = 0;
+    } else {
+      fetchBalance();
+    }
+  }
+
+  // ===== Watchers =====
   watch(
     () => authStore.isAuthenticated,
     (isAuth) => {
@@ -267,267 +312,227 @@
     { immediate: true }
   );
 
-  const isActive = (path: string) => {
-    // Special case: /organizations should also match /organization/:id routes
-    if (path === '/organizations') {
-      return route.path.startsWith('/organizations') || route.path.startsWith('/organization/');
-    }
-    return route.path.startsWith(path);
-  };
-
-  const shouldShowCategory = (category: string, index: number) => {
-    // Only show category label for the first item with that category
-    if (index === 0) return true;
-    const previousItem = visibleNavigationItems.value[index - 1];
-    return previousItem.category !== category;
-  };
-
-  const formattedAddress = computed(() => {
-    if (!authStore.isAuthenticated) return '';
-
-    // For email-based auth (Google or email/password), show email; for wallet auth, show formatted address
-    if (authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) && authStore.email) {
-      return authStore.email;
-    }
-    return formatAddress(authStore.walletAddress ?? '');
-  });
-
-  const disconnectButtonText = computed(() => {
-    return authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) ? 'Sign Out' : 'Disconnect';
-  });
-
-  const handleDisconnect = () => {
-    authStore.logout();
-    router.push('/');
-  };
-
-  const showAuthModal = () => {
-    emit('show-auth-modal');
-  };
-
-  const handleCreditClick = () => {
-    if (authStore.isAuthenticated) {
-      router.push('/billing');
-    } else {
-      showAuthModal();
-    }
-  };
-
-  // Dialog handling
-  const showBugReportDialog = ref(false);
-
-  const handleDialogAction = (item: any) => {
-    if (item.action === 'dialog' && item.name === 'Bug Report') {
-      showBugReportDialog.value = true;
-    }
-  };
-
-  const handleBugReportSubmitted = () => {
-    console.log('Bug report submitted successfully');
-    // Could add a toast notification here if needed
-  };
-
-  async function fetchBalance() {
-    if (!authStore.isAuthenticated) {
-      hoursRemaining.value = 0;
-      return;
-    }
-
-    loadingBalance.value = true;
-    try {
-      const response = await api.get('/credits/balance');
-
-      if (response.data.success) {
-        hoursRemaining.value = response.data.balance.hours_remaining;
-      }
-    } catch (error) {
-      console.error('Failed to fetch balance:', error);
-    } finally {
-      loadingBalance.value = false;
-    }
-  }
-
-  // Handle auth state changes (login/logout)
-  function handleAuthStateChanged(event: CustomEvent) {
-    console.log('[DashboardSidebar] Auth state changed, refetching balance. User ID:', event.detail?.userId);
-
-    if (event.detail?.userId === null) {
-      // User logged out - clear balance immediately
-      hoursRemaining.value = 0;
-    } else {
-      // User logged in - fetch new balance
-      fetchBalance();
-    }
-  }
-
+  // ===== Lifecycle =====
   onMounted(() => {
-    // Check if running in native Tauri environment
     isNativeEnvironment.value = typeof window !== 'undefined' && '__TAURI__' in window;
-
-    // Initial fetch
     fetchBalance();
-
-    // Refresh balance every 30 seconds
     balanceRefreshInterval = setInterval(fetchBalance, 30000);
-
-    // Listen for auth state changes
     window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
-
-    // Initialize feature flags
     initFeatureFlags();
   });
 
   onUnmounted(() => {
-    // Clear the interval to prevent memory leaks
     if (balanceRefreshInterval) {
       clearInterval(balanceRefreshInterval);
       balanceRefreshInterval = null;
     }
-
-    // Remove auth state change listener
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
   });
 </script>
 
 <style scoped>
-  .nav-link {
+  /* ===== Sidebar Container ===== */
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    width: 240px;
     display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
-    border-radius: 0.35rem;
-    color: var(--muted-foreground);
+    flex-direction: column;
+    background-color: var(--sidebar-bg);
+    border-right: 1px solid var(--sidebar-border);
+    transition: width 200ms ease-out;
+    z-index: 40;
   }
 
-  .nav-link:hover {
-    color: var(--foreground);
-    background-color: var(--accent);
+  .sidebar--native {
+    padding-top: 32px; /* Account for custom titlebar */
   }
 
-  .nav-link-active {
-    background-color: rgb(255 255 255 / 0.1);
-    color: white;
-  }
-
-  .nav-link-active:hover {
-    background-color: rgb(255 255 255 / 0.15);
-    color: rgb(255 255 255);
-  }
-
-  .disconnect-btn {
-    font-size: 0.75rem;
-    line-height: 1rem;
-    color: rgb(239 68 68);
-    cursor: pointer;
-  }
-
-  .disconnect-btn:hover {
-    color: rgb(248 113 113);
-    border-color: rgb(248 113 113 / 0.3);
-    background-color: rgb(248 113 113 / 0.05);
-  }
-
-  /* Credit Balance Card Styles */
-  .credit-balance-card {
-    display: block;
-    width: 100%;
-    padding: 0.625rem;
-    border-radius: 0.375rem;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
-    border: 1px solid rgba(99, 102, 241, 0.2);
-    transition: all 0.2s ease;
-    cursor: pointer;
-    text-align: left;
-    font: inherit;
-  }
-
-  .credit-balance-card:hover {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%);
-    border-color: rgba(99, 102, 241, 0.3);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
-  }
-
-  .credit-balance-header {
+  /* ===== Header ===== */
+  .sidebar-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    /* margin-bottom: 0.5rem; */
+    padding: 1rem;
+    height: 56px;
+    border-bottom: 1px solid var(--sidebar-border);
   }
 
-  .credit-left {
+  .sidebar-logo {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0.5rem;
+    min-width: 0;
   }
 
-  .credit-right {
+  .sidebar-logo__image {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  .sidebar-logo__text {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ===== Navigation ===== */
+  .sidebar-nav {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .sidebar-nav__scroll {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Custom scrollbar for navigation */
+  .sidebar-nav__scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .sidebar-nav__scroll::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  .sidebar-nav__scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebar-nav__scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .sidebar-nav__scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+
+  /* Firefox scrollbar */
+  .sidebar-nav__scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  }
+
+  .sidebar-nav__content {
+    padding: 0.75rem;
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    gap: 1rem;
   }
 
-  .credit-icon-wrapper {
+  /* Navigation Groups */
+  .sidebar-nav-group {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 0.25rem;
-    background: rgba(99, 102, 241, 0.15);
+    flex-direction: column;
+    gap: 0.25rem;
   }
 
-  .credit-icon {
-    width: 1rem;
-    height: 1rem;
-    color: rgb(99, 102, 241);
-  }
-
-  .credit-label {
-    font-size: 0.6875rem;
+  .sidebar-nav-group__label {
+    font-size: 0.625rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--sidebar-text-muted);
+    padding: 0.5rem 0.75rem 0.25rem;
+    opacity: 0.7;
   }
 
-  .credit-value-wrapper {
+  .sidebar-nav-group__items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: flex;
-    align-items: baseline;
-    gap: 0.375rem;
+    flex-direction: column;
+    gap: 2px;
   }
 
-  .credit-value {
-    font-size: 1rem;
-    font-weight: 700;
-    line-height: 1;
-    color: white;
-  }
-
-  .credit-value.unlimited {
-    background: linear-gradient(135deg, rgb(99, 102, 241) 0%, rgb(139, 92, 246) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  .credit-unit {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.6);
-  }
-
-  .credit-loading {
+  /* Navigation Items */
+  .sidebar-nav-item {
     display: flex;
     align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: none;
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: all 150ms ease;
+    cursor: pointer;
   }
 
-  .loading-spinner {
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid rgba(99, 102, 241, 0.2);
-    border-top-color: rgb(99, 102, 241);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+  .sidebar-nav-item:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .sidebar-nav-item--active {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-accent);
+  }
+
+  .sidebar-nav-item--active:hover {
+    background-color: var(--sidebar-active-hover);
+  }
+
+  .sidebar-nav-item__icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .sidebar-nav-item__custom-icon {
+    width: 18px;
+    height: 18px;
+    background-color: currentColor;
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+  }
+
+  .sidebar-nav-item__text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sidebar-nav-item__badge {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.625rem;
+    font-weight: 600;
+    background-color: #ef4444;
+    color: white;
+    border-radius: 8px;
+  }
+
+  /* ===== Footer ===== */
+  .sidebar-footer {
+    padding: 0.25rem;
+    border-top: 1px solid var(--sidebar-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
   }
 
   @keyframes spin {
@@ -536,36 +541,187 @@
     }
   }
 
-  .credit-sign-in-prompt {
+  /* User Section */
+  .sidebar-user {
+    display: flex;
+  }
+
+  .sidebar-user__trigger {
     display: flex;
     align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    /* Prevent any animations/transforms from dropdown library */
+    transform: none !important;
+    animation: none !important;
   }
 
-  .credit-sign-in-text {
-    font-size: 0.775rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.8);
+  .sidebar-user__trigger:hover {
+    background-color: var(--sidebar-hover);
   }
 
-  .sign-in-btn {
+  .sidebar-user__trigger[data-state='open'] {
+    background-color: var(--sidebar-hover);
+  }
+
+  .sidebar-user__avatar {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 20px;
+    background-color: var(--sidebar-accent);
+  }
+
+  .sidebar-user__avatar-text {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: #0a0a0b;
+    text-transform: uppercase;
+  }
+
+  .sidebar-user__name {
+    flex: 1;
+    font-size: 0.75rem;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--sidebar-text-muted);
+  }
+
+  .sidebar-user__chevron {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  /* Sign In Button */
+  .sidebar-signin-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 100%;
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
     font-size: 0.875rem;
     font-weight: 500;
-    color: white;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.8) 0%, rgba(139, 92, 246, 0.8) 100%);
-    border: 1px solid rgba(99, 102, 241, 0.3);
-    border-radius: 0.375rem;
-    text-decoration: none;
-    transition: all 0.2s ease;
+    cursor: pointer;
+    transition: all 150ms ease;
   }
 
-  .sign-in-btn:hover {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 1) 0%, rgba(139, 92, 246, 1) 100%);
-    border-color: rgba(99, 102, 241, 0.5);
-    transform: translateY(-1px);
+  .sidebar-signin-btn:hover {
+    opacity: 0.9;
+  }
+</style>
+
+<!-- Global styles for dropdown (rendered via portal outside component scope) -->
+<style>
+  .sidebar-dropdown {
+    width: 200px !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    z-index: 100 !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    /* Disable all slide/zoom animations, only fade */
+    animation: sidebarDropdownFade 100ms ease-out !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+  }
+
+  @keyframes sidebarDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .sidebar-dropdown__label {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.75rem !important;
+    font-weight: 400 !important;
+    color: var(--sidebar-text-muted) !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sidebar-dropdown__separator {
+    height: 1px !important;
+    margin: 0.25rem 0 !important;
+    background-color: var(--sidebar-border) !important;
+  }
+
+  .sidebar-dropdown__item {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 4px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    cursor: pointer !important;
+  }
+
+  .sidebar-dropdown__item:hover,
+  .sidebar-dropdown__item:focus,
+  .sidebar-dropdown__item[data-highlighted] {
+    background-color: var(--sidebar-hover) !important;
+    outline: none !important;
+  }
+
+  .sidebar-dropdown__item--danger {
+    color: #f87171 !important;
+  }
+
+  .sidebar-dropdown__item--danger:hover,
+  .sidebar-dropdown__item--danger:focus,
+  .sidebar-dropdown__item--danger[data-highlighted] {
+    background-color: rgba(248, 113, 113, 0.1) !important;
+    color: #f87171 !important;
+  }
+
+  /* Credits item in dropdown */
+  .sidebar-dropdown__credits {
+    justify-content: flex-start !important;
+  }
+
+  .sidebar-dropdown__credits .text-sidebar-accent {
+    color: var(--sidebar-accent) !important;
+  }
+
+  .sidebar-dropdown__credits-label {
+    flex: 1;
+  }
+
+  .sidebar-dropdown__credits-value {
+    font-weight: 600;
+    color: var(--sidebar-accent) !important;
+    font-size: 0.8125rem;
+  }
+
+  .sidebar-dropdown__credits-loading {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--sidebar-border);
+    border-top-color: var(--sidebar-accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
   }
 </style>

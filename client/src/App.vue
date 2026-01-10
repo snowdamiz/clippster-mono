@@ -31,7 +31,7 @@
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
-  
+
   // Check if this is the PIP window (no title bar needed)
   const isPipWindow = computed(() => window.location.pathname === '/pip-controls');
 
@@ -148,7 +148,7 @@
   async function initializeApp() {
     // Check if this is the PIP window - it only needs minimal initialization
     const isPipWindow = window.location.pathname === '/pip-controls';
-    
+
     if (isPipWindow) {
       // PIP window only needs to show content, no DB/auth/etc
       isLoading.value = false;
@@ -223,7 +223,7 @@
     });
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
-    
+
     // Cleanup global clip build event handler
     cleanupClipBuildEventHandler();
   });
@@ -250,7 +250,7 @@
     <TitleBar v-if="!isPipWindow" :dark-mode="true" :platform-override="titleBarPlatformOverride" />
 
     <!-- Main content area with scrolling -->
-    <div class="main-content" :class="{ 'pip-content': isPipWindow }">
+    <div class="main-content dashboard-container" :class="{ 'pip-content': isPipWindow }">
       <!-- Toast notifications provider -->
       <Toast />
       <!-- Router view for page content (key changes on auth to force refresh) -->
@@ -307,5 +307,9 @@
   .main-content.pip-content {
     padding-top: 0; /* No title bar in PIP window */
     overflow: hidden;
+  }
+
+  .dashboard-container {
+    background-color: var(--sidebar-bg);
   }
 </style>

@@ -1,16 +1,17 @@
 <template>
-  <div class="bg-background flex">
+  <div class="dashboard-container flex">
     <DashboardSidebar @show-auth-modal="showAuthModal = true" />
     <!-- Main content area with left margin to account for fixed sidebar -->
-    <main class="flex-1 ml-64">
+    <main
+      class="flex-1 transition-[margin-left] duration-200 ease-out dashboard-container"
+      :class="isCollapsed ? 'ml-16' : 'ml-60'"
+    >
       <!-- <DashboardHeader /> -->
       <!-- Page content with top margin to account for fixed header -->
-      <div class="px-6 pb-8 pt-8">
-        <div class="max-w-7xl mx-auto">
-          <router-view v-slot="{ Component }">
-            <transition name="fade" mode="out-in"><component :is="Component" /></transition>
-          </router-view>
-        </div>
+      <div class="pb-8 dashboard-container">
+        <router-view v-slot="{ Component }">
+          <transition name="fade" mode="out-in"><component :is="Component" /></transition>
+        </router-view>
       </div>
     </main>
     <!-- Authentication Modal -->
@@ -26,8 +27,10 @@
   import AuthModal from '@/components/AuthModal.vue';
   import AccountTypeDialog from '@/components/AccountTypeDialog.vue';
   import { useAuthStore } from '@/stores/auth';
+  import { useSidebarState } from '@/composables/useSidebarState';
 
   const authStore = useAuthStore();
+  const { isCollapsed } = useSidebarState();
   const showAuthModal = ref(false);
   const showAccountTypeDialog = ref(false);
 
@@ -71,6 +74,10 @@
 </script>
 
 <style scoped>
+  .dashboard-container {
+    background-color: var(--sidebar-bg);
+  }
+
   .fade-enter-active,
   .fade-leave-active {
     transition: opacity 0.1s ease;

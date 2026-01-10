@@ -290,4 +290,3 @@ When multimodal is enabled:
 
 - Decider has focused context (only clips from one time range)
 - Better at resolving overlapping timestamps within a chunk
-- More manageable input size for the decider model

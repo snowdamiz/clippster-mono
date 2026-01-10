@@ -747,32 +747,32 @@
   }
 
   .titlebar-dark {
-    background: #070707;
+    background: #0a0a0b;
     border-bottom-color: #333;
   }
 
   /* Linux-specific styling */
   .titlebar-linux {
-    background: #202020;
+    background: #0a0a0b;
     border-bottom: 1px solid #3c3c3c;
     height: 32px;
   }
 
   .titlebar-linux.titlebar-dark {
-    background: #070707;
+    background: #0a0a0b;
     border-bottom-color: #333;
   }
 
   /* macOS-specific styling */
   .titlebar-macos {
-    background: #202020;
+    background: #0a0a0b;
     border-bottom: 1px solid #3c3c3c;
     height: 32px;
     margin-right: -12px;
   }
 
   .titlebar-macos.titlebar-dark {
-    background: #070707;
+    background: #0a0a0b;
     border-bottom-color: #333;
   }
 
@@ -945,12 +945,12 @@
 
   /* Windows-specific styling */
   .titlebar-windows {
-    background: #202020;
+    background: #0a0a0b;
     border-bottom: 1px solid #3c3c3c;
   }
 
   .titlebar-windows.titlebar-dark {
-    background: #070707;
+    background: #0a0a0b;
     border-bottom-color: #333;
   }
 
@@ -1035,7 +1035,7 @@
   /* macOS-specific adjustments for better theme integration */
   @media (prefers-color-scheme: dark) {
     .titlebar-macos:not(.titlebar-dark) {
-      background: #070707;
+      background: #0a0a0b;
       border-bottom-color: #333;
     }
   }
