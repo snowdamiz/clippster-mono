@@ -425,9 +425,9 @@
             :duration="getSpeedCurveDuration()"
             :speed-keyframes="speedCurveKeyframes"
             @close="closeSpeedCurveEditor"
-            @add-keyframe="handleAddSpeedKeyframe"
-            @update-keyframe="handleUpdateSpeedKeyframe"
-            @delete-keyframe="handleDeleteSpeedKeyframe"
+            @add-keyframe="(time: number, speed: number) => handleAddSpeedKeyframe(speedCurveEditorSourceId!, time, speed)"
+            @update-keyframe="(kfId: string, updates: any) => handleUpdateSpeedKeyframe(speedCurveEditorSourceId!, kfId, updates)"
+            @delete-keyframe="(kfId: string) => handleDeleteSpeedKeyframe(speedCurveEditorSourceId!, kfId)"
             @apply-preset="handleApplySpeedPreset"
           />
         </div>
@@ -436,14 +436,14 @@
       <!-- Manual POI Editor Dialog -->
       <ManualPOIEditor
         v-model="showManualPOIEditor"
-        :initial-config="getConfigForRatio(editingAspectRatio)"
+        :initial-config="getInitialPOIConfig(editingAspectRatio)"
         :target-aspect-ratio="editingAspectRatio"
         :source-aspect-ratio="'16:9'"
-        :thumbnail-url="effectiveThumbnailUrl"
-        :video-path="effectiveVideoPath"
+        :thumbnail-url="effectiveThumbnailUrl ?? undefined"
+        :video-path="effectiveVideoPath ?? undefined"
         :clip-start-time="effectivePOIClipStartTime"
         :clip-end-time="effectivePOIClipEndTime ?? undefined"
-        @confirm="onManualPOIConfigConfirm"
+        @confirm="onManualPOIConfirm"
       />
 
       <!-- Promote to Video Project Confirmation Dialog -->
@@ -484,7 +484,8 @@
   } from '@/services/commands';
   import { TimelineAdapter } from '@/services/timeline-adapter';
   import type { UpdateOverlayPropertyCommandData } from '@/services/commands';
-  import type { ClipSegment } from '@/services/database';
+  import type { ClipSegment as DbClipSegment } from '@/services/database';
+  import type { ClipSegment } from '@/types';
   import type {
     VideoEditorAudioTrackRecord,
     VideoEditorTextOverlayRecord,
@@ -587,7 +588,7 @@
   import ManualPOIEditor from './ManualPOIEditor.vue';
   import SpeedCurveEditor from './SpeedCurveEditor.vue';
   import KeyframeInspector from './KeyframeInspector.vue';
-  import type { ItemType } from '@/types/timeline-model';
+  import type { ItemType, Keyframe as TimelineKeyframe, EasingType } from '@/types/timeline-model';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { useUnifiedTracks } from '@/composables/useUnifiedTracks';
@@ -733,7 +734,7 @@
   const commandHistory = new CommandHistory();
 
   // Clipboard for copy/paste
-  const copiedSegment = ref<ClipSegment | null>(null);
+  const copiedSegment = ref<DbClipSegment | null>(null);
 
   // Multi-select state
   const selectedSegmentIds = ref<Set<string>>(new Set());
@@ -957,6 +958,7 @@
     return videoSources.value.map((source) => ({
       start: source.trim_start,
       end: source.trim_end ?? source.trim_start + (source.end_time - source.start_time),
+      sourcePath: source.source_path,
     }));
   });
 
@@ -1075,6 +1077,7 @@
         start_time: t.startTime,
         end_time: t.endTime,
         volume: t.volume,
+        pan: t.pan ?? 0,
         fade_in: t.fadeIn,
         fade_out: t.fadeOut,
         track_order: t.trackOrder,
@@ -1417,19 +1420,31 @@
   });
 
   // Get segments in absolute time format for playback
-  const playbackSegments = computed(() => {
+  const playbackSegments = computed<ClipSegment[]>(() => {
     if (trimSegments.value.length === 0) {
       // No segments defined, use the full clip as a single segment
-      return [{ start_time: props.clipStartTime, end_time: props.clipEndTime }];
+      const duration = props.clipEndTime - props.clipStartTime;
+      return [{ 
+        start_time: props.clipStartTime, 
+        end_time: props.clipEndTime, 
+        duration, 
+        transcript: '' 
+      }];
     }
 
     // Convert relative segment times back to absolute times
     return trimSegments.value
       .filter((seg) => !seg.isDeleted)
-      .map((seg) => ({
-        start_time: props.clipStartTime + seg.startTime,
-        end_time: props.clipStartTime + seg.endTime,
-      }))
+      .map((seg) => {
+        const start_time = props.clipStartTime + seg.startTime;
+        const end_time = props.clipStartTime + seg.endTime;
+        return {
+          start_time,
+          end_time,
+          duration: end_time - start_time,
+          transcript: '',
+        };
+      })
       .sort((a, b) => a.start_time - b.start_time);
   });
 
@@ -2028,7 +2043,7 @@
         const resizeCommand = new ResizeCommand({
           type: 'source',
           itemId: sourceId,
-          editId: videoEditorEditId.value || undefined,
+          editId: videoEditorEditId.value || '',
           originalStartTime: source.start_time,
           originalEndTime: source.end_time,
           originalTrimStart: source.trim_start ?? undefined,
@@ -2530,7 +2545,7 @@
     id: string;
     itemId: string;
     type: 'source' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
-    keyframe: Keyframe;
+    keyframe: TimelineKeyframe;
   } | null>(null);
 
   function handleKeyframeSelect(data: { itemId: string; keyframeId: string; type: ItemType }) {
@@ -2563,7 +2578,7 @@
     }
   }
 
-  async function updateKeyframe(updates: Partial<Keyframe>) {
+  async function updateKeyframe(updates: Partial<TimelineKeyframe>) {
     if (!selectedKeyframe.value) return;
     
     const { itemId, type, id } = selectedKeyframe.value;
@@ -2578,7 +2593,7 @@
         const index = item.keyframes.findIndex((k) => k.id === id);
         if (index !== -1) {
           const newKeyframes = [...item.keyframes];
-          newKeyframes[index] = { ...newKeyframes[index], ...updates };
+          newKeyframes[index] = { ...newKeyframes[index], ...updates } as TimelineKeyframe;
           await updateTextOverlayLocal(itemId, { keyframes: newKeyframes });
         }
       }
@@ -2588,7 +2603,7 @@
         const index = item.keyframes.findIndex((k) => k.id === id);
         if (index !== -1) {
           const newKeyframes = [...item.keyframes];
-          newKeyframes[index] = { ...newKeyframes[index], ...updates };
+          newKeyframes[index] = { ...newKeyframes[index], ...updates } as TimelineKeyframe;
           await updateStickerLocal(itemId, { keyframes: newKeyframes });
         }
       }
@@ -2598,7 +2613,7 @@
         const index = item.keyframes.findIndex((k) => k.id === id);
         if (index !== -1) {
           const newKeyframes = [...item.keyframes];
-          newKeyframes[index] = { ...newKeyframes[index], ...updates };
+          newKeyframes[index] = { ...newKeyframes[index], ...updates } as TimelineKeyframe;
           await updateWatermarkLocal(itemId, { keyframes: newKeyframes });
         }
       }
@@ -2608,7 +2623,7 @@
         const index = item.keyframes.findIndex((k) => k.id === id);
         if (index !== -1) {
           const newKeyframes = [...item.keyframes];
-          newKeyframes[index] = { ...newKeyframes[index], ...updates };
+          newKeyframes[index] = { ...newKeyframes[index], ...updates } as TimelineKeyframe;
           await updateAudioTrackLocal(itemId, { keyframes: newKeyframes });
         }
       }
@@ -4558,7 +4573,7 @@
       const resizeCommand = new ResizeCommand({
         type: 'audio',
         itemId: trackId,
-        editId: videoEditorEditId.value || undefined,
+        editId: videoEditorEditId.value || '',
         originalStartTime: track.startTime,
         originalEndTime: track.endTime,
         newStartTime: updates.startTime ?? track.startTime,
@@ -4795,6 +4810,55 @@
   // Get config for a specific aspect ratio
   function getConfigForRatio(ratio: string): ManualFramingConfig | null {
     return framingConfigs.value[ratio as keyof ManualFramingConfigs] || null;
+  }
+
+  // POIConfig type for ManualPOIEditor (simple x, y, width, height)
+  interface POIConfig {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }
+
+  // Convert ManualFramingConfig to POIConfig for ManualPOIEditor
+  function getInitialPOIConfig(ratio: string): POIConfig | undefined {
+    const config = getConfigForRatio(ratio);
+    if (!config || !config.regions || config.regions.length === 0) return undefined;
+    // Use the first region's source as the POI config
+    const region = config.regions[0];
+    return {
+      x: region.source.x * 100,
+      y: region.source.y * 100,
+      width: region.source.width * 100,
+      height: region.source.height * 100,
+    };
+  }
+
+  // Handle POI config confirmation from ManualPOIEditor (converts POIConfig to ManualFramingConfig)
+  function onManualPOIConfirm(poiConfig: POIConfig) {
+    const config: ManualFramingConfig = {
+      mode: 'manual',
+      targetAspectRatio: editingAspectRatio.value,
+      regions: [
+        {
+          id: `region-${Date.now()}`,
+          color: '#4F9DFF',
+          source: {
+            x: poiConfig.x / 100,
+            y: poiConfig.y / 100,
+            width: poiConfig.width / 100,
+            height: poiConfig.height / 100,
+          },
+          output: {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+          },
+        },
+      ],
+    };
+    onManualPOIConfigConfirm(config);
   }
 
   // Get framing config for specific segments and aspect ratio

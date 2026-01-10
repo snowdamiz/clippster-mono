@@ -32,7 +32,7 @@ watch(() => props.modelValue, (newVal) => {
   selectedTimezone.value = newVal || '';
 });
 
-const handleChange = (value: string | number | boolean | Record<string, any> | null) => {
+const handleChange = (value: unknown) => {
   if (typeof value === 'string') {
     emit('update:modelValue', value);
   }

@@ -40,14 +40,14 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="space-y-2">
               <Label>Display Name</Label>
-              <Input v-model="profile.display_name" placeholder="Your public name" @blur="saveProfile" />
+              <Input :model-value="profile.display_name ?? ''" @update:model-value="profile.display_name = String($event)" placeholder="Your public name" @blur="saveProfile" />
             </div>
             
             <div class="space-y-2">
               <Label>Profile URL Slug</Label>
               <div class="flex items-center gap-2">
                 <span class="text-sm text-muted-foreground">/clipper/</span>
-                <Input v-model="profile.slug" placeholder="your-slug" @blur="saveProfile" />
+                <Input :model-value="profile.slug ?? ''" @update:model-value="profile.slug = String($event)" placeholder="your-slug" @blur="saveProfile" />
               </div>
             </div>
           </div>
@@ -55,7 +55,8 @@
           <div class="space-y-2">
             <Label>Bio</Label>
             <Textarea 
-              v-model="profile.bio" 
+              :model-value="profile.bio ?? ''"
+              @update:model-value="profile.bio = String($event)"
               placeholder="Tell organizations about yourself and your clipping style..."
               class="min-h-[100px]"
               @blur="saveProfile"
@@ -65,7 +66,7 @@
 
           <div class="space-y-2">
             <Label>Avatar URL</Label>
-            <Input v-model="profile.avatar_url" placeholder="https://..." @blur="saveProfile" />
+            <Input :model-value="profile.avatar_url ?? ''" @update:model-value="profile.avatar_url = String($event)" placeholder="https://..." @blur="saveProfile" />
           </div>
         </div>
 
@@ -76,7 +77,7 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="space-y-2">
               <Label>Experience Level</Label>
-              <Select v-model="profile.experience_level" @update:modelValue="saveProfile">
+              <Select :model-value="profile.experience_level ?? undefined" @update:modelValue="(v: unknown) => { profile.experience_level = String(v); saveProfile(); }">
                 <SelectTrigger>
                   <SelectValue placeholder="Select level" />
                 </SelectTrigger>
@@ -90,7 +91,7 @@
 
             <div class="space-y-2">
               <Label>Timezone</Label>
-              <Input v-model="profile.timezone" placeholder="America/New_York" @blur="saveProfile" />
+              <Input :model-value="profile.timezone ?? ''" @update:model-value="profile.timezone = String($event)" placeholder="America/New_York" @blur="saveProfile" />
             </div>
           </div>
 
@@ -115,7 +116,7 @@
                 :key="tag.value"
                 @click="toggleTag('specialty_tags', tag.value)"
                 class="px-3 py-1.5 rounded-full text-sm transition-colors"
-                :class="profile.specialty_tags.includes(tag.value) 
+                :class="(profile.specialty_tags ?? []).includes(tag.value) 
                   ? 'bg-primary text-primary-foreground' 
                   : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
               >
@@ -132,7 +133,7 @@
                 :key="tag.value"
                 @click="toggleTag('content_style_tags', tag.value)"
                 class="px-3 py-1.5 rounded-full text-sm transition-colors"
-                :class="profile.content_style_tags.includes(tag.value) 
+                :class="(profile.content_style_tags ?? []).includes(tag.value) 
                   ? 'bg-primary text-primary-foreground' 
                   : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
               >
@@ -149,7 +150,7 @@
                 :key="platform.value"
                 @click="toggleTag('preferred_platforms', platform.value)"
                 class="px-3 py-1.5 rounded-full text-sm transition-colors"
-                :class="profile.preferred_platforms.includes(platform.value) 
+                :class="(profile.preferred_platforms ?? []).includes(platform.value) 
                   ? 'bg-primary text-primary-foreground' 
                   : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
               >
@@ -166,7 +167,7 @@
                 :key="lang.code"
                 @click="toggleTag('languages', lang.code)"
                 class="px-3 py-1.5 rounded-full text-sm transition-colors"
-                :class="profile.languages.includes(lang.code) 
+                :class="(profile.languages ?? []).includes(lang.code) 
                   ? 'bg-primary text-primary-foreground' 
                   : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
               >
