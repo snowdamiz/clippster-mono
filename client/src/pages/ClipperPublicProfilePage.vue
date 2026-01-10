@@ -437,6 +437,6 @@ onMounted(() => {
 
 <style scoped>
 .clipper-public-profile-page {
-  @apply h-full;
+  height: 100%;
 }
 </style>

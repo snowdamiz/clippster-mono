@@ -225,6 +225,84 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     end
   end
 
+  @doc """
+  POST /api/user/clipper-profile/portfolio-clips/upload
+  Upload a portfolio clip video file to R2 storage (max 100MB).
+  """
+  @max_file_size 100 * 1024 * 1024  # 100MB
+  def upload_portfolio_clip(conn, %{"file" => %Plug.Upload{} = upload} = params) do
+    user = conn.assigns.current_user
+    alias ClippsterServer.Storage
+
+    # Check file size
+    case File.stat(upload.path) do
+      {:ok, %{size: size}} when size > @max_file_size ->
+        conn
+        |> put_status(:request_entity_too_large)
+        |> json(%{success: false, error: "File size exceeds 100MB limit"})
+
+      {:ok, %{size: file_size}} ->
+        with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
+             {:ok, file_binary} <- File.read(upload.path),
+             key <- generate_portfolio_clip_key(user.id, upload.filename),
+             content_type <- upload.content_type || "video/mp4",
+             {:ok, video_url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
+          
+          # Create the portfolio clip record
+          clip_params = %{
+            "title" => params["title"] || Path.basename(upload.filename, Path.extname(upload.filename)),
+            "video_url" => video_url,
+            "file_size" => file_size
+          }
+
+          case ClipperProfiles.add_portfolio_clip(profile.id, clip_params) do
+            {:ok, clip} ->
+              conn
+              |> put_status(:created)
+              |> json(%{success: true, portfolio_clip: serialize_portfolio_clip(clip)})
+
+            {:error, :max_clips_reached} ->
+              # Clean up uploaded file
+              Storage.delete_file(key)
+              conn
+              |> put_status(:unprocessable_entity)
+              |> json(%{success: false, error: "Maximum of 3 portfolio clips allowed"})
+
+            {:error, changeset} ->
+              # Clean up uploaded file
+              Storage.delete_file(key)
+              conn
+              |> put_status(:unprocessable_entity)
+              |> json(%{success: false, error: format_changeset_errors(changeset)})
+          end
+        else
+          {:error, reason} ->
+            conn
+            |> put_status(:unprocessable_entity)
+            |> json(%{success: false, error: "Upload failed: #{inspect(reason)}"})
+        end
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{success: false, error: "Could not read file: #{inspect(reason)}"})
+    end
+  end
+
+  def upload_portfolio_clip(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{success: false, error: "No file provided"})
+  end
+
+  defp generate_portfolio_clip_key(user_id, filename) do
+    timestamp = DateTime.utc_now() |> DateTime.to_unix()
+    sanitized = filename
+      |> String.replace(~r/[^\w\-\.]/, "_")
+      |> String.slice(0, 50)
+    "portfolio-clips/#{user_id}/#{timestamp}_#{sanitized}"
+  end
+
   # ============================================================================
   # Public Directory Endpoints
   # ============================================================================

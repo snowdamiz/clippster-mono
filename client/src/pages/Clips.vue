@@ -1560,13 +1560,35 @@
 
   async function loadClipThumbnail(clip: Clip) {
     try {
+      // Try multiple sources for thumbnail in order of preference:
+      // 1. Clip's built_thumbnail_path (set by Rust backend during build)
+      // 2. Thumbnail from thumbnails table (clip detection thumbnail)
+      
+      const thumbnailSources: string[] = [];
+      
+      // 1. Clip's built_thumbnail_path (set by Rust backend during build)
+      if (clip.built_thumbnail_path) {
+        thumbnailSources.push(clip.built_thumbnail_path);
+      }
+      
+      // 2. Thumbnail from thumbnails table
       const thumbnail = await getThumbnailByClipId(clip.id);
       if (thumbnail && thumbnail.file_path) {
-        // Convert local file path to data URL for browser display
-        const dataUrl = await invoke<string>('read_file_as_data_url', {
-          filePath: thumbnail.file_path,
-        });
-        thumbnailCache.value.set(clip.id, dataUrl);
+        thumbnailSources.push(thumbnail.file_path);
+      }
+      
+      // Try each source until one works
+      for (const thumbnailPath of thumbnailSources) {
+        try {
+          const fileExists = await invoke<boolean>('check_file_exists', { path: thumbnailPath });
+          if (fileExists) {
+            const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbnailPath });
+            thumbnailCache.value.set(clip.id, dataUrl);
+            return;
+          }
+        } catch {
+          // Try next source
+        }
       }
     } catch (error) {
       console.error(`Failed to load thumbnail for clip ${clip.id}:`, error);
@@ -1749,45 +1771,9 @@
       };
       clipToPlay.value = buildAsVideo;
 
-      // Load creator profile watermark if project ID is available
+      // Don't load watermark settings for built clips - the watermark is already baked into the video
+      // The video player watermark overlay is only for preview purposes during editing
       playerWatermarkSettings.value = null;
-      if (projectId) {
-        try {
-          const profile = await getCreatorProfileByProjectId(projectId);
-          if (profile && profile.watermark_id) {
-            // Parse the creator's per-ratio watermark settings
-            let perRatioSettings = null;
-            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-            if (profile.watermark_settings) {
-              try {
-                perRatioSettings = JSON.parse(profile.watermark_settings);
-                // Use 16:9 as the default display position
-                // Check for nested position object (standard structure)
-                if (perRatioSettings['16:9']?.position) {
-                  defaultPos = perRatioSettings['16:9'].position;
-                } else if (perRatioSettings['16:9']) {
-                  // Fallback for flat structure
-                  defaultPos = perRatioSettings['16:9'];
-                }
-              } catch (e) {
-                console.warn('Failed to parse creator watermark settings:', e);
-              }
-            }
-
-            playerWatermarkSettings.value = {
-              enabled: true,
-              watermarkId: profile.watermark_id,
-              positionX: defaultPos.x,
-              positionY: defaultPos.y,
-              opacity: defaultPos.opacity,
-              scale: defaultPos.scale,
-              perRatioSettings: perRatioSettings,
-            };
-          }
-        } catch (error) {
-          console.error('Failed to load creator profile for watermark:', error);
-        }
-      }
 
       showVideoPlayer.value = true;
     } catch (err) {

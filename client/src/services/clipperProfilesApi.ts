@@ -313,6 +313,59 @@ export async function deletePortfolioClip(id: number): Promise<DeleteResponse> {
   return response.data;
 }
 
+interface UploadPortfolioClipResponse {
+  success: boolean;
+  portfolio_clip?: PortfolioClip;
+  error?: string;
+}
+
+/**
+ * Upload a portfolio clip video file to R2 storage.
+ * Max file size: 100MB
+ */
+export async function uploadPortfolioClip(
+  file: File,
+  title?: string,
+  thumbnail?: File
+): Promise<UploadPortfolioClipResponse> {
+  // Validate file size (100MB max)
+  const MAX_SIZE = 100 * 1024 * 1024; // 100MB in bytes
+  if (file.size > MAX_SIZE) {
+    return {
+      success: false,
+      error: `File size exceeds 100MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`
+    };
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (title) {
+      formData.append('title', title);
+    }
+    if (thumbnail) {
+      formData.append('thumbnail', thumbnail);
+    }
+
+    const response = await api.post<UploadPortfolioClipResponse>(
+      '/user/clipper-profile/portfolio-clips/upload',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[ClipperProfilesApi] Failed to upload portfolio clip:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to upload portfolio clip',
+    };
+  }
+}
+
 // ============================================================================
 // Public Directory API
 // ============================================================================

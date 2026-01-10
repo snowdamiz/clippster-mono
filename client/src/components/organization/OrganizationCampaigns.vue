@@ -161,135 +161,255 @@
     </div>
 
     <!-- Create/Edit Campaign Dialog -->
-    <Dialog v-model:open="showCampaignDialog">
-      <DialogContent class="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>{{ editingCampaign ? 'Edit Campaign' : 'Create Campaign' }}</DialogTitle>
-        </DialogHeader>
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showCampaignDialog" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]" @click.self="showCampaignDialog = false">
+          <Transition name="dialog" appear>
+            <div class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-xl sm:max-w-2xl w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col">
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 flex-shrink-0" />
 
-        <div class="flex-1 overflow-y-auto space-y-4 pr-2">
-          <div class="grid grid-cols-2 gap-4">
-            <div class="col-span-2 space-y-2">
-              <Label>Title</Label>
-              <Input v-model="campaignForm.title" placeholder="Campaign title" />
-            </div>
-
-            <div class="col-span-2 space-y-2">
-              <Label>Description</Label>
-              <Textarea v-model="campaignForm.description" placeholder="Describe your campaign..." class="min-h-[80px]" />
-            </div>
-
-            <div class="space-y-2">
-              <Label>CPM Price ($)</Label>
-              <Input v-model.number="campaignForm.cpm" type="number" step="0.01" min="0" placeholder="0.00" />
-            </div>
-
-            <div class="space-y-2">
-              <Label>Per Views</Label>
-              <Select v-model="campaignForm.cpm_views">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem :value="500">500 views</SelectItem>
-                  <SelectItem :value="1000">1,000 views</SelectItem>
-                  <SelectItem :value="5000">5,000 views</SelectItem>
-                  <SelectItem :value="10000">10,000 views</SelectItem>
-                  <SelectItem :value="100000">100,000 views</SelectItem>
-                </SelectContent>
-              </Select>
-              <p class="text-xs text-muted-foreground">${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views</p>
-            </div>
-
-            <div class="space-y-2">
-              <Label>Budget ($)</Label>
-              <Input v-model.number="campaignForm.budget" type="number" step="1" min="0" placeholder="0" />
-            </div>
-
-            <div class="space-y-2">
-              <Label>Min Views for Payment</Label>
-              <Input v-model.number="campaignForm.min_views_for_payment" type="number" min="0" placeholder="1000" />
-            </div>
-
-            <div class="space-y-2">
-              <Label>Join Type</Label>
-              <Select v-model="campaignForm.join_type">
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="open">Open (anyone can join)</SelectItem>
-                  <SelectItem value="application_required">Application Required</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div class="space-y-2">
-              <Label>Start Date (optional)</Label>
-              <Input v-model="campaignForm.starts_at" type="datetime-local" />
-            </div>
-
-            <div class="space-y-2">
-              <Label>End Date (optional)</Label>
-              <Input v-model="campaignForm.ends_at" type="datetime-local" />
-            </div>
-
-            <div class="col-span-2 space-y-2">
-              <Label>Allowed Platforms</Label>
-              <div class="flex flex-wrap gap-2">
-                <div
-                  v-for="platform in availablePlatforms"
-                  :key="platform.value"
-                  class="flex items-center gap-2"
-                >
-                  <Checkbox
-                    :id="`platform-${platform.value}`"
-                    :checked="campaignForm.allowed_platforms.includes(platform.value)"
-                    @update:checked="togglePlatform(platform.value)"
-                  />
-                  <Label :for="`platform-${platform.value}`" class="text-sm font-normal cursor-pointer">
-                    {{ platform.label }}
-                  </Label>
+              <div class="p-5 sm:p-6 overflow-y-auto custom-scrollbar">
+                <!-- Header -->
+                <div class="mb-4 sm:mb-6 text-center">
+                  <div class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-3 sm:mb-4">
+                    <Megaphone class="h-5 w-5 sm:h-6 sm:w-6 text-violet-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">
+                    {{ editingCampaign ? 'Edit Campaign' : 'Create Campaign' }}
+                  </h2>
+                  <p class="text-zinc-400 text-xs sm:text-sm mt-1">
+                    {{ editingCampaign ? 'Update your campaign details' : 'Set up a new campaign for clippers' }}
+                  </p>
                 </div>
+
+                <form @submit.prevent="saveCampaign" class="space-y-4 sm:space-y-5">
+                  <!-- Title -->
+                  <div class="space-y-1.5 sm:space-y-2">
+                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Title *</label>
+                    <input
+                      v-model="campaignForm.title"
+                      type="text"
+                      required
+                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                      placeholder="Campaign title"
+                    />
+                  </div>
+
+                  <!-- Description -->
+                  <div class="space-y-1.5 sm:space-y-2">
+                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Description</label>
+                    <textarea
+                      v-model="campaignForm.description"
+                      rows="3"
+                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all resize-y min-h-[80px]"
+                      placeholder="Describe your campaign..."
+                    ></textarea>
+                  </div>
+
+                  <!-- CPM and Views Row -->
+                  <div class="grid grid-cols-2 gap-3 sm:gap-4">
+                    <div class="space-y-1.5 sm:space-y-2">
+                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">CPM Price ($)</label>
+                      <input
+                        v-model.number="campaignForm.cpm"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div class="space-y-1.5 sm:space-y-2">
+                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Per Views</label>
+                      <select
+                        v-model="campaignForm.cpm_views"
+                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                      >
+                        <option :value="500">500 views</option>
+                        <option :value="1000">1,000 views</option>
+                        <option :value="5000">5,000 views</option>
+                        <option :value="10000">10,000 views</option>
+                        <option :value="100000">100,000 views</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p class="text-xs text-zinc-500 -mt-2">${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views</p>
+
+                  <!-- Budget and Min Views Row -->
+                  <div class="grid grid-cols-2 gap-3 sm:gap-4">
+                    <div class="space-y-1.5 sm:space-y-2">
+                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Budget ($)</label>
+                      <input
+                        v-model.number="campaignForm.budget"
+                        type="number"
+                        step="1"
+                        min="0"
+                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div class="space-y-1.5 sm:space-y-2">
+                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Min Views for Payment</label>
+                      <input
+                        v-model.number="campaignForm.min_views_for_payment"
+                        type="number"
+                        min="0"
+                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        placeholder="1000"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Join Type and Dates Row -->
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                    <div class="space-y-1.5 sm:space-y-2">
+                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Join Type</label>
+                      <select
+                        v-model="campaignForm.join_type"
+                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                      >
+                        <option value="open">Open</option>
+                        <option value="application_required">Application Required</option>
+                      </select>
+                    </div>
+                    <div class="space-y-1.5 sm:space-y-2">
+                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Start Date</label>
+                      <input
+                        v-model="campaignForm.starts_at"
+                        type="datetime-local"
+                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                      />
+                    </div>
+                    <div class="space-y-1.5 sm:space-y-2">
+                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">End Date</label>
+                      <input
+                        v-model="campaignForm.ends_at"
+                        type="datetime-local"
+                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Allowed Platforms -->
+                  <div class="space-y-1.5 sm:space-y-2">
+                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Allowed Platforms</label>
+                    <div class="flex flex-wrap gap-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800">
+                      <button
+                        v-for="platform in availablePlatforms"
+                        :key="platform.value"
+                        type="button"
+                        @click="togglePlatform(platform.value)"
+                        class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all"
+                        :class="campaignForm.allowed_platforms.includes(platform.value)
+                          ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-300'"
+                      >
+                        {{ platform.label }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Payment Methods -->
+                  <div class="space-y-1.5 sm:space-y-2">
+                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Payment Methods</label>
+                    <div class="flex flex-wrap gap-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800">
+                      <button
+                        v-for="method in availablePaymentMethods"
+                        :key="method.value"
+                        type="button"
+                        @click="togglePaymentMethod(method.value)"
+                        class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all"
+                        :class="campaignForm.payment_methods.includes(method.value)
+                          ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-300'"
+                      >
+                        {{ method.label }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Cover Image -->
+                  <div class="space-y-1.5 sm:space-y-2">
+                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Cover Image</label>
+                    
+                    <!-- Image Preview -->
+                    <div v-if="campaignForm.cover_image_url || coverImagePreview" class="relative w-full h-32 rounded-lg sm:rounded-xl overflow-hidden bg-zinc-900/50 border border-zinc-800">
+                      <img 
+                        :src="coverImagePreview || campaignForm.cover_image_url" 
+                        class="w-full h-full object-cover"
+                        @error="handleImageError"
+                      />
+                      <button
+                        type="button"
+                        @click="clearCoverImage"
+                        class="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-lg transition-colors"
+                      >
+                        <X class="w-4 h-4 text-white" />
+                      </button>
+                    </div>
+
+                    <!-- Upload/URL Options -->
+                    <div class="flex gap-2 items-center">
+                      <button
+                        type="button"
+                        @click="triggerCoverImageUpload"
+                        :disabled="uploadingCoverImage"
+                        class="px-3 sm:px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all font-medium border border-zinc-700 text-xs sm:text-sm flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <Loader2 v-if="uploadingCoverImage" class="w-4 h-4 animate-spin" />
+                        <Upload v-else class="w-4 h-4" />
+                        {{ uploadingCoverImage ? 'Uploading...' : 'Upload' }}
+                      </button>
+                      <input
+                        ref="coverImageInput"
+                        type="file"
+                        accept="image/*"
+                        class="hidden"
+                        @change="handleCoverImageSelect"
+                      />
+                      <span class="text-zinc-500 text-xs">or</span>
+                      <input
+                        v-model="campaignForm.cover_image_url"
+                        type="text"
+                        placeholder="Paste image URL..."
+                        class="flex-1 px-3 sm:px-4 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        @input="coverImagePreview = ''"
+                      />
+                    </div>
+                    <p class="text-xs text-zinc-500">Recommended size: 1200x630px</p>
+                  </div>
+
+                  <!-- Actions -->
+                  <div class="flex gap-2 sm:gap-3 pt-3 sm:pt-4">
+                    <button
+                      type="button"
+                      @click="showCampaignDialog = false"
+                      :disabled="saving"
+                      class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      :disabled="saving || !campaignForm.title"
+                      class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+                      <span v-if="saving" class="relative flex items-center justify-center">
+                        <Loader2 class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2 animate-spin" />
+                        Saving...
+                      </span>
+                      <span v-else class="relative">{{ editingCampaign ? 'Save Changes' : 'Create Campaign' }}</span>
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
-
-            <div class="col-span-2 space-y-2">
-              <Label>Payment Methods</Label>
-              <div class="flex flex-wrap gap-2">
-                <div
-                  v-for="method in availablePaymentMethods"
-                  :key="method.value"
-                  class="flex items-center gap-2"
-                >
-                  <Checkbox
-                    :id="`method-${method.value}`"
-                    :checked="campaignForm.payment_methods.includes(method.value)"
-                    @update:checked="togglePaymentMethod(method.value)"
-                  />
-                  <Label :for="`method-${method.value}`" class="text-sm font-normal cursor-pointer">
-                    {{ method.label }}
-                  </Label>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-span-2 space-y-2">
-              <Label>Cover Image URL (optional)</Label>
-              <Input v-model="campaignForm.cover_image_url" placeholder="https://..." />
-            </div>
-          </div>
+          </Transition>
         </div>
-
-        <DialogFooter class="mt-4">
-          <Button variant="outline" @click="showCampaignDialog = false">Cancel</Button>
-          <Button @click="saveCampaign" :disabled="saving || !campaignForm.title">
-            <Loader2 v-if="saving" class="w-4 h-4 mr-2 animate-spin" />
-            {{ editingCampaign ? 'Save Changes' : 'Create Campaign' }}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </Transition>
+    </Teleport>
 
     <!-- Campaign Detail Dialog -->
     <Dialog v-model:open="showDetailDialog">
@@ -473,51 +593,124 @@
     </Dialog>
 
     <!-- Delete Confirmation Dialog -->
-    <Dialog v-model:open="showDeleteDialog">
-      <DialogContent class="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Delete Campaign</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete "{{ campaignToDelete?.title }}"? This action cannot be undone.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" @click="showDeleteDialog = false">Cancel</Button>
-          <Button variant="destructive" @click="deleteCampaignAction" :disabled="deleting">
-            <Loader2 v-if="deleting" class="w-4 h-4 mr-2 animate-spin" />
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showDeleteDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="showDeleteDialog = false"
+        >
+          <Transition name="dialog" appear>
+            <div class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden">
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-red-500 via-rose-500 to-pink-500" />
+
+              <div class="p-5 sm:p-6">
+                <div class="mb-5 text-center">
+                  <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-red-500/30 mb-4">
+                    <Trash2 class="h-6 w-6 text-red-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Delete Campaign</h2>
+                  <p class="text-zinc-400 text-sm mt-1">This action cannot be undone</p>
+                </div>
+
+                <div class="mb-5 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
+                  <p class="text-sm text-zinc-300 text-center">
+                    Are you sure you want to delete "<span class="font-medium text-white">{{ campaignToDelete?.title }}</span>"?
+                  </p>
+                </div>
+
+                <div class="flex gap-3">
+                  <button
+                    type="button"
+                    class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm"
+                    @click="showDeleteDialog = false"
+                    :disabled="deleting"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    class="flex-1 px-4 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-xl font-semibold transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                    @click="deleteCampaignAction"
+                    :disabled="deleting"
+                  >
+                    <Loader2 v-if="deleting" class="h-4 w-4 animate-spin" />
+                    {{ deleting ? 'Deleting...' : 'Delete Campaign' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Payment Dialog -->
-    <Dialog v-model:open="showPaymentDialog">
-      <DialogContent class="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Create Payment</DialogTitle>
-          <DialogDescription>
-            Pay for submission with {{ paymentSubmission?.view_count.toLocaleString() }} views
-          </DialogDescription>
-        </DialogHeader>
-        <div class="space-y-4">
-          <div class="space-y-2">
-            <Label>Amount ($)</Label>
-            <Input v-model.number="paymentAmount" type="number" step="0.01" min="0" />
-            <p class="text-xs text-muted-foreground">
-              Suggested: ${{ calculateSuggestedPayment().toFixed(2) }} based on CPM
-            </p>
-          </div>
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showPaymentDialog"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          @click.self="showPaymentDialog = false"
+        >
+          <Transition name="dialog" appear>
+            <div class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden">
+              <!-- Decorative top accent -->
+              <div class="h-1 w-full bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500" />
+
+              <div class="p-5 sm:p-6">
+                <div class="mb-5 text-center">
+                  <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 mb-4">
+                    <DollarSign class="h-6 w-6 text-green-400" />
+                  </div>
+                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Create Payment</h2>
+                  <p class="text-zinc-400 text-sm mt-1">
+                    Pay for submission with {{ paymentSubmission?.view_count.toLocaleString() }} views
+                  </p>
+                </div>
+
+                <div class="space-y-4 mb-5">
+                  <div class="space-y-2">
+                    <label class="text-sm font-medium text-zinc-300">Amount ($)</label>
+                    <input
+                      v-model.number="paymentAmount"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all text-sm"
+                    />
+                    <p class="text-xs text-zinc-500">
+                      Suggested: <span class="text-green-400 font-medium">${{ calculateSuggestedPayment().toFixed(2) }}</span> based on CPM
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex gap-3">
+                  <button
+                    type="button"
+                    class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm"
+                    @click="showPaymentDialog = false"
+                    :disabled="creatingPayment"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    class="flex-1 px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-xl font-semibold transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                    @click="createPaymentAction"
+                    :disabled="creatingPayment || paymentAmount <= 0"
+                  >
+                    <Loader2 v-if="creatingPayment" class="h-4 w-4 animate-spin" />
+                    {{ creatingPayment ? 'Processing...' : 'Create Payment' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
         </div>
-        <DialogFooter>
-          <Button variant="outline" @click="showPaymentDialog = false">Cancel</Button>
-          <Button @click="createPaymentAction" :disabled="creatingPayment || paymentAmount <= 0">
-            <Loader2 v-if="creatingPayment" class="w-4 h-4 mr-2 animate-spin" />
-            Create Payment
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -526,7 +719,7 @@ import { ref, reactive, onMounted, watch } from 'vue';
 import {
   Megaphone, Plus, DollarSign, Wallet, Users, Eye, Pencil, MoreVertical,
   Play, Pause, CheckCircle, Trash2, Loader2, User, Check, X,
-  Music2, Instagram, Twitter, Youtube, Globe
+  Music2, Instagram, Twitter, Youtube, Globe, Upload
 } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -535,7 +728,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -543,6 +735,7 @@ import {
   pauseCampaign, activateCampaign, completeCampaign,
   listCampaignParticipants, approveParticipant, rejectParticipant,
   listCampaignSubmissions, verifySubmission, rejectSubmission, createPayment,
+  uploadCampaignCoverImage,
   type Campaign, type CampaignParticipant, type CampaignSubmission,
   getPlatformDisplayName
 } from '@/services/campaignApi';
@@ -579,6 +772,11 @@ const loadingSubmissions = ref(false);
 const paymentSubmission = ref<CampaignSubmission | null>(null);
 const paymentAmount = ref(0);
 const creatingPayment = ref(false);
+
+// Cover image upload
+const coverImageInput = ref<HTMLInputElement | null>(null);
+const coverImagePreview = ref('');
+const uploadingCoverImage = ref(false);
 
 const availablePlatforms = CLIPPER_PLATFORMS;
 const availablePaymentMethods = PAYMENT_METHOD_TYPES;
@@ -663,6 +861,61 @@ const getSubmissionStatusVariant = (status: string) => {
   return variants[status] || 'secondary';
 };
 
+// Cover image upload functions
+const triggerCoverImageUpload = () => {
+  coverImageInput.value?.click();
+};
+
+const handleCoverImageSelect = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    toast({ title: 'Error', description: 'Please select an image file' });
+    return;
+  }
+
+  // Show preview immediately
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    coverImagePreview.value = e.target?.result as string;
+  };
+  reader.readAsDataURL(file);
+
+  // Upload to server
+  uploadingCoverImage.value = true;
+  try {
+    const response = await uploadCampaignCoverImage(Number(props.organizationId), file);
+    if (response.success && response.url) {
+      campaignForm.cover_image_url = response.url;
+      toast({ title: 'Success', description: 'Cover image uploaded' });
+    } else {
+      toast({ title: 'Error', description: response.error || 'Failed to upload image' });
+      coverImagePreview.value = '';
+    }
+  } catch (error) {
+    console.error('Failed to upload cover image:', error);
+    toast({ title: 'Error', description: 'Failed to upload image' });
+    coverImagePreview.value = '';
+  } finally {
+    uploadingCoverImage.value = false;
+    // Reset input so same file can be selected again
+    input.value = '';
+  }
+};
+
+const clearCoverImage = () => {
+  campaignForm.cover_image_url = '';
+  coverImagePreview.value = '';
+};
+
+const handleImageError = (event: Event) => {
+  const img = event.target as HTMLImageElement;
+  img.style.display = 'none';
+};
+
 const togglePlatform = (platform: string) => {
   const idx = campaignForm.allowed_platforms.indexOf(platform);
   if (idx >= 0) {
@@ -700,6 +953,7 @@ const loadCampaigns = async () => {
 
 const openCreateDialog = () => {
   editingCampaign.value = null;
+  coverImagePreview.value = '';
   Object.assign(campaignForm, {
     title: '',
     description: '',
@@ -719,6 +973,7 @@ const openCreateDialog = () => {
 
 const editCampaign = (campaign: Campaign) => {
   editingCampaign.value = campaign;
+  coverImagePreview.value = '';
   Object.assign(campaignForm, {
     title: campaign.title,
     description: campaign.description || '',
@@ -999,3 +1254,53 @@ onMounted(() => {
   }
 });
 </script>
+
+<style scoped>
+/* Modal backdrop transition */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+/* Dialog transition */
+.dialog-enter-active {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dialog-leave-active {
+  transition: all 0.2s ease-in;
+}
+
+.dialog-enter-from {
+  opacity: 0;
+  transform: scale(0.95) translateY(10px);
+}
+
+.dialog-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(63 63 70);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(82 82 91);
+}
+</style>

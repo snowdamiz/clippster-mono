@@ -587,6 +587,61 @@ export async function completePayment(
 }
 
 // ============================================
+// Campaign Cover Image Upload
+// ============================================
+
+export interface UploadCoverImageResponse {
+  success: boolean;
+  url?: string;
+  error?: string;
+}
+
+/**
+ * Upload a cover image for a campaign.
+ * Returns the URL of the uploaded image.
+ */
+export async function uploadCampaignCoverImage(
+  organizationId: number,
+  file: File
+): Promise<UploadCoverImageResponse> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('asset_type', 'image');
+    formData.append('name', `campaign-cover-${Date.now()}`);
+
+    const response = await api.post(
+      `/organizations/${organizationId}/assets`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 120000, // 2 minutes
+      }
+    );
+
+    if (response.data.success && response.data.asset?.url) {
+      return {
+        success: true,
+        url: response.data.asset.url,
+      };
+    }
+
+    return {
+      success: false,
+      error: response.data.error || 'Failed to upload image',
+    };
+  } catch (error: any) {
+    console.error('[CampaignApi] Failed to upload cover image:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to upload image',
+    };
+  }
+}
+
+// ============================================
 // Helper functions
 // ============================================
 

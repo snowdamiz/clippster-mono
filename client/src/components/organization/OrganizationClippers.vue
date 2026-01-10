@@ -1,25 +1,26 @@
 <template>
   <div class="organization-clippers">
+    <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-xl font-semibold text-foreground">Find Clippers</h2>
-        <p class="text-sm text-muted-foreground">Browse talented clippers for your campaigns</p>
+        <h2 class="text-base font-semibold text-foreground">Find Clippers</h2>
+        <p class="text-sm text-muted-foreground mt-0.5">Browse talented clippers for your campaigns</p>
       </div>
       <div class="flex gap-1 bg-muted/50 rounded-lg p-1">
         <button
           @click="activeView = 'directory'"
-          class="px-3 py-1.5 text-sm rounded-md transition-colors"
+          class="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5"
           :class="activeView === 'directory' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
         >
-          <Users class="w-4 h-4 inline mr-1.5" />
+          <Users class="w-4 h-4" />
           Directory
         </button>
         <button
           @click="activeView = 'leaderboard'"
-          class="px-3 py-1.5 text-sm rounded-md transition-colors"
+          class="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5"
           :class="activeView === 'leaderboard' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
         >
-          <Trophy class="w-4 h-4 inline mr-1.5" />
+          <Trophy class="w-4 h-4" />
           Leaderboard
         </button>
       </div>
@@ -202,16 +203,27 @@
 
       <!-- Clippers Grid -->
       <div class="flex-1">
-        <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          <div v-for="i in 6" :key="i" class="bg-card border border-border/60 rounded-xl p-4 animate-pulse">
-            <div class="flex items-center gap-3 mb-3">
-              <div class="w-10 h-10 rounded-full bg-muted/40"></div>
-              <div class="space-y-2">
-                <div class="h-4 bg-muted/40 rounded w-24"></div>
-                <div class="h-3 bg-muted/30 rounded w-16"></div>
+        <div v-if="loading" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div v-for="i in 6" :key="i" class="bg-gradient-to-br from-card to-card/80 border border-border/60 rounded-xl overflow-hidden animate-pulse">
+            <div class="p-4 pb-3">
+              <div class="flex items-start gap-3.5">
+                <div class="w-14 h-14 rounded-xl bg-muted/40"></div>
+                <div class="flex-1 space-y-2 pt-1">
+                  <div class="h-4 bg-muted/40 rounded w-32"></div>
+                  <div class="h-3 bg-muted/30 rounded w-20"></div>
+                  <div class="h-3 bg-muted/30 rounded w-full"></div>
+                </div>
               </div>
             </div>
-            <div class="h-10 bg-muted/30 rounded"></div>
+            <div class="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/20">
+              <div class="flex items-center justify-between">
+                <div class="flex gap-1.5">
+                  <div class="h-6 bg-muted/30 rounded w-16"></div>
+                  <div class="h-6 bg-muted/30 rounded w-16"></div>
+                </div>
+                <div class="h-6 bg-muted/30 rounded w-24"></div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -221,54 +233,75 @@
           <p class="text-sm text-muted-foreground">Try adjusting your filters</p>
         </div>
 
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <router-link
             v-for="clipper in clippers"
             :key="clipper.id"
             :to="`/clippers/${clipper.slug}`"
             class="block"
           >
-            <div class="bg-card border border-border/60 rounded-xl p-4 hover:border-primary/30 hover:shadow-md transition-all h-full">
-              <!-- Header -->
-              <div class="flex items-start gap-3 mb-2">
-                <div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="w-full h-full object-cover" />
-                  <UserCircle v-else class="w-5 h-5 text-primary" />
-                </div>
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-1.5">
-                    <span class="font-semibold text-sm text-foreground truncate">{{ clipper.display_name || 'Unnamed' }}</span>
-                    <CheckCircle v-if="clipper.is_verified" class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+            <div class="group relative bg-gradient-to-br from-card to-card/80 border border-border/60 rounded-xl overflow-hidden hover:border-border hover:shadow-lg hover:shadow-black/5 transition-all duration-200 h-full">
+              <!-- Top Section: Avatar & Name -->
+              <div class="p-4 pb-3">
+                <div class="flex items-start gap-3.5">
+                  <!-- Avatar -->
+                  <div class="relative flex-shrink-0">
+                    <div class="w-14 h-14 rounded-xl bg-muted flex items-center justify-center overflow-hidden ring-2 ring-border/30 ring-offset-2 ring-offset-card">
+                      <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="w-full h-full object-cover" />
+                      <div v-else class="absolute inset-0 bg-gradient-to-br from-primary/25 via-primary/15 to-primary/20"></div>
+                      <UserCircle v-if="!clipper.avatar_url" class="h-7 w-7 text-muted-foreground/40 relative z-10" />
+                    </div>
+                    <!-- Available badge on avatar -->
+                    <div v-if="clipper.looking_for_work" class="absolute -bottom-1 -right-1">
+                      <div class="w-5 h-5 rounded-full bg-green-500/20 border-2 border-card flex items-center justify-center" title="Available for work">
+                        <CheckCircle class="w-2.5 h-2.5 text-green-400" />
+                      </div>
+                    </div>
                   </div>
-                  <div class="text-[11px] text-muted-foreground">
-                    {{ getExperienceLevelLabel(clipper.experience_level || '') }}
+
+                  <!-- Name & Bio -->
+                  <div class="flex-1 min-w-0 pt-0.5">
+                    <div class="flex items-center gap-1.5">
+                      <h3 class="font-semibold text-foreground truncate text-[15px] leading-tight">{{ clipper.display_name || 'Unnamed' }}</h3>
+                      <CheckCircle v-if="clipper.is_verified" class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                    </div>
+                    <div class="text-xs text-muted-foreground mt-0.5">
+                      {{ getExperienceLevelLabel(clipper.experience_level || '') }}
+                    </div>
+                    <p v-if="clipper.bio" class="text-xs text-muted-foreground line-clamp-2 mt-1 leading-relaxed">
+                      {{ clipper.bio }}
+                    </p>
+                    <p v-else class="text-xs text-muted-foreground/50 italic mt-1">No bio</p>
                   </div>
-                </div>
-                <div v-if="clipper.looking_for_work" class="px-1.5 py-0.5 bg-green-500/10 text-green-500 text-[9px] font-medium rounded">
-                  Available
                 </div>
               </div>
 
-              <!-- Bio -->
-              <p v-if="clipper.bio" class="text-xs text-muted-foreground line-clamp-2 mb-2">
-                {{ clipper.bio }}
-              </p>
+              <!-- Bottom Section: Tags & Stats -->
+              <div class="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/20">
+                <div class="flex items-center justify-between gap-3">
+                  <!-- Tags -->
+                  <div class="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+                    <template v-if="clipper.specialty_tags?.length">
+                      <span
+                        v-for="tag in clipper.specialty_tags.slice(0, 3)"
+                        :key="tag"
+                        class="px-2 py-1 rounded-md text-xs font-medium bg-muted/50 text-muted-foreground border border-border/50"
+                      >
+                        {{ getSpecialtyTagLabel(tag) }}
+                      </span>
+                      <span v-if="clipper.specialty_tags.length > 3" class="text-xs text-muted-foreground px-1.5">
+                        +{{ clipper.specialty_tags.length - 3 }} more
+                      </span>
+                    </template>
+                    <span v-else class="text-xs text-muted-foreground/60">No specialties</span>
+                  </div>
 
-              <!-- Tags -->
-              <div v-if="clipper.specialty_tags?.length" class="flex flex-wrap gap-1 mb-2">
-                <span
-                  v-for="tag in clipper.specialty_tags.slice(0, 3)"
-                  :key="tag"
-                  class="px-1.5 py-0.5 bg-muted/50 text-muted-foreground text-[9px] rounded"
-                >
-                  {{ getSpecialtyTagLabel(tag) }}
-                </span>
-              </div>
-
-              <!-- Stats -->
-              <div class="flex items-center gap-3 text-[10px] text-muted-foreground">
-                <span>{{ clipper.total_campaigns_completed }} campaigns</span>
-                <span>{{ clipper.total_endorsements }} endorsements</span>
+                  <!-- Stats Badge -->
+                  <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium flex-shrink-0 bg-primary/10 text-primary border border-primary/20">
+                    <Trophy class="w-3.5 h-3.5" />
+                    <span>{{ clipper.total_campaigns_completed }} campaigns</span>
+                  </div>
+                </div>
               </div>
             </div>
           </router-link>
@@ -409,6 +442,6 @@ onMounted(() => {
 
 <style scoped>
 .organization-clippers {
-  @apply h-full;
+  height: 100%;
 }
 </style>
