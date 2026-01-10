@@ -6,7 +6,7 @@ import {
   searchPumpFunTokens,
   fetchTokenMetadataFromServer,
 } from '@/services/pumpfun';
-import { getKickClips, extractChannelSlug } from '@/services/kick';
+import { getKickClips, extractChannelSlug, checkKickLivestream } from '@/services/kick';
 
 // Unified clip type that works across platforms
 export interface PlatformClip {
@@ -225,6 +225,31 @@ export const usePlatformStore = defineStore('platform', {
       saveRecentSearches(this.recentSearches);
     },
 
+    // Background metadata fetch for Kick (avatar/username)
+    async fetchKickMetadata(channelSlug: string) {
+      try {
+        const status = await checkKickLivestream(channelSlug);
+        if (status) {
+          this.updateRecentSearchMetadata(channelSlug, 'kick', {
+            name: status.username,
+            imageUrl: status.profileImageUrl,
+          });
+        }
+      } catch {
+        // Ignore errors; non-fatal
+      }
+    },
+
+    // Refresh missing metadata (avatars) for recent searches
+    async refreshRecentSearchMetadata() {
+      // Process sequentially to avoid burst requests
+      for (const search of this.recentSearches) {
+        if (search.platform === 'kick' && !search.imageUrl) {
+          await this.fetchKickMetadata(search.id);
+        }
+      }
+    },
+
     // Update metadata for a recent search
     updateRecentSearchMetadata(
       id: string,
@@ -368,9 +393,11 @@ export const usePlatformStore = defineStore('platform', {
           // Save to recent searches with platform
           this.addToRecentSearches(extractedId!, trimmedInput, this.activePlatform, undefined);
 
-          // Fetch metadata for PumpFun searches
+          // Fetch metadata for PumpFun or Kick searches
           if (this.activePlatform === 'pumpfun') {
             this.fetchPumpFunMetadata(extractedId!);
+          } else if (this.activePlatform === 'kick') {
+            this.fetchKickMetadata(extractedId!);
           }
 
           return {

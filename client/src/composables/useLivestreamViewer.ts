@@ -22,7 +22,7 @@ import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesA
 import type { LiveStatus, LiveSession, SegmentEventPayload, SupportedLivestreamPlatform } from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
 import { useHlsPlayback } from './useHlsPlayback';
-import { checkKickLivestream, startKickRecording, stopKickRecording } from '@/services/kick';
+import { checkKickLivestream, startKickRecording, stopKickRecording, extractChannelSlug } from '@/services/kick';
 
 // PumpFun LiveKit API endpoints
 const PUMPFUN_LIVESTREAM_API = 'https://livestream-api.pump.fun';
@@ -507,12 +507,14 @@ export function useLivestreamViewer() {
   // Connect to Kick livestream using yt-dlp recording (bypasses origin restrictions)
   // Kick's CDN validates JWT tokens server-side, so we use yt-dlp to capture to local HLS
   async function connectToKick(
-    channelSlug: string,
+    channelInput: string,
     streamerId: string,
     displayName: string,
     profileImageUrl?: string
   ) {
     try {
+      // Extract channel slug from URL if needed (e.g., "https://kick.com/jerzynft" -> "jerzynft")
+      const channelSlug = extractChannelSlug(channelInput) || channelInput;
       console.log('[LiveViewer] Connecting to Kick channel:', channelSlug);
 
       // Check if stream is live and get stream info
@@ -613,7 +615,8 @@ export function useLivestreamViewer() {
       // Clean up recording if it was started (only for temp recordings)
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
-          await stopKickRecording(channelSlug);
+          const cleanupSlug = extractChannelSlug(channelInput) || channelInput;
+          await stopKickRecording(cleanupSlug);
         } catch {
           // Ignore cleanup errors
         }

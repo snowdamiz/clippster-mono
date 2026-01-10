@@ -2119,55 +2119,79 @@
         console.log('[ClipsTab] Merged subtitle overrides from clip editor:', finalSubtitleOverrides);
       }
 
-      // Handle org assets: download on-demand if selected intro/outro is an org asset
-      let introPath = settings.intro?.file_path || null;
-      let outroPath = settings.outro?.file_path || null;
+      // Determine effective intro/outro: creator profile defaults take precedence, then dialog selection
+      // Creator profile intro/outro MUST be applied when set - they are mandatory defaults
+      const effectiveIntro = props.creatorDefaultIntro || settings.intro;
+      const effectiveOutro = props.creatorDefaultOutro || settings.outro;
 
-      // Download org intro if needed
-      if (settings.intro?.isOrgAsset && settings.intro.serverId) {
-        console.log('[ClipsTab] Downloading org intro asset on-demand:', settings.intro.name);
-        const introResult = await ensureAssetDownloaded({
-          id: settings.intro.serverId,
-          name: settings.intro.name,
-          asset_type: 'intro',
-          url: settings.intro.serverUrl || settings.intro.file_path,
-          organization_id: Number(settings.intro.organization_id),
-          organization_name: settings.intro.organization_name || undefined,
-          duration: settings.intro.duration || undefined,
-          thumbnail_url: settings.intro.thumbnail_path || undefined,
-          inserted_at: settings.intro.created_at,
-          updated_at: settings.intro.updated_at,
-        } as unknown as ServerOrganizationAsset);
+      let introPath: string | null = null;
+      let outroPath: string | null = null;
+      let introDuration: number | null = null;
+      let outroDuration: number | null = null;
 
-        if (introResult.success && introResult.filePath) {
-          introPath = introResult.filePath;
-          console.log('[ClipsTab] Org intro downloaded to:', introPath);
-        } else {
-          throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+      // Handle intro
+      if (effectiveIntro) {
+        introPath = effectiveIntro.file_path || null;
+        introDuration = effectiveIntro.duration || null;
+        const introSource = props.creatorDefaultIntro ? '(creator profile)' : '(dialog selection)';
+        console.log('[ClipsTab] Using intro:', effectiveIntro.name, introSource);
+
+        // Download org intro if needed (cast to any for org asset properties)
+        const introAny = effectiveIntro as any;
+        if (introAny.isOrgAsset && introAny.serverId) {
+          console.log('[ClipsTab] Downloading org intro asset on-demand:', effectiveIntro.name);
+          const introResult = await ensureAssetDownloaded({
+            id: introAny.serverId,
+            name: effectiveIntro.name,
+            asset_type: 'intro',
+            url: introAny.serverUrl || effectiveIntro.file_path,
+            organization_id: Number(introAny.organization_id),
+            organization_name: introAny.organization_name || undefined,
+            duration: effectiveIntro.duration || undefined,
+            thumbnail_url: introAny.thumbnail_path || undefined,
+            inserted_at: introAny.created_at,
+            updated_at: introAny.updated_at,
+          } as unknown as ServerOrganizationAsset);
+
+          if (introResult.success && introResult.filePath) {
+            introPath = introResult.filePath;
+            console.log('[ClipsTab] Org intro downloaded to:', introPath);
+          } else {
+            throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+          }
         }
       }
 
-      // Download org outro if needed
-      if (settings.outro?.isOrgAsset && settings.outro.serverId) {
-        console.log('[ClipsTab] Downloading org outro asset on-demand:', settings.outro.name);
-        const outroResult = await ensureAssetDownloaded({
-          id: settings.outro.serverId,
-          name: settings.outro.name,
-          asset_type: 'outro',
-          url: settings.outro.serverUrl || settings.outro.file_path,
-          organization_id: Number(settings.outro.organization_id),
-          organization_name: settings.outro.organization_name || undefined,
-          duration: settings.outro.duration || undefined,
-          thumbnail_url: settings.outro.thumbnail_path || undefined,
-          inserted_at: settings.outro.created_at,
-          updated_at: settings.outro.updated_at,
-        } as unknown as ServerOrganizationAsset);
+      // Handle outro
+      if (effectiveOutro) {
+        outroPath = effectiveOutro.file_path || null;
+        outroDuration = effectiveOutro.duration || null;
+        const outroSource = props.creatorDefaultOutro ? '(creator profile)' : '(dialog selection)';
+        console.log('[ClipsTab] Using outro:', effectiveOutro.name, outroSource);
 
-        if (outroResult.success && outroResult.filePath) {
-          outroPath = outroResult.filePath;
-          console.log('[ClipsTab] Org outro downloaded to:', outroPath);
-        } else {
-          throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+        // Download org outro if needed (cast to any for org asset properties)
+        const outroAny = effectiveOutro as any;
+        if (outroAny.isOrgAsset && outroAny.serverId) {
+          console.log('[ClipsTab] Downloading org outro asset on-demand:', effectiveOutro.name);
+          const outroResult = await ensureAssetDownloaded({
+            id: outroAny.serverId,
+            name: effectiveOutro.name,
+            asset_type: 'outro',
+            url: outroAny.serverUrl || effectiveOutro.file_path,
+            organization_id: Number(outroAny.organization_id),
+            organization_name: outroAny.organization_name || undefined,
+            duration: effectiveOutro.duration || undefined,
+            thumbnail_url: outroAny.thumbnail_path || undefined,
+            inserted_at: outroAny.created_at,
+            updated_at: outroAny.updated_at,
+          } as unknown as ServerOrganizationAsset);
+
+          if (outroResult.success && outroResult.filePath) {
+            outroPath = outroResult.filePath;
+            console.log('[ClipsTab] Org outro downloaded to:', outroPath);
+          } else {
+            throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+          }
         }
       }
 
@@ -2190,9 +2214,9 @@
         buildNumber: buildNumber,
         buildId: buildId,
         introPath: introPath,
-        introDuration: settings.intro?.duration || null,
+        introDuration: introDuration,
         outroPath: outroPath,
-        outroDuration: settings.outro?.duration || null,
+        outroDuration: outroDuration,
         watermarkSettings: watermarkSettings,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,

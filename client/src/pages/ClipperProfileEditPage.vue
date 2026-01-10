@@ -64,8 +64,52 @@
           </div>
 
           <div class="space-y-2">
-            <Label>Avatar URL</Label>
-            <Input v-model="profile.avatar_url" placeholder="https://..." @blur="saveProfile" />
+            <Label>Avatar</Label>
+            <div class="flex items-center gap-4">
+              <!-- Avatar Preview -->
+              <div class="relative">
+                <div 
+                  class="w-20 h-20 rounded-full bg-muted border-2 border-border overflow-hidden flex items-center justify-center"
+                >
+                  <img 
+                    v-if="profile.avatar_url" 
+                    :src="profile.avatar_url" 
+                    class="w-full h-full object-cover"
+                    @error="(e: Event) => (e.target as HTMLImageElement).style.display = 'none'"
+                  />
+                  <UserCircle v-else class="w-12 h-12 text-muted-foreground" />
+                </div>
+                <div 
+                  v-if="uploadingAvatar" 
+                  class="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center"
+                >
+                  <Loader2 class="w-6 h-6 animate-spin text-white" />
+                </div>
+              </div>
+              
+              <!-- Upload Button -->
+              <div class="flex-1">
+                <input
+                  ref="avatarInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  class="hidden"
+                  @change="handleAvatarUpload"
+                />
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  @click="($refs.avatarInput as HTMLInputElement)?.click()"
+                  :disabled="uploadingAvatar"
+                >
+                  <Upload class="w-4 h-4 mr-2" />
+                  {{ profile.avatar_url ? 'Change Avatar' : 'Upload Avatar' }}
+                </Button>
+                <p class="text-xs text-muted-foreground mt-1">
+                  JPEG, PNG, GIF, or WebP. Max 5MB.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -394,7 +438,7 @@
 import { ref, reactive, onMounted } from 'vue';
 import {
   UserCircle, Globe, Lock, Plus, Link2, Video, Pencil, Trash2, Loader2,
-  Music2, Instagram, Twitter, Youtube, Twitch
+  Music2, Instagram, Twitter, Youtube, Twitch, Upload
 } from 'lucide-vue-next';
 import PageLayout from '@/components/PageLayout.vue';
 import { Button } from '@/components/ui/button';
@@ -408,6 +452,7 @@ import {
   getMyClipperProfile, updateMyClipperProfile,
   listChannelLinks, createChannelLink, updateChannelLink, deleteChannelLink,
   listPortfolioClips, createPortfolioClip, updatePortfolioClip, deletePortfolioClip,
+  uploadClipperAvatar,
   type ClipperProfile, type ChannelLink, type PortfolioClip,
   EXPERIENCE_LEVELS, SPECIALTY_TAGS, CONTENT_STYLE_TAGS, PREFERRED_PLATFORMS, LANGUAGES, CHANNEL_PLATFORMS,
   getPlatformLabel
@@ -437,6 +482,10 @@ const profile = reactive<Partial<ClipperProfile>>({
 
 const channelLinks = ref<ChannelLink[]>([]);
 const portfolioClips = ref<PortfolioClip[]>([]);
+
+// Avatar upload state
+const uploadingAvatar = ref(false);
+const avatarInput = ref<HTMLInputElement | null>(null);
 
 const showChannelLinkDialog = ref(false);
 const showPortfolioClipDialog = ref(false);
@@ -538,6 +587,31 @@ const toggleTag = (field: 'specialty_tags' | 'content_style_tags' | 'preferred_p
     arr.push(value);
   }
   saveProfile();
+};
+
+// Avatar Upload
+const handleAvatarUpload = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  uploadingAvatar.value = true;
+  try {
+    const response = await uploadClipperAvatar(file);
+    if (response.success && response.avatar_url) {
+      profile.avatar_url = response.avatar_url;
+      toast({ title: 'Success', description: 'Avatar uploaded successfully' });
+    } else {
+      toast({ title: 'Error', description: response.error || 'Failed to upload avatar' });
+    }
+  } catch (error) {
+    console.error('Failed to upload avatar:', error);
+    toast({ title: 'Error', description: 'Failed to upload avatar' });
+  } finally {
+    uploadingAvatar.value = false;
+    // Reset the input so the same file can be selected again
+    if (input) input.value = '';
+  }
 };
 
 // Channel Links
@@ -658,6 +732,6 @@ onMounted(() => {
 
 <style scoped>
 .clipper-profile-edit-page {
-  @apply h-full;
+  height: 100%;
 }
 </style>

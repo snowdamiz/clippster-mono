@@ -40,12 +40,30 @@ defmodule ClippsterServerWeb.KickController do
         
         Logger.info("Kick channel #{channel_slug} is_live: #{is_live}")
 
+        # Extract profile image with robust fallbacks (API field names may vary)
+        profile_image_url =
+          (user && (
+            user["profile_pic"] ||
+            user["profilePic"] ||
+            user["profile_picture"] ||
+            user["profilePicture"] ||
+            user["profile_image_url"] ||
+            user["profileImageUrl"] ||
+            user["avatar"]
+          )) ||
+          data["profile_pic"] ||
+          data["profilePic"] ||
+          data["profile_image_url"] ||
+          data["profileImageUrl"] ||
+          data["logo"] ||
+          data["icon"]
+
         response = %{
           isLive: is_live,
           channelId: data["id"],
           channelSlug: data["slug"] || channel_slug,
           username: (user && user["username"]) || nil,
-          profileImageUrl: (user && user["profile_pic"]) || nil,
+          profileImageUrl: profile_image_url,
           streamTitle: (livestream && (livestream["session_title"] || livestream["sessionTitle"])) || nil,
           viewerCount: (livestream && (livestream["viewer_count"] || livestream["viewerCount"] || livestream["viewers"])) || nil,
           thumbnailUrl: get_in(livestream || %{}, ["thumbnail", "url"]) || get_in(livestream || %{}, ["thumbnail", "src"]),

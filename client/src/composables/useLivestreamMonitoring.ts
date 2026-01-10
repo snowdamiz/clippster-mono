@@ -107,6 +107,7 @@ async function fetchKickLiveStatus(channelSlug: string): Promise<LiveStatus> {
       streamId: kickStatus.channelId,
       streamStartTimestamp: kickStatus.startedAt ? new Date(kickStatus.startedAt).getTime() : undefined,
       numParticipants: kickStatus.viewerCount,
+      profileImageUrl: kickStatus.profileImageUrl,
       raw: kickStatus,
     };
   } catch (error) {

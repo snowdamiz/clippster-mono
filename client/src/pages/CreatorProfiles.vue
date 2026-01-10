@@ -546,7 +546,9 @@
       const displayName = entry?.displayName || monitorableLink.display_name || creator.name;
       const profileImage = entry?.profileImageUrl || monitorableLink.profile_image_url || getCreatorProfileImage(creator);
 
-      livestreamStore.openWatchDialog(monitorableLink.platform_id, streamerId, displayName, profileImage);
+      // Determine the platform for the watch dialog
+      const platform = monitorableLink.platform === 'kick' ? 'Kick' : 'PumpFun';
+      livestreamStore.openWatchDialog(monitorableLink.platform_id, streamerId, displayName, profileImage, platform);
     } catch (error) {
       console.error('[CreatorProfiles] Failed to open watch dialog:', error);
       showError('Watch Failed', 'Could not open the stream viewer.');
@@ -656,8 +658,8 @@
   const showDownloadDialog = ref(false);
   const creatorToDownload = ref<DisplayCreatorProfile | null>(null);
 
-  // Live status tracking (by platform_id for pumpfun links)
-  const liveStatusMap = ref<Map<string, { isLive: boolean; viewerCount?: number; isChecking: boolean }>>(new Map());
+  // Live status tracking (by platform_id for pumpfun/kick links)
+  const liveStatusMap = ref<Map<string, { isLive: boolean; viewerCount?: number; profileImageUrl?: string; isChecking: boolean }>>(new Map());
   const liveStatusInterval = ref<number | null>(null);
 
   // Auto DVR status tracking (by streamer_id, for when not actively monitoring)
@@ -705,7 +707,7 @@
 
   async function checkAllLiveStatuses() {
     const pumpfunLinksToCheck: { platformId: string; mintId: string }[] = [];
-    const kickLinksToCheck: { platformId: string; channelSlug: string }[] = [];
+    const kickLinksToCheck: { linkId: string; platformId: string; channelSlug: string; hasProfileImage: boolean }[] = [];
 
     for (const creator of creators.value) {
       for (const link of creator.platform_links) {
@@ -717,7 +719,12 @@
         if (link.platform === 'pumpfun') {
           pumpfunLinksToCheck.push({ platformId: link.platform_id, mintId: link.platform_id });
         } else if (link.platform === 'kick') {
-          kickLinksToCheck.push({ platformId: link.platform_id, channelSlug: link.platform_id });
+          kickLinksToCheck.push({ 
+            linkId: link.id, 
+            platformId: link.platform_id, 
+            channelSlug: link.platform_id,
+            hasProfileImage: Boolean(link.profile_image_url),
+          });
         }
       }
     }
@@ -748,7 +755,7 @@
     });
 
     // Check Kick streams
-    const kickPromises = kickLinksToCheck.map(async ({ platformId, channelSlug }) => {
+    const kickPromises = kickLinksToCheck.map(async ({ linkId, platformId, channelSlug, hasProfileImage }) => {
       liveStatusMap.value.set(platformId, {
         ...liveStatusMap.value.get(platformId),
         isLive: liveStatusMap.value.get(platformId)?.isLive ?? false,
@@ -760,8 +767,27 @@
         liveStatusMap.value.set(platformId, {
           isLive: status.isLive,
           viewerCount: status.viewerCount,
+          profileImageUrl: status.profileImageUrl,
           isChecking: false,
         });
+
+        // Persist profile image to database if we got one and the link doesn't have one stored
+        // Skip org profile links (they have IDs starting with "org-link-")
+        if (status.profileImageUrl && !hasProfileImage && !linkId.startsWith('org-link-')) {
+          try {
+            await updatePlatformLink(linkId, { profile_image_url: status.profileImageUrl });
+            // Also update local state so it persists across re-renders
+            for (const creator of creators.value) {
+              const link = creator.platform_links.find((l) => l.id === linkId);
+              if (link) {
+                link.profile_image_url = status.profileImageUrl;
+                break;
+              }
+            }
+          } catch (updateError) {
+            console.warn('[CreatorProfiles] Failed to persist Kick profile image:', updateError);
+          }
+        }
       } catch (error) {
         console.error('[CreatorProfiles] Failed to check Kick live status for', channelSlug, error);
         liveStatusMap.value.set(platformId, {
@@ -780,6 +806,15 @@
     try {
       // Load local profiles
       const localProfiles = await getAllCreatorProfiles();
+      console.log('[CreatorProfiles] Loaded local profiles:', localProfiles.map(p => ({
+        name: p.name,
+        links: p.platform_links.map(l => ({ 
+          platform: l.platform, 
+          hasImage: !!l.profile_image_url,
+          url: l.profile_image_url 
+        }))
+      })));
+
       const displayProfiles: DisplayCreatorProfile[] = localProfiles.map((p) => ({
         ...p,
         isOrgProfile: false,
@@ -881,6 +916,14 @@
     for (const link of creator.platform_links) {
       if (link.profile_image_url) {
         return link.profile_image_url;
+      }
+    }
+
+    // Check liveStatusMap for dynamically fetched profile images (e.g., from Kick API)
+    for (const link of creator.platform_links) {
+      const liveStatus = liveStatusMap.value.get(link.platform_id);
+      if (liveStatus?.profileImageUrl) {
+        return liveStatus.profileImageUrl;
       }
     }
 

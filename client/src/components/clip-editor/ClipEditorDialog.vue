@@ -303,6 +303,8 @@
                   :current-intro="currentIntro"
                   :current-outro="currentOutro"
                   :creator-profile-watermark-settings="computedCreatorProfileWatermarkSettings"
+                  :creator-default-intro="props.creatorDefaultIntro"
+                  :creator-default-outro="props.creatorDefaultOutro"
                   @go-to-aspect-tab="editorMode ? setEditorTab('aspect') : setActiveTab('aspect')"
                   @build-started="onBuildStarted"
                   @build-completed="onBuildCompleted"
@@ -707,6 +709,9 @@
       // Creator profile watermark settings (auto-applied when opening)
       creatorWatermarkId?: string | null;
       creatorWatermarkSettings?: string | null; // JSON string of per-ratio settings
+      // Creator profile default intro/outro (auto-applied when building)
+      creatorDefaultIntro?: IntroOutro | null;
+      creatorDefaultOutro?: IntroOutro | null;
     }>(),
     {
       clipId: '',
@@ -720,6 +725,8 @@
       editorProjectName: 'Video Project',
       creatorWatermarkId: null,
       creatorWatermarkSettings: null,
+      creatorDefaultIntro: null,
+      creatorDefaultOutro: null,
     }
   );
 
