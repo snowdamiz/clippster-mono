@@ -3620,9 +3620,9 @@
   }
 
   function getAudioVisualSegments(track: AudioTrack): AudioVisualSegment[] {
-    // Use resize preview position only (not drag preview - drag uses CSS transforms now)
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     const preview = dragPreview.value;
-    const usePreview = preview && preview.type === 'audio' && preview.id === track.id && isResizing.value;
+    const usePreview = preview && preview.type === 'audio' && preview.id === track.id;
 
     const audioStart = usePreview ? preview.startTime : track.startTime;
     const audioEnd = usePreview ? preview.endTime : track.endTime;
@@ -3894,9 +3894,9 @@
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${track.id}`;
 
-    // Use resize preview position only (drag uses ghost element now)
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     const preview = dragPreview.value;
-    const usePreview = preview && preview.type === 'audio' && preview.id === track.id && isResizing.value;
+    const usePreview = preview && preview.type === 'audio' && preview.id === track.id;
 
     const startTime = usePreview ? preview.startTime : track.startTime;
     const endTime = usePreview ? preview.endTime : track.endTime;
@@ -4125,9 +4125,9 @@
     const colors = colorMap[color] || colorMap.violet;
     const isSelected = selectedItemKey.value === `${type}_${id}`;
 
-    // Use resize preview position only (drag uses ghost element now)
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     const preview = dragPreview.value;
-    const usePreview = preview && preview.type === type && preview.id === id && isResizing.value;
+    const usePreview = preview && preview.type === type && preview.id === id;
 
     const actualStartTime = usePreview ? preview.startTime : startTime;
     const actualEndTime = usePreview ? preview.endTime : endTime;
@@ -4158,9 +4158,9 @@
     const colors = colorMap.rose; // Use rose/pink for filters
     const isSelected = selectedItemKey.value === `filter_${filterSeg.id}`;
 
-    // Use resize preview position only (drag uses ghost element now)
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     const preview = dragPreview.value;
-    const usePreview = preview && preview.type === 'filter' && preview.id === filterSeg.id && isResizing.value;
+    const usePreview = preview && preview.type === 'filter' && preview.id === filterSeg.id;
 
     const startTime = usePreview ? preview.startTime : filterSeg.startTime;
     const endTime = usePreview ? preview.endTime : filterSeg.endTime;
@@ -5491,12 +5491,12 @@
   ): Record<string, string> {
     const isSelected = selectedItemKey.value === `source_${source.id}`;
     
-    // Check for resize preview only (drag uses ghost element now)
+    // Use preview position for both resize AND drag end (to show segment at new position before props update)
     let startTime = source.start_time;
     let endTime = source.end_time;
     
-    // Only apply position preview for resize operations, not drag
-    if (_preview && _preview.type === 'source' && _preview.id === source.id && isResizing.value) {
+    // Apply position preview for resize or drag operations
+    if (_preview && _preview.type === 'source' && _preview.id === source.id) {
       startTime = _preview.startTime;
       endTime = _preview.endTime;
     }
@@ -5775,10 +5775,9 @@
   }
 
   function onSourceDragEnd() {
-    // Hide the ghost element immediately
-    if (dragGhostState.value) {
-      dragGhostState.value = { ...dragGhostState.value, visible: false };
-    }
+    // Remove event listeners immediately to prevent further drag events
+    document.removeEventListener('mousemove', onSourceDragMove);
+    document.removeEventListener('mouseup', onSourceDragEnd);
 
     // Commit the final position to database only on drag end
     if (dragSourceInfo.value && videoTrackContentRef.value) {
@@ -5864,6 +5863,15 @@
         }
       }
 
+      // Set dragPreview to final position BEFORE emitting and clearing isDraggingSource
+      // This ensures the segment renders at the new position immediately while props update
+      dragPreview.value = {
+        type: 'source',
+        id: dragSourceInfo.value.sourceId,
+        startTime: finalStartTime,
+        endTime: finalEndTime,
+      };
+
       const updates: Partial<VideoEditorSource> = {
         start_time: finalStartTime,
         end_time: finalEndTime,
@@ -5877,13 +5885,17 @@
       emit('updateSource', dragSourceInfo.value.sourceId, updates);
     }
 
+    // Hide ghost immediately, but keep dragPreview set so segment shows at new position
+    dragGhostState.value = null;
     isDraggingSource.value = false;
     dragSourceInfo.value = null;
-    dragGhostState.value = null;
     activeSnapTime.value = null;
     activeSnapTrackType.value = null;
-    document.removeEventListener('mousemove', onSourceDragMove);
-    document.removeEventListener('mouseup', onSourceDragEnd);
+
+    // Clear dragPreview after a delay to allow props to propagate from parent
+    setTimeout(() => {
+      dragPreview.value = null;
+    }, 100);
   }
 
   // Segment context menu state (for Clip Mode)
@@ -6772,10 +6784,9 @@
   }
 
   function onDragEnd() {
-    // Hide the ghost element immediately
-    if (dragGhostState.value) {
-      dragGhostState.value = { ...dragGhostState.value, visible: false };
-    }
+    // Remove event listeners immediately to prevent further drag events
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
 
     // Commit the final position to database with undo/redo support
     if (dragInfo.value) {
@@ -6790,14 +6801,14 @@
               originalTrimEnd: slipState.value.originalTrimEnd
           });
           
-          isDragging.value = false;
-          dragInfo.value = null;
-          slipState.value = null;
-          dragGhostState.value = null;
-          document.removeEventListener('mousemove', onDragMove);
-          document.removeEventListener('mouseup', onDragEnd);
-          // Trigger final waveform render after slip edit
-          nextTick(() => debouncedRenderAllWaveforms());
+          // Delay cleanup until Vue has processed the update
+          nextTick(() => {
+            isDragging.value = false;
+            dragInfo.value = null;
+            slipState.value = null;
+            dragGhostState.value = null;
+            debouncedRenderAllWaveforms();
+          });
           return;
       }
 
@@ -6813,14 +6824,14 @@
               originalEndTime: slideState.value.originalEndTime
           });
 
-          isDragging.value = false;
-          dragInfo.value = null;
-          slideState.value = null;
-          dragGhostState.value = null;
-          document.removeEventListener('mousemove', onDragMove);
-          document.removeEventListener('mouseup', onDragEnd);
-          // Trigger final waveform render after slide edit
-          nextTick(() => debouncedRenderAllWaveforms());
+          // Delay cleanup until Vue has processed the update
+          nextTick(() => {
+            isDragging.value = false;
+            dragInfo.value = null;
+            slideState.value = null;
+            dragGhostState.value = null;
+            debouncedRenderAllWaveforms();
+          });
           return;
       }
 
@@ -6874,6 +6885,15 @@
             newEndTime = itemDuration;
           }
         }
+
+        // Set dragPreview to final position BEFORE emitting and clearing isDragging
+        // This ensures the segment renders at the new position immediately while props update
+        dragPreview.value = {
+          type,
+          id,
+          startTime: newStartTime,
+          endTime: newEndTime,
+        };
 
         // For video sources with cross-track dragging
         if (
@@ -6931,20 +6951,18 @@
       }
     }
 
+    // Hide ghost immediately, but keep dragPreview set so segment shows at new position
+    dragGhostState.value = null;
     isDragging.value = false;
     dragInfo.value = null;
-    dragPreview.value = null;
-    dragGhostState.value = null;
     activeSnapTime.value = null;
     activeSnapTrackType.value = null;
 
-    document.removeEventListener('mousemove', onDragMove);
-    document.removeEventListener('mouseup', onDragEnd);
-    
-    // Trigger final waveform render after drag completes
-    nextTick(() => {
+    // Clear dragPreview after a delay to allow props to propagate from parent
+    setTimeout(() => {
+      dragPreview.value = null;
       debouncedRenderAllWaveforms();
-    });
+    }, 100);
   }
 
   // Segment resizing
