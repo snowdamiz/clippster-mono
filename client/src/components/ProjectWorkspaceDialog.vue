@@ -188,6 +188,8 @@
         ? JSON.stringify(watermarkSettings.perRatioSettings)
         : null
     "
+    :creator-default-intro="creatorDefaultIntro"
+    :creator-default-outro="creatorDefaultOutro"
     @save="onClipEditorSave"
   />
 </template>
