@@ -10,9 +10,9 @@
               @click="setTool('move')"
               :class="[
                 'p-1.5 rounded-md transition-all duration-150',
-                isMoveTool 
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
-                  : 'text-white/50 hover:text-white hover:bg-white/8'
+                isMoveTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Move Tool (V)"
             >
@@ -22,9 +22,9 @@
               @click="setTool('razor')"
               :class="[
                 'p-1.5 rounded-md transition-all duration-150',
-                isRazorTool 
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
-                  : 'text-white/50 hover:text-white hover:bg-white/8'
+                isRazorTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Razor Tool (C)"
             >
@@ -34,9 +34,9 @@
               @click="setTool('ripple')"
               :class="[
                 'p-1.5 rounded-md transition-all duration-150',
-                isRippleTool 
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
-                  : 'text-white/50 hover:text-white hover:bg-white/8'
+                isRippleTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Ripple Edit (B)"
             >
@@ -46,9 +46,9 @@
               @click="setTool('roll')"
               :class="[
                 'p-1.5 rounded-md transition-all duration-150',
-                isRollTool 
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
-                  : 'text-white/50 hover:text-white hover:bg-white/8'
+                isRollTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Roll Edit (N)"
             >
@@ -58,9 +58,9 @@
               @click="setTool('slip')"
               :class="[
                 'p-1.5 rounded-md transition-all duration-150',
-                isSlipTool 
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
-                  : 'text-white/50 hover:text-white hover:bg-white/8'
+                isSlipTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Slip Tool (Y)"
             >
@@ -70,9 +70,9 @@
               @click="setTool('slide')"
               :class="[
                 'p-1.5 rounded-md transition-all duration-150',
-                isSlideTool 
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
-                  : 'text-white/50 hover:text-white hover:bg-white/8'
+                isSlideTool
+                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                  : 'text-white/50 hover:text-white hover:bg-white/8',
               ]"
               title="Slide Tool (U)"
             >
@@ -145,16 +145,18 @@
             </button>
           </div>
         </div>
-        
+
         <!-- Right Side Controls -->
         <div class="flex items-center gap-2">
           <!-- Snap Settings -->
           <div class="relative group/snap">
             <button
               class="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border transition-all duration-150"
-              :class="snapEnabled 
-                ? 'text-violet-300 bg-violet-500/15 border-violet-500/30 shadow-[0_0_8px_rgba(139,92,246,0.15)]' 
-                : 'text-white/50 bg-[#161618] border-white/[0.04] hover:bg-white/8'"
+              :class="
+                snapEnabled
+                  ? 'text-violet-300 bg-violet-500/15 border-violet-500/30 shadow-[0_0_8px_rgba(139,92,246,0.15)]'
+                  : 'text-white/50 bg-[#161618] border-white/[0.04] hover:bg-white/8'
+              "
               @click="snapMenuOpen = !snapMenuOpen"
             >
               <Magnet :size="12" :class="snapEnabled ? 'text-violet-400' : 'text-white/40'" />
@@ -167,33 +169,75 @@
               class="absolute right-0 top-full mt-1.5 bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 min-w-[190px] z-[100]"
               @mouseleave="snapMenuOpen = false"
             >
-              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">Snap Settings</div>
+              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">
+                Snap Settings
+              </div>
               <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
                 <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
                 <span class="text-sm text-white/80">Enable Snapping</span>
               </label>
               <div class="h-px bg-white/8 my-1"></div>
               <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Snap To</div>
-              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
-                <input type="checkbox" v-model="snapPreferences.playhead" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.playhead"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
                 <span class="text-sm text-white/80">Playhead</span>
               </label>
-              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
-                <input type="checkbox" v-model="snapPreferences.segmentEdges" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.segmentEdges"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
                 <span class="text-sm text-white/80">Segment Edges</span>
               </label>
-              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
-                <input type="checkbox" v-model="snapPreferences.markers" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.markers"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
                 <span class="text-sm text-white/80">Markers</span>
               </label>
-              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
-                <input type="checkbox" v-model="snapPreferences.grid" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.grid"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
                 <span class="text-sm text-white/80">Grid (1s intervals)</span>
               </label>
               <div class="h-px bg-white/8 my-1"></div>
               <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Behavior</div>
-              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer" :class="!snapEnabled && 'opacity-40'">
-                <input type="checkbox" v-model="snapPreferences.magnetic" :disabled="!snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
+              <label
+                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
+                :class="!snapEnabled && 'opacity-40'"
+              >
+                <input
+                  type="checkbox"
+                  v-model="snapPreferences.magnetic"
+                  :disabled="!snapEnabled"
+                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                />
                 <span class="text-sm text-white/80">Magnetic Timeline</span>
               </label>
               <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
@@ -202,7 +246,7 @@
               </label>
             </div>
           </div>
-          
+
           <!-- Segment Count Badge -->
           <span
             v-if="sortedTrimSegments.length > 1"
@@ -210,14 +254,18 @@
           >
             {{ sortedTrimSegments.length }} segments
           </span>
-          
+
           <!-- Duration Badge -->
-          <span class="text-[11px] text-white/60 bg-[#161618] px-2.5 py-1.5 rounded-lg font-mono tabular-nums border border-white/[0.04]">
+          <span
+            class="text-[11px] text-white/60 bg-[#161618] px-2.5 py-1.5 rounded-lg font-mono tabular-nums border border-white/[0.04]"
+          >
             {{ formatTime(totalDuration) }}
           </span>
-          
+
           <!-- Zoom Controls Group (far right) -->
-          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04] relative group/zoom">
+          <div
+            class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04] relative group/zoom"
+          >
             <button
               @click="zoomOut"
               :disabled="zoomLevel <= MIN_ZOOM"
@@ -233,7 +281,7 @@
             >
               {{ getZoomDisplayText() }}
             </button>
-            
+
             <!-- Zoom Presets Dropdown -->
             <div
               v-if="zoomMenuOpen"
@@ -241,22 +289,62 @@
               @mouseleave="zoomMenuOpen = false"
             >
               <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">Zoom Presets</div>
-              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80" @click="() => { zoomToFit(); zoomMenuOpen = false; }">
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80"
+                @click="
+                  () => {
+                    zoomToFit();
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>Fit to Screen</span>
                 <span class="text-white/30 text-xs font-mono">Z</span>
               </button>
-              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80" @click="() => { zoomToSelection(); zoomMenuOpen = false; }">
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80"
+                @click="
+                  () => {
+                    zoomToSelection();
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>Fit Selection</span>
                 <span class="text-white/30 text-xs font-mono">⇧Z</span>
               </button>
               <div class="h-px bg-white/8 my-1"></div>
-              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80" @click="() => { zoomLevel = 1.0; zoomMenuOpen = false; }">
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                @click="
+                  () => {
+                    zoomLevel = 1.0;
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>100% (Baseline)</span>
               </button>
-              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80" @click="() => { zoomLevel = 2.0; zoomMenuOpen = false; }">
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                @click="
+                  () => {
+                    zoomLevel = 2.0;
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>200%</span>
               </button>
-              <button class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80" @click="() => { zoomLevel = 5.0; zoomMenuOpen = false; }">
+              <button
+                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                @click="
+                  () => {
+                    zoomLevel = 5.0;
+                    zoomMenuOpen = false;
+                  }
+                "
+              >
                 <span>500%</span>
               </button>
             </div>
@@ -272,7 +360,6 @@
         </div>
       </div>
 
-
       <!-- Timeline Tracks Container -->
       <div
         ref="timelineScrollContainer"
@@ -282,6 +369,7 @@
         @mouseleave="onTimelineMouseLeave"
         @click="onTimelineContainerClick"
         @wheel="onTimelineWheel"
+        @scroll="onTimelineScroll"
       >
         <!-- Marquee Selection Rectangle -->
         <div
@@ -348,14 +436,14 @@
                     v-for="tick in rulerTicks"
                     :key="tick.key"
                     class="absolute flex flex-col items-center"
-                    :style="{ 
-                      left: `${tick.percent}%`, 
-                      transform: tick.time === 0 ? 'translateX(0)' : 'translateX(-50%)', 
-                      bottom: '0' 
+                    :style="{
+                      left: `${tick.percent}%`,
+                      transform: tick.time === 0 ? 'translateX(0)' : 'translateX(-50%)',
+                      bottom: '0',
                     }"
                   >
-                    <div 
-                      class="timeline-tick" 
+                    <div
+                      class="timeline-tick"
                       :class="tick.isMajor ? 'w-px h-4 bg-white/30' : 'w-px h-2 bg-white/15'"
                     ></div>
                     <span
@@ -385,7 +473,8 @@
                     class="w-6 h-6 flex items-center justify-center rounded-full transition-all duration-150"
                     :style="{
                       backgroundColor: marker.color || '#eab308',
-                      boxShadow: props.selectedMarkerId === marker.id ? `0 4px 6px -1px ${marker.color || '#eab308'}80` : 'none',
+                      boxShadow:
+                        props.selectedMarkerId === marker.id ? `0 4px 6px -1px ${marker.color || '#eab308'}80` : 'none',
                       opacity: props.selectedMarkerId === marker.id ? 1 : 0.8,
                     }"
                   >
@@ -481,7 +570,7 @@
               </div>
               <div class="flex-1 h-full relative" @click="onTrackContentClick">
                 <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
-                
+
                 <!-- Extended timeline area indicator (beyond source videos) -->
                 <div
                   v-if="sourcesEndTime > 0 && totalDuration > sourcesEndTime"
@@ -520,7 +609,16 @@
                       :value="kf.value"
                       :is-selected="selectedKeyframeId === kf.id"
                       :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'source', overlayItem.item.endTime - overlayItem.item.startTime)"
+                      @mousedown.stop="
+                        (e) =>
+                          startKeyframeDrag(
+                            e,
+                            kf,
+                            overlayItem.item.id,
+                            'source',
+                            overlayItem.item.endTime - overlayItem.item.startTime
+                          )
+                      "
                     />
                     <!-- Left resize handle -->
                     <div
@@ -577,7 +675,16 @@
                       :value="kf.value"
                       :is-selected="selectedKeyframeId === kf.id"
                       :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'sticker', overlayItem.item.endTime - overlayItem.item.startTime)"
+                      @mousedown.stop="
+                        (e) =>
+                          startKeyframeDrag(
+                            e,
+                            kf,
+                            overlayItem.item.id,
+                            'sticker',
+                            overlayItem.item.endTime - overlayItem.item.startTime
+                          )
+                      "
                     />
                     <!-- Left resize handle -->
                     <div
@@ -628,7 +735,16 @@
                       :value="kf.value"
                       :is-selected="selectedKeyframeId === kf.id"
                       :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'text', overlayItem.item.endTime - overlayItem.item.startTime)"
+                      @mousedown.stop="
+                        (e) =>
+                          startKeyframeDrag(
+                            e,
+                            kf,
+                            overlayItem.item.id,
+                            'text',
+                            overlayItem.item.endTime - overlayItem.item.startTime
+                          )
+                      "
                     />
                     <!-- Left resize handle -->
                     <div
@@ -679,7 +795,16 @@
                       :value="kf.value"
                       :is-selected="selectedKeyframeId === kf.id"
                       :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlayItem.item.id, 'watermark', overlayItem.item.endTime - overlayItem.item.startTime)"
+                      @mousedown.stop="
+                        (e) =>
+                          startKeyframeDrag(
+                            e,
+                            kf,
+                            overlayItem.item.id,
+                            'watermark',
+                            overlayItem.item.endTime - overlayItem.item.startTime
+                          )
+                      "
                     />
                     <!-- Left resize handle -->
                     <div
@@ -740,7 +865,9 @@
                     :value="kf.value"
                     :is-selected="selectedKeyframeId === kf.id"
                     :style="{ left: `${(kf.time / (overlay.endTime - overlay.startTime)) * 100}%` }"
-                    @mousedown.stop="(e) => startKeyframeDrag(e, kf, overlay.id, 'text', overlay.endTime - overlay.startTime)"
+                    @mousedown.stop="
+                      (e) => startKeyframeDrag(e, kf, overlay.id, 'text', overlay.endTime - overlay.startTime)
+                    "
                   />
                   <!-- Left resize handle -->
                   <div
@@ -902,7 +1029,7 @@
                 >
                   <!-- Background - split into source area and extended area -->
                   <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
-                  
+
                   <!-- Extended timeline area indicator (beyond source videos) -->
                   <div
                     v-if="sourcesEndTime > 0 && totalDuration > sourcesEndTime"
@@ -970,10 +1097,7 @@
                     <!-- Video thumbnails background (filmstrip style) -->
                     <div class="absolute inset-0 bg-[#161618] flex overflow-hidden">
                       <!-- Loading placeholder skeleton -->
-                      <div
-                        v-if="!source.source_thumbnail"
-                        class="absolute inset-0 flex items-center justify-center"
-                      >
+                      <div v-if="!source.source_thumbnail" class="absolute inset-0 flex items-center justify-center">
                         <div class="flex gap-1">
                           <div class="w-8 h-full bg-white/5 animate-pulse"></div>
                           <div class="w-8 h-full bg-white/5 animate-pulse delay-75"></div>
@@ -1251,7 +1375,7 @@
                     >
                       <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
                     </div>
-                    
+
                     <!-- Fade In overlay and handle (CapCut style - bottom corner triangle) -->
                     <div
                       v-if="visualSeg.isFirst && track.fadeIn > 0"
@@ -1273,13 +1397,15 @@
                       title="Drag to adjust fade in"
                     >
                       <!-- Triangle handle pointing right -->
-                      <div class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center">
+                      <div
+                        class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center"
+                      >
                         <svg width="8" height="8" viewBox="0 0 8 8" fill="white">
                           <polygon points="2,1 6,4 2,7" />
                         </svg>
                       </div>
                     </div>
-                    
+
                     <!-- Fade Out overlay and handle (CapCut style - bottom corner triangle) -->
                     <div
                       v-if="visualSeg.isLast && track.fadeOut > 0"
@@ -1301,7 +1427,9 @@
                       title="Drag to adjust fade out"
                     >
                       <!-- Triangle handle pointing left -->
-                      <div class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center">
+                      <div
+                        class="w-full h-full bg-emerald-500 rounded-sm shadow-lg shadow-emerald-500/50 flex items-center justify-center"
+                      >
                         <svg width="8" height="8" viewBox="0 0 8 8" fill="white">
                           <polygon points="6,1 2,4 6,7" />
                         </svg>
@@ -1342,24 +1470,29 @@
               @wheel="onRulerWheel"
             >
               <!-- Triangular head (CapCut signature style) -->
-              <div class="relative flex-shrink-0 playhead-child flex justify-center" style="width: 16px;">
+              <div class="relative flex-shrink-0 playhead-child flex justify-center" style="width: 16px">
                 <svg width="14" height="10" viewBox="0 0 14 10">
-                  <polygon 
-                    points="7,10 0,0 14,0" 
-                    class="fill-amber-500 group-hover:fill-amber-400 transition-colors"
-                  />
+                  <polygon points="7,10 0,0 14,0" class="fill-amber-500 group-hover:fill-amber-400 transition-colors" />
                 </svg>
               </div>
               <!-- The line (gradient from amber to orange) -->
               <div
                 class="flex-1 playhead-line-inner playhead-child"
-                style="width: 1px; background: linear-gradient(to bottom, rgb(245, 158, 11), rgb(249, 115, 22)); box-shadow: 0 0 8px rgba(245, 158, 11, 0.5), 0 0 4px rgba(249, 115, 22, 0.3);"
+                style="
+                  width: 1px;
+                  background: linear-gradient(to bottom, rgb(245, 158, 11), rgb(249, 115, 22));
+                  box-shadow:
+                    0 0 8px rgba(245, 158, 11, 0.5),
+                    0 0 4px rgba(249, 115, 22, 0.3);
+                "
               ></div>
               <!-- Time tooltip on hover -->
-              <div 
+              <div
                 class="absolute -top-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none"
               >
-                <div class="bg-black/90 text-amber-400 text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded whitespace-nowrap border border-amber-500/30">
+                <div
+                  class="bg-black/90 text-amber-400 text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded whitespace-nowrap border border-amber-500/30"
+                >
                   {{ formatTime(currentTime) }}
                 </div>
               </div>
@@ -1374,12 +1507,9 @@
                 '--snap-position': snapIndicatorPosition,
               }"
             >
-              <div 
-                class="absolute inset-0 w-0.5 shadow-lg"
-                :class="snapIndicatorColorClass"
-              ></div>
+              <div class="absolute inset-0 w-0.5 shadow-lg" :class="snapIndicatorColorClass"></div>
             </div>
-            
+
             <!-- Trim Preview Tooltip - shows time during resize -->
             <div
               v-if="trimPreviewInfo"
@@ -1390,12 +1520,18 @@
                 transform: 'translateX(-50%)',
               }"
             >
-              <div class="bg-black/90 text-white text-xs px-2 py-1 rounded shadow-lg border border-green-500/50 whitespace-nowrap">
+              <div
+                class="bg-black/90 text-white text-xs px-2 py-1 rounded shadow-lg border border-green-500/50 whitespace-nowrap"
+              >
                 <span class="text-green-400 font-mono">{{ trimPreviewInfo.formattedTime }}</span>
-                <span class="text-white/60 ml-1 text-[10px]">{{ trimPreviewInfo.handle === 'left' ? 'IN' : 'OUT' }}</span>
+                <span class="text-white/60 ml-1 text-[10px]">
+                  {{ trimPreviewInfo.handle === 'left' ? 'IN' : 'OUT' }}
+                </span>
               </div>
               <!-- Arrow pointing down -->
-              <div class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-green-500/50"></div>
+              <div
+                class="absolute left-1/2 -translate-x-1/2 -bottom-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-green-500/50"
+              ></div>
             </div>
           </div>
           <!-- end contentWrapper -->
@@ -1454,7 +1590,12 @@
         <!-- Edit Operations with Shortcuts -->
         <button
           class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
-          @click="() => { closeSourceContextMenu(); copySelectedItems(); }"
+          @click="
+            () => {
+              closeSourceContextMenu();
+              copySelectedItems();
+            }
+          "
         >
           <span class="flex items-center gap-2">
             <span>Copy</span>
@@ -1463,7 +1604,12 @@
         </button>
         <button
           class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
-          @click="() => { closeSourceContextMenu(); duplicateSelectedItems(); }"
+          @click="
+            () => {
+              closeSourceContextMenu();
+              duplicateSelectedItems();
+            }
+          "
         >
           <span class="flex items-center gap-2">
             <span>Duplicate</span>
@@ -1517,7 +1663,12 @@
         <!-- Split/Cut Option -->
         <button
           class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
-          @click="() => { closeSourceContextMenu(); performCutAtPlayhead(); }"
+          @click="
+            () => {
+              closeSourceContextMenu();
+              performCutAtPlayhead();
+            }
+          "
         >
           <span class="flex items-center gap-2">
             <Scissors :size="14" />
@@ -1538,7 +1689,9 @@
             <span class="text-white/40 text-xs">{{ getSourceSpeed(sourceContextMenu.source) }}x</span>
           </button>
           <!-- Speed submenu -->
-          <div class="absolute left-full top-0 ml-1 bg-[#161618] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] hidden group-hover/speed:block max-h-[300px] overflow-y-auto">
+          <div
+            class="absolute left-full top-0 ml-1 bg-[#161618] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px] hidden group-hover/speed:block max-h-[300px] overflow-y-auto"
+          >
             <!-- Reverse speeds -->
             <div class="px-2 py-1 text-[10px] text-white/40 uppercase tracking-wider">Reverse</div>
             <button
@@ -1610,8 +1763,18 @@
     <div
       v-if="sourceContextMenu.visible || segmentContextMenu.visible"
       class="fixed inset-0 z-[9998]"
-      @click="() => { closeSourceContextMenu(); closeSegmentContextMenu(); }"
-      @contextmenu.prevent="() => { closeSourceContextMenu(); closeSegmentContextMenu(); }"
+      @click="
+        () => {
+          closeSourceContextMenu();
+          closeSegmentContextMenu();
+        }
+      "
+      @contextmenu.prevent="
+        () => {
+          closeSourceContextMenu();
+          closeSegmentContextMenu();
+        }
+      "
     ></div>
   </div>
   <!-- end outer bg container -->
@@ -1663,7 +1826,12 @@
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
   import { useToast } from '@/composables/useToast';
   import { waveformService, useWaveform, type WaveformPeak, type AudioData } from '@/services/waveformService';
-  import { renderWaveform, renderAudioTrackWaveform, WAVEFORM_COLORS, createThrottledRenderer } from '@/utils/waveformRenderer';
+  import {
+    renderWaveform,
+    renderAudioTrackWaveform,
+    WAVEFORM_COLORS,
+    createThrottledRenderer,
+  } from '@/utils/waveformRenderer';
   import type { Track, Keyframe, ItemType } from '@/types/timeline-model';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
   import KeyframeMarker from './KeyframeMarker.vue';
@@ -1721,17 +1889,10 @@
   // Minimum segment duration after a split (in seconds)
   const MIN_SEGMENT_DURATION = 0.1;
 
-  interface SegmentTick {
-    time: number;
-    positionInSegment: number;
-    isMajor: boolean;
-  }
-
   interface SegmentLayout {
     segment: TrimSegment;
     startPercent: number;
     widthPercent: number;
-    ticks: SegmentTick[];
     effectiveStartTime: number; // Cumulative time from start of timeline
     effectiveEndTime: number; // Cumulative time at end of this segment
   }
@@ -1781,7 +1942,14 @@
       regions?: Array<{ id: string; startTime: number; endTime: number; label?: string; color?: string }>;
       // Clip transitions and effects (from EffectsTab)
       clipTransitions?: Array<{ id: string; transitionType: string; positionIndex: number; duration: number }>;
-      clipEffects?: Array<{ id: string; effectType: string; startTime: number; endTime: number; intensity: number; isEnabled: boolean }>;
+      clipEffects?: Array<{
+        id: string;
+        effectType: string;
+        startTime: number;
+        endTime: number;
+        intensity: number;
+        isEnabled: boolean;
+      }>;
     }>(),
     {
       audioGainDb: 0,
@@ -1805,16 +1973,8 @@
     }
   );
 
-  const {
-    activeTool,
-    setTool,
-    isMoveTool,
-    isRazorTool,
-    isRippleTool,
-    isRollTool,
-    isSlipTool,
-    isSlideTool,
-  } = useTimelineTools();
+  const { activeTool, setTool, isMoveTool, isRazorTool, isRippleTool, isRollTool, isSlipTool, isSlideTool } =
+    useTimelineTools();
 
   const { loading: toastLoading, success: toastSuccess, error: toastError, removeToast } = useToast();
 
@@ -1892,10 +2052,30 @@
         sourceName: string | null;
       }
     ): void;
-    (e: 'rippleEdit', data: { type: ItemType; id: string; newStartTime: number; newEndTime: number; delta: number }): void;
-    (e: 'rollEdit', data: { type: ItemType; leftItemId: string; rightItemId: string; newRollTime: number; originalRollTime: number }): void;
-    (e: 'slipEdit', data: { type: ItemType; itemId: string; delta: number; originalTrimStart: number; originalTrimEnd: number | null }): void;
-    (e: 'slideEdit', data: { type: ItemType; itemId: string; leftNeighborId: string; rightNeighborId: string; delta: number; originalStartTime: number; originalEndTime: number }): void;
+    (
+      e: 'rippleEdit',
+      data: { type: ItemType; id: string; newStartTime: number; newEndTime: number; delta: number }
+    ): void;
+    (
+      e: 'rollEdit',
+      data: { type: ItemType; leftItemId: string; rightItemId: string; newRollTime: number; originalRollTime: number }
+    ): void;
+    (
+      e: 'slipEdit',
+      data: { type: ItemType; itemId: string; delta: number; originalTrimStart: number; originalTrimEnd: number | null }
+    ): void;
+    (
+      e: 'slideEdit',
+      data: {
+        type: ItemType;
+        itemId: string;
+        leftNeighborId: string;
+        rightNeighborId: string;
+        delta: number;
+        originalStartTime: number;
+        originalEndTime: number;
+      }
+    ): void;
     (e: 'updateKeyframeTime', data: { itemId: string; keyframeId: string; time: number; type: ItemType }): void;
     (e: 'keyframe-select', data: { itemId: string; keyframeId: string; type: ItemType }): void;
     // J-K-L playback control events
@@ -1922,7 +2102,11 @@
     (e: 'clearBeatMarkers'): void;
     // Region/range events (work area with start/end)
     (e: 'addRegion', startTime: number, endTime: number, label?: string, color?: string): void;
-    (e: 'updateRegion', regionId: string, updates: { startTime?: number; endTime?: number; label?: string; color?: string }): void;
+    (
+      e: 'updateRegion',
+      regionId: string,
+      updates: { startTime?: number; endTime?: number; label?: string; color?: string }
+    ): void;
     (e: 'deleteRegion', regionId: string): void;
     // In/Out point events (work area)
     (e: 'setInPoint', time: number): void;
@@ -1933,7 +2117,11 @@
     // Audio fade events
     (e: 'updateAudioFade', trackId: string, fadeType: 'fadeIn' | 'fadeOut', duration: number): void;
     // Audio ducking events (auto-lower music under speech)
-    (e: 'enableAudioDucking', trackId: string, options: { threshold: number; reduction: number; attack: number; release: number }): void;
+    (
+      e: 'enableAudioDucking',
+      trackId: string,
+      options: { threshold: number; reduction: number; attack: number; release: number }
+    ): void;
     (e: 'disableAudioDucking', trackId: string): void;
     // Audio normalization events
     (e: 'normalizeAudio', trackId: string, targetLevel: number): void;
@@ -1947,7 +2135,12 @@
     (e: 'reorderTrack', trackType: 'audio' | 'overlay', trackId: string, newOrder: number): void;
     // Speed keyframe events
     (e: 'addSpeedKeyframe', sourceId: string, time: number, speed: number): void;
-    (e: 'updateSpeedKeyframe', sourceId: string, keyframeId: string, updates: { time?: number; speed?: number; easing?: string }): void;
+    (
+      e: 'updateSpeedKeyframe',
+      sourceId: string,
+      keyframeId: string,
+      updates: { time?: number; speed?: number; easing?: string }
+    ): void;
     (e: 'deleteSpeedKeyframe', sourceId: string, keyframeId: string): void;
     // Freeze point events
     (e: 'addFreezePoint', sourceId: string, time: number, duration: number): void;
@@ -1961,17 +2154,13 @@
   const unifiedVideoTracks = computed(() => {
     if (!props.tracks) return [];
     // Filter video tracks and sort by orderIndex descending (highest index on top)
-    return props.tracks
-      .filter(t => t.type === 'video')
-      .sort((a, b) => b.orderIndex - a.orderIndex);
+    return props.tracks.filter((t) => t.type === 'video').sort((a, b) => b.orderIndex - a.orderIndex);
   });
 
   const unifiedAudioTracks = computed(() => {
     if (!props.tracks) return [];
     // Filter audio tracks and sort by orderIndex ascending (usually audio tracks stack downwards)
-    return props.tracks
-      .filter(t => t.type === 'audio')
-      .sort((a, b) => a.orderIndex - b.orderIndex);
+    return props.tracks.filter((t) => t.type === 'audio').sort((a, b) => a.orderIndex - b.orderIndex);
   });
 
   // Computed: detect transitions between overlapping sources in editor mode
@@ -2042,11 +2231,15 @@
   function zoomIn() {
     const step = getZoomStep();
     zoomLevel.value = zoomLevel.value + step;
+    ticksZoomLevel.value = zoomLevel.value; // Sync immediately for button clicks
+    nextTick(updateVisibleTimeRange);
   }
 
   function zoomOut() {
     const step = getZoomStep();
     zoomLevel.value = Math.max(MIN_ZOOM.value, zoomLevel.value - step);
+    ticksZoomLevel.value = zoomLevel.value; // Sync immediately for button clicks
+    nextTick(updateVisibleTimeRange);
   }
 
   // Calculate fit-to-width zoom level (baseline = 0%)
@@ -2069,6 +2262,7 @@
     baselineZoom.value = fitZoom;
     MIN_ZOOM.value = fitZoom;
     zoomLevel.value = fitZoom; // Start at 0% (fit-to-width)
+    ticksZoomLevel.value = fitZoom; // Sync ticks zoom level
   }
 
   // Zoom to fit all content in view
@@ -2077,75 +2271,79 @@
     baselineZoom.value = fitZoom;
     MIN_ZOOM.value = fitZoom;
     zoomLevel.value = fitZoom;
-    
+    ticksZoomLevel.value = fitZoom; // Sync immediately
+
     // Reset scroll to start
     nextTick(() => {
       const scrollContainer = timelineScrollContainer.value;
       if (scrollContainer) {
         scrollContainer.scrollLeft = 0;
       }
+      updateVisibleTimeRange();
     });
   }
 
   // Zoom to focus on selected segment(s)
   function zoomToSelection() {
     if (!selectedItemKey.value) return;
-    
+
     const [type, id] = selectedItemKey.value.split('_');
     let startTime = 0;
     let endTime = 0;
-    
+
     // Find the selected item's time range
     if (type === 'source') {
-      const source = props.videoSources?.find(s => s.id === id);
+      const source = props.videoSources?.find((s) => s.id === id);
       if (source) {
         startTime = source.start_time;
         endTime = source.end_time;
       }
     } else if (type === 'trim') {
-      const segment = props.trimSegments.find(s => s.id === id);
+      const segment = props.trimSegments.find((s) => s.id === id);
       if (segment) {
         startTime = segment.startTime;
         endTime = segment.endTime;
       }
     } else if (type === 'audio') {
-      const track = props.audioTracks.find(t => t.id === id);
+      const track = props.audioTracks.find((t) => t.id === id);
       if (track) {
         startTime = track.startTime;
         endTime = track.endTime;
       }
     } else if (type === 'text') {
-      const overlay = props.textOverlays.find(t => t.id === id);
+      const overlay = props.textOverlays.find((t) => t.id === id);
       if (overlay) {
         startTime = overlay.startTime;
         endTime = overlay.endTime;
       }
     }
-    
+
     if (endTime <= startTime) return;
-    
+
     const duration = endTime - startTime;
     const totalDur = props.editorMode ? props.duration : totalDuration.value;
     if (totalDur <= 0) return;
-    
+
     // Calculate zoom to show selection with some padding (20% on each side)
     const paddedDuration = duration * 1.4;
     const targetZoom = totalDur / paddedDuration;
-    
+
     zoomLevel.value = Math.max(MIN_ZOOM.value, targetZoom);
-    
+    ticksZoomLevel.value = zoomLevel.value; // Sync immediately
+
     // Scroll to center the selection
     nextTick(() => {
       const scrollContainer = timelineScrollContainer.value;
       const contentWrapper = contentWrapperRef.value;
       if (!scrollContainer || !contentWrapper) return;
-      
+
       const contentWidth = contentWrapper.offsetWidth;
       const containerWidth = scrollContainer.clientWidth;
-      const selectionCenter = ((startTime + endTime) / 2) / totalDur;
-      const targetScrollLeft = (selectionCenter * contentWidth) - (containerWidth / 2);
-      
+      const selectionCenter = (startTime + endTime) / 2 / totalDur;
+      const targetScrollLeft = selectionCenter * contentWidth - containerWidth / 2;
+
       scrollContainer.scrollLeft = Math.max(0, targetScrollLeft);
+      updateVisibleTimeRange();
     });
   }
 
@@ -2158,6 +2356,16 @@
     const zoomPercent = Math.round((zoomLevel.value / baselineZoom.value - 1) * 100);
     return `${zoomPercent}%`;
   }
+
+  // Sync ticksZoomLevel when zoomLevel changes from direct assignments (dropdown buttons)
+  // This catches cases where zoomLevel is set directly in the template
+  watch(zoomLevel, (newZoom) => {
+    // Only sync if not in an active scroll-to-zoom gesture
+    // (scroll-to-zoom handles ticksZoomLevel via debouncing in applyPendingZoom)
+    if (!isZooming.value && !pendingZoom) {
+      ticksZoomLevel.value = newZoom;
+    }
+  });
 
   // Continuous seeking state
   const isSeeking = ref(false);
@@ -2203,8 +2411,8 @@
    */
   function trackRecentAction(id: string, label: string, icon?: string) {
     // Remove if already exists
-    recentActions.value = recentActions.value.filter(a => a.id !== id);
-    
+    recentActions.value = recentActions.value.filter((a) => a.id !== id);
+
     // Add to front
     recentActions.value.unshift({
       id,
@@ -2212,7 +2420,7 @@
       icon,
       timestamp: Date.now(),
     });
-    
+
     // Limit to max
     if (recentActions.value.length > MAX_RECENT_ACTIONS) {
       recentActions.value = recentActions.value.slice(0, MAX_RECENT_ACTIONS);
@@ -2232,7 +2440,7 @@
   function executeRecentAction(actionId: string) {
     closeSourceContextMenu();
     closeSegmentContextMenu();
-    
+
     switch (actionId) {
       case 'copy':
         copySelectedItems();
@@ -2288,43 +2496,49 @@
     itemDuration: number;
   } | null>(null);
 
-  function startKeyframeDrag(e: MouseEvent, keyframe: Keyframe, itemId: string, itemType: ItemType, itemDuration: number) {
+  function startKeyframeDrag(
+    e: MouseEvent,
+    keyframe: Keyframe,
+    itemId: string,
+    itemType: ItemType,
+    itemDuration: number
+  ) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     keyframeDragState.value = {
       id: keyframe.id,
       itemId,
       itemType,
       startX: e.clientX,
       originalTime: keyframe.time,
-      itemDuration
+      itemDuration,
     };
-    
+
     // Select the keyframe on drag start
     selectKeyframe(keyframe.id, e);
-    
+
     document.addEventListener('mousemove', onKeyframeDragMove);
     document.addEventListener('mouseup', onKeyframeDragEnd);
   }
 
   function onKeyframeDragMove(e: MouseEvent) {
     if (!keyframeDragState.value) return;
-    
+
     const { startX, originalTime, itemDuration, itemId, id, itemType } = keyframeDragState.value;
     const deltaX = e.clientX - startX;
-    
+
     // Calculate track width for pixel-to-time conversion
     const trackContentWidth = getTrackContentWidth();
-    
+
     // Calculate delta time based on global timeline scale
     const deltaTime = (deltaX / trackContentWidth) * props.duration;
-    
+
     let newTime = originalTime + deltaTime;
-    
+
     // Clamp to item duration (0 to itemDuration)
     newTime = Math.max(0, Math.min(itemDuration, newTime));
-    
+
     // Emit update event
     emit('updateKeyframeTime', { itemId, keyframeId: id, time: newTime, type: itemType });
   }
@@ -2387,13 +2601,13 @@
   // Trim preview state - shows frame time during resize
   const trimPreviewInfo = computed(() => {
     if (!isResizing.value || !resizeInfo.value || !dragPreview.value) return null;
-    
+
     const handle = resizeInfo.value.handle;
     const time = handle === 'left' ? dragPreview.value.startTime : dragPreview.value.endTime;
-    
+
     // Calculate position for the preview tooltip
     const percent = (time / totalDuration.value) * 100;
-    
+
     return {
       time,
       formattedTime: formatTime(time),
@@ -2406,10 +2620,10 @@
   // Computed: IDs of segments that will be affected by ripple edit
   const rippleAffectedIds = computed(() => {
     if (!rippleState.value) return new Set<string>();
-    
+
     const affected = new Set<string>();
     const edgeTime = rippleState.value.originalEdgeTime;
-    
+
     if (props.editorMode) {
       // Editor mode: check video sources
       for (const source of props.videoSources) {
@@ -2425,14 +2639,14 @@
         }
       }
     }
-    
+
     return affected;
   });
 
   // Computed: IDs of segments that are overlapping/colliding with other segments
   const collidingSegmentIds = computed(() => {
     const colliding = new Set<string>();
-    
+
     if (props.editorMode) {
       // Editor mode: check video sources for overlaps
       const sources = props.videoSources;
@@ -2462,7 +2676,7 @@
         }
       }
     }
-    
+
     // Also check audio tracks for overlaps within the same track order
     const audioByOrder = new Map<number, typeof props.audioTracks>();
     for (const track of props.audioTracks) {
@@ -2472,7 +2686,7 @@
       }
       audioByOrder.get(order)!.push(track);
     }
-    
+
     for (const [, tracks] of audioByOrder) {
       for (let i = 0; i < tracks.length; i++) {
         for (let j = i + 1; j < tracks.length; j++) {
@@ -2485,7 +2699,7 @@
         }
       }
     }
-    
+
     return colliding;
   });
 
@@ -2566,13 +2780,23 @@
   // ============================================
   // PERFORMANCE: Interaction state flags
   // ============================================
-  
+
   // Track when user is actively zooming (to skip expensive renders)
   const isZooming = ref(false);
   let zoomEndTimeout: ReturnType<typeof setTimeout> | null = null;
-  
+
+  // Debounced zoom level for ruler ticks - updates after zoom gesture settles
+  // This prevents expensive tick recalculation on every scroll frame
+  const ticksZoomLevel = ref(1.0);
+  let ticksZoomTimeout: ReturnType<typeof setTimeout> | null = null;
+
   // Pending zoom state for batching via requestAnimationFrame
-  let pendingZoom: { newZoom: number; logicalPosition: number; cursorXInContainer: number; scrollContainer: HTMLElement } | null = null;
+  let pendingZoom: {
+    newZoom: number;
+    logicalPosition: number;
+    cursorXInContainer: number;
+    scrollContainer: HTMLElement;
+  } | null = null;
   let zoomRAFId: number | null = null;
 
   /**
@@ -2584,20 +2808,31 @@
       zoomRAFId = null;
       return;
     }
-    
+
     const { newZoom, logicalPosition, cursorXInContainer, scrollContainer } = pendingZoom;
     pendingZoom = null;
     zoomRAFId = null;
-    
-    // Apply the zoom
+
+    // Apply the zoom immediately for visual feedback
     zoomLevel.value = newZoom;
-    
+
+    // Debounce the ticks zoom level update (ruler recalculation)
+    if (ticksZoomTimeout) {
+      clearTimeout(ticksZoomTimeout);
+    }
+    ticksZoomTimeout = setTimeout(() => {
+      ticksZoomLevel.value = newZoom;
+      ticksZoomTimeout = null;
+    }, 100);
+
     // Adjust scroll to keep cursor position stable
     nextTick(() => {
       const newContentWidth = scrollContainer.scrollWidth;
       const newContentX = logicalPosition * newContentWidth;
       const newScrollLeft = newContentX - cursorXInContainer;
       scrollContainer.scrollLeft = Math.max(0, newScrollLeft);
+      // Update visible time range after scroll adjustment
+      updateVisibleTimeRange();
     });
   }
 
@@ -2605,26 +2840,35 @@
    * Queue a zoom update to be applied in the next animation frame
    * This batches multiple rapid zoom events (like trackpad pinch) for performance
    */
-  function queueZoomUpdate(newZoom: number, logicalPosition: number, cursorXInContainer: number, scrollContainer: HTMLElement) {
+  function queueZoomUpdate(
+    newZoom: number,
+    logicalPosition: number,
+    cursorXInContainer: number,
+    scrollContainer: HTMLElement
+  ) {
     // Mark as zooming to suppress waveform renders
     isZooming.value = true;
-    
+
     // Clear any pending zoom end timeout
     if (zoomEndTimeout) {
       clearTimeout(zoomEndTimeout);
     }
-    
-    // Schedule zoom end after user stops zooming (150ms idle)
+
+    // Schedule zoom end after user stops zooming (200ms idle for smoother experience)
     zoomEndTimeout = setTimeout(() => {
       isZooming.value = false;
       zoomEndTimeout = null;
+      // Sync ticks zoom level when zoom ends
+      ticksZoomLevel.value = zoomLevel.value;
+      // Update visible time range for virtualized rendering
+      updateVisibleTimeRange();
       // Trigger a final waveform render after zoom completes
       debouncedRenderAllWaveforms();
-    }, 150);
-    
+    }, 200);
+
     // Store the pending zoom (latest values win)
     pendingZoom = { newZoom, logicalPosition, cursorXInContainer, scrollContainer };
-    
+
     // Schedule the zoom to be applied in the next animation frame
     if (!zoomRAFId) {
       zoomRAFId = requestAnimationFrame(applyPendingZoom);
@@ -2655,7 +2899,7 @@
     const { visibleStartTime, visibleEndTime, bufferTime } = virtualScrollState.value;
     const bufferedStart = visibleStartTime - bufferTime;
     const bufferedEnd = visibleEndTime + bufferTime;
-    
+
     // Item is visible if it overlaps with the buffered viewport
     return endTime >= bufferedStart && startTime <= bufferedEnd;
   }
@@ -2665,25 +2909,33 @@
    */
   function updateVisibleTimeRange() {
     if (!timelineScrollContainer.value) return;
-    
+
     const container = timelineScrollContainer.value;
     const scrollLeft = container.scrollLeft;
     const viewportWidth = container.clientWidth;
     const contentWidth = container.scrollWidth;
-    
+
     if (contentWidth <= 0) return;
-    
+
     const totalDur = props.editorMode ? props.duration : totalDuration.value;
     const scrollPercent = scrollLeft / contentWidth;
     const viewportPercent = viewportWidth / contentWidth;
-    
+
     virtualScrollState.value.visibleStartTime = scrollPercent * totalDur;
     virtualScrollState.value.visibleEndTime = (scrollPercent + viewportPercent) * totalDur;
   }
 
+  /**
+   * Handle scroll events on the timeline container
+   * Updates visible time range for virtualized tick rendering
+   */
+  function onTimelineScroll() {
+    updateVisibleTimeRange();
+  }
+
   // Screen reader announcements for accessibility
   const screenReaderAnnouncement = ref('');
-  
+
   /**
    * Announce a message to screen readers using ARIA live region
    */
@@ -2718,7 +2970,7 @@
 
   // High contrast mode for accessibility
   const highContrastMode = ref(false);
-  
+
   /**
    * Toggle high contrast mode for better visibility
    */
@@ -2746,11 +2998,11 @@
 
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
-  
+
   // Optimistic playhead position during drag (avoids round-trip lag)
   // This is the time value we're dragging to, updated immediately during drag
   const optimisticDragTime = ref<number | null>(null);
-  
+
   // Inertial scrolling state for playhead
   const playheadVelocity = ref(0);
   const lastPlayheadDragTime = ref(0);
@@ -2775,11 +3027,11 @@
 
   // Smooth playhead animation state
   const smoothPlayheadPosition = ref(0);
-  
+
   // J-K-L playback speed state (industry standard shuttle control)
   // -4 to 4: negative = reverse, 0 = stopped, positive = forward
   const jklPlaybackSpeed = ref(0);
-  
+
   // Track collapse state (local UI state)
   const collapsedTracks = ref<Set<string>>(new Set()); // Set of "trackType_trackId" keys
 
@@ -2802,12 +3054,15 @@
     const key = trackId ? `${trackType}_${trackId}` : trackType;
     const customHeight = trackHeights.value.get(key);
     if (customHeight) return customHeight;
-    
+
     // Return default based on track type
     switch (trackType) {
-      case 'video': return DEFAULT_VIDEO_TRACK_HEIGHT;
-      case 'audio': return DEFAULT_AUDIO_TRACK_HEIGHT;
-      default: return DEFAULT_OVERLAY_TRACK_HEIGHT;
+      case 'video':
+        return DEFAULT_VIDEO_TRACK_HEIGHT;
+      case 'audio':
+        return DEFAULT_AUDIO_TRACK_HEIGHT;
+      default:
+        return DEFAULT_OVERLAY_TRACK_HEIGHT;
     }
   }
 
@@ -2827,7 +3082,7 @@
     const key = trackId ? `${trackType}_${trackId}` : trackType;
     const customColor = trackColors.value.get(key);
     if (customColor) return customColor;
-    
+
     // Return default color based on index
     return DEFAULT_TRACK_COLORS[index % DEFAULT_TRACK_COLORS.length];
   }
@@ -2883,7 +3138,7 @@
   function onTrackHeightResizeStart(e: MouseEvent, trackType: string, trackId?: string) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     isResizingTrackHeight.value = true;
     trackHeightResizeInfo.value = {
       trackType,
@@ -2891,22 +3146,18 @@
       startY: e.clientY,
       startHeight: getTrackHeight(trackType, trackId),
     };
-    
+
     document.addEventListener('mousemove', onTrackHeightResizeMove);
     document.addEventListener('mouseup', onTrackHeightResizeEnd);
   }
 
   function onTrackHeightResizeMove(e: MouseEvent) {
     if (!isResizingTrackHeight.value || !trackHeightResizeInfo.value) return;
-    
+
     const deltaY = e.clientY - trackHeightResizeInfo.value.startY;
     const newHeight = trackHeightResizeInfo.value.startHeight + deltaY;
-    
-    setTrackHeight(
-      trackHeightResizeInfo.value.trackType,
-      trackHeightResizeInfo.value.trackId,
-      newHeight
-    );
+
+    setTrackHeight(trackHeightResizeInfo.value.trackType, trackHeightResizeInfo.value.trackId, newHeight);
   }
 
   function onTrackHeightResizeEnd() {
@@ -2928,13 +3179,13 @@
   // Computed marquee rectangle style
   const marqueeStyle = computed(() => {
     if (!marqueeSelection.value || !marqueeSelection.value.active) return null;
-    
+
     const { startX, startY, currentX, currentY } = marqueeSelection.value;
     const left = Math.min(startX, currentX);
     const top = Math.min(startY, currentY);
     const width = Math.abs(currentX - startX);
     const height = Math.abs(currentY - startY);
-    
+
     return {
       left: `${left}px`,
       top: `${top}px`,
@@ -2947,7 +3198,7 @@
     const key = trackId ? `${trackType}_${trackId}` : trackType;
     return collapsedTracks.value.has(key);
   }
-  
+
   function toggleTrackCollapse(trackType: 'video' | 'audio' | 'overlay', trackId?: string) {
     const key = trackId ? `${trackType}_${trackId}` : trackType;
     if (collapsedTracks.value.has(key)) {
@@ -2966,7 +3217,7 @@
   const TRACK_LABEL_WIDTH = 120;
 
   // Snap configuration
-  const SNAP_THRESHOLD_PX = 8; // Pixels distance to trigger snapping
+  const SNAP_THRESHOLD_PX = 5; // Pixels distance to trigger snapping
   const snapEnabled = ref(true);
   const snapMenuOpen = ref(false);
   const snapPreferences = ref({
@@ -2978,7 +3229,7 @@
   });
 
   // Magnetic timeline threshold (larger than regular snap for attraction effect)
-  const MAGNETIC_THRESHOLD_PX = 20; // Pixels distance for magnetic attraction
+  const MAGNETIC_THRESHOLD_PX = 12; // Pixels distance for magnetic attraction
 
   // Snap state for visual indicator
   const activeSnapTime = ref<number | null>(null); // Time position where snap is occurring
@@ -3040,7 +3291,7 @@
     const maxScale = 10; // Don't amplify more than 10x
     const finalScale = Math.min(scaleFactor, maxScale);
 
-    return peaks.map(peak => ({
+    return peaks.map((peak) => ({
       min: peak.min * finalScale,
       max: peak.max * finalScale,
     }));
@@ -3048,40 +3299,40 @@
 
   // Color mappings - Enhanced gradients for CapCut style
   const colorMap: Record<string, { bg: string; border: string; glow: string }> = {
-    violet: { 
-      bg: 'rgba(139, 92, 246, 0.35), rgba(99, 102, 241, 0.45)', 
+    violet: {
+      bg: 'rgba(139, 92, 246, 0.35), rgba(99, 102, 241, 0.45)',
       border: 'rgba(139, 92, 246, 0.7)',
-      glow: 'rgba(139, 92, 246, 0.3)'
+      glow: 'rgba(139, 92, 246, 0.3)',
     },
-    emerald: { 
-      bg: 'rgba(16, 185, 129, 0.35), rgba(20, 184, 166, 0.45)', 
+    emerald: {
+      bg: 'rgba(16, 185, 129, 0.35), rgba(20, 184, 166, 0.45)',
       border: 'rgba(16, 185, 129, 0.7)',
-      glow: 'rgba(16, 185, 129, 0.3)'
+      glow: 'rgba(16, 185, 129, 0.3)',
     },
-    amber: { 
-      bg: 'rgba(245, 158, 11, 0.35), rgba(251, 146, 60, 0.45)', 
+    amber: {
+      bg: 'rgba(245, 158, 11, 0.35), rgba(251, 146, 60, 0.45)',
       border: 'rgba(245, 158, 11, 0.7)',
-      glow: 'rgba(245, 158, 11, 0.3)'
+      glow: 'rgba(245, 158, 11, 0.3)',
     },
-    pink: { 
-      bg: 'rgba(236, 72, 153, 0.35), rgba(244, 114, 182, 0.45)', 
+    pink: {
+      bg: 'rgba(236, 72, 153, 0.35), rgba(244, 114, 182, 0.45)',
       border: 'rgba(236, 72, 153, 0.7)',
-      glow: 'rgba(236, 72, 153, 0.3)'
+      glow: 'rgba(236, 72, 153, 0.3)',
     },
-    cyan: { 
-      bg: 'rgba(6, 182, 212, 0.35), rgba(34, 211, 238, 0.45)', 
+    cyan: {
+      bg: 'rgba(6, 182, 212, 0.35), rgba(34, 211, 238, 0.45)',
       border: 'rgba(6, 182, 212, 0.7)',
-      glow: 'rgba(6, 182, 212, 0.3)'
+      glow: 'rgba(6, 182, 212, 0.3)',
     },
-    rose: { 
-      bg: 'rgba(244, 63, 94, 0.35), rgba(251, 113, 133, 0.45)', 
+    rose: {
+      bg: 'rgba(244, 63, 94, 0.35), rgba(251, 113, 133, 0.45)',
       border: 'rgba(244, 63, 94, 0.7)',
-      glow: 'rgba(244, 63, 94, 0.3)'
+      glow: 'rgba(244, 63, 94, 0.3)',
     },
-    sky: { 
-      bg: 'rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.45)', 
+    sky: {
+      bg: 'rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.45)',
       border: 'rgba(14, 165, 233, 0.7)',
-      glow: 'rgba(14, 165, 233, 0.3)'
+      glow: 'rgba(14, 165, 233, 0.3)',
     },
   };
 
@@ -3132,7 +3383,7 @@
   // Timeline grows automatically when any item extends beyond current duration
   const totalDuration = computed(() => {
     let maxEndTime = 0;
-    
+
     if (props.editorMode) {
       // Start with video sources end time
       if (props.videoSources && props.videoSources.length > 0) {
@@ -3142,37 +3393,37 @@
           maxEndTime = Math.max(maxEndTime, props.videoSources[0].source_duration || 0);
         }
       }
-      
+
       // Include audio tracks
       if (props.audioTracks && props.audioTracks.length > 0) {
         const maxAudioEnd = props.audioTracks.reduce((max, track) => Math.max(max, track.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxAudioEnd);
       }
-      
+
       // Include text overlays
       if (props.textOverlays && props.textOverlays.length > 0) {
         const maxTextEnd = props.textOverlays.reduce((max, overlay) => Math.max(max, overlay.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxTextEnd);
       }
-      
+
       // Include stickers
       if (props.stickers && props.stickers.length > 0) {
         const maxStickerEnd = props.stickers.reduce((max, sticker) => Math.max(max, sticker.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxStickerEnd);
       }
-      
+
       // Include watermarks
       if (props.watermarks && props.watermarks.length > 0) {
         const maxWatermarkEnd = props.watermarks.reduce((max, wm) => Math.max(max, wm.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxWatermarkEnd);
       }
-      
+
       // Include effects
       if (props.effects && props.effects.length > 0) {
         const maxEffectEnd = props.effects.reduce((max, effect) => Math.max(max, effect.endTime), 0);
         maxEndTime = Math.max(maxEndTime, maxEffectEnd);
       }
-      
+
       // Minimum 5 minutes if nothing exists, or add 10% padding for extension room
       if (maxEndTime === 0) {
         return 300;
@@ -3381,13 +3632,16 @@
       });
   });
 
-  // Ruler ticks spanning full timeline
+  // Ruler ticks spanning full timeline - VIRTUALIZED
+  // Uses debounced ticksZoomLevel for performance - only recalculates after zoom settles
+  // Only generates ticks for the visible viewport + buffer to prevent DOM bloat
   const rulerTicks = computed(() => {
     const timelineDuration = totalDuration.value;
     if (timelineDuration <= 0) return [];
 
-    // Determine optimal intervals based on visible duration (duration / zoom)
-    const visibleDuration = timelineDuration / zoomLevel.value;
+    // Use debounced zoom level for tick calculations to prevent recalc on every scroll frame
+    const effectiveZoom = ticksZoomLevel.value;
+    const visibleDuration = timelineDuration / effectiveZoom;
     let majorInterval: number;
     let minorInterval: number;
 
@@ -3429,10 +3683,31 @@
       minorInterval = 60;
     }
 
+    // When actively zooming, show only major ticks for performance
+    // This dramatically reduces DOM updates during scroll-to-zoom
+    const showMinorTicks = !isZooming.value;
+    const tickInterval = showMinorTicks ? minorInterval : majorInterval;
+
+    // VIRTUALIZATION: Only generate ticks for the visible time range + buffer
+    // This prevents thousands of DOM elements when zoomed in far
+    const { visibleStartTime, visibleEndTime, bufferTime } = virtualScrollState.value;
+
+    // Add buffer on each side for smooth scrolling (prevents popping)
+    const renderStartTime = Math.max(0, visibleStartTime - bufferTime);
+    const renderEndTime = Math.min(timelineDuration, visibleEndTime + bufferTime);
+
+    // Align start time to tick interval for consistent positioning
+    const alignedStartTime = Math.floor(renderStartTime / tickInterval) * tickInterval;
+
+    // Safety cap: limit maximum number of ticks to prevent extreme cases
+    const MAX_TICKS = 300;
+
     const ticks: { key: string; time: number; percent: number; isMajor: boolean }[] = [];
-    for (let t = 0; t <= timelineDuration + 0.0001; t += minorInterval) {
+    for (let t = alignedStartTime; t <= renderEndTime + 0.0001 && ticks.length < MAX_TICKS; t += tickInterval) {
+      // Skip ticks outside the timeline bounds
+      if (t < 0 || t > timelineDuration) continue;
+
       const percent = (t / timelineDuration) * 100;
-      if (percent < -0.1 || percent > 100.1) continue;
       const isMajor = Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
       ticks.push({
         key: `${t.toFixed(3)}`,
@@ -3446,83 +3721,13 @@
   });
 
   // Calculate segment layouts (segments are butted up against each other)
+  // NOTE: Tick generation removed for performance - ruler ticks are rendered separately
   const segmentLayouts = computed((): SegmentLayout[] => {
     const timelineDuration = totalDuration.value;
     if (timelineDuration <= 0) return [];
 
-    // Determine optimal intervals based on visible duration (duration / zoom)
-    // More zoom = smaller visible duration = more granular ticks for precise editing
-    const visibleDuration = timelineDuration / zoomLevel.value;
-    let majorInterval: number;
-    let minorInterval: number;
-
-    // The thresholds are based on what's comfortable to read on screen
-    // More granular intervals when zoomed in for precise frame-level editing
-    if (visibleDuration < 0.5) {
-      // Extremely zoomed: major every 0.1s, minor every 0.02s (frame-level precision)
-      majorInterval = 0.1;
-      minorInterval = 0.02;
-    } else if (visibleDuration < 1) {
-      // Very zoomed: major every 0.25s, minor every 0.05s
-      majorInterval = 0.25;
-      minorInterval = 0.05;
-    } else if (visibleDuration < 2) {
-      // Highly zoomed: major every 0.5s, minor every 0.1s
-      majorInterval = 0.5;
-      minorInterval = 0.1;
-    } else if (visibleDuration < 5) {
-      // Zoomed: major every 1s, minor every 0.2s
-      majorInterval = 1;
-      minorInterval = 0.2;
-    } else if (visibleDuration < 10) {
-      // Moderately zoomed: major every 2s, minor every 0.5s
-      majorInterval = 2;
-      minorInterval = 0.5;
-    } else if (visibleDuration < 20) {
-      // Slightly zoomed: major every 5s, minor every 1s
-      majorInterval = 5;
-      minorInterval = 1;
-    } else if (visibleDuration < 45) {
-      // Normal view: major every 10s, minor every 2s
-      majorInterval = 10;
-      minorInterval = 2;
-    } else if (visibleDuration < 90) {
-      // Slightly zoomed out: major every 15s, minor every 5s
-      majorInterval = 15;
-      minorInterval = 5;
-    } else if (visibleDuration < 180) {
-      // Zoomed out: major every 30s, minor every 10s
-      majorInterval = 30;
-      minorInterval = 10;
-    } else if (visibleDuration < 600) {
-      // Very zoomed out: major every 60s (1 min), minor every 15s
-      majorInterval = 60;
-      minorInterval = 15;
-    } else if (visibleDuration < 1800) {
-      // Long timeline: major every 2 min, minor every 30s
-      majorInterval = 120;
-      minorInterval = 30;
-    } else {
-      // Very long timeline: major every 5 min, minor every 1 min
-      majorInterval = 300;
-      minorInterval = 60;
-    }
-
     // Editor mode: create a single linear timeline layout (no segment gaps)
     if (props.editorMode) {
-      const ticks: SegmentTick[] = [];
-      for (let t = minorInterval; t < timelineDuration; t += minorInterval) {
-        const posInSegment = (t / timelineDuration) * 100;
-        if (posInSegment > 0.5 && posInSegment < 99.5) {
-          const isMajor = Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
-          ticks.push({
-            time: t,
-            positionInSegment: posInSegment,
-            isMajor,
-          });
-        }
-      }
-
       return [
         {
           segment: {
@@ -3533,7 +3738,6 @@
           },
           startPercent: 0,
           widthPercent: 100,
-          ticks,
           effectiveStartTime: 0,
           effectiveEndTime: timelineDuration,
         },
@@ -3560,40 +3764,10 @@
       const effectiveStartTime = cumulativeTime;
       const effectiveEndTime = cumulativeTime + segmentDuration;
 
-      // Generate ticks for this segment using the consistent intervals
-      const ticks: SegmentTick[] = [];
-
-      // Generate intermediate ticks using effective times
-      // Start from the first interval after effectiveStartTime
-      const startTick = Math.ceil(effectiveStartTime / minorInterval) * minorInterval;
-
-      // Calculate minimum distance from edges based on duration (shorter clips = tighter margins)
-      const edgeMargin = Math.min(0.3, segmentDuration * 0.05);
-
-      for (let t = startTick; t < effectiveEndTime; t += minorInterval) {
-        // Skip if too close to start or end
-        if (Math.abs(t - effectiveStartTime) < edgeMargin || Math.abs(t - effectiveEndTime) < edgeMargin) {
-          continue;
-        }
-
-        const posInSegment = ((t - effectiveStartTime) / segmentDuration) * 100;
-        // Only include ticks in the middle of the segment (not at edges)
-        if (posInSegment > 1 && posInSegment < 99) {
-          // Use a small epsilon for floating point comparison
-          const isMajor = Math.abs(t % majorInterval) < 0.001 || Math.abs((t % majorInterval) - majorInterval) < 0.001;
-          ticks.push({
-            time: t, // This is now the effective time
-            positionInSegment: posInSegment,
-            isMajor,
-          });
-        }
-      }
-
       layouts.push({
         segment,
         startPercent: currentPercent,
         widthPercent,
-        ticks,
         effectiveStartTime,
         effectiveEndTime,
       });
@@ -3776,10 +3950,10 @@
   // Methods
   function formatTime(seconds: number): string {
     if (isNaN(seconds) || !isFinite(seconds)) return '0';
-    
+
     // Special case: show just "0" for the first timestamp
     if (seconds === 0) return '0';
-    
+
     const mins = Math.floor(seconds / 60);
     const secs = seconds - mins * 60;
     const secsWithHundredths = secs.toFixed(2); // always show hundredths
@@ -3834,7 +4008,7 @@
     // Get the original position from dragSourceInfo or dragInfo
     let originalStartTime = 0;
     let originalEndTime = 0;
-    
+
     if (type === 'source' && dragSourceInfo.value) {
       originalStartTime = dragSourceInfo.value.originalStartTime;
       originalEndTime = dragSourceInfo.value.originalEndTime;
@@ -3844,13 +4018,13 @@
     } else {
       return { display: 'none' };
     }
-    
+
     const duration = props.editorMode ? props.duration : totalDuration.value;
     if (duration <= 0) return { display: 'none' };
-    
+
     const left = (originalStartTime / duration) * 100;
     const width = ((originalEndTime - originalStartTime) / duration) * 100;
-    
+
     return {
       left: `${left}%`,
       width: `${Math.max(width, 0.5)}%`,
@@ -3926,22 +4100,22 @@
 
   function selectItem(type: ItemType, id: string, autoSelectLinked: boolean = true) {
     selectedItemKey.value = `${type}_${id}`;
-    
+
     // Linked selection: auto-select linked audio when selecting video source
     if (autoSelectLinked && type === 'source' && props.editorMode) {
       // Find any audio tracks linked to this source
-      const linkedAudio = props.audioTracks.filter(track => track.linkedSourceId === id);
+      const linkedAudio = props.audioTracks.filter((track) => track.linkedSourceId === id);
       if (linkedAudio.length > 0) {
         // Emit selection for linked audio tracks (add to selection)
-        linkedAudio.forEach(track => {
+        linkedAudio.forEach((track) => {
           emit('sourceSelect', track.id, { shift: false, ctrl: true });
         });
       }
     }
-    
+
     // Reverse: when selecting audio, also select linked video source
     if (autoSelectLinked && type === 'audio') {
-      const audioTrack = props.audioTracks.find(t => t.id === id);
+      const audioTrack = props.audioTracks.find((t) => t.id === id);
       if (audioTrack?.linkedSourceId) {
         // Also select the linked video source
         emit('sourceSelect', audioTrack.linkedSourceId, { shift: false, ctrl: true });
@@ -3969,7 +4143,14 @@
     } else if (isSourceDragging) {
       classes.push('cursor-grabbing', 'z-30', 'shadow-2xl', 'dragging');
     } else {
-      classes.push('cursor-grab', 'hover:cursor-grab', 'transition-all', 'duration-150', 'ease-out', 'hover:brightness-110');
+      classes.push(
+        'cursor-grab',
+        'hover:cursor-grab',
+        'transition-all',
+        'duration-150',
+        'ease-out',
+        'hover:brightness-110'
+      );
     }
 
     if (isDeleted) {
@@ -4221,7 +4402,7 @@
   // Snap-to-edge utility functions
   type SnapEdgeType = 'segment-start' | 'segment-end' | 'playhead' | 'marker' | 'grid';
   type SnapTrackType = 'video' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter' | 'system';
-  
+
   interface SnapTarget {
     time: number;
     type: SnapEdgeType;
@@ -4274,7 +4455,7 @@
     // Cross-track snapping: Collect edges from audio tracks
     for (const track of props.audioTracks) {
       if (track.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'audio' && preview.id === track.id;
       const startTime = isPreviewing ? preview.startTime : track.startTime;
       const endTime = isPreviewing ? preview.endTime : track.endTime;
@@ -4286,7 +4467,7 @@
     // Cross-track snapping: Collect edges from text overlays
     for (const overlay of props.textOverlays) {
       if (overlay.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'text' && preview.id === overlay.id;
       const startTime = isPreviewing ? preview.startTime : overlay.startTime;
       const endTime = isPreviewing ? preview.endTime : overlay.endTime;
@@ -4298,7 +4479,7 @@
     // Cross-track snapping: Collect edges from stickers
     for (const sticker of props.stickers) {
       if (sticker.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'sticker' && preview.id === sticker.id;
       const startTime = isPreviewing ? preview.startTime : sticker.startTime;
       const endTime = isPreviewing ? preview.endTime : sticker.endTime;
@@ -4310,7 +4491,7 @@
     // Cross-track snapping: Collect edges from watermarks
     for (const watermark of props.watermarks) {
       if (watermark.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'watermark' && preview.id === watermark.id;
       const startTime = isPreviewing ? preview.startTime : watermark.startTime;
       const endTime = isPreviewing ? preview.endTime : watermark.endTime;
@@ -4322,7 +4503,7 @@
     // Cross-track snapping: Collect edges from effects
     for (const effect of props.effects) {
       if (effect.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'effect' && preview.id === effect.id;
       const startTime = isPreviewing ? preview.startTime : effect.startTime;
       const endTime = isPreviewing ? preview.endTime : effect.endTime;
@@ -4334,7 +4515,7 @@
     // Cross-track snapping: Collect edges from filter segments
     for (const filter of props.filterSegments) {
       if (filter.id === excludeId) continue;
-      
+
       const isPreviewing = preview && preview.type === 'filter' && preview.id === filter.id;
       const startTime = isPreviewing ? preview.startTime : filter.startTime;
       const endTime = isPreviewing ? preview.endTime : filter.endTime;
@@ -4374,7 +4555,7 @@
 
     // Filter out segment edges if not enabled
     if (!snapPreferences.value.segmentEdges) {
-      return targets.filter(t => t.type !== 'segment-start' && t.type !== 'segment-end');
+      return targets.filter((t) => t.type !== 'segment-start' && t.type !== 'segment-end');
     }
 
     return targets;
@@ -4524,11 +4705,11 @@
 
     const wrapperRect = contentWrapperRef.value.getBoundingClientRect();
     const cursorXInWrapper = e.clientX - wrapperRect.left;
-    
+
     // Account for the 120px track label area
     const contentAreaX = cursorXInWrapper - TRACK_LABEL_WIDTH;
     const contentAreaWidth = wrapperRect.width - TRACK_LABEL_WIDTH;
-    
+
     const percent = Math.max(0, Math.min(1, contentAreaX / contentAreaWidth));
     const time = clickPositionToTime(percent);
 
@@ -4560,11 +4741,11 @@
 
     const wrapperRect = contentWrapperRef.value.getBoundingClientRect();
     const cursorXInWrapper = e.clientX - wrapperRect.left;
-    
+
     // Account for the 120px track label area
     const contentAreaX = cursorXInWrapper - TRACK_LABEL_WIDTH;
     const contentAreaWidth = wrapperRect.width - TRACK_LABEL_WIDTH;
-    
+
     const percent = Math.max(0, Math.min(1, contentAreaX / contentAreaWidth));
     const time = clickPositionToTime(percent);
 
@@ -4626,7 +4807,7 @@
    */
   function copySelectedItems() {
     const itemKeys: string[] = [];
-    
+
     // Collect selected items from both modes
     if (props.editorMode && props.selectedSourceIds && props.selectedSourceIds.size > 0) {
       // Editor mode: collect selected sources
@@ -4642,7 +4823,7 @@
       // Single selection fallback
       itemKeys.push(selectedItemKey.value);
     }
-    
+
     if (itemKeys.length > 0) {
       emit('copyItems', itemKeys);
     }
@@ -4678,7 +4859,7 @@
    */
   function duplicateSelectedItems() {
     const itemKeys: string[] = [];
-    
+
     // Collect selected items from both modes
     if (props.editorMode && props.selectedSourceIds && props.selectedSourceIds.size > 0) {
       for (const sourceId of props.selectedSourceIds) {
@@ -4691,7 +4872,7 @@
     } else if (selectedItemKey.value) {
       itemKeys.push(selectedItemKey.value);
     }
-    
+
     if (itemKeys.length > 0) {
       emit('duplicateItems', itemKeys);
     }
@@ -4709,7 +4890,7 @@
    */
   function groupSelectedItems() {
     const itemKeys: string[] = [];
-    
+
     if (props.editorMode && props.selectedSourceIds && props.selectedSourceIds.size > 1) {
       for (const sourceId of props.selectedSourceIds) {
         itemKeys.push(`source_${sourceId}`);
@@ -4719,7 +4900,7 @@
         itemKeys.push(`trim_${segmentId}`);
       }
     }
-    
+
     if (itemKeys.length > 1) {
       emit('groupItems', itemKeys);
     }
@@ -4740,13 +4921,13 @@
    * Add a speed keyframe to a video source at the current playhead position
    */
   function addSpeedKeyframeAtPlayhead(sourceId: string, speed: number = 1.0) {
-    const source = props.videoSources.find(s => s.id === sourceId);
+    const source = props.videoSources.find((s) => s.id === sourceId);
     if (!source) return;
-    
+
     // Calculate time relative to source start
     const relativeTime = props.currentTime - source.start_time;
-    if (relativeTime < 0 || relativeTime > (source.end_time - source.start_time)) return;
-    
+    if (relativeTime < 0 || relativeTime > source.end_time - source.start_time) return;
+
     emit('addSpeedKeyframe', sourceId, relativeTime, speed);
   }
 
@@ -4754,13 +4935,13 @@
    * Add a freeze point at the current playhead position
    */
   function addFreezePointAtPlayhead(sourceId: string, duration: number = 1.0) {
-    const source = props.videoSources.find(s => s.id === sourceId);
+    const source = props.videoSources.find((s) => s.id === sourceId);
     if (!source) return;
-    
+
     // Calculate time relative to source start
     const relativeTime = props.currentTime - source.start_time;
-    if (relativeTime < 0 || relativeTime > (source.end_time - source.start_time)) return;
-    
+    if (relativeTime < 0 || relativeTime > source.end_time - source.start_time) return;
+
     emit('addFreezePoint', sourceId, relativeTime, duration);
   }
 
@@ -4770,14 +4951,14 @@
   function onTrackReorderStart(e: MouseEvent, trackType: 'audio' | 'overlay', trackId: string, currentOrder: number) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     trackReorderState.value = {
       trackType,
       trackId,
       originalOrder: currentOrder,
       startY: e.clientY,
     };
-    
+
     document.addEventListener('mousemove', onTrackReorderMove);
     document.addEventListener('mouseup', onTrackReorderEnd);
   }
@@ -4787,12 +4968,12 @@
    */
   function onTrackReorderMove(e: MouseEvent) {
     if (!trackReorderState.value) return;
-    
+
     // Calculate how many track positions to move based on Y delta
     const deltaY = e.clientY - trackReorderState.value.startY;
     const trackHeight = 48; // Approximate track height
     const positionDelta = Math.round(deltaY / trackHeight);
-    
+
     if (positionDelta !== 0) {
       const newOrder = trackReorderState.value.originalOrder + positionDelta;
       // Emit reorder event for live preview
@@ -4819,11 +5000,11 @@
     // Only start marquee if clicking on empty area (not on a segment)
     if ((e.target as HTMLElement).closest('.clip-segment')) return;
     if (!timelineScrollContainer.value) return;
-    
+
     const rect = timelineScrollContainer.value.getBoundingClientRect();
     const x = e.clientX - rect.left + timelineScrollContainer.value.scrollLeft;
     const y = e.clientY - rect.top + timelineScrollContainer.value.scrollTop;
-    
+
     marqueeSelection.value = {
       active: true,
       startX: x,
@@ -4831,7 +5012,7 @@
       currentX: x,
       currentY: y,
     };
-    
+
     document.addEventListener('mousemove', onTimelineMarqueeMove);
     document.addEventListener('mouseup', onTimelineMarqueeEnd);
   }
@@ -4841,11 +5022,11 @@
    */
   function onTimelineMarqueeMove(e: MouseEvent) {
     if (!marqueeSelection.value || !timelineScrollContainer.value) return;
-    
+
     const rect = timelineScrollContainer.value.getBoundingClientRect();
     const x = e.clientX - rect.left + timelineScrollContainer.value.scrollLeft;
     const y = e.clientY - rect.top + timelineScrollContainer.value.scrollTop;
-    
+
     marqueeSelection.value.currentX = x;
     marqueeSelection.value.currentY = y;
   }
@@ -4860,17 +5041,17 @@
       document.removeEventListener('mouseup', onTimelineMarqueeEnd);
       return;
     }
-    
+
     const { startX, startY, currentX, currentY } = marqueeSelection.value;
     const left = Math.min(startX, currentX);
     const right = Math.max(startX, currentX);
     const top = Math.min(startY, currentY);
     const bottom = Math.max(startY, currentY);
-    
+
     // Only process if marquee is larger than 10px (avoid accidental clicks)
     if (right - left > 10 && bottom - top > 10) {
       const selectedIds: string[] = [];
-      
+
       // Check each source segment for intersection with marquee
       if (props.editorMode) {
         for (const source of primaryVideoSources.value) {
@@ -4878,20 +5059,20 @@
           if (segmentEl) {
             const segRect = segmentEl.getBoundingClientRect();
             const containerRect = timelineScrollContainer.value!.getBoundingClientRect();
-            
+
             // Convert segment rect to container-relative coordinates
             const segLeft = segRect.left - containerRect.left + timelineScrollContainer.value!.scrollLeft;
             const segRight = segRect.right - containerRect.left + timelineScrollContainer.value!.scrollLeft;
             const segTop = segRect.top - containerRect.top + timelineScrollContainer.value!.scrollTop;
             const segBottom = segRect.bottom - containerRect.top + timelineScrollContainer.value!.scrollTop;
-            
+
             // Check intersection
             if (segLeft < right && segRight > left && segTop < bottom && segBottom > top) {
               selectedIds.push(source.id);
             }
           }
         }
-        
+
         // Emit multi-select events for each selected source
         if (selectedIds.length > 0) {
           // First source without modifier, rest with ctrl to add to selection
@@ -4901,7 +5082,7 @@
         }
       }
     }
-    
+
     marqueeSelection.value = null;
     document.removeEventListener('mousemove', onTimelineMarqueeMove);
     document.removeEventListener('mouseup', onTimelineMarqueeEnd);
@@ -4913,10 +5094,10 @@
   function onFadeHandleMouseDown(e: MouseEvent, trackId: string, fadeType: 'fadeIn' | 'fadeOut', track: AudioTrack) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const trackDuration = track.endTime - track.startTime;
     const originalFade = fadeType === 'fadeIn' ? track.fadeIn : track.fadeOut;
-    
+
     fadeHandleState.value = {
       trackId,
       fadeType,
@@ -4925,26 +5106,26 @@
       trackDuration,
       trackElement: e.currentTarget as HTMLElement,
     };
-    
+
     document.addEventListener('mousemove', onFadeHandleMouseMove);
     document.addEventListener('mouseup', onFadeHandleMouseUp);
   }
 
   function onFadeHandleMouseMove(e: MouseEvent) {
     if (!fadeHandleState.value) return;
-    
+
     const { trackId, fadeType, startX, originalFade, trackDuration, trackElement } = fadeHandleState.value;
-    
+
     // Get the parent track element to calculate width
     const parentEl = trackElement?.closest('.clip-segment') as HTMLElement;
     if (!parentEl) return;
-    
+
     const trackWidth = parentEl.offsetWidth;
     const deltaX = e.clientX - startX;
-    
+
     // Convert pixel delta to time delta
     const timeDelta = (deltaX / trackWidth) * trackDuration;
-    
+
     // Calculate new fade duration
     let newFade: number;
     if (fadeType === 'fadeIn') {
@@ -4954,7 +5135,7 @@
       // Dragging left increases fade out (negative delta)
       newFade = Math.max(0, Math.min(trackDuration * 0.5, originalFade - timeDelta));
     }
-    
+
     // Emit the update
     emit('updateAudioFade', trackId, fadeType, newFade);
   }
@@ -4968,7 +5149,10 @@
   /**
    * Enable audio ducking for a track (auto-lower music under speech)
    */
-  function enableAudioDucking(trackId: string, options?: { threshold?: number; reduction?: number; attack?: number; release?: number }) {
+  function enableAudioDucking(
+    trackId: string,
+    options?: { threshold?: number; reduction?: number; attack?: number; release?: number }
+  ) {
     const defaultOptions = {
       threshold: -20, // dB threshold for ducking trigger
       reduction: -12, // dB reduction when ducking
@@ -5221,21 +5405,21 @@
     e.stopPropagation();
 
     isDraggingPlayhead.value = true;
-    
+
     // Initialize optimistic drag time with current position to avoid flicker
     optimisticDragTime.value = props.currentTime;
-    
+
     // Initialize velocity tracking for inertial scrolling
     playheadVelocity.value = 0;
     lastPlayheadDragTime.value = performance.now();
     lastPlayheadDragX.value = e.clientX;
-    
+
     // Cancel any ongoing inertial animation
     if (inertialAnimationId) {
       cancelAnimationFrame(inertialAnimationId);
       inertialAnimationId = null;
     }
-    
+
     // Initialize audio scrubbing if enabled
     if (audioScrubEnabled.value) {
       initAudioScrubbing();
@@ -5301,17 +5485,18 @@
     const x = cursorX - timelineLeft;
     const percent = Math.max(0, Math.min(1, x / timelineWidth));
     let time = clickPositionToTime(percent);
-    
+
     // Frame-accurate scrubbing: snap to nearest frame when enabled
     if (frameSnapEnabled.value) {
       const frameDuration = 1 / frameRate;
       time = Math.round(time / frameDuration) * frameDuration;
     }
-    
+
     // Track velocity for inertial scrolling
     const now = performance.now();
     const dt = now - lastPlayheadDragTime.value;
-    if (dt > 0 && dt < 100) { // Only track if reasonable time delta
+    if (dt > 0 && dt < 100) {
+      // Only track if reasonable time delta
       const dx = cursorX - lastPlayheadDragX.value;
       // Convert pixel velocity to time velocity
       const pixelVelocity = dx / dt; // pixels per ms
@@ -5321,41 +5506,41 @@
     }
     lastPlayheadDragTime.value = now;
     lastPlayheadDragX.value = cursorX;
-    
+
     // Play audio scrub preview at the current position
     playScrubAudio(time);
-    
+
     // Set optimistic drag time BEFORE emitting seek to avoid round-trip lag
     // This ensures the playhead visually follows the cursor immediately
     const clampedTime = Math.max(0, time);
     optimisticDragTime.value = clampedTime;
-    
+
     emit('seek', clampedTime);
   }
 
   function onPlayheadDragEnd() {
     isDraggingPlayhead.value = false;
-    
+
     // Clear optimistic drag time - playhead will now use props.currentTime
     optimisticDragTime.value = null;
 
     document.removeEventListener('mousemove', onPlayheadDragMove);
     document.removeEventListener('mouseup', onPlayheadDragEnd);
-    
+
     // Stop audio scrubbing
     stopAudioScrubbing();
-    
+
     // Reset velocity - disable inertial scrolling as it causes position jumps
     // when dragging between segments in editor mode
     playheadVelocity.value = 0;
-    
+
     // Cancel any ongoing inertial animation
     if (inertialAnimationId) {
       cancelAnimationFrame(inertialAnimationId);
       inertialAnimationId = null;
     }
   }
-  
+
   /**
    * Apply inertial scrolling with smooth deceleration
    */
@@ -5364,19 +5549,19 @@
     const minVelocity = 0.1; // Stop when velocity drops below this
     let velocity = initialVelocity;
     let lastTime = performance.now();
-    
+
     function animate() {
       const now = performance.now();
       const dt = (now - lastTime) / 1000; // Convert to seconds
       lastTime = now;
-      
+
       // Apply velocity to current time
       const newTime = Math.max(0, Math.min(totalDuration.value, props.currentTime + velocity * dt));
       emit('seek', newTime);
-      
+
       // Apply friction
       velocity *= friction;
-      
+
       // Continue animation if velocity is still significant
       if (Math.abs(velocity) > minVelocity && newTime > 0 && newTime < totalDuration.value) {
         inertialAnimationId = requestAnimationFrame(animate);
@@ -5384,7 +5569,7 @@
         inertialAnimationId = null;
       }
     }
-    
+
     inertialAnimationId = requestAnimationFrame(animate);
   }
 
@@ -5393,23 +5578,23 @@
    */
   async function initAudioScrubbing() {
     if (scrubAudioContext) return; // Already initialized
-    
+
     try {
       scrubAudioContext = new AudioContext();
-      
+
       // Try to load audio from the video source
       const videoSrc = props.videoSrc || props.videoPath;
       if (!videoSrc) return;
-      
+
       let audioUrl = videoSrc;
-      
+
       // Convert local file path to streaming URL if needed
       if (!videoSrc.startsWith('http') && !videoSrc.startsWith('data:')) {
         const port = await invoke<number>('get_video_server_port');
         const encodedPath = btoa(unescape(encodeURIComponent(videoSrc)));
         audioUrl = `http://localhost:${port}/video/${encodedPath}`;
       }
-      
+
       const response = await fetch(audioUrl);
       const arrayBuffer = await response.arrayBuffer();
       scrubAudioBuffer = await scrubAudioContext.decodeAudioData(arrayBuffer);
@@ -5425,12 +5610,12 @@
    */
   function playScrubAudio(time: number) {
     if (!audioScrubEnabled.value || !scrubAudioContext || !scrubAudioBuffer) return;
-    
+
     // Throttle audio playback to avoid overlapping snippets
     const now = performance.now();
     if (now - lastScrubTime < SCRUB_SNIPPET_DURATION * 800) return; // 80% of snippet duration
     lastScrubTime = now;
-    
+
     // Stop any currently playing scrub audio
     if (scrubSourceNode) {
       try {
@@ -5440,17 +5625,17 @@
       }
       scrubSourceNode = null;
     }
-    
+
     // Clamp time to valid range
     const startTime = Math.max(0, Math.min(time, scrubAudioBuffer.duration - SCRUB_SNIPPET_DURATION));
     if (startTime < 0 || startTime >= scrubAudioBuffer.duration) return;
-    
+
     try {
       // Create a new source node for this snippet
       scrubSourceNode = scrubAudioContext.createBufferSource();
       scrubSourceNode.buffer = scrubAudioBuffer;
       scrubSourceNode.connect(scrubAudioContext.destination);
-      
+
       // Play a short snippet starting at the scrub position
       scrubSourceNode.start(0, startTime, SCRUB_SNIPPET_DURATION);
     } catch (err) {
@@ -5490,11 +5675,11 @@
     _preview?: { type: ItemType; id: string; startTime: number; endTime: number } | null
   ): Record<string, string> {
     const isSelected = selectedItemKey.value === `source_${source.id}`;
-    
+
     // Use preview position for both resize AND drag end (to show segment at new position before props update)
     let startTime = source.start_time;
     let endTime = source.end_time;
-    
+
     // Apply position preview for resize or drag operations
     if (_preview && _preview.type === 'source' && _preview.id === source.id) {
       startTime = _preview.startTime;
@@ -5524,13 +5709,13 @@
 
     // Apply Slide Adjustment (Visual) - slide tool uses ghost element
     if (slideState.value && slideState.value.type === 'source') {
-        if (source.id === slideState.value.leftNeighborId) {
-            // Left neighbor end changes
-            endTime += slideState.value.delta;
-        } else if (source.id === slideState.value.rightNeighborId) {
-            // Right neighbor start changes
-            startTime += slideState.value.delta;
-        }
+      if (source.id === slideState.value.leftNeighborId) {
+        // Left neighbor end changes
+        endTime += slideState.value.delta;
+      } else if (source.id === slideState.value.rightNeighborId) {
+        // Right neighbor start changes
+        startTime += slideState.value.delta;
+      }
     }
 
     const duration = totalDuration.value || props.duration || 300;
@@ -5565,7 +5750,7 @@
   function onSourceClick(e: MouseEvent, source: VideoEditorSource) {
     // Select the source (with multi-select support via modifier keys)
     selectItem('source', source.id);
-    
+
     // Emit multi-select event with modifier keys for parent to handle
     emit('sourceSelect', source.id, {
       shift: e.shiftKey,
@@ -5587,12 +5772,12 @@
 
   function onSourceMouseDown(e: MouseEvent, source: VideoEditorSource) {
     if (e.button !== 0) return;
-    
+
     // Prevent editing if track is locked
     if (videoTrackState.isLocked) {
       return;
     }
-    
+
     e.preventDefault();
 
     selectItem('source', source.id);
@@ -5770,7 +5955,7 @@
     // DIRECT DOM MANIPULATION - bypasses Vue reactivity completely for zero-lag dragging
     // Only horizontal movement - segments stay within their track
     if (dragGhostRef.value) {
-      dragGhostRef.value.style.transform = `translateX(${deltaX}px)`;
+      dragGhostRef.value.style.transform = `translateX(${snapAdjustedDeltaX}px)`;
     }
   }
 
@@ -5785,10 +5970,10 @@
       const deltaX = dragSourceInfo.value.currentDeltaX ?? 0;
       const deltaTime = (deltaX / rect.width) * props.duration;
       const duration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
-      
+
       let finalStartTime = dragSourceInfo.value.originalStartTime + deltaTime;
       let finalEndTime = finalStartTime + duration;
-      
+
       // Clamp to timeline bounds
       if (finalStartTime < 0) {
         finalStartTime = 0;
@@ -5925,7 +6110,7 @@
     closeSegmentContextMenu();
 
     isExtractingAudio.value = true;
-    
+
     // Show loading toast
     const loadingToastId = toastLoading('Extracting Audio', 'Processing segment');
 
@@ -5968,7 +6153,7 @@
         endTime: audioEndTime,
         sourceName: 'Extracted Audio',
       });
-      
+
       // Remove loading toast and show success
       removeToast(loadingToastId);
       toastSuccess('Audio Extracted', 'Audio track added to timeline');
@@ -6002,12 +6187,9 @@
     closeSourceContextMenu();
 
     isExtractingAudio.value = true;
-    
+
     // Show loading toast
-    const loadingToastId = toastLoading(
-      'Extracting Audio',
-      `Processing "${source.source_name || 'video'}"`
-    );
+    const loadingToastId = toastLoading('Extracting Audio', `Processing "${source.source_name || 'video'}"`);
 
     try {
       console.log('[ClipEditorTimeline] Extracting audio from source:', source.id);
@@ -6067,7 +6249,7 @@
         endTime: audioEndTime,
         sourceName: source.source_name,
       });
-      
+
       // Remove loading toast and show success
       removeToast(loadingToastId);
       toastSuccess('Audio Extracted', 'Audio track added to timeline');
@@ -6093,21 +6275,23 @@
   // J/L Cut functions
   function hasAudioOffset(source: VideoEditorSource | null): boolean {
     if (!source) return false;
-    return (source.audio_trim_start !== undefined && source.audio_trim_start !== null) ||
-           (source.audio_trim_end !== undefined && source.audio_trim_end !== null);
+    return (
+      (source.audio_trim_start !== undefined && source.audio_trim_start !== null) ||
+      (source.audio_trim_end !== undefined && source.audio_trim_end !== null)
+    );
   }
 
   function applyJCut() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // J-cut: Audio from this clip starts 0.5s earlier than video
     // This means audio_trim_start is less than trim_start
     const jCutOffset = 0.5; // Default 0.5 second audio lead
     const newAudioTrimStart = Math.max(0, (source.trim_start || 0) - jCutOffset);
-    
+
     emit('updateSource', source.id, {
       audio_trim_start: newAudioTrimStart,
       audio_trim_end: source.trim_end, // Keep video trim end for audio
@@ -6116,17 +6300,17 @@
 
   function applyLCut() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // L-cut: Audio from this clip extends 0.5s beyond video
     // This means audio_trim_end is greater than trim_end
     const lCutOffset = 0.5; // Default 0.5 second audio extension
-    const sourceDuration = source.source_duration || (source.end_time - source.start_time);
+    const sourceDuration = source.source_duration || source.end_time - source.start_time;
     const currentTrimEnd = source.trim_end ?? sourceDuration;
     const newAudioTrimEnd = Math.min(sourceDuration, currentTrimEnd + lCutOffset);
-    
+
     emit('updateSource', source.id, {
       audio_trim_start: source.trim_start, // Keep video trim start for audio
       audio_trim_end: newAudioTrimEnd,
@@ -6135,10 +6319,10 @@
 
   function resetAudioTrim() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // Reset audio trim to match video trim (sync audio with video)
     emit('updateSource', source.id, {
       audio_trim_start: null,
@@ -6151,8 +6335,10 @@
    * Creates a still image segment from the current video frame
    */
   // Thumbnail cache for filmstrip thumbnails (sourceId -> cached thumbnail data)
-  const thumbnailCache = ref<Map<string, { thumbnails: { width: number; bgPosition: number }[]; zoomLevel: number; containerWidth: number }>>(new Map());
-  
+  const thumbnailCache = ref<
+    Map<string, { thumbnails: { width: number; bgPosition: number }[]; zoomLevel: number; containerWidth: number }>
+  >(new Map());
+
   // Thumbnail loading state (sourceId -> loading status)
   const thumbnailLoadingState = ref<Map<string, boolean>>(new Map());
 
@@ -6178,57 +6364,62 @@
   /**
    * Generate filmstrip thumbnail positions for a video source
    * Uses caching and adaptive density based on zoom level
+   * PERFORMANCE: Caps maximum thumbnails to prevent DOM bloat at high zoom
    */
   function getFilmstripThumbnails(source: VideoEditorSource): { width: number; bgPosition: number }[] {
     const THUMB_WIDTH = getAdaptiveThumbnailWidth(); // Adaptive density based on zoom
+    const MAX_THUMBNAILS = 50; // Cap to prevent performance issues at high zoom
     const duration = source.end_time - source.start_time;
     const totalDur = props.editorMode ? props.duration : totalDuration.value;
-    
+
     if (totalDur <= 0 || duration <= 0) return [];
-    
+
     // Calculate the pixel width of this source segment
     const segmentWidthPercent = (duration / totalDur) * 100;
     const containerWidth = contentWrapperRef.value?.offsetWidth || 1000;
     const segmentWidth = (segmentWidthPercent / 100) * containerWidth * zoomLevel.value;
-    
+
     // Check cache - invalidate if zoom level or container width changed significantly
     const cacheKey = source.id;
     const cached = thumbnailCache.value.get(cacheKey);
-    if (cached && 
-        Math.abs(cached.zoomLevel - zoomLevel.value) < 0.1 && 
-        Math.abs(cached.containerWidth - containerWidth) < 50) {
+    if (
+      cached &&
+      Math.abs(cached.zoomLevel - zoomLevel.value) < 0.1 &&
+      Math.abs(cached.containerWidth - containerWidth) < 50
+    ) {
       return cached.thumbnails;
     }
-    
-    // Calculate number of thumbnails needed
-    const numThumbs = Math.max(1, Math.ceil(segmentWidth / THUMB_WIDTH));
+
+    // Calculate number of thumbnails needed - CAPPED for performance
+    const rawNumThumbs = Math.max(1, Math.ceil(segmentWidth / THUMB_WIDTH));
+    const numThumbs = Math.min(rawNumThumbs, MAX_THUMBNAILS);
     const actualThumbWidth = segmentWidth / numThumbs;
-    
+
     // Generate thumbnail data
     const thumbnails: { width: number; bgPosition: number }[] = [];
     const sourceDuration = source.source_duration || duration;
     const trimStart = source.trim_start || 0;
-    
+
     for (let i = 0; i < numThumbs; i++) {
       // Calculate the time position within the source for this thumbnail
       const timeOffset = (i / numThumbs) * duration;
       const sourceTime = trimStart + timeOffset;
       // Convert to percentage position in the thumbnail image (0-100)
       const bgPosition = sourceDuration > 0 ? (sourceTime / sourceDuration) * 100 : 0;
-      
+
       thumbnails.push({
         width: actualThumbWidth,
         bgPosition: Math.min(100, Math.max(0, bgPosition)),
       });
     }
-    
+
     // Cache the result
     thumbnailCache.value.set(cacheKey, {
       thumbnails,
       zoomLevel: zoomLevel.value,
       containerWidth,
     });
-    
+
     return thumbnails;
   }
 
@@ -6244,10 +6435,10 @@
    */
   function setSourceSpeed(speed: number) {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // Emit update to change the source speed
     emit('updateSource', source.id, { speed });
   }
@@ -6257,23 +6448,23 @@
    */
   function openSpeedCurveEditor() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // Emit event to open speed curve editor in parent component
     emit('openSpeedCurveEditor', source.id);
   }
 
   function addFreezeFrame() {
     if (!sourceContextMenu.source) return;
-    
+
     const source = sourceContextMenu.source;
     closeSourceContextMenu();
-    
+
     // Calculate the time within the source where the playhead is
     const playheadTime = props.currentTime;
-    
+
     // Check if playhead is within this source's time range
     if (playheadTime < source.start_time || playheadTime > source.end_time) {
       // Playhead is not within this source - use the source's start time
@@ -6287,7 +6478,7 @@
       // Calculate the corresponding time in the source video
       const offsetInTimeline = playheadTime - source.start_time;
       const sourceTime = (source.trim_start ?? 0) + offsetInTimeline;
-      
+
       emit('freezeFrame', {
         sourceId: source.id,
         time: sourceTime,
@@ -6377,14 +6568,14 @@
     // Use contentWrapperRef for consistency with playhead position calculation
     const wrapperRect = contentWrapper.getBoundingClientRect();
     const cursorXInWrapper = event.clientX - wrapperRect.left;
-    
+
     // Account for the 120px track label area
     const contentAreaX = cursorXInWrapper - TRACK_LABEL_WIDTH;
     const contentAreaWidth = wrapperRect.width - TRACK_LABEL_WIDTH;
 
     // Detect pinch-to-zoom gesture (trackpad pinch sets ctrlKey)
     const isPinchGesture = event.ctrlKey;
-    
+
     // For regular scroll (not pinch), seek playhead to cursor position
     if (!isPinchGesture && contentAreaX >= 0 && contentAreaX <= contentAreaWidth) {
       const percent = contentAreaX / contentAreaWidth;
@@ -6408,7 +6599,7 @@
     // Apply zoom with dynamic step based on current zoom level
     const oldZoom = zoomLevel.value;
     const step = getZoomStep();
-    
+
     // For pinch gestures, use deltaY directly for smoother zoom
     // Pinch out (spread fingers) = negative deltaY = zoom in
     // Pinch in (pinch fingers) = positive deltaY = zoom out
@@ -6420,7 +6611,7 @@
       // Regular scroll wheel
       delta = event.deltaY > 0 ? -step : step;
     }
-    
+
     const newZoom = Math.max(MIN_ZOOM.value, oldZoom + delta);
 
     if (newZoom === oldZoom) return;
@@ -6428,7 +6619,7 @@
     // Use batched zoom update via requestAnimationFrame for performance
     queueZoomUpdate(newZoom, logicalPosition, cursorXInContainer, scrollContainer);
   }
-  
+
   /**
    * Handle wheel events on the timeline container for pinch-to-zoom
    * This allows pinch gestures anywhere on the timeline, not just the ruler
@@ -6436,34 +6627,34 @@
   function onTimelineWheel(event: WheelEvent) {
     // Only handle pinch-to-zoom gestures (ctrlKey is set by trackpad pinch)
     if (!event.ctrlKey) return;
-    
+
     event.preventDefault();
-    
+
     if (!timelineScrollContainer.value) return;
-    
+
     const scrollContainer = timelineScrollContainer.value;
     const containerRect = scrollContainer.getBoundingClientRect();
-    
+
     // Cursor position relative to the scroll container's viewport
     const cursorXInContainer = event.clientX - containerRect.left;
-    
+
     // Current scroll position and content width
     const scrollLeft = scrollContainer.scrollLeft;
     const contentWidth = scrollContainer.scrollWidth;
-    
+
     // Position in the full content (scroll + cursor offset)
     const contentX = scrollLeft + cursorXInContainer;
-    
+
     // Calculate the "logical" position (0-1 range, independent of zoom)
     const logicalPosition = contentX / contentWidth;
-    
+
     // Apply zoom - pinch out = zoom in, pinch in = zoom out
     const oldZoom = zoomLevel.value;
     const delta = -event.deltaY * 0.01; // Invert and scale for natural pinch behavior
     const newZoom = Math.max(MIN_ZOOM.value, oldZoom + delta);
-    
+
     if (newZoom === oldZoom) return;
-    
+
     // Use batched zoom update via requestAnimationFrame for performance
     queueZoomUpdate(newZoom, logicalPosition, cursorXInContainer, scrollContainer);
   }
@@ -6471,16 +6662,16 @@
   // Segment dragging
   function onSegmentMouseDown(e: MouseEvent, type: ItemType, id: string, item: any) {
     if (e.button !== 0) return;
-    
+
     // Check if track is locked - prevent editing
     if (type === 'trim' || type === 'source') {
       if (videoTrackState.isLocked) return;
     } else if (type === 'audio') {
       // Check if this specific audio track is locked
-      const audioTrack = props.audioTracks.find(t => t.id === id);
+      const audioTrack = props.audioTracks.find((t) => t.id === id);
       if (audioTrack?.isLocked) return;
     }
-    
+
     e.preventDefault();
     e.stopPropagation();
 
@@ -6491,7 +6682,7 @@
     // Capture the clicked element's position for ghost
     const targetEl = e.currentTarget as HTMLElement;
     const rect = targetEl.getBoundingClientRect();
-    
+
     // Determine color based on type
     const colorMap: Record<string, string> = {
       trim: 'violet',
@@ -6503,7 +6694,7 @@
       effect: 'cyan',
       filter: 'rose',
     };
-    
+
     // Get label for ghost
     let label = '';
     if (type === 'audio') label = item.name || 'Audio';
@@ -6581,75 +6772,75 @@
 
     // SLIP TOOL LOGIC
     if (isSlipTool.value && dragInfo.value.type === 'source') {
-        const item = dragInfo.value.item as VideoEditorSource;
-        const deltaX = e.clientX - dragInfo.value.startX;
-        // Slip delta is inverted: dragging right slips content left (earlier in source), so we subtract delta
-        // But typically dragging content: drag right -> see earlier content -> start_time decreases.
-        // Wait, standard NLE:
-        // Drag rect right -> clip stays, content moves right? No, usually "Slip" moves the "window" over the content.
-        // Dragging right: Window moves right relative to content?
-        // Let's stick to: Drag right -> delta positive.
-        // Content time = Time - start + trim_start.
-        // If we slip by +delta (right):
-        // new_trim_start = old_trim_start - delta?
-        // Let's visualize:
-        // [   Source Content   ]
-        //     [ Segment ]
-        // Drag Segment Mouse Right -> We want to see "earlier" content?
-        // Usually, dragging the clip visual representation with slip tool:
-        // Drag Right -> The content shifts right. Meaning we see earlier frames at the start.
-        // So trim_start decreases.
-        // So delta is negative of drag delta?
-        // Let's use: delta = -(pixelDelta / pixelsPerSecond).
-        
-        const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
-        const slipDelta = -deltaTime;
+      const item = dragInfo.value.item as VideoEditorSource;
+      const deltaX = e.clientX - dragInfo.value.startX;
+      // Slip delta is inverted: dragging right slips content left (earlier in source), so we subtract delta
+      // But typically dragging content: drag right -> see earlier content -> start_time decreases.
+      // Wait, standard NLE:
+      // Drag rect right -> clip stays, content moves right? No, usually "Slip" moves the "window" over the content.
+      // Dragging right: Window moves right relative to content?
+      // Let's stick to: Drag right -> delta positive.
+      // Content time = Time - start + trim_start.
+      // If we slip by +delta (right):
+      // new_trim_start = old_trim_start - delta?
+      // Let's visualize:
+      // [   Source Content   ]
+      //     [ Segment ]
+      // Drag Segment Mouse Right -> We want to see "earlier" content?
+      // Usually, dragging the clip visual representation with slip tool:
+      // Drag Right -> The content shifts right. Meaning we see earlier frames at the start.
+      // So trim_start decreases.
+      // So delta is negative of drag delta?
+      // Let's use: delta = -(pixelDelta / pixelsPerSecond).
 
-        slipState.value = {
-            type: 'source',
-            id: dragInfo.value.id,
-            delta: slipDelta,
-            originalTrimStart: item.trim_start,
-            originalTrimEnd: item.trim_end
-        };
-        
-        // Position doesn't change for slip
-        return;
+      const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+      const slipDelta = -deltaTime;
+
+      slipState.value = {
+        type: 'source',
+        id: dragInfo.value.id,
+        delta: slipDelta,
+        originalTrimStart: item.trim_start,
+        originalTrimEnd: item.trim_end,
+      };
+
+      // Position doesn't change for slip
+      return;
     }
 
     // SLIDE TOOL LOGIC
     if (isSlideTool.value && dragInfo.value.type === 'source' && props.videoSources) {
-        const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
-        
-        // Identify neighbors
-        // This relies on sorting.
-        const sortedSources = [...props.videoSources].sort((a, b) => a.start_time - b.start_time);
-        const currentIndex = sortedSources.findIndex(s => s.id === dragInfo.value?.id);
-        
-        let leftNeighborId = '';
-        let rightNeighborId = '';
-        
-        if (currentIndex > 0) leftNeighborId = sortedSources[currentIndex - 1].id;
-        if (currentIndex < sortedSources.length - 1) rightNeighborId = sortedSources[currentIndex + 1].id;
-        
-        if (leftNeighborId && rightNeighborId) {
-             slideState.value = {
-                type: 'source',
-                id: dragInfo.value.id,
-                leftNeighborId,
-                rightNeighborId,
-                delta: deltaTime,
-                originalStartTime: dragInfo.value.originalStartTime,
-                originalEndTime: dragInfo.value.originalEndTime
-             };
-             
-             // DIRECT DOM MANIPULATION - bypasses Vue reactivity for smooth dragging
-             // Only horizontal movement - segments stay within their track
-             if (dragGhostRef.value) {
-               dragGhostRef.value.style.transform = `translateX(${deltaX}px)`;
-             }
-             return;
+      const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+
+      // Identify neighbors
+      // This relies on sorting.
+      const sortedSources = [...props.videoSources].sort((a, b) => a.start_time - b.start_time);
+      const currentIndex = sortedSources.findIndex((s) => s.id === dragInfo.value?.id);
+
+      let leftNeighborId = '';
+      let rightNeighborId = '';
+
+      if (currentIndex > 0) leftNeighborId = sortedSources[currentIndex - 1].id;
+      if (currentIndex < sortedSources.length - 1) rightNeighborId = sortedSources[currentIndex + 1].id;
+
+      if (leftNeighborId && rightNeighborId) {
+        slideState.value = {
+          type: 'source',
+          id: dragInfo.value.id,
+          leftNeighborId,
+          rightNeighborId,
+          delta: deltaTime,
+          originalStartTime: dragInfo.value.originalStartTime,
+          originalEndTime: dragInfo.value.originalEndTime,
+        };
+
+        // DIRECT DOM MANIPULATION - bypasses Vue reactivity for smooth dragging
+        // Only horizontal movement - segments stay within their track
+        if (dragGhostRef.value) {
+          dragGhostRef.value.style.transform = `translateX(${deltaX}px)`;
         }
+        return;
+      }
     }
 
     // For visual overlays, detect which layer the mouse is over
@@ -6779,7 +6970,7 @@
     // DIRECT DOM MANIPULATION - bypasses Vue reactivity completely for zero-lag dragging
     // Only horizontal movement - segments stay within their track
     if (dragGhostRef.value) {
-      dragGhostRef.value.style.transform = `translateX(${deltaX}px)`;
+      dragGhostRef.value.style.transform = `translateX(${snapAdjustedDeltaX}px)`;
     }
   }
 
@@ -6790,69 +6981,71 @@
 
     // Commit the final position to database with undo/redo support
     if (dragInfo.value) {
-      
       // Handle Slip Edit End
       if (isSlipTool.value && slipState.value) {
-          emit('slipEdit', {
-              type: slipState.value.type,
-              itemId: slipState.value.id,
-              delta: slipState.value.delta,
-              originalTrimStart: slipState.value.originalTrimStart,
-              originalTrimEnd: slipState.value.originalTrimEnd
-          });
-          
-          // Delay cleanup until Vue has processed the update
-          nextTick(() => {
-            isDragging.value = false;
-            dragInfo.value = null;
-            slipState.value = null;
-            dragGhostState.value = null;
-            debouncedRenderAllWaveforms();
-          });
-          return;
+        emit('slipEdit', {
+          type: slipState.value.type,
+          itemId: slipState.value.id,
+          delta: slipState.value.delta,
+          originalTrimStart: slipState.value.originalTrimStart,
+          originalTrimEnd: slipState.value.originalTrimEnd,
+        });
+
+        // Delay cleanup until Vue has processed the update
+        nextTick(() => {
+          isDragging.value = false;
+          dragInfo.value = null;
+          slipState.value = null;
+          dragGhostState.value = null;
+          debouncedRenderAllWaveforms();
+        });
+        return;
       }
 
       // Handle Slide Edit End
       if (isSlideTool.value && slideState.value) {
-          emit('slideEdit', {
-              type: slideState.value.type,
-              itemId: slideState.value.id,
-              leftNeighborId: slideState.value.leftNeighborId,
-              rightNeighborId: slideState.value.rightNeighborId,
-              delta: slideState.value.delta,
-              originalStartTime: slideState.value.originalStartTime,
-              originalEndTime: slideState.value.originalEndTime
-          });
+        emit('slideEdit', {
+          type: slideState.value.type,
+          itemId: slideState.value.id,
+          leftNeighborId: slideState.value.leftNeighborId,
+          rightNeighborId: slideState.value.rightNeighborId,
+          delta: slideState.value.delta,
+          originalStartTime: slideState.value.originalStartTime,
+          originalEndTime: slideState.value.originalEndTime,
+        });
 
-          // Delay cleanup until Vue has processed the update
-          nextTick(() => {
-            isDragging.value = false;
-            dragInfo.value = null;
-            slideState.value = null;
-            dragGhostState.value = null;
-            debouncedRenderAllWaveforms();
-          });
-          return;
+        // Delay cleanup until Vue has processed the update
+        nextTick(() => {
+          isDragging.value = false;
+          dragInfo.value = null;
+          slideState.value = null;
+          dragGhostState.value = null;
+          debouncedRenderAllWaveforms();
+        });
+        return;
       }
 
       // Compute final position from stored delta
       const deltaX = dragInfo.value.currentDeltaX ?? 0;
-      if (deltaX !== 0 || dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder || 
-          dragInfo.value.targetLayer !== dragInfo.value.originalLayer ||
-          dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex) {
+      if (
+        deltaX !== 0 ||
+        dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder ||
+        dragInfo.value.targetLayer !== dragInfo.value.originalLayer ||
+        dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex
+      ) {
         const type = dragInfo.value.type;
         const id = dragInfo.value.id;
         const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
-        
+
         let newStartTime: number;
         let newEndTime: number;
-        
+
         // Calculate final time based on item type
         if (type === 'trim') {
           const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
           newStartTime = dragInfo.value.originalStartTime + deltaTime;
           newEndTime = newStartTime + itemDuration;
-          
+
           // Clamp to bounds
           if (newStartTime < 0) {
             newStartTime = 0;
@@ -6866,7 +7059,7 @@
           const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * totalDuration.value;
           newStartTime = dragInfo.value.originalStartTime + deltaTime;
           newEndTime = newStartTime + itemDuration;
-          
+
           if (newStartTime < 0) {
             newStartTime = 0;
             newEndTime = itemDuration;
@@ -6876,10 +7069,10 @@
           const deltaPercent = (deltaX / dragInfo.value.trackContentWidth) * 100;
           const originalStartPercent = effectiveTimeToVisualPercent(dragInfo.value.originalStartTime);
           const newStartPercent = Math.max(0, originalStartPercent + deltaPercent);
-          
+
           newStartTime = visualPercentToEffectiveTime(newStartPercent);
           newEndTime = newStartTime + itemDuration;
-          
+
           if (newStartTime < 0) {
             newStartTime = 0;
             newEndTime = itemDuration;
@@ -7089,7 +7282,7 @@
       const deltaX = e.clientX - resizeInfo.value.startX;
       const deltaTime = (deltaX / resizeInfo.value.trackContentWidth) * props.duration;
       const originalTrimStart = source.trim_start ?? 0;
-      const originalTrimEnd = source.trim_end ?? (originalTrimStart + (source.end_time - source.start_time));
+      const originalTrimEnd = source.trim_end ?? originalTrimStart + (source.end_time - source.start_time);
       const sourceDuration = source.source_duration || Infinity;
 
       if (resizeInfo.value.handle === 'left') {
@@ -7107,15 +7300,15 @@
         if (snapResult.didSnap && snapResult.time >= 0) {
           const snappedDelta = snapResult.time - resizeInfo.value.originalStartTime;
           const snappedTrimStart = originalTrimStart + snappedDelta;
-          
+
           if (snappedTrimStart >= 0) {
             newStartTime = snapResult.time;
             newTrimStart = snappedTrimStart;
             activeSnapTime.value = snapResult.time;
             activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
           } else {
-             activeSnapTime.value = null;
-             activeSnapTrackType.value = null;
+            activeSnapTime.value = null;
+            activeSnapTrackType.value = null;
           }
         } else {
           activeSnapTime.value = null;
@@ -7129,41 +7322,41 @@
           activeSnapTime.value = null;
           activeSnapTrackType.value = null;
         }
-        
+
         newTrimEnd = originalTrimEnd;
       } else {
         // Right handle
         newEndTime = Math.min(props.duration, resizeInfo.value.originalEndTime + deltaTime);
-                // Calculate newTrimEnd
+        // Calculate newTrimEnd
         const baseTrimEnd = originalTrimEnd ?? sourceDuration;
         newTrimEnd = baseTrimEnd + (newEndTime - resizeInfo.value.originalEndTime);
 
         // Constrain trim_end <= sourceDuration
         if (newTrimEnd !== undefined && newTrimEnd > sourceDuration) {
-            newTrimEnd = sourceDuration;
-            newEndTime = resizeInfo.value.originalEndTime + (sourceDuration - baseTrimEnd);
+          newTrimEnd = sourceDuration;
+          newEndTime = resizeInfo.value.originalEndTime + (sourceDuration - baseTrimEnd);
         }
 
         // Apply snapping to the right edge
         const snapResult = applySnapToTime(newEndTime, resizeInfo.value.id);
         if (snapResult.didSnap && snapResult.time <= props.duration) {
-             const snappedDelta = snapResult.time - resizeInfo.value.originalEndTime;
-             // Ensure we have a valid base for snapped calculation
-             const baseTrimEnd = originalTrimEnd ?? sourceDuration;
-             const snappedTrimEnd = baseTrimEnd + snappedDelta;
-             
-             if (snappedTrimEnd <= sourceDuration) {
-                 newEndTime = snapResult.time;
-                 newTrimEnd = snappedTrimEnd;
-                 activeSnapTime.value = snapResult.time;
-                 activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
-             } else {
-                 activeSnapTime.value = null;
-                 activeSnapTrackType.value = null;
-             }
+          const snappedDelta = snapResult.time - resizeInfo.value.originalEndTime;
+          // Ensure we have a valid base for snapped calculation
+          const baseTrimEnd = originalTrimEnd ?? sourceDuration;
+          const snappedTrimEnd = baseTrimEnd + snappedDelta;
+
+          if (snappedTrimEnd <= sourceDuration) {
+            newEndTime = snapResult.time;
+            newTrimEnd = snappedTrimEnd;
+            activeSnapTime.value = snapResult.time;
+            activeSnapTrackType.value = snapResult.snapTarget?.trackType || null;
+          } else {
+            activeSnapTime.value = null;
+            activeSnapTrackType.value = null;
+          }
         } else {
-             activeSnapTime.value = null;
-             activeSnapTrackType.value = null;
+          activeSnapTime.value = null;
+          activeSnapTrackType.value = null;
         }
 
         // Min duration check
@@ -7173,7 +7366,7 @@
           activeSnapTime.value = null;
           activeSnapTrackType.value = null;
         }
-        
+
         newTrimStart = originalTrimStart;
       }
     } else {
@@ -7241,7 +7434,7 @@
     if (isRippleTool.value) {
       let delta = 0;
       let originalEdgeTime = 0;
-      
+
       if (resizeInfo.value.handle === 'left') {
         delta = newStartTime - resizeInfo.value.originalStartTime;
         originalEdgeTime = resizeInfo.value.originalStartTime;
@@ -7254,7 +7447,7 @@
         type: resizeInfo.value.type,
         id: resizeInfo.value.id,
         delta,
-        originalEdgeTime
+        originalEdgeTime,
       };
     }
 
@@ -7273,11 +7466,12 @@
         leftId = itemId;
         originalRollTime = resizeInfo.value.originalEndTime;
         newRollTime = newEndTime;
-        
+
         // Find right neighbor
-        const neighbor = props.videoSources.find(s => Math.abs(s.start_time - originalRollTime) < 0.01 && s.id !== itemId);
+        const neighbor = props.videoSources.find(
+          (s) => Math.abs(s.start_time - originalRollTime) < 0.01 && s.id !== itemId
+        );
         if (neighbor) rightId = neighbor.id;
-        
       } else {
         // Dragging the boundary between Neighbor (Left) and Item (Right)
         rightId = itemId;
@@ -7285,7 +7479,9 @@
         newRollTime = newStartTime;
 
         // Find left neighbor
-        const neighbor = props.videoSources.find(s => Math.abs(s.end_time - originalRollTime) < 0.01 && s.id !== itemId);
+        const neighbor = props.videoSources.find(
+          (s) => Math.abs(s.end_time - originalRollTime) < 0.01 && s.id !== itemId
+        );
         if (neighbor) leftId = neighbor.id;
       }
 
@@ -7296,7 +7492,7 @@
           rightItemId: rightId,
           originalRollTime,
           newRollTime,
-          activeHandle: handle
+          activeHandle: handle,
         };
       }
     }
@@ -7312,7 +7508,7 @@
           id: dragPreview.value.id,
           newStartTime: dragPreview.value.startTime,
           newEndTime: dragPreview.value.endTime,
-          delta: rippleState.value.delta
+          delta: rippleState.value.delta,
         });
       } else if (isRollTool.value && rollState.value) {
         // Emit Roll Edit event
@@ -7321,7 +7517,7 @@
           leftItemId: rollState.value.leftItemId,
           rightItemId: rollState.value.rightItemId,
           newRollTime: rollState.value.newRollTime,
-          originalRollTime: rollState.value.originalRollTime
+          originalRollTime: rollState.value.originalRollTime,
         });
       } else if (dragPreview.value.type === 'source') {
         // Source Resize with trims
@@ -7329,14 +7525,14 @@
           start_time: dragPreview.value.startTime,
           end_time: dragPreview.value.endTime,
           trim_start: dragPreview.value.trimStart,
-          trim_end: dragPreview.value.trimEnd
+          trim_end: dragPreview.value.trimEnd,
         });
       } else {
         // Standard Resize
         emitUpdate(
-          dragPreview.value.type, 
-          dragPreview.value.id, 
-          dragPreview.value.startTime, 
+          dragPreview.value.type,
+          dragPreview.value.id,
+          dragPreview.value.startTime,
           dragPreview.value.endTime
         );
       }
@@ -7352,7 +7548,7 @@
 
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onResizeEnd);
-    
+
     // Trigger final waveform render after resize completes
     nextTick(() => {
       debouncedRenderAllWaveforms();
@@ -7407,7 +7603,9 @@
       const isWithinSegment = props.currentTime >= segment.startTime && props.currentTime <= segment.endTime;
       const playheadRatio = isWithinSegment
         ? (props.currentTime - segment.startTime) / segmentDuration
-        : props.currentTime < segment.startTime ? 0 : 1;
+        : props.currentTime < segment.startTime
+          ? 0
+          : 1;
 
       // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
       const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
@@ -7462,7 +7660,7 @@
     try {
       console.log('[ClipEditorTimeline] Loading waveform for source:', sourceId);
       await waveformService.loadAudio(sourcePath);
-      
+
       // Render the waveform after loading
       nextTick(() => {
         renderSourceWaveform(sourceId);
@@ -7546,7 +7744,7 @@
     try {
       console.log('[loadAudioWaveform] Loading audio for track:', trackId);
       await waveformService.loadAudio(audioSrc);
-      
+
       // Render the waveform
       nextTick(() => renderAudioWaveform(trackId));
     } catch (err) {
@@ -7778,7 +7976,7 @@
       // Skip during active drag - the segment visuals update via dragPreview styles
       // Only render when drag ends (newVal is null) to show final state
       if (newVal !== null) return;
-      
+
       // Use nextTick + requestAnimationFrame to ensure canvas refs are set up after DOM update
       nextTick(() => {
         requestAnimationFrame(() => {
@@ -8153,7 +8351,11 @@
     }
 
     // Perform cut at playhead with X key or Ctrl+K
-    if ((event.key === 'x' || event.key === 'X') || ((event.ctrlKey || event.metaKey) && (event.key === 'k' || event.key === 'K'))) {
+    if (
+      event.key === 'x' ||
+      event.key === 'X' ||
+      ((event.ctrlKey || event.metaKey) && (event.key === 'k' || event.key === 'K'))
+    ) {
       event.preventDefault();
       performCutAtPlayhead();
     }
@@ -8255,7 +8457,7 @@
           break;
       }
     }
-    
+
     // Shift+Z for zoom to selection
     if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
       if (event.key.toLowerCase() === 'z') {
@@ -8278,11 +8480,13 @@
     // Handle arrow keys for frame-by-frame seeking (precise millisecond navigation)
     // In editor mode, use props.duration (editor timeline duration)
     // In clip mode, use the clip duration from clipEnd - clipStart
-    const maxDuration = props.editorMode 
-      ? (props.duration || totalDuration.value) 
-      : (props.clipEnd && props.clipStart !== undefined ? props.clipEnd - props.clipStart : totalDuration.value);
+    const maxDuration = props.editorMode
+      ? props.duration || totalDuration.value
+      : props.clipEnd && props.clipStart !== undefined
+        ? props.clipEnd - props.clipStart
+        : totalDuration.value;
     const frameTime = 1 / 30; // Assume 30fps for frame-accurate stepping
-    
+
     if (!isCutToolActive.value && maxDuration > 0) {
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
@@ -8386,6 +8590,8 @@
       setupResizeObserver();
       // Initialize zoom to fit-to-width
       initializeZoom();
+      // Initialize visible time range for virtualized rendering
+      updateVisibleTimeRange();
       if (props.videoSrc) {
         loadWaveformFromVideo(props.videoSrc);
       }
@@ -8435,6 +8641,8 @@
     backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     user-select: none;
+    /* Performance: contain layout to prevent reflows from affecting parent */
+    contain: layout style;
   }
 
   /* Sticky track labels - prevent sub-pixel jitter during scroll */
@@ -8444,8 +8652,25 @@
     -webkit-backface-visibility: hidden;
   }
 
+  /* Timeline content wrapper - optimize for zoom transforms */
+  .timeline-content-wrapper {
+    /* Promote to compositor layer for smoother width changes during zoom */
+    will-change: width;
+    transform: translateZ(0);
+    /* CSS containment for performance - prevents layout thrashing */
+    contain: layout style;
+  }
+
   .timeline-tick {
-    transition: all 0.2s ease;
+    /* Remove transition during rapid updates for performance */
+    transition: none;
+    /* Each tick is independent - prevent layout recalculation cascade */
+    contain: layout style;
+  }
+
+  /* Track content areas - contain layout to prevent reflows */
+  .track-label {
+    contain: layout style;
   }
 
   /* Clip segment animations */
@@ -8455,6 +8680,8 @@
       box-shadow 0.2s ease-out,
       border-color 0.15s ease;
     will-change: transform, box-shadow;
+    /* CSS containment - each segment is visually independent */
+    contain: layout style;
   }
 
   /* No transitions during drag for smoother performance */
