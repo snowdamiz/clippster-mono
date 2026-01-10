@@ -17,27 +17,41 @@
 
       <!-- Editor Content -->
       <div class="flex-1 bg-black relative overflow-hidden flex items-center justify-center select-none" ref="containerRef">
-        <!-- Media (Video or Image) -->
+        <!-- Hidden video element for loading (always in DOM) -->
+        <video
+          v-if="videoUrl && !mediaLoaded"
+          ref="hiddenVideoRef"
+          :src="videoSrc"
+          class="absolute opacity-0 pointer-events-none"
+          style="width: 1px; height: 1px;"
+          muted
+          crossorigin="anonymous"
+          @loadedmetadata="onMediaLoaded"
+          @error="onMediaError"
+        ></video>
+        
+        <!-- Media (Video or Image) - shown after loaded -->
         <div 
           class="relative bg-[#0a0a0a]" 
           :style="{ width: mediaWidth + 'px', height: mediaHeight + 'px' }"
-          v-if="mediaLoaded"
+          v-show="mediaLoaded"
         >
           <video
-            v-if="videoPath"
+            v-if="videoUrl"
             ref="videoRef"
-            :src="convertedVideoSrc"
+            :src="videoSrc"
             class="w-full h-full object-contain pointer-events-none"
             muted
             crossorigin="anonymous"
-            @loadedmetadata="onMediaLoaded"
             @timeupdate="onTimeUpdate"
+            @error="onMediaError"
           ></video>
           <img
             v-else-if="thumbnailUrl"
             :src="thumbnailUrl"
             class="w-full h-full object-contain pointer-events-none"
             @load="onMediaLoaded"
+            @error="onMediaError"
           />
           
           <!-- Overlay / Mask -->
@@ -80,7 +94,7 @@
         </div>
         
         <!-- Loading State -->
-        <div v-else class="text-white/40 flex items-center gap-2">
+        <div v-show="!mediaLoaded" class="text-white/40 flex items-center gap-2">
           <Loader2 :size="20" class="animate-spin" />
           <span>Loading media...</span>
         </div>
@@ -89,7 +103,7 @@
       <!-- Controls -->
       <div class="p-4 border-t border-white/10 bg-[#1a1a1a]">
         <!-- Playback controls if video -->
-        <div v-if="videoPath" class="flex items-center gap-4 mb-4">
+        <div v-if="videoUrl" class="flex items-center gap-4 mb-4">
           <button @click="togglePlay" class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
             <component :is="isPlaying ? Pause : Play" :size="16" fill="currentColor" />
           </button>
@@ -132,7 +146,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { X, Play, Pause, Loader2 } from 'lucide-vue-next';
-import { convertFileSrc } from '@tauri-apps/api/core';
 
 interface POIConfig {
   x: number;
@@ -147,7 +160,7 @@ const props = defineProps<{
   targetAspectRatio: string; // e.g., "9:16"
   sourceAspectRatio?: string; // e.g., "16:9"
   thumbnailUrl?: string;
-  videoPath?: string;
+  videoUrl?: string; // Streaming URL for video (not file path)
   clipStartTime?: number;
   clipEndTime?: number;
 }>();
@@ -159,6 +172,7 @@ const emit = defineEmits<{
 
 const containerRef = ref<HTMLElement | null>(null);
 const videoRef = ref<HTMLVideoElement | null>(null);
+const hiddenVideoRef = ref<HTMLVideoElement | null>(null);
 const mediaLoaded = ref(false);
 const mediaWidth = ref(0);
 const mediaHeight = ref(0);
@@ -169,8 +183,9 @@ const currentTime = ref(props.clipStartTime || 0);
 // ROI State (in percentages 0-100)
 const roi = ref<POIConfig>({ x: 0, y: 0, width: 100, height: 100 });
 
-const convertedVideoSrc = computed(() => {
-  return props.videoPath ? convertFileSrc(props.videoPath) : '';
+// Video source is now passed as a URL directly (no conversion needed)
+const videoSrc = computed(() => {
+  return props.videoUrl || '';
 });
 
 // Calculate target aspect ratio value
@@ -224,14 +239,25 @@ function initializeROI() {
 function onMediaLoaded(e: Event) {
   const el = e.target as HTMLElement;
   
+  console.log('[ManualPOIEditor] onMediaLoaded called', el);
+  
+  let originalWidth = 0;
+  let originalHeight = 0;
+  
   if (el instanceof HTMLVideoElement) {
-    mediaWidth.value = el.videoWidth;
-    mediaHeight.value = el.videoHeight;
+    originalWidth = el.videoWidth;
+    originalHeight = el.videoHeight;
     duration.value = el.duration;
-    el.currentTime = props.clipStartTime || 0;
+    console.log('[ManualPOIEditor] Video dimensions:', originalWidth, 'x', originalHeight, 'duration:', duration.value);
   } else if (el instanceof HTMLImageElement) {
-    mediaWidth.value = el.naturalWidth;
-    mediaHeight.value = el.naturalHeight;
+    originalWidth = el.naturalWidth;
+    originalHeight = el.naturalHeight;
+    console.log('[ManualPOIEditor] Image dimensions:', originalWidth, 'x', originalHeight);
+  }
+  
+  if (originalWidth === 0 || originalHeight === 0) {
+    console.error('[ManualPOIEditor] Invalid media dimensions');
+    return;
   }
   
   // Calculate scaled dimensions to fit container
@@ -240,7 +266,9 @@ function onMediaLoaded(e: Event) {
     const cw = container.clientWidth - 40; // padding
     const ch = container.clientHeight - 40;
     const cRatio = cw / ch;
-    const mRatio = mediaWidth.value / mediaHeight.value;
+    const mRatio = originalWidth / originalHeight;
+
+    console.log('[ManualPOIEditor] Container:', cw, 'x', ch, 'ratio:', cRatio, 'media ratio:', mRatio);
 
     if (mRatio > cRatio) {
       mediaWidth.value = cw;
@@ -249,10 +277,17 @@ function onMediaLoaded(e: Event) {
       mediaHeight.value = ch;
       mediaWidth.value = ch * mRatio;
     }
+    
+    console.log('[ManualPOIEditor] Scaled dimensions:', mediaWidth.value, 'x', mediaHeight.value);
   }
 
   mediaLoaded.value = true;
   initializeROI();
+  
+  // After media is loaded, sync the main video element's time
+  if (videoRef.value && props.clipStartTime) {
+    videoRef.value.currentTime = props.clipStartTime;
+  }
 }
 
 // Drag & Drop Logic
@@ -408,6 +443,12 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}.${ms}`;
 }
 
+function onMediaError(e: Event) {
+  console.error('[ManualPOIEditor] Media load error:', e);
+  console.error('[ManualPOIEditor] Video URL:', props.videoUrl);
+  console.error('[ManualPOIEditor] Video src:', videoSrc.value);
+}
+
 function confirm() {
   emit('confirm', roi.value);
   emit('update:modelValue', false);
@@ -416,6 +457,10 @@ function confirm() {
 // Watchers
 watch(() => props.modelValue, (val) => {
   if (val) {
+    console.log('[ManualPOIEditor] Dialog opened');
+    console.log('[ManualPOIEditor] videoUrl:', props.videoUrl);
+    console.log('[ManualPOIEditor] thumbnailUrl:', props.thumbnailUrl);
+    console.log('[ManualPOIEditor] videoSrc:', videoSrc.value);
     mediaLoaded.value = false;
     // Reset state if needed
   }

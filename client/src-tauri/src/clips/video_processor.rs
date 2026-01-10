@@ -758,12 +758,14 @@ pub async fn build_single_segment_clip_with_settings(
         args.push(encoder.quality_value.clone());
         
         // Add common parameters
+        // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
         args.extend_from_slice(&[
+            "-fps_mode".to_string(), "cfr".to_string(),
             "-r".to_string(), frame_rate.to_string(),
             "-c:a".to_string(), "aac".to_string(),
             "-b:a".to_string(), "192k".to_string(),
             "-pix_fmt".to_string(), "yuv420p".to_string(),
-            "-avoid_negative_ts".to_string(), "1".to_string(),
+            "-avoid_negative_ts".to_string(), "make_zero".to_string(),
             "-y".to_string(),
             segment_file.to_string_lossy().to_string(),
         ]);
@@ -852,7 +854,7 @@ pub async fn build_single_segment_clip_with_settings(
                 "-safe", "0",
                 "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
                 "-c", "copy",
-                "-avoid_negative_ts", "1",
+                "-avoid_negative_ts", "make_zero",
                 "-y",
                 concat_output_path.to_str().ok_or("Invalid output path")?,
             ])
@@ -1031,13 +1033,16 @@ pub async fn build_single_segment_clip_with_settings(
     }
     
     // Add common parameters
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+    // when using input seeking with crop/filter operations
     args.extend_from_slice(&[
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
-        "-avoid_negative_ts".to_string(), "1".to_string(),
+        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
@@ -1206,10 +1211,12 @@ pub async fn build_multi_segment_clip_with_settings(
             }
             
             // Add common parameters
+            // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
             args.extend_from_slice(&[
+                "-fps_mode".to_string(), "cfr".to_string(),
                 "-r".to_string(), frame_rate_str.clone(),
                 "-pix_fmt".to_string(), "yuv420p".to_string(),
-                "-avoid_negative_ts".to_string(), "1".to_string(),
+                "-avoid_negative_ts".to_string(), "make_zero".to_string(),
                 "-y".to_string(),
                 segment_file.to_string_lossy().to_string(),
             ]);
@@ -1320,7 +1327,7 @@ pub async fn build_multi_segment_clip_with_settings(
             "-safe", "0",
             "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
             "-c", "copy",
-            "-avoid_negative_ts", "1",
+            "-avoid_negative_ts", "make_zero",
             "-y",
             concat_output_path.to_str().ok_or("Invalid output path")?,
         ])
@@ -1508,12 +1515,14 @@ pub async fn prepare_intro_outro_for_concat(
     args.push(encoder.quality_value.clone());
     
     // Add common parameters
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
     args.extend_from_slice(&[
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
-        "-avoid_negative_ts".to_string(), "1".to_string(),
+        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
@@ -1763,12 +1772,16 @@ pub async fn build_split_screen_clip(
     }
 
     // Common output parameters
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+    // when using input seeking with complex filter graphs
     args.extend_from_slice(&[
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
+        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
@@ -1932,12 +1945,16 @@ pub async fn build_dynamic_pan_clip(
     }
 
     // Common output parameters
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+    // when using input seeking with complex filter graphs
     args.extend_from_slice(&[
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
+        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
@@ -2150,6 +2167,8 @@ pub async fn build_multi_region_clip(
     let encoder = detect_hardware_encoder(app, quality).await;
 
     // Build FFmpeg args
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+    // when using input seeking with complex filter graphs
     let mut args = vec![
         "-ss".to_string(), format!("{:.3}", start_time),
         "-i".to_string(), video_path.to_string(),
@@ -2158,6 +2177,7 @@ pub async fn build_multi_region_clip(
         "-map".to_string(), map_label.to_string(),
         "-map".to_string(), "0:a?".to_string(), // Map audio if present
         "-c:v".to_string(), encoder.codec.clone(),
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
     ];
 
@@ -2186,7 +2206,9 @@ pub async fn build_multi_region_clip(
         }
     }
 
-    // Output
+    // Output - add avoid_negative_ts to prevent black frames at start
+    args.push("-avoid_negative_ts".to_string());
+    args.push("make_zero".to_string());
     args.push("-y".to_string());
     args.push(output_path.to_string_lossy().to_string());
 

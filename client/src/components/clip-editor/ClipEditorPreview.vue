@@ -11,80 +11,83 @@
       :class="isFullscreen ? 'rounded-none' : 'rounded-lg'"
       :style="{ aspectRatio: previewAspectRatio.replace(':', '/'), width: 'auto', height: 'auto' }"
     >
-      <!-- Single region mode: Main video with CSS transforms applied directly (no extra decoding) -->
+      <!-- Framed container for non-16:9 aspect ratios - always rendered but hidden when not needed -->
       <div
-        v-if="showFramedPreview && isSingleRegion"
-        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black overflow-hidden cursor-pointer"
+        v-show="showFramedPreview"
+        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black overflow-hidden"
+        :class="isSingleRegion ? 'cursor-pointer' : ''"
         :style="getFramedContainerStyle()"
-        @click="onVideoClick"
+        @click="isSingleRegion ? onVideoClick() : undefined"
       >
+        <!-- Framed video element - used for non-16:9 single region mode -->
         <video
-          ref="videoRef"
+          v-show="showFramedPreview && isSingleRegion"
+          ref="framedVideoRef"
           :src="videoSrc || ''"
           class="absolute max-w-none"
           :style="getSingleRegionVideoStyle()"
-          @loadedmetadata="onLoadedMetadata"
-          @timeupdate="onTimeUpdate"
-          @ended="onEnded"
-          @play="onPlay"
-          @pause="onPause"
-        />
-      </div>
-
-      <!-- Multi-region framed container (for manually configured multiple regions) -->
-      <div
-        v-else-if="showFramedPreview"
-        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black overflow-hidden"
-        :style="getFramedContainerStyle()"
-      >
-        <!-- Hidden main video for audio/control -->
-        <video
-          ref="videoRef"
-          :src="videoSrc || ''"
-          class="sr-only"
-          @loadedmetadata="onLoadedMetadata"
-          @timeupdate="onTimeUpdate"
+          @loadedmetadata="onFramedVideoLoadedMetadata"
+          @timeupdate="onFramedVideoTimeUpdate"
           @ended="onEnded"
           @play="onPlay"
           @pause="onPause"
         />
 
-        <!-- Render each region from the framing config -->
-        <div
-          v-for="(region, idx) in currentFramingConfig?.regions || []"
-          :key="region.id"
-          class="absolute overflow-hidden"
-          :style="getRegionOutputStyle(region)"
-        >
-          <!-- Video crop preview - matches POI editor exactly -->
-          <video
-            :ref="(el) => setRegionVideoRef(idx, el as HTMLVideoElement)"
-            :src="videoSrc || ''"
-            class="absolute max-w-none pointer-events-none"
-            :style="getCroppedVideoStyle(region)"
-            muted
-            playsinline
-            @loadedmetadata="onRegionVideoLoaded"
-          />
-        </div>
+        <!-- Multi-region: Render each region from the framing config -->
+        <template v-if="showFramedPreview && !isSingleRegion">
+          <div
+            v-for="(region, idx) in currentFramingConfig?.regions || []"
+            :key="region.id"
+            class="absolute overflow-hidden"
+            :style="getRegionOutputStyle(region)"
+          >
+            <!-- Video crop preview - matches POI editor exactly -->
+            <video
+              :ref="(el) => setRegionVideoRef(idx, el as HTMLVideoElement)"
+              :src="videoSrc || ''"
+              class="absolute max-w-none pointer-events-none"
+              :style="getCroppedVideoStyle(region)"
+              muted
+              playsinline
+              @loadedmetadata="onRegionVideoLoaded"
+            />
+          </div>
 
-        <!-- Click handler overlay -->
-        <div class="absolute inset-0 cursor-pointer" @click="onVideoClick" />
+          <!-- Click handler overlay for multi-region -->
+          <div class="absolute inset-0 cursor-pointer" @click="onVideoClick" />
+        </template>
       </div>
 
-      <!-- Default 16:9 mode: Normal video display -->
+      <!-- Default 16:9 mode: Normal video display - always rendered, invisible when framed -->
+      <!-- Use visibility:hidden instead of v-show to maintain container dimensions -->
       <video
-        v-else
         ref="videoRef"
         :src="videoSrc || ''"
         class="max-w-full max-h-full object-contain cursor-pointer"
-        :style="editorMode ? getMainVideoStyle() : getVideoFilterStyle()"
+        :style="{
+          ...(editorMode ? getMainVideoStyle() : getVideoFilterStyle()),
+          visibility: showFramedPreview ? 'hidden' : 'visible',
+          pointerEvents: showFramedPreview ? 'none' : 'auto'
+        }"
         @loadedmetadata="onLoadedMetadata"
         @timeupdate="onTimeUpdate"
         @ended="onEnded"
         @play="onPlay"
         @pause="onPause"
         @click="onVideoClick"
+      />
+
+      <!-- Hidden audio-only video for framed multi-region mode -->
+      <video
+        v-if="showFramedPreview && !isSingleRegion"
+        ref="audioVideoRef"
+        :src="videoSrc || ''"
+        class="sr-only"
+        @loadedmetadata="onAudioVideoLoadedMetadata"
+        @timeupdate="onAudioVideoTimeUpdate"
+        @ended="onEnded"
+        @play="onPlay"
+        @pause="onPause"
       />
 
       <!-- Preload video for seamless transitions / crossfade (editor mode only) -->
@@ -297,7 +300,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2, Check } from 'lucide-vue-next';
   import TrackRenderer from './TrackRenderer.vue';
   import { AnimationService } from '@/services/AnimationService';
@@ -515,6 +518,8 @@
 
   // Refs
   const videoRef = ref<HTMLVideoElement | null>(null);
+  const framedVideoRef = ref<HTMLVideoElement | null>(null); // Video for framed single-region mode
+  const audioVideoRef = ref<HTMLVideoElement | null>(null); // Audio-only video for multi-region mode
   const preloadVideoRef = ref<HTMLVideoElement | null>(null); // Second video for seamless transitions
   const videoContainerRef = ref<HTMLElement | null>(null);
   // ... rest of the code remains the same ...
@@ -2688,6 +2693,69 @@
     }
   }
 
+  // Event handlers for framed video (single-region mode)
+  function onFramedVideoLoadedMetadata() {
+    if (framedVideoRef.value) {
+      duration.value = framedVideoRef.value.duration;
+
+      // Check if we have a pending seek time from aspect ratio switch
+      if (pendingSeekTime.value !== null) {
+        framedVideoRef.value.currentTime = pendingSeekTime.value;
+        pendingSeekTime.value = null;
+      }
+
+      updateContainerSize();
+      emit('videoElementReady', framedVideoRef.value);
+    }
+  }
+
+  function onFramedVideoTimeUpdate() {
+    if (framedVideoRef.value && !isDraggingProgress.value && showFramedPreview.value && isSingleRegion.value) {
+      const currentVideoTime = framedVideoRef.value.currentTime;
+      updateVideoMuteState(currentVideoTime);
+
+      if (props.editorMode) {
+        if (activeVideoIndex.value === 0) {
+          emit('timeUpdate', currentVideoTime);
+        }
+        return;
+      }
+
+      emit('timeUpdate', currentVideoTime);
+    }
+  }
+
+  // Event handlers for audio-only video (multi-region mode)
+  function onAudioVideoLoadedMetadata() {
+    if (audioVideoRef.value) {
+      duration.value = audioVideoRef.value.duration;
+
+      if (pendingSeekTime.value !== null) {
+        audioVideoRef.value.currentTime = pendingSeekTime.value;
+        pendingSeekTime.value = null;
+      }
+
+      updateContainerSize();
+      emit('videoElementReady', audioVideoRef.value);
+    }
+  }
+
+  function onAudioVideoTimeUpdate() {
+    if (audioVideoRef.value && !isDraggingProgress.value && showFramedPreview.value && !isSingleRegion.value) {
+      const currentVideoTime = audioVideoRef.value.currentTime;
+      updateVideoMuteState(currentVideoTime);
+
+      if (props.editorMode) {
+        if (activeVideoIndex.value === 0) {
+          emit('timeUpdate', currentVideoTime);
+        }
+        return;
+      }
+
+      emit('timeUpdate', currentVideoTime);
+    }
+  }
+
   function onEnded(event: Event) {
     const endedVideo = event.target as HTMLVideoElement;
     const isMainVideo = endedVideo === videoRef.value;
@@ -3430,14 +3498,67 @@
     }
   }
 
-  // Watch for framed preview mode changes
-  watch(showFramedPreview, (isFramed) => {
+  // Watch for framed preview mode changes - sync video time between modes
+  watch(showFramedPreview, (isFramed, wasFramed) => {
     if (isFramed) {
       startSyncLoop();
       // Clear old refs when switching modes
       regionVideoRefs.value = [];
+      
+      // Sync time from main video to framed video when switching TO framed mode
+      if (!wasFramed && videoRef.value && !isNaN(videoRef.value.currentTime)) {
+        const currentTime = videoRef.value.currentTime;
+        const wasPaused = videoRef.value.paused;
+        
+        // Use nextTick to ensure the framed video element is mounted
+        nextTick(() => {
+          if (isSingleRegion.value && framedVideoRef.value) {
+            // Ensure video is loaded before setting time
+            framedVideoRef.value.load();
+            framedVideoRef.value.currentTime = currentTime;
+            if (!wasPaused) {
+              framedVideoRef.value.play().catch(() => {});
+            }
+            // Emit the framed video as the active element
+            emit('videoElementReady', framedVideoRef.value);
+          } else if (audioVideoRef.value) {
+            audioVideoRef.value.load();
+            audioVideoRef.value.currentTime = currentTime;
+            if (!wasPaused) {
+              audioVideoRef.value.play().catch(() => {});
+            }
+            // Emit the audio video as the active element
+            emit('videoElementReady', audioVideoRef.value);
+          }
+        });
+      }
     } else {
       stopSyncLoop();
+      
+      // Sync time from framed video back to main video when switching FROM framed mode
+      if (wasFramed) {
+        let currentTime = 0;
+        let wasPaused = true;
+        
+        if (framedVideoRef.value && !isNaN(framedVideoRef.value.currentTime)) {
+          currentTime = framedVideoRef.value.currentTime;
+          wasPaused = framedVideoRef.value.paused;
+        } else if (audioVideoRef.value && !isNaN(audioVideoRef.value.currentTime)) {
+          currentTime = audioVideoRef.value.currentTime;
+          wasPaused = audioVideoRef.value.paused;
+        }
+        
+        nextTick(() => {
+          if (videoRef.value) {
+            videoRef.value.currentTime = currentTime;
+            if (!wasPaused) {
+              videoRef.value.play().catch(() => {});
+            }
+            // Emit the main video as the active element
+            emit('videoElementReady', videoRef.value);
+          }
+        });
+      }
     }
   });
 
@@ -3458,9 +3579,21 @@
   watch(
     () => props.previewAspectRatio,
     () => {
-      // Store current video time before aspect ratio change causes video element swap
-      if (videoRef.value && !isNaN(videoRef.value.currentTime)) {
-        pendingSeekTime.value = videoRef.value.currentTime;
+      // Store current video time from whichever video is currently active
+      let currentTime: number | null = null;
+      
+      if (showFramedPreview.value) {
+        if (isSingleRegion.value && framedVideoRef.value && !isNaN(framedVideoRef.value.currentTime)) {
+          currentTime = framedVideoRef.value.currentTime;
+        } else if (audioVideoRef.value && !isNaN(audioVideoRef.value.currentTime)) {
+          currentTime = audioVideoRef.value.currentTime;
+        }
+      } else if (videoRef.value && !isNaN(videoRef.value.currentTime)) {
+        currentTime = videoRef.value.currentTime;
+      }
+      
+      if (currentTime !== null) {
+        pendingSeekTime.value = currentTime;
       }
 
       // Force container size update when aspect ratio changes
@@ -3561,10 +3694,23 @@
       activeVideoIndex.value = 0;
       preloadVideoReady.value = false;
       lastPreloadSrc.value = null;
-      // Emit main video element as active
-      if (videoRef.value) {
+      // Emit the currently visible video element as active
+      if (showFramedPreview.value && isSingleRegion.value && framedVideoRef.value) {
+        emit('videoElementReady', framedVideoRef.value);
+      } else if (showFramedPreview.value && !isSingleRegion.value && audioVideoRef.value) {
+        emit('videoElementReady', audioVideoRef.value);
+      } else if (videoRef.value) {
         emit('videoElementReady', videoRef.value);
       }
+    },
+    // Expose refs for parent to access current active video
+    getActiveVideoElement: () => {
+      if (showFramedPreview.value && isSingleRegion.value) {
+        return framedVideoRef.value;
+      } else if (showFramedPreview.value && !isSingleRegion.value) {
+        return audioVideoRef.value;
+      }
+      return videoRef.value;
     },
   });
 </script>

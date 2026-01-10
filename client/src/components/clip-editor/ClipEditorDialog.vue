@@ -450,14 +450,14 @@
       <!-- Manual POI Editor Dialog -->
       <ManualPOIEditor
         v-model="showManualPOIEditor"
-        :initial-config="getInitialPOIConfig(editingAspectRatio)"
+        :initial-config="getConfigForRatio(editingAspectRatio)"
         :target-aspect-ratio="editingAspectRatio"
         :source-aspect-ratio="'16:9'"
-        :thumbnail-url="effectiveThumbnailUrl ?? undefined"
-        :video-path="effectiveVideoPath ?? undefined"
+        :thumbnail-url="effectiveThumbnailUrl"
+        :video-path="effectiveVideoPath"
         :clip-start-time="effectivePOIClipStartTime"
-        :clip-end-time="effectivePOIClipEndTime ?? undefined"
-        @confirm="onManualPOIConfirm"
+        :clip-end-time="effectivePOIClipEndTime"
+        @confirm="onManualPOIConfigConfirm"
       />
 
       <!-- Promote to Video Project Confirmation Dialog -->
@@ -608,7 +608,7 @@
   import EffectsTab from './tabs/EffectsTab.vue';
   import ExportTab from './tabs/ExportTab.vue';
   import ClipEditorTimeline from './ClipEditorTimeline.vue';
-  import ManualPOIEditor from './ManualPOIEditor.vue';
+  import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
   import SpeedCurveEditor from './SpeedCurveEditor.vue';
   import KeyframeInspector from './KeyframeInspector.vue';
   import type { ItemType, Keyframe as TimelineKeyframe, EasingType } from '@/types/timeline-model';
@@ -1415,6 +1415,25 @@
       return source?.source_path || null;
     }
     return videoPath.value;
+  });
+
+  // Effective video URL for ManualPOIEditor - converts path to streaming URL
+  const effectiveVideoUrl = computed(() => {
+    const path = effectiveVideoPath.value;
+    if (!path) return null;
+
+    // If path already looks like an HTTP URL, use it directly
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+
+    // Otherwise, construct the HTTP URL from the file path using video server
+    if (!videoServerPort.value) {
+      return null;
+    }
+
+    const encodedPath = btoa(unescape(encodeURIComponent(path)));
+    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
   });
 
   // Effective clip start time for ManualPOIEditor - uses source trim times in editor mode

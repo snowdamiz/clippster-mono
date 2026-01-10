@@ -9,7 +9,7 @@
  */
 
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { updateClipBuildStatus } from './database/clip-build';
+import { updateClipBuildStatus, updateClipBuild, getClipBuilds } from './database/clip-build';
 
 interface ClipBuildCompletePayload {
   clip_id: string;
@@ -51,6 +51,8 @@ async function handleClipBuildComplete(event: { payload: ClipBuildCompletePayloa
   try {
     if (success) {
       console.log(`[GlobalClipBuildHandler] Updating database for successful build: ${clip_id}`);
+      
+      // Update the clips table (legacy support)
       await updateClipBuildStatus(clip_id, 'completed', {
         progress: 100,
         builtFilePath: output_path || undefined,
@@ -59,6 +61,30 @@ async function handleClipBuildComplete(event: { payload: ClipBuildCompletePayloa
         builtFileSize: file_size || undefined,
         error: undefined,
       });
+      
+      // Also update the clip_builds table - find the most recent building record
+      try {
+        const builds = await getClipBuilds(clip_id);
+        const buildingBuild = builds.find(b => b.status === 'building');
+        if (buildingBuild) {
+          console.log(`[GlobalClipBuildHandler] Updating clip_builds record: ${buildingBuild.id}`);
+          await updateClipBuild(buildingBuild.id, {
+            status: 'completed',
+            progress: 100,
+            filePath: output_path || undefined,
+            outputPaths: payload.all_output_paths || (output_path ? [output_path] : []),
+            thumbnailPath: thumbnail_path || undefined,
+            duration: duration || undefined,
+            fileSize: file_size || undefined,
+          });
+          console.log(`[GlobalClipBuildHandler] clip_builds record updated successfully`);
+        } else {
+          console.warn(`[GlobalClipBuildHandler] No building record found in clip_builds for clip: ${clip_id}`);
+        }
+      } catch (buildError) {
+        console.error(`[GlobalClipBuildHandler] Failed to update clip_builds:`, buildError);
+      }
+      
       console.log(`[GlobalClipBuildHandler] Database updated successfully for clip: ${clip_id}`);
     } else if (isCancelled) {
       console.log(`[GlobalClipBuildHandler] Resetting cancelled build: ${clip_id}`);
@@ -66,11 +92,40 @@ async function handleClipBuildComplete(event: { payload: ClipBuildCompletePayloa
         progress: 0,
         error: 'Build cancelled by user',
       });
+      
+      // Update clip_builds table for cancelled build
+      try {
+        const builds = await getClipBuilds(clip_id);
+        const buildingBuild = builds.find(b => b.status === 'building');
+        if (buildingBuild) {
+          await updateClipBuild(buildingBuild.id, {
+            status: 'failed',
+            progress: 0,
+            errorMessage: 'Build cancelled by user',
+          });
+        }
+      } catch (buildError) {
+        console.error(`[GlobalClipBuildHandler] Failed to update clip_builds for cancelled build:`, buildError);
+      }
     } else {
       console.log(`[GlobalClipBuildHandler] Marking build as failed: ${clip_id}`);
       await updateClipBuildStatus(clip_id, 'failed', {
         error: error || 'Unknown build error',
       });
+      
+      // Update clip_builds table for failed build
+      try {
+        const builds = await getClipBuilds(clip_id);
+        const buildingBuild = builds.find(b => b.status === 'building');
+        if (buildingBuild) {
+          await updateClipBuild(buildingBuild.id, {
+            status: 'failed',
+            errorMessage: error || 'Unknown build error',
+          });
+        }
+      } catch (buildError) {
+        console.error(`[GlobalClipBuildHandler] Failed to update clip_builds for failed build:`, buildError);
+      }
     }
   } catch (dbError) {
     console.error(`[GlobalClipBuildHandler] Failed to update database for clip ${clip_id}:`, dbError);
