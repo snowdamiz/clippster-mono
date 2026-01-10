@@ -289,6 +289,33 @@
           class="absolute border-2 border-cyan-500 bg-cyan-500/15 pointer-events-none z-[100] rounded"
           :style="marqueeStyle"
         ></div>
+
+        <!-- Drag Ghost Element - positioned via direct DOM manipulation for zero-lag dragging -->
+        <div
+          ref="dragGhostRef"
+          v-show="dragGhostState?.visible"
+          class="fixed pointer-events-none z-[1000] rounded-md shadow-2xl opacity-90"
+          :class="{
+            'bg-violet-600/80 border-2 border-violet-400': dragGhostState?.color === 'violet',
+            'bg-cyan-600/80 border-2 border-cyan-400': dragGhostState?.color === 'cyan',
+            'bg-emerald-600/80 border-2 border-emerald-400': dragGhostState?.color === 'emerald',
+            'bg-amber-600/80 border-2 border-amber-400': dragGhostState?.color === 'amber',
+            'bg-rose-600/80 border-2 border-rose-400': dragGhostState?.color === 'rose',
+          }"
+          :style="{
+            left: `${dragGhostState?.initialLeft ?? 0}px`,
+            top: `${dragGhostState?.initialTop ?? 0}px`,
+            width: `${dragGhostState?.width ?? 100}px`,
+            height: `${dragGhostState?.height ?? 36}px`,
+            willChange: 'transform',
+          }"
+        >
+          <div class="flex items-center justify-center h-full px-2">
+            <span class="text-xs text-white font-medium truncate drop-shadow-md">
+              {{ dragGhostState?.label || '' }}
+            </span>
+          </div>
+        </div>
         <!-- Horizontal scroller for ruler + tracks -->
         <div class="pb-1 flex-1">
           <!-- Timeline Content Wrapper - handles zoom width -->
@@ -900,7 +927,7 @@
 
                   <!-- Ghost preview showing original position during drag -->
                   <div
-                    v-if="dragPreview && dragPreview.type === 'source' && isDraggingSource"
+                    v-if="dragGhostState?.visible && dragGhostState?.type === 'source' && isDraggingSource"
                     class="absolute top-0 bottom-0 rounded-md border-2 border-dashed border-cyan-500/40 bg-cyan-500/10 pointer-events-none z-10"
                     :style="getGhostPreviewStyle('source')"
                   ></div>
@@ -1670,6 +1697,8 @@
     targetTrackOrder?: number;
     targetLayer?: number;
     targetTrackIndex?: number;
+    currentDeltaX?: number; // Current drag delta X (for final position calculation)
+    currentDeltaY?: number; // Current drag delta Y (for final position calculation)
   }
 
   interface ResizeInfo {
@@ -2147,6 +2176,7 @@
     originalEndTime: number;
     originalTrackIndex: number;
     targetTrackIndex: number;
+    currentDeltaX?: number; // Current snap-adjusted delta for final position calculation
   } | null>(null);
 
   // Source context menu state
@@ -2321,6 +2351,21 @@
     endTime: number;
     trimStart?: number;
     trimEnd?: number;
+  } | null>(null);
+
+  // Ghost element for drag visualization - uses direct DOM manipulation for zero-lag dragging
+  // This completely bypasses Vue's reactivity system during drag for true 60fps performance
+  const dragGhostRef = ref<HTMLDivElement | null>(null);
+  const dragGhostState = ref<{
+    visible: boolean;
+    type: ItemType;
+    id: string;
+    initialLeft: number;
+    initialTop: number;
+    width: number;
+    height: number;
+    label: string;
+    color: string;
   } | null>(null);
 
   // Ripple Edit State
@@ -3575,9 +3620,9 @@
   }
 
   function getAudioVisualSegments(track: AudioTrack): AudioVisualSegment[] {
-    // Use preview position during drag/resize
+    // Use resize preview position only (not drag preview - drag uses CSS transforms now)
     const preview = dragPreview.value;
-    const usePreview = preview && preview.type === 'audio' && preview.id === track.id;
+    const usePreview = preview && preview.type === 'audio' && preview.id === track.id && isResizing.value;
 
     const audioStart = usePreview ? preview.startTime : track.startTime;
     const audioEnd = usePreview ? preview.endTime : track.endTime;
@@ -3816,6 +3861,9 @@
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${track.id}`;
 
+    // Check if this audio track is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === 'audio' && dragInfo.value?.id === track.id;
+
     return {
       left: `${visualSeg.leftPercent}%`,
       width: `${Math.max(visualSeg.widthPercent, 0.5)}%`,
@@ -3823,6 +3871,8 @@
       borderColor: isSelected ? '#3b82f6' : colors.border,
       borderWidth: '1px',
       borderStyle: 'solid',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -3844,9 +3894,9 @@
     const colors = colorMap.emerald;
     const isSelected = selectedItemKey.value === `audio_${track.id}`;
 
-    // Use preview position during drag/resize, otherwise use actual track position
+    // Use resize preview position only (drag uses ghost element now)
     const preview = dragPreview.value;
-    const usePreview = preview && preview.type === 'audio' && preview.id === track.id;
+    const usePreview = preview && preview.type === 'audio' && preview.id === track.id && isResizing.value;
 
     const startTime = usePreview ? preview.startTime : track.startTime;
     const endTime = usePreview ? preview.endTime : track.endTime;
@@ -3859,6 +3909,9 @@
     const leftPercent = (startTime / totalDuration.value) * 100;
     const widthPercent = (trackDuration / effectiveDuration) * 100;
 
+    // Check if this audio track is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === 'audio' && dragInfo.value?.id === track.id;
+
     return {
       left: `${leftPercent}%`,
       width: `${Math.max(widthPercent, 1)}%`,
@@ -3866,6 +3919,8 @@
       borderColor: isSelected ? '#3b82f6' : colors.border,
       borderWidth: '1px',
       borderStyle: 'solid',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -3947,6 +4002,9 @@
     const colors = colorMap[color] || colorMap.violet;
     const isSelected = selectedItemKey.value === `${type}_${id}`;
 
+    // Check if this segment is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === type && dragInfo.value?.id === id;
+
     return {
       left: `${layout.startPercent}%`,
       width: `${layout.widthPercent}%`,
@@ -3956,6 +4014,8 @@
       borderStyle: 'solid',
       borderRadius: '6px',
       boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -4065,9 +4125,9 @@
     const colors = colorMap[color] || colorMap.violet;
     const isSelected = selectedItemKey.value === `${type}_${id}`;
 
-    // Use preview position during drag/resize
+    // Use resize preview position only (drag uses ghost element now)
     const preview = dragPreview.value;
-    const usePreview = preview && preview.type === type && preview.id === id;
+    const usePreview = preview && preview.type === type && preview.id === id && isResizing.value;
 
     const actualStartTime = usePreview ? preview.startTime : startTime;
     const actualEndTime = usePreview ? preview.endTime : endTime;
@@ -4077,6 +4137,9 @@
     const rightPercent = effectiveTimeToVisualPercent(actualEndTime);
     const widthPercent = Math.max(rightPercent - leftPercent, 1);
 
+    // Check if this item is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === type && dragInfo.value?.id === id;
+
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
@@ -4086,6 +4149,8 @@
       borderStyle: 'solid',
       borderRadius: '6px',
       boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -4093,9 +4158,9 @@
     const colors = colorMap.rose; // Use rose/pink for filters
     const isSelected = selectedItemKey.value === `filter_${filterSeg.id}`;
 
-    // Use preview position during drag/resize
+    // Use resize preview position only (drag uses ghost element now)
     const preview = dragPreview.value;
-    const usePreview = preview && preview.type === 'filter' && preview.id === filterSeg.id;
+    const usePreview = preview && preview.type === 'filter' && preview.id === filterSeg.id && isResizing.value;
 
     const startTime = usePreview ? preview.startTime : filterSeg.startTime;
     const endTime = usePreview ? preview.endTime : filterSeg.endTime;
@@ -4105,6 +4170,9 @@
     const rightPercent = effectiveTimeToVisualPercent(endTime);
     const widthPercent = Math.max(rightPercent - leftPercent, 1);
 
+    // Check if this item is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDragging.value && dragInfo.value?.type === 'filter' && dragInfo.value?.id === filterSeg.id;
+
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
@@ -4114,6 +4182,8 @@
       borderStyle: 'solid',
       borderRadius: '6px',
       boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -4171,7 +4241,8 @@
    */
   function getSnapTargets(excludeId?: string): SnapTarget[] {
     const targets: SnapTarget[] = [];
-    const preview = dragPreview.value;
+    // Only use preview for resize operations (drag uses CSS transforms now)
+    const preview = isResizing.value ? dragPreview.value : null;
 
     if (props.editorMode) {
       // Editor mode: collect video source edges
@@ -5420,11 +5491,12 @@
   ): Record<string, string> {
     const isSelected = selectedItemKey.value === `source_${source.id}`;
     
-    // Check for drag/resize preview
+    // Check for resize preview only (drag uses ghost element now)
     let startTime = source.start_time;
     let endTime = source.end_time;
     
-    if (_preview && _preview.type === 'source' && _preview.id === source.id) {
+    // Only apply position preview for resize operations, not drag
+    if (_preview && _preview.type === 'source' && _preview.id === source.id && isResizing.value) {
       startTime = _preview.startTime;
       endTime = _preview.endTime;
     }
@@ -5450,13 +5522,9 @@
       }
     }
 
-    // Apply Slide Adjustment (Visual)
+    // Apply Slide Adjustment (Visual) - slide tool uses ghost element
     if (slideState.value && slideState.value.type === 'source') {
-        if (source.id === slideState.value.id) {
-            // Target moves by delta (handled by _preview check normally, but be explicit)
-            startTime = slideState.value.originalStartTime + slideState.value.delta;
-            endTime = slideState.value.originalEndTime + slideState.value.delta;
-        } else if (source.id === slideState.value.leftNeighborId) {
+        if (source.id === slideState.value.leftNeighborId) {
             // Left neighbor end changes
             endTime += slideState.value.delta;
         } else if (source.id === slideState.value.rightNeighborId) {
@@ -5469,10 +5537,15 @@
     const leftPercent = (startTime / duration) * 100;
     const widthPercent = ((endTime - startTime) / duration) * 100;
 
+    // Check if this source is being dragged - hide completely so ghost is the only visual
+    const isDraggingThis = isDraggingSource.value && dragSourceInfo.value?.sourceId === source.id;
+
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
       borderColor: isSelected ? '#06b6d4' : 'transparent', // Cyan-500
+      opacity: isDraggingThis ? '0' : '1',
+      pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
 
@@ -5524,6 +5597,28 @@
 
     selectItem('source', source.id);
 
+    // Capture the clicked element's position for ghost
+    const targetEl = e.currentTarget as HTMLElement;
+    const rect = targetEl.getBoundingClientRect();
+
+    // Initialize ghost state and position
+    dragGhostState.value = {
+      visible: true,
+      type: 'source',
+      id: source.id,
+      initialLeft: rect.left,
+      initialTop: rect.top,
+      width: rect.width,
+      height: rect.height,
+      label: source.source_name || 'Video',
+      color: 'cyan',
+    };
+
+    // Reset ghost transform
+    if (dragGhostRef.value) {
+      dragGhostRef.value.style.transform = 'translateX(0px)';
+    }
+
     isDraggingSource.value = true;
     dragSourceInfo.value = {
       sourceId: source.id,
@@ -5544,6 +5639,7 @@
 
     const rect = videoTrackContentRef.value.getBoundingClientRect();
     const deltaX = e.clientX - dragSourceInfo.value.startX;
+    const deltaY = e.clientY - dragSourceInfo.value.startY;
     const deltaTime = (deltaX / rect.width) * props.duration;
 
     // Detect which layer the mouse is currently over by checking all layer elements
@@ -5575,7 +5671,6 @@
 
     // Fallback: If no existing layers found or not over any track, use pixel-based calculation
     if (!foundLayer) {
-      const deltaY = e.clientY - dragSourceInfo.value.startY;
       const LAYER_HEIGHT = 40;
       const trackOffset = Math.round(-deltaY / LAYER_HEIGHT);
       targetTrackIndex = Math.max(0, dragSourceInfo.value.originalTrackIndex + trackOffset);
@@ -5665,20 +5760,45 @@
       }
     }
 
-    // Update local preview state (no database call) for smooth dragging
-    dragPreview.value = {
-      type: 'source',
-      id: dragSourceInfo.value.sourceId,
-      startTime: newStartTime,
-      endTime: newEndTime,
-    };
+    // Calculate snap-adjusted deltaX for visual transform
+    const snapDelta = newStartTime - dragSourceInfo.value.originalStartTime;
+    const snapAdjustedDeltaX = (snapDelta / props.duration) * rect.width;
+
+    // Store the snap-adjusted delta for onSourceDragEnd
+    dragSourceInfo.value.currentDeltaX = snapAdjustedDeltaX;
+
+    // DIRECT DOM MANIPULATION - bypasses Vue reactivity completely for zero-lag dragging
+    // Only horizontal movement - segments stay within their track
+    if (dragGhostRef.value) {
+      dragGhostRef.value.style.transform = `translateX(${deltaX}px)`;
+    }
   }
 
   function onSourceDragEnd() {
+    // Hide the ghost element immediately
+    if (dragGhostState.value) {
+      dragGhostState.value = { ...dragGhostState.value, visible: false };
+    }
+
     // Commit the final position to database only on drag end
-    if (dragPreview.value && dragPreview.value.type === 'source' && dragSourceInfo.value) {
-      let finalStartTime = dragPreview.value.startTime;
-      let finalEndTime = dragPreview.value.endTime;
+    if (dragSourceInfo.value && videoTrackContentRef.value) {
+      const rect = videoTrackContentRef.value.getBoundingClientRect();
+      const deltaX = dragSourceInfo.value.currentDeltaX ?? 0;
+      const deltaTime = (deltaX / rect.width) * props.duration;
+      const duration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
+      
+      let finalStartTime = dragSourceInfo.value.originalStartTime + deltaTime;
+      let finalEndTime = finalStartTime + duration;
+      
+      // Clamp to timeline bounds
+      if (finalStartTime < 0) {
+        finalStartTime = 0;
+        finalEndTime = duration;
+      }
+      if (finalEndTime > props.duration) {
+        finalEndTime = props.duration;
+        finalStartTime = props.duration - duration;
+      }
 
       console.log(
         '[onSourceDragEnd] Initial position:',
@@ -5759,7 +5879,7 @@
 
     isDraggingSource.value = false;
     dragSourceInfo.value = null;
-    dragPreview.value = null;
+    dragGhostState.value = null;
     activeSnapTime.value = null;
     activeSnapTrackType.value = null;
     document.removeEventListener('mousemove', onSourceDragMove);
@@ -6356,6 +6476,48 @@
     const originalLayer = ['text', 'sticker', 'watermark'].includes(type) ? (item.layer ?? 0) : undefined;
     const originalTrackIndex = type === 'source' ? (item.track_index ?? 0) : undefined;
 
+    // Capture the clicked element's position for ghost
+    const targetEl = e.currentTarget as HTMLElement;
+    const rect = targetEl.getBoundingClientRect();
+    
+    // Determine color based on type
+    const colorMap: Record<string, string> = {
+      trim: 'violet',
+      source: 'cyan',
+      audio: 'emerald',
+      text: 'amber',
+      sticker: 'rose',
+      watermark: 'violet',
+      effect: 'cyan',
+      filter: 'rose',
+    };
+    
+    // Get label for ghost
+    let label = '';
+    if (type === 'audio') label = item.name || 'Audio';
+    else if (type === 'text') label = item.text?.substring(0, 20) || 'Text';
+    else if (type === 'source') label = item.source_name || 'Video';
+    else if (type === 'trim') label = 'Segment';
+    else label = type.charAt(0).toUpperCase() + type.slice(1);
+
+    // Initialize ghost state and position
+    dragGhostState.value = {
+      visible: true,
+      type,
+      id,
+      initialLeft: rect.left,
+      initialTop: rect.top,
+      width: rect.width,
+      height: rect.height,
+      label,
+      color: colorMap[type] || 'violet',
+    };
+
+    // Reset ghost transform
+    if (dragGhostRef.value) {
+      dragGhostRef.value.style.transform = 'translateX(0px)';
+    }
+
     isDragging.value = true;
     dragInfo.value = {
       type,
@@ -6381,7 +6543,6 @@
     const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
     const deltaX = e.clientX - dragInfo.value.startX;
     const deltaY = e.clientY - dragInfo.value.startY;
-    const deltaPercent = (deltaX / dragInfo.value.trackContentWidth) * 100;
 
     // For audio tracks, detect which track row the mouse is over
     if (dragInfo.value.type === 'audio' && dragInfo.value.originalTrackOrder !== undefined) {
@@ -6470,15 +6631,11 @@
                 originalEndTime: dragInfo.value.originalEndTime
              };
              
-             // Update preview position
-             const newStartTime = dragInfo.value.originalStartTime + deltaTime;
-             const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
-             dragPreview.value = {
-                type: 'source',
-                id: dragInfo.value.id,
-                startTime: newStartTime,
-                endTime: newStartTime + itemDuration
-             };
+             // DIRECT DOM MANIPULATION - bypasses Vue reactivity for smooth dragging
+             // Only horizontal movement - segments stay within their track
+             if (dragGhostRef.value) {
+               dragGhostRef.value.style.transform = `translateX(${deltaX}px)`;
+             }
              return;
         }
     }
@@ -6494,8 +6651,10 @@
       dragInfo.value.targetLayer = Math.max(0, targetLayer);
     }
 
+    // Calculate snapped position for snap line indicator (but don't update dragPreview)
     let newStartTime: number;
     let newEndTime: number;
+    let snapAdjustedDeltaX = deltaX;
 
     // For trim segments and audio, use linear calculation (they have different coordinate systems)
     if (dragInfo.value.type === 'trim') {
@@ -6512,7 +6671,7 @@
         newStartTime = props.duration - itemDuration;
       }
 
-      // Apply snapping for trim segments
+      // Apply snapping for trim segments - calculate snap for visual feedback
       const snapResult = applySnapToSegment(newStartTime, newEndTime, dragInfo.value.id);
       if (snapResult.didSnap) {
         // Re-apply bounds after snapping
@@ -6528,6 +6687,9 @@
         }
         activeSnapTime.value = snapResult.snapTime;
         activeSnapTrackType.value = snapResult.snapTrackType;
+        // Adjust visual deltaX to account for snap
+        const snapDelta = newStartTime - dragInfo.value.originalStartTime;
+        snapAdjustedDeltaX = (snapDelta / props.duration) * dragInfo.value.trackContentWidth;
       } else {
         activeSnapTime.value = null;
         activeSnapTrackType.value = null;
@@ -6552,6 +6714,9 @@
         }
         activeSnapTime.value = snapResult.snapTime;
         activeSnapTrackType.value = snapResult.snapTrackType;
+        // Adjust visual deltaX to account for snap
+        const snapDelta = newStartTime - dragInfo.value.originalStartTime;
+        snapAdjustedDeltaX = (snapDelta / totalDuration.value) * dragInfo.value.trackContentWidth;
       } else {
         activeSnapTime.value = null;
         activeSnapTrackType.value = null;
@@ -6559,6 +6724,7 @@
     } else {
       // For text, sticker, effect, filter - CapCut-style free positioning
       // These overlay items can extend beyond the source video duration
+      const deltaPercent = (deltaX / dragInfo.value.trackContentWidth) * 100;
       // Calculate original visual position and new visual position
       const originalStartPercent = effectiveTimeToVisualPercent(dragInfo.value.originalStartTime);
       const newStartPercent = Math.max(0, originalStartPercent + deltaPercent);
@@ -6584,22 +6750,33 @@
         }
         activeSnapTime.value = snapResult.snapTime;
         activeSnapTrackType.value = snapResult.snapTrackType;
+        // Adjust visual deltaX to account for snap
+        const snappedPercent = effectiveTimeToVisualPercent(newStartTime);
+        const originalPercent = effectiveTimeToVisualPercent(dragInfo.value.originalStartTime);
+        snapAdjustedDeltaX = ((snappedPercent - originalPercent) / 100) * dragInfo.value.trackContentWidth;
       } else {
         activeSnapTime.value = null;
         activeSnapTrackType.value = null;
       }
     }
 
-    // Update local preview state (no database call)
-    dragPreview.value = {
-      type: dragInfo.value.type,
-      id: dragInfo.value.id,
-      startTime: newStartTime,
-      endTime: newEndTime,
-    };
+    // Store the final delta for use in onDragEnd (minimal reactive update)
+    dragInfo.value.currentDeltaX = snapAdjustedDeltaX;
+    dragInfo.value.currentDeltaY = deltaY;
+
+    // DIRECT DOM MANIPULATION - bypasses Vue reactivity completely for zero-lag dragging
+    // Only horizontal movement - segments stay within their track
+    if (dragGhostRef.value) {
+      dragGhostRef.value.style.transform = `translateX(${deltaX}px)`;
+    }
   }
 
   function onDragEnd() {
+    // Hide the ghost element immediately
+    if (dragGhostState.value) {
+      dragGhostState.value = { ...dragGhostState.value, visible: false };
+    }
+
     // Commit the final position to database with undo/redo support
     if (dragInfo.value) {
       
@@ -6616,6 +6793,7 @@
           isDragging.value = false;
           dragInfo.value = null;
           slipState.value = null;
+          dragGhostState.value = null;
           document.removeEventListener('mousemove', onDragMove);
           document.removeEventListener('mouseup', onDragEnd);
           // Trigger final waveform render after slip edit
@@ -6638,7 +6816,7 @@
           isDragging.value = false;
           dragInfo.value = null;
           slideState.value = null;
-          dragPreview.value = null; // Clear preview
+          dragGhostState.value = null;
           document.removeEventListener('mousemove', onDragMove);
           document.removeEventListener('mouseup', onDragEnd);
           // Trigger final waveform render after slide edit
@@ -6646,73 +6824,117 @@
           return;
       }
 
-      if (dragPreview.value) {
-      const type = dragPreview.value.type;
-
-      // For video sources with cross-track dragging
-      if (
-        type === 'source' &&
-        dragInfo.value.targetTrackIndex !== undefined &&
-        dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex
-      ) {
-        // Video source was dragged to a different track
-        emit('updateSource', dragPreview.value.id, {
-          start_time: dragPreview.value.startTime,
-          end_time: dragPreview.value.endTime,
-          track_index: dragInfo.value.targetTrackIndex,
-        });
-      } else if (
-        type === 'audio' &&
-        dragInfo.value.targetTrackOrder !== undefined &&
-        dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder
-      ) {
-        // Audio was dragged to a different track
-        emit('updateAudioTrack', dragPreview.value.id, {
-          startTime: dragPreview.value.startTime,
-          endTime: dragPreview.value.endTime,
-          trackOrder: dragInfo.value.targetTrackOrder,
-        });
-      } else if (['text', 'sticker', 'watermark'].includes(type)) {
-        // Visual overlays always use direct update to preserve layer property
-        const currentLayer = dragInfo.value.targetLayer ?? dragInfo.value.originalLayer ?? 0;
-        const updateData: any = {
-          startTime: dragPreview.value.startTime,
-          endTime: dragPreview.value.endTime,
-          layer: currentLayer,
-        };
-
-        if (type === 'text') {
-          emit('updateTextOverlay', dragPreview.value.id, updateData);
-        } else if (type === 'sticker') {
-          emit('updateSticker', dragPreview.value.id, updateData);
-        } else if (type === 'watermark') {
-          emit('updateWatermark', dragPreview.value.id, updateData);
+      // Compute final position from stored delta
+      const deltaX = dragInfo.value.currentDeltaX ?? 0;
+      if (deltaX !== 0 || dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder || 
+          dragInfo.value.targetLayer !== dragInfo.value.originalLayer ||
+          dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex) {
+        const type = dragInfo.value.type;
+        const id = dragInfo.value.id;
+        const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
+        
+        let newStartTime: number;
+        let newEndTime: number;
+        
+        // Calculate final time based on item type
+        if (type === 'trim') {
+          const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * props.duration;
+          newStartTime = dragInfo.value.originalStartTime + deltaTime;
+          newEndTime = newStartTime + itemDuration;
+          
+          // Clamp to bounds
+          if (newStartTime < 0) {
+            newStartTime = 0;
+            newEndTime = itemDuration;
+          }
+          if (newEndTime > props.duration) {
+            newEndTime = props.duration;
+            newStartTime = props.duration - itemDuration;
+          }
+        } else if (type === 'audio') {
+          const deltaTime = (deltaX / dragInfo.value.trackContentWidth) * totalDuration.value;
+          newStartTime = dragInfo.value.originalStartTime + deltaTime;
+          newEndTime = newStartTime + itemDuration;
+          
+          if (newStartTime < 0) {
+            newStartTime = 0;
+            newEndTime = itemDuration;
+          }
+        } else {
+          // For text, sticker, effect, filter, source - CapCut-style free positioning
+          const deltaPercent = (deltaX / dragInfo.value.trackContentWidth) * 100;
+          const originalStartPercent = effectiveTimeToVisualPercent(dragInfo.value.originalStartTime);
+          const newStartPercent = Math.max(0, originalStartPercent + deltaPercent);
+          
+          newStartTime = visualPercentToEffectiveTime(newStartPercent);
+          newEndTime = newStartTime + itemDuration;
+          
+          if (newStartTime < 0) {
+            newStartTime = 0;
+            newEndTime = itemDuration;
+          }
         }
-      } else if (['effect', 'audio', 'filter'].includes(type)) {
-        // For track types that support undo/redo, emit moveTrack event
-        emit('moveTrack', {
-          type,
-          id: dragPreview.value.id,
-          originalStartTime: dragInfo.value.originalStartTime,
-          originalEndTime: dragInfo.value.originalEndTime,
-          newStartTime: dragPreview.value.startTime,
-          newEndTime: dragPreview.value.endTime,
-        });
-      } else {
-        // For other types (trim, source), use direct update
-        emitUpdate(
-          dragPreview.value.type,
-          dragPreview.value.id,
-          dragPreview.value.startTime,
-          dragPreview.value.endTime
-        );
+
+        // For video sources with cross-track dragging
+        if (
+          type === 'source' &&
+          dragInfo.value.targetTrackIndex !== undefined &&
+          dragInfo.value.targetTrackIndex !== dragInfo.value.originalTrackIndex
+        ) {
+          // Video source was dragged to a different track
+          emit('updateSource', id, {
+            start_time: newStartTime,
+            end_time: newEndTime,
+            track_index: dragInfo.value.targetTrackIndex,
+          });
+        } else if (
+          type === 'audio' &&
+          dragInfo.value.targetTrackOrder !== undefined &&
+          dragInfo.value.targetTrackOrder !== dragInfo.value.originalTrackOrder
+        ) {
+          // Audio was dragged to a different track
+          emit('updateAudioTrack', id, {
+            startTime: newStartTime,
+            endTime: newEndTime,
+            trackOrder: dragInfo.value.targetTrackOrder,
+          });
+        } else if (['text', 'sticker', 'watermark'].includes(type)) {
+          // Visual overlays always use direct update to preserve layer property
+          const currentLayer = dragInfo.value.targetLayer ?? dragInfo.value.originalLayer ?? 0;
+          const updateData: any = {
+            startTime: newStartTime,
+            endTime: newEndTime,
+            layer: currentLayer,
+          };
+
+          if (type === 'text') {
+            emit('updateTextOverlay', id, updateData);
+          } else if (type === 'sticker') {
+            emit('updateSticker', id, updateData);
+          } else if (type === 'watermark') {
+            emit('updateWatermark', id, updateData);
+          }
+        } else if (['effect', 'audio', 'filter'].includes(type)) {
+          // For track types that support undo/redo, emit moveTrack event
+          emit('moveTrack', {
+            type,
+            id,
+            originalStartTime: dragInfo.value.originalStartTime,
+            originalEndTime: dragInfo.value.originalEndTime,
+            newStartTime,
+            newEndTime,
+          });
+        } else {
+          // For other types (trim, source), use direct update
+          emitUpdate(type, id, newStartTime, newEndTime);
+        }
       }
-    }
     }
 
     isDragging.value = false;
     dragInfo.value = null;
     dragPreview.value = null;
+    dragGhostState.value = null;
     activeSnapTime.value = null;
     activeSnapTrackType.value = null;
 
