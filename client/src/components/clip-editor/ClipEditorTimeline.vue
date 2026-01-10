@@ -415,13 +415,13 @@
           >
             <!-- Full-width Timestamp Ruler - Enhanced -->
             <div
-              class="h-8 border-b border-white/[0.08] flex items-center bg-gradient-to-b from-[#141416] to-[#0d0d0d] sticky top-0 z-50 timeline-ruler"
+              class="h-8 border-b border-white/[0.08] flex items-center bg-gradient-to-b from-[#141416] to-[#0d0d0d] sticky top-0 z-[80] timeline-ruler"
               @wheel="onRulerWheel"
               title="Scroll to zoom"
             >
               <!-- Track label spacer - matches track header width -->
               <div
-                class="w-[120px] h-full flex items-center justify-start pl-3 gap-2 flex-shrink-0 sticky left-0 z-[70] bg-gradient-to-b from-[#141416] to-[#0d0d0d] border-r border-white/[0.06]"
+                class="w-[120px] h-full flex items-center justify-start pl-3 gap-2 flex-shrink-0 sticky left-0 z-[90] bg-gradient-to-b from-[#141416] to-[#0d0d0d] border-r border-white/[0.06]"
               >
                 <span class="text-[10px] font-medium text-white/50 uppercase tracking-wider">Timeline</span>
               </div>
@@ -550,7 +550,7 @@
               v-for="layerGroup in visualLayers"
               :key="`layer-${layerGroup.layer}`"
               :data-layer-track="layerGroup.layer"
-              class="flex items-center h-11 relative"
+              class="flex items-center h-11 relative border-b border-white/[0.04]"
               :class="{
                 'bg-purple-500/10 ring-2 ring-purple-500/40 ring-inset':
                   (isDragging &&
@@ -832,7 +832,7 @@
             <!-- Legacy single tracks (kept for backward compatibility if no layers defined) -->
             <div
               v-if="textOverlays.length > 0 && visualOverlayLayers.length === 0"
-              class="flex items-center h-11 relative"
+              class="flex items-center h-11 relative border-b border-white/[0.04]"
             >
               <div
                 class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
@@ -887,7 +887,7 @@
               </div>
             </div>
 
-            <div v-if="effects.length > 0" class="flex items-center h-11 relative">
+            <div v-if="effects.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
               <div
                 class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
@@ -931,7 +931,7 @@
               </div>
             </div>
 
-            <div v-if="filterSegments.length > 0" class="flex items-center h-11 relative">
+            <div v-if="filterSegments.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
               <div
                 class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
               >
@@ -977,7 +977,7 @@
 
             <!-- Source Track (Primary Video - Editor Mode) -->
             <template v-if="editorMode">
-              <div class="flex items-center h-[72px] relative">
+              <div class="flex items-center h-[72px] relative border-b border-white/[0.04]">
                 <div
                   class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
                 >
@@ -1146,7 +1146,7 @@
 
             <!-- Single Video Track (Clip Mode) -->
             <template v-else>
-              <div class="flex items-center h-[72px] relative">
+              <div class="flex items-center h-[72px] relative border-b border-white/[0.04]">
                 <div
                   class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
                 >
@@ -1239,7 +1239,7 @@
             <div
               v-for="(track, trackIndex) in audioTracks"
               :key="track.id"
-              class="flex items-center relative transition-all duration-200"
+              class="flex items-center relative transition-all duration-200 border-b border-white/[0.04]"
               :class="{
                 'bg-emerald-500/10 ring-2 ring-emerald-500/40 ring-inset':
                   isDragging && dragInfo?.type === 'audio' && dragInfo?.targetTrackOrder === track.trackOrder,
