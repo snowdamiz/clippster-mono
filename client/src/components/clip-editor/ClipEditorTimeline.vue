@@ -1634,6 +1634,7 @@
   } from 'lucide-vue-next';
   import { useTimelineTools, type TimelineTool } from '@/composables/useTimelineTools';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+  import { useToast } from '@/composables/useToast';
   import { waveformService, useWaveform, type WaveformPeak, type AudioData } from '@/services/waveformService';
   import { renderWaveform, renderAudioTrackWaveform, WAVEFORM_COLORS, createThrottledRenderer } from '@/utils/waveformRenderer';
   import type { Track, Keyframe, ItemType } from '@/types/timeline-model';
@@ -1785,6 +1786,8 @@
     isSlipTool,
     isSlideTool,
   } = useTimelineTools();
+
+  const { loading: toastLoading, success: toastSuccess, error: toastError, removeToast } = useToast();
 
   function getTimelineCursor() {
     if (isRazorTool.value) return 'text'; // Razor often looks like a I-beam or specialized cursor
@@ -5790,6 +5793,9 @@
     closeSegmentContextMenu();
 
     isExtractingAudio.value = true;
+    
+    // Show loading toast
+    const loadingToastId = toastLoading('Extracting Audio', 'Processing segment');
 
     try {
       console.log('[ClipEditorTimeline] Extracting audio from segment:', segment.id);
@@ -5830,8 +5836,15 @@
         endTime: audioEndTime,
         sourceName: 'Extracted Audio',
       });
+      
+      // Remove loading toast and show success
+      removeToast(loadingToastId);
+      toastSuccess('Audio Extracted', 'Audio track added to timeline');
     } catch (error) {
       console.error('[ClipEditorTimeline] Failed to extract audio:', error);
+      // Remove loading toast and show error
+      removeToast(loadingToastId);
+      toastError('Extraction Failed', error instanceof Error ? error.message : 'Failed to extract audio');
     } finally {
       isExtractingAudio.value = false;
     }
@@ -5857,6 +5870,12 @@
     closeSourceContextMenu();
 
     isExtractingAudio.value = true;
+    
+    // Show loading toast
+    const loadingToastId = toastLoading(
+      'Extracting Audio',
+      `Processing "${source.source_name || 'video'}"`
+    );
 
     try {
       console.log('[ClipEditorTimeline] Extracting audio from source:', source.id);
@@ -5916,8 +5935,15 @@
         endTime: audioEndTime,
         sourceName: source.source_name,
       });
+      
+      // Remove loading toast and show success
+      removeToast(loadingToastId);
+      toastSuccess('Audio Extracted', 'Audio track added to timeline');
     } catch (error) {
       console.error('[ClipEditorTimeline] Failed to extract audio:', error);
+      // Remove loading toast and show error
+      removeToast(loadingToastId);
+      toastError('Extraction Failed', error instanceof Error ? error.message : 'Failed to extract audio');
     } finally {
       isExtractingAudio.value = false;
     }
@@ -7707,9 +7733,10 @@
   });
 
   // Computed position for snap indicator line (0-1 range like playhead)
+  // Must use totalDuration.value to match segment positioning via effectiveTimeToVisualPercent
   const snapIndicatorPosition = computed(() => {
     if (activeSnapTime.value === null) return null;
-    const duration = props.editorMode ? props.duration : totalDuration.value;
+    const duration = totalDuration.value;
     if (duration <= 0) return null;
     return activeSnapTime.value / duration;
   });

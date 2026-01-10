@@ -94,14 +94,17 @@ pub async fn start_video_server_impl() {
                                 parts[0].parse::<u64>().unwrap_or(0)
                             };
 
-                            let end = if parts[1].is_empty() {
+                            let requested_end = if parts[1].is_empty() {
                                 file_size - 1
                             } else {
                                 parts[1].parse::<u64>().unwrap_or(file_size - 1)
                             };
+                            
+                            // Clamp end to file size (standard HTTP range behavior)
+                            let end = std::cmp::min(requested_end, file_size - 1);
 
-                            // Validate range and ensure it's not too large
-                            if start < file_size && end < file_size && start <= end {
+                            // Validate range
+                            if start < file_size && start <= end {
                                 let content_length = end - start + 1;
 
                                 // For very large ranges, serve the first 50MB chunk instead
