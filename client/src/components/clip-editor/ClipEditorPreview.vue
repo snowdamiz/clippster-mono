@@ -15,9 +15,7 @@
       <div
         v-show="showFramedPreview"
         class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black overflow-hidden"
-        :class="isSingleRegion ? 'cursor-pointer' : ''"
         :style="getFramedContainerStyle()"
-        @click="isSingleRegion ? onVideoClick() : undefined"
       >
         <!-- Framed video element - used for non-16:9 single region mode -->
         <video
@@ -54,7 +52,7 @@
           </div>
 
           <!-- Click handler overlay for multi-region -->
-          <div class="absolute inset-0 cursor-pointer" @click="onVideoClick" />
+          <div class="absolute inset-0" />
         </template>
       </div>
 
@@ -63,18 +61,17 @@
       <video
         ref="videoRef"
         :src="videoSrc || ''"
-        class="max-w-full max-h-full object-contain cursor-pointer"
+        class="max-w-full max-h-full object-contain"
         :style="{
           ...(editorMode ? getMainVideoStyle() : getVideoFilterStyle()),
           visibility: showFramedPreview ? 'hidden' : 'visible',
-          pointerEvents: showFramedPreview ? 'none' : 'auto'
+          pointerEvents: 'none'
         }"
         @loadedmetadata="onLoadedMetadata"
         @timeupdate="onTimeUpdate"
         @ended="onEnded"
         @play="onPlay"
         @pause="onPause"
-        @click="onVideoClick"
       />
 
       <!-- Hidden audio-only video for framed multi-region mode -->
@@ -96,7 +93,7 @@
         v-if="editorMode && (preloadVideoSrc || activeVideoIndex === 1)"
         ref="preloadVideoRef"
         :src="activePreloadSrc"
-        class="max-w-full max-h-full object-contain cursor-pointer absolute inset-0 m-auto"
+        class="max-w-full max-h-full object-contain absolute inset-0 m-auto pointer-events-none"
         :style="getPreloadVideoStyle()"
         preload="auto"
         @canplaythrough="onPreloadCanPlay"
@@ -105,13 +102,12 @@
         @ended="onEnded"
         @play="onPlay"
         @pause="onPause"
-        @click="onVideoClick"
       />
 
       <!-- Overlay Container - matches video dimensions -->
       <div
         ref="overlayContainerRef"
-        class="absolute overflow-hidden"
+        class="absolute overflow-hidden z-10"
         :style="getOverlayContainerPositionStyle()"
         @click.self="onOverlayContainerClick"
       >
@@ -133,6 +129,7 @@
             :is-playing="isPlaying"
             :selected-item-ids="effectiveSelectedItemIds"
             :canvas-size="containerSize"
+            :aspect-ratio="previewAspectRatio"
             :scale-overrides="unifiedScaleOverrides"
             :rotation-overrides="unifiedRotationOverrides"
             :width-overrides="unifiedWidthOverrides"
@@ -174,14 +171,6 @@
           :style="getTemperatureStyle()"
         />
 
-        <!-- Play Button (centered, doesn't block overlay interactions) -->
-        <button
-          v-if="!isPlaying"
-          @click.stop="emit('togglePlay')"
-          class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm flex items-center justify-center transition-colors pointer-events-auto z-10"
-        >
-          <Play class="w-6 h-6 text-white ml-0.5" />
-        </button>
       </div>
     </div>
 
@@ -360,6 +349,7 @@
   interface StickerRotateState {
     isRotating: boolean;
     id: string | null;
+    itemType: 'sticker' | 'text' | 'watermark' | null; // Track item type for proper emit
     startAngle: number;
     startRotation: number;
     centerX: number;
@@ -447,6 +437,8 @@
       position: { x: number; y: number }
     ): void;
     (e: 'updateOverlayWidth', id: string, width: number): void;
+    (e: 'updateOverlayRotation', id: string, rotation: number): void;
+    (e: 'updateOverlayScale', id: string, scale: number): void;
     (e: 'updateStickerScale', id: string, scale: number): void;
     (e: 'updateStickerRotation', id: string, rotation: number): void;
     (e: 'updateWatermarkScale', id: string, scale: number): void;
@@ -456,6 +448,8 @@
     // Completion events for undo/redo
     (e: 'overlayDragEnd', type: 'text' | 'sticker' | 'watermark', id: string): void;
     (e: 'overlayResizeEnd', id: string): void;
+    (e: 'overlayRotateEnd', id: string): void;
+    (e: 'overlayScaleEnd', id: string): void;
     (e: 'stickerResizeEnd', id: string): void;
     (e: 'stickerRotateEnd', id: string): void;
     (e: 'watermarkResizeEnd', id: string): void;
@@ -471,6 +465,7 @@
   // (Moved to lower section to avoid duplication)
 
   function handleTrackItemResizeStart(event: MouseEvent, item: TimelineItem, handle: 'tl' | 'tr' | 'bl' | 'br') {
+    console.log('[ClipEditorPreview] handleTrackItemResizeStart called', { itemType: item.type, itemId: item.id, handle });
     // Map unified resize to legacy handlers
     if (item.type === 'sticker') {
       const sticker = props.stickers.find((s) => s.id === item.id);
@@ -479,8 +474,9 @@
       const watermark = props.watermarks.find((w) => w.id === item.id);
       if (watermark) startWatermarkResize(event, watermark);
     } else if (item.type === 'text') {
-      const side = handle === 'tr' || handle === 'br' ? 'right' : 'left';
-      startResize(event, item.id, side);
+      // Use scale-based resize for text (like stickers) for visual feedback
+      const overlay = props.textOverlays.find((o) => o.id === item.id);
+      if (overlay) startTextResize(event, overlay);
     }
   }
 
@@ -497,13 +493,25 @@
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    // Determine current rotation
+    // Determine current rotation - for text, check perRatioConfigs first
     const relativeTime = props.currentTime - item.startTime;
-    const currentRotation = AnimationService.getValueAtTime(item, 'rotation', relativeTime, item.rotation ?? 0);
+    let currentRotation = 0;
+    
+    if (item.type === 'text') {
+      // For text, get rotation from perRatioConfigs or default
+      const overlay = props.textOverlays.find(o => o.id === item.id);
+      if (overlay) {
+        const ratioConfig = overlay.perRatioConfigs?.[props.previewAspectRatio];
+        currentRotation = ratioConfig?.rotation ?? overlay.rotation ?? 0;
+      }
+    } else {
+      currentRotation = AnimationService.getValueAtTime(item, 'rotation', relativeTime, item.rotation ?? 0);
+    }
 
     // Reuse stickerRotateState as generic rotate state
     stickerRotateState.isRotating = true;
     stickerRotateState.id = item.id;
+    stickerRotateState.itemType = item.type as 'sticker' | 'text' | 'watermark';
     stickerRotateState.centerX = centerX;
     stickerRotateState.centerY = centerY;
     stickerRotateState.startRotation = currentRotation;
@@ -512,8 +520,8 @@
     const startAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * (180 / Math.PI);
     stickerRotateState.startAngle = startAngle;
 
-    document.addEventListener('mousemove', onStickerRotateMove);
-    document.addEventListener('mouseup', onStickerRotateEnd);
+    document.addEventListener('mousemove', onUnifiedRotateMove);
+    document.addEventListener('mouseup', onUnifiedRotateEnd);
   }
 
   // Refs
@@ -995,10 +1003,11 @@
     startScale: 1,
   });
 
-  // Sticker rotate state
+  // Sticker rotate state (also used for text rotation)
   const stickerRotateState = reactive<StickerRotateState>({
     isRotating: false,
     id: null,
+    itemType: null,
     startAngle: 0,
     startRotation: 0,
     centerX: 0,
@@ -1008,6 +1017,26 @@
   // Local sticker scale/rotation tracking for instant feedback during drag
   const localStickerScales = ref<Record<string, number>>({});
   const localStickerRotations = ref<Record<string, number>>({});
+
+  // Text resize state (for scale-based resizing like stickers)
+  const textResizeState = reactive<{
+    isResizing: boolean;
+    id: string | null;
+    centerX: number;
+    centerY: number;
+    startDistance: number;
+    startScale: number;
+  }>({
+    isResizing: false,
+    id: null,
+    centerX: 0,
+    centerY: 0,
+    startDistance: 0,
+    startScale: 1,
+  });
+
+  // Local text scale tracking for instant feedback during resize
+  const localTextScales = ref<Record<string, number>>({});
 
   // Watermark resize state (for scale)
   const watermarkResizeState = reactive<WatermarkResizeState>({
@@ -1065,6 +1094,7 @@
     if (stickerResizeState.id) set.add(stickerResizeState.id);
     if (watermarkResizeState.id) set.add(watermarkResizeState.id);
     if (stickerRotateState.id) set.add(stickerRotateState.id);
+    if (textResizeState.id) set.add(textResizeState.id);
 
     return set;
   });
@@ -1074,6 +1104,7 @@
     return {
       ...localStickerScales.value,
       ...localWatermarkScales.value,
+      ...localTextScales.value,
     };
   });
 
@@ -2292,8 +2323,13 @@
     e.preventDefault();
     e.stopPropagation();
 
+    console.log('[ClipEditorPreview] startResize called', { overlayId, side });
+
     const overlay = props.textOverlays.find((o) => o.id === overlayId);
-    if (!overlay || !overlayContainerRef.value) return;
+    if (!overlay || !overlayContainerRef.value) {
+      console.log('[ClipEditorPreview] startResize early return', { overlay: !!overlay, containerRef: !!overlayContainerRef.value });
+      return;
+    }
 
     const config = getOverlayConfigForRatio(overlay);
     const currentStyle = config.style;
@@ -2323,7 +2359,10 @@
   }
 
   function onResizeMove(e: MouseEvent) {
-    if (!resizeState.isResizing || !overlayContainerRef.value || !resizeState.id) return;
+    if (!resizeState.isResizing || !overlayContainerRef.value || !resizeState.id) {
+      return;
+    }
+    console.log('[ClipEditorPreview] onResizeMove', { id: resizeState.id, clientX: e.clientX });
 
     const container = overlayContainerRef.value;
     const rect = container.getBoundingClientRect();
@@ -2344,6 +2383,8 @@
 
     // Clamp width to reasonable bounds (10% to 100%)
     newWidth = Math.max(10, Math.min(100, newWidth));
+
+    console.log('[ClipEditorPreview] onResizeMove setting width', { id: resizeState.id, newWidth, deltaXPercent });
 
     // Set local width immediately for instant feedback
     localDragWidths.value[resizeState.id] = newWidth;
@@ -2440,6 +2481,75 @@
     document.removeEventListener('mouseup', onStickerResizeEnd);
   }
 
+  // Text resize handlers (scale-based like stickers)
+  function startTextResize(e: MouseEvent, overlay: TextOverlay) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Get the text element to find its center
+    const textEl = (e.target as HTMLElement).closest('[data-item-id]') as HTMLElement;
+    if (!textEl) return;
+
+    const rect = textEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Calculate initial distance from center to mouse
+    const startDistance = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
+
+    // Get current scale from perRatioConfigs or default to 1
+    const ratioConfig = overlay.perRatioConfigs?.[props.previewAspectRatio];
+    const currentScale = ratioConfig?.scale ?? overlay.scale ?? 1;
+
+    textResizeState.isResizing = true;
+    textResizeState.id = overlay.id;
+    textResizeState.centerX = centerX;
+    textResizeState.centerY = centerY;
+    textResizeState.startDistance = startDistance;
+    textResizeState.startScale = currentScale;
+
+    document.addEventListener('mousemove', onTextResizeMove);
+    document.addEventListener('mouseup', onTextResizeEnd);
+  }
+
+  function onTextResizeMove(e: MouseEvent) {
+    if (!textResizeState.isResizing || !textResizeState.id) return;
+
+    // Calculate current distance from center to mouse
+    const currentDistance = Math.sqrt(
+      Math.pow(e.clientX - textResizeState.centerX, 2) + Math.pow(e.clientY - textResizeState.centerY, 2)
+    );
+
+    // Scale is proportional to distance ratio
+    const distanceRatio = textResizeState.startDistance > 0 ? currentDistance / textResizeState.startDistance : 1;
+
+    let newScale = textResizeState.startScale * distanceRatio;
+
+    // Enforce minimum scale (0.1x), no maximum limit
+    newScale = Math.max(0.1, newScale);
+
+    // Set local scale immediately for instant feedback
+    localTextScales.value[textResizeState.id] = newScale;
+
+    // Emit scale update
+    emit('updateOverlayScale', textResizeState.id, newScale);
+  }
+
+  function onTextResizeEnd() {
+    if (textResizeState.id) {
+      // Emit completion event for undo/redo
+      emit('overlayScaleEnd', textResizeState.id);
+      // Clear local scale after emit completes
+      delete localTextScales.value[textResizeState.id];
+    }
+
+    textResizeState.isResizing = false;
+    textResizeState.id = null;
+
+    document.removeEventListener('mousemove', onTextResizeMove);
+    document.removeEventListener('mouseup', onTextResizeEnd);
+  }
+
   // Sticker rotation handlers
   function startStickerRotate(e: MouseEvent, stickerId: string, stickerEl: HTMLElement, currentRotation: number) {
     e.preventDefault();
@@ -2497,9 +2607,59 @@
 
     stickerRotateState.isRotating = false;
     stickerRotateState.id = null;
+    stickerRotateState.itemType = null;
 
     document.removeEventListener('mousemove', onStickerRotateMove);
     document.removeEventListener('mouseup', onStickerRotateEnd);
+  }
+
+  // Unified rotation handlers for TrackRenderer items (text, sticker, watermark)
+  function onUnifiedRotateMove(e: MouseEvent) {
+    if (!stickerRotateState.isRotating || !stickerRotateState.id) return;
+
+    // Calculate current angle from center to mouse
+    const currentAngle =
+      Math.atan2(e.clientY - stickerRotateState.centerY, e.clientX - stickerRotateState.centerX) * (180 / Math.PI);
+
+    // Calculate rotation delta
+    const angleDelta = currentAngle - stickerRotateState.startAngle;
+    let newRotation = stickerRotateState.startRotation + angleDelta;
+
+    // Normalize rotation to -180 to 180 range
+    while (newRotation > 180) newRotation -= 360;
+    while (newRotation < -180) newRotation += 360;
+
+    // Set local rotation immediately for instant feedback
+    localStickerRotations.value[stickerRotateState.id] = newRotation;
+
+    // Emit rotation update based on item type
+    const roundedRotation = Math.round(newRotation);
+    if (stickerRotateState.itemType === 'text') {
+      emit('updateOverlayRotation', stickerRotateState.id, roundedRotation);
+    } else if (stickerRotateState.itemType === 'sticker') {
+      emit('updateStickerRotation', stickerRotateState.id, roundedRotation);
+    }
+    // Watermark rotation could be added here if needed
+  }
+
+  function onUnifiedRotateEnd() {
+    if (stickerRotateState.id) {
+      // Emit completion event for undo/redo based on item type
+      if (stickerRotateState.itemType === 'text') {
+        emit('overlayRotateEnd', stickerRotateState.id);
+      } else if (stickerRotateState.itemType === 'sticker') {
+        emit('stickerRotateEnd', stickerRotateState.id);
+      }
+      // Clear local rotation after emit completes
+      delete localStickerRotations.value[stickerRotateState.id];
+    }
+
+    stickerRotateState.isRotating = false;
+    stickerRotateState.id = null;
+    stickerRotateState.itemType = null;
+
+    document.removeEventListener('mousemove', onUnifiedRotateMove);
+    document.removeEventListener('mouseup', onUnifiedRotateEnd);
   }
 
   // Methods
@@ -3141,9 +3301,9 @@
   }
 
   function onOverlayContainerClick() {
-    // Toggle play when clicking on empty space in overlay container
+    // Clicking on empty space in overlay container clears selection
     if (!dragState.isDragging) {
-      emit('togglePlay');
+      emit('trackItemSelect', '', '');
     }
   }
 

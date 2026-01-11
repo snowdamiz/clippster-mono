@@ -527,6 +527,12 @@ pub fn run() {
                             sql: include_str!("../migrations/077_add_source_id_to_clip_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 78,
+                            description: "add_keyframes_to_video_editor_overlays",
+                            sql: include_str!("../migrations/078_add_keyframes_to_video_editor_overlays.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

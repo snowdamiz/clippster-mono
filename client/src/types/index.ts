@@ -727,7 +727,8 @@ export interface AudioTrack {
 export interface TextOverlayRatioConfig {
   position: { x: number; y: number }; // 0-100 percentage
   style: TextOverlayStyle;
-  // Future: could add scale, rotation, etc.
+  rotation?: number; // Rotation in degrees
+  scale?: number; // Scale factor (1.0 = 100%)
 }
 
 import type { Keyframe } from './timeline-model';
@@ -750,6 +751,8 @@ export interface TextOverlay {
   motionPreset?: 'none' | 'fade' | 'slide-up' | 'pop';
   motionDuration?: number; // seconds
   layer?: number; // Visual track layer (0 = bottom, higher = on top)
+  rotation?: number; // Default rotation in degrees
+  scale?: number; // Default scale factor (1.0 = 100%)
 }
 
 export interface TextOverlayStyle {
