@@ -391,710 +391,621 @@
     />
 
     <!-- Folder Contents Dialog -->
-    <div
-      v-if="showFolderDialog && folderProject"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    >
-      <div
-        class="bg-card rounded-lg w-full mx-4 border border-border flex flex-col overflow-hidden shadow-2xl transition-all duration-200 max-h-[80vh]"
-        :class="folderDialogWidthClass"
-      >
-        <!-- Header -->
-        <div class="py-2 px-3 border-b border-border flex items-center justify-between bg-black/30">
-          <div class="flex items-center gap-2.5 min-w-0">
-            <!-- Selection Controls (visible when items selected) -->
-            <div v-if="selectedFolderChildren.size > 0" class="flex items-center gap-3">
-              <button
-                @click="confirmBulkDeleteFolderChildren"
-                :disabled="hasAnySelectedFolderChildDetecting()"
-                :class="[
-                  'px-3 py-1.5 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all',
-                  hasAnySelectedFolderChildDetecting()
-                    ? 'bg-gray-500 cursor-not-allowed opacity-50'
-                    : 'bg-red-600 hover:bg-red-700',
-                ]"
-                :title="hasAnySelectedFolderChildDetecting() ? 'Cannot delete while detection is in progress' : ''"
-              >
-                <Trash2 class="h-4 w-4" />
-                Delete ({{ selectedFolderChildren.size }})
-              </button>
-              <span class="text-sm text-muted-foreground">{{ selectedFolderChildren.size }} selected</span>
-              <button
-                @click="clearFolderChildSelection"
-                class="text-xs text-muted-foreground hover:text-foreground font-medium"
-              >
-                Clear
-              </button>
-            </div>
-
-            <!-- Normal header (hidden when items selected) -->
-            <template v-else>
-              <div class="bg-primary/10 p-1.5 rounded-md shrink-0">
-                <FolderOpen class="h-4 w-4 text-primary" />
-              </div>
-              <h2 class="text-md font-medium text-foreground -mt-1 truncate" :title="folderProject.name">
-                {{ folderProject.name }}
-              </h2>
-            </template>
-          </div>
-          <button
-            @click="showFolderDialog = false"
-            class="p-2 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground"
-          >
-            <X class="h-5 w-5" />
-          </button>
-        </div>
-
-        <!-- Tabs -->
-        <div class="flex items-center border-b border-border px-4 bg-black/20">
-          <button
-            @click="onFolderTabChange('segments')"
-            :class="[
-              'relative px-4 py-2.5 text-sm font-medium transition-all duration-200 flex items-center gap-2',
-              folderActiveTab === 'segments' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80',
-            ]"
-          >
-            <FolderOpen class="h-4 w-4" />
-            Segments
-            <span class="text-xs bg-muted px-1.5 py-0.5 rounded-full">
-              {{ getEffectiveSegmentCount(folderProject.id) }}
-            </span>
+    <!-- Folder Contents Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showFolderDialog && folderProject"
+          class="folder-dialog__overlay"
+          @click.self="showFolderDialog = false"
+        >
+          <Transition name="dialog" appear>
             <div
-              v-if="folderActiveTab === 'segments'"
-              class="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
-            ></div>
-          </button>
-          <button
-            @click="onFolderTabChange('clips')"
-            :class="[
-              'relative px-4 py-2.5 text-sm font-medium transition-all duration-200 flex items-center gap-2',
-              folderActiveTab === 'clips' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground/80',
-            ]"
-          >
-            <Video class="h-4 w-4" />
-            Clips
-            <span class="text-xs bg-muted px-1.5 py-0.5 rounded-full">{{ folderTotalClipsCount }}</span>
-            <div
-              v-if="folderActiveTab === 'clips'"
-              class="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
-            ></div>
-          </button>
-        </div>
-
-        <!-- Content -->
-        <div class="flex-1 min-h-0 flex flex-col" :class="folderActiveTab === 'clips' ? '' : 'overflow-y-auto p-6'">
-          <!-- Segments Tab -->
-          <div
-            v-if="folderActiveTab === 'segments'"
-            class="grid gap-5"
-            :class="{
-              'grid-cols-1': paginatedFolderChildren.length <= 1,
-              'grid-cols-1 md:grid-cols-2': paginatedFolderChildren.length === 2,
-              'grid-cols-1 md:grid-cols-2 lg:grid-cols-3': paginatedFolderChildren.length >= 3,
-            }"
-          >
-            <div
-              v-for="project in paginatedFolderChildren"
-              :key="project.id"
-              class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all border border-border shadow-sm"
-              :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isFolderChildSelected(project.id) }"
-              @click="openWorkspace(project)"
+              v-if="showFolderDialog"
+              class="folder-dialog"
+              :class="folderDialogSizeClass"
+              role="dialog"
+              aria-modal="true"
             >
-              <!-- Selection Checkbox (visible on hover or when selected) -->
-              <div
-                class="absolute top-3 right-3 z-30 transition-opacity"
-                :class="isFolderChildSelected(project.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-                @click.stop="toggleFolderChildSelection(project.id)"
-              >
-                <div
-                  :class="[
-                    'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
-                    isFolderChildSelected(project.id)
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-black/60 text-white hover:bg-black/80',
-                  ]"
-                >
-                  <Check v-if="isFolderChildSelected(project.id)" class="w-4 h-4" />
+              <!-- Accent bar -->
+              <div class="folder-dialog__accent"></div>
+
+              <!-- Header (compact) -->
+              <div class="folder-dialog__header">
+                <div class="folder-dialog__header-left">
+                  <!-- Selection Controls (visible when items selected) -->
+                  <template v-if="selectedFolderChildren.size > 0">
+                    <button
+                      @click="confirmBulkDeleteFolderChildren"
+                      :disabled="hasAnySelectedFolderChildDetecting()"
+                      class="folder-dialog__selection-delete"
+                      :class="{ 'folder-dialog__selection-delete--disabled': hasAnySelectedFolderChildDetecting() }"
+                      :title="
+                        hasAnySelectedFolderChildDetecting() ? 'Cannot delete while detection is in progress' : ''
+                      "
+                    >
+                      <Trash2 :size="14" />
+                      Delete ({{ selectedFolderChildren.size }})
+                    </button>
+                    <span class="folder-dialog__selection-count">{{ selectedFolderChildren.size }} selected</span>
+                    <button @click="clearFolderChildSelection" class="folder-dialog__selection-clear">Clear</button>
+                  </template>
+
+                  <!-- Normal header (hidden when items selected) -->
+                  <template v-else>
+                    <div class="folder-dialog__header-icon">
+                      <FolderOpen :size="16" />
+                    </div>
+                    <h2 class="folder-dialog__title" :title="folderProject.name">{{ folderProject.name }}</h2>
+                  </template>
                 </div>
-              </div>
 
-              <!-- Thumbnail background -->
-              <div
-                v-if="getThumbnailUrl(project.id)"
-                class="absolute inset-0 z-0 rounded-md"
-                :style="{
-                  backgroundImage: `url(${getThumbnailUrl(project.id)})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat',
-                }"
-              >
-                <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60"></div>
-              </div>
-              <div v-else class="absolute inset-0 z-0 bg-muted">
-                <div class="absolute inset-0 bg-gradient-to-br from-black/20 via-transparent to-black/40"></div>
-                <div class="absolute inset-0 flex items-center justify-center opacity-20">
-                  <Play class="h-12 w-12 text-foreground" />
-                </div>
-              </div>
-
-              <!-- Detection Progress Indicator (for individual segment) -->
-              <div
-                v-if="isDetectionActive(project.id)"
-                class="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-purple-600/90 text-white px-2 py-1 rounded-md text-xs font-bold shadow-sm backdrop-blur-sm"
-              >
-                <Loader2 class="w-3 h-3 animate-spin" />
-                <span>Detecting...</span>
-              </div>
-              <!-- Duration Badge (only show if not detecting) -->
-              <div v-else-if="getProjectDuration(project.id)" class="absolute top-3 left-3 z-5">
-                <span
-                  class="text-xs px-2 py-1 rounded-md text-white bg-black/60 backdrop-blur-sm font-medium flex items-center gap-1.5"
-                >
-                  <Clock class="w-3 h-3" />
-                  {{ getProjectDuration(project.id) }}
-                </span>
-              </div>
-
-              <!-- Info -->
-              <div class="absolute bottom-0 left-0 right-0 z-5 bg-black/60 backdrop-blur-sm p-3 rounded-b-md">
-                <h3 class="text-sm font-semibold text-white line-clamp-1">{{ project.name }}</h3>
-                <p class="text-xs text-white/70 line-clamp-1 mt-0.5">
-                  {{ project.description || 'No description' }} • {{ getRelativeTime(project.updated_at) }}
-                </p>
-              </div>
-
-              <!-- Hover Overlay -->
-              <div
-                class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 flex items-center justify-center gap-3"
-              >
-                <button
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Open Workspace"
-                  @click.stop="openWorkspace(project)"
-                >
-                  <Play class="h-5 w-5" />
-                </button>
-                <button
-                  v-if="
-                    canDetectClips(project.id) &&
-                    !isDetectionActive(project.id) &&
-                    !isProjectDetecting(folderProject?.id || '') &&
-                    isAIAllowed
-                  "
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Detect Clips"
-                  @click.stop="startProjectDetection(project)"
-                >
-                  <Sparkles class="h-5 w-5" />
-                </button>
-                <button
-                  v-if="!isDetectionActive(project.id) && !isProjectDetecting(folderProject?.id || '')"
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Delete"
-                  @click.stop="confirmDelete(project)"
-                >
-                  <Trash2 class="h-5 w-5" />
+                <button class="folder-dialog__close" @click="showFolderDialog = false" title="Close">
+                  <X :size="18" />
                 </button>
               </div>
-            </div>
-          </div>
 
-          <!-- Clips Tab - 2 Column Layout -->
-          <div v-else-if="folderActiveTab === 'clips'" class="flex-1 flex min-h-0">
-            <!-- Left Column: Clips List -->
-            <div class="w-[480px] flex-shrink-0 border-r border-border overflow-y-auto p-4">
-              <!-- Loading State -->
-              <div v-if="folderClipsLoading" class="flex items-center justify-center py-12">
-                <Loader2 class="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-
-              <!-- Empty State -->
-              <div
-                v-else-if="folderClips.length === 0"
-                class="flex flex-col items-center justify-center py-12 text-center"
-              >
-                <div class="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mb-4">
-                  <Video class="w-8 h-8 text-muted-foreground" />
-                </div>
-                <h3 class="text-lg font-medium text-foreground mb-2">No Clips Detected</h3>
-                <p class="text-sm text-muted-foreground max-w-xs">
-                  Run clip detection on individual segments to find viral moments.
-                </p>
-              </div>
-
-              <!-- Clips List -->
-              <div v-else class="space-y-3 pb-4">
-                <div
-                  v-for="(clip, index) in folderClips"
-                  :key="clip.id"
-                  class="group relative bg-card/50 backdrop-blur-sm border rounded-lg cursor-pointer transition-all duration-200"
-                  :class="
-                    clipToPreview?.id === clip.id
-                      ? 'border-primary/60 bg-primary/5 ring-1 ring-primary/30'
-                      : 'border-border/50 hover:border-border/80 hover:bg-card/70 hover:shadow-lg hover:shadow-black/10'
-                  "
-                  @click="previewClip(clip)"
+              <!-- Tabs -->
+              <div class="folder-dialog__tabs">
+                <button
+                  @click="onFolderTabChange('segments')"
+                  class="folder-dialog__tab"
+                  :class="{ 'folder-dialog__tab--active': folderActiveTab === 'segments' }"
                 >
-                  <!-- Left accent bar -->
+                  <FolderOpen :size="14" />
+                  <span>Segments</span>
+                  <span class="folder-dialog__tab-count">{{ getEffectiveSegmentCount(folderProject.id) }}</span>
+                </button>
+                <button
+                  @click="onFolderTabChange('clips')"
+                  class="folder-dialog__tab"
+                  :class="{ 'folder-dialog__tab--active': folderActiveTab === 'clips' }"
+                >
+                  <Video :size="14" />
+                  <span>Clips</span>
+                  <span class="folder-dialog__tab-count">{{ folderTotalClipsCount }}</span>
+                </button>
+              </div>
+
+              <!-- Content -->
+              <div
+                class="folder-dialog__content"
+                :class="{ 'folder-dialog__content--clips': folderActiveTab === 'clips' }"
+              >
+                <!-- Segments Tab -->
+                <div v-if="folderActiveTab === 'segments'" class="folder-dialog__segments">
                   <div
-                    v-if="clip.run_number"
-                    class="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200 rounded-l-lg"
-                    :style="{ backgroundColor: clip.session_run_color || '#8B5CF6', opacity: 0.6 }"
-                  ></div>
+                    class="folder-dialog__segments-grid"
+                    :class="{
+                      'folder-dialog__segments-grid--1': paginatedFolderChildren.length <= 1,
+                      'folder-dialog__segments-grid--2': paginatedFolderChildren.length === 2,
+                      'folder-dialog__segments-grid--3': paginatedFolderChildren.length >= 3,
+                    }"
+                  >
+                    <div
+                      v-for="project in paginatedFolderChildren"
+                      :key="project.id"
+                      class="folder-dialog__segment-card"
+                      :class="{ 'folder-dialog__segment-card--selected': isFolderChildSelected(project.id) }"
+                      @click="openWorkspace(project)"
+                    >
+                      <!-- Selection Checkbox -->
+                      <div
+                        class="folder-dialog__segment-checkbox"
+                        :class="{ 'folder-dialog__segment-checkbox--visible': isFolderChildSelected(project.id) }"
+                        @click.stop="toggleFolderChildSelection(project.id)"
+                      >
+                        <div
+                          class="folder-dialog__segment-checkbox-box"
+                          :class="{ 'folder-dialog__segment-checkbox-box--checked': isFolderChildSelected(project.id) }"
+                        >
+                          <Check v-if="isFolderChildSelected(project.id)" :size="14" />
+                        </div>
+                      </div>
 
-                  <div class="flex gap-3 p-3 pl-4">
-                    <!-- Thumbnail (16:9 aspect ratio) -->
-                    <div class="relative flex-shrink-0 w-40 aspect-video rounded-lg overflow-hidden bg-black/50">
+                      <!-- Thumbnail background -->
                       <div
-                        v-if="getClipThumbnailUrl(clip)"
-                        class="absolute inset-0"
-                        :style="{
-                          backgroundImage: `url(${getClipThumbnailUrl(clip)})`,
-                          backgroundSize: 'cover',
-                          backgroundPosition: 'center',
-                        }"
-                      ></div>
-                      <div v-else class="absolute inset-0 flex items-center justify-center">
-                        <Video class="w-6 h-6 text-muted-foreground/40" />
-                      </div>
-                      <!-- Duration badge -->
-                      <div
-                        class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-medium text-white tabular-nums"
+                        v-if="getThumbnailUrl(project.id)"
+                        class="folder-dialog__segment-thumb"
+                        :style="{ backgroundImage: `url(${getThumbnailUrl(project.id)})` }"
                       >
-                        {{ getClipDuration(clip) }}
+                        <div class="folder-dialog__segment-thumb-overlay"></div>
                       </div>
-                      <!-- Play overlay on hover -->
-                      <div
-                        class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                      >
-                        <PlayIcon class="w-6 h-6 text-white" />
+                      <div v-else class="folder-dialog__segment-thumb folder-dialog__segment-thumb--empty">
+                        <div class="folder-dialog__segment-thumb-overlay"></div>
+                        <div class="folder-dialog__segment-thumb-placeholder">
+                          <Play :size="32" />
+                        </div>
+                      </div>
+
+                      <!-- Detection Progress Indicator -->
+                      <div v-if="isDetectionActive(project.id)" class="folder-dialog__segment-detecting">
+                        <Loader2 :size="12" class="folder-dialog__spin" />
+                        <span>Detecting...</span>
+                      </div>
+                      <!-- Duration Badge -->
+                      <div v-else-if="getProjectDuration(project.id)" class="folder-dialog__segment-duration">
+                        <Clock :size="12" />
+                        {{ getProjectDuration(project.id) }}
+                      </div>
+
+                      <!-- Info -->
+                      <div class="folder-dialog__segment-info">
+                        <h3 class="folder-dialog__segment-name">{{ project.name }}</h3>
+                        <p class="folder-dialog__segment-meta">
+                          {{ project.description || 'No description' }} • {{ getRelativeTime(project.updated_at) }}
+                        </p>
+                      </div>
+
+                      <!-- Hover Overlay -->
+                      <div class="folder-dialog__segment-hover">
+                        <button
+                          class="folder-dialog__segment-action"
+                          title="Open Workspace"
+                          @click.stop="openWorkspace(project)"
+                        >
+                          <Play :size="20" />
+                        </button>
+                        <button
+                          v-if="
+                            canDetectClips(project.id) &&
+                            !isDetectionActive(project.id) &&
+                            !isProjectDetecting(folderProject?.id || '') &&
+                            isAIAllowed
+                          "
+                          class="folder-dialog__segment-action"
+                          title="Detect Clips"
+                          @click.stop="startProjectDetection(project)"
+                        >
+                          <Sparkles :size="20" />
+                        </button>
+                        <button
+                          v-if="!isDetectionActive(project.id) && !isProjectDetecting(folderProject?.id || '')"
+                          class="folder-dialog__segment-action"
+                          title="Delete"
+                          @click.stop="confirmDelete(project)"
+                        >
+                          <Trash2 :size="20" />
+                        </button>
                       </div>
                     </div>
+                  </div>
+                </div>
 
-                    <!-- Content -->
-                    <div class="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                      <!-- Header: Title & Actions -->
-                      <div class="flex items-start justify-between gap-2">
-                        <div class="flex items-start gap-2 min-w-0">
-                          <span class="text-xs font-bold text-foreground/30 mt-0.5 tabular-nums select-none">
-                            #{{ index + 1 }}
-                          </span>
-                          <h5 class="text-sm font-semibold text-foreground leading-snug line-clamp-2">
-                            {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
-                          </h5>
-                        </div>
+                <!-- Clips Tab - 2 Column Layout -->
+                <div v-else-if="folderActiveTab === 'clips'" class="folder-dialog__clips-layout">
+                  <!-- Left Column: Clips List -->
+                  <div class="folder-dialog__clips-list">
+                    <!-- Loading State -->
+                    <div v-if="folderClipsLoading" class="folder-dialog__clips-loading">
+                      <Loader2 :size="24" class="folder-dialog__spin" />
+                    </div>
 
-                        <!-- Actions -->
+                    <!-- Empty State -->
+                    <div v-else-if="folderClips.length === 0" class="folder-dialog__clips-empty">
+                      <div class="folder-dialog__clips-empty-icon">
+                        <Video :size="32" />
+                      </div>
+                      <h3 class="folder-dialog__clips-empty-title">No Clips Detected</h3>
+                      <p class="folder-dialog__clips-empty-text">
+                        Run clip detection on individual segments to find viral moments.
+                      </p>
+                    </div>
+
+                    <!-- Clips List -->
+                    <div v-else class="folder-dialog__clips-items">
+                      <div
+                        v-for="(clip, index) in folderClips"
+                        :key="clip.id"
+                        class="folder-dialog__clip-card"
+                        :class="{ 'folder-dialog__clip-card--active': clipToPreview?.id === clip.id }"
+                        @click="previewClip(clip)"
+                      >
+                        <!-- Left accent bar -->
                         <div
-                          class="flex items-center gap-0.5 transition-opacity duration-200 flex-shrink-0 -mr-1 -mt-1"
-                          :class="
-                            hasCompletedBuilds(clip) || clip.build_status === 'building'
-                              ? 'opacity-100'
-                              : 'opacity-0 group-hover:opacity-100'
-                          "
-                        >
-                          <!-- Play button (preview) -->
-                          <button
-                            class="p-1.5 hover:bg-violet-500/15 rounded-md transition-colors text-foreground/60 hover:text-violet-400"
-                            title="Preview clip"
-                            @click.stop="previewClip(clip)"
-                          >
-                            <PlayIcon class="h-4 w-4" />
-                          </button>
+                          v-if="clip.run_number"
+                          class="folder-dialog__clip-accent"
+                          :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
+                        ></div>
 
-                          <!-- Edit button (open in segment) -->
-                          <button
-                            class="p-1.5 hover:bg-blue-500/15 rounded-md transition-colors text-foreground/60 hover:text-blue-400"
-                            title="Edit in Segment"
-                            @click.stop="openSegmentWithClip(clip)"
-                          >
-                            <ExternalLink class="h-4 w-4" />
-                          </button>
-
-                          <!-- Build button -->
-                          <button
-                            v-if="clip.build_status !== 'building'"
-                            class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-foreground/60 hover:text-green-400"
-                            title="Build clip"
-                            @click.stop="onFolderBuildClip(clip)"
-                          >
-                            <Hammer class="h-4 w-4" />
-                          </button>
-
-                          <!-- Download dropdown (only when built) -->
-                          <div v-if="hasCompletedBuilds(clip)" class="relative">
-                            <button
-                              :ref="(el) => setFolderDropdownButtonRef(el, clip.id)"
-                              class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/80 hover:text-green-400 flex items-center gap-0.5"
-                              title="Download built clip"
-                              @click.stop="toggleFolderDownloadDropdown(clip.id)"
-                            >
-                              <DownloadIcon class="h-4 w-4" />
-                              <ChevronDownIcon class="h-3 w-3" />
-                            </button>
-
-                            <!-- Dropdown menu with list of all builds - Teleported to body -->
-                            <Teleport to="body">
-                              <div
-                                v-if="folderDownloadDropdownId === clip.id"
-                                class="fixed z-[9999] min-w-[260px] max-w-[340px] bg-popover border border-border rounded-md shadow-lg py-1 max-h-[300px] overflow-y-auto"
-                                :style="getFolderDropdownPosition(clip.id)"
-                                @click.stop
-                              >
-                                <div
-                                  class="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider border-b border-border/50 mb-1 flex items-center justify-between"
-                                >
-                                  <span>Downloads ({{ getDownloadableFilesCount(clip) }})</span>
-                                </div>
-                                <!-- Individual file items from all builds -->
-                                <button
-                                  v-for="(file, fileIdx) in getDownloadableFiles(clip)"
-                                  :key="`${file.build.id}-${fileIdx}`"
-                                  class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3 border-b border-border/20 last:border-b-0"
-                                  @click.stop="
-                                    onFolderSaveFile(file.filePath);
-                                    closeFolderDownloadDropdown();
-                                  "
-                                >
-                                  <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
-                                  <div class="flex-1 min-w-0">
-                                    <div class="text-xs font-medium truncate flex items-center gap-1.5">
-                                      <span v-if="file.aspectRatio" class="text-primary/80 font-semibold">
-                                        {{ file.aspectRatio }}
-                                      </span>
-                                      <span class="text-muted-foreground/70">#{{ file.build.build_number }}</span>
-                                      <span class="truncate">{{ getBuildFileName(file.filePath) }}</span>
-                                    </div>
-                                    <div class="text-[10px] text-muted-foreground flex items-center gap-2 mt-0.5">
-                                      <span v-if="file.build.completed_at">
-                                        {{ formatBuildDate(file.build.completed_at) }}
-                                      </span>
-                                      <span v-if="file.build.file_size && getDownloadableFiles(clip).length === 1">
-                                        {{ formatFileSize(file.build.file_size) }}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </button>
-                                <!-- Fallback for legacy builds (clip.built_file_path) -->
-                                <button
-                                  v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
-                                  class="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50 flex items-center gap-3"
-                                  @click.stop="
-                                    onFolderSaveFile(clip.built_file_path);
-                                    closeFolderDownloadDropdown();
-                                  "
-                                >
-                                  <DownloadIcon class="h-4 w-4 text-green-500 flex-shrink-0" />
-                                  <div class="flex-1 min-w-0">
-                                    <div class="text-xs font-medium truncate">
-                                      {{ getBuildFileName(clip.built_file_path) }}
-                                    </div>
-                                  </div>
-                                </button>
-                              </div>
-                            </Teleport>
+                        <div class="folder-dialog__clip-content">
+                          <!-- Thumbnail -->
+                          <div class="folder-dialog__clip-thumb">
+                            <div
+                              v-if="getClipThumbnailUrl(clip)"
+                              class="folder-dialog__clip-thumb-img"
+                              :style="{ backgroundImage: `url(${getClipThumbnailUrl(clip)})` }"
+                            ></div>
+                            <div v-else class="folder-dialog__clip-thumb-placeholder">
+                              <Video :size="24" />
+                            </div>
+                            <div class="folder-dialog__clip-thumb-duration">{{ getClipDuration(clip) }}</div>
+                            <div class="folder-dialog__clip-thumb-hover">
+                              <PlayIcon :size="24" />
+                            </div>
                           </div>
 
-                          <!-- Delete button -->
-                          <button
-                            v-if="!hasCompletedBuilds(clip)"
-                            class="p-1.5 hover:bg-red-500/15 rounded-md transition-colors text-foreground/60 hover:text-red-400"
-                            title="Delete clip"
-                            @click.stop="deleteFolderClip(clip.id)"
-                          >
-                            <Trash2 class="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
+                          <!-- Content -->
+                          <div class="folder-dialog__clip-details">
+                            <!-- Header -->
+                            <div class="folder-dialog__clip-header">
+                              <div class="folder-dialog__clip-title-row">
+                                <span class="folder-dialog__clip-index">#{{ index + 1 }}</span>
+                                <h5 class="folder-dialog__clip-title">
+                                  {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
+                                </h5>
+                              </div>
 
-                      <!-- Metrics Row -->
-                      <div class="flex items-center flex-wrap gap-2">
-                        <!-- Segment Badge -->
-                        <div
-                          class="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground/70 bg-primary/10 px-2 py-0.5 rounded border border-primary/20"
-                        >
-                          <FolderOpen class="h-3 w-3 opacity-70" />
-                          <span class="truncate max-w-[120px]">{{ clip.segment_name }}</span>
-                        </div>
+                              <!-- Actions -->
+                              <div
+                                class="folder-dialog__clip-actions"
+                                :class="{
+                                  'folder-dialog__clip-actions--visible':
+                                    hasCompletedBuilds(clip) || clip.build_status === 'building',
+                                }"
+                              >
+                                <button
+                                  class="folder-dialog__clip-action folder-dialog__clip-action--preview"
+                                  title="Preview clip"
+                                  @click.stop="previewClip(clip)"
+                                >
+                                  <PlayIcon :size="16" />
+                                </button>
+                                <button
+                                  class="folder-dialog__clip-action folder-dialog__clip-action--edit"
+                                  title="Edit in Segment"
+                                  @click.stop="openSegmentWithClip(clip)"
+                                >
+                                  <ExternalLink :size="16" />
+                                </button>
+                                <button
+                                  v-if="clip.build_status !== 'building'"
+                                  class="folder-dialog__clip-action folder-dialog__clip-action--build"
+                                  title="Build clip"
+                                  @click.stop="onFolderBuildClip(clip)"
+                                >
+                                  <Hammer :size="16" />
+                                </button>
 
-                        <!-- Virality Score -->
-                        <div
-                          v-if="
-                            clip.current_version_virality_score !== undefined &&
-                            clip.current_version_virality_score !== null
-                          "
-                          class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium transition-colors"
-                          :class="getViralityColorClass(clip.current_version_virality_score)"
-                          title="Predicted Virality Score"
-                        >
-                          <Flame class="h-3 w-3" />
-                          <span>{{ Math.round(clip.current_version_virality_score) }}%</span>
-                        </div>
+                                <!-- Download dropdown -->
+                                <div v-if="hasCompletedBuilds(clip)" class="folder-dialog__clip-download">
+                                  <button
+                                    :ref="(el) => setFolderDropdownButtonRef(el, clip.id)"
+                                    class="folder-dialog__clip-action folder-dialog__clip-action--download"
+                                    title="Download built clip"
+                                    @click.stop="toggleFolderDownloadDropdown(clip.id)"
+                                  >
+                                    <DownloadIcon :size="16" />
+                                    <ChevronDownIcon :size="12" />
+                                  </button>
 
-                        <!-- Confidence (more subtle) -->
-                        <div
-                          v-if="clip.current_version_confidence_score"
-                          class="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/60"
-                          title="AI Confidence Score"
-                        >
-                          <BrainIcon class="h-3 w-3" />
-                          <span>{{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%</span>
-                        </div>
-                      </div>
+                                  <Teleport to="body">
+                                    <div
+                                      v-if="folderDownloadDropdownId === clip.id"
+                                      class="folder-dialog__download-menu"
+                                      :style="getFolderDropdownPosition(clip.id)"
+                                      @click.stop
+                                    >
+                                      <div class="folder-dialog__download-header">
+                                        <span>Downloads ({{ getDownloadableFilesCount(clip) }})</span>
+                                      </div>
+                                      <button
+                                        v-for="(file, fileIdx) in getDownloadableFiles(clip)"
+                                        :key="`${file.build.id}-${fileIdx}`"
+                                        class="folder-dialog__download-item"
+                                        @click.stop="
+                                          onFolderSaveFile(file.filePath);
+                                          closeFolderDownloadDropdown();
+                                        "
+                                      >
+                                        <DownloadIcon :size="16" class="folder-dialog__download-item-icon" />
+                                        <div class="folder-dialog__download-item-info">
+                                          <div class="folder-dialog__download-item-name">
+                                            <span v-if="file.aspectRatio" class="folder-dialog__download-item-ratio">
+                                              {{ file.aspectRatio }}
+                                            </span>
+                                            <span class="folder-dialog__download-item-number">
+                                              #{{ file.build.build_number }}
+                                            </span>
+                                            <span class="folder-dialog__download-item-filename">
+                                              {{ getBuildFileName(file.filePath) }}
+                                            </span>
+                                          </div>
+                                          <div class="folder-dialog__download-item-meta">
+                                            <span v-if="file.build.completed_at">
+                                              {{ formatBuildDate(file.build.completed_at) }}
+                                            </span>
+                                            <span
+                                              v-if="file.build.file_size && getDownloadableFiles(clip).length === 1"
+                                            >
+                                              {{ formatFileSize(file.build.file_size) }}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </button>
+                                      <button
+                                        v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
+                                        class="folder-dialog__download-item"
+                                        @click.stop="
+                                          onFolderSaveFile(clip.built_file_path);
+                                          closeFolderDownloadDropdown();
+                                        "
+                                      >
+                                        <DownloadIcon :size="16" class="folder-dialog__download-item-icon" />
+                                        <div class="folder-dialog__download-item-info">
+                                          <div class="folder-dialog__download-item-name">
+                                            {{ getBuildFileName(clip.built_file_path) }}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    </div>
+                                  </Teleport>
+                                </div>
 
-                      <!-- Footer Info -->
-                      <div class="flex items-center justify-between text-[11px] text-muted-foreground/60 mt-auto">
-                        <div class="flex items-center gap-3">
-                          <span class="font-mono tabular-nums">
-                            {{ formatClipTime(clip.current_version_start_time || 0) }} -
-                            {{ formatClipTime(clip.current_version_end_time || 0) }}
-                          </span>
+                                <button
+                                  v-if="!hasCompletedBuilds(clip)"
+                                  class="folder-dialog__clip-action folder-dialog__clip-action--delete"
+                                  title="Delete clip"
+                                  @click.stop="deleteFolderClip(clip.id)"
+                                >
+                                  <Trash2 :size="16" />
+                                </button>
+                              </div>
+                            </div>
 
-                          <!-- Build Status -->
-                          <span v-if="clip.build_status === 'building'" class="text-blue-400 flex items-center gap-1">
-                            <Loader2 class="h-3 w-3 animate-spin" />
-                            Building...
-                          </span>
-                          <span v-else-if="hasCompletedBuilds(clip)" class="text-green-400 flex items-center gap-1">
-                            <Check class="h-3 w-3" />
-                            {{ getDownloadableFilesCount(clip) || 1 }} File{{
-                              (getDownloadableFilesCount(clip) || 1) !== 1 ? 's' : ''
-                            }}
-                          </span>
-                        </div>
+                            <!-- Metrics Row -->
+                            <div class="folder-dialog__clip-metrics">
+                              <div class="folder-dialog__clip-badge folder-dialog__clip-badge--segment">
+                                <FolderOpen :size="12" />
+                                <span>{{ clip.segment_name }}</span>
+                              </div>
+                              <div
+                                v-if="
+                                  clip.current_version_virality_score !== undefined &&
+                                  clip.current_version_virality_score !== null
+                                "
+                                class="folder-dialog__clip-badge"
+                                :class="getViralityColorClass(clip.current_version_virality_score)"
+                                title="Predicted Virality Score"
+                              >
+                                <Flame :size="12" />
+                                <span>{{ Math.round(clip.current_version_virality_score) }}%</span>
+                              </div>
+                              <div
+                                v-if="clip.current_version_confidence_score"
+                                class="folder-dialog__clip-badge folder-dialog__clip-badge--confidence"
+                                title="AI Confidence Score"
+                              >
+                                <BrainIcon :size="12" />
+                                <span>{{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%</span>
+                              </div>
+                            </div>
 
-                        <!-- Run Info -->
-                        <div class="flex items-center gap-2">
-                          <span v-if="clip.run_number" class="flex items-center gap-1.5">
-                            <div
-                              class="w-2 h-2 rounded-full"
-                              :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
-                            ></div>
-                            Run {{ clip.run_number }}
-                          </span>
+                            <!-- Footer -->
+                            <div class="folder-dialog__clip-footer">
+                              <div class="folder-dialog__clip-time">
+                                <span>
+                                  {{ formatClipTime(clip.current_version_start_time || 0) }} -
+                                  {{ formatClipTime(clip.current_version_end_time || 0) }}
+                                </span>
+                                <span
+                                  v-if="clip.build_status === 'building'"
+                                  class="folder-dialog__clip-status folder-dialog__clip-status--building"
+                                >
+                                  <Loader2 :size="12" class="folder-dialog__spin" />
+                                  Building...
+                                </span>
+                                <span
+                                  v-else-if="hasCompletedBuilds(clip)"
+                                  class="folder-dialog__clip-status folder-dialog__clip-status--built"
+                                >
+                                  <Check :size="12" />
+                                  {{ getDownloadableFilesCount(clip) || 1 }} File{{
+                                    (getDownloadableFilesCount(clip) || 1) !== 1 ? 's' : ''
+                                  }}
+                                </span>
+                              </div>
+                              <div v-if="clip.run_number" class="folder-dialog__clip-run">
+                                <div
+                                  class="folder-dialog__clip-run-dot"
+                                  :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
+                                ></div>
+                                Run {{ clip.run_number }}
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
-            </div>
 
-            <!-- Right Column: Video Player -->
-            <div class="flex-1 flex flex-col p-4 overflow-y-auto">
-              <!-- No clip selected state -->
-              <div
-                v-if="!clipToPreview"
-                class="flex-1 flex flex-col items-center justify-center text-center bg-black/20 rounded-xl border border-border/30"
-              >
-                <div class="w-20 h-20 bg-muted/10 rounded-full flex items-center justify-center mb-4">
-                  <PlayIcon class="w-10 h-10 text-muted-foreground/40" />
-                </div>
-                <h3 class="text-lg font-medium text-foreground/80 mb-2">Select a Clip to Preview</h3>
-                <p class="text-sm text-muted-foreground/60 max-w-xs">
-                  Click on any clip from the list to preview it here
-                </p>
-              </div>
-
-              <!-- Video Player -->
-              <template v-else>
-                <!-- Clip Info Header -->
-                <div class="flex items-center justify-between mb-3">
-                  <div class="min-w-0 flex-1">
-                    <h3 class="text-base font-semibold text-foreground truncate">
-                      {{ clipToPreview.current_version?.name || clipToPreview.name || 'Untitled Clip' }}
-                    </h3>
-                    <p class="text-xs text-muted-foreground flex items-center gap-2">
-                      <span class="truncate">{{ clipToPreview.segment_name }}</span>
-                    </p>
-                  </div>
-                  <button
-                    @click="closeClipPreview"
-                    class="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground flex-shrink-0"
-                    title="Close preview"
-                  >
-                    <X class="h-4 w-4" />
-                  </button>
-                </div>
-
-                <!-- Video Container - Fixed 16:9 aspect ratio with custom controls -->
-                <div
-                  ref="inlineVideoContainerRef"
-                  class="w-full aspect-video bg-black rounded-lg overflow-hidden relative group"
-                  :class="{ 'inline-video-fullscreen': isInlineVideoFullscreen }"
-                >
-                  <video
-                    v-if="inlineVideoSrc"
-                    ref="inlineVideoRef"
-                    class="w-full h-full object-contain"
-                    :src="inlineVideoSrc"
-                    @loadedmetadata="onInlineVideoLoaded"
-                    @timeupdate="onInlineVideoTimeUpdate"
-                    @ended="onInlineVideoEnded"
-                    @click="toggleInlineVideoPlay"
-                  ></video>
-                  <div v-else-if="inlineVideoLoading" class="w-full h-full flex items-center justify-center">
-                    <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
-                  </div>
-                  <div v-else class="w-full h-full flex items-center justify-center">
-                    <p class="text-muted-foreground text-sm">No video source available</p>
-                  </div>
-
-                  <!-- Watermark Overlay -->
-                  <div
-                    v-if="previewWatermarkData && previewWatermarkSettings && inlineVideoSrc"
-                    class="absolute pointer-events-none z-10 transition-opacity duration-300"
-                    :style="getPreviewWatermarkStyle"
-                  >
-                    <img
-                      :src="previewWatermarkData.dataUrl"
-                      alt="Watermark"
-                      :class="isPreviewWatermarkFullFrame ? '' : 'max-w-full max-h-full object-contain'"
-                      :style="getPreviewWatermarkImageStyle"
-                    />
-                  </div>
-
-                  <!-- Custom Video Controls -->
-                  <div
-                    v-if="inlineVideoSrc"
-                    class="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-sm transition-opacity"
-                    :class="isInlineVideoFullscreen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-                  >
-                    <!-- Full-width Progress Bar -->
-                    <div
-                      ref="inlineProgressBarRef"
-                      class="relative h-4 w-full cursor-pointer group/progress flex items-center"
-                      @mousedown="startInlineSeekDrag"
-                      @mousemove="onInlineTimelineHover"
-                      @mouseleave="onInlineTimelineLeave"
-                    >
-                      <!-- Visual track (centered in larger hit area) -->
-                      <div class="absolute inset-x-0 h-1 top-1/2 -translate-y-1/2">
-                        <!-- Background track -->
-                        <div class="absolute inset-0 bg-white/20"></div>
-                        <!-- Progress Bar -->
-                        <div
-                          class="absolute h-full bg-violet-500"
-                          :class="{ 'transition-all duration-75': !inlineSeekDragging }"
-                          :style="{ width: `${inlineVideoProgress}%` }"
-                        ></div>
+                  <!-- Right Column: Video Player -->
+                  <div class="folder-dialog__player">
+                    <!-- No clip selected state -->
+                    <div v-if="!clipToPreview" class="folder-dialog__player-empty">
+                      <div class="folder-dialog__player-empty-icon">
+                        <PlayIcon :size="40" />
                       </div>
-                      <!-- Seek thumb - always visible, larger during drag -->
-                      <div
-                        class="absolute top-1/2 bg-violet-400 rounded-full shadow-md pointer-events-none"
-                        :class="[
-                          inlineSeekDragging ? 'w-4 h-4' : 'w-3 h-3',
-                          { 'transition-all duration-75': !inlineSeekDragging },
-                        ]"
-                        :style="{ left: `${inlineVideoProgress}%`, transform: 'translate(-50%, -50%)' }"
-                      ></div>
-                      <!-- Hover/drag time preview -->
-                      <div
-                        v-if="inlineHoverTime !== null || inlineSeekDragging"
-                        class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-medium whitespace-nowrap z-20 pointer-events-none"
-                        :style="{
-                          left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%`,
-                          transform: 'translateX(-50%)',
-                        }"
-                      >
-                        {{
-                          formatDuration(
-                            inlineSeekDragging
-                              ? (inlineVideoProgress / 100) * inlineVideoClipDuration
-                              : (inlineHoverTime ?? 0)
-                          )
-                        }}
-                      </div>
+                      <h3 class="folder-dialog__player-empty-title">Select a Clip to Preview</h3>
+                      <p class="folder-dialog__player-empty-text">Click on any clip from the list to preview it here</p>
                     </div>
 
-                    <!-- Controls Row -->
-                    <div class="flex items-center justify-between px-3 py-2">
-                      <div class="flex items-center gap-3">
-                        <!-- Play/Pause -->
-                        <button @click="toggleInlineVideoPlay" class="text-white hover:text-primary transition-colors">
-                          <PlayIcon v-if="!inlineVideoPlaying" class="w-5 h-5" />
-                          <Pause v-else class="w-5 h-5" />
+                    <!-- Video Player -->
+                    <template v-else>
+                      <!-- Clip Info Header -->
+                      <div class="folder-dialog__player-header">
+                        <div class="folder-dialog__player-info">
+                          <h3 class="folder-dialog__player-title">
+                            {{ clipToPreview.current_version?.name || clipToPreview.name || 'Untitled Clip' }}
+                          </h3>
+                          <p class="folder-dialog__player-segment">{{ clipToPreview.segment_name }}</p>
+                        </div>
+                        <button @click="closeClipPreview" class="folder-dialog__player-close" title="Close preview">
+                          <X :size="16" />
                         </button>
+                      </div>
 
-                        <!-- Volume -->
-                        <div class="flex items-center gap-1.5 group/volume">
-                          <button
-                            @click="toggleInlineVideoMute"
-                            class="text-white hover:text-primary transition-colors"
-                          >
-                            <VolumeX v-if="inlineVideoMuted || inlineVideoVolume === 0" class="w-4 h-4" />
-                            <Volume2 v-else class="w-4 h-4" />
-                          </button>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            :value="inlineVideoMuted ? 0 : inlineVideoVolume"
-                            @input="setInlineVideoVolume"
-                            class="w-16 h-1 bg-white/20 rounded-full appearance-none cursor-pointer opacity-0 group-hover/volume:opacity-100 transition-opacity [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
+                      <!-- Video Container -->
+                      <div
+                        ref="inlineVideoContainerRef"
+                        class="folder-dialog__player-video"
+                        :class="{ 'inline-video-fullscreen': isInlineVideoFullscreen }"
+                      >
+                        <video
+                          v-if="inlineVideoSrc"
+                          ref="inlineVideoRef"
+                          class="folder-dialog__player-video-el"
+                          :src="inlineVideoSrc"
+                          @loadedmetadata="onInlineVideoLoaded"
+                          @timeupdate="onInlineVideoTimeUpdate"
+                          @ended="onInlineVideoEnded"
+                          @click="toggleInlineVideoPlay"
+                        ></video>
+                        <div v-else-if="inlineVideoLoading" class="folder-dialog__player-loading">
+                          <Loader2 :size="32" class="folder-dialog__spin" />
+                        </div>
+                        <div v-else class="folder-dialog__player-no-source">
+                          <p>No video source available</p>
+                        </div>
+
+                        <!-- Watermark Overlay -->
+                        <div
+                          v-if="previewWatermarkData && previewWatermarkSettings && inlineVideoSrc"
+                          class="folder-dialog__player-watermark"
+                          :style="getPreviewWatermarkStyle"
+                        >
+                          <img
+                            :src="previewWatermarkData.dataUrl"
+                            alt="Watermark"
+                            :class="isPreviewWatermarkFullFrame ? '' : 'folder-dialog__player-watermark-img'"
+                            :style="getPreviewWatermarkImageStyle"
                           />
                         </div>
 
-                        <!-- Time Display -->
-                        <span class="text-white text-xs font-mono tabular-nums">
-                          {{ formatClipTime(inlineVideoCurrentTime) }} / {{ formatClipTime(inlineVideoClipDuration) }}
-                        </span>
+                        <!-- Custom Video Controls -->
+                        <div
+                          v-if="inlineVideoSrc"
+                          class="folder-dialog__player-controls"
+                          :class="{ 'folder-dialog__player-controls--visible': isInlineVideoFullscreen }"
+                        >
+                          <!-- Progress Bar -->
+                          <div
+                            ref="inlineProgressBarRef"
+                            class="folder-dialog__player-progress"
+                            @mousedown="startInlineSeekDrag"
+                            @mousemove="onInlineTimelineHover"
+                            @mouseleave="onInlineTimelineLeave"
+                          >
+                            <div class="folder-dialog__player-progress-track">
+                              <div class="folder-dialog__player-progress-bg"></div>
+                              <div
+                                class="folder-dialog__player-progress-bar"
+                                :class="{ 'folder-dialog__player-progress-bar--smooth': !inlineSeekDragging }"
+                                :style="{ width: `${inlineVideoProgress}%` }"
+                              ></div>
+                            </div>
+                            <div
+                              class="folder-dialog__player-progress-thumb"
+                              :class="{
+                                'folder-dialog__player-progress-thumb--large': inlineSeekDragging,
+                                'folder-dialog__player-progress-thumb--smooth': !inlineSeekDragging,
+                              }"
+                              :style="{ left: `${inlineVideoProgress}%` }"
+                            ></div>
+                            <div
+                              v-if="inlineHoverTime !== null || inlineSeekDragging"
+                              class="folder-dialog__player-progress-tooltip"
+                              :style="{ left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%` }"
+                            >
+                              {{
+                                formatDuration(
+                                  inlineSeekDragging
+                                    ? (inlineVideoProgress / 100) * inlineVideoClipDuration
+                                    : (inlineHoverTime ?? 0)
+                                )
+                              }}
+                            </div>
+                          </div>
+
+                          <!-- Controls Row -->
+                          <div class="folder-dialog__player-controls-row">
+                            <div class="folder-dialog__player-controls-left">
+                              <button @click="toggleInlineVideoPlay" class="folder-dialog__player-btn">
+                                <PlayIcon v-if="!inlineVideoPlaying" :size="20" />
+                                <Pause v-else :size="20" />
+                              </button>
+                              <div class="folder-dialog__player-volume">
+                                <button @click="toggleInlineVideoMute" class="folder-dialog__player-btn">
+                                  <VolumeX v-if="inlineVideoMuted || inlineVideoVolume === 0" :size="16" />
+                                  <Volume2 v-else :size="16" />
+                                </button>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="1"
+                                  step="0.1"
+                                  :value="inlineVideoMuted ? 0 : inlineVideoVolume"
+                                  @input="setInlineVideoVolume"
+                                  class="folder-dialog__player-volume-slider"
+                                />
+                              </div>
+                              <span class="folder-dialog__player-time">
+                                {{ formatClipTime(inlineVideoCurrentTime) }} /
+                                {{ formatClipTime(inlineVideoClipDuration) }}
+                              </span>
+                            </div>
+                            <button
+                              @click="toggleInlineVideoFullscreen"
+                              class="folder-dialog__player-btn"
+                              :title="isInlineVideoFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
+                            >
+                              <Minimize2 v-if="isInlineVideoFullscreen" :size="16" />
+                              <Maximize2 v-else :size="16" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <!-- Play overlay when paused -->
+                        <div
+                          v-if="inlineVideoSrc && !inlineVideoPlaying && !inlineVideoLoading"
+                          class="folder-dialog__player-play-overlay"
+                          @click="toggleInlineVideoPlay"
+                        >
+                          <div class="folder-dialog__player-play-btn">
+                            <PlayIcon :size="32" />
+                          </div>
+                        </div>
                       </div>
 
-                      <!-- Fullscreen -->
-                      <button
-                        @click="toggleInlineVideoFullscreen"
-                        class="text-white hover:text-primary transition-colors"
-                        :title="isInlineVideoFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
+                      <!-- Clip Description -->
+                      <div
+                        v-if="clipToPreview.current_version_detection_reason"
+                        class="folder-dialog__player-description"
                       >
-                        <Minimize2 v-if="isInlineVideoFullscreen" class="w-4 h-4" />
-                        <Maximize2 v-else class="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Play overlay when paused -->
-                  <div
-                    v-if="inlineVideoSrc && !inlineVideoPlaying && !inlineVideoLoading"
-                    class="absolute inset-0 flex items-center justify-center cursor-pointer"
-                    @click="toggleInlineVideoPlay"
-                  >
-                    <div class="w-16 h-16 bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
-                      <PlayIcon class="w-8 h-8 text-white ml-1" />
-                    </div>
+                        <p>"{{ clipToPreview.current_version_detection_reason }}"</p>
+                      </div>
+                    </template>
                   </div>
                 </div>
+              </div>
 
-                <!-- Clip Description -->
-                <div v-if="clipToPreview.current_version_detection_reason" class="mt-3 p-2.5 bg-muted/20 rounded-lg">
-                  <p class="text-xs text-muted-foreground italic line-clamp-2">
-                    "{{ clipToPreview.current_version_detection_reason }}"
-                  </p>
-                </div>
-              </template>
+              <!-- Footer with Pagination (only for segments tab) -->
+              <div v-if="folderActiveTab === 'segments' && folderTotalPages > 1" class="folder-dialog__footer">
+                <PaginationFooter
+                  :current-page="folderCurrentPage"
+                  :total-pages="folderTotalPages"
+                  :total-items="getEffectiveSegmentCount(folderProject.id)"
+                  item-label="part"
+                  @go-to-page="(page) => (folderCurrentPage = page)"
+                  @previous="folderCurrentPage--"
+                  @next="folderCurrentPage++"
+                />
+              </div>
             </div>
-          </div>
+          </Transition>
         </div>
-
-        <!-- Footer with Pagination (only for segments tab) -->
-        <div
-          v-if="folderActiveTab === 'segments' && folderTotalPages > 1"
-          class="px-6 py-4 border-t border-border bg-muted/10 flex justify-center"
-        >
-          <PaginationFooter
-            :current-page="folderCurrentPage"
-            :total-pages="folderTotalPages"
-            :total-items="getEffectiveSegmentCount(folderProject.id)"
-            item-label="part"
-            @go-to-page="(page) => (folderCurrentPage = page)"
-            @previous="folderCurrentPage--"
-            @next="folderCurrentPage++"
-          />
-        </div>
-      </div>
-    </div>
+      </Transition>
+    </Teleport>
 
     <!-- Delete Confirmation Modal -->
     <div
@@ -1709,17 +1620,17 @@
   // Store unlisten functions for Tauri event cleanup
   const clipBuildUnlistenFunctions = ref<UnlistenFn[]>([]);
 
-  // Computed class for folder dialog width based on active tab and content
-  const folderDialogWidthClass = computed(() => {
+  // Computed class for folder dialog size based on active tab and content
+  const folderDialogSizeClass = computed(() => {
     if (folderActiveTab.value === 'clips') {
       // Wide layout for 2-column view with inline video player
-      return 'max-w-6xl';
+      return 'folder-dialog--xl';
     }
     // For segments tab, base width on segment count
     const segmentCount = folderProject.value ? getEffectiveSegmentCount(folderProject.value.id) : 0;
-    if (segmentCount <= 1) return 'max-w-lg';
-    if (segmentCount === 2) return 'max-w-3xl';
-    return 'max-w-5xl';
+    if (segmentCount <= 1) return 'folder-dialog--sm';
+    if (segmentCount === 2) return 'folder-dialog--md';
+    return 'folder-dialog--lg';
   });
   const folderDropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
   const clipToPreview = ref<ClipWithVersionAndSegment | null>(null);
@@ -2104,10 +2015,17 @@
   });
 
   // Handle folder tab change
-  function onFolderTabChange(tab: 'segments' | 'clips') {
+  async function onFolderTabChange(tab: 'segments' | 'clips') {
     folderActiveTab.value = tab;
-    if (tab === 'clips' && folderProject.value && folderClips.value.length === 0) {
-      loadFolderClips(folderProject.value.id);
+    if (tab === 'clips' && folderProject.value) {
+      // Load clips if not already loaded
+      if (folderClips.value.length === 0) {
+        await loadFolderClips(folderProject.value.id);
+      }
+      // Auto-select the first clip for preview
+      if (folderClips.value.length > 0 && !clipToPreview.value) {
+        previewClip(folderClips.value[0]);
+      }
     }
     // Clear clip preview when switching away from clips tab
     if (tab === 'segments') {
@@ -2479,8 +2397,8 @@
       inlineVideoRef.value.currentTime = startTime;
       inlineVideoCurrentTime.value = 0;
       inlineVideoProgress.value = 0;
-      inlineVideoRef.value.play();
-      inlineVideoPlaying.value = true;
+      // Don't auto-play - let user start playback manually
+      inlineVideoPlaying.value = false;
     }
   }
 
@@ -4939,6 +4857,1312 @@
     width: 100% !important;
     height: 100% !important;
     object-fit: contain !important;
+  }
+
+  /* ========================================
+     FOLDER DIALOG STYLES
+     ======================================== */
+
+  /* ===== Overlay ===== */
+  .folder-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  /* ===== Dialog Container ===== */
+  .folder-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .folder-dialog--sm {
+    max-width: 520px;
+  }
+
+  .folder-dialog--md {
+    max-width: 768px;
+  }
+
+  .folder-dialog--lg {
+    max-width: 1024px;
+  }
+
+  .folder-dialog--xl {
+    max-width: 1280px;
+  }
+
+  /* ===== Accent Bar ===== */
+  .folder-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header (Compact) ===== */
+  .folder-dialog__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.625rem 0.75rem;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .folder-dialog__header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  .folder-dialog__header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Selection Controls ===== */
+  .folder-dialog__selection-delete {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .folder-dialog__selection-delete:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .folder-dialog__selection-delete--disabled,
+  .folder-dialog__selection-delete:disabled {
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .folder-dialog__selection-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .folder-dialog__selection-clear {
+    background: none;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: color 150ms ease;
+  }
+
+  .folder-dialog__selection-clear:hover {
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Tabs ===== */
+  .folder-dialog__tabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0 1rem;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--sidebar-border);
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__tab {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    margin-bottom: -1px;
+  }
+
+  .folder-dialog__tab:hover {
+    color: var(--sidebar-text);
+  }
+
+  .folder-dialog__tab--active {
+    color: var(--sidebar-accent);
+    border-bottom-color: var(--sidebar-accent);
+  }
+
+  .folder-dialog__tab-count {
+    padding: 0.125rem 0.5rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .folder-dialog__tab--active .folder-dialog__tab-count {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Content ===== */
+  .folder-dialog__content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.5rem;
+  }
+
+  .folder-dialog__content--clips {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .folder-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .folder-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .folder-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Segments Tab ===== */
+  .folder-dialog__segments {
+    width: 100%;
+  }
+
+  .folder-dialog__segments-grid {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .folder-dialog__segments-grid--1 {
+    grid-template-columns: 1fr;
+  }
+
+  .folder-dialog__segments-grid--2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .folder-dialog__segments-grid--3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* ===== Segment Card ===== */
+  .folder-dialog__segment-card {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 1px solid var(--sidebar-border);
+    transition: all 200ms ease;
+  }
+
+  .folder-dialog__segment-card:hover {
+    transform: scale(1.02);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .folder-dialog__segment-card--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow:
+      0 0 0 2px var(--sidebar-surface),
+      0 0 0 4px var(--sidebar-accent);
+  }
+
+  /* ===== Segment Checkbox ===== */
+  .folder-dialog__segment-checkbox {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .folder-dialog__segment-card:hover .folder-dialog__segment-checkbox,
+  .folder-dialog__segment-checkbox--visible {
+    opacity: 1;
+  }
+
+  .folder-dialog__segment-checkbox-box {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: white;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .folder-dialog__segment-checkbox-box:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .folder-dialog__segment-checkbox-box--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  /* ===== Segment Thumbnail ===== */
+  .folder-dialog__segment-thumb {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .folder-dialog__segment-thumb--empty {
+    background-color: var(--sidebar-hover);
+  }
+
+  .folder-dialog__segment-thumb-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom right, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6));
+  }
+
+  .folder-dialog__segment-thumb-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text);
+    opacity: 0.2;
+  }
+
+  /* ===== Segment Badges ===== */
+  .folder-dialog__segment-detecting {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background-color: rgba(147, 51, 234, 0.9);
+    backdrop-filter: blur(4px);
+    border-radius: 6px;
+    color: white;
+    font-size: 0.6875rem;
+    font-weight: 700;
+  }
+
+  .folder-dialog__segment-duration {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    border-radius: 6px;
+    color: white;
+    font-size: 0.6875rem;
+    font-weight: 500;
+  }
+
+  /* ===== Segment Info ===== */
+  .folder-dialog__segment-info {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+
+  .folder-dialog__segment-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: white;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__segment-meta {
+    font-size: 0.6875rem;
+    color: rgba(255, 255, 255, 0.7);
+    margin: 0.25rem 0 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ===== Segment Hover Overlay ===== */
+  .folder-dialog__segment-hover {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .folder-dialog__segment-card:hover .folder-dialog__segment-hover {
+    opacity: 1;
+  }
+
+  .folder-dialog__segment-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 9999px;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .folder-dialog__segment-action:hover {
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  /* ===== Clips Tab Layout ===== */
+  .folder-dialog__clips-layout {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ===== Clips List Column ===== */
+  .folder-dialog__clips-list {
+    width: 480px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--sidebar-border);
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  .folder-dialog__clips-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .folder-dialog__clips-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .folder-dialog__clips-list::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .folder-dialog__clips-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 0;
+    color: var(--sidebar-text-muted);
+  }
+
+  .folder-dialog__clips-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1rem;
+    text-align: center;
+  }
+
+  .folder-dialog__clips-empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background-color: var(--sidebar-hover);
+    border-radius: 9999px;
+    color: var(--sidebar-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .folder-dialog__clips-empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .folder-dialog__clips-empty-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 280px;
+  }
+
+  .folder-dialog__clips-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-bottom: 1rem;
+  }
+
+  /* ===== Clip Card ===== */
+  .folder-dialog__clip-card {
+    position: relative;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 200ms ease;
+    overflow: hidden;
+  }
+
+  .folder-dialog__clip-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    background-color: var(--sidebar-active);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  }
+
+  .folder-dialog__clip-card--active {
+    border-color: rgba(6, 182, 212, 0.5);
+    background-color: rgba(6, 182, 212, 0.05);
+    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.3);
+  }
+
+  .folder-dialog__clip-accent {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    opacity: 0.6;
+    border-radius: 10px 0 0 10px;
+  }
+
+  .folder-dialog__clip-content {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    padding-left: 1rem;
+  }
+
+  /* ===== Clip Thumbnail ===== */
+  .folder-dialog__clip-thumb {
+    position: relative;
+    flex-shrink: 0;
+    width: 144px;
+    aspect-ratio: 16 / 9;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: rgba(0, 0, 0, 0.5);
+  }
+
+  .folder-dialog__clip-thumb-img {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+  }
+
+  .folder-dialog__clip-thumb-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+    opacity: 0.4;
+  }
+
+  .folder-dialog__clip-thumb-duration {
+    position: absolute;
+    bottom: 0.25rem;
+    right: 0.25rem;
+    padding: 0.125rem 0.375rem;
+    background-color: rgba(0, 0, 0, 0.7);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 500;
+    color: white;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .folder-dialog__clip-thumb-hover {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.4);
+    color: white;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .folder-dialog__clip-card:hover .folder-dialog__clip-thumb-hover {
+    opacity: 1;
+  }
+
+  /* ===== Clip Details ===== */
+  .folder-dialog__clip-details {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 0.125rem 0;
+  }
+
+  .folder-dialog__clip-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .folder-dialog__clip-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .folder-dialog__clip-index {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
+    margin-top: 0.125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .folder-dialog__clip-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* ===== Clip Actions ===== */
+  .folder-dialog__clip-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    flex-shrink: 0;
+    margin: -0.25rem -0.25rem 0 0;
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .folder-dialog__clip-card:hover .folder-dialog__clip-actions,
+  .folder-dialog__clip-actions--visible {
+    opacity: 1;
+  }
+
+  .folder-dialog__clip-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .folder-dialog__clip-action--preview:hover {
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+  }
+
+  .folder-dialog__clip-action--edit:hover {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+  }
+
+  .folder-dialog__clip-action--build:hover {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+  }
+
+  .folder-dialog__clip-action--download {
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    color: rgba(34, 197, 94, 0.8);
+  }
+
+  .folder-dialog__clip-action--download:hover {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+  }
+
+  .folder-dialog__clip-action--delete:hover {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .folder-dialog__clip-download {
+    position: relative;
+  }
+
+  /* ===== Download Menu ===== */
+  .folder-dialog__download-menu {
+    position: fixed;
+    z-index: 99999;
+    min-width: 260px;
+    max-width: 340px;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    padding: 0.25rem 0;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .folder-dialog__download-header {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+    border-bottom: 1px solid var(--sidebar-border);
+    margin-bottom: 0.25rem;
+  }
+
+  .folder-dialog__download-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .folder-dialog__download-item:last-child {
+    border-bottom: none;
+  }
+
+  .folder-dialog__download-item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .folder-dialog__download-item-icon {
+    flex-shrink: 0;
+    color: #4ade80;
+  }
+
+  .folder-dialog__download-item-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .folder-dialog__download-item-name {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .folder-dialog__download-item-ratio {
+    color: var(--sidebar-accent);
+    font-weight: 600;
+  }
+
+  .folder-dialog__download-item-number {
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  .folder-dialog__download-item-filename {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__download-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.125rem;
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Clip Metrics ===== */
+  .folder-dialog__clip-metrics {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .folder-dialog__clip-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+  }
+
+  .folder-dialog__clip-badge--segment {
+    background-color: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    color: var(--sidebar-text);
+    opacity: 0.7;
+  }
+
+  .folder-dialog__clip-badge--segment span {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__clip-badge--confidence {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  /* ===== Clip Footer ===== */
+  .folder-dialog__clip-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+  }
+
+  .folder-dialog__clip-time {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.6875rem;
+    font-family: ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .folder-dialog__clip-status {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .folder-dialog__clip-status--building {
+    color: #60a5fa;
+  }
+
+  .folder-dialog__clip-status--built {
+    color: #4ade80;
+  }
+
+  .folder-dialog__clip-run {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .folder-dialog__clip-run-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+  }
+
+  /* ===== Player Column ===== */
+  .folder-dialog__player {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+
+  .folder-dialog__player-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+  }
+
+  .folder-dialog__player-empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 80px;
+    background-color: var(--sidebar-hover);
+    border-radius: 9999px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.4;
+    margin-bottom: 1rem;
+  }
+
+  .folder-dialog__player-empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    opacity: 0.8;
+    margin: 0 0 0.5rem;
+  }
+
+  .folder-dialog__player-empty-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+    margin: 0;
+    max-width: 280px;
+  }
+
+  .folder-dialog__player-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .folder-dialog__player-info {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .folder-dialog__player-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__player-segment {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__player-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__player-close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Video Container ===== */
+  .folder-dialog__player-video {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background-color: black;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .folder-dialog__player-video-el {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .folder-dialog__player-loading,
+  .folder-dialog__player-no-source {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
+  }
+
+  .folder-dialog__player-watermark {
+    position: absolute;
+    pointer-events: none;
+    z-index: 10;
+    transition: opacity 300ms ease;
+  }
+
+  .folder-dialog__player-watermark-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  /* ===== Video Controls ===== */
+  .folder-dialog__player-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .folder-dialog__player-video:hover .folder-dialog__player-controls,
+  .folder-dialog__player-controls--visible {
+    opacity: 1;
+  }
+
+  .folder-dialog__player-progress {
+    position: relative;
+    height: 16px;
+    width: 100%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+  }
+
+  .folder-dialog__player-progress-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .folder-dialog__player-progress-bg {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .folder-dialog__player-progress-bar {
+    position: absolute;
+    height: 100%;
+    background-color: var(--sidebar-accent);
+  }
+
+  .folder-dialog__player-progress-bar--smooth {
+    transition: width 75ms ease;
+  }
+
+  .folder-dialog__player-progress-thumb {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    background-color: var(--sidebar-accent);
+    border-radius: 9999px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+  }
+
+  .folder-dialog__player-progress-thumb--large {
+    width: 16px;
+    height: 16px;
+  }
+
+  .folder-dialog__player-progress-thumb--smooth {
+    transition:
+      left 75ms ease,
+      width 75ms ease,
+      height 75ms ease;
+  }
+
+  .folder-dialog__player-progress-tooltip {
+    position: absolute;
+    top: -32px;
+    padding: 0.25rem 0.5rem;
+    background-color: rgba(0, 0, 0, 0.9);
+    backdrop-filter: blur(4px);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: white;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 20;
+    transform: translateX(-50%);
+  }
+
+  .folder-dialog__player-controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .folder-dialog__player-controls-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .folder-dialog__player-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: white;
+    cursor: pointer;
+    transition: color 150ms ease;
+    padding: 0;
+  }
+
+  .folder-dialog__player-btn:hover {
+    color: var(--sidebar-accent);
+  }
+
+  .folder-dialog__player-volume {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .folder-dialog__player-volume-slider {
+    width: 64px;
+    height: 4px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 9999px;
+    appearance: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .folder-dialog__player-volume:hover .folder-dialog__player-volume-slider {
+    opacity: 1;
+  }
+
+  .folder-dialog__player-volume-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    background-color: white;
+    border-radius: 9999px;
+  }
+
+  .folder-dialog__player-time {
+    font-size: 0.75rem;
+    font-family: ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    color: white;
+  }
+
+  /* ===== Play Overlay ===== */
+  .folder-dialog__player-play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .folder-dialog__player-play-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    border-radius: 9999px;
+    color: white;
+    padding-left: 4px;
+  }
+
+  /* ===== Player Description ===== */
+  .folder-dialog__player-description {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+  }
+
+  .folder-dialog__player-description p {
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* ===== Footer ===== */
+  .folder-dialog__footer {
+    display: flex;
+    justify-content: center;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
+  }
+
+  /* ===== Utility ===== */
+  .folder-dialog__spin {
+    animation: folder-dialog-spin 0.8s linear infinite;
+  }
+
+  @keyframes folder-dialog-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* ===== Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 </style>
 
