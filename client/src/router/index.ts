@@ -133,7 +133,6 @@ const router = createRouter({
       path: '/campaigns',
       name: 'campaigns',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -246,11 +245,11 @@ const router = createRouter({
         },
       ],
     },
-    // Authentication routes
+    // Legacy login route - redirect to home (auth is handled via AuthModal)
     {
       path: '/login',
       name: 'login',
-      component: () => import('@/components/Auth.vue'),
+      redirect: '/',
     },
     {
       path: '/reset-password/:token',

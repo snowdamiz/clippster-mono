@@ -15,7 +15,7 @@
 
       <div
         class="campaigns__content"
-        :class="{ 'campaigns__content--empty': !loading && filteredCampaigns.length === 0 }"
+        :class="{ 'campaigns__content--empty': !loading && (needsAuth || filteredCampaigns.length === 0) }"
       >
         <!-- Page Heading -->
         <div v-if="!loading && filteredCampaigns.length > 0" class="campaigns__heading">
@@ -41,6 +41,18 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Auth Required State -->
+        <div v-else-if="needsAuth" class="campaigns__empty">
+          <div class="campaigns__empty-icon-wrapper">
+            <Megaphone class="campaigns__empty-icon" />
+          </div>
+          <h3 class="campaigns__empty-title">Sign in to browse campaigns</h3>
+          <p class="campaigns__empty-description">
+            Create an account or sign in to discover clipping campaigns and start earning
+          </p>
+          <button class="campaigns__signin-btn" @click="showAuthModal = true">Sign In</button>
         </div>
 
         <!-- Empty State -->
@@ -185,12 +197,20 @@
     </PageLayout>
 
     <!-- Campaign Detail Dialog -->
-    <CampaignDetailDialog v-model:open="showDetailDialog" :campaign="selectedCampaign" @joined="onCampaignJoined" />
+    <CampaignDetailDialog
+      v-model:open="showDetailDialog"
+      :campaign="selectedCampaign"
+      @joined="onCampaignJoined"
+      @require-auth="showAuthModal = true"
+    />
+
+    <!-- Authentication Modal -->
+    <AuthModal v-model="showAuthModal" />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, watch } from 'vue';
   import {
     Megaphone,
     Search,
@@ -207,16 +227,21 @@
   import PageLayout from '@/components/PageLayout.vue';
   import { Input } from '@/components/ui/input';
   import CampaignDetailDialog from '@/components/campaigns/CampaignDetailDialog.vue';
+  import AuthModal from '@/components/AuthModal.vue';
   import { listActiveCampaigns, type Campaign, getPlatformDisplayName } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
+  import { useAuthStore } from '@/stores/auth';
 
   const { toast } = useToast();
+  const authStore = useAuthStore();
 
   const loading = ref(true);
   const campaigns = ref<Campaign[]>([]);
   const searchQuery = ref('');
   const showDetailDialog = ref(false);
   const selectedCampaign = ref<Campaign | null>(null);
+  const showAuthModal = ref(false);
+  const needsAuth = ref(false);
 
   const filteredCampaigns = computed(() => {
     if (!searchQuery.value) return campaigns.value;
@@ -295,8 +320,25 @@
     }
   };
 
+  // Watch for authentication changes to load campaigns after user logs in
+  watch(
+    () => authStore.isAuthenticated,
+    (isAuth) => {
+      if (isAuth && needsAuth.value) {
+        needsAuth.value = false;
+        loadCampaigns();
+      }
+    }
+  );
+
   onMounted(() => {
-    loadCampaigns();
+    // Check if user is authenticated before loading campaigns
+    if (!authStore.isAuthenticated) {
+      needsAuth.value = true;
+      loading.value = false;
+    } else {
+      loadCampaigns();
+    }
   });
 </script>
 
@@ -780,6 +822,24 @@
     margin: 0;
     max-width: 320px;
     line-height: 1.5;
+  }
+
+  .campaigns__signin-btn {
+    margin-top: 1.25rem;
+    padding: 0.75rem 2rem;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns__signin-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
   }
 
   /* ===== Loading State ===== */
