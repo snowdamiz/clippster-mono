@@ -1657,14 +1657,14 @@
   }
 
   .post-submissions__empty-icon-wrapper {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 72px;
-    height: 72px;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
-    border-radius: 20px;
-    margin-bottom: 1.5rem;
+    background-color: var(--sidebar-hover);
+    margin-bottom: 1.25rem;
   }
 
   .post-submissions__empty-icon {

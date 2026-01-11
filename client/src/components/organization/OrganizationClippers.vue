@@ -1,406 +1,403 @@
 <template>
-  <div class="organization-clippers">
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h2 class="text-base font-semibold text-foreground">Find Clippers</h2>
-        <p class="text-sm text-muted-foreground mt-0.5">Browse talented clippers for your campaigns</p>
-      </div>
-      <div class="flex gap-1 bg-muted/50 rounded-lg p-1">
-        <button
-          @click="activeView = 'directory'"
-          class="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5"
-          :class="
-            activeView === 'directory'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          "
-        >
-          <Users class="w-4 h-4" />
-          Directory
-        </button>
-        <button
-          @click="activeView = 'leaderboard'"
-          class="px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5"
-          :class="
-            activeView === 'leaderboard'
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          "
-        >
-          <Trophy class="w-4 h-4" />
-          Leaderboard
-        </button>
-      </div>
+  <div class="org-clippers">
+    <!-- Page Heading -->
+    <div class="org-clippers__heading">
+      <h1 class="org-clippers__title">
+        {{ activeView === 'leaderboard' ? 'Top Clippers' : 'Clipper Directory' }}
+      </h1>
+      <p class="org-clippers__subtitle">
+        {{
+          activeView === 'leaderboard'
+            ? 'See top performing clippers ranked by clips delivered and engagement'
+            : 'Browse and connect with talented clippers for your campaigns'
+        }}
+      </p>
     </div>
 
     <!-- Leaderboard View -->
-    <div v-if="activeView === 'leaderboard'" class="space-y-6">
-      <!-- TODO Banner -->
-      <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-center gap-3">
-        <AlertTriangle class="w-5 h-5 text-amber-500 flex-shrink-0" />
-        <div>
-          <p class="text-sm font-medium text-amber-600 dark:text-amber-400">Leaderboard In Progress</p>
-          <p class="text-xs text-muted-foreground">
-            View tracking not yet implemented. See
-            <code class="bg-muted px-1 rounded">docs/Leaderboard_TODO.md</code>
-            for remaining tasks.
-          </p>
+    <template v-if="activeView === 'leaderboard'">
+      <!-- Period Toggle Bar -->
+      <div class="org-clippers__toolbar">
+        <div class="org-clippers__period-toggle">
+          <button
+            @click="switchLeaderboardPeriod('weekly')"
+            class="org-clippers__period-btn"
+            :class="{ 'org-clippers__period-btn--active': leaderboardPeriod === 'weekly' }"
+          >
+            Weekly
+          </button>
+          <button
+            @click="switchLeaderboardPeriod('monthly')"
+            class="org-clippers__period-btn"
+            :class="{ 'org-clippers__period-btn--active': leaderboardPeriod === 'monthly' }"
+          >
+            Monthly
+          </button>
         </div>
       </div>
 
-      <!-- Leaderboard Card -->
-      <div class="bg-card border border-border/60 rounded-xl p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-foreground">Top Clippers</h3>
-          <div class="flex gap-1 bg-muted/50 rounded-lg p-1">
-            <button
-              @click="switchLeaderboardPeriod('weekly')"
-              class="px-3 py-1 text-sm rounded-md transition-colors"
-              :class="
-                leaderboardPeriod === 'weekly'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              "
-            >
-              Weekly
-            </button>
-            <button
-              @click="switchLeaderboardPeriod('monthly')"
-              class="px-3 py-1 text-sm rounded-md transition-colors"
-              :class="
-                leaderboardPeriod === 'monthly'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              "
-            >
-              Monthly
-            </button>
-          </div>
-        </div>
-
-        <div v-if="loadingLeaderboard" class="space-y-3">
-          <div v-for="i in 10" :key="i" class="flex items-center gap-4 p-3 bg-muted/20 rounded-lg animate-pulse">
-            <div class="w-8 h-8 rounded-full bg-muted/40"></div>
-            <div class="flex-1 space-y-2">
-              <div class="h-4 bg-muted/40 rounded w-32"></div>
-              <div class="h-3 bg-muted/30 rounded w-24"></div>
+      <!-- Loading State -->
+      <div v-if="loadingLeaderboard" class="org-clippers__leaderboard-list">
+        <div v-for="i in 10" :key="i" class="org-clippers__leaderboard-card org-clippers__leaderboard-card--skeleton">
+          <div class="org-clippers__leaderboard-indicator"></div>
+          <div class="org-clippers__leaderboard-content">
+            <div class="org-clippers__skeleton-rank"></div>
+            <div class="org-clippers__skeleton-avatar"></div>
+            <div class="org-clippers__skeleton-info">
+              <div class="org-clippers__skeleton-name"></div>
+              <div class="org-clippers__skeleton-meta"></div>
             </div>
+            <div class="org-clippers__skeleton-stats"></div>
           </div>
         </div>
+      </div>
 
-        <div v-else-if="leaderboardEntries.length === 0" class="text-center py-8">
-          <Trophy class="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
-          <p class="text-sm text-muted-foreground">No leaderboard data yet</p>
+      <!-- Empty State -->
+      <div v-else-if="leaderboardEntries.length === 0" class="org-clippers__empty">
+        <div class="org-clippers__empty-icon-wrapper">
+          <Trophy class="org-clippers__empty-icon" />
         </div>
+        <h3 class="org-clippers__empty-title">No leaderboard data yet</h3>
+        <p class="org-clippers__empty-text">Clipper rankings will appear here once data is available</p>
+      </div>
 
-        <div v-else class="space-y-2">
-          <router-link
-            v-for="(entry, index) in leaderboardEntries"
-            :key="entry.id"
-            :to="`/clippers/${entry.clipper_profile?.slug}`"
-            class="flex items-center gap-4 p-3 rounded-lg transition-colors bg-muted/20 hover:bg-muted/30"
-          >
+      <!-- Leaderboard List -->
+      <div v-else class="org-clippers__leaderboard-list">
+        <router-link
+          v-for="(entry, index) in leaderboardEntries"
+          :key="entry.id"
+          :to="`/clippers/${entry.clipper_profile?.slug}`"
+          class="org-clippers__leaderboard-card"
+          :class="{
+            'org-clippers__leaderboard-card--gold': index === 0,
+            'org-clippers__leaderboard-card--silver': index === 1,
+            'org-clippers__leaderboard-card--bronze': index === 2,
+          }"
+        >
+          <div
+            class="org-clippers__leaderboard-indicator"
+            :class="{
+              'org-clippers__leaderboard-indicator--gold': index === 0,
+              'org-clippers__leaderboard-indicator--silver': index === 1,
+              'org-clippers__leaderboard-indicator--bronze': index === 2,
+            }"
+          ></div>
+          <div class="org-clippers__leaderboard-content">
             <!-- Rank -->
             <div
-              class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm"
+              class="org-clippers__rank"
               :class="{
-                'bg-amber-500 text-white': index === 0,
-                'bg-gray-400 text-white': index === 1,
-                'bg-amber-700 text-white': index === 2,
-                'bg-muted text-muted-foreground': index > 2,
+                'org-clippers__rank--gold': index === 0,
+                'org-clippers__rank--silver': index === 1,
+                'org-clippers__rank--bronze': index === 2,
               }"
             >
               {{ index + 1 }}
             </div>
 
-            <!-- Avatar & Name -->
-            <div class="flex items-center gap-3 flex-1 min-w-0">
-              <div
-                class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0"
-              >
-                <img
-                  v-if="entry.clipper_profile?.avatar_url"
-                  :src="entry.clipper_profile.avatar_url"
-                  class="w-full h-full object-cover"
-                />
-                <UserCircle v-else class="w-5 h-5 text-primary" />
-              </div>
-              <div class="min-w-0">
-                <div class="font-medium text-foreground truncate flex items-center gap-1.5">
-                  {{ entry.clipper_profile?.display_name || 'Anonymous Clipper' }}
-                  <CheckCircle
-                    v-if="entry.clipper_profile?.is_verified"
-                    class="w-3.5 h-3.5 text-blue-500 flex-shrink-0"
-                  />
-                </div>
-                <div class="text-xs text-muted-foreground">{{ entry.clips_delivered }} clips</div>
-              </div>
+            <!-- Avatar -->
+            <div class="org-clippers__leaderboard-avatar">
+              <img
+                v-if="entry.clipper_profile?.avatar_url"
+                :src="entry.clipper_profile.avatar_url"
+                class="org-clippers__leaderboard-avatar-img"
+              />
+              <UserCircle v-else class="org-clippers__leaderboard-avatar-icon" />
             </div>
 
-            <!-- Stats -->
-            <div class="text-right flex-shrink-0">
-              <div class="font-semibold text-foreground">{{ formatViews(entry.total_views || 0) }}</div>
-              <div class="text-xs text-muted-foreground">views</div>
+            <!-- Info -->
+            <div class="org-clippers__leaderboard-info">
+              <div class="org-clippers__leaderboard-name">
+                {{ entry.clipper_profile?.display_name || 'Anonymous Clipper' }}
+                <CheckCircle v-if="entry.clipper_profile?.is_verified" class="org-clippers__verified-badge" />
+              </div>
+              <div class="org-clippers__leaderboard-meta">{{ entry.clips_delivered }} clips delivered</div>
             </div>
-          </router-link>
-        </div>
 
-        <p class="text-xs text-muted-foreground mt-4 text-center italic">
-          Leaderboard based on clips posted and views from clipper social accounts
-        </p>
+            <!-- Views -->
+            <div class="org-clippers__leaderboard-stats">
+              <span class="org-clippers__leaderboard-value">{{ formatViews(entry.total_views || 0) }}</span>
+              <span class="org-clippers__leaderboard-label">views</span>
+            </div>
+          </div>
+        </router-link>
       </div>
-    </div>
+    </template>
 
     <!-- Directory View -->
-    <div v-else class="flex gap-6">
-      <!-- Filters Sidebar -->
-      <div class="w-56 flex-shrink-0 space-y-4">
-        <div class="bg-muted/20 border border-border/60 rounded-xl p-4 space-y-4">
-          <h3 class="font-semibold text-foreground text-sm">Filters</h3>
-
-          <!-- Looking for Work -->
-          <div class="flex items-center justify-between">
-            <Label class="text-xs">Available for work</Label>
-            <Switch v-model:checked="filters.looking_for_work" @update:checked="loadClippers" />
-          </div>
-
-          <!-- Verified Only -->
-          <div class="flex items-center justify-between">
-            <Label class="text-xs">Verified only</Label>
-            <Switch v-model:checked="filters.verified_only" @update:checked="loadClippers" />
-          </div>
-
-          <!-- Experience Level -->
-          <div class="space-y-1.5">
-            <Label class="text-xs">Experience</Label>
-            <Select v-model="filters.experience_level" @update:modelValue="loadClippers">
-              <SelectTrigger class="h-8 text-xs">
-                <SelectValue placeholder="Any level" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="any">Any level</SelectItem>
-                <SelectItem v-for="level in EXPERIENCE_LEVELS" :key="level.value" :value="level.value">
-                  {{ level.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <!-- Specialty Tags -->
-          <div class="space-y-1.5">
-            <Label class="text-xs">Specialties</Label>
-            <div class="flex flex-wrap gap-1">
-              <button
-                v-for="tag in SPECIALTY_TAGS"
-                :key="tag.value"
-                @click="toggleFilter('specialty_tags', tag.value)"
-                class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
-                :class="
-                  filters.specialty_tags.includes(tag.value)
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-                "
-              >
-                {{ tag.label }}
-              </button>
-            </div>
-          </div>
-
-          <!-- Content Style Tags -->
-          <div class="space-y-1.5">
-            <Label class="text-xs">Content Style</Label>
-            <div class="flex flex-wrap gap-1">
-              <button
-                v-for="tag in CONTENT_STYLE_TAGS"
-                :key="tag.value"
-                @click="toggleFilter('content_style_tags', tag.value)"
-                class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
-                :class="
-                  filters.content_style_tags.includes(tag.value)
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-                "
-              >
-                {{ tag.label }}
-              </button>
-            </div>
-          </div>
-
-          <!-- Platforms -->
-          <div class="space-y-1.5">
-            <Label class="text-xs">Platforms</Label>
-            <div class="flex flex-wrap gap-1">
-              <button
-                v-for="platform in PREFERRED_PLATFORMS"
-                :key="platform.value"
-                @click="toggleFilter('preferred_platforms', platform.value)"
-                class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
-                :class="
-                  filters.preferred_platforms.includes(platform.value)
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-                "
-              >
-                {{ platform.label }}
-              </button>
-            </div>
-          </div>
-
-          <!-- Languages -->
-          <div class="space-y-1.5">
-            <Label class="text-xs">Languages</Label>
-            <div class="flex flex-wrap gap-1">
-              <button
-                v-for="lang in LANGUAGES"
-                :key="lang.code"
-                @click="toggleFilter('languages', lang.code)"
-                class="px-1.5 py-0.5 rounded text-[10px] transition-colors"
-                :class="
-                  filters.languages.includes(lang.code)
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-                "
-              >
-                {{ lang.name }}
-              </button>
-            </div>
-          </div>
-
-          <Button variant="outline" size="sm" class="w-full text-xs" @click="clearFilters">Clear Filters</Button>
+    <template v-else>
+      <!-- Compact Filters Toolbar -->
+      <div class="org-clippers__toolbar">
+        <!-- Available for Work -->
+        <div class="org-clippers__filter-toggle">
+          <Switch v-model:checked="filters.looking_for_work" @update:checked="loadClippers" />
+          <span class="org-clippers__filter-toggle-label">Available for work</span>
         </div>
+
+        <!-- Verified Only -->
+        <div class="org-clippers__filter-toggle">
+          <Switch v-model:checked="filters.verified_only" @update:checked="loadClippers" />
+          <span class="org-clippers__filter-toggle-label">Verified only</span>
+        </div>
+
+        <!-- Experience Level -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <button class="org-clippers__filter-btn">
+              <span>{{ getExperienceFilterLabel() }}</span>
+              <ChevronDown class="org-clippers__filter-chevron" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" :side-offset="4" class="org-clippers__filter-dropdown">
+            <DropdownMenuItem
+              class="org-clippers__filter-item"
+              :class="{ 'org-clippers__filter-item--active': filters.experience_level === 'any' }"
+              @click="
+                filters.experience_level = 'any';
+                loadClippers();
+              "
+            >
+              Any Experience
+            </DropdownMenuItem>
+            <DropdownMenuSeparator class="org-clippers__filter-separator" />
+            <DropdownMenuItem
+              v-for="level in EXPERIENCE_LEVELS"
+              :key="level.value"
+              class="org-clippers__filter-item"
+              :class="{ 'org-clippers__filter-item--active': filters.experience_level === level.value }"
+              @click="
+                filters.experience_level = level.value;
+                loadClippers();
+              "
+            >
+              {{ level.label }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <!-- Specialties -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <button class="org-clippers__filter-btn org-clippers__filter-btn--wide">
+              <span>{{ getSpecialtiesFilterLabel() }}</span>
+              <ChevronDown class="org-clippers__filter-chevron" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" :side-offset="4" class="org-clippers__filter-dropdown">
+            <DropdownMenuItem
+              v-for="tag in SPECIALTY_TAGS"
+              :key="tag.value"
+              class="org-clippers__filter-item"
+              :class="{ 'org-clippers__filter-item--active': filters.specialty_tags.includes(tag.value) }"
+              @click="toggleFilter('specialty_tags', tag.value)"
+            >
+              <span
+                class="org-clippers__filter-check"
+                :class="{ 'org-clippers__filter-check--active': filters.specialty_tags.includes(tag.value) }"
+              >
+                <Check v-if="filters.specialty_tags.includes(tag.value)" class="org-clippers__filter-check-icon" />
+              </span>
+              {{ tag.label }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <!-- Content Style -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <button class="org-clippers__filter-btn org-clippers__filter-btn--wide">
+              <span>{{ getContentStyleFilterLabel() }}</span>
+              <ChevronDown class="org-clippers__filter-chevron" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" :side-offset="4" class="org-clippers__filter-dropdown">
+            <DropdownMenuItem
+              v-for="tag in CONTENT_STYLE_TAGS"
+              :key="tag.value"
+              class="org-clippers__filter-item"
+              :class="{ 'org-clippers__filter-item--active': filters.content_style_tags.includes(tag.value) }"
+              @click="toggleFilter('content_style_tags', tag.value)"
+            >
+              <span
+                class="org-clippers__filter-check"
+                :class="{ 'org-clippers__filter-check--active': filters.content_style_tags.includes(tag.value) }"
+              >
+                <Check v-if="filters.content_style_tags.includes(tag.value)" class="org-clippers__filter-check-icon" />
+              </span>
+              {{ tag.label }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <!-- Platforms -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <button class="org-clippers__filter-btn">
+              <span>{{ getPlatformsFilterLabel() }}</span>
+              <ChevronDown class="org-clippers__filter-chevron" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" :side-offset="4" class="org-clippers__filter-dropdown">
+            <DropdownMenuItem
+              v-for="platform in PREFERRED_PLATFORMS"
+              :key="platform.value"
+              class="org-clippers__filter-item"
+              :class="{ 'org-clippers__filter-item--active': filters.preferred_platforms.includes(platform.value) }"
+              @click="toggleFilter('preferred_platforms', platform.value)"
+            >
+              <span
+                class="org-clippers__filter-check"
+                :class="{ 'org-clippers__filter-check--active': filters.preferred_platforms.includes(platform.value) }"
+              >
+                <Check
+                  v-if="filters.preferred_platforms.includes(platform.value)"
+                  class="org-clippers__filter-check-icon"
+                />
+              </span>
+              {{ platform.label }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <!-- Languages -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <button class="org-clippers__filter-btn">
+              <span>{{ getLanguagesFilterLabel() }}</span>
+              <ChevronDown class="org-clippers__filter-chevron" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" :side-offset="4" class="org-clippers__filter-dropdown">
+            <DropdownMenuItem
+              v-for="lang in LANGUAGES"
+              :key="lang.code"
+              class="org-clippers__filter-item"
+              :class="{ 'org-clippers__filter-item--active': filters.languages.includes(lang.code) }"
+              @click="toggleFilter('languages', lang.code)"
+            >
+              <span
+                class="org-clippers__filter-check"
+                :class="{ 'org-clippers__filter-check--active': filters.languages.includes(lang.code) }"
+              >
+                <Check v-if="filters.languages.includes(lang.code)" class="org-clippers__filter-check-icon" />
+              </span>
+              {{ lang.name }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div class="org-clippers__toolbar-spacer"></div>
+
+        <button class="org-clippers__clear-btn" @click="clearFilters" :disabled="!hasActiveFilters">
+          <X class="org-clippers__clear-icon" />
+          Clear
+        </button>
+
+        <span class="org-clippers__results-count">{{ clippers.length }} clippers</span>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="loading" class="org-clippers__grid">
+        <div v-for="i in 6" :key="i" class="org-clippers__card org-clippers__card--skeleton">
+          <div class="org-clippers__card-indicator"></div>
+          <div class="org-clippers__card-content">
+            <div class="org-clippers__skeleton-card-avatar"></div>
+            <div class="org-clippers__skeleton-card-info">
+              <div class="org-clippers__skeleton-card-name"></div>
+              <div class="org-clippers__skeleton-card-level"></div>
+              <div class="org-clippers__skeleton-card-bio"></div>
+            </div>
+          </div>
+          <div class="org-clippers__card-footer">
+            <div class="org-clippers__skeleton-tags"></div>
+            <div class="org-clippers__skeleton-badge"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else-if="clippers.length === 0" class="org-clippers__empty">
+        <div class="org-clippers__empty-icon-wrapper">
+          <Users class="org-clippers__empty-icon" />
+        </div>
+        <h3 class="org-clippers__empty-title">No clippers found</h3>
+        <p class="org-clippers__empty-text">Try adjusting your filters to find more clippers</p>
       </div>
 
       <!-- Clippers Grid -->
-      <div class="flex-1">
-        <div v-if="loading" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div v-else class="org-clippers__grid">
+        <router-link
+          v-for="clipper in clippers"
+          :key="clipper.id"
+          :to="`/clippers/${clipper.slug}`"
+          class="org-clippers__card"
+          :class="{ 'org-clippers__card--available': clipper.looking_for_work }"
+        >
           <div
-            v-for="i in 6"
-            :key="i"
-            class="bg-gradient-to-br from-card to-card/80 border border-border/60 rounded-xl overflow-hidden animate-pulse"
-          >
-            <div class="p-4 pb-3">
-              <div class="flex items-start gap-3.5">
-                <div class="w-14 h-14 rounded-xl bg-muted/40"></div>
-                <div class="flex-1 space-y-2 pt-1">
-                  <div class="h-4 bg-muted/40 rounded w-32"></div>
-                  <div class="h-3 bg-muted/30 rounded w-20"></div>
-                  <div class="h-3 bg-muted/30 rounded w-full"></div>
-                </div>
+            class="org-clippers__card-indicator"
+            :class="{ 'org-clippers__card-indicator--available': clipper.looking_for_work }"
+          ></div>
+          <div class="org-clippers__card-content">
+            <!-- Avatar -->
+            <div class="org-clippers__avatar">
+              <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="org-clippers__avatar-img" />
+              <div v-else class="org-clippers__avatar-fallback">
+                <UserCircle class="org-clippers__avatar-icon" />
+              </div>
+              <div v-if="clipper.looking_for_work" class="org-clippers__available-dot" title="Available for work">
+                <CheckCircle class="org-clippers__available-dot-icon" />
               </div>
             </div>
-            <div class="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/20">
-              <div class="flex items-center justify-between">
-                <div class="flex gap-1.5">
-                  <div class="h-6 bg-muted/30 rounded w-16"></div>
-                  <div class="h-6 bg-muted/30 rounded w-16"></div>
-                </div>
-                <div class="h-6 bg-muted/30 rounded w-24"></div>
+
+            <!-- Info -->
+            <div class="org-clippers__info">
+              <div class="org-clippers__name">
+                {{ clipper.display_name || 'Unnamed' }}
+                <CheckCircle v-if="clipper.is_verified" class="org-clippers__verified-badge" />
               </div>
+              <div class="org-clippers__level">
+                {{ getExperienceLevelLabel(clipper.experience_level || '') }}
+              </div>
+              <p v-if="clipper.bio" class="org-clippers__bio">{{ clipper.bio }}</p>
+              <p v-else class="org-clippers__bio org-clippers__bio--empty">No bio provided</p>
             </div>
           </div>
-        </div>
 
-        <div v-else-if="clippers.length === 0" class="text-center py-12">
-          <Users class="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
-          <h3 class="text-base font-medium text-foreground mb-1">No clippers found</h3>
-          <p class="text-sm text-muted-foreground">Try adjusting your filters</p>
-        </div>
-
-        <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <router-link v-for="clipper in clippers" :key="clipper.id" :to="`/clippers/${clipper.slug}`" class="block">
-            <div
-              class="group relative bg-gradient-to-br from-card to-card/80 border border-border/60 rounded-xl overflow-hidden hover:border-border hover:shadow-lg hover:shadow-black/5 transition-all duration-200 h-full"
-            >
-              <!-- Top Section: Avatar & Name -->
-              <div class="p-4 pb-3">
-                <div class="flex items-start gap-3.5">
-                  <!-- Avatar -->
-                  <div class="relative flex-shrink-0">
-                    <div
-                      class="w-14 h-14 rounded-xl bg-muted flex items-center justify-center overflow-hidden ring-2 ring-border/30 ring-offset-2 ring-offset-card"
-                    >
-                      <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="w-full h-full object-cover" />
-                      <div
-                        v-else
-                        class="absolute inset-0 bg-gradient-to-br from-primary/25 via-primary/15 to-primary/20"
-                      ></div>
-                      <UserCircle v-if="!clipper.avatar_url" class="h-7 w-7 text-muted-foreground/40 relative z-10" />
-                    </div>
-                    <!-- Available badge on avatar -->
-                    <div v-if="clipper.looking_for_work" class="absolute -bottom-1 -right-1">
-                      <div
-                        class="w-5 h-5 rounded-full bg-green-500/20 border-2 border-card flex items-center justify-center"
-                        title="Available for work"
-                      >
-                        <CheckCircle class="w-2.5 h-2.5 text-green-400" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Name & Bio -->
-                  <div class="flex-1 min-w-0 pt-0.5">
-                    <div class="flex items-center gap-1.5">
-                      <h3 class="font-semibold text-foreground truncate text-[15px] leading-tight">
-                        {{ clipper.display_name || 'Unnamed' }}
-                      </h3>
-                      <CheckCircle v-if="clipper.is_verified" class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                    </div>
-                    <div class="text-xs text-muted-foreground mt-0.5">
-                      {{ getExperienceLevelLabel(clipper.experience_level || '') }}
-                    </div>
-                    <p v-if="clipper.bio" class="text-xs text-muted-foreground line-clamp-2 mt-1 leading-relaxed">
-                      {{ clipper.bio }}
-                    </p>
-                    <p v-else class="text-xs text-muted-foreground/50 italic mt-1">No bio</p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Bottom Section: Tags & Stats -->
-              <div class="px-4 pb-4 pt-2 border-t border-border/30 bg-muted/20">
-                <div class="flex items-center justify-between gap-3">
-                  <!-- Tags -->
-                  <div class="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
-                    <template v-if="clipper.specialty_tags?.length">
-                      <span
-                        v-for="tag in clipper.specialty_tags.slice(0, 3)"
-                        :key="tag"
-                        class="px-2 py-1 rounded-md text-xs font-medium bg-muted/50 text-muted-foreground border border-border/50"
-                      >
-                        {{ getSpecialtyTagLabel(tag) }}
-                      </span>
-                      <span v-if="clipper.specialty_tags.length > 3" class="text-xs text-muted-foreground px-1.5">
-                        +{{ clipper.specialty_tags.length - 3 }} more
-                      </span>
-                    </template>
-                    <span v-else class="text-xs text-muted-foreground/60">No specialties</span>
-                  </div>
-
-                  <!-- Stats Badge -->
-                  <div
-                    class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium flex-shrink-0 bg-primary/10 text-primary border border-primary/20"
-                  >
-                    <Trophy class="w-3.5 h-3.5" />
-                    <span>{{ clipper.total_campaigns_completed }} campaigns</span>
-                  </div>
-                </div>
-              </div>
+          <!-- Footer -->
+          <div class="org-clippers__card-footer">
+            <div class="org-clippers__tags">
+              <template v-if="clipper.specialty_tags?.length">
+                <span v-for="tag in clipper.specialty_tags.slice(0, 3)" :key="tag" class="org-clippers__tag">
+                  {{ getSpecialtyTagLabel(tag) }}
+                </span>
+                <span v-if="clipper.specialty_tags.length > 3" class="org-clippers__tag-more">
+                  +{{ clipper.specialty_tags.length - 3 }}
+                </span>
+              </template>
+              <span v-else class="org-clippers__no-tags">No specialties</span>
             </div>
-          </router-link>
-        </div>
+            <div class="org-clippers__campaigns-badge">
+              <Trophy class="org-clippers__campaigns-icon" />
+              <span>{{ clipper.total_campaigns_completed }} campaigns</span>
+            </div>
+          </div>
+        </router-link>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted } from 'vue';
-  import { Users, Trophy, UserCircle, CheckCircle, AlertTriangle } from 'lucide-vue-next';
-  import { Button } from '@/components/ui/button';
-  import { Label } from '@/components/ui/label';
+  import { ref, reactive, computed, onMounted } from 'vue';
+  import { Users, Trophy, UserCircle, CheckCircle, ChevronDown, X, Check } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
-  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
   import {
     listClippers,
     getLeaderboard,
@@ -412,12 +409,15 @@
     LANGUAGES,
     getExperienceLevelLabel,
     getSpecialtyTagLabel,
-    getContentStyleTagLabel,
-    getLanguageName,
   } from '@/services/clipperProfilesApi';
 
-  // View state
-  const activeView = ref<'directory' | 'leaderboard'>('directory');
+  // Props
+  const props = defineProps<{
+    activeView: 'directory' | 'leaderboard';
+  }>();
+
+  // Computed to use prop
+  const activeView = computed(() => props.activeView);
 
   // Directory state
   const loading = ref(true);
@@ -487,6 +487,18 @@
     languages: [] as string[],
   });
 
+  const hasActiveFilters = computed(() => {
+    return (
+      filters.looking_for_work ||
+      filters.verified_only ||
+      filters.experience_level !== 'any' ||
+      filters.specialty_tags.length > 0 ||
+      filters.content_style_tags.length > 0 ||
+      filters.preferred_platforms.length > 0 ||
+      filters.languages.length > 0
+    );
+  });
+
   const loadClippers = async () => {
     loading.value = true;
     try {
@@ -534,6 +546,49 @@
     loadClippers();
   };
 
+  // Filter label helpers
+  const getExperienceFilterLabel = () => {
+    if (filters.experience_level === 'any') return 'Any Experience';
+    const level = EXPERIENCE_LEVELS.find((l) => l.value === filters.experience_level);
+    return level?.label || 'Any Experience';
+  };
+
+  const getSpecialtiesFilterLabel = () => {
+    if (filters.specialty_tags.length === 0) return 'All Specialties';
+    if (filters.specialty_tags.length === 1) {
+      const tag = SPECIALTY_TAGS.find((t) => t.value === filters.specialty_tags[0]);
+      return tag?.label || 'Specialties';
+    }
+    return `${filters.specialty_tags.length} Specialties`;
+  };
+
+  const getContentStyleFilterLabel = () => {
+    if (filters.content_style_tags.length === 0) return 'All Styles';
+    if (filters.content_style_tags.length === 1) {
+      const tag = CONTENT_STYLE_TAGS.find((t) => t.value === filters.content_style_tags[0]);
+      return tag?.label || 'Content Style';
+    }
+    return `${filters.content_style_tags.length} Styles`;
+  };
+
+  const getPlatformsFilterLabel = () => {
+    if (filters.preferred_platforms.length === 0) return 'All Platforms';
+    if (filters.preferred_platforms.length === 1) {
+      const platform = PREFERRED_PLATFORMS.find((p) => p.value === filters.preferred_platforms[0]);
+      return platform?.label || 'Platforms';
+    }
+    return `${filters.preferred_platforms.length} Platforms`;
+  };
+
+  const getLanguagesFilterLabel = () => {
+    if (filters.languages.length === 0) return 'All Languages';
+    if (filters.languages.length === 1) {
+      const lang = LANGUAGES.find((l) => l.code === filters.languages[0]);
+      return lang?.name || 'Languages';
+    }
+    return `${filters.languages.length} Languages`;
+  };
+
   onMounted(() => {
     loadClippers();
     loadLeaderboard();
@@ -541,7 +596,919 @@
 </script>
 
 <style scoped>
-  .organization-clippers {
+  /* ===== Page Container ===== */
+  .org-clippers {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* ===== Page Heading ===== */
+  .org-clippers__heading {
+    margin-bottom: 0;
+  }
+
+  .org-clippers__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .org-clippers__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Toolbar ===== */
+  .org-clippers__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .org-clippers__toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .org-clippers__toolbar-label {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-clippers__toolbar-spacer {
+    flex: 1;
+    min-width: 1rem;
+  }
+
+  .org-clippers__results-count {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    padding: 0.375rem 0.625rem;
+    background-color: rgba(6, 182, 212, 0.1);
+    border-radius: 4px;
+  }
+
+  /* ===== Period Toggle ===== */
+  .org-clippers__period-toggle {
+    display: flex;
+    gap: 0.125rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    padding: 0.1875rem;
+  }
+
+  .org-clippers__period-btn {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-clippers__period-btn:hover {
+    color: var(--sidebar-text);
+  }
+
+  .org-clippers__period-btn--active {
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  /* ===== Filter Controls ===== */
+  .org-clippers__filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .org-clippers__filter-toggle-label {
+    font-size: 0.75rem;
+    color: var(--sidebar-text);
+  }
+
+  .org-clippers__filter-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.375rem;
+    min-width: 110px;
+    height: 30px;
+    padding: 0 0.625rem;
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--sidebar-text);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 5px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-clippers__filter-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .org-clippers__filter-btn[data-state='open'] {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: var(--sidebar-accent);
+  }
+
+  .org-clippers__filter-btn--wide {
+    min-width: 130px;
+  }
+
+  .org-clippers__filter-chevron {
+    width: 12px;
+    height: 12px;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+    transition: transform 150ms ease;
+  }
+
+  .org-clippers__filter-btn[data-state='open'] .org-clippers__filter-chevron {
+    transform: rotate(180deg);
+  }
+
+  .org-clippers__clear-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 30px;
+    padding: 0 0.625rem;
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    border: none;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-clippers__clear-btn:hover:not(:disabled) {
+    color: var(--sidebar-text);
+  }
+
+  .org-clippers__clear-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .org-clippers__clear-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* ===== Clippers Grid ===== */
+  .org-clippers__grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 0.625rem;
+  }
+
+  @media (min-width: 768px) {
+    .org-clippers__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .org-clippers__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  /* ===== Clipper Card ===== */
+  .org-clippers__card {
+    display: flex;
+    flex-direction: column;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    text-decoration: none;
+    transition: all 200ms ease;
+  }
+
+  .org-clippers__card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+  }
+
+  .org-clippers__card-indicator {
+    height: 3px;
+    flex-shrink: 0;
+    background-color: var(--sidebar-border);
+  }
+
+  .org-clippers__card-indicator--available {
+    background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+  }
+
+  .org-clippers__card-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+  }
+
+  /* ===== Avatar ===== */
+  .org-clippers__avatar {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-color: var(--sidebar-hover);
+  }
+
+  .org-clippers__avatar-img {
+    width: 100%;
     height: 100%;
+    object-fit: cover;
+  }
+
+  .org-clippers__avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
+  }
+
+  .org-clippers__avatar-icon {
+    width: 28px;
+    height: 28px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .org-clippers__available-dot {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: rgba(16, 185, 129, 0.2);
+    border: 2px solid var(--sidebar-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .org-clippers__available-dot-icon {
+    width: 10px;
+    height: 10px;
+    color: #10b981;
+  }
+
+  /* ===== Info ===== */
+  .org-clippers__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-clippers__name {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin-bottom: 0.125rem;
+  }
+
+  .org-clippers__verified-badge {
+    width: 14px;
+    height: 14px;
+    color: #3b82f6;
+    flex-shrink: 0;
+  }
+
+  .org-clippers__level {
+    font-size: 0.75rem;
+    color: var(--sidebar-accent);
+    margin-bottom: 0.5rem;
+  }
+
+  .org-clippers__bio {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .org-clippers__bio--empty {
+    font-style: italic;
+    opacity: 0.6;
+  }
+
+  /* ===== Card Footer ===== */
+  .org-clippers__card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .org-clippers__tags {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-clippers__tag {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 4px;
+  }
+
+  .org-clippers__tag-more {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    padding: 0 0.25rem;
+  }
+
+  .org-clippers__no-tags {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .org-clippers__campaigns-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    background-color: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+
+  .org-clippers__campaigns-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* ===== Leaderboard List ===== */
+  .org-clippers__leaderboard-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .org-clippers__leaderboard-card {
+    display: flex;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    text-decoration: none;
+    transition: all 200ms ease;
+  }
+
+  .org-clippers__leaderboard-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  .org-clippers__leaderboard-indicator {
+    width: 3px;
+    flex-shrink: 0;
+    background-color: var(--sidebar-border);
+  }
+
+  .org-clippers__leaderboard-indicator--gold {
+    background: linear-gradient(to bottom, #f59e0b 0%, #d97706 100%);
+  }
+
+  .org-clippers__leaderboard-indicator--silver {
+    background: linear-gradient(to bottom, #9ca3af 0%, #6b7280 100%);
+  }
+
+  .org-clippers__leaderboard-indicator--bronze {
+    background: linear-gradient(to bottom, #d97706 0%, #b45309 100%);
+  }
+
+  .org-clippers__leaderboard-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.875rem 1.25rem;
+  }
+
+  /* ===== Rank ===== */
+  .org-clippers__rank {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 0.875rem;
+    font-weight: 700;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .org-clippers__rank--gold {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+  }
+
+  .org-clippers__rank--silver {
+    background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+    color: white;
+  }
+
+  .org-clippers__rank--bronze {
+    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+    color: white;
+  }
+
+  /* ===== Leaderboard Avatar ===== */
+  .org-clippers__leaderboard-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .org-clippers__leaderboard-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .org-clippers__leaderboard-avatar-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Leaderboard Info ===== */
+  .org-clippers__leaderboard-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-clippers__leaderboard-name {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .org-clippers__leaderboard-meta {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  /* ===== Leaderboard Stats ===== */
+  .org-clippers__leaderboard-stats {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+
+  .org-clippers__leaderboard-value {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .org-clippers__leaderboard-label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .org-clippers__leaderboard-note {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    font-style: italic;
+  }
+
+  .org-clippers__leaderboard-note-icon {
+    width: 14px;
+    height: 14px;
+    opacity: 0.6;
+  }
+
+  /* ===== Empty State ===== */
+  .org-clippers__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1rem;
+    text-align: center;
+    background-color: var(--sidebar-surface);
+    border: 1px dashed var(--sidebar-border);
+    border-radius: 12px;
+  }
+
+  .org-clippers__empty-icon-wrapper {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--sidebar-hover);
+    margin-bottom: 1.25rem;
+  }
+
+  .org-clippers__empty-icon {
+    width: 28px;
+    height: 28px;
+    color: var(--sidebar-accent);
+  }
+
+  .org-clippers__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .org-clippers__empty-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 300px;
+  }
+
+  /* ===== Skeleton Loading ===== */
+  .org-clippers__card--skeleton,
+  .org-clippers__leaderboard-card--skeleton {
+    pointer-events: none;
+  }
+
+  .org-clippers__skeleton-card-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .org-clippers__skeleton-card-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .org-clippers__skeleton-card-name {
+    height: 16px;
+    width: 60%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.1s;
+    border-radius: 4px;
+  }
+
+  .org-clippers__skeleton-card-level {
+    height: 12px;
+    width: 30%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.15s;
+    border-radius: 4px;
+  }
+
+  .org-clippers__skeleton-card-bio {
+    height: 32px;
+    width: 100%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.2s;
+    border-radius: 4px;
+  }
+
+  .org-clippers__skeleton-tags {
+    height: 24px;
+    width: 120px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.25s;
+    border-radius: 4px;
+  }
+
+  .org-clippers__skeleton-badge {
+    height: 24px;
+    width: 80px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.3s;
+    border-radius: 6px;
+  }
+
+  .org-clippers__skeleton-rank {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .org-clippers__skeleton-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.1s;
+  }
+
+  .org-clippers__skeleton-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .org-clippers__skeleton-name {
+    height: 16px;
+    width: 140px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.15s;
+    border-radius: 4px;
+  }
+
+  .org-clippers__skeleton-meta {
+    height: 12px;
+    width: 80px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.2s;
+    border-radius: 4px;
+  }
+
+  .org-clippers__skeleton-stats {
+    width: 60px;
+    height: 40px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.25s;
+    border-radius: 6px;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+</style>
+
+<!-- Global styles for dropdown (rendered via portal outside component scope) -->
+<style>
+  /* Prevent button animation when dropdown opens */
+  .org-clippers__filter-btn {
+    transform: none !important;
+    animation: none !important;
+  }
+
+  .org-clippers__filter-btn[data-state='open'] {
+    transform: none !important;
+  }
+
+  .org-clippers__filter-dropdown {
+    min-width: 160px !important;
+    max-height: 320px !important;
+    overflow-y: auto !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    z-index: 100 !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: orgClippersDropdownFade 80ms ease-out !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+    --tw-exit-scale: 1 !important;
+  }
+
+  .org-clippers__filter-dropdown[data-state='open'] {
+    animation: orgClippersDropdownFade 80ms ease-out !important;
+  }
+
+  .org-clippers__filter-dropdown[data-state='closed'] {
+    animation: orgClippersDropdownFadeOut 60ms ease-in !important;
+  }
+
+  @keyframes orgClippersDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes orgClippersDropdownFadeOut {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  .org-clippers__filter-item {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.8125rem !important;
+    color: var(--sidebar-text) !important;
+    cursor: pointer !important;
+  }
+
+  .org-clippers__filter-item:hover,
+  .org-clippers__filter-item:focus,
+  .org-clippers__filter-item[data-highlighted] {
+    background-color: var(--sidebar-hover) !important;
+    outline: none !important;
+  }
+
+  .org-clippers__filter-item--active {
+    background-color: rgba(6, 182, 212, 0.1) !important;
+    color: var(--sidebar-accent) !important;
+  }
+
+  .org-clippers__filter-item--active:hover,
+  .org-clippers__filter-item--active:focus,
+  .org-clippers__filter-item--active[data-highlighted] {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+  }
+
+  .org-clippers__filter-separator {
+    height: 1px !important;
+    margin: 0.25rem 0 !important;
+    background-color: var(--sidebar-border) !important;
+  }
+
+  .org-clippers__filter-check {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid var(--sidebar-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 150ms ease;
+  }
+
+  .org-clippers__filter-check--active {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .org-clippers__filter-check-icon {
+    width: 10px;
+    height: 10px;
+    color: white;
   }
 </style>

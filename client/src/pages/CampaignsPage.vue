@@ -1,5 +1,5 @@
 <template>
-  <div class="campaigns-page">
+  <div class="campaigns">
     <PageLayout
       title="Campaigns"
       description="Browse clipping campaigns and earn money by posting clips"
@@ -7,17 +7,9 @@
       :icon="Megaphone"
     >
       <template #actions>
-        <div class="relative w-[320px] shadow-sm group">
-          <div
-            class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 pointer-events-none z-10"
-          >
-            <Search class="w-4 h-4 text-muted-foreground" />
-          </div>
-          <Input
-            v-model="searchQuery"
-            class="h-12 pl-11 pr-4 text-sm bg-background border-border/70 rounded-lg focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
-            placeholder="Search campaigns..."
-          />
+        <div class="campaigns-search">
+          <Search class="campaigns-search__icon" />
+          <Input v-model="searchQuery" class="campaigns-search__input" placeholder="Search campaigns..." />
         </div>
       </template>
 
@@ -25,16 +17,27 @@
         class="campaigns__content"
         :class="{ 'campaigns__content--empty': !loading && filteredCampaigns.length === 0 }"
       >
+        <!-- Page Heading -->
+        <div v-if="!loading && filteredCampaigns.length > 0" class="campaigns__heading">
+          <h1 class="campaigns__title">Clipping Campaigns</h1>
+          <p class="campaigns__subtitle">Join campaigns from creators and brands to earn money by posting clips</p>
+        </div>
+
         <!-- Loading State -->
-        <div v-if="loading" class="space-y-4 pt-4">
-          <div v-for="i in 4" :key="i" class="bg-card border border-border/60 rounded-xl overflow-hidden animate-pulse">
-            <div class="h-32 bg-muted/40"></div>
-            <div class="p-4 space-y-3">
-              <div class="h-5 bg-muted/40 rounded w-48"></div>
-              <div class="h-4 bg-muted/30 rounded w-full"></div>
-              <div class="flex gap-2">
-                <div class="h-6 bg-muted/30 rounded-full w-20"></div>
-                <div class="h-6 bg-muted/30 rounded-full w-16"></div>
+        <div v-if="loading" class="campaigns__loading">
+          <div class="campaigns__loading-header">
+            <div class="campaigns-skeleton campaigns-skeleton--heading"></div>
+            <div class="campaigns-skeleton campaigns-skeleton--subheading"></div>
+          </div>
+          <div class="campaigns__grid">
+            <div v-for="i in 6" :key="i" class="campaign-card campaign-card--skeleton">
+              <div class="campaign-card__inner">
+                <div class="campaign-card__cover campaign-card__cover--skeleton"></div>
+                <div class="campaign-card__body">
+                  <div class="campaigns-skeleton campaigns-skeleton--title"></div>
+                  <div class="campaigns-skeleton campaigns-skeleton--text"></div>
+                  <div class="campaigns-skeleton campaigns-skeleton--badges"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -47,130 +50,137 @@
           </div>
           <h3 class="campaigns__empty-title">No campaigns found</h3>
           <p class="campaigns__empty-description">
-            {{ searchQuery ? 'Try adjusting your search' : 'Check back later for new campaigns' }}
+            {{ searchQuery ? 'Try adjusting your search query' : 'Check back later for new clipping campaigns' }}
           </p>
         </div>
 
         <!-- Campaigns Grid -->
-        <div v-else class="pt-4">
-          <div class="flex items-center justify-between px-1 text-[13px] text-muted-foreground mb-3">
-            <span class="font-medium">Active Campaigns</span>
-            <span class="tabular-nums">{{ filteredCampaigns.length }} campaigns</span>
+        <template v-else>
+          <!-- Section Header -->
+          <div class="campaigns__section-header">
+            <div class="campaigns__section-header-left">
+              <div class="campaigns__section-icon">
+                <Sparkles />
+              </div>
+              <div class="campaigns__section-text">
+                <h2 class="campaigns__section-title">Active Campaigns</h2>
+                <p class="campaigns__section-subtitle">{{ filteredCampaigns.length }} campaigns available</p>
+              </div>
+            </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="campaigns__grid">
             <div
               v-for="campaign in filteredCampaigns"
               :key="campaign.id"
-              class="group bg-card rounded-xl border border-border/60 overflow-hidden hover:border-primary/30 transition-all cursor-pointer"
+              class="campaign-card"
               @click="viewCampaign(campaign)"
             >
-              <!-- Cover Image -->
-              <div class="relative h-32 bg-gradient-to-br from-primary/20 to-primary/5">
-                <img
-                  v-if="campaign.cover_image_url"
-                  :src="campaign.cover_image_url"
-                  class="w-full h-full object-cover"
-                  @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
-                />
-                <div v-else class="w-full h-full flex items-center justify-center">
-                  <Megaphone class="w-10 h-10 text-primary/30" />
-                </div>
-
-                <!-- Organization Badge -->
+              <div class="campaign-card__inner">
+                <!-- Cover Image -->
                 <div
-                  v-if="campaign.organization"
-                  class="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md"
+                  class="campaign-card__cover"
+                  :class="{ 'campaign-card__cover--fallback': !campaign.cover_image_url }"
                 >
                   <img
-                    v-if="campaign.organization.logo_url"
-                    :src="campaign.organization.logo_url"
-                    class="w-4 h-4 rounded-full"
+                    v-if="campaign.cover_image_url"
+                    :src="campaign.cover_image_url"
+                    class="campaign-card__cover-img"
+                    @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
                   />
-                  <Building2 v-else class="w-3.5 h-3.5 text-white/80" />
-                  <span class="text-[11px] font-medium text-white/90">{{ campaign.organization.name }}</span>
+                  <div v-else class="campaign-card__cover-placeholder">
+                    <div class="campaign-card__cover-icon-wrap">
+                      <Megaphone class="campaign-card__cover-icon" />
+                    </div>
+                  </div>
+
+                  <!-- Organization Badge -->
+                  <div v-if="campaign.organization" class="campaign-card__org-badge">
+                    <img
+                      v-if="campaign.organization.logo_url"
+                      :src="campaign.organization.logo_url"
+                      class="campaign-card__org-logo"
+                    />
+                    <Building2 v-else class="campaign-card__org-icon" />
+                    <span class="campaign-card__org-name">{{ campaign.organization.name }}</span>
+                  </div>
+
+                  <!-- CPM Badge -->
+                  <div class="campaign-card__cpm-badge">
+                    <span class="campaign-card__cpm-value">${{ formatCpm(campaign.cpm) }}</span>
+                    <span class="campaign-card__cpm-unit">/1K views</span>
+                  </div>
                 </div>
 
-                <!-- CPM Badge -->
-                <div class="absolute top-2 right-2 px-2 py-1 bg-green-500/90 backdrop-blur-sm rounded-md">
-                  <span class="text-[11px] font-bold text-white">${{ formatCpm(campaign.cpm) }}/1K</span>
-                </div>
-              </div>
+                <!-- Content -->
+                <div class="campaign-card__body">
+                  <div class="campaign-card__header">
+                    <h3 class="campaign-card__title">{{ campaign.title }}</h3>
+                    <p v-if="campaign.description" class="campaign-card__description">
+                      {{ campaign.description }}
+                    </p>
+                  </div>
 
-              <!-- Content -->
-              <div class="p-4 space-y-3">
-                <div>
-                  <h3
-                    class="font-semibold text-[15px] text-foreground line-clamp-1 group-hover:text-primary transition-colors"
+                  <!-- Creator Profiles -->
+                  <div
+                    v-if="campaign.creator_profiles && campaign.creator_profiles.length > 0"
+                    class="campaign-card__creators"
                   >
-                    {{ campaign.title }}
-                  </h3>
-                  <p v-if="campaign.description" class="text-[13px] text-muted-foreground line-clamp-2 mt-1">
-                    {{ campaign.description }}
-                  </p>
-                </div>
-
-                <!-- Creator Profiles -->
-                <div
-                  v-if="campaign.creator_profiles && campaign.creator_profiles.length > 0"
-                  class="flex items-center gap-1"
-                >
-                  <span class="text-[11px] text-muted-foreground mr-1">Creators:</span>
-                  <div class="flex -space-x-1.5">
-                    <div
-                      v-for="(profile, idx) in campaign.creator_profiles.slice(0, 4)"
-                      :key="profile.id"
-                      class="w-6 h-6 rounded-full border-2 border-card overflow-hidden bg-muted"
-                      :title="profile.name"
-                    >
-                      <img
-                        v-if="profile.profile_image_url"
-                        :src="profile.profile_image_url"
-                        class="w-full h-full object-cover"
-                      />
+                    <span class="campaign-card__creators-label">Creators:</span>
+                    <div class="campaign-card__creators-avatars">
                       <div
-                        v-else
-                        class="w-full h-full flex items-center justify-center text-[10px] font-medium text-muted-foreground"
+                        v-for="(profile, idx) in campaign.creator_profiles.slice(0, 4)"
+                        :key="profile.id"
+                        class="campaign-card__creator-avatar"
+                        :title="profile.name"
                       >
-                        {{ profile.name?.charAt(0) }}
+                        <img
+                          v-if="profile.profile_image_url"
+                          :src="profile.profile_image_url"
+                          class="campaign-card__creator-img"
+                        />
+                        <div v-else class="campaign-card__creator-fallback">
+                          {{ profile.name?.charAt(0) }}
+                        </div>
+                      </div>
+                      <div
+                        v-if="campaign.creator_profiles.length > 4"
+                        class="campaign-card__creator-avatar campaign-card__creator-avatar--more"
+                      >
+                        +{{ campaign.creator_profiles.length - 4 }}
                       </div>
                     </div>
+                  </div>
+
+                  <!-- Platforms -->
+                  <div class="campaign-card__platforms">
                     <div
-                      v-if="campaign.creator_profiles.length > 4"
-                      class="w-6 h-6 rounded-full border-2 border-card bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground"
+                      v-for="platform in campaign.allowed_platforms"
+                      :key="platform"
+                      class="campaign-card__platform"
+                      :class="getPlatformClass(platform)"
                     >
-                      +{{ campaign.creator_profiles.length - 4 }}
+                      <component :is="getPlatformIcon(platform)" class="campaign-card__platform-icon" />
+                      <span>{{ getPlatformDisplayName(platform) }}</span>
                     </div>
                   </div>
-                </div>
 
-                <!-- Platforms -->
-                <div class="flex flex-wrap gap-1.5">
-                  <div
-                    v-for="platform in campaign.allowed_platforms"
-                    :key="platform"
-                    class="inline-flex items-center gap-1 px-2 py-0.5 bg-muted/50 rounded-full text-[11px] font-medium text-muted-foreground"
-                  >
-                    <component :is="getPlatformIcon(platform)" class="w-3 h-3" />
-                    {{ getPlatformDisplayName(platform) }}
-                  </div>
-                </div>
-
-                <!-- Stats -->
-                <div class="flex items-center justify-between pt-2 border-t border-border/40">
-                  <div class="flex items-center gap-1 text-[12px] text-muted-foreground">
-                    <Users class="w-3.5 h-3.5" />
-                    <span>{{ campaign.participants_count || 0 }} clippers</span>
-                  </div>
-                  <div class="flex items-center gap-1 text-[12px] text-muted-foreground">
-                    <DollarSign class="w-3.5 h-3.5" />
-                    <span>${{ formatBudget(campaign.budget) }} budget</span>
+                  <!-- Stats Footer -->
+                  <div class="campaign-card__footer">
+                    <div class="campaign-card__stat">
+                      <Users class="campaign-card__stat-icon" />
+                      <span>{{ campaign.participants_count || 0 }} clippers</span>
+                    </div>
+                    <div class="campaign-card__stat">
+                      <Wallet class="campaign-card__stat-icon" />
+                      <span>${{ formatBudget(campaign.budget) }} budget</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        </template>
       </div>
     </PageLayout>
 
@@ -186,12 +196,13 @@
     Search,
     Building2,
     Users,
-    DollarSign,
     Music2,
     Instagram,
     Twitter,
     Youtube,
     Globe,
+    Sparkles,
+    Wallet,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Input } from '@/components/ui/input';
@@ -227,6 +238,16 @@
       youtube: Youtube,
     };
     return icons[platform] || Globe;
+  };
+
+  const getPlatformClass = (platform: string) => {
+    const classes: Record<string, string> = {
+      tiktok: 'campaign-card__platform--tiktok',
+      instagram: 'campaign-card__platform--instagram',
+      x: 'campaign-card__platform--x',
+      youtube: 'campaign-card__platform--youtube',
+    };
+    return classes[platform] || '';
   };
 
   const formatCpm = (cpm: string | number) => {
@@ -280,20 +301,444 @@
 </script>
 
 <style scoped>
-  .campaigns-page {
-    @apply h-full;
+  /* ===== Page Container ===== */
+  .campaigns {
+    width: 100%;
+    min-height: 100%;
   }
 
-  /* ===== Content Container ===== */
   .campaigns__content {
     display: flex;
     flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
     flex: 1;
   }
 
   .campaigns__content--empty {
     justify-content: center;
     align-items: center;
+  }
+
+  /* ===== Page Heading ===== */
+  .campaigns__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .campaigns__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .campaigns__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Search Bar ===== */
+  .campaigns-search {
+    position: relative;
+    width: 280px;
+  }
+
+  .campaigns-search__icon {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    pointer-events: none;
+  }
+
+  .campaigns-search__input {
+    height: 34px;
+    padding-left: 2.25rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .campaigns-search__input:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .campaigns-search__input:focus {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.1);
+  }
+
+  /* ===== Section Header ===== */
+  .campaigns__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .campaigns__section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .campaigns__section-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns__section-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .campaigns__section-title {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .campaigns__section-subtitle {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
+  }
+
+  /* ===== Grid Layout ===== */
+  .campaigns__grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+  }
+
+  @media (min-width: 768px) {
+    .campaigns__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .campaigns__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  /* ===== Campaign Card ===== */
+  .campaign-card {
+    position: relative;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 200ms ease;
+  }
+
+  .campaign-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  }
+
+  .campaign-card__inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  /* Cover Image */
+  .campaign-card__cover {
+    position: relative;
+    height: 100px;
+    overflow: hidden;
+  }
+
+  .campaign-card__cover--fallback {
+    background-color: var(--sidebar-hover);
+  }
+
+  .campaign-card__cover-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaign-card__cover-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .campaign-card__cover-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .campaign-card__cover-icon {
+    width: 22px;
+    height: 22px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .campaign-card__org-badge {
+    position: absolute;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.3125rem 0.5rem;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(8px);
+    border-radius: 5px;
+  }
+
+  .campaign-card__org-logo {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    object-fit: cover;
+  }
+
+  .campaign-card__org-icon {
+    width: 11px;
+    height: 11px;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .campaign-card__org-name {
+    font-size: 0.625rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.85);
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .campaign-card__cpm-badge {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.125rem;
+    padding: 0.3125rem 0.5rem;
+    background-color: #10b981;
+    border-radius: 5px;
+  }
+
+  .campaign-card__cpm-value {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: white;
+    letter-spacing: -0.01em;
+  }
+
+  .campaign-card__cpm-unit {
+    font-size: 0.5625rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  /* Card Body */
+  .campaign-card__body {
+    padding: 0.875rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 1;
+  }
+
+  .campaign-card__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .campaign-card__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color 150ms ease;
+  }
+
+  .campaign-card:hover .campaign-card__title {
+    color: var(--sidebar-accent);
+  }
+
+  .campaign-card__description {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Creators */
+  .campaign-card__creators {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .campaign-card__creators-label {
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaign-card__creators-avatars {
+    display: flex;
+    align-items: center;
+  }
+
+  .campaign-card__creator-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--sidebar-surface);
+    overflow: hidden;
+    margin-left: -5px;
+    background-color: var(--sidebar-hover);
+  }
+
+  .campaign-card__creator-avatar:first-child {
+    margin-left: 0;
+  }
+
+  .campaign-card__creator-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaign-card__creator-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.5rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaign-card__creator-avatar--more {
+    font-size: 0.5rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Platforms */
+  .campaign-card__platforms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .campaign-card__platform {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1875rem;
+    padding: 0.1875rem 0.375rem;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    font-size: 0.5625rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaign-card__platform-icon {
+    width: 9px;
+    height: 9px;
+  }
+
+  .campaign-card__platform--tiktok {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-color: rgba(255, 255, 255, 0.08);
+    color: #fff;
+  }
+
+  .campaign-card__platform--instagram {
+    background-color: rgba(225, 48, 108, 0.1);
+    border-color: rgba(225, 48, 108, 0.2);
+    color: #e1306c;
+  }
+
+  .campaign-card__platform--x {
+    background-color: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+  }
+
+  .campaign-card__platform--youtube {
+    background-color: rgba(255, 0, 0, 0.08);
+    border-color: rgba(255, 0, 0, 0.15);
+    color: #ff4444;
+  }
+
+  /* Footer Stats */
+  .campaign-card__footer {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding-top: 0.625rem;
+    border-top: 1px solid var(--sidebar-border);
+    margin-top: auto;
+  }
+
+  .campaign-card__stat {
+    display: flex;
+    align-items: center;
+    gap: 0.3125rem;
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaign-card__stat-icon {
+    width: 11px;
+    height: 11px;
+    opacity: 0.6;
   }
 
   /* ===== Empty State ===== */
@@ -333,6 +778,74 @@
     font-size: 0.875rem;
     color: var(--sidebar-text-muted);
     margin: 0;
-    max-width: 300px;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  /* ===== Loading State ===== */
+  .campaigns__loading {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .campaigns__loading-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .campaign-card--skeleton {
+    pointer-events: none;
+  }
+
+  .campaign-card__cover--skeleton {
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .campaigns-skeleton {
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  .campaigns-skeleton--heading {
+    height: 28px;
+    width: 220px;
+  }
+
+  .campaigns-skeleton--subheading {
+    height: 16px;
+    width: 360px;
+  }
+
+  .campaigns-skeleton--title {
+    height: 16px;
+    width: 70%;
+  }
+
+  .campaigns-skeleton--text {
+    height: 12px;
+    width: 90%;
+    margin-top: 0.375rem;
+  }
+
+  .campaigns-skeleton--badges {
+    height: 18px;
+    width: 60%;
+    margin-top: 0.5rem;
+  }
+
+  /* ===== Animations ===== */
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
   }
 </style>

@@ -240,10 +240,6 @@
           <p class="org-creators__empty-text">
             Create profiles with platform links, intros, outros, and watermarks to assign to your team members.
           </p>
-          <button v-if="isAdmin" @click="openProfileDialog()" class="org-creators__empty-btn">
-            <UserCircle class="org-creators__empty-btn-icon" />
-            Create First Profile
-          </button>
         </div>
       </section>
     </div>
@@ -1148,20 +1144,20 @@
   }
 
   .org-creators__empty-icon-wrapper {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 72px;
-    height: 72px;
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, var(--sidebar-hover) 100%);
-    border-radius: 20px;
-    margin-bottom: 1.5rem;
+    background-color: var(--sidebar-hover);
+    margin-bottom: 1.25rem;
   }
 
   .org-creators__empty-icon {
     width: 32px;
     height: 32px;
-    color: #10b981;
+    color: var(--sidebar-accent);
   }
 
   .org-creators__empty-title {

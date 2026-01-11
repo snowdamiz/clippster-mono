@@ -883,7 +883,7 @@
   .org-billing__empty-icon svg {
     width: 28px;
     height: 28px;
-    color: var(--sidebar-text-muted);
+    color: var(--sidebar-accent);
   }
 
   .org-billing__empty-title {
