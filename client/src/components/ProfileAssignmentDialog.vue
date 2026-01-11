@@ -1,135 +1,131 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div
-        v-if="show"
-        class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
-        @click.self="closeDialog"
-      >
+      <div v-if="show" class="org-dialog__overlay" @click.self="closeDialog">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[80vh] flex flex-col"
-          >
-            <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
+          <div class="org-dialog org-dialog--cyan">
+            <!-- Accent Bar -->
+            <div class="org-dialog__accent org-dialog__accent--cyan" />
 
-            <div class="p-5 sm:p-6 flex flex-col flex-1 overflow-hidden">
-              <!-- Header -->
-              <div class="mb-5 text-center flex-shrink-0">
-                <div
-                  class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-4"
-                >
-                  <Users class="h-6 w-6 text-violet-400" />
-                </div>
-                <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Manage Assignments</h2>
-                <p class="text-zinc-400 text-sm mt-1">Assign "{{ profile?.name }}" to team members</p>
+            <!-- Header -->
+            <div class="org-dialog__header">
+              <button class="org-dialog__close" @click="closeDialog" title="Close" :disabled="saving">
+                <X :size="18" />
+              </button>
+              <div class="org-dialog__icon org-dialog__icon--cyan">
+                <Users :size="24" />
               </div>
+              <h2 class="org-dialog__title">Manage Assignments</h2>
+              <p class="org-dialog__subtitle">Assign "{{ profile?.name }}" to team members</p>
+            </div>
 
+            <!-- Content -->
+            <div class="org-dialog__content">
               <!-- Loading State -->
-              <div v-if="loading" class="flex-1 flex items-center justify-center">
-                <Loader2 class="h-8 w-8 animate-spin text-zinc-500" />
+              <div v-if="loading" class="org-dialog__loading">
+                <div class="org-dialog__loading-spinner"></div>
+                <span>Loading members...</span>
               </div>
 
               <!-- Member List -->
-              <div v-else class="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+              <div v-else class="org-dialog__member-list">
                 <div
                   v-for="member in members"
                   :key="member.user_id"
-                  class="flex items-center gap-3 p-3 bg-zinc-900/60 border border-zinc-800 rounded-lg hover:border-zinc-700 transition-colors cursor-pointer"
+                  class="org-dialog__member-row"
+                  :class="{ 'org-dialog__member-row--selected': isAssigned(member.user_id) }"
                   @click="toggleAssignment(member.user_id)"
                 >
                   <!-- Checkbox -->
                   <div
-                    class="w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all"
-                    :class="
-                      isAssigned(member.user_id)
-                        ? 'bg-violet-500 border-violet-500'
-                        : 'border-zinc-600 hover:border-zinc-500'
-                    "
+                    class="org-dialog__checkbox"
+                    :class="{ 'org-dialog__checkbox--checked': isAssigned(member.user_id) }"
                   >
-                    <Check v-if="isAssigned(member.user_id)" class="h-3 w-3 text-white" />
+                    <Check v-if="isAssigned(member.user_id)" class="org-dialog__checkbox-icon" />
                   </div>
 
                   <!-- Avatar -->
-                  <div class="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden">
+                  <div class="org-dialog__member-avatar">
                     <img
                       v-if="member.user?.avatar_url"
                       :src="member.user.avatar_url"
                       :alt="member.user.name || member.user.email"
-                      class="w-full h-full object-cover"
+                      class="org-dialog__member-avatar-img"
                       referrerpolicy="no-referrer"
                     />
-                    <User v-else class="h-4 w-4 text-zinc-500" />
+                    <User v-else class="org-dialog__member-avatar-icon" />
                   </div>
 
                   <!-- Info -->
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-white truncate">
+                  <div class="org-dialog__member-info">
+                    <p class="org-dialog__member-name">
                       {{ member.user?.name || member.user?.email }}
                     </p>
-                    <p v-if="member.user?.name" class="text-xs text-zinc-500 truncate">
+                    <p v-if="member.user?.name" class="org-dialog__member-email">
                       {{ member.user.email }}
                     </p>
                   </div>
 
                   <!-- Role Badge -->
                   <span
-                    :class="[
-                      'px-2 py-0.5 rounded text-xs font-medium flex-shrink-0',
-                      member.role === 'owner'
-                        ? 'bg-amber-500/20 text-amber-400'
-                        : member.role === 'admin'
-                          ? 'bg-violet-500/20 text-violet-400'
-                          : 'bg-zinc-700 text-zinc-400',
-                    ]"
+                    class="org-dialog__role-badge"
+                    :class="{
+                      'org-dialog__role-badge--owner': member.role === 'owner',
+                      'org-dialog__role-badge--admin': member.role === 'admin',
+                    }"
                   >
                     {{ member.role }}
                   </span>
                 </div>
 
                 <!-- Empty State -->
-                <div v-if="members.length === 0" class="text-center py-8 text-zinc-500">
-                  <Users class="h-10 w-10 mx-auto mb-3 opacity-50" />
-                  <p>No members in this organization</p>
-                </div>
-              </div>
-
-              <!-- Summary -->
-              <div class="pt-4 mt-4 border-t border-zinc-800 flex-shrink-0">
-                <div class="flex items-center justify-between text-sm text-zinc-400 mb-4">
-                  <span>{{ selectedUserIds.length }} of {{ members.length }} members selected</span>
-                  <div class="flex gap-2">
-                    <button type="button" @click="selectAll" class="text-violet-400 hover:text-violet-300 text-xs">
-                      Select All
-                    </button>
-                    <span class="text-zinc-600">|</span>
-                    <button type="button" @click="selectNone" class="text-zinc-500 hover:text-zinc-400 text-xs">
-                      Clear
-                    </button>
+                <div v-if="members.length === 0" class="org-dialog__empty">
+                  <div class="org-dialog__empty-icon">
+                    <Users />
                   </div>
+                  <p class="org-dialog__empty-text">No members in this organization</p>
                 </div>
+              </div>
+            </div>
 
-                <!-- Actions -->
-                <div class="flex gap-3">
+            <!-- Summary & Footer -->
+            <div class="org-dialog__summary">
+              <div class="org-dialog__summary-row">
+                <span class="org-dialog__summary-text">
+                  {{ selectedUserIds.length }} of {{ members.length }} members selected
+                </span>
+                <div class="org-dialog__summary-actions">
+                  <button type="button" @click="selectAll" class="org-dialog__summary-link">Select All</button>
+                  <span class="org-dialog__summary-divider">|</span>
                   <button
                     type="button"
-                    @click="closeDialog"
-                    class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm"
-                    :disabled="saving"
+                    @click="selectNone"
+                    class="org-dialog__summary-link org-dialog__summary-link--muted"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    @click="saveAssignments"
-                    class="flex-1 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white rounded-xl font-semibold transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
-                    :disabled="saving"
-                  >
-                    <Loader2 v-if="saving" class="h-4 w-4 animate-spin" />
-                    {{ saving ? 'Saving...' : 'Save Assignments' }}
+                    Clear
                   </button>
                 </div>
               </div>
+            </div>
+
+            <div class="org-dialog__footer">
+              <button
+                type="button"
+                @click="closeDialog"
+                class="org-dialog__btn org-dialog__btn--secondary"
+                :disabled="saving"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                @click="saveAssignments"
+                class="org-dialog__btn org-dialog__btn--primary"
+                :disabled="saving"
+              >
+                <Loader2 v-if="saving" class="org-dialog__btn-spinner" />
+                {{ saving ? 'Saving...' : 'Save Assignments' }}
+              </button>
             </div>
           </div>
         </Transition>
@@ -140,7 +136,7 @@
 
 <script setup lang="ts">
   import { ref, watch } from 'vue';
-  import { Users, User, Check, Loader2 } from 'lucide-vue-next';
+  import { Users, User, Check, Loader2, X } from 'lucide-vue-next';
   import {
     assignProfile,
     unassignProfile,
@@ -277,10 +273,431 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Dialog Overlay ===== */
+  .org-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+  }
+
+  /* ===== Dialog Container ===== */
+  .org-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 440px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ===== Accent Bar ===== */
+  .org-dialog__accent {
+    height: 3px;
+    flex-shrink: 0;
+  }
+
+  .org-dialog__accent--cyan {
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  }
+
+  /* ===== Header ===== */
+  .org-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .org-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    margin-bottom: 0.875rem;
+  }
+
+  .org-dialog__icon--cyan {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .org-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .org-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content ===== */
+  .org-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 1.5rem;
+    min-height: 0;
+  }
+
+  .org-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .org-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .org-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Loading ===== */
+  .org-dialog__loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 3rem;
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
+  }
+
+  .org-dialog__loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--sidebar-border);
+    border-top-color: var(--sidebar-accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Member List ===== */
+  .org-dialog__member-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-bottom: 1rem;
+  }
+
+  .org-dialog__member-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__member-row:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--sidebar-active);
+  }
+
+  .org-dialog__member-row--selected {
+    border-color: rgba(6, 182, 212, 0.3);
+    background-color: rgba(6, 182, 212, 0.05);
+  }
+
+  .org-dialog__member-row--selected:hover {
+    border-color: rgba(6, 182, 212, 0.4);
+    background-color: rgba(6, 182, 212, 0.08);
+  }
+
+  /* ===== Checkbox ===== */
+  .org-dialog__checkbox {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    background-color: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__member-row:hover .org-dialog__checkbox:not(.org-dialog__checkbox--checked) {
+    border-color: rgba(255, 255, 255, 0.35);
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .org-dialog__checkbox--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .org-dialog__checkbox-icon {
+    width: 12px;
+    height: 12px;
+    color: white;
+  }
+
+  /* ===== Member Avatar ===== */
+  .org-dialog__member-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .org-dialog__member-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .org-dialog__member-avatar-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Member Info ===== */
+  .org-dialog__member-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-dialog__member-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .org-dialog__member-email {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ===== Role Badge ===== */
+  .org-dialog__role-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .org-dialog__role-badge--owner {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+
+  .org-dialog__role-badge--admin {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Empty State ===== */
+  .org-dialog__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2.5rem 1rem;
+    text-align: center;
+  }
+
+  .org-dialog__empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    background-color: var(--sidebar-hover);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-dialog__empty-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .org-dialog__empty-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  /* ===== Summary ===== */
+  .org-dialog__summary {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .org-dialog__summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .org-dialog__summary-text {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-dialog__summary-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .org-dialog__summary-link {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+
+  .org-dialog__summary-link:hover {
+    opacity: 0.8;
+  }
+
+  .org-dialog__summary-link--muted {
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-dialog__summary-divider {
+    color: var(--sidebar-border);
+    font-size: 0.75rem;
+  }
+
+  /* ===== Footer ===== */
+  .org-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 0 1.5rem 1.5rem;
+  }
+
+  /* ===== Buttons ===== */
+  .org-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .org-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .org-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .org-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .org-dialog__btn-spinner {
+    width: 16px;
+    height: 16px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Animations ===== */
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -288,40 +705,21 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {
     opacity: 0;
     transform: scale(0.98);
-  }
-
-  /* Custom scrollbar */
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: hsl(240 3.7% 15.9% / 0.5);
-    border-radius: 3px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: hsl(240 3.7% 15.9% / 0.7);
   }
 </style>

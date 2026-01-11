@@ -19,409 +19,371 @@
         </div>
       </template>
 
-      <!-- Not Authenticated -->
-      <EmptyState
-        v-if="!authStore.isAuthenticated && creators.length === 0"
-        title="Sign in to manage creators"
-        description="Access your creator profiles and streaming configurations"
-      >
-        <template #icon>
-          <Users class="creators__empty-icon" />
-        </template>
-      </EmptyState>
-
-      <div v-else class="creators__content">
-        <!-- Page Heading -->
-        <div class="creators__heading">
-          <h1 class="creators__title">Manage Your Creators</h1>
-          <p class="creators__subtitle">View your creator profiles, monitor live streams, and manage recordings</p>
-        </div>
-
-        <!-- Stats Summary Cards -->
-        <div class="creators__stats">
-          <!-- Total Creators Card -->
-          <div class="creators-stat">
-            <div class="creators-stat__indicator"></div>
-            <div class="creators-stat__inner">
-              <div class="creators-stat__icon">
-                <Users />
-              </div>
-              <div class="creators-stat__info">
-                <span class="creators-stat__label">Total Creators</span>
-                <span class="creators-stat__value">
-                  <template v-if="loading">
-                    <span class="creators-stat__loading"></span>
-                  </template>
-                  <template v-else>{{ creators.length }}</template>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Live Now Card -->
-          <div class="creators-stat creators-stat--live">
-            <div class="creators-stat__indicator creators-stat__indicator--live"></div>
-            <div class="creators-stat__inner">
-              <div class="creators-stat__icon creators-stat__icon--live">
-                <Radio />
-              </div>
-              <div class="creators-stat__info">
-                <span class="creators-stat__label">Live Now</span>
-                <span class="creators-stat__value creators-stat__value--live">
-                  <template v-if="loading">
-                    <span class="creators-stat__loading"></span>
-                  </template>
-                  <template v-else>{{ liveCreatorsCount }}</template>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Monitoring Card -->
-          <div class="creators-stat creators-stat--monitoring">
-            <div class="creators-stat__indicator creators-stat__indicator--monitoring"></div>
-            <div class="creators-stat__inner">
-              <div class="creators-stat__icon creators-stat__icon--monitoring">
-                <Activity />
-              </div>
-              <div class="creators-stat__info">
-                <span class="creators-stat__label">Monitoring</span>
-                <span class="creators-stat__value creators-stat__value--monitoring">
-                  <template v-if="loading">
-                    <span class="creators-stat__loading"></span>
-                  </template>
-                  <template v-else>{{ monitoringCreatorsCount }}</template>
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Loading State -->
-        <div v-if="loading" class="creators__loading">
-          <div v-for="i in 4" :key="i" class="creator-skeleton">
-            <div class="creator-skeleton__indicator"></div>
-            <div class="creator-skeleton__inner">
-              <div class="creator-skeleton__header">
-                <div class="creator-skeleton__avatar"></div>
-                <div class="creator-skeleton__info">
-                  <div class="creator-skeleton__line creator-skeleton__line--name"></div>
-                  <div class="creator-skeleton__line creator-skeleton__line--desc"></div>
-                  <div class="creator-skeleton__badges">
-                    <div class="creator-skeleton__badge"></div>
-                    <div class="creator-skeleton__badge"></div>
-                  </div>
-                </div>
-              </div>
-              <div class="creator-skeleton__footer">
-                <div class="creator-skeleton__status"></div>
-                <div class="creator-skeleton__actions">
-                  <div class="creator-skeleton__btn"></div>
-                  <div class="creator-skeleton__btn"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Main Content Area -->
-        <div v-else-if="creators.length > 0" class="creators__list-section">
-          <!-- Section Header -->
-          <div class="creators__section-header">
-            <div class="creators__section-header-left">
-              <div class="creators__section-icon">
-                <Users />
-              </div>
-              <div class="creators__section-text">
-                <h2 class="creators__section-title">All Creators</h2>
-                <p class="creators__section-subtitle">
-                  {{ filteredCreators.length }} {{ filteredCreators.length === 1 ? 'profile' : 'profiles' }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Creator List -->
-          <div class="creators__list">
-            <transition-group name="list" tag="div" class="creators__list-inner">
-              <div
-                v-for="creator in sortedCreators"
-                :key="creator.id"
-                class="creator-card"
-                :class="{
-                  'creator-card--monitoring': isCreatorMonitored(creator),
-                  'creator-card--live': !isCreatorMonitored(creator) && isCreatorLive(creator),
-                }"
-              >
-                <!-- Left Accent Indicator -->
-                <div
-                  class="creator-card__indicator"
-                  :class="{
-                    'creator-card__indicator--monitoring': isCreatorMonitored(creator),
-                    'creator-card__indicator--live': !isCreatorMonitored(creator) && isCreatorLive(creator),
-                  }"
-                ></div>
-
-                <div class="creator-card__inner">
-                  <!-- Header Row: Avatar + Info + Platform Badges -->
-                  <div class="creator-card__header">
-                    <!-- Avatar with status indicator -->
-                    <div class="creator-card__avatar-wrapper">
-                      <div class="creator-card__avatar">
-                        <img
-                          v-if="getCreatorProfileImage(creator)"
-                          :src="getCreatorProfileImage(creator)"
-                          class="creator-card__avatar-img"
-                          @error="handleImageError($event, creator)"
-                        />
-                        <div v-else class="creator-card__avatar-fallback">
-                          <Users class="creator-card__avatar-icon" />
-                        </div>
-                      </div>
-                      <!-- Live/Monitoring indicator dot -->
-                      <div
-                        v-if="isCreatorMonitored(creator) || isCreatorLive(creator)"
-                        class="creator-card__status-dot"
-                        :class="{
-                          'creator-card__status-dot--monitoring': isCreatorMonitored(creator),
-                          'creator-card__status-dot--live': !isCreatorMonitored(creator) && isCreatorLive(creator),
-                        }"
-                      >
-                        <span class="creator-card__status-dot-inner"></span>
-                      </div>
-                    </div>
-
-                    <!-- Creator Info -->
-                    <div class="creator-card__info">
-                      <div class="creator-card__name-row">
-                        <h3 class="creator-card__name">{{ creator.name }}</h3>
-                        <!-- Organization Badge -->
-                        <div
-                          v-if="creator.isOrgProfile"
-                          class="creator-card__org-badge"
-                          :title="`Managed by ${creator.organization_name}`"
-                        >
-                          <Building2 class="creator-card__org-badge-icon" />
-                          {{ creator.organization_name }}
-                        </div>
-                      </div>
-                      <!-- Description -->
-                      <p v-if="creator.description" class="creator-card__description">
-                        {{ creator.description }}
-                      </p>
-                      <!-- Platform Badges -->
-                      <div class="creator-card__platforms">
-                        <div v-for="link in creator.platform_links" :key="link.id" class="creator-card__platform">
-                          <img :src="getPlatformIcon(link.platform)" class="creator-card__platform-icon" />
-                          <span class="creator-card__platform-name">
-                            {{ link.display_name || truncateId(link.platform_id) }}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- Asset Indicators -->
-                    <div
-                      v-if="creator.intro_id || creator.outro_id || creator.watermark_id"
-                      class="creator-card__assets"
-                    >
-                      <div
-                        v-if="creator.intro_id"
-                        class="creator-card__asset creator-card__asset--intro"
-                        title="Has intro configured"
-                      >
-                        <Play class="creator-card__asset-icon" />
-                      </div>
-                      <div
-                        v-if="creator.outro_id"
-                        class="creator-card__asset creator-card__asset--outro"
-                        title="Has outro configured"
-                      >
-                        <SkipForward class="creator-card__asset-icon" />
-                      </div>
-                      <div
-                        v-if="creator.watermark_id"
-                        class="creator-card__asset creator-card__asset--watermark"
-                        title="Has watermark configured"
-                      >
-                        <ImageIcon class="creator-card__asset-icon" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Footer Row: Status + Actions -->
-                  <div class="creator-card__footer">
-                    <!-- Left: Status -->
-                    <div class="creator-card__status">
-                      <!-- Monitoring status -->
-                      <div
-                        v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
-                        class="creator-status creator-status--monitoring"
-                      >
-                        <span class="creator-status__dot"></span>
-                        {{ getCreatorStatusLabel(creator) }}
-                      </div>
-                      <!-- Live status for monitorable creators -->
-                      <template v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                        <div v-if="isCreatorCheckingLive(creator)" class="creator-status creator-status--checking">
-                          <Loader2 class="creator-status__spinner" />
-                          Checking...
-                        </div>
-                        <div v-else-if="isCreatorLive(creator)" class="creator-status creator-status--live">
-                          <span class="creator-status__dot"></span>
-                          LIVE
-                          <span v-if="getCreatorViewerCount(creator)" class="creator-status__viewers">
-                            {{ formatViewerCount(getCreatorViewerCount(creator)!) }} viewers
-                          </span>
-                        </div>
-                        <div v-else class="creator-status creator-status--offline">
-                          <span class="creator-status__dot"></span>
-                          Offline
-                        </div>
-                      </template>
-                      <!-- Platform count -->
-                      <span v-else class="creator-card__platform-count">
-                        {{ creator.platform_links.length }} platform{{
-                          creator.platform_links.length !== 1 ? 's' : ''
-                        }}
-                        linked
-                      </span>
-                    </div>
-
-                    <!-- Right: Actions -->
-                    <div class="creator-card__actions">
-                      <!-- Live Clip Controls (Primary Actions) -->
-                      <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                        <template v-if="!isCreatorMonitored(creator)">
-                          <button
-                            @click.stop="startCreatorMonitoring(creator, false)"
-                            class="creator-btn creator-btn--rec"
-                            title="Record Only"
-                          >
-                            <span class="creator-btn__rec-dot"></span>
-                            Rec
-                          </button>
-                          <button
-                            @click.stop="startCreatorMonitoring(creator, true)"
-                            class="creator-btn creator-btn--auto"
-                            title="Auto-Detect Clips"
-                          >
-                            <Sparkles class="creator-btn__icon" />
-                            Auto
-                          </button>
-                        </template>
-                        <template v-else>
-                          <button
-                            @click.stop="stopCreatorMonitoring(creator)"
-                            class="creator-btn creator-btn--stop"
-                            title="Stop Monitoring"
-                          >
-                            <Square class="creator-btn__icon" />
-                            Stop
-                          </button>
-                        </template>
-                        <button
-                          @click.stop="watchCreator(creator)"
-                          :disabled="!canWatchCreator(creator)"
-                          class="creator-btn creator-btn--watch"
-                          :class="{ 'creator-btn--watch-disabled': !canWatchCreator(creator) }"
-                          :title="
-                            canWatchCreator(creator)
-                              ? 'Watch Live'
-                              : 'Watch becomes available when the creator is monitored and live'
-                          "
-                        >
-                          <Eye class="creator-btn__icon" />
-                          Watch
-                          <span
-                            v-if="hasCreatorDvr(creator) && canWatchCreator(creator)"
-                            class="creator-btn__dvr-badge"
-                          >
-                            DVR
-                          </span>
-                        </button>
-                      </template>
-
-                      <!-- More Actions Dropdown -->
-                      <DropdownMenu>
-                        <DropdownMenuTrigger as-child>
-                          <button class="creator-btn creator-btn--more" title="More actions">
-                            <MoreHorizontal class="creator-btn__icon" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" :side-offset="4" class="creator-dropdown">
-                          <DropdownMenuItem class="creator-dropdown__item" @click="viewCreatorVods(creator)">
-                            <Video class="creator-dropdown__item-icon" />
-                            View VODs
-                          </DropdownMenuItem>
-                          <DropdownMenuItem class="creator-dropdown__item" @click="openDownloadDialog(creator)">
-                            <Download class="creator-dropdown__item-icon" />
-                            Download VOD
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            v-if="!creator.isOrgProfile"
-                            class="creator-dropdown__item"
-                            @click="openEditDialog(creator)"
-                          >
-                            <Edit class="creator-dropdown__item-icon" />
-                            Edit Profile
-                          </DropdownMenuItem>
-                          <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                            <DropdownMenuSeparator class="creator-dropdown__separator" />
-                            <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
-                              <HardDrive class="creator-dropdown__item-icon" />
-                              Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
-                              <span
-                                class="creator-dropdown__item-badge"
-                                :class="{ 'creator-dropdown__item-badge--active': isCreatorAutoDvrEnabled(creator) }"
-                              >
-                                {{ isCreatorAutoDvrEnabled(creator) ? 'ON' : 'OFF' }}
-                              </span>
-                            </DropdownMenuItem>
-                          </template>
-                          <template v-if="!creator.isOrgProfile">
-                            <DropdownMenuSeparator class="creator-dropdown__separator" />
-                            <DropdownMenuItem
-                              class="creator-dropdown__item creator-dropdown__item--danger"
-                              @click="confirmDeleteCreator(creator)"
-                            >
-                              <Trash2 class="creator-dropdown__item-icon" />
-                              Delete Creator
-                            </DropdownMenuItem>
-                          </template>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </transition-group>
-
-            <!-- No results from search -->
-            <div v-if="filteredCreators.length === 0 && searchQuery" class="creators__no-results">
-              <Search class="creators__no-results-icon" />
-              <p class="creators__no-results-title">No creators found</p>
-              <p class="creators__no-results-text">No results for "{{ searchQuery }}"</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Empty State -->
-        <EmptyState
-          v-else
-          title="No creators yet"
-          description="Add your first content creator to start managing their VODs, assets, and live monitoring."
-        >
-          <template #icon>
+      <div class="creators__wrapper" :class="{ 'creators__wrapper--empty': !loading && creators.length === 0 }">
+        <!-- Not Authenticated -->
+        <div v-if="!authStore.isAuthenticated && creators.length === 0" class="creators__empty">
+          <div class="creators__empty-icon-wrapper">
             <Users class="creators__empty-icon" />
-          </template>
-          <template #default>
-            <button @click="openCreateDialog" class="creators__empty-btn">
-              <Plus class="creators__empty-btn-icon" />
-              Add Your First Creator
-            </button>
-          </template>
-        </EmptyState>
+          </div>
+          <h3 class="creators__empty-title">Sign in to manage creators</h3>
+          <p class="creators__empty-description">Access your creator profiles and streaming configurations</p>
+        </div>
+
+        <div v-else class="creators__content">
+          <!-- Page Heading (hidden in empty state) -->
+          <div v-if="creators.length > 0 || loading" class="creators__heading">
+            <h1 class="creators__title">Manage Your Creators</h1>
+            <p class="creators__subtitle">View your creator profiles, monitor live streams, and manage recordings</p>
+          </div>
+
+          <!-- Stats Summary Cards (hidden in empty state) -->
+          <div v-if="creators.length > 0 || loading" class="creators__stats">
+            <!-- Total Creators Card -->
+            <div class="creators-stat">
+              <div class="creators-stat__indicator"></div>
+              <div class="creators-stat__inner">
+                <div class="creators-stat__icon">
+                  <Users />
+                </div>
+                <div class="creators-stat__info">
+                  <span class="creators-stat__label">Total Creators</span>
+                  <span class="creators-stat__value">
+                    <template v-if="loading">
+                      <span class="creators-stat__loading"></span>
+                    </template>
+                    <template v-else>{{ creators.length }}</template>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Live Now Card -->
+            <div class="creators-stat creators-stat--live">
+              <div class="creators-stat__indicator creators-stat__indicator--live"></div>
+              <div class="creators-stat__inner">
+                <div class="creators-stat__icon creators-stat__icon--live">
+                  <Radio />
+                </div>
+                <div class="creators-stat__info">
+                  <span class="creators-stat__label">Live Now</span>
+                  <span class="creators-stat__value creators-stat__value--live">
+                    <template v-if="loading">
+                      <span class="creators-stat__loading"></span>
+                    </template>
+                    <template v-else>{{ liveCreatorsCount }}</template>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Monitoring Card -->
+            <div class="creators-stat creators-stat--monitoring">
+              <div class="creators-stat__indicator creators-stat__indicator--monitoring"></div>
+              <div class="creators-stat__inner">
+                <div class="creators-stat__icon creators-stat__icon--monitoring">
+                  <Activity />
+                </div>
+                <div class="creators-stat__info">
+                  <span class="creators-stat__label">Monitoring</span>
+                  <span class="creators-stat__value creators-stat__value--monitoring">
+                    <template v-if="loading">
+                      <span class="creators-stat__loading"></span>
+                    </template>
+                    <template v-else>{{ monitoringCreatorsCount }}</template>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Loading State -->
+          <div v-if="loading" class="creators__loading">
+            <div v-for="i in 4" :key="i" class="creator-skeleton">
+              <div class="creator-skeleton__inner">
+                <div class="creator-skeleton__header">
+                  <div class="creator-skeleton__avatar"></div>
+                  <div class="creator-skeleton__info">
+                    <div class="creator-skeleton__line creator-skeleton__line--name"></div>
+                    <div class="creator-skeleton__line creator-skeleton__line--desc"></div>
+                    <div class="creator-skeleton__badges">
+                      <div class="creator-skeleton__badge"></div>
+                      <div class="creator-skeleton__badge"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="creator-skeleton__footer">
+                  <div class="creator-skeleton__status"></div>
+                  <div class="creator-skeleton__actions">
+                    <div class="creator-skeleton__btn"></div>
+                    <div class="creator-skeleton__btn"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Main Content Area -->
+          <div v-else-if="creators.length > 0" class="creators__list-section">
+            <!-- Item Count -->
+            <div class="creators__item-count">
+              {{ filteredCreators.length }} {{ filteredCreators.length === 1 ? 'profile' : 'profiles' }}
+            </div>
+
+            <!-- Creator List -->
+            <div class="creators__list">
+              <transition-group name="list" tag="div" class="creators__list-inner">
+                <div v-for="creator in sortedCreators" :key="creator.id" class="creator-card">
+                  <div class="creator-card__inner">
+                    <!-- Header Row: Avatar + Info + Platform Badges -->
+                    <div class="creator-card__header">
+                      <!-- Avatar with status indicator -->
+                      <div class="creator-card__avatar-wrapper">
+                        <div class="creator-card__avatar">
+                          <img
+                            v-if="getCreatorProfileImage(creator)"
+                            :src="getCreatorProfileImage(creator)"
+                            class="creator-card__avatar-img"
+                            @error="handleImageError($event, creator)"
+                          />
+                          <div v-else class="creator-card__avatar-fallback">
+                            <Users class="creator-card__avatar-icon" />
+                          </div>
+                        </div>
+                        <!-- Live/Monitoring indicator dot -->
+                        <div
+                          v-if="isCreatorMonitored(creator) || isCreatorLive(creator)"
+                          class="creator-card__status-dot"
+                          :class="{
+                            'creator-card__status-dot--monitoring': isCreatorMonitored(creator),
+                            'creator-card__status-dot--live': !isCreatorMonitored(creator) && isCreatorLive(creator),
+                          }"
+                        >
+                          <span class="creator-card__status-dot-inner"></span>
+                        </div>
+                      </div>
+
+                      <!-- Creator Info -->
+                      <div class="creator-card__info">
+                        <div class="creator-card__name-row">
+                          <h3 class="creator-card__name">{{ creator.name }}</h3>
+                          <!-- Organization Badge -->
+                          <div
+                            v-if="creator.isOrgProfile"
+                            class="creator-card__org-badge"
+                            :title="`Managed by ${creator.organization_name}`"
+                          >
+                            <Building2 class="creator-card__org-badge-icon" />
+                            {{ creator.organization_name }}
+                          </div>
+                        </div>
+                        <!-- Description -->
+                        <p v-if="creator.description" class="creator-card__description">
+                          {{ creator.description }}
+                        </p>
+                        <!-- Platform Badges -->
+                        <div class="creator-card__platforms">
+                          <div v-for="link in creator.platform_links" :key="link.id" class="creator-card__platform">
+                            <img :src="getPlatformIcon(link.platform)" class="creator-card__platform-icon" />
+                            <span class="creator-card__platform-name">
+                              {{ link.display_name || truncateId(link.platform_id) }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Asset Indicators -->
+                      <div
+                        v-if="creator.intro_id || creator.outro_id || creator.watermark_id"
+                        class="creator-card__assets"
+                      >
+                        <div
+                          v-if="creator.intro_id"
+                          class="creator-card__asset creator-card__asset--intro"
+                          title="Has intro configured"
+                        >
+                          <Play class="creator-card__asset-icon" />
+                        </div>
+                        <div
+                          v-if="creator.outro_id"
+                          class="creator-card__asset creator-card__asset--outro"
+                          title="Has outro configured"
+                        >
+                          <SkipForward class="creator-card__asset-icon" />
+                        </div>
+                        <div
+                          v-if="creator.watermark_id"
+                          class="creator-card__asset creator-card__asset--watermark"
+                          title="Has watermark configured"
+                        >
+                          <ImageIcon class="creator-card__asset-icon" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Footer Row: Status + Actions -->
+                    <div class="creator-card__footer">
+                      <!-- Left: Status -->
+                      <div class="creator-card__status">
+                        <!-- Monitoring status -->
+                        <div
+                          v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
+                          class="creator-status creator-status--monitoring"
+                        >
+                          <span class="creator-status__dot"></span>
+                          {{ getCreatorStatusLabel(creator) }}
+                        </div>
+                        <!-- Live status for monitorable creators -->
+                        <template v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                          <div v-if="isCreatorCheckingLive(creator)" class="creator-status creator-status--checking">
+                            <Loader2 class="creator-status__spinner" />
+                            Checking...
+                          </div>
+                          <div v-else-if="isCreatorLive(creator)" class="creator-status creator-status--live">
+                            <span class="creator-status__dot"></span>
+                            LIVE
+                            <span v-if="getCreatorViewerCount(creator)" class="creator-status__viewers">
+                              {{ formatViewerCount(getCreatorViewerCount(creator)!) }} viewers
+                            </span>
+                          </div>
+                          <div v-else class="creator-status creator-status--offline">
+                            <span class="creator-status__dot"></span>
+                            Offline
+                          </div>
+                        </template>
+                        <!-- Platform count -->
+                        <span v-else class="creator-card__platform-count">
+                          {{ creator.platform_links.length }} platform{{
+                            creator.platform_links.length !== 1 ? 's' : ''
+                          }}
+                          linked
+                        </span>
+                      </div>
+
+                      <!-- Right: Actions -->
+                      <div class="creator-card__actions">
+                        <!-- Live Clip Controls (Primary Actions) -->
+                        <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                          <template v-if="!isCreatorMonitored(creator)">
+                            <div class="creator-action-group">
+                              <button
+                                @click.stop="startCreatorMonitoring(creator, false)"
+                                class="creator-action-group__btn"
+                                title="Record Only"
+                              >
+                                <span class="creator-action-group__rec-dot"></span>
+                                Rec
+                              </button>
+                              <button
+                                @click.stop="startCreatorMonitoring(creator, true)"
+                                class="creator-action-group__btn creator-action-group__btn--primary"
+                                title="Auto-Detect Clips"
+                              >
+                                <Sparkles class="creator-btn__icon" />
+                                Auto
+                              </button>
+                            </div>
+                          </template>
+                          <template v-else>
+                            <button
+                              @click.stop="stopCreatorMonitoring(creator)"
+                              class="creator-btn creator-btn--stop"
+                              title="Stop Monitoring"
+                            >
+                              <Square class="creator-btn__icon" />
+                              Stop
+                            </button>
+                          </template>
+                          <button
+                            @click.stop="watchCreator(creator)"
+                            :disabled="!canWatchCreator(creator)"
+                            class="creator-btn creator-btn--watch"
+                            :class="{ 'creator-btn--watch-disabled': !canWatchCreator(creator) }"
+                            :title="
+                              canWatchCreator(creator)
+                                ? 'Watch Live'
+                                : 'Watch becomes available when the creator is monitored and live'
+                            "
+                          >
+                            <Eye class="creator-btn__icon" />
+                            Watch
+                          </button>
+                        </template>
+
+                        <!-- More Actions Dropdown -->
+                        <DropdownMenu>
+                          <DropdownMenuTrigger as-child>
+                            <button class="creator-btn creator-btn--more" title="More actions">
+                              <MoreHorizontal class="creator-btn__icon" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" :side-offset="4" class="creator-dropdown">
+                            <DropdownMenuItem class="creator-dropdown__item" @click="viewCreatorVods(creator)">
+                              <Video class="creator-dropdown__item-icon" />
+                              View VODs
+                            </DropdownMenuItem>
+                            <DropdownMenuItem class="creator-dropdown__item" @click="openDownloadDialog(creator)">
+                              <Download class="creator-dropdown__item-icon" />
+                              Download VOD
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              v-if="!creator.isOrgProfile"
+                              class="creator-dropdown__item"
+                              @click="openEditDialog(creator)"
+                            >
+                              <Edit class="creator-dropdown__item-icon" />
+                              Edit Profile
+                            </DropdownMenuItem>
+                            <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                              <DropdownMenuSeparator class="creator-dropdown__separator" />
+                              <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
+                                <HardDrive class="creator-dropdown__item-icon" />
+                                Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
+                                <span
+                                  class="creator-dropdown__item-badge"
+                                  :class="{ 'creator-dropdown__item-badge--active': isCreatorAutoDvrEnabled(creator) }"
+                                >
+                                  {{ isCreatorAutoDvrEnabled(creator) ? 'ON' : 'OFF' }}
+                                </span>
+                              </DropdownMenuItem>
+                            </template>
+                            <template v-if="!creator.isOrgProfile">
+                              <DropdownMenuSeparator class="creator-dropdown__separator" />
+                              <DropdownMenuItem
+                                class="creator-dropdown__item creator-dropdown__item--danger"
+                                @click="confirmDeleteCreator(creator)"
+                              >
+                                <Trash2 class="creator-dropdown__item-icon" />
+                                Delete Creator
+                              </DropdownMenuItem>
+                            </template>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </transition-group>
+
+              <!-- No results from search -->
+              <div v-if="filteredCreators.length === 0 && searchQuery" class="creators__no-results">
+                <Search class="creators__no-results-icon" />
+                <p class="creators__no-results-title">No creators found</p>
+                <p class="creators__no-results-text">No results for "{{ searchQuery }}"</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else class="creators__empty">
+            <div class="creators__empty-icon-wrapper">
+              <Users class="creators__empty-icon" />
+            </div>
+            <h3 class="creators__empty-title">No creators yet</h3>
+            <p class="creators__empty-description">
+              Add your first content creator to start managing their VODs, assets, and live monitoring.
+            </p>
+          </div>
+        </div>
       </div>
     </PageLayout>
 
@@ -459,7 +421,6 @@
   import { ref, onMounted, onUnmounted, computed } from 'vue';
   import { useRouter } from 'vue-router';
   import PageLayout from '@/components/PageLayout.vue';
-  import EmptyState from '@/components/EmptyState.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import {
@@ -1221,6 +1182,18 @@
     min-height: 100%;
   }
 
+  /* ===== Content Wrapper ===== */
+  .creators__wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .creators__wrapper--empty {
+    justify-content: center;
+    align-items: center;
+  }
+
   .creators__content {
     display: flex;
     flex-direction: column;
@@ -1231,36 +1204,44 @@
     width: 100%;
   }
 
+  /* ===== Empty State ===== */
+  .creators__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .creators__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
   .creators__empty-icon {
-    width: 64px;
-    height: 64px;
+    width: 36px;
+    height: 36px;
     color: var(--sidebar-text-muted);
   }
 
-  .creators__empty-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 1.5rem;
-    padding: 0.75rem 1.25rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 8px;
-    font-size: 0.875rem;
+  .creators__empty-title {
+    font-size: 1.125rem;
     font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
   }
 
-  .creators__empty-btn:hover {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-
-  .creators__empty-btn-icon {
-    width: 16px;
-    height: 16px;
+  .creators__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 300px;
   }
 
   /* ===== Page Heading ===== */
@@ -1297,7 +1278,7 @@
 
   .creators-search__icon {
     position: absolute;
-    left: 0.5rem;
+    left: 0.625rem;
     top: 50%;
     transform: translateY(-50%);
     width: 14px;
@@ -1307,23 +1288,19 @@
   }
 
   .creators-search__input {
+    width: 100%;
     height: 32px;
-    padding-left: 1.75rem;
-    background-color: transparent;
+    padding-left: 2rem;
+    background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
     border-radius: 6px;
     font-size: 0.75rem;
     color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .creators-search__input:hover {
-    border-color: rgba(255, 255, 255, 0.15);
   }
 
   .creators-search__input:focus {
     border-color: var(--sidebar-accent);
-    background-color: var(--sidebar-surface);
+    outline: none;
   }
 
   .creators-add-btn {
@@ -1460,48 +1437,11 @@
     border-radius: 4px;
   }
 
-  /* ===== Section Header ===== */
-  .creators__section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.875rem;
-  }
-
-  .creators__section-header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-  }
-
-  .creators__section-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .creators__section-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .creators__section-title {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .creators__section-subtitle {
-    font-size: 0.75rem;
+  /* ===== Item Count ===== */
+  .creators__item-count {
+    font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
+    font-weight: 500;
   }
 
   /* ===== Creator List ===== */
@@ -1519,45 +1459,13 @@
   .creator-card {
     display: flex;
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
     border-radius: 10px;
     overflow: hidden;
     transition: all 200ms ease;
   }
 
   .creator-card:hover {
-    border-color: rgba(255, 255, 255, 0.1);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  }
-
-  .creator-card--monitoring {
-    border-color: rgba(16, 185, 129, 0.3);
-  }
-
-  .creator-card--monitoring:hover {
-    border-color: rgba(16, 185, 129, 0.5);
-  }
-
-  .creator-card--live {
-    border-color: rgba(239, 68, 68, 0.3);
-  }
-
-  .creator-card--live:hover {
-    border-color: rgba(239, 68, 68, 0.5);
-  }
-
-  .creator-card__indicator {
-    width: 4px;
-    flex-shrink: 0;
-    background-color: var(--sidebar-border);
-  }
-
-  .creator-card__indicator--monitoring {
-    background-color: #10b981;
-  }
-
-  .creator-card__indicator--live {
-    background-color: #ef4444;
   }
 
   .creator-card__inner {
@@ -1784,7 +1692,7 @@
     gap: 1rem;
     padding: 0.875rem 1.25rem;
     background-color: rgba(0, 0, 0, 0.15);
-    border-top: 1px solid var(--sidebar-border);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
   }
 
   .creator-card__status {
@@ -1868,101 +1776,118 @@
     gap: 0.5rem;
   }
 
-  .creator-btn {
+  /* Segmented Button Group */
+  .creator-action-group {
+    display: flex;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .creator-action-group__btn {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.75rem;
     font-weight: 500;
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--sidebar-text-muted);
     border: none;
     cursor: pointer;
     transition: all 150ms ease;
   }
 
-  .creator-btn__icon {
-    width: 14px;
-    height: 14px;
+  .creator-action-group__btn:first-child {
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
   }
 
-  .creator-btn__rec-dot {
-    width: 8px;
-    height: 8px;
+  .creator-action-group__btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+  }
+
+  .creator-action-group__btn--primary {
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+  }
+
+  .creator-action-group__btn--primary:hover {
+    background-color: rgba(139, 92, 246, 0.25);
+    color: #c4b5fd;
+  }
+
+  .creator-action-group__rec-dot {
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background-color: #ef4444;
   }
 
-  .creator-btn--rec {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
+  /* Individual Buttons */
+  .creator-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.4375rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 150ms ease;
   }
 
-  .creator-btn--rec:hover {
-    background-color: var(--sidebar-active);
-  }
-
-  .creator-btn--auto {
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-  }
-
-  .creator-btn--auto:hover {
-    opacity: 0.9;
+  .creator-btn__icon {
+    width: 13px;
+    height: 13px;
   }
 
   .creator-btn--stop {
-    background-color: rgba(239, 68, 68, 0.15);
+    background-color: rgba(239, 68, 68, 0.12);
     color: #f87171;
+    border-color: rgba(239, 68, 68, 0.2);
   }
 
   .creator-btn--stop:hover {
-    background-color: rgba(239, 68, 68, 0.25);
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
   }
 
   .creator-btn--watch {
-    background-color: rgba(239, 68, 68, 0.1);
+    background-color: rgba(239, 68, 68, 0.12);
     color: #f87171;
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.2);
   }
 
   .creator-btn--watch:hover:not(:disabled) {
     background-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
   }
 
   .creator-btn--watch-disabled {
-    background-color: var(--sidebar-hover);
+    background-color: rgba(255, 255, 255, 0.04);
     color: var(--sidebar-text-muted);
-    border-color: var(--sidebar-border);
+    border-color: rgba(255, 255, 255, 0.08);
     cursor: not-allowed;
-    opacity: 0.6;
-  }
-
-  .creator-btn__dvr-badge {
-    font-size: 0.5625rem;
-    font-weight: 700;
-    padding: 0.125rem 0.375rem;
-    background-color: rgba(16, 185, 129, 0.2);
-    color: #34d399;
-    border-radius: 10px;
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    margin-left: 0.25rem;
+    opacity: 0.5;
   }
 
   .creator-btn--more {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: var(--sidebar-hover);
+    background-color: rgba(255, 255, 255, 0.04);
     color: var(--sidebar-text-muted);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 6px;
   }
 
   .creator-btn--more:hover {
-    background-color: var(--sidebar-active);
+    background-color: rgba(255, 255, 255, 0.08);
     color: var(--sidebar-text);
   }
 
@@ -2007,17 +1932,8 @@
   .creator-skeleton {
     display: flex;
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
     border-radius: 10px;
     overflow: hidden;
-  }
-
-  .creator-skeleton__indicator {
-    width: 4px;
-    flex-shrink: 0;
-    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
   }
 
   .creator-skeleton__inner {
@@ -2087,7 +2003,7 @@
     justify-content: space-between;
     padding: 0.875rem 1.25rem;
     background-color: rgba(0, 0, 0, 0.15);
-    border-top: 1px solid var(--sidebar-border);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
   }
 
   .creator-skeleton__status {

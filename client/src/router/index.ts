@@ -89,16 +89,6 @@ const router = createRouter({
           name: 'prompts-home',
           component: () => import('@/pages/Prompts.vue'),
         },
-        {
-          path: 'new',
-          name: 'prompts-new',
-          component: () => import('@/pages/NewPrompt.vue'),
-        },
-        {
-          path: ':id/edit',
-          name: 'prompts-edit',
-          component: () => import('@/pages/EditPrompt.vue'),
-        },
       ],
     },
     {
@@ -300,8 +290,58 @@ const router = createRouter({
       children: [
         {
           path: '',
-          name: 'organization-detail-home',
-          component: () => import('@/components/OrganizationDashboard.vue'),
+          name: 'organization-hub',
+          component: () => import('@/pages/organization/OrganizationHub.vue'),
+        },
+        {
+          path: 'members',
+          name: 'org-members',
+          component: () => import('@/pages/organization/OrganizationMembers.vue'),
+        },
+        {
+          path: 'creators',
+          name: 'org-creators',
+          component: () => import('@/pages/organization/OrganizationCreators.vue'),
+        },
+        {
+          path: 'campaigns',
+          name: 'org-campaigns',
+          component: () => import('@/pages/organization/OrganizationCampaigns.vue'),
+        },
+        {
+          path: 'clippers',
+          name: 'org-clippers',
+          component: () => import('@/pages/organization/OrganizationClippers.vue'),
+        },
+        {
+          path: 'shared',
+          name: 'org-shared',
+          component: () => import('@/pages/organization/OrganizationShared.vue'),
+        },
+        {
+          path: 'social',
+          name: 'org-social',
+          component: () => import('@/pages/organization/OrganizationSocial.vue'),
+        },
+        {
+          path: 'posts',
+          name: 'org-posts',
+          component: () => import('@/pages/organization/OrganizationPosts.vue'),
+        },
+        {
+          path: 'assets',
+          name: 'org-assets',
+          component: () => import('@/pages/organization/OrganizationAssets.vue'),
+        },
+        {
+          path: 'billing',
+          name: 'org-billing',
+          component: () => import('@/pages/organization/OrganizationBilling.vue'),
+        },
+        {
+          path: 'settings',
+          name: 'org-settings',
+          component: () => import('@/pages/organization/OrganizationSettings.vue'),
         },
       ],
     },

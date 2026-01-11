@@ -1,5 +1,5 @@
 <template>
-  <div class="assets-page">
+  <div class="assets">
     <PageLayout
       title="Assets"
       description="Manage your intros, outros, watermarks, and images"
@@ -7,162 +7,151 @@
       :icon="Archive"
     >
       <template #actions>
-        <div class="flex items-center gap-2">
+        <div class="assets-actions">
           <!-- Refresh button for organization assets -->
-          <Button
+          <button
             v-if="hasOrganizations"
             @click="triggerSync"
             :disabled="isSyncing"
             title="Refresh organization assets"
-            class="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="assets-action-btn"
           >
-            <Loader2 v-if="isSyncing" class="h-5 w-5 animate-spin" />
-            <RefreshCw v-else class="h-5 w-5" />
-          </Button>
-          <Button @click="openIntrosFolder" title="Open assets folder" class="flex items-center gap-2">
-            <Folder class="h-5 w-5" />
-          </Button>
-          <Button
-            @click="handleUpload"
-            :disabled="uploading"
-            class="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Upload class="h-5 w-5" />
+            <Loader2 v-if="isSyncing" class="assets-action-btn__icon assets-action-btn__icon--spin" />
+            <RefreshCw v-else class="assets-action-btn__icon" />
+          </button>
+          <button @click="openIntrosFolder" title="Open assets folder" class="assets-action-btn">
+            <Folder class="assets-action-btn__icon" />
+          </button>
+          <button @click="handleUpload" :disabled="uploading" class="assets-upload-btn">
+            <Upload class="assets-upload-btn__icon" />
             {{ uploading ? 'Uploading...' : 'Upload Asset' }}
-          </Button>
+          </button>
         </div>
       </template>
 
       <!-- Loading State -->
-      <div v-if="loading" class="space-y-6">
-        <SkeletonGrid />
+      <div v-if="loading" class="assets__content">
+        <!-- Skeleton Page Heading -->
+        <div class="assets__heading">
+          <div class="assets-skeleton__title"></div>
+          <div class="assets-skeleton__subtitle"></div>
+        </div>
+
+        <!-- Skeleton Item Count -->
+        <div class="assets-skeleton__item-count"></div>
+
+        <!-- Skeleton Cards Grid -->
+        <div class="assets__grid">
+          <div v-for="i in 6" :key="`skeleton-${i}`" class="asset-card asset-card--skeleton">
+            <div class="asset-card__skeleton-bg"></div>
+            <div class="asset-card__bottom">
+              <div class="assets-skeleton__card-title"></div>
+              <div class="assets-skeleton__card-meta"></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Content when not loading -->
-      <div v-else>
-        <!-- Header with stats or selection controls -->
-        <div v-if="allAssets.length > 0 || showSkeletonCard" class="flex items-center justify-between mb-4">
-          <!-- Selection Controls (visible when items selected) -->
-          <div v-if="selectedAssets.size > 0" class="flex items-center gap-3">
-            <button
-              @click="confirmBulkDelete"
-              class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
-            >
-              <Trash2 class="h-4 w-4" />
-              Delete ({{ selectedAssets.size }})
-            </button>
-            <span class="text-sm text-muted-foreground">{{ selectedAssets.size }} selected</span>
-            <button @click="clearSelection" class="text-xs text-muted-foreground hover:text-foreground font-medium">
-              Clear
+      <div v-else class="assets__content" :class="{ 'assets__content--empty': allAssets.length === 0 && !uploading }">
+        <!-- Page Heading -->
+        <div v-if="allAssets.length > 0 || uploading" class="assets__heading">
+          <h1 class="assets__title">Manage Your Assets</h1>
+          <p class="assets__subtitle">Organize intros, outros, watermarks, audio, and images for your content</p>
+        </div>
+
+        <!-- Selection Controls Bar (visible when items selected) -->
+        <div v-if="selectedAssets.size > 0" class="assets__selection-bar">
+          <div class="assets__selection-info">
+            <Check class="assets__selection-icon" />
+            <span>{{ selectedAssets.size }} selected</span>
+          </div>
+          <div class="assets__selection-actions">
+            <button @click="clearSelection" class="assets__selection-clear">Clear</button>
+            <button @click="confirmBulkDelete" class="assets__selection-delete">
+              <Trash2 class="assets__selection-delete-icon" />
+              Delete Selected
             </button>
           </div>
+        </div>
 
-          <!-- Stats (hidden when items selected) -->
-          <p v-else class="text-sm text-muted-foreground">
-            <span v-if="showSkeletonCard">
-              Uploading...
-              <span v-if="allAssets.length > 0">
-                • {{ allAssets.length }} asset{{ allAssets.length !== 1 ? 's' : '' }}
-              </span>
-            </span>
-            <span v-else-if="allAssets.length > 0">
-              {{ allAssets.length }} asset{{ allAssets.length !== 1 ? 's' : '' }}
-            </span>
-          </p>
+        <!-- Item Count -->
+        <div v-if="allAssets.length > 0 || showSkeletonCard" class="assets__item-count">
+          {{ paginatedAssets.length }} {{ paginatedAssets.length === 1 ? 'item' : 'items' }}
+          <span v-if="totalPages > 1">(Page {{ currentPage }} of {{ totalPages }})</span>
         </div>
 
         <!-- Assets Grid -->
-        <div
+        <TransitionGroup
           v-if="allAssets.length > 0 || showSkeletonCard"
-          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+          name="card-list"
+          tag="div"
+          class="assets__grid"
         >
           <!-- Upload progress card -->
-          <div
-            v-if="showSkeletonCard"
-            class="relative bg-card border border-border rounded-md overflow-hidden hover:border-foreground/20 group aspect-video"
-          >
-            <!-- Upload overlay -->
-            <div class="absolute inset-0 bg-black/40 z-10 flex items-center justify-center">
-              <div class="text-center text-white p-4">
-                <!-- Upload icon -->
-                <div
-                  class="inline-flex items-center justify-center w-12 h-12 mb-3 bg-white/10 rounded-full backdrop-blur-sm"
-                >
-                  <Upload class="h-6 w-6" />
-                </div>
-
-                <!-- Title -->
-                <h3 class="font-semibold text-base mb-2 line-clamp-2 px-2">Uploading Asset</h3>
-
-                <!-- Status -->
-                <div class="text-sm mb-1">Processing...</div>
-                <div class="text-xs text-white/70">Generating thumbnail and saving asset</div>
+          <div v-if="showSkeletonCard" key="upload-skeleton" class="asset-card asset-card--uploading">
+            <div class="asset-card__upload-overlay">
+              <div class="asset-card__upload-icon">
+                <Loader2 class="asset-card__upload-spinner" />
               </div>
+              <span class="asset-card__upload-text">Uploading...</span>
+              <span class="asset-card__upload-subtext">Processing asset</span>
             </div>
           </div>
 
-          <!-- Existing asset cards -->
+          <!-- Asset cards -->
           <div
             v-for="asset in paginatedAssets"
-            :key="asset.id"
-            class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
-            :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isAssetSelected(String(asset.id)) }"
+            :key="`asset-${asset.isOrgAsset ? 'org' : 'local'}-${asset.id}`"
+            class="asset-card group"
+            :class="{
+              'asset-card--selected': isAssetSelected(String(asset.id)),
+              'asset-card--watermark': asset.assetType === 'watermark',
+              'asset-card--image': asset.assetType === 'image',
+            }"
             @click="handleAssetClick(asset)"
           >
-            <!-- Selection Checkbox (visible on hover or when selected) - NOT for org assets -->
-            <div
-              v-if="!asset.isOrgAsset"
-              class="absolute top-4 right-4 z-30 transition-opacity"
-              :class="isAssetSelected(asset.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-              @click.stop="toggleAssetSelection(asset.id)"
-            >
-              <div
-                :class="[
-                  'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
-                  isAssetSelected(asset.id)
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-black/60 text-white hover:bg-black/80',
-                ]"
-              >
-                <Check v-if="isAssetSelected(asset.id)" class="w-4 h-4" />
-              </div>
-            </div>
-
-            <!-- Thumbnail background with vignette -->
+            <!-- Thumbnail background -->
             <div
               v-if="getThumbnailUrl(asset)"
-              class="absolute inset-0 z-0"
+              class="asset-card__thumbnail-bg"
               :style="{
                 backgroundImage: `url(${getThumbnailUrl(asset)})`,
                 backgroundSize: asset.assetType === 'watermark' || asset.assetType === 'image' ? 'contain' : 'cover',
                 backgroundPosition: 'center',
                 backgroundRepeat: 'no-repeat',
-                backgroundColor:
-                  asset.assetType === 'watermark' || asset.assetType === 'image' ? '#1a1a1a' : 'transparent',
               }"
+            ></div>
+
+            <!-- Vignette overlay -->
+            <div class="asset-card__vignette"></div>
+
+            <!-- Selection checkbox -->
+            <div
+              v-if="!asset.isOrgAsset"
+              class="asset-card__checkbox"
+              :class="{ 'asset-card__checkbox--visible': isAssetSelected(String(asset.id)) }"
+              @click.stop="toggleAssetSelection(String(asset.id))"
             >
-              <!-- Dark vignette overlay handled by bottom gradient now, but keep subtle global one -->
-              <div class="absolute inset-0 bg-black/10"></div>
+              <div
+                class="asset-card__checkbox-box"
+                :class="{ 'asset-card__checkbox-box--checked': isAssetSelected(String(asset.id)) }"
+              >
+                <Check v-if="isAssetSelected(String(asset.id))" class="asset-card__checkbox-icon" />
+              </div>
             </div>
 
-            <!-- Top left badges -->
-            <div class="absolute top-4 left-4 z-5 flex flex-row flex-wrap gap-1.5">
-              <!-- Type badge -->
+            <!-- Badges -->
+            <div class="asset-card__badges">
               <span
-                :class="[
-                  'text-xs px-2 py-1 rounded-md flex items-center gap-1',
-                  getThumbnailUrl(asset)
-                    ? 'text-white/70 bg-white/10 backdrop-blur-sm'
-                    : asset.assetType === 'intro'
-                      ? 'text-white/70 bg-blue-500/20 backdrop-blur-sm'
-                      : asset.assetType === 'outro'
-                        ? 'text-white/70 bg-purple-500/20 backdrop-blur-sm'
-                        : asset.assetType === 'audio'
-                          ? 'text-white/70 bg-emerald-500/20 backdrop-blur-sm'
-                          : asset.assetType === 'image'
-                            ? 'text-white/70 bg-cyan-500/20 backdrop-blur-sm'
-                            : 'text-white/70 bg-amber-500/20 backdrop-blur-sm',
-                ]"
+                class="asset-card__badge"
+                :class="{
+                  'asset-card__badge--intro': asset.assetType === 'intro',
+                  'asset-card__badge--outro': asset.assetType === 'outro',
+                  'asset-card__badge--watermark': asset.assetType === 'watermark',
+                  'asset-card__badge--audio': asset.assetType === 'audio',
+                  'asset-card__badge--image': asset.assetType === 'image',
+                }"
               >
                 <component
                   :is="
@@ -172,7 +161,7 @@
                         ? Music
                         : Package
                   "
-                  class="h-3 w-3"
+                  class="asset-card__badge-icon"
                 />
                 {{
                   asset.assetType === 'intro'
@@ -186,43 +175,69 @@
                           : 'Watermark'
                 }}
               </span>
-              <!-- Organization badge -->
               <span
                 v-if="asset.isOrgAsset || asset.organization_id"
-                class="text-xs px-2 py-1 rounded-md flex items-center gap-1 text-white/80 bg-indigo-500/30 backdrop-blur-sm"
+                class="asset-card__badge asset-card__badge--org"
                 :title="`From: ${asset.organization_name || 'Organization'}`"
               >
-                <Building2 class="h-3 w-3" />
+                <Building2 class="asset-card__badge-icon" />
                 {{ asset.organization_name || 'Org' }}
               </span>
             </div>
 
             <!-- Downloading overlay -->
-            <div
-              v-if="isAssetDownloading(asset)"
-              class="absolute inset-0 z-20 bg-black/60 flex items-center justify-center"
-            >
-              <div class="text-center text-white">
-                <Loader2 class="h-8 w-8 animate-spin mx-auto mb-2" />
-                <span class="text-sm">Downloading...</span>
-              </div>
+            <div v-if="isAssetDownloading(asset)" class="asset-card__downloading">
+              <Loader2 class="asset-card__downloading-spinner" />
+              <span class="asset-card__downloading-text">Downloading...</span>
             </div>
 
-            <!-- Bottom Overlay with Info -->
+            <!-- Hover actions -->
             <div
-              class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
+              class="asset-card__actions"
+              :class="{
+                'asset-card__actions--visible':
+                  asset.assetType === 'audio' && isAudioPlaying(asset.id, asset.isOrgAsset),
+              }"
             >
-              <!-- Title -->
-              <h3
-                class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
-                :title="asset.name"
+              <button
+                v-if="asset.assetType === 'intro' || asset.assetType === 'outro'"
+                class="asset-card__action-btn"
+                title="Play"
+                @click.stop="playAsset(asset as any)"
               >
-                {{ asset.name }}
-              </h3>
+                <Play class="asset-card__action-icon" />
+              </button>
+              <button
+                v-if="asset.assetType === 'audio'"
+                class="asset-card__action-btn"
+                :title="isAudioPlaying(asset.id, asset.isOrgAsset) ? 'Pause' : 'Play'"
+                @click.stop="toggleAudioPlayback(asset as any)"
+              >
+                <Pause v-if="isAudioPlaying(asset.id, asset.isOrgAsset)" class="asset-card__action-icon" />
+                <Play v-else class="asset-card__action-icon" />
+              </button>
+              <button
+                v-if="asset.assetType === 'image' || asset.assetType === 'watermark'"
+                class="asset-card__action-btn"
+                title="View full size"
+                @click.stop="openImagePreview(asset)"
+              >
+                <Maximize2 class="asset-card__action-icon" />
+              </button>
+              <button
+                v-if="!asset.isOrgAsset"
+                class="asset-card__action-btn asset-card__action-btn--danger"
+                title="Delete"
+                @click.stop="confirmDelete(asset)"
+              >
+                <Trash2 class="asset-card__action-icon" />
+              </button>
+            </div>
 
-              <!-- Metadata Row -->
-              <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
-                <!-- Duration for video/audio assets, dimensions for watermarks/images -->
+            <!-- Bottom Info Overlay -->
+            <div class="asset-card__bottom">
+              <h3 class="asset-card__name" :title="asset.name">{{ asset.name }}</h3>
+              <div class="asset-card__meta">
                 <span v-if="asset.assetType === 'watermark'">
                   {{
                     (asset as WatermarkImage).width && (asset as WatermarkImage).height
@@ -241,72 +256,25 @@
                   {{ formatDuration((asset as AudioAsset).duration || undefined) }}
                 </span>
                 <span v-else>{{ formatDuration((asset as IntroOutro).duration || undefined) }}</span>
-
-                <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
-
-                <!-- Created At -->
-                <span class="truncate">
+                <span class="asset-card__meta-dot"></span>
+                <span>
                   {{ formatRelativeTime(asset.isOrgAsset ? (asset as any).inserted_at : (asset as any).created_at) }}
                 </span>
               </div>
             </div>
-
-            <!-- Hover Overlay Buttons -->
-            <div
-              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-3"
-              :class="{ 'opacity-100': asset.assetType === 'audio' && isAudioPlaying(asset.id, asset.isOrgAsset) }"
-            >
-              <!-- Play button for video assets -->
-              <button
-                v-if="asset.assetType === 'intro' || asset.assetType === 'outro'"
-                class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                title="Play"
-                @click.stop="playAsset(asset as any)"
-              >
-                <Play class="h-5 w-5" />
-              </button>
-              <!-- Play/Pause button for audio assets -->
-              <button
-                v-if="asset.assetType === 'audio'"
-                class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                :title="isAudioPlaying(asset.id, asset.isOrgAsset) ? 'Pause' : 'Play'"
-                @click.stop="toggleAudioPlayback(asset as any)"
-              >
-                <Pause v-if="isAudioPlaying(asset.id, asset.isOrgAsset)" class="h-5 w-5" />
-                <Play v-else class="h-5 w-5" />
-              </button>
-              <!-- Expand button for image/watermark assets -->
-              <button
-                v-if="asset.assetType === 'image' || asset.assetType === 'watermark'"
-                class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                title="View full size"
-                @click.stop="openImagePreview(asset)"
-              >
-                <Maximize2 class="h-5 w-5" />
-              </button>
-              <!-- Delete button - NOT for org assets (they're managed at org level) -->
-              <button
-                v-if="!asset.isOrgAsset"
-                class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                title="Delete"
-                @click.stop="confirmDelete(asset)"
-              >
-                <Trash2 class="h-5 w-5" />
-              </button>
-            </div>
           </div>
-        </div>
+        </TransitionGroup>
 
         <!-- Empty State -->
-        <EmptyState
-          v-if="allAssets.length === 0 && !uploading"
-          title="No assets yet"
-          description="Upload your first intro, outro, watermark, audio, or image to get started"
-        >
-          <template #icon>
-            <Package class="h-16 w-16 text-muted-foreground" />
-          </template>
-        </EmptyState>
+        <div v-if="allAssets.length === 0 && !uploading" class="assets__empty">
+          <div class="assets__empty-icon-wrapper">
+            <Package class="assets__empty-icon" />
+          </div>
+          <h3 class="assets__empty-title">No assets yet</h3>
+          <p class="assets__empty-description">
+            Upload your first intro, outro, watermark, audio, or image to get started
+          </p>
+        </div>
       </div>
       <!-- Close content when not loading -->
     </PageLayout>
@@ -344,66 +312,55 @@
     <!-- Image Preview Dialog -->
     <Teleport to="body">
       <Transition name="modal">
-        <div
-          v-if="showImagePreview && imageToPreview"
-          class="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50"
-          @click.self="closeImagePreview"
-        >
+        <div v-if="showImagePreview && imageToPreview" class="assets-modal__overlay" @click.self="closeImagePreview">
           <Transition name="dialog" appear>
-            <div class="relative max-w-[90vw] max-h-[90vh] flex flex-col">
+            <div class="assets-modal assets-modal--preview">
               <!-- Close Button -->
-              <button
-                @click="closeImagePreview"
-                class="absolute -top-10 right-0 p-2 text-white/70 hover:text-white transition-colors rounded-full hover:bg-white/10"
-              >
-                <X class="h-6 w-6" />
+              <button @click="closeImagePreview" class="assets-modal__close">
+                <X class="assets-modal__close-icon" />
               </button>
 
               <!-- Image Container -->
-              <div class="relative bg-zinc-900/50 rounded-xl overflow-hidden border border-white/10">
-                <img
-                  :src="getImagePreviewUrl(imageToPreview)"
-                  :alt="imageToPreview.name"
-                  class="max-w-[85vw] max-h-[80vh] object-contain"
-                />
+              <div class="assets-modal__image-container">
+                <img :src="getImagePreviewUrl(imageToPreview)" :alt="imageToPreview.name" class="assets-modal__image" />
               </div>
 
-              <!-- Image Info -->
-              <div class="mt-4 flex items-center justify-between gap-4">
-                <div class="flex items-center gap-3">
+              <!-- Image Info Footer -->
+              <div class="assets-modal__image-footer">
+                <div class="assets-modal__image-info">
                   <div
-                    class="p-2 rounded-lg"
-                    :class="imageToPreview.assetType === 'watermark' ? 'bg-amber-500/20' : 'bg-cyan-500/20'"
+                    class="assets-modal__image-icon"
+                    :class="
+                      imageToPreview.assetType === 'watermark'
+                        ? 'assets-modal__image-icon--watermark'
+                        : 'assets-modal__image-icon--image'
+                    "
                   >
-                    <ImageIcon
-                      class="h-5 w-5"
-                      :class="imageToPreview.assetType === 'watermark' ? 'text-amber-400' : 'text-cyan-400'"
-                    />
+                    <ImageIcon class="assets-modal__image-icon-svg" />
                   </div>
-                  <div>
-                    <p class="text-white font-medium">{{ imageToPreview.name }}</p>
-                    <p class="text-zinc-400 text-sm">
+                  <div class="assets-modal__image-details">
+                    <p class="assets-modal__image-name">{{ imageToPreview.name }}</p>
+                    <div class="assets-modal__image-meta">
                       <span
-                        class="px-1.5 py-0.5 rounded text-xs mr-2"
+                        class="assets-modal__image-type"
                         :class="
                           imageToPreview.assetType === 'watermark'
-                            ? 'bg-amber-500/20 text-amber-400'
-                            : 'bg-cyan-500/20 text-cyan-400'
+                            ? 'assets-modal__image-type--watermark'
+                            : 'assets-modal__image-type--image'
                         "
                       >
                         {{ imageToPreview.assetType === 'watermark' ? 'Watermark' : 'Image' }}
                       </span>
-                      <span v-if="getImageDimensions(imageToPreview)">
+                      <span v-if="getImageDimensions(imageToPreview)" class="assets-modal__image-dimensions">
                         {{ getImageDimensions(imageToPreview) }}
                       </span>
-                      <!-- Organization badge -->
                       <span
                         v-if="imageToPreview.isOrgAsset || imageToPreview.organization_id"
-                        class="ml-2 px-1.5 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-400"
+                        class="assets-modal__image-org"
                       >
                         {{ (imageToPreview as any).organization_name || 'Organization' }}
                       </span>
-                    </p>
+                    </div>
                   </div>
                 </div>
 
@@ -414,9 +371,9 @@
                     confirmDelete(imageToPreview);
                     closeImagePreview();
                   "
-                  class="px-3 py-2 text-sm text-destructive hover:bg-destructive/10 rounded-lg transition-colors flex items-center gap-2"
+                  class="assets-modal__image-delete"
                 >
-                  <Trash2 class="h-4 w-4" />
+                  <Trash2 class="assets-modal__image-delete-icon" />
                   Delete
                 </button>
               </div>
@@ -427,41 +384,52 @@
     </Teleport>
 
     <!-- Bulk Delete Confirmation Modal -->
-    <div
-      v-if="showBulkDeleteDialog"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    >
-      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">Delete {{ selectedAssets.size }} Assets</h2>
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showBulkDeleteDialog" class="assets-modal__overlay" @click.self="handleBulkDeleteDialogClose">
+          <Transition name="dialog" appear>
+            <div class="assets-modal">
+              <div class="assets-modal__accent-bar assets-modal__accent-bar--danger"></div>
+              <div class="assets-modal__content">
+                <div class="assets-modal__header">
+                  <div class="assets-modal__icon assets-modal__icon--danger">
+                    <Trash2 />
+                  </div>
+                  <h2 class="assets-modal__title">Delete {{ selectedAssets.size }} Assets</h2>
+                  <p class="assets-modal__subtitle">Are you sure you want to permanently delete these assets?</p>
+                </div>
 
-        <div class="space-y-4">
-          <p class="text-muted-foreground">
-            Are you sure you want to delete
-            <span class="font-semibold text-foreground">{{ selectedAssets.size }} assets</span>
-            ? The files will be permanently removed.
-            <span class="block mt-1">This action cannot be undone.</span>
-          </p>
+                <div class="assets-modal__body">
+                  <div class="assets-modal__warning">
+                    <p>
+                      You are about to delete
+                      <strong>{{ selectedAssets.size }} {{ selectedAssets.size === 1 ? 'asset' : 'assets' }}</strong>
+                      . The files will be permanently removed from your computer.
+                    </p>
+                    <p class="assets-modal__warning-note">This action cannot be undone.</p>
+                  </div>
 
-          <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
-            @click="bulkDeleteConfirmed"
-          >
-            Delete {{ selectedAssets.size }} Assets
-          </button>
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
-            @click="handleBulkDeleteDialogClose"
-          >
-            Cancel
-          </button>
+                  <div class="assets-modal__actions">
+                    <button @click="bulkDeleteConfirmed" class="assets-modal__btn assets-modal__btn--danger">
+                      <Trash2 class="assets-modal__btn-icon" />
+                      Delete {{ selectedAssets.size }} {{ selectedAssets.size === 1 ? 'Asset' : 'Assets' }}
+                    </button>
+                    <button @click="handleBulkDeleteDialogClose" class="assets-modal__btn assets-modal__btn--secondary">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Transition>
         </div>
-      </div>
-    </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted, computed, watch, Teleport, Transition } from 'vue';
+  import { ref, onMounted, onUnmounted, computed, watch, Teleport, Transition, TransitionGroup } from 'vue';
   import {
     getAllIntroOutros,
     getAllAudioAssets,
@@ -1346,17 +1314,1041 @@
 </script>
 
 <style scoped>
-  /* Root wrapper to ensure single root element for Transition */
-  .assets-page {
-    position: relative;
+  /* ===== Page Container ===== */
+  .assets {
     width: 100%;
     min-height: 100%;
   }
 
-  /* Modal backdrop transition */
+  .assets__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    width: 100%;
+    flex: 1;
+  }
+
+  .assets__content--empty {
+    justify-content: center;
+    align-items: center;
+  }
+
+  /* ===== Page Heading ===== */
+  .assets__heading {
+    flex-shrink: 0;
+  }
+
+  .assets__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .assets__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Item Count ===== */
+  .assets__item-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  /* ===== Actions Bar ===== */
+  .assets-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .assets-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background-color: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .assets-action-btn:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--sidebar-text);
+  }
+
+  .assets-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .assets-action-btn__icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .assets-action-btn__icon--spin {
+    animation: spin 0.8s linear infinite;
+  }
+
+  .assets-upload-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .assets-upload-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .assets-upload-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .assets-upload-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ===== Skeleton Loading States ===== */
+  .asset-card--skeleton {
+    pointer-events: none;
+  }
+
+  .assets-skeleton__title {
+    height: 28px;
+    width: 200px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 6px;
+  }
+
+  .assets-skeleton__subtitle {
+    height: 16px;
+    width: 380px;
+    max-width: 100%;
+    margin-top: 0.5rem;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.1s;
+    border-radius: 4px;
+  }
+
+  .assets-skeleton__item-count {
+    height: 16px;
+    width: 80px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  .assets-skeleton__card-title {
+    height: 16px;
+    width: 65%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.05) 25%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.05) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  .assets-skeleton__card-meta {
+    height: 12px;
+    width: 40%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.03) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.03) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.15s;
+    border-radius: 3px;
+  }
+
+  /* Stagger animation delays for skeleton cards */
+  .asset-card--skeleton:nth-child(1) .asset-card__skeleton-bg {
+    animation-delay: 0s;
+  }
+  .asset-card--skeleton:nth-child(2) .asset-card__skeleton-bg {
+    animation-delay: 0.1s;
+  }
+  .asset-card--skeleton:nth-child(3) .asset-card__skeleton-bg {
+    animation-delay: 0.2s;
+  }
+  .asset-card--skeleton:nth-child(4) .asset-card__skeleton-bg {
+    animation-delay: 0.3s;
+  }
+  .asset-card--skeleton:nth-child(5) .asset-card__skeleton-bg {
+    animation-delay: 0.4s;
+  }
+  .asset-card--skeleton:nth-child(6) .asset-card__skeleton-bg {
+    animation-delay: 0.5s;
+  }
+
+  /* ===== Selection Bar ===== */
+  .assets__selection-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .assets__selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    font-weight: 500;
+  }
+
+  .assets__selection-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  .assets__selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .assets__selection-clear {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .assets__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .assets__selection-delete {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    background-color: #ef4444;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .assets__selection-delete:hover {
+    background-color: #dc2626;
+  }
+
+  .assets__selection-delete-icon {
+    width: 13px;
+    height: 13px;
+  }
+
+  /* ===== Assets Grid ===== */
+  .assets__grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .assets__grid {
+      grid-template-columns: repeat(1, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .assets__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1400px) {
+    .assets__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1800px) {
+    .assets__grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  @media (min-width: 2200px) {
+    .assets__grid {
+      grid-template-columns: repeat(5, 1fr);
+    }
+  }
+
+  /* ===== Asset Card ===== */
+  .asset-card {
+    position: relative;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 200ms ease;
+    aspect-ratio: 16 / 9;
+  }
+
+  .asset-card:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    transform: scale(1.02);
+  }
+
+  .asset-card--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .asset-card--selected:hover {
+    border-color: var(--sidebar-accent);
+  }
+
+  /* Watermark/Image cards need contained background */
+  .asset-card--watermark,
+  .asset-card--image {
+    background-color: #1a1a1a;
+  }
+
+  /* Card Thumbnail Background */
+  .asset-card__thumbnail-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
+
+  /* Vignette Overlay */
+  .asset-card__vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.3) 40%, rgba(0, 0, 0, 0.1) 100%);
+    pointer-events: none;
+  }
+
+  /* Upload overlay */
+  .asset-card--uploading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
+  }
+
+  .asset-card__upload-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    text-align: center;
+    z-index: 10;
+  }
+
+  .asset-card__upload-icon {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(6, 182, 212, 0.15);
+    border-radius: 12px;
+    color: var(--sidebar-accent);
+  }
+
+  .asset-card__upload-spinner {
+    width: 22px;
+    height: 22px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .asset-card__upload-text {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .asset-card__upload-subtext {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* Skeleton card background */
+  .asset-card__skeleton-bg {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* Selection Checkbox */
+  .asset-card__checkbox {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .asset-card:hover .asset-card__checkbox,
+  .asset-card__checkbox--visible {
+    opacity: 1;
+  }
+
+  .asset-card__checkbox-box {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1.5px solid rgba(255, 255, 255, 0.45);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .asset-card__checkbox-box:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+    border-color: rgba(255, 255, 255, 0.6);
+  }
+
+  .asset-card__checkbox-box--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .asset-card__checkbox-box--checked:hover {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .asset-card__checkbox-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-bg);
+  }
+
+  /* Badges */
+  .asset-card__badges {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    z-index: 5;
+  }
+
+  .asset-card__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
+    background-color: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(8px);
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.75);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .asset-card__badge--intro {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+  }
+
+  .asset-card__badge--outro {
+    background-color: rgba(139, 92, 246, 0.2);
+    color: #c4b5fd;
+  }
+
+  .asset-card__badge--watermark {
+    background-color: rgba(245, 158, 11, 0.2);
+    color: #fcd34d;
+  }
+
+  .asset-card__badge--audio {
+    background-color: rgba(16, 185, 129, 0.2);
+    color: #6ee7b7;
+  }
+
+  .asset-card__badge--image {
+    background-color: rgba(6, 182, 212, 0.2);
+    color: #67e8f9;
+  }
+
+  .asset-card__badge--org {
+    background-color: rgba(99, 102, 241, 0.3);
+    color: #c4b5fd;
+  }
+
+  .asset-card__badge-icon {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* Downloading overlay */
+  .asset-card__downloading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 25;
+  }
+
+  .asset-card__downloading-spinner {
+    width: 32px;
+    height: 32px;
+    color: white;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .asset-card__downloading-text {
+    font-size: 0.8125rem;
+    color: white;
+    font-weight: 500;
+  }
+
+  /* Hover Actions */
+  .asset-card__actions {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 200ms ease;
+    z-index: 10;
+  }
+
+  .asset-card:hover .asset-card__actions,
+  .asset-card__actions--visible {
+    opacity: 1;
+  }
+
+  .asset-card__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 50%;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  }
+
+  .asset-card__action-btn:hover {
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  }
+
+  .asset-card__action-btn--danger:hover {
+    background-color: #fef2f2;
+    color: #ef4444;
+  }
+
+  .asset-card__action-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Bottom Info Overlay */
+  .asset-card__bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .asset-card__name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    line-height: 1.3;
+  }
+
+  .asset-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .asset-card__meta-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.4);
+  }
+
+  /* ===== Empty State ===== */
+  .assets__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .assets__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .assets__empty-icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .assets__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .assets__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  /* ===== Modal ===== */
+  .assets-modal__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+
+  .assets-modal {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 420px;
+    margin: 1rem;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .assets-modal--preview {
+    width: fit-content;
+    max-width: 90vw;
+    max-height: 90vh;
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    margin: 0;
+  }
+
+  .assets-modal__accent-bar {
+    height: 3px;
+    background-color: var(--sidebar-accent);
+  }
+
+  .assets-modal__accent-bar--danger {
+    background-color: #ef4444;
+  }
+
+  .assets-modal__close {
+    position: absolute;
+    top: -48px;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .assets-modal__close:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+  }
+
+  .assets-modal__close-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .assets-modal__content {
+    padding: 1.75rem;
+  }
+
+  .assets-modal__header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+
+  .assets-modal__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.5rem;
+  }
+
+  .assets-modal__icon svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .assets-modal__icon--danger {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .assets-modal__title {
+    font-size: 1.1875rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .assets-modal__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .assets-modal__body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .assets-modal__warning {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.6;
+  }
+
+  .assets-modal__warning p {
+    margin: 0;
+  }
+
+  .assets-modal__warning strong {
+    color: var(--sidebar-text);
+  }
+
+  .assets-modal__warning-note {
+    margin-top: 0.5rem !important;
+    color: #f87171;
+    font-weight: 500;
+  }
+
+  .assets-modal__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .assets-modal__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .assets-modal__btn svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .assets-modal__btn--danger {
+    background-color: #ef4444;
+    color: white;
+  }
+
+  .assets-modal__btn--danger:hover {
+    background-color: #dc2626;
+  }
+
+  .assets-modal__btn--secondary {
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    color: var(--sidebar-text);
+  }
+
+  .assets-modal__btn--secondary:hover {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .assets-modal__btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Image Preview Modal Specific */
+  .assets-modal__image-container {
+    background-color: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .assets-modal__image {
+    display: block;
+    max-width: 85vw;
+    max-height: 70vh;
+    object-fit: contain;
+  }
+
+  .assets-modal__image-footer {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .assets-modal__image-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  .assets-modal__image-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .assets-modal__image-icon--watermark {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+
+  .assets-modal__image-icon--image {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+  }
+
+  .assets-modal__image-icon-svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .assets-modal__image-details {
+    min-width: 0;
+  }
+
+  .assets-modal__image-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .assets-modal__image-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .assets-modal__image-type {
+    display: inline-block;
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-radius: 4px;
+  }
+
+  .assets-modal__image-type--watermark {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+
+  .assets-modal__image-type--image {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+  }
+
+  .assets-modal__image-dimensions {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .assets-modal__image-org {
+    display: inline-block;
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    border-radius: 4px;
+  }
+
+  .assets-modal__image-delete {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #f87171;
+    background: transparent;
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .assets-modal__image-delete:hover {
+    background-color: rgba(248, 113, 113, 0.1);
+    border-color: rgba(248, 113, 113, 0.5);
+  }
+
+  .assets-modal__image-delete-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ===== Modal Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 0.2s ease;
   }
 
   .modal-enter-from,
@@ -1364,22 +2356,61 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 0.15s ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {
     opacity: 0;
     transform: scale(0.98);
+  }
+
+  /* ===== Card List Transitions ===== */
+  .card-list-enter-active {
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .card-list-leave-active {
+    transition: all 0.2s ease-out;
+    position: absolute;
+  }
+
+  .card-list-enter-from {
+    opacity: 0;
+    transform: scale(0.92) translateY(12px);
+  }
+
+  .card-list-leave-to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  .card-list-move {
+    transition: transform 0.3s ease;
+  }
+
+  /* ===== Animations ===== */
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
   }
 </style>

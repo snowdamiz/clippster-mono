@@ -1,393 +1,368 @@
 <template>
   <PageLayout title="Projects" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
     <template #actions>
-      <Button @click="openCreateDialog" class="flex items-center gap-2">
-        <Plus class="h-5 w-5" />
-        New Project
-      </Button>
+      <div class="projects-header-actions">
+        <!-- Search -->
+        <div class="projects-header__search">
+          <Search class="projects-header__search-icon" />
+          <Input v-model="searchQuery" placeholder="Search projects..." class="projects-header__search-input" />
+        </div>
+
+        <!-- Status Filter -->
+        <CustomDropdown
+          v-model="statusFilter"
+          :options="statusOptions"
+          placeholder="Status"
+          class="projects-header__filter"
+          trigger-class="projects-header__dropdown-trigger"
+        />
+
+        <!-- Sort Filter -->
+        <CustomDropdown
+          v-model="sortBy"
+          :options="sortOptions"
+          placeholder="Sort By"
+          class="projects-header__sort"
+          trigger-class="projects-header__dropdown-trigger"
+        />
+
+        <!-- View Mode -->
+        <div
+          class="projects-header__view-toggle"
+          :class="{ 'projects-header__view-toggle--disabled': searchQuery || statusFilter === 'has_clips' }"
+        >
+          <button
+            @click="viewMode = 'folders'"
+            :disabled="!!searchQuery || statusFilter === 'has_clips'"
+            class="projects-header__view-btn"
+            :class="{ 'projects-header__view-btn--active': viewMode === 'folders' }"
+            title="Folder View"
+          >
+            <Folder class="projects-header__view-icon" />
+          </button>
+          <button
+            @click="viewMode = 'list'"
+            :disabled="!!searchQuery || statusFilter === 'has_clips'"
+            class="projects-header__view-btn"
+            :class="{ 'projects-header__view-btn--active': viewMode === 'list' }"
+            title="List View"
+          >
+            <List class="projects-header__view-icon" />
+          </button>
+        </div>
+
+        <!-- New Project Button -->
+        <button @click="openCreateDialog" class="projects-create-btn">
+          <Plus class="projects-create-btn__icon" />
+          New Project
+        </button>
+      </div>
     </template>
 
-    <!-- Loading State -->
-    <div v-if="loading" class="space-y-6">
-      <SkeletonGrid />
-    </div>
-
-    <!-- Projects Content -->
     <div
-      v-else-if="projects.length > 0 || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
-      class="space-y-8"
+      class="projects__content"
+      :class="{
+        'projects__content--empty':
+          !loading && projects.length === 0 && getActiveDownloads().length === 0 && getQueuedDownloads().length === 0,
+      }"
     >
-      <!-- Filter Toolbar -->
-      <div class="-mt-2 bg-card flex flex-col md:flex-row gap-4 items-center justify-between">
-        <!-- Left: Search or Selection Info -->
-        <div class="flex items-center gap-3 w-full md:w-auto">
-          <!-- Selection Controls (visible when items selected) -->
-          <div v-if="selectedProjects.size > 0" class="flex items-center gap-3">
-            <button
-              @click="confirmBulkDelete"
-              :disabled="hasAnySelectedProjectDetecting()"
-              :class="[
-                'px-3 py-2 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all',
-                hasAnySelectedProjectDetecting()
-                  ? 'bg-gray-500 cursor-not-allowed opacity-50'
-                  : 'bg-red-600 hover:bg-red-700',
-              ]"
-              :title="hasAnySelectedProjectDetecting() ? 'Cannot delete while detection is in progress' : ''"
-            >
-              <Trash2 class="h-4 w-4" />
-              Delete ({{ selectedProjects.size }})
-            </button>
-            <button
-              v-if="paginatedProjects.length > 0 && selectedProjects.size < paginatedProjects.length"
-              @click="selectAllCurrentPage"
-              class="text-xs text-primary hover:text-primary/80 font-semibold"
-            >
-              Select all on page
-            </button>
-            <span class="text-sm text-muted-foreground">{{ selectedProjects.size }} selected</span>
-            <button @click="clearSelection" class="text-xs text-muted-foreground hover:text-foreground font-medium">
-              Clear
-            </button>
-          </div>
-
-          <!-- Search (hidden when items selected) -->
-          <div v-else class="relative w-full md:w-72">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input v-model="searchQuery" placeholder="Search projects..." class="pl-9 bg-background/50" />
-          </div>
-        </div>
-
-        <!-- Right: Filters & View Mode -->
-        <div class="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
-          <!-- Reset Filters Button -->
-          <button
-            v-if="searchQuery || statusFilter !== 'all'"
-            @click="
-              searchQuery = '';
-              statusFilter = 'all';
-            "
-            class="text-xs px-2 py-1 text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-md transition-colors whitespace-nowrap font-medium flex items-center gap-1"
-          >
-            <X class="h-3 w-3" />
-            Reset
-          </button>
-
-          <!-- Status Filter -->
-          <CustomDropdown v-model="statusFilter" :options="statusOptions" placeholder="Status" class="w-[140px]" />
-
-          <!-- Sort Filter -->
-          <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort By" class="w-[160px]" />
-
-          <!-- View Mode -->
-          <div
-            class="bg-muted/50 rounded-md p-1 flex items-center gap-1 transition-opacity"
-            :class="{ 'opacity-50 pointer-events-none': searchQuery || statusFilter === 'has_clips' }"
-          >
-            <button
-              @click="viewMode = 'folders'"
-              :disabled="!!searchQuery || statusFilter === 'has_clips'"
-              :class="[
-                'p-2 rounded transition-colors',
-                viewMode === 'folders'
-                  ? 'bg-background shadow-sm text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              ]"
-              title="Folder View"
-            >
-              <Folder class="h-4 w-4" />
-            </button>
-            <button
-              @click="viewMode = 'list'"
-              :disabled="!!searchQuery || statusFilter === 'has_clips'"
-              :class="[
-                'p-2 rounded transition-colors',
-                viewMode === 'list'
-                  ? 'bg-background shadow-sm text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              ]"
-              title="List View"
-            >
-              <List class="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+      <!-- Page Heading -->
+      <div
+        v-if="projects.length > 0 || loading || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
+        class="projects__heading"
+      >
+        <h1 class="projects__title">Your Projects</h1>
+        <p class="projects__subtitle">Manage and organize your video projects, detect clips, and build content</p>
       </div>
 
-      <!-- Active Downloads Section -->
-      <div v-if="getActiveDownloads().length > 0 || getQueuedDownloads().length > 0" class="space-y-4">
-        <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">Active Downloads</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          <DownloadCard
-            v-for="download in [...getActiveDownloads(), ...getQueuedDownloads()]"
-            :key="download.id"
-            :download="download"
-          />
-        </div>
-      </div>
-
-      <!-- Projects Grid -->
-      <div v-if="filteredProjects.length > 0" class="space-y-8">
-        <div v-for="group in groupedProjects" :key="group.dateLabel" class="space-y-4">
-          <!-- Date Header -->
-          <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">{{ group.dateLabel }}</h3>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <div
-              v-for="project in group.projects"
-              :key="project.id"
-              class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all"
-              :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isProjectSelected(project.id) }"
-              @click="handleProjectClick(project)"
-            >
-              <!-- Selection Checkbox (visible on hover or when selected) -->
-              <div
-                class="absolute top-4 right-4 z-30 transition-opacity"
-                :class="isProjectSelected(project.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-                @click.stop="toggleProjectSelection(project.id)"
-              >
-                <div
-                  :class="[
-                    'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
-                    isProjectSelected(project.id)
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-black/60 text-white hover:bg-black/80',
-                  ]"
-                >
-                  <Check v-if="isProjectSelected(project.id)" class="w-4 h-4" />
-                </div>
-              </div>
-
-              <!-- Processing Indicator (if project or any segment is being detected) -->
-              <div
-                v-if="isProjectDetecting(project.id)"
-                class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-purple-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
-              >
-                <Loader2 class="w-3 h-3 animate-spin" />
-                <span>Detecting...</span>
-              </div>
-              <!-- Folder Badge (if has children and in folder view, only show if not detecting/merging) -->
-              <div
-                v-else-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
-                class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
-              >
-                <FolderOpen class="w-3 h-3" />
-                <span>{{ getChildCount(project.id) }} Parts</span>
-              </div>
-
-              <!-- Thumbnail background with vignette -->
-              <div
-                v-if="getThumbnailUrl(project.id)"
-                class="absolute inset-0 z-0"
-                :style="{
-                  backgroundImage: `url(${getThumbnailUrl(project.id)})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'no-repeat',
-                }"
-              >
-                <!-- Dark vignette overlay handled by bottom gradient now, but keep subtle global one -->
-                <div class="absolute inset-0 bg-black/10"></div>
-              </div>
-              <!-- Fallback background for projects without thumbnails -->
-              <div v-else class="absolute inset-0 z-0 bg-muted">
-                <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/40 to-black/50"></div>
-
-                <!-- Live Empty State -->
-                <div
-                  v-if="isProjectLive(project.id)"
-                  class="absolute inset-0 flex flex-col items-center justify-center gap-3 opacity-50"
-                >
-                  <div class="relative">
-                    <div class="absolute inset-0 bg-red-500 rounded-full animate-ping opacity-20"></div>
-                    <Radio class="h-12 w-12 text-red-500 relative z-10" />
-                  </div>
-                  <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Monitoring</span>
-                </div>
-                <!-- Standard Empty State -->
-                <div v-else class="absolute inset-0 flex items-center justify-center opacity-20">
-                  <Folder class="h-16 w-16 text-foreground" />
-                </div>
-              </div>
-
-              <!-- Bottom Overlay with Info -->
-              <div
-                class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
-              >
-                <!-- Title -->
-                <h3
-                  class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
-                  :title="project.name"
-                >
-                  {{ project.name }}
-                </h3>
-
-                <!-- Metadata Row -->
-                <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
-                  <!-- Platform Icon -->
-                  <div
-                    v-if="getProjectPlatform(project) === 'Youtube'"
-                    class="w-4 h-4 bg-red-600 rounded flex items-center justify-center shadow-sm shrink-0"
-                    title="YouTube"
-                  >
-                    <img src="/youtube.svg" class="w-2.5 h-2.5 invert brightness-200" />
-                  </div>
-                  <div
-                    v-else-if="getProjectPlatform(project) === 'Twitch'"
-                    class="w-4 h-4 bg-[#9146FF] rounded flex items-center justify-center shadow-sm shrink-0"
-                    title="Twitch"
-                  >
-                    <img src="/twitch.svg" class="w-2.5 h-2.5 invert brightness-200" />
-                  </div>
-                  <div
-                    v-else-if="getProjectPlatform(project) === 'Kick'"
-                    class="w-4 h-4 bg-[#53FC18] rounded flex items-center justify-center shadow-sm shrink-0"
-                    title="Kick"
-                  >
-                    <img src="/kick.svg" class="w-2.5 h-2.5" />
-                  </div>
-                  <div
-                    v-else-if="getProjectPlatform(project) === 'PumpFun'"
-                    class="w-4 h-4 bg-emerald-500 rounded flex items-center justify-center shadow-sm shrink-0"
-                    title="PumpFun"
-                  >
-                    <img src="/capsule.svg" class="w-2.5 h-2.5 brightness-200" />
-                  </div>
-                  <div
-                    v-else-if="getProjectPlatform(project) === 'Manual'"
-                    class="w-4 h-4 bg-slate-700 rounded flex items-center justify-center shadow-sm shrink-0 text-white"
-                    title="Manual"
-                  >
-                    <Monitor class="w-2.5 h-2.5" />
-                  </div>
-
-                  <!-- Live Indicator -->
-                  <div
-                    v-if="isProjectLive(project.id)"
-                    class="flex items-center gap-1.5 text-red-500 font-bold px-1.5 py-0.5 bg-red-500/10 rounded-full border border-red-500/20"
-                  >
-                    <span class="relative flex h-1.5 w-1.5">
-                      <span
-                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"
-                      ></span>
-                      <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
-                    </span>
-                    <span class="text-[10px] uppercase tracking-wider">Live</span>
-                  </div>
-
-                  <span
-                    v-if="!isProjectLive(project.id) && getProjectPlatform(project)"
-                    class="w-0.5 h-0.5 rounded-full bg-white/40"
-                  ></span>
-
-                  <!-- Time -->
-                  <span class="truncate">{{ getRelativeTime(project.updated_at) }}</span>
-
-                  <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
-
-                  <!-- Clip Count -->
-                  <span class="truncate">{{ getClipCount(project.id) }} clips</span>
-                </div>
-              </div>
-
-              <!-- Hover Overlay Buttons -->
-              <div
-                class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-3"
-              >
-                <button
-                  v-if="viewMode === 'folders' && (hasChildren(project.id) || hasDirectVideos(project.id))"
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="View Project"
-                  @click.stop="handleProjectClick(project)"
-                >
-                  <FolderOpen class="h-5 w-5" />
-                </button>
-                <button
-                  v-else
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Open Workspace"
-                  @click.stop="handleProjectClick(project)"
-                >
-                  <Play class="h-5 w-5" />
-                </button>
-
-                <button
-                  v-if="canDetectClips(project.id) && !isProjectDetecting(project.id) && isAIAllowed"
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Detect Clips"
-                  @click.stop="startProjectDetection(project)"
-                >
-                  <Sparkles class="h-5 w-5" />
-                </button>
-
-                <button
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Edit"
-                  @click.stop="editProject(project)"
-                >
-                  <Edit class="h-5 w-5" />
-                </button>
-                <button
-                  v-if="!isProjectDetecting(project.id)"
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Delete"
-                  @click.stop="confirmDelete(project)"
-                >
-                  <Trash2 class="h-5 w-5" />
-                </button>
-              </div>
+      <!-- Loading State -->
+      <div v-if="loading" class="projects__loading">
+        <!-- Skeleton Cards Grid -->
+        <div class="projects__grid">
+          <div v-for="i in 6" :key="`skeleton-${i}`" class="project-card project-card--skeleton">
+            <div class="project-card__skeleton-bg"></div>
+            <div class="project-card__bottom">
+              <div class="projects-skeleton__card-title"></div>
+              <div class="projects-skeleton__card-meta"></div>
             </div>
           </div>
         </div>
       </div>
-      <!-- Pagination Footer -->
-      <PaginationFooter
-        v-if="!loading && filteredProjects.length > 0"
-        :current-page="currentPage"
-        :total-pages="totalPages"
-        :total-items="filteredProjects.length"
-        item-label="project"
-        @go-to-page="goToPage"
-        @previous="previousPage"
-        @next="nextPage"
-      />
-      <!-- No Results State (only show if no active downloads) -->
+
+      <!-- Projects Content -->
       <div
-        v-if="filteredProjects.length === 0 && getActiveDownloads().length === 0 && getQueuedDownloads().length === 0"
-        class="flex flex-col items-center justify-center py-16 text-center space-y-4"
+        v-else-if="projects.length > 0 || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
+        class="projects__main"
       >
-        <div class="bg-muted rounded-full p-4">
-          <Search class="h-8 w-8 text-muted-foreground" />
+        <!-- Selection Bar (shown when items selected) -->
+        <div v-if="selectedProjects.size > 0" class="projects__selection-bar">
+          <button
+            @click="confirmBulkDelete"
+            :disabled="hasAnySelectedProjectDetecting()"
+            class="projects__selection-delete"
+            :class="{ 'projects__selection-delete--disabled': hasAnySelectedProjectDetecting() }"
+            :title="hasAnySelectedProjectDetecting() ? 'Cannot delete while detection is in progress' : ''"
+          >
+            <Trash2 class="projects__selection-icon" />
+            Delete ({{ selectedProjects.size }})
+          </button>
+          <button
+            v-if="paginatedProjects.length > 0 && selectedProjects.size < paginatedProjects.length"
+            @click="selectAllCurrentPage"
+            class="projects__selection-action"
+          >
+            Select all on page
+          </button>
+          <span class="projects__selection-count">{{ selectedProjects.size }} selected</span>
+          <button @click="clearSelection" class="projects__selection-clear">Clear</button>
         </div>
-        <div class="space-y-1">
-          <h3 class="font-semibold text-lg">No projects found</h3>
-          <p class="text-muted-foreground text-sm max-w-sm">
+
+        <!-- Active Downloads Section -->
+        <div v-if="getActiveDownloads().length > 0 || getQueuedDownloads().length > 0" class="projects__section">
+          <h3 class="projects__section-header">Active Downloads</h3>
+          <div class="projects__grid projects__grid--downloads">
+            <DownloadCard
+              v-for="download in [...getActiveDownloads(), ...getQueuedDownloads()]"
+              :key="download.id"
+              :download="download"
+            />
+          </div>
+        </div>
+
+        <!-- Projects Grid -->
+        <div v-if="filteredProjects.length > 0" class="projects__section">
+          <div v-for="group in groupedProjects" :key="group.dateLabel" class="projects__date-group">
+            <!-- Date Header -->
+            <h3 class="projects__section-header">{{ group.dateLabel }}</h3>
+
+            <div class="projects__grid">
+              <div
+                v-for="project in group.projects"
+                :key="project.id"
+                class="project-card"
+                :class="{ 'project-card--selected': isProjectSelected(project.id) }"
+                @click="handleProjectClick(project)"
+              >
+                <!-- Selection Checkbox (visible on hover or when selected) -->
+                <div
+                  class="project-card__checkbox"
+                  :class="{ 'project-card__checkbox--visible': isProjectSelected(project.id) }"
+                  @click.stop="toggleProjectSelection(project.id)"
+                >
+                  <div
+                    class="project-card__checkbox-inner"
+                    :class="{ 'project-card__checkbox-inner--checked': isProjectSelected(project.id) }"
+                  >
+                    <Check v-if="isProjectSelected(project.id)" class="project-card__checkbox-icon" />
+                  </div>
+                </div>
+
+                <!-- Processing Indicator (if project or any segment is being detected) -->
+                <div v-if="isProjectDetecting(project.id)" class="project-card__badge project-card__badge--detecting">
+                  <Loader2 class="project-card__badge-icon project-card__badge-icon--spin" />
+                  <span>Detecting...</span>
+                </div>
+                <!-- Folder Badge (if has children and in folder view, only show if not detecting/merging) -->
+                <div
+                  v-else-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
+                  class="project-card__badge project-card__badge--folder"
+                >
+                  <FolderOpen class="project-card__badge-icon" />
+                  <span>{{ getChildCount(project.id) }} Parts</span>
+                </div>
+
+                <!-- Thumbnail background with vignette -->
+                <div
+                  v-if="getThumbnailUrl(project.id)"
+                  class="project-card__thumbnail"
+                  :style="{
+                    backgroundImage: `url(${getThumbnailUrl(project.id)})`,
+                  }"
+                >
+                  <!-- Vignette overlay -->
+                  <div class="project-card__vignette"></div>
+                </div>
+                <!-- Fallback background for projects without thumbnails -->
+                <div v-else class="project-card__thumbnail project-card__thumbnail--empty">
+                  <div class="project-card__thumbnail-gradient"></div>
+
+                  <!-- Live Empty State -->
+                  <div v-if="isProjectLive(project.id)" class="project-card__empty-live">
+                    <div class="project-card__empty-live-pulse">
+                      <div class="project-card__empty-live-ring"></div>
+                      <Radio class="project-card__empty-live-icon" />
+                    </div>
+                    <span class="project-card__empty-live-text">Monitoring</span>
+                  </div>
+                  <!-- Standard Empty State -->
+                  <div v-else class="project-card__empty-icon">
+                    <Folder class="project-card__folder-icon" />
+                  </div>
+                </div>
+
+                <!-- Bottom Overlay with Info -->
+                <div class="project-card__bottom">
+                  <!-- Title -->
+                  <h3 class="project-card__title" :title="project.name">
+                    {{ project.name }}
+                  </h3>
+
+                  <!-- Metadata Row -->
+                  <div class="project-card__meta">
+                    <!-- Platform Icon -->
+                    <div
+                      v-if="getProjectPlatform(project) === 'Youtube'"
+                      class="project-card__platform project-card__platform--youtube"
+                      title="YouTube"
+                    >
+                      <img src="/youtube.svg" class="project-card__platform-icon" />
+                    </div>
+                    <div
+                      v-else-if="getProjectPlatform(project) === 'Twitch'"
+                      class="project-card__platform project-card__platform--twitch"
+                      title="Twitch"
+                    >
+                      <img src="/twitch.svg" class="project-card__platform-icon" />
+                    </div>
+                    <div
+                      v-else-if="getProjectPlatform(project) === 'Kick'"
+                      class="project-card__platform project-card__platform--kick"
+                      title="Kick"
+                    >
+                      <img src="/kick.svg" class="project-card__platform-icon project-card__platform-icon--kick" />
+                    </div>
+                    <div
+                      v-else-if="getProjectPlatform(project) === 'PumpFun'"
+                      class="project-card__platform project-card__platform--pumpfun"
+                      title="PumpFun"
+                    >
+                      <img
+                        src="/capsule.svg"
+                        class="project-card__platform-icon project-card__platform-icon--pumpfun"
+                      />
+                    </div>
+                    <div
+                      v-else-if="getProjectPlatform(project) === 'Manual'"
+                      class="project-card__platform project-card__platform--manual"
+                      title="Manual"
+                    >
+                      <Monitor class="project-card__platform-svg" />
+                    </div>
+
+                    <!-- Live Indicator -->
+                    <div v-if="isProjectLive(project.id)" class="project-card__live">
+                      <span class="project-card__live-dot">
+                        <span class="project-card__live-ping"></span>
+                        <span class="project-card__live-core"></span>
+                      </span>
+                      <span class="project-card__live-text">Live</span>
+                    </div>
+
+                    <span
+                      v-if="!isProjectLive(project.id) && getProjectPlatform(project)"
+                      class="project-card__dot"
+                    ></span>
+
+                    <!-- Time -->
+                    <span class="project-card__meta-text">{{ getRelativeTime(project.updated_at) }}</span>
+
+                    <span class="project-card__dot"></span>
+
+                    <!-- Clip Count -->
+                    <span class="project-card__meta-text">{{ getClipCount(project.id) }} clips</span>
+                  </div>
+                </div>
+
+                <!-- Hover Overlay Buttons -->
+                <div class="project-card__hover-actions">
+                  <button
+                    v-if="viewMode === 'folders' && (hasChildren(project.id) || hasDirectVideos(project.id))"
+                    class="project-card__action-btn"
+                    title="View Project"
+                    @click.stop="handleProjectClick(project)"
+                  >
+                    <FolderOpen class="project-card__action-icon" />
+                  </button>
+                  <button
+                    v-else
+                    class="project-card__action-btn"
+                    title="Open Workspace"
+                    @click.stop="handleProjectClick(project)"
+                  >
+                    <Play class="project-card__action-icon" />
+                  </button>
+
+                  <button
+                    v-if="canDetectClips(project.id) && !isProjectDetecting(project.id) && isAIAllowed"
+                    class="project-card__action-btn"
+                    title="Detect Clips"
+                    @click.stop="startProjectDetection(project)"
+                  >
+                    <Sparkles class="project-card__action-icon" />
+                  </button>
+
+                  <button class="project-card__action-btn" title="Edit" @click.stop="editProject(project)">
+                    <Edit class="project-card__action-icon" />
+                  </button>
+                  <button
+                    v-if="!isProjectDetecting(project.id)"
+                    class="project-card__action-btn"
+                    title="Delete"
+                    @click.stop="confirmDelete(project)"
+                  >
+                    <Trash2 class="project-card__action-icon" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Pagination Footer -->
+        <PaginationFooter
+          v-if="!loading && filteredProjects.length > 0"
+          :current-page="currentPage"
+          :total-pages="totalPages"
+          :total-items="filteredProjects.length"
+          item-label="project"
+          @go-to-page="goToPage"
+          @previous="previousPage"
+          @next="nextPage"
+        />
+
+        <!-- No Results State (only show if no active downloads) -->
+        <div
+          v-if="filteredProjects.length === 0 && getActiveDownloads().length === 0 && getQueuedDownloads().length === 0"
+          class="projects__no-results"
+        >
+          <div class="projects__no-results-icon-wrapper">
+            <Search class="projects__no-results-icon" />
+          </div>
+          <h3 class="projects__no-results-title">No projects found</h3>
+          <p class="projects__no-results-description">
             We couldn't find any projects matching your search filters. Try adjusting your search query or filters.
           </p>
+          <button
+            @click="
+              searchQuery = '';
+              statusFilter = 'all';
+            "
+            class="projects__no-results-btn"
+          >
+            Clear filters
+          </button>
         </div>
-        <button
-          @click="
-            searchQuery = '';
-            statusFilter = 'all';
-          "
-          class="text-primary hover:underline text-sm font-medium"
-        >
-          Clear filters
-        </button>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else class="projects__empty">
+        <div class="projects__empty-icon-wrapper">
+          <Folder class="projects__empty-icon" />
+        </div>
+        <h3 class="projects__empty-title">No projects found</h3>
+        <p class="projects__empty-description">Create a new project to get started</p>
       </div>
     </div>
 
-    <!-- Empty State -->
-    <EmptyState v-else title="No projects found" description="Create a new project to get started">
-      <template #icon>
-        <Folder class="h-16 w-16 text-muted-foreground" />
-      </template>
-      <template #default>
-        <Button @click="openCreateDialog" class="mt-6 flex items-center gap-2">
-          <Plus class="w-4 h-4" />
-          Create Project
-        </Button>
-      </template>
-    </EmptyState>
     <!-- Project Dialog -->
     <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
     <!-- Project Workspace Dialog -->
@@ -1363,7 +1338,6 @@
   import { useVideoOperations } from '@/composables/useVideoOperations';
   import { useDownloads } from '@/composables/useDownloads';
   import PageLayout from '@/components/PageLayout.vue';
-  import EmptyState from '@/components/EmptyState.vue';
   import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
@@ -1383,8 +1357,6 @@
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useAIPermission } from '@/composables/useAIPermission';
-  import { Button } from '@/components/ui/button';
-
   // AI Permission check
   const { isAIAllowed } = useAIPermission();
   const { gates } = useSubscriptionGate();
@@ -4071,7 +4043,885 @@
 </script>
 
 <style scoped>
-  /* Fullscreen video player styles */
+  /* ===== Content Container ===== */
+  .projects__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    width: 100%;
+    flex: 1;
+  }
+
+  .projects__content--empty {
+    justify-content: center;
+    align-items: center;
+  }
+
+  .projects__main {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .projects__loading {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* ===== Page Heading ===== */
+  .projects__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .projects__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .projects__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Header Actions ===== */
+  .projects-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .projects-header__search {
+    position: relative;
+    width: 200px;
+  }
+
+  .projects-header__search-icon {
+    position: absolute;
+    left: 0.625rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    pointer-events: none;
+  }
+
+  .projects-header__search-input {
+    width: 100%;
+    padding-left: 2rem;
+    height: 32px;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+  }
+
+  .projects-header__search-input:focus {
+    border-color: var(--sidebar-accent);
+    outline: none;
+  }
+
+  .projects-header__filter {
+    width: 110px;
+    flex-shrink: 0;
+  }
+
+  .projects-header__sort {
+    width: 140px;
+    flex-shrink: 0;
+  }
+
+  /* Dropdown trigger button styling */
+  :deep(.projects-header__dropdown-trigger) {
+    height: 32px !important;
+    padding: 0 0.625rem !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 6px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+  }
+
+  :deep(.projects-header__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  :deep(.projects-header__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.projects-header__dropdown-trigger svg) {
+    width: 12px !important;
+    height: 12px !important;
+    color: var(--sidebar-text-muted) !important;
+  }
+
+  .projects-header__view-toggle {
+    display: flex;
+    align-items: center;
+    padding: 0.125rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    transition: opacity 150ms ease;
+  }
+
+  .projects-header__view-toggle--disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .projects-header__view-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .projects-header__view-btn:hover:not(:disabled) {
+    color: var(--sidebar-text);
+  }
+
+  .projects-header__view-btn--active {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .projects-header__view-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .projects-create-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .projects-create-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .projects-create-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .projects-create-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ===== Skeleton Loading States ===== */
+  .projects-skeleton__card-title {
+    height: 16px;
+    width: 70%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+
+  .projects-skeleton__card-meta {
+    height: 12px;
+    width: 50%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.15s;
+    border-radius: 4px;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  /* ===== Selection Bar ===== */
+  .projects__selection-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.625rem 1rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .projects__selection-delete {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    background-color: #ef4444;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .projects__selection-delete:hover:not(:disabled) {
+    background-color: #dc2626;
+  }
+
+  .projects__selection-delete--disabled {
+    background-color: #6b7280;
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .projects__selection-icon {
+    width: 13px;
+    height: 13px;
+  }
+
+  .projects__selection-action {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.375rem 0;
+    transition: opacity 150ms ease;
+  }
+
+  .projects__selection-action:hover {
+    opacity: 0.8;
+  }
+
+  .projects__selection-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  .projects__selection-clear {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    padding: 0.375rem 0.75rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .projects__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Sections ===== */
+  .projects__section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .projects__date-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .projects__section-header {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    padding-bottom: 0.1rem;
+  }
+
+  /* ===== Projects Grid ===== */
+  .projects__grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .projects__grid {
+      grid-template-columns: repeat(1, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .projects__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1400px) {
+    .projects__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1800px) {
+    .projects__grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  @media (min-width: 2200px) {
+    .projects__grid {
+      grid-template-columns: repeat(5, 1fr);
+    }
+  }
+
+  /* ===== Project Card ===== */
+  .project-card {
+    position: relative;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 200ms ease;
+    aspect-ratio: 16 / 9;
+  }
+
+  .project-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    transform: scale(1.02);
+  }
+
+  .project-card--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow:
+      0 0 0 2px var(--sidebar-accent),
+      0 8px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  .project-card--skeleton {
+    pointer-events: none;
+  }
+
+  .project-card__skeleton-bg {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
+  }
+
+  /* Checkbox */
+  .project-card__checkbox {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .project-card:hover .project-card__checkbox,
+  .project-card__checkbox--visible {
+    opacity: 1;
+  }
+
+  .project-card__checkbox-inner {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 150ms ease;
+  }
+
+  .project-card__checkbox-inner:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .project-card__checkbox-inner--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .project-card__checkbox-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Badges */
+  .project-card__badge {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .project-card__badge--detecting {
+    background-color: rgba(147, 51, 234, 0.9);
+    color: white;
+  }
+
+  .project-card__badge--folder {
+    background-color: rgba(37, 99, 235, 0.9);
+    color: white;
+  }
+
+  .project-card__badge-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .project-card__badge-icon--spin {
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Thumbnail */
+  .project-card__thumbnail {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .project-card__vignette {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 70%);
+  }
+
+  .project-card__thumbnail--empty {
+    background-color: var(--sidebar-hover);
+  }
+
+  .project-card__thumbnail-gradient {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
+  }
+
+  /* Empty State Icons */
+  .project-card__empty-live {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    opacity: 0.5;
+  }
+
+  .project-card__empty-live-pulse {
+    position: relative;
+  }
+
+  .project-card__empty-live-ring {
+    position: absolute;
+    inset: 0;
+    background-color: #ef4444;
+    border-radius: 9999px;
+    animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+    opacity: 0.2;
+  }
+
+  .project-card__empty-live-icon {
+    width: 48px;
+    height: 48px;
+    color: #ef4444;
+    position: relative;
+    z-index: 10;
+  }
+
+  .project-card__empty-live-text {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .project-card__empty-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.2;
+  }
+
+  .project-card__folder-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--sidebar-text);
+  }
+
+  @keyframes ping {
+    75%,
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+
+  /* Bottom Info */
+  .project-card__bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 1rem;
+    padding-top: 7rem;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .project-card__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    line-height: 1.3;
+    transition: color 150ms ease;
+  }
+
+  .project-card:hover .project-card__title {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .project-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    flex-wrap: wrap;
+  }
+
+  .project-card__meta-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .project-card__dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
+  }
+
+  /* Platform Icons */
+  .project-card__platform {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  .project-card__platform--youtube {
+    background-color: #dc2626;
+  }
+
+  .project-card__platform--twitch {
+    background-color: #9146ff;
+  }
+
+  .project-card__platform--kick {
+    background-color: #53fc18;
+  }
+
+  .project-card__platform--pumpfun {
+    background-color: #10b981;
+  }
+
+  .project-card__platform--manual {
+    background-color: #475569;
+    color: white;
+  }
+
+  .project-card__platform-icon {
+    width: 10px;
+    height: 10px;
+    filter: invert(1) brightness(2);
+  }
+
+  .project-card__platform-icon--kick {
+    filter: none;
+  }
+
+  .project-card__platform-icon--pumpfun {
+    filter: brightness(2);
+  }
+
+  .project-card__platform-svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* Live Indicator */
+  .project-card__live {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.375rem;
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 9999px;
+    color: #ef4444;
+    font-weight: 700;
+  }
+
+  .project-card__live-dot {
+    position: relative;
+    display: flex;
+    width: 6px;
+    height: 6px;
+  }
+
+  .project-card__live-ping {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background-color: #f87171;
+    opacity: 0.75;
+    animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  .project-card__live-core {
+    position: relative;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: #ef4444;
+  }
+
+  .project-card__live-text {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Hover Actions */
+  .project-card__hover-actions {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .project-card:hover .project-card__hover-actions {
+    opacity: 1;
+  }
+
+  .project-card__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 9999px;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .project-card__action-btn:hover {
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .project-card__action-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* ===== No Results State ===== */
+  .projects__no-results {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 1rem;
+    text-align: center;
+  }
+
+  .projects__no-results-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background-color: var(--sidebar-hover);
+    border-radius: 9999px;
+    margin-bottom: 1rem;
+  }
+
+  .projects__no-results-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .projects__no-results-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+  }
+
+  .projects__no-results-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1rem;
+    max-width: 24rem;
+  }
+
+  .projects__no-results-btn {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+
+  .projects__no-results-btn:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+  }
+
+  /* ===== Empty State ===== */
+  .projects__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .projects__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .projects__empty-icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .projects__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .projects__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 300px;
+  }
+
+  /* ===== Fullscreen Video Player ===== */
   .inline-video-fullscreen {
     position: fixed !important;
     inset: 0 !important;
@@ -4089,5 +4939,49 @@
     width: 100% !important;
     height: 100% !important;
     object-fit: contain !important;
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Projects page dropdown menu styling */
+  .projects-header__filter + div[class*='fixed'],
+  .projects-header__sort + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: projectsDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes projectsDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  div.fixed.bg-popover button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  div.fixed.bg-popover button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
   }
 </style>

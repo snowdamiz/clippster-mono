@@ -588,6 +588,13 @@
       :show-header="true"
       :icon="MessageSquare"
     >
+      <template #actions>
+        <button @click="openNewConversationDialog" class="messages-header__new-btn">
+          <Plus class="messages-header__new-btn-icon" />
+          New Conversation
+        </button>
+      </template>
+
       <div class="messages__content">
         <!-- Page Heading -->
         <div class="messages__heading">
@@ -939,50 +946,48 @@
       <Transition name="modal">
         <div v-if="showNewConversationDialog" class="messages-modal__overlay" @click.self="closeNewConversationDialog">
           <Transition name="dialog" appear>
-            <div class="messages-modal">
+            <div class="messages-modal messages-modal--new-conversation">
               <div class="messages-modal__accent"></div>
 
               <!-- Header -->
-              <div class="messages-modal__header">
-                <div class="messages-modal__header-left">
-                  <div class="messages-modal__icon">
-                    <MessageSquare />
-                  </div>
-                  <h2 class="messages-modal__title">New Conversation</h2>
-                </div>
-                <button @click="closeNewConversationDialog" class="messages-modal__close">
+              <div class="messages-modal__header messages-modal__header--centered">
+                <button @click="closeNewConversationDialog" class="messages-modal__close messages-modal__close--corner">
                   <X />
+                </button>
+                <div class="messages-modal__icon messages-modal__icon--large">
+                  <MessageSquare />
+                </div>
+                <h2 class="messages-modal__title">New Conversation</h2>
+              </div>
+
+              <!-- Type Tabs -->
+              <div class="messages-modal__tabs-nav">
+                <button
+                  @click="
+                    newConversationType = 'direct';
+                    selectedUserIds = [];
+                  "
+                  class="messages-modal__tabs-item"
+                  :class="{ 'messages-modal__tabs-item--active': newConversationType === 'direct' }"
+                >
+                  <User :size="14" />
+                  <span>Direct Message</span>
+                </button>
+                <button
+                  @click="
+                    newConversationType = 'group';
+                    selectedUserIds = [];
+                  "
+                  class="messages-modal__tabs-item"
+                  :class="{ 'messages-modal__tabs-item--active': newConversationType === 'group' }"
+                >
+                  <Users :size="14" />
+                  <span>Group Chat</span>
                 </button>
               </div>
 
               <!-- Content -->
-              <div class="messages-modal__body">
-                <!-- Type Tabs -->
-                <div class="messages-modal__tabs">
-                  <button
-                    @click="
-                      newConversationType = 'direct';
-                      selectedUserIds = [];
-                    "
-                    class="messages-modal__tab"
-                    :class="{ 'messages-modal__tab--active': newConversationType === 'direct' }"
-                  >
-                    <User class="messages-modal__tab-icon" />
-                    Direct Message
-                  </button>
-                  <button
-                    @click="
-                      newConversationType = 'group';
-                      selectedUserIds = [];
-                    "
-                    class="messages-modal__tab"
-                    :class="{ 'messages-modal__tab--active': newConversationType === 'group' }"
-                  >
-                    <Users class="messages-modal__tab-icon" />
-                    Group Chat
-                  </button>
-                </div>
-
+              <div class="messages-modal__body messages-modal__body--scrollable">
                 <!-- Group Name Input -->
                 <div v-if="newConversationType === 'group'" class="messages-modal__field">
                   <label class="messages-modal__label">Group Name</label>
@@ -1251,6 +1256,32 @@
 </template>
 
 <style scoped>
+  /* ===== Header Actions ===== */
+  .messages-header__new-btn {
+    height: 32px;
+    padding: 0 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .messages-header__new-btn:hover {
+    opacity: 0.9;
+  }
+
+  .messages-header__new-btn-icon {
+    width: 14px;
+    height: 14px;
+  }
+
   /* ===== Page Container ===== */
   .messages {
     width: 100%;
@@ -2223,9 +2254,23 @@
     max-width: 420px;
   }
 
+  .messages-modal--new-conversation {
+    max-width: 480px;
+  }
+
+  .messages-modal--new-conversation .messages-modal__accent {
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  }
+
+  .messages-modal--new-conversation .messages-modal__icon {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
   .messages-modal__accent {
     height: 3px;
     background: linear-gradient(90deg, #6366f1, #8b5cf6, #a855f7);
+    flex-shrink: 0;
   }
 
   .messages-modal__accent--danger {
@@ -2242,6 +2287,15 @@
     justify-content: space-between;
     padding: 1.25rem;
     border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .messages-modal__header--centered {
+    position: relative;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+    border-bottom: none;
   }
 
   .messages-modal__header-left {
@@ -2266,6 +2320,18 @@
     height: 20px;
   }
 
+  .messages-modal__icon--large {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    margin-bottom: 0.875rem;
+  }
+
+  .messages-modal__icon--large svg {
+    width: 24px;
+    height: 24px;
+  }
+
   .messages-modal__icon--danger {
     background-color: rgba(239, 68, 68, 0.15);
     color: #f87171;
@@ -2281,6 +2347,12 @@
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0;
+  }
+
+  .messages-modal__header--centered .messages-modal__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
   }
 
   .messages-modal__close {
@@ -2307,6 +2379,13 @@
     height: 18px;
   }
 
+  .messages-modal__close--corner {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    border-radius: 6px;
+  }
+
   .messages-modal__body {
     flex: 1;
     overflow-y: auto;
@@ -2316,7 +2395,72 @@
     gap: 1.25rem;
   }
 
-  /* Tabs */
+  .messages-modal__body--scrollable {
+    padding: 1.25rem 1.5rem 1.5rem;
+  }
+
+  .messages-modal__body--scrollable::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .messages-modal__body--scrollable::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .messages-modal__body--scrollable::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .messages-modal__body--scrollable::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+
+  /* Tabs Navigation (Modern Style) */
+  .messages-modal__tabs-nav {
+    display: flex;
+    gap: 0.375rem;
+    padding: 0 1.5rem;
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+
+  .messages-modal__tabs-nav::-webkit-scrollbar {
+    height: 0;
+  }
+
+  .messages-modal__tabs-item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .messages-modal__tabs-item:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .messages-modal__tabs-item--active {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .messages-modal__tabs-item--active:hover {
+    background-color: rgba(6, 182, 212, 0.2);
+    color: var(--sidebar-accent);
+  }
+
+  /* Legacy Tabs (for other modals) */
   .messages-modal__tabs {
     display: flex;
     gap: 0.5rem;
@@ -2389,6 +2533,12 @@
     background-color: var(--sidebar-surface);
   }
 
+  .messages-modal--new-conversation .messages-modal__input:focus,
+  .messages-modal--new-conversation .messages-modal__search-input:focus {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+  }
+
   /* Search */
   .messages-modal__search {
     position: relative;
@@ -2454,7 +2604,7 @@
   }
 
   .messages-modal__member--selected {
-    background-color: rgba(99, 102, 241, 0.1);
+    background-color: rgba(6, 182, 212, 0.1);
   }
 
   .messages-modal__member-avatar {
@@ -2505,7 +2655,7 @@
   .messages-modal__member-check {
     width: 24px;
     height: 24px;
-    background-color: #6366f1;
+    background-color: var(--sidebar-accent);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -2570,6 +2720,15 @@
 
   .messages-modal__btn--primary:hover:not(:disabled) {
     opacity: 0.9;
+  }
+
+  .messages-modal--new-conversation .messages-modal__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+  }
+
+  .messages-modal--new-conversation .messages-modal__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
   }
 
   .messages-modal__btn--secondary {

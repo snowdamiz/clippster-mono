@@ -1,0 +1,588 @@
+import { ref, computed, watch, type Ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/composables/useToast';
+import api from '@/services/api';
+import {
+  listOrganizationCreatorProfiles,
+  type ServerOrganizationCreatorProfile,
+} from '@/services/organizationProfilesApi';
+import {
+  listOrganizationAssets,
+  type ServerOrganizationAsset,
+} from '@/services/organizationAssetsApi';
+
+export interface OrganizationMember {
+  id: number;
+  user_id: number;
+  role: 'owner' | 'admin' | 'member';
+  user?: {
+    id: number;
+    name?: string;
+    email: string;
+    avatar_url?: string;
+    created_by_organization_id?: number;
+  };
+  allocation?: {
+    hours_allocated: string;
+    hours_used: string;
+    hours_remaining: string;
+  };
+}
+
+export interface OrganizationInvitation {
+  id: number;
+  email: string;
+  role: string;
+  expires_at: string;
+}
+
+export interface OrganizationCredits {
+  hoursRemaining: string;
+  hoursUsed: string;
+}
+
+export interface Organization {
+  id: number;
+  name: string;
+  description?: string;
+  settings?: {
+    allow_ai?: boolean;
+  };
+}
+
+// Shared state cache keyed by organization ID
+// This ensures all components using useOrganization get the same reactive state
+const stateCache = new Map<
+  string,
+  {
+    loading: Ref<boolean>;
+    error: Ref<string>;
+    organization: Ref<Organization | null>;
+    members: Ref<OrganizationMember[]>;
+    invitations: Ref<OrganizationInvitation[]>;
+    credits: Ref<OrganizationCredits>;
+    myAllocation: Ref<any>;
+    role: Ref<string>;
+    creatorProfiles: Ref<ServerOrganizationCreatorProfile[]>;
+    profilesLoading: Ref<boolean>;
+    profilesLoaded: Ref<boolean>;
+    orgAssets: Ref<ServerOrganizationAsset[]>;
+    assetsLoading: Ref<boolean>;
+    assetsLoaded: Ref<boolean>;
+    transactions: Ref<any[]>;
+    transactionsLoading: Ref<boolean>;
+    transactionsTotal: Ref<number>;
+    transactionsPage: Ref<number>;
+    transactionsLoaded: Ref<boolean>;
+  }
+>();
+
+function getOrCreateState(orgId: string) {
+  if (!stateCache.has(orgId)) {
+    stateCache.set(orgId, {
+      loading: ref(true),
+      error: ref(''),
+      organization: ref<Organization | null>(null),
+      members: ref<OrganizationMember[]>([]),
+      invitations: ref<OrganizationInvitation[]>([]),
+      credits: ref<OrganizationCredits>({ hoursRemaining: '0', hoursUsed: '0' }),
+      myAllocation: ref<any>(null),
+      role: ref<string>(''),
+      creatorProfiles: ref<ServerOrganizationCreatorProfile[]>([]),
+      profilesLoading: ref(false),
+      profilesLoaded: ref(false),
+      orgAssets: ref<ServerOrganizationAsset[]>([]),
+      assetsLoading: ref(false),
+      assetsLoaded: ref(false),
+      transactions: ref<any[]>([]),
+      transactionsLoading: ref(false),
+      transactionsTotal: ref(0),
+      transactionsPage: ref(1),
+      transactionsLoaded: ref(false),
+    });
+  }
+  return stateCache.get(orgId)!;
+}
+
+/**
+ * Composable for managing organization state and API interactions.
+ * Uses shared state cache to ensure all components get the same reactive state
+ * for the same organization.
+ */
+export function useOrganization(orgIdOverride?: string) {
+  const route = useRoute();
+  const router = useRouter();
+  const authStore = useAuthStore();
+  const { success: showSuccess, error: showError } = useToast();
+  const transactionsPerPage = 20;
+
+  // Computed organization ID
+  const organizationId = computed(() => {
+    if (orgIdOverride) return orgIdOverride;
+    return (route.params.id as string) || authStore.user?.owned_organization_id;
+  });
+
+  // Get or create shared state for this organization
+  const currentOrgId = organizationId.value || '_pending';
+  const state = getOrCreateState(currentOrgId);
+
+  const {
+    loading,
+    error,
+    organization,
+    members,
+    invitations,
+    credits,
+    myAllocation,
+    role,
+    creatorProfiles,
+    profilesLoading,
+    profilesLoaded,
+    orgAssets,
+    assetsLoading,
+    assetsLoaded,
+    transactions,
+    transactionsLoading,
+    transactionsTotal,
+    transactionsPage,
+    transactionsLoaded,
+  } = state;
+
+  const isAdmin = computed(() => role.value === 'owner' || role.value === 'admin');
+  const isOwner = computed(() => role.value === 'owner');
+
+  const poolBalance = computed(() => {
+    const remaining = parseFloat(credits.value.hoursRemaining);
+    return isNaN(remaining) ? 0 : remaining;
+  });
+
+  const totalTransactionPages = computed(() =>
+    Math.ceil(transactionsTotal.value / transactionsPerPage)
+  );
+
+  // Check if a member's user was created by this organization
+  function isOrgCreatedUser(member: OrganizationMember): boolean {
+    if (!member.user || !organizationId.value) return false;
+    return member.user.created_by_organization_id === Number(organizationId.value);
+  }
+
+  // Load organization data
+  async function loadOrganization() {
+    const orgId = organizationId.value;
+    if (!orgId) {
+      error.value = 'No organization found';
+      loading.value = false;
+      return;
+    }
+
+    loading.value = true;
+    error.value = '';
+
+    try {
+      // Load organization details
+      const orgResult = await authStore.getOrganization(orgId);
+      if (orgResult.success) {
+        organization.value = orgResult.organization;
+        role.value = orgResult.role ?? '';
+
+        // Regular members should not access the dashboard - redirect to organizations list
+        if (role.value === 'member') {
+          router.replace('/organizations');
+          return;
+        }
+      } else {
+        throw new Error(orgResult.error);
+      }
+
+      // Load members
+      const membersResult = await authStore.getOrganizationMembers(orgId);
+      if (membersResult.success) {
+        members.value = membersResult.members ?? [];
+      }
+
+      // Load invitations (if admin)
+      if (isAdmin.value) {
+        const invitesResult = await authStore.getOrganizationInvitations(orgId);
+        if (invitesResult.success) {
+          invitations.value = invitesResult.invitations ?? [];
+        }
+      }
+
+      // Load credits
+      const creditsResult = await authStore.getOrganizationCredits(orgId);
+      if (creditsResult.success) {
+        credits.value = {
+          hoursRemaining: creditsResult.org_credits.hours_remaining,
+          hoursUsed: creditsResult.org_credits.hours_used,
+        };
+        myAllocation.value = creditsResult.my_allocation;
+      }
+    } catch (err: any) {
+      error.value = err.message || 'Failed to load organization';
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  // Load creator profiles
+  async function loadCreatorProfiles() {
+    if (!organizationId.value) return;
+
+    profilesLoading.value = true;
+    try {
+      const response = await listOrganizationCreatorProfiles(organizationId.value);
+      if (response.success) {
+        creatorProfiles.value = response.profiles;
+        profilesLoaded.value = true;
+      } else {
+        console.error('[useOrganization] Failed to load creator profiles:', response.error);
+      }
+    } catch (err) {
+      console.error('[useOrganization] Failed to load creator profiles:', err);
+    } finally {
+      profilesLoading.value = false;
+    }
+  }
+
+  // Load organization assets
+  async function loadOrgAssets() {
+    if (!organizationId.value || assetsLoaded.value) return;
+
+    assetsLoading.value = true;
+    try {
+      const response = await listOrganizationAssets(organizationId.value);
+      if (response.success) {
+        orgAssets.value = response.assets;
+        assetsLoaded.value = true;
+      } else {
+        console.error('[useOrganization] Failed to load org assets:', response.error);
+      }
+    } catch (err) {
+      console.error('[useOrganization] Failed to load org assets:', err);
+    } finally {
+      assetsLoading.value = false;
+    }
+  }
+
+  // Load transactions
+  async function loadTransactions(page = 1) {
+    const orgId = organizationId.value;
+    if (!orgId || !isAdmin.value) return;
+
+    transactionsLoading.value = true;
+    try {
+      const offset = (page - 1) * transactionsPerPage;
+      const result = await authStore.getOrganizationTransactions(orgId, {
+        limit: transactionsPerPage,
+        offset,
+      });
+
+      if (result.success) {
+        transactions.value = result.transactions ?? [];
+        transactionsTotal.value = result.total ?? 0;
+        transactionsPage.value = page;
+        transactionsLoaded.value = true;
+      }
+    } catch (err: any) {
+      console.error('[useOrganization] Failed to load transactions:', err);
+    } finally {
+      transactionsLoading.value = false;
+    }
+  }
+
+  // Update organization settings
+  async function updateOrganization(data: {
+    name: string;
+    description: string;
+    settings: { allow_ai: boolean };
+  }) {
+    if (!organizationId.value) return { success: false, error: 'No organization ID' };
+
+    try {
+      const result = await authStore.updateOrganization(organizationId.value, data);
+      if (result.success) {
+        organization.value = result.organization;
+        showSuccess('Settings saved', 'Organization settings updated successfully');
+      }
+      return result;
+    } catch (err: any) {
+      showError('Save failed', err.message || 'Failed to update organization');
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Cancel invitation
+  async function cancelInvitation(invitationId: number) {
+    const orgId = organizationId.value;
+    if (!orgId) return;
+    try {
+      await authStore.cancelOrganizationInvitation(orgId, invitationId);
+      invitations.value = invitations.value.filter((i) => i.id !== invitationId);
+      showSuccess('Invitation cancelled');
+    } catch (err) {
+      console.error('[useOrganization] Failed to cancel invitation:', err);
+      showError('Failed to cancel invitation');
+    }
+  }
+
+  // Resend invitation
+  async function resendInvitation(invitation: OrganizationInvitation) {
+    const orgId = organizationId.value;
+    if (!orgId) return { success: false };
+
+    try {
+      const result = await authStore.resendOrganizationInvitation(orgId, invitation.id);
+      if (result.success) {
+        showSuccess('Invitation resent', `Invitation email resent to ${invitation.email}`);
+        await loadOrganization(); // Reload to get updated expiry date
+      } else {
+        showError('Failed to resend', result.error || 'Could not resend invitation');
+      }
+      return result;
+    } catch (err: any) {
+      showError('Failed to resend', err.message || 'An error occurred');
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Remove member
+  async function removeMember(member: OrganizationMember) {
+    const orgId = organizationId.value;
+    if (!orgId) return { success: false };
+
+    try {
+      await authStore.removeOrganizationMember(orgId, member.user_id);
+      members.value = members.value.filter((m) => m.id !== member.id);
+      showSuccess('Member removed', `${member.user?.email} has been removed from the organization`);
+      return { success: true };
+    } catch (err: any) {
+      showError('Failed to remove member', err.message || 'An error occurred');
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Update member role
+  async function updateMemberRole(member: OrganizationMember, newRole: string) {
+    const orgId = organizationId.value;
+    if (!orgId) return { success: false };
+
+    try {
+      await authStore.updateOrganizationMemberRole(orgId, member.user_id, newRole);
+      showSuccess('Role updated', `${member.user?.email} is now a ${newRole}`);
+      await loadOrganization();
+      return { success: true };
+    } catch (err: any) {
+      showError('Failed to update role', err.message || 'An error occurred');
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Update member account (for org-created users)
+  async function updateMemberAccount(
+    member: OrganizationMember,
+    updates: { name?: string; email?: string; password?: string }
+  ) {
+    const orgId = organizationId.value;
+    if (!orgId) return { success: false };
+
+    try {
+      const result = await authStore.updateOrganizationMemberAccount(
+        orgId,
+        member.user_id,
+        updates
+      );
+      if (result.success) {
+        showSuccess('Member updated', 'Member account has been updated successfully');
+        await loadOrganization();
+      } else {
+        showError('Update failed', result.error || 'Failed to update member account');
+      }
+      return result;
+    } catch (err: any) {
+      showError('Update failed', err.message || 'An error occurred while updating the member');
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Allocate credits to a member
+  async function allocateCredits(userId: number, minutes: number) {
+    const orgId = organizationId.value;
+    if (!orgId) return { success: false };
+
+    if (!minutes || minutes <= 0) {
+      showError('Invalid amount', 'Please enter a positive number of minutes to allocate');
+      return { success: false };
+    }
+
+    if (minutes > poolBalance.value) {
+      showError(
+        'Insufficient pool credits',
+        `You can only allocate up to ${poolBalance.value} minutes from the pool`
+      );
+      return { success: false };
+    }
+
+    try {
+      const result = await authStore.allocateOrganizationCredits(orgId, userId, minutes);
+      if (result.success) {
+        showSuccess('Credits allocated', `${minutes} minutes allocated successfully`);
+        await loadOrganization();
+      } else {
+        showError('Allocation failed', result.error || 'Failed to allocate credits');
+      }
+      return result;
+    } catch (err: any) {
+      showError('Allocation failed', err.message || 'An error occurred while allocating credits');
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Delete organization
+  async function deleteOrganization() {
+    const orgId = organizationId.value;
+    if (!orgId) return { success: false };
+
+    try {
+      await authStore.deleteOrganization(orgId);
+      router.push('/projects');
+      return { success: true };
+    } catch (err: any) {
+      showError('Delete failed', err.message || 'Failed to delete organization');
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Fetch pricing for buy credits modal
+  async function fetchPricing() {
+    try {
+      const response = await api.get('/pricing');
+      if (response.data.success) {
+        return {
+          success: true,
+          packs: response.data.packs,
+          solUsdRate: response.data.sol_usd_rate,
+          companyWallet: response.data.company_wallet_address,
+        };
+      }
+      return { success: false };
+    } catch (err) {
+      console.error('[useOrganization] Failed to fetch pricing:', err);
+      return { success: false };
+    }
+  }
+
+  // Utility functions
+  function formatDate(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString();
+  }
+
+  function formatAllocation(value: string | undefined): string {
+    if (!value) return '0';
+    const num = parseFloat(value);
+    if (isNaN(num)) return '0';
+    return Math.round(num).toString();
+  }
+
+  function formatTransactionDate(dateStr: string) {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function getPaymentMethodLabel(method: string) {
+    switch (method) {
+      case 'stripe':
+        return 'Card';
+      case 'solana':
+        return 'Crypto';
+      default:
+        return method;
+    }
+  }
+
+  function getPackLabel(packType: string) {
+    const labels: Record<string, string> = {
+      starter: 'Starter Pack',
+      creator: 'Creator Pack',
+      pro: 'Pro Pack',
+      studio: 'Studio Pack',
+    };
+    return labels[packType] || packType;
+  }
+
+  // Watch for route changes
+  watch(
+    () => route.params.id,
+    () => {
+      if (organizationId.value) {
+        loadOrganization();
+      }
+    }
+  );
+
+  return {
+    // State
+    loading,
+    error,
+    organization,
+    members,
+    invitations,
+    credits,
+    myAllocation,
+    role,
+    organizationId,
+
+    // Creator profiles
+    creatorProfiles,
+    profilesLoading,
+    profilesLoaded,
+
+    // Assets
+    orgAssets,
+    assetsLoading,
+    assetsLoaded,
+
+    // Transactions
+    transactions,
+    transactionsLoading,
+    transactionsTotal,
+    transactionsPage,
+    transactionsPerPage,
+    transactionsLoaded,
+    totalTransactionPages,
+
+    // Computed
+    isAdmin,
+    isOwner,
+    poolBalance,
+
+    // Functions
+    loadOrganization,
+    loadCreatorProfiles,
+    loadOrgAssets,
+    loadTransactions,
+    updateOrganization,
+    cancelInvitation,
+    resendInvitation,
+    removeMember,
+    updateMemberRole,
+    updateMemberAccount,
+    allocateCredits,
+    deleteOrganization,
+    fetchPricing,
+    isOrgCreatedUser,
+
+    // Utility functions
+    formatDate,
+    formatAllocation,
+    formatTransactionDate,
+    getPaymentMethodLabel,
+    getPackLabel,
+  };
+}

@@ -50,28 +50,24 @@
         </div>
       </template>
 
-      <div class="liveclip__content">
-        <!-- Page Heading -->
-        <div class="liveclip__heading">
+      <div class="liveclip__content" :class="{ 'liveclip__content--empty': streamers.length === 0 }">
+        <!-- Page Heading (hidden in empty state) -->
+        <div v-if="streamers.length > 0" class="liveclip__heading">
           <h1 class="liveclip__title">Live Stream Monitor</h1>
           <p class="liveclip__subtitle">Track streams and detect clips in real-time with AI-powered analysis</p>
         </div>
 
         <!-- Main Grid -->
-        <div class="liveclip__grid" :class="{ 'liveclip__grid--with-logs': isDetectingAny && activityLogs.length > 0 }">
+        <div
+          v-if="streamers.length > 0"
+          class="liveclip__grid"
+          :class="{ 'liveclip__grid--with-logs': isDetectingAny && activityLogs.length > 0 }"
+        >
           <!-- Streamers Column -->
           <div class="liveclip__streamers">
-            <!-- Section Header -->
-            <div class="liveclip__section-header">
-              <div class="liveclip__section-header-left">
-                <div class="liveclip__section-icon">
-                  <Radio />
-                </div>
-                <div class="liveclip__section-text">
-                  <h2 class="liveclip__section-title">Monitored Channels</h2>
-                  <p class="liveclip__section-subtitle">{{ streamers.length }} total</p>
-                </div>
-              </div>
+            <!-- Item Count -->
+            <div class="liveclip__item-count">
+              {{ streamers.length }} {{ streamers.length === 1 ? 'channel' : 'channels' }}
             </div>
 
             <!-- Streamer Cards -->
@@ -86,15 +82,6 @@
                     'monitor-card--live': !streamer.isDetecting && streamer.isLive,
                   }"
                 >
-                  <!-- Top Accent Bar -->
-                  <div
-                    class="monitor-card__accent"
-                    :class="{
-                      'monitor-card__accent--active': streamer.isDetecting,
-                      'monitor-card__accent--live': !streamer.isDetecting && streamer.isLive,
-                    }"
-                  ></div>
-
                   <div class="monitor-card__content">
                     <!-- Header: Avatar + Info + Status -->
                     <div class="monitor-card__header">
@@ -176,39 +163,45 @@
                     <div class="monitor-card__controls">
                       <!-- Left: Settings -->
                       <div class="monitor-card__settings">
-                        <div class="monitor-setting">
-                          <span class="monitor-setting__label">Segment</span>
-                          <Select
-                            :model-value="String(streamer.segmentDurationMinutes)"
-                            @update:model-value="updateSegmentDuration(streamer, Number($event))"
-                            :disabled="streamer.isDetecting"
-                          >
-                            <SelectTrigger
-                              class="monitor-setting__select"
-                              :class="{ 'monitor-setting__select--disabled': streamer.isDetecting }"
+                        <DropdownMenu>
+                          <DropdownMenuTrigger as-child>
+                            <button
+                              class="monitor-setting__dropdown-trigger"
+                              :class="{ 'monitor-setting__dropdown-trigger--disabled': streamer.isDetecting }"
+                              :disabled="streamer.isDetecting"
                             >
-                              <SelectValue :placeholder="`${streamer.segmentDurationMinutes} min`" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="3">3 min</SelectItem>
-                              <SelectItem value="5">5 min</SelectItem>
-                              <SelectItem value="10">10 min</SelectItem>
-                              <SelectItem value="15">15 min</SelectItem>
-                              <SelectItem value="30">30 min</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div class="monitor-setting">
-                          <span class="monitor-setting__label">Auto DVR</span>
-                          <button
-                            @click="updateAutoDvr(streamer, !streamer.autoDvr)"
-                            :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
-                            class="monitor-setting__toggle"
-                            :class="{ 'monitor-setting__toggle--on': streamer.autoDvr }"
-                          >
-                            {{ streamer.autoDvr ? 'On' : 'Off' }}
-                          </button>
-                        </div>
+                              {{ streamer.segmentDurationMinutes }} min
+                              <ChevronDown class="monitor-setting__dropdown-chevron" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" :side-offset="4" class="segment-dropdown">
+                            <DropdownMenuItem
+                              v-for="duration in [3, 5, 10, 15, 30]"
+                              :key="duration"
+                              class="segment-dropdown__item"
+                              :class="{
+                                'segment-dropdown__item--selected': streamer.segmentDurationMinutes === duration,
+                              }"
+                              @click="updateSegmentDuration(streamer, duration)"
+                            >
+                              {{ duration }} min
+                              <Check
+                                v-if="streamer.segmentDurationMinutes === duration"
+                                class="segment-dropdown__check"
+                              />
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <button
+                          @click="updateAutoDvr(streamer, !streamer.autoDvr)"
+                          :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
+                          class="monitor-setting__toggle"
+                          :class="{ 'monitor-setting__toggle--on': streamer.autoDvr }"
+                          title="Auto DVR"
+                        >
+                          <Video class="monitor-setting__toggle-icon" />
+                          DVR
+                        </button>
                       </div>
 
                       <!-- Right: Action Buttons -->
@@ -226,45 +219,33 @@
                             >
                               <Eye class="monitor-action__icon" />
                               Watch
-                              <span v-if="streamer.hasTempRecording" class="monitor-action__dvr">DVR</span>
                             </button>
-                            <button @click="startStreamer(streamer, false)" class="monitor-action monitor-action--rec">
-                              <Video class="monitor-action__icon" />
-                              Rec
-                            </button>
-                            <button @click="startStreamer(streamer, true)" class="monitor-action monitor-action--auto">
-                              <Sparkles class="monitor-action__icon" />
-                              Auto
-                            </button>
+                            <div class="monitor-action-group">
+                              <button @click="startStreamer(streamer, false)" class="monitor-action-group__btn">
+                                <Video class="monitor-action__icon" />
+                                Rec
+                              </button>
+                              <button
+                                @click="startStreamer(streamer, true)"
+                                class="monitor-action-group__btn monitor-action-group__btn--primary"
+                              >
+                                <Sparkles class="monitor-action__icon" />
+                                Auto
+                              </button>
+                            </div>
                           </template>
                         </template>
                         <template v-else>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            class="monitor-action monitor-action--stop"
-                            @click="stopStreamer(streamer)"
-                          >
+                          <button class="monitor-action monitor-action--stop" @click="stopStreamer(streamer)">
                             <Square class="monitor-action__icon" />
                             Stop
-                          </Button>
+                          </button>
                         </template>
                       </div>
                     </div>
                   </div>
                 </div>
               </transition-group>
-
-              <!-- Empty State -->
-              <EmptyState
-                v-if="streamers.length === 0"
-                title="No active monitors"
-                description="Add a stream link above to start detecting clips in real-time."
-              >
-                <template #icon>
-                  <Radio class="liveclip__empty-icon" />
-                </template>
-              </EmptyState>
             </div>
           </div>
 
@@ -307,6 +288,15 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Empty State -->
+        <div v-if="streamers.length === 0" class="liveclip__empty">
+          <div class="liveclip__empty-icon-wrapper">
+            <Radio class="liveclip__empty-icon" />
+          </div>
+          <h3 class="liveclip__empty-title">No active monitors</h3>
+          <p class="liveclip__empty-description">Add a stream link above to start detecting clips in real-time</p>
         </div>
       </div>
 
@@ -386,13 +376,18 @@
     Sparkles,
     RefreshCw,
     Eye,
+    ChevronDown,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
-  import EmptyState from '@/components/EmptyState.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CampaignSelectionDialog from '@/components/campaigns/CampaignSelectionDialog.vue';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
@@ -1231,6 +1226,12 @@
     max-width: 1400px;
     margin: 0 auto;
     width: 100%;
+    flex: 1;
+  }
+
+  .liveclip__content--empty {
+    justify-content: center;
+    align-items: center;
   }
 
   /* ===== Page Heading ===== */
@@ -1270,8 +1271,8 @@
     left: 0.625rem;
     top: 50%;
     transform: translateY(-50%);
-    width: 14px;
-    height: 14px;
+    width: 15px;
+    height: 15px;
     color: var(--sidebar-text-muted);
     pointer-events: none;
   }
@@ -1316,7 +1317,7 @@
   .liveclip-search__input {
     height: 32px;
     padding-left: 2rem;
-    background-color: transparent;
+    background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
     border-radius: 6px;
     font-size: 0.75rem;
@@ -1330,7 +1331,7 @@
 
   .liveclip-search__input:focus {
     border-color: var(--sidebar-accent);
-    background-color: var(--sidebar-surface);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.1);
   }
 
   .liveclip-add-btn {
@@ -1435,6 +1436,14 @@
     letter-spacing: 0.04em;
   }
 
+  /* ===== Item Count ===== */
+  .liveclip__item-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+    margin-bottom: 1rem;
+  }
+
   /* ===== Streamer List ===== */
   .liveclip__list-inner {
     display: grid;
@@ -1448,53 +1457,57 @@
     }
   }
 
+  /* ===== Empty State ===== */
+  .liveclip__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .liveclip__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
   .liveclip__empty-icon {
-    width: 64px;
-    height: 64px;
+    width: 36px;
+    height: 36px;
     color: var(--sidebar-text-muted);
+  }
+
+  .liveclip__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .liveclip__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.5;
   }
 
   /* ===== Monitor Card ===== */
   .monitor-card {
     background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     overflow: hidden;
     transition: all 200ms ease;
   }
 
   .monitor-card:hover {
-    border-color: rgba(255, 255, 255, 0.1);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  }
-
-  .monitor-card--active {
-    border-color: rgba(16, 185, 129, 0.3);
-  }
-
-  .monitor-card--active:hover {
-    border-color: rgba(16, 185, 129, 0.5);
-  }
-
-  .monitor-card--live {
-    border-color: rgba(239, 68, 68, 0.3);
-  }
-
-  .monitor-card--live:hover {
-    border-color: rgba(239, 68, 68, 0.5);
-  }
-
-  .monitor-card__accent {
-    height: 3px;
-    background-color: var(--sidebar-border);
-  }
-
-  .monitor-card__accent--active {
-    background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
-  }
-
-  .monitor-card__accent--live {
-    background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
   }
 
   .monitor-card__content {
@@ -1706,145 +1719,190 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-top: 1rem;
-    border-top: 1px solid var(--sidebar-border);
-    gap: 1rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 0.75rem;
   }
 
   .monitor-card__settings {
-    display: flex;
-    gap: 1rem;
-  }
-
-  .monitor-setting {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
 
-  .monitor-setting__label {
+  .monitor-setting__dropdown-trigger {
+    height: 30px;
+    padding: 0 0.5rem 0 0.625rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
     font-size: 0.6875rem;
+    font-weight: 500;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
     color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
   }
 
-  .monitor-setting__select {
-    height: 28px;
-    width: 75px;
-    font-size: 0.6875rem;
-    background-color: var(--sidebar-hover);
-    border-color: var(--sidebar-border);
+  .monitor-setting__dropdown-trigger:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--sidebar-text);
   }
 
-  .monitor-setting__select--disabled {
-    opacity: 0.5;
+  .monitor-setting__dropdown-trigger--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .monitor-setting__dropdown-chevron {
+    width: 12px;
+    height: 12px;
+    opacity: 0.6;
   }
 
   .monitor-setting__toggle {
-    height: 28px;
+    height: 30px;
     padding: 0 0.625rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     font-size: 0.6875rem;
-    font-weight: 600;
+    font-weight: 500;
     border-radius: 6px;
-    border: 1px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background-color: rgba(255, 255, 255, 0.04);
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
   }
 
   .monitor-setting__toggle:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
   }
 
   .monitor-setting__toggle--on {
-    background-color: rgba(16, 185, 129, 0.15);
-    border-color: rgba(16, 185, 129, 0.3);
+    background-color: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.25);
     color: #34d399;
   }
 
   .monitor-setting__toggle--on:hover:not(:disabled) {
-    background-color: rgba(16, 185, 129, 0.25);
+    background-color: rgba(16, 185, 129, 0.18);
+  }
+
+  .monitor-setting__toggle-icon {
+    width: 12px;
+    height: 12px;
+    opacity: 0.7;
+  }
+
+  .monitor-setting__toggle--on .monitor-setting__toggle-icon {
+    opacity: 1;
   }
 
   /* Card Actions */
   .monitor-card__actions {
     display: flex;
+    align-items: center;
     gap: 0.5rem;
   }
 
-  .monitor-action {
+  /* Segmented Button Group */
+  .monitor-action-group {
+    display: flex;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .monitor-action-group__btn {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--sidebar-text-muted);
     border: none;
     cursor: pointer;
     transition: all 150ms ease;
   }
 
+  .monitor-action-group__btn:first-child {
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .monitor-action-group__btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+  }
+
+  .monitor-action-group__btn--primary {
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+  }
+
+  .monitor-action-group__btn--primary:hover {
+    background-color: rgba(139, 92, 246, 0.25);
+    color: #c4b5fd;
+  }
+
+  /* Individual Actions */
+  .monitor-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.4375rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
   .monitor-action__icon {
-    width: 14px;
-    height: 14px;
+    width: 13px;
+    height: 13px;
   }
 
   .monitor-action__spinner {
-    width: 14px;
-    height: 14px;
+    width: 13px;
+    height: 13px;
     animation: spin 0.8s linear infinite;
   }
 
   .monitor-action--stopping {
-    background-color: rgba(245, 158, 11, 0.15);
+    background-color: rgba(245, 158, 11, 0.12);
     color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-color: rgba(245, 158, 11, 0.2);
   }
 
   .monitor-action--watch {
-    background-color: rgba(239, 68, 68, 0.1);
+    background-color: rgba(239, 68, 68, 0.12);
     color: #f87171;
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.2);
   }
 
   .monitor-action--watch:hover {
     background-color: rgba(239, 68, 68, 0.2);
-  }
-
-  .monitor-action__dvr {
-    font-size: 0.5625rem;
-    padding: 0.125rem 0.375rem;
-    background-color: rgba(16, 185, 129, 0.2);
-    color: #34d399;
-    border-radius: 10px;
-    border: 1px solid rgba(16, 185, 129, 0.3);
-  }
-
-  .monitor-action--rec {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .monitor-action--rec:hover {
-    background-color: var(--sidebar-active);
-  }
-
-  .monitor-action--auto {
-    background-color: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-    border: 1px solid rgba(139, 92, 246, 0.3);
-  }
-
-  .monitor-action--auto:hover {
-    background-color: rgba(139, 92, 246, 0.25);
+    color: #fca5a5;
   }
 
   .monitor-action--stop {
-    height: 34px;
-    padding: 0 1rem;
-    font-size: 0.75rem;
-    font-weight: 600;
+    background-color: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.2);
+  }
+
+  .monitor-action--stop:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
   }
 
   /* ===== Activity Log ===== */
@@ -2005,5 +2063,74 @@
   .list-leave-active {
     position: absolute;
     z-index: 0;
+  }
+</style>
+
+<!-- Global styles for dropdown (rendered via portal outside component scope) -->
+<style>
+  /* Prevent button animation when dropdown opens */
+  .monitor-setting__dropdown-trigger {
+    transform: none !important;
+    animation: none !important;
+  }
+
+  .monitor-setting__dropdown-trigger[data-state='open'] {
+    transform: none !important;
+  }
+
+  .segment-dropdown {
+    min-width: 100px !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    z-index: 100 !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    /* Disable all slide/zoom animations, only fade */
+    animation: segmentDropdownFade 100ms ease-out !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+  }
+
+  @keyframes segmentDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .segment-dropdown__item {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 0.75rem !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text-muted) !important;
+    cursor: pointer !important;
+    transition: all 100ms ease !important;
+  }
+
+  .segment-dropdown__item:hover,
+  .segment-dropdown__item:focus,
+  .segment-dropdown__item[data-highlighted] {
+    background-color: var(--sidebar-hover) !important;
+    color: var(--sidebar-text) !important;
+    outline: none !important;
+  }
+
+  .segment-dropdown__item--selected {
+    color: var(--sidebar-text) !important;
+  }
+
+  .segment-dropdown__check {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
   }
 </style>

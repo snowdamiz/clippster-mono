@@ -26,7 +26,21 @@
           </svg>
         </div>
         <div class="page-header__info">
-          <h1 class="page-header__title">{{ title }}</h1>
+          <div class="page-header__title-row">
+            <!-- Breadcrumbs -->
+            <nav v-if="breadcrumbs && breadcrumbs.length > 0" class="page-header__breadcrumbs">
+              <template v-for="(crumb, index) in breadcrumbs" :key="index">
+                <router-link v-if="crumb.path" :to="crumb.path" class="page-header__breadcrumb-link">
+                  {{ crumb.label }}
+                </router-link>
+                <span v-else class="page-header__breadcrumb-text">{{ crumb.label }}</span>
+                <ChevronRight v-if="index < breadcrumbs.length - 1" class="page-header__breadcrumb-separator" />
+              </template>
+            </nav>
+            <!-- Simple title (when no breadcrumbs) -->
+            <h1 v-else class="page-header__title">{{ title }}</h1>
+            <slot name="badge"></slot>
+          </div>
           <!-- <p class="page-header__description">{{ description }}</p> -->
         </div>
       </div>
@@ -43,12 +57,19 @@
 
 <script setup lang="ts">
   import type { Component } from 'vue';
+  import { ChevronRight } from 'lucide-vue-next';
+
+  export interface BreadcrumbItem {
+    label: string;
+    path?: string;
+  }
 
   defineProps<{
     title: string;
     description: string;
     showHeader?: boolean;
     icon?: string | Component;
+    breadcrumbs?: BreadcrumbItem[];
   }>();
 </script>
 
@@ -66,6 +87,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
   }
 
   /* ===== Page Header ===== */
@@ -128,6 +150,12 @@
     gap: 0.125rem;
   }
 
+  .page-header__title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
   .page-header__title {
     font-size: 0.9rem;
     font-weight: 600;
@@ -135,6 +163,39 @@
     letter-spacing: -0.01em;
     line-height: 1.2;
     margin: 0;
+  }
+
+  /* ===== Breadcrumbs ===== */
+  .page-header__breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+
+  .page-header__breadcrumb-link {
+    color: var(--page-text-muted);
+    text-decoration: none;
+    transition: color 150ms ease;
+  }
+
+  .page-header__breadcrumb-link:hover {
+    color: var(--page-text);
+  }
+
+  .page-header__breadcrumb-text {
+    color: var(--page-text);
+  }
+
+  .page-header__breadcrumb-separator {
+    width: 14px;
+    height: 14px;
+    color: var(--page-text-muted);
+    opacity: 0.5;
+    flex-shrink: 0;
   }
 
   .page-header__description {

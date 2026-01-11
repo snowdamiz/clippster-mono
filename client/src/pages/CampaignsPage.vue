@@ -21,146 +21,151 @@
         </div>
       </template>
 
-      <!-- Loading State -->
-      <div v-if="loading" class="space-y-4 pt-4">
-        <div v-for="i in 4" :key="i" class="bg-card border border-border/60 rounded-xl overflow-hidden animate-pulse">
-          <div class="h-32 bg-muted/40"></div>
-          <div class="p-4 space-y-3">
-            <div class="h-5 bg-muted/40 rounded w-48"></div>
-            <div class="h-4 bg-muted/30 rounded w-full"></div>
-            <div class="flex gap-2">
-              <div class="h-6 bg-muted/30 rounded-full w-20"></div>
-              <div class="h-6 bg-muted/30 rounded-full w-16"></div>
+      <div
+        class="campaigns__content"
+        :class="{ 'campaigns__content--empty': !loading && filteredCampaigns.length === 0 }"
+      >
+        <!-- Loading State -->
+        <div v-if="loading" class="space-y-4 pt-4">
+          <div v-for="i in 4" :key="i" class="bg-card border border-border/60 rounded-xl overflow-hidden animate-pulse">
+            <div class="h-32 bg-muted/40"></div>
+            <div class="p-4 space-y-3">
+              <div class="h-5 bg-muted/40 rounded w-48"></div>
+              <div class="h-4 bg-muted/30 rounded w-full"></div>
+              <div class="flex gap-2">
+                <div class="h-6 bg-muted/30 rounded-full w-20"></div>
+                <div class="h-6 bg-muted/30 rounded-full w-16"></div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Empty State -->
-      <div v-else-if="filteredCampaigns.length === 0" class="flex flex-col items-center justify-center py-16">
-        <div class="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
-          <Megaphone class="w-8 h-8 text-muted-foreground/50" />
-        </div>
-        <h3 class="text-lg font-medium text-foreground mb-1">No campaigns found</h3>
-        <p class="text-sm text-muted-foreground">
-          {{ searchQuery ? 'Try adjusting your search' : 'Check back later for new campaigns' }}
-        </p>
-      </div>
-
-      <!-- Campaigns Grid -->
-      <div v-else class="pt-4">
-        <div class="flex items-center justify-between px-1 text-[13px] text-muted-foreground mb-3">
-          <span class="font-medium">Active Campaigns</span>
-          <span class="tabular-nums">{{ filteredCampaigns.length }} campaigns</span>
+        <!-- Empty State -->
+        <div v-else-if="filteredCampaigns.length === 0" class="campaigns__empty">
+          <div class="campaigns__empty-icon-wrapper">
+            <Megaphone class="campaigns__empty-icon" />
+          </div>
+          <h3 class="campaigns__empty-title">No campaigns found</h3>
+          <p class="campaigns__empty-description">
+            {{ searchQuery ? 'Try adjusting your search' : 'Check back later for new campaigns' }}
+          </p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div
-            v-for="campaign in filteredCampaigns"
-            :key="campaign.id"
-            class="group bg-card rounded-xl border border-border/60 overflow-hidden hover:border-primary/30 transition-all cursor-pointer"
-            @click="viewCampaign(campaign)"
-          >
-            <!-- Cover Image -->
-            <div class="relative h-32 bg-gradient-to-br from-primary/20 to-primary/5">
-              <img
-                v-if="campaign.cover_image_url"
-                :src="campaign.cover_image_url"
-                class="w-full h-full object-cover"
-                @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
-              />
-              <div v-else class="w-full h-full flex items-center justify-center">
-                <Megaphone class="w-10 h-10 text-primary/30" />
-              </div>
+        <!-- Campaigns Grid -->
+        <div v-else class="pt-4">
+          <div class="flex items-center justify-between px-1 text-[13px] text-muted-foreground mb-3">
+            <span class="font-medium">Active Campaigns</span>
+            <span class="tabular-nums">{{ filteredCampaigns.length }} campaigns</span>
+          </div>
 
-              <!-- Organization Badge -->
-              <div
-                v-if="campaign.organization"
-                class="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md"
-              >
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div
+              v-for="campaign in filteredCampaigns"
+              :key="campaign.id"
+              class="group bg-card rounded-xl border border-border/60 overflow-hidden hover:border-primary/30 transition-all cursor-pointer"
+              @click="viewCampaign(campaign)"
+            >
+              <!-- Cover Image -->
+              <div class="relative h-32 bg-gradient-to-br from-primary/20 to-primary/5">
                 <img
-                  v-if="campaign.organization.logo_url"
-                  :src="campaign.organization.logo_url"
-                  class="w-4 h-4 rounded-full"
+                  v-if="campaign.cover_image_url"
+                  :src="campaign.cover_image_url"
+                  class="w-full h-full object-cover"
+                  @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
                 />
-                <Building2 v-else class="w-3.5 h-3.5 text-white/80" />
-                <span class="text-[11px] font-medium text-white/90">{{ campaign.organization.name }}</span>
-              </div>
+                <div v-else class="w-full h-full flex items-center justify-center">
+                  <Megaphone class="w-10 h-10 text-primary/30" />
+                </div>
 
-              <!-- CPM Badge -->
-              <div class="absolute top-2 right-2 px-2 py-1 bg-green-500/90 backdrop-blur-sm rounded-md">
-                <span class="text-[11px] font-bold text-white">${{ formatCpm(campaign.cpm) }}/1K</span>
-              </div>
-            </div>
-
-            <!-- Content -->
-            <div class="p-4 space-y-3">
-              <div>
-                <h3
-                  class="font-semibold text-[15px] text-foreground line-clamp-1 group-hover:text-primary transition-colors"
+                <!-- Organization Badge -->
+                <div
+                  v-if="campaign.organization"
+                  class="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md"
                 >
-                  {{ campaign.title }}
-                </h3>
-                <p v-if="campaign.description" class="text-[13px] text-muted-foreground line-clamp-2 mt-1">
-                  {{ campaign.description }}
-                </p>
+                  <img
+                    v-if="campaign.organization.logo_url"
+                    :src="campaign.organization.logo_url"
+                    class="w-4 h-4 rounded-full"
+                  />
+                  <Building2 v-else class="w-3.5 h-3.5 text-white/80" />
+                  <span class="text-[11px] font-medium text-white/90">{{ campaign.organization.name }}</span>
+                </div>
+
+                <!-- CPM Badge -->
+                <div class="absolute top-2 right-2 px-2 py-1 bg-green-500/90 backdrop-blur-sm rounded-md">
+                  <span class="text-[11px] font-bold text-white">${{ formatCpm(campaign.cpm) }}/1K</span>
+                </div>
               </div>
 
-              <!-- Creator Profiles -->
-              <div
-                v-if="campaign.creator_profiles && campaign.creator_profiles.length > 0"
-                class="flex items-center gap-1"
-              >
-                <span class="text-[11px] text-muted-foreground mr-1">Creators:</span>
-                <div class="flex -space-x-1.5">
-                  <div
-                    v-for="(profile, idx) in campaign.creator_profiles.slice(0, 4)"
-                    :key="profile.id"
-                    class="w-6 h-6 rounded-full border-2 border-card overflow-hidden bg-muted"
-                    :title="profile.name"
+              <!-- Content -->
+              <div class="p-4 space-y-3">
+                <div>
+                  <h3
+                    class="font-semibold text-[15px] text-foreground line-clamp-1 group-hover:text-primary transition-colors"
                   >
-                    <img
-                      v-if="profile.profile_image_url"
-                      :src="profile.profile_image_url"
-                      class="w-full h-full object-cover"
-                    />
+                    {{ campaign.title }}
+                  </h3>
+                  <p v-if="campaign.description" class="text-[13px] text-muted-foreground line-clamp-2 mt-1">
+                    {{ campaign.description }}
+                  </p>
+                </div>
+
+                <!-- Creator Profiles -->
+                <div
+                  v-if="campaign.creator_profiles && campaign.creator_profiles.length > 0"
+                  class="flex items-center gap-1"
+                >
+                  <span class="text-[11px] text-muted-foreground mr-1">Creators:</span>
+                  <div class="flex -space-x-1.5">
                     <div
-                      v-else
-                      class="w-full h-full flex items-center justify-center text-[10px] font-medium text-muted-foreground"
+                      v-for="(profile, idx) in campaign.creator_profiles.slice(0, 4)"
+                      :key="profile.id"
+                      class="w-6 h-6 rounded-full border-2 border-card overflow-hidden bg-muted"
+                      :title="profile.name"
                     >
-                      {{ profile.name?.charAt(0) }}
+                      <img
+                        v-if="profile.profile_image_url"
+                        :src="profile.profile_image_url"
+                        class="w-full h-full object-cover"
+                      />
+                      <div
+                        v-else
+                        class="w-full h-full flex items-center justify-center text-[10px] font-medium text-muted-foreground"
+                      >
+                        {{ profile.name?.charAt(0) }}
+                      </div>
+                    </div>
+                    <div
+                      v-if="campaign.creator_profiles.length > 4"
+                      class="w-6 h-6 rounded-full border-2 border-card bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground"
+                    >
+                      +{{ campaign.creator_profiles.length - 4 }}
                     </div>
                   </div>
+                </div>
+
+                <!-- Platforms -->
+                <div class="flex flex-wrap gap-1.5">
                   <div
-                    v-if="campaign.creator_profiles.length > 4"
-                    class="w-6 h-6 rounded-full border-2 border-card bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground"
+                    v-for="platform in campaign.allowed_platforms"
+                    :key="platform"
+                    class="inline-flex items-center gap-1 px-2 py-0.5 bg-muted/50 rounded-full text-[11px] font-medium text-muted-foreground"
                   >
-                    +{{ campaign.creator_profiles.length - 4 }}
+                    <component :is="getPlatformIcon(platform)" class="w-3 h-3" />
+                    {{ getPlatformDisplayName(platform) }}
                   </div>
                 </div>
-              </div>
 
-              <!-- Platforms -->
-              <div class="flex flex-wrap gap-1.5">
-                <div
-                  v-for="platform in campaign.allowed_platforms"
-                  :key="platform"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 bg-muted/50 rounded-full text-[11px] font-medium text-muted-foreground"
-                >
-                  <component :is="getPlatformIcon(platform)" class="w-3 h-3" />
-                  {{ getPlatformDisplayName(platform) }}
-                </div>
-              </div>
-
-              <!-- Stats -->
-              <div class="flex items-center justify-between pt-2 border-t border-border/40">
-                <div class="flex items-center gap-1 text-[12px] text-muted-foreground">
-                  <Users class="w-3.5 h-3.5" />
-                  <span>{{ campaign.participants_count || 0 }} clippers</span>
-                </div>
-                <div class="flex items-center gap-1 text-[12px] text-muted-foreground">
-                  <DollarSign class="w-3.5 h-3.5" />
-                  <span>${{ formatBudget(campaign.budget) }} budget</span>
+                <!-- Stats -->
+                <div class="flex items-center justify-between pt-2 border-t border-border/40">
+                  <div class="flex items-center gap-1 text-[12px] text-muted-foreground">
+                    <Users class="w-3.5 h-3.5" />
+                    <span>{{ campaign.participants_count || 0 }} clippers</span>
+                  </div>
+                  <div class="flex items-center gap-1 text-[12px] text-muted-foreground">
+                    <DollarSign class="w-3.5 h-3.5" />
+                    <span>${{ formatBudget(campaign.budget) }} budget</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -277,5 +282,57 @@
 <style scoped>
   .campaigns-page {
     @apply h-full;
+  }
+
+  /* ===== Content Container ===== */
+  .campaigns__content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .campaigns__content--empty {
+    justify-content: center;
+    align-items: center;
+  }
+
+  /* ===== Empty State ===== */
+  .campaigns__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .campaigns__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .campaigns__empty-icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .campaigns__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 300px;
   }
 </style>
