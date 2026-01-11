@@ -1,5 +1,5 @@
 <template>
-  <div class="creator-profiles-page">
+  <div class="creators">
     <PageLayout
       title="Creator Profiles"
       description="Manage your content creators and their streaming configurations"
@@ -7,374 +7,422 @@
       :icon="Users"
     >
       <template #actions>
-        <div class="relative w-[320px] shadow-sm group">
-          <div
-            class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 pointer-events-none z-10"
-          >
-            <Users class="w-4 h-4 text-muted-foreground" />
+        <div class="creators-actions">
+          <div class="creators-search">
+            <Search class="creators-search__icon" />
+            <Input v-model="searchQuery" class="creators-search__input" placeholder="Search creators..." />
           </div>
-          <Input
-            v-model="searchQuery"
-            class="h-12 pl-11 pr-28 text-sm bg-background border-border/70 rounded-lg focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
-            placeholder="Search creators..."
-          />
-          <div class="absolute right-2.5 top-1/2 -translate-y-1/2">
-            <Button size="sm" class="h-8 px-4 rounded-sm font-medium transition-all text-xs" @click="openCreateDialog">
-              <Plus class="w-3.5 h-3.5" />
-              Add Creator
-            </Button>
-          </div>
+          <Button size="sm" class="creators-add-btn" @click="openCreateDialog">
+            <Plus class="creators-add-btn__icon" />
+            Add Creator
+          </Button>
         </div>
       </template>
 
-      <!-- Loading State -->
-      <div v-if="loading" class="space-y-3 pt-2">
-        <div v-for="i in 4" :key="i" class="bg-card border border-border/60 rounded-xl overflow-hidden">
-          <div class="flex items-start gap-4 p-4 animate-pulse">
-            <div class="w-14 h-14 rounded-lg bg-muted/40"></div>
-            <div class="flex-1 space-y-3">
-              <div class="space-y-2">
-                <div class="h-4 bg-muted/40 rounded w-36"></div>
-                <div class="h-3 bg-muted/30 rounded w-56"></div>
+      <!-- Not Authenticated -->
+      <EmptyState
+        v-if="!authStore.isAuthenticated && creators.length === 0"
+        title="Sign in to manage creators"
+        description="Access your creator profiles and streaming configurations"
+      >
+        <template #icon>
+          <Users class="creators__empty-icon" />
+        </template>
+      </EmptyState>
+
+      <div v-else class="creators__content">
+        <!-- Page Heading -->
+        <div class="creators__heading">
+          <h1 class="creators__title">Manage Your Creators</h1>
+          <p class="creators__subtitle">View your creator profiles, monitor live streams, and manage recordings</p>
+        </div>
+
+        <!-- Stats Summary Cards -->
+        <div class="creators__stats">
+          <!-- Total Creators Card -->
+          <div class="creators-stat">
+            <div class="creators-stat__indicator"></div>
+            <div class="creators-stat__inner">
+              <div class="creators-stat__icon">
+                <Users />
               </div>
-              <div class="flex gap-2">
-                <div class="h-6 bg-muted/30 rounded-md w-24"></div>
-                <div class="h-6 bg-muted/30 rounded-md w-20"></div>
+              <div class="creators-stat__info">
+                <span class="creators-stat__label">Total Creators</span>
+                <span class="creators-stat__value">
+                  <template v-if="loading">
+                    <span class="creators-stat__loading"></span>
+                  </template>
+                  <template v-else>{{ creators.length }}</template>
+                </span>
               </div>
             </div>
           </div>
-          <div class="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t border-border/40">
-            <div class="h-6 bg-muted/30 rounded-md w-20"></div>
-            <div class="flex gap-1">
-              <div class="h-7 bg-muted/30 rounded-md w-14"></div>
-              <div class="h-7 bg-muted/30 rounded-md w-14"></div>
-              <div class="h-7 bg-muted/30 rounded-md w-20"></div>
+
+          <!-- Live Now Card -->
+          <div class="creators-stat creators-stat--live">
+            <div class="creators-stat__indicator creators-stat__indicator--live"></div>
+            <div class="creators-stat__inner">
+              <div class="creators-stat__icon creators-stat__icon--live">
+                <Radio />
+              </div>
+              <div class="creators-stat__info">
+                <span class="creators-stat__label">Live Now</span>
+                <span class="creators-stat__value creators-stat__value--live">
+                  <template v-if="loading">
+                    <span class="creators-stat__loading"></span>
+                  </template>
+                  <template v-else>{{ liveCreatorsCount }}</template>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Monitoring Card -->
+          <div class="creators-stat creators-stat--monitoring">
+            <div class="creators-stat__indicator creators-stat__indicator--monitoring"></div>
+            <div class="creators-stat__inner">
+              <div class="creators-stat__icon creators-stat__icon--monitoring">
+                <Activity />
+              </div>
+              <div class="creators-stat__info">
+                <span class="creators-stat__label">Monitoring</span>
+                <span class="creators-stat__value creators-stat__value--monitoring">
+                  <template v-if="loading">
+                    <span class="creators-stat__loading"></span>
+                  </template>
+                  <template v-else>{{ monitoringCreatorsCount }}</template>
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Main Content Area -->
-      <div v-else-if="creators.length > 0" class="mx-auto pt-2 relative pb-12">
-        <div>
-          <!-- Creator Profiles List -->
-          <div class="w-full">
-            <div
-              v-if="filteredCreators.length > 0"
-              class="flex items-center justify-between px-1 text-[13px] text-muted-foreground mb-3"
-            >
-              <span class="font-medium">All Creators</span>
-              <span class="tabular-nums">
-                {{ filteredCreators.length }} {{ filteredCreators.length === 1 ? 'profile' : 'profiles' }}
-              </span>
+        <!-- Loading State -->
+        <div v-if="loading" class="creators__loading">
+          <div v-for="i in 4" :key="i" class="creator-skeleton">
+            <div class="creator-skeleton__indicator"></div>
+            <div class="creator-skeleton__inner">
+              <div class="creator-skeleton__header">
+                <div class="creator-skeleton__avatar"></div>
+                <div class="creator-skeleton__info">
+                  <div class="creator-skeleton__line creator-skeleton__line--name"></div>
+                  <div class="creator-skeleton__line creator-skeleton__line--desc"></div>
+                  <div class="creator-skeleton__badges">
+                    <div class="creator-skeleton__badge"></div>
+                    <div class="creator-skeleton__badge"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="creator-skeleton__footer">
+                <div class="creator-skeleton__status"></div>
+                <div class="creator-skeleton__actions">
+                  <div class="creator-skeleton__btn"></div>
+                  <div class="creator-skeleton__btn"></div>
+                </div>
+              </div>
             </div>
+          </div>
+        </div>
 
-            <div class="relative">
-              <transition-group name="list" tag="div" class="space-y-3">
+        <!-- Main Content Area -->
+        <div v-else-if="creators.length > 0" class="creators__list-section">
+          <!-- Section Header -->
+          <div class="creators__section-header">
+            <div class="creators__section-header-left">
+              <div class="creators__section-icon">
+                <Users />
+              </div>
+              <div class="creators__section-text">
+                <h2 class="creators__section-title">All Creators</h2>
+                <p class="creators__section-subtitle">
+                  {{ filteredCreators.length }} {{ filteredCreators.length === 1 ? 'profile' : 'profiles' }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Creator List -->
+          <div class="creators__list">
+            <transition-group name="list" tag="div" class="creators__list-inner">
+              <div
+                v-for="creator in sortedCreators"
+                :key="creator.id"
+                class="creator-card"
+                :class="{
+                  'creator-card--monitoring': isCreatorMonitored(creator),
+                  'creator-card--live': !isCreatorMonitored(creator) && isCreatorLive(creator),
+                }"
+              >
+                <!-- Left Accent Indicator -->
                 <div
-                  v-for="creator in sortedCreators"
-                  :key="creator.id"
-                  class="group bg-card rounded-xl border transition-all duration-200 overflow-hidden"
+                  class="creator-card__indicator"
                   :class="{
-                    'border-green-500/40 ring-1 ring-green-500/20': isCreatorMonitored(creator),
-                    'border-red-500/40 ring-1 ring-red-500/20': !isCreatorMonitored(creator) && isCreatorLive(creator),
-                    'border-border/60 hover:border-border': !isCreatorMonitored(creator) && !isCreatorLive(creator),
+                    'creator-card__indicator--monitoring': isCreatorMonitored(creator),
+                    'creator-card__indicator--live': !isCreatorMonitored(creator) && isCreatorLive(creator),
                   }"
-                >
-                  <!-- Main Content Row -->
-                  <div class="flex items-start gap-4 p-4">
+                ></div>
+
+                <div class="creator-card__inner">
+                  <!-- Header Row: Avatar + Info + Platform Badges -->
+                  <div class="creator-card__header">
                     <!-- Avatar with status indicator -->
-                    <div class="relative flex-shrink-0">
-                      <div class="w-14 h-14 rounded-lg flex items-center justify-center overflow-hidden bg-muted/50">
+                    <div class="creator-card__avatar-wrapper">
+                      <div class="creator-card__avatar">
                         <img
                           v-if="getCreatorProfileImage(creator)"
                           :src="getCreatorProfileImage(creator)"
-                          class="w-full h-full object-cover"
+                          class="creator-card__avatar-img"
                           @error="handleImageError($event, creator)"
                         />
-                        <div
-                          v-else
-                          class="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-muted/50"
-                        >
-                          <Users class="w-6 h-6 text-muted-foreground/40" />
+                        <div v-else class="creator-card__avatar-fallback">
+                          <Users class="creator-card__avatar-icon" />
                         </div>
                       </div>
                       <!-- Live/Monitoring indicator dot -->
                       <div
                         v-if="isCreatorMonitored(creator) || isCreatorLive(creator)"
-                        class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-card flex items-center justify-center"
+                        class="creator-card__status-dot"
                         :class="{
-                          'bg-green-500': isCreatorMonitored(creator),
-                          'bg-red-500': !isCreatorMonitored(creator) && isCreatorLive(creator),
+                          'creator-card__status-dot--monitoring': isCreatorMonitored(creator),
+                          'creator-card__status-dot--live': !isCreatorMonitored(creator) && isCreatorLive(creator),
                         }"
                       >
-                        <span class="w-2 h-2 rounded-full bg-white/80 animate-pulse"></span>
+                        <span class="creator-card__status-dot-inner"></span>
                       </div>
                     </div>
 
                     <!-- Creator Info -->
-                    <div class="flex-1 min-w-0 space-y-2">
-                      <!-- Header: Name + Badges -->
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <div class="flex items-center gap-2 flex-wrap">
-                            <h3 class="font-semibold text-[15px] text-foreground truncate">
-                              {{ creator.name }}
-                            </h3>
-                            <!-- Organization Badge -->
-                            <div
-                              v-if="creator.isOrgProfile"
-                              class="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-500/10 text-violet-400 text-[11px] font-medium rounded-md"
-                              :title="`Managed by ${creator.organization_name}`"
-                            >
-                              <Building2 class="w-3 h-3" />
-                              {{ creator.organization_name }}
-                            </div>
-                          </div>
-                          <!-- Description -->
-                          <p v-if="creator.description" class="text-[13px] text-muted-foreground line-clamp-1 mt-0.5">
-                            {{ creator.description }}
-                          </p>
-                        </div>
-
-                        <!-- Asset Indicators (top right) -->
+                    <div class="creator-card__info">
+                      <div class="creator-card__name-row">
+                        <h3 class="creator-card__name">{{ creator.name }}</h3>
+                        <!-- Organization Badge -->
                         <div
-                          v-if="creator.intro_id || creator.outro_id || creator.watermark_id"
-                          class="flex items-center gap-1 flex-shrink-0"
+                          v-if="creator.isOrgProfile"
+                          class="creator-card__org-badge"
+                          :title="`Managed by ${creator.organization_name}`"
                         >
-                          <div
-                            v-if="creator.intro_id"
-                            class="w-6 h-6 flex items-center justify-center rounded-md bg-blue-500/10"
-                            title="Has intro configured"
-                          >
-                            <Play class="w-3.5 h-3.5 text-blue-400" />
-                          </div>
-                          <div
-                            v-if="creator.outro_id"
-                            class="w-6 h-6 flex items-center justify-center rounded-md bg-purple-500/10"
-                            title="Has outro configured"
-                          >
-                            <SkipForward class="w-3.5 h-3.5 text-purple-400" />
-                          </div>
-                          <div
-                            v-if="creator.watermark_id"
-                            class="w-6 h-6 flex items-center justify-center rounded-md bg-amber-500/10"
-                            title="Has watermark configured"
-                          >
-                            <ImageIcon class="w-3.5 h-3.5 text-amber-400" />
-                          </div>
+                          <Building2 class="creator-card__org-badge-icon" />
+                          {{ creator.organization_name }}
                         </div>
                       </div>
-
+                      <!-- Description -->
+                      <p v-if="creator.description" class="creator-card__description">
+                        {{ creator.description }}
+                      </p>
                       <!-- Platform Badges -->
-                      <div class="flex items-center gap-2 flex-wrap">
-                        <div
-                          v-for="link in creator.platform_links"
-                          :key="link.id"
-                          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium bg-muted/60"
-                        >
-                          <img
-                            :src="getPlatformIcon(link.platform)"
-                            class="w-3.5 h-3.5 opacity-70"
-                            :class="getPlatformIconClass(link.platform)"
-                          />
-                          <span class="truncate max-w-[100px] text-muted-foreground">
+                      <div class="creator-card__platforms">
+                        <div v-for="link in creator.platform_links" :key="link.id" class="creator-card__platform">
+                          <img :src="getPlatformIcon(link.platform)" class="creator-card__platform-icon" />
+                          <span class="creator-card__platform-name">
                             {{ link.display_name || truncateId(link.platform_id) }}
                           </span>
                         </div>
                       </div>
                     </div>
+
+                    <!-- Asset Indicators -->
+                    <div
+                      v-if="creator.intro_id || creator.outro_id || creator.watermark_id"
+                      class="creator-card__assets"
+                    >
+                      <div
+                        v-if="creator.intro_id"
+                        class="creator-card__asset creator-card__asset--intro"
+                        title="Has intro configured"
+                      >
+                        <Play class="creator-card__asset-icon" />
+                      </div>
+                      <div
+                        v-if="creator.outro_id"
+                        class="creator-card__asset creator-card__asset--outro"
+                        title="Has outro configured"
+                      >
+                        <SkipForward class="creator-card__asset-icon" />
+                      </div>
+                      <div
+                        v-if="creator.watermark_id"
+                        class="creator-card__asset creator-card__asset--watermark"
+                        title="Has watermark configured"
+                      >
+                        <ImageIcon class="creator-card__asset-icon" />
+                      </div>
+                    </div>
                   </div>
 
-                  <!-- Actions Footer -->
-                  <div
-                    class="flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/30 border-t border-border/40"
-                  >
+                  <!-- Footer Row: Status + Actions -->
+                  <div class="creator-card__footer">
                     <!-- Left: Status -->
-                    <div class="flex items-center gap-2">
-                      <!-- Monitoring status (only shown when Live Clip feature is enabled) -->
+                    <div class="creator-card__status">
+                      <!-- Monitoring status -->
                       <div
                         v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
-                        class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 text-green-500 text-[12px] font-medium"
+                        class="creator-status creator-status--monitoring"
                       >
-                        <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                        <span class="creator-status__dot"></span>
                         {{ getCreatorStatusLabel(creator) }}
                       </div>
-                      <!-- Live status for monitorable creators (pumpfun/kick) (only shown when Live Clip feature is enabled) -->
+                      <!-- Live status for monitorable creators -->
                       <template v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                        <div
-                          v-if="isCreatorCheckingLive(creator)"
-                          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted text-muted-foreground text-[12px]"
-                        >
-                          <Loader2 class="w-3 h-3 animate-spin" />
+                        <div v-if="isCreatorCheckingLive(creator)" class="creator-status creator-status--checking">
+                          <Loader2 class="creator-status__spinner" />
                           Checking...
                         </div>
-                        <div
-                          v-else-if="isCreatorLive(creator)"
-                          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/10 text-red-500 text-[12px] font-medium"
-                        >
-                          <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                        <div v-else-if="isCreatorLive(creator)" class="creator-status creator-status--live">
+                          <span class="creator-status__dot"></span>
                           LIVE
-                          <span v-if="getCreatorViewerCount(creator)" class="text-red-400/70 font-normal">
-                            · {{ formatViewerCount(getCreatorViewerCount(creator)!) }} viewers
+                          <span v-if="getCreatorViewerCount(creator)" class="creator-status__viewers">
+                            {{ formatViewerCount(getCreatorViewerCount(creator)!) }} viewers
                           </span>
                         </div>
-                        <div
-                          v-else
-                          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-muted-foreground/60 text-[12px]"
-                        >
-                          <span class="w-1.5 h-1.5 rounded-full bg-muted-foreground/40"></span>
+                        <div v-else class="creator-status creator-status--offline">
+                          <span class="creator-status__dot"></span>
                           Offline
                         </div>
                       </template>
-                      <!-- Platform count (shown when Live Clip is disabled or no pumpfun link) -->
-                      <span v-else class="text-[12px] text-muted-foreground">
-                        {{ creator.platform_links.length }} platform{{ creator.platform_links.length !== 1 ? 's' : '' }}
+                      <!-- Platform count -->
+                      <span v-else class="creator-card__platform-count">
+                        {{ creator.platform_links.length }} platform{{
+                          creator.platform_links.length !== 1 ? 's' : ''
+                        }}
                         linked
                       </span>
                     </div>
 
-                    <!-- Right: Action Buttons -->
-                    <div class="flex items-center gap-1">
-                      <!-- Edit Button - Only for local profiles -->
-                      <button
-                        v-if="!creator.isOrgProfile"
-                        @click.stop="openEditDialog(creator)"
-                        class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-                        title="Edit creator"
-                      >
-                        <Edit class="w-3.5 h-3.5" />
-                        Edit
-                      </button>
-                      <!-- VODs Button -->
-                      <button
-                        @click.stop="viewCreatorVods(creator)"
-                        class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-                        title="View VODs"
-                      >
-                        <Video class="w-3.5 h-3.5" />
-                        VODs
-                      </button>
-                      <!-- Download Button -->
-                      <button
-                        @click.stop="openDownloadDialog(creator)"
-                        class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-                        title="Download last VOD"
-                      >
-                        <Download class="w-3.5 h-3.5" />
-                        Download
-                      </button>
-                      <!-- Delete Button - Only for local profiles -->
-                      <button
-                        v-if="!creator.isOrgProfile"
-                        @click.stop="confirmDeleteCreator(creator)"
-                        class="inline-flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                        title="Delete creator"
-                      >
-                        <Trash2 class="w-3.5 h-3.5" />
-                      </button>
-                      <!-- Live Clip Controls -->
-                      <div
-                        v-if="isLiveClipEnabled && hasMonitorableLink(creator)"
-                        class="w-px h-5 bg-border/60 mx-1"
-                      ></div>
-                      <div v-if="isLiveClipEnabled && hasMonitorableLink(creator)" class="flex items-center gap-1">
+                    <!-- Right: Actions -->
+                    <div class="creator-card__actions">
+                      <!-- Live Clip Controls (Primary Actions) -->
+                      <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
                         <template v-if="!isCreatorMonitored(creator)">
                           <button
                             @click.stop="startCreatorMonitoring(creator, false)"
-                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors"
+                            class="creator-btn creator-btn--rec"
                             title="Record Only"
                           >
-                            <div class="w-2 h-2 rounded-full bg-red-500"></div>
+                            <span class="creator-btn__rec-dot"></span>
                             Rec
                           </button>
                           <button
                             @click.stop="startCreatorMonitoring(creator, true)"
-                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-primary hover:bg-primary/90 text-primary-foreground transition-colors"
+                            class="creator-btn creator-btn--auto"
                             title="Auto-Detect Clips"
                           >
-                            <Sparkles class="w-3.5 h-3.5" />
+                            <Sparkles class="creator-btn__icon" />
                             Auto
                           </button>
                         </template>
                         <template v-else>
                           <button
                             @click.stop="stopCreatorMonitoring(creator)"
-                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-colors"
+                            class="creator-btn creator-btn--stop"
                             title="Stop Monitoring"
                           >
-                            <Square class="w-3.5 h-3.5" />
+                            <Square class="creator-btn__icon" />
                             Stop
                           </button>
                         </template>
                         <button
                           @click.stop="watchCreator(creator)"
                           :disabled="!canWatchCreator(creator)"
-                          class="flex items-center gap-2 px-3.5 py-1.5 rounded-md text-[13px] font-medium transition-all border"
-                          :class="
-                            canWatchCreator(creator)
-                              ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30'
-                              : 'bg-muted/40 text-muted-foreground/60 border-border/50 cursor-not-allowed'
-                          "
+                          class="creator-btn creator-btn--watch"
+                          :class="{ 'creator-btn--watch-disabled': !canWatchCreator(creator) }"
                           :title="
                             canWatchCreator(creator)
                               ? 'Watch Live'
                               : 'Watch becomes available when the creator is monitored and live'
                           "
                         >
-                          <Eye class="w-3.5 h-3.5" />
+                          <Eye class="creator-btn__icon" />
                           Watch
                           <span
                             v-if="hasCreatorDvr(creator) && canWatchCreator(creator)"
-                            class="text-[10px] bg-green-500/20 text-green-400 px-1 py-0.5 rounded-full border border-green-500/30"
+                            class="creator-btn__dvr-badge"
                           >
                             DVR
                           </span>
                         </button>
-                        <button
-                          @click.stop="toggleCreatorAutoDvr(creator)"
-                          class="h-8 px-3 rounded-md text-xs font-medium transition-all border"
-                          :class="[
-                            isCreatorAutoDvrEnabled(creator)
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                              : 'bg-background text-muted-foreground border-border/50 hover:bg-muted/50',
-                          ]"
-                          title="Automatically start persistent recording when streamer goes live"
-                        >
-                          Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
-                        </button>
-                      </div>
+                      </template>
+
+                      <!-- More Actions Dropdown -->
+                      <DropdownMenu>
+                        <DropdownMenuTrigger as-child>
+                          <button class="creator-btn creator-btn--more" title="More actions">
+                            <MoreHorizontal class="creator-btn__icon" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" :side-offset="4" class="creator-dropdown">
+                          <DropdownMenuItem class="creator-dropdown__item" @click="viewCreatorVods(creator)">
+                            <Video class="creator-dropdown__item-icon" />
+                            View VODs
+                          </DropdownMenuItem>
+                          <DropdownMenuItem class="creator-dropdown__item" @click="openDownloadDialog(creator)">
+                            <Download class="creator-dropdown__item-icon" />
+                            Download VOD
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            v-if="!creator.isOrgProfile"
+                            class="creator-dropdown__item"
+                            @click="openEditDialog(creator)"
+                          >
+                            <Edit class="creator-dropdown__item-icon" />
+                            Edit Profile
+                          </DropdownMenuItem>
+                          <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                            <DropdownMenuSeparator class="creator-dropdown__separator" />
+                            <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
+                              <HardDrive class="creator-dropdown__item-icon" />
+                              Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
+                              <span
+                                class="creator-dropdown__item-badge"
+                                :class="{ 'creator-dropdown__item-badge--active': isCreatorAutoDvrEnabled(creator) }"
+                              >
+                                {{ isCreatorAutoDvrEnabled(creator) ? 'ON' : 'OFF' }}
+                              </span>
+                            </DropdownMenuItem>
+                          </template>
+                          <template v-if="!creator.isOrgProfile">
+                            <DropdownMenuSeparator class="creator-dropdown__separator" />
+                            <DropdownMenuItem
+                              class="creator-dropdown__item creator-dropdown__item--danger"
+                              @click="confirmDeleteCreator(creator)"
+                            >
+                              <Trash2 class="creator-dropdown__item-icon" />
+                              Delete Creator
+                            </DropdownMenuItem>
+                          </template>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 </div>
-              </transition-group>
-
-              <!-- No results from search -->
-              <div v-if="filteredCreators.length === 0 && searchQuery" class="text-center py-12 text-muted-foreground">
-                <Search class="w-8 h-8 mx-auto mb-3 opacity-50" />
-                <p>No creators found matching "{{ searchQuery }}"</p>
               </div>
+            </transition-group>
+
+            <!-- No results from search -->
+            <div v-if="filteredCreators.length === 0 && searchQuery" class="creators__no-results">
+              <Search class="creators__no-results-icon" />
+              <p class="creators__no-results-title">No creators found</p>
+              <p class="creators__no-results-text">No results for "{{ searchQuery }}"</p>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Empty State -->
-      <EmptyState
-        v-else
-        title="No creators yet"
-        description="Add your first content creator to start managing their VODs, assets, and live monitoring."
-      >
-        <template #icon>
-          <Users class="h-16 w-16 text-muted-foreground" />
-        </template>
-        <template #default>
-          <Button @click="openCreateDialog" class="mt-6 flex items-center gap-2">
-            <Plus class="w-4 h-4" />
-            Add Your First Creator
-          </Button>
-        </template>
-      </EmptyState>
+        <!-- Empty State -->
+        <EmptyState
+          v-else
+          title="No creators yet"
+          description="Add your first content creator to start managing their VODs, assets, and live monitoring."
+        >
+          <template #icon>
+            <Users class="creators__empty-icon" />
+          </template>
+          <template #default>
+            <button @click="openCreateDialog" class="creators__empty-btn">
+              <Plus class="creators__empty-btn-icon" />
+              Add Your First Creator
+            </button>
+          </template>
+        </EmptyState>
+      </div>
     </PageLayout>
 
     <!-- Creator Profile Dialog -->
@@ -414,6 +462,13 @@
   import EmptyState from '@/components/EmptyState.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import ProfileDialog from '@/components/ProfileDialog.vue';
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
@@ -452,6 +507,10 @@
     Loader2,
     Building2,
     Eye,
+    MoreHorizontal,
+    Radio,
+    Activity,
+    HardDrive,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -461,7 +520,7 @@
     isOrgProfile?: boolean;
     organization_id?: number;
     organization_name?: string;
-    server_id?: number; // ID on the server for org profiles
+    server_id?: number;
   }
 
   function getMonitoredStreamerId(creator: DisplayCreatorProfile): string | null {
@@ -476,11 +535,9 @@
   function isCreatorAutoDvrEnabled(creator: DisplayCreatorProfile): boolean {
     const streamerId = getMonitoredStreamerId(creator);
     if (!streamerId) return false;
-    // First check the local autoDvr tracker
     if (autoDvrTracker.value.has(streamerId)) {
       return autoDvrTracker.value.get(streamerId)!;
     }
-    // Fallback to monitored entry if actively monitoring
     const entry = monitoredStreamers.value.get(streamerId);
     return Boolean(entry?.streamer?.autoDvr);
   }
@@ -493,13 +550,11 @@
 
   function canWatchCreator(creator: DisplayCreatorProfile): boolean {
     if (!isCreatorLive(creator)) return false;
-    // Just need a monitorable link with platform_id to watch
     const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
     return Boolean(monitorableLink?.platform_id);
   }
 
   async function watchCreator(creator: DisplayCreatorProfile) {
-    // Find a monitorable link (pumpfun or kick)
     const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
     if (!monitorableLink || !monitorableLink.platform_id) {
       showError('Cannot Watch', 'No PumpFun or Kick platform link found for this creator.');
@@ -509,29 +564,25 @@
     try {
       let streamerId = monitorableLink.monitored_streamer_id;
 
-      // If no monitored_streamer_id, create or find one
       if (!streamerId) {
-        // Try to find existing by mint ID
         const existingByMint = await getMonitoredStreamerByMint(monitorableLink.platform_id);
         if (existingByMint) {
           streamerId = existingByMint.id;
           await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
           monitorableLink.monitored_streamer_id = streamerId;
         } else {
-          // Create new monitored_streamer
           const platformDisplay = monitorableLink.platform === 'kick' ? 'kick' : 'pumpfun';
           streamerId = await createMonitoredStreamer(
             monitorableLink.platform_id,
             monitorableLink.display_name || creator.name,
             monitorableLink.profile_image_url || undefined,
-            5, // segment duration
-            false, // auto_dvr
+            5,
+            false,
             platformDisplay
           );
           await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
           monitorableLink.monitored_streamer_id = streamerId;
         }
-        // Notify other components
         window.dispatchEvent(new CustomEvent('monitored-streamers-updated'));
       }
 
@@ -540,7 +591,6 @@
       const profileImage =
         entry?.profileImageUrl || monitorableLink.profile_image_url || getCreatorProfileImage(creator);
 
-      // Determine the platform for the watch dialog
       const platform = monitorableLink.platform === 'kick' ? 'Kick' : 'PumpFun';
       livestreamStore.openWatchDialog(monitorableLink.platform_id, streamerId, displayName, profileImage, platform);
     } catch (error) {
@@ -550,7 +600,6 @@
   }
 
   async function toggleCreatorAutoDvr(creator: DisplayCreatorProfile) {
-    // Find a monitorable link
     const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
     if (!monitorableLink || !monitorableLink.platform_id) {
       showError('Auto DVR Unavailable', 'No PumpFun or Kick platform link found for this creator.');
@@ -560,23 +609,20 @@
     try {
       let streamerId = monitorableLink.monitored_streamer_id;
 
-      // If no monitored_streamer_id, create or find one
       if (!streamerId) {
-        // Try to find existing by mint ID
         const existingByMint = await getMonitoredStreamerByMint(monitorableLink.platform_id);
         if (existingByMint) {
           streamerId = existingByMint.id;
           await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
           monitorableLink.monitored_streamer_id = streamerId;
         } else {
-          // Create new monitored_streamer
           const platformDisplay = monitorableLink.platform === 'kick' ? 'kick' : 'pumpfun';
           streamerId = await createMonitoredStreamer(
             monitorableLink.platform_id,
             monitorableLink.display_name || creator.name,
             monitorableLink.profile_image_url || undefined,
-            5, // segment duration
-            false, // auto_dvr (will be toggled below)
+            5,
+            false,
             platformDisplay
           );
           await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
@@ -584,18 +630,14 @@
         }
       }
 
-      // Get current auto_dvr value
       let currentAutoDvr = false;
-      // Check local tracker first
       if (autoDvrTracker.value.has(streamerId)) {
         currentAutoDvr = autoDvrTracker.value.get(streamerId)!;
       } else {
-        // Check monitored entry or fetch from database
         const currentEntry = monitoredStreamers.value.get(streamerId);
         if (currentEntry) {
           currentAutoDvr = Boolean(currentEntry.streamer?.autoDvr);
         } else {
-          // Fetch from database
           const streamerRecord = await getMonitoredStreamer(streamerId);
           currentAutoDvr = Boolean(streamerRecord?.auto_dvr);
         }
@@ -603,19 +645,14 @@
 
       const newValue = !currentAutoDvr;
 
-      // Update database
       await updateMonitoredStreamer(streamerId, { auto_dvr: newValue ? 1 : 0 });
-
-      // Update local tracker
       autoDvrTracker.value.set(streamerId, newValue);
 
-      // Update monitored entry if it exists
       const currentEntry = monitoredStreamers.value.get(streamerId);
       if (currentEntry) {
         currentEntry.streamer.autoDvr = newValue;
       }
 
-      // Emit event to notify LiveClip.vue and other components
       window.dispatchEvent(new CustomEvent('monitored-streamers-updated'));
 
       success(
@@ -647,23 +684,30 @@
   const showDownloadDialog = ref(false);
   const creatorToDownload = ref<DisplayCreatorProfile | null>(null);
 
-  // Live status tracking (by platform_id for pumpfun/kick links)
+  // Live status tracking
   const liveStatusMap = ref<
     Map<string, { isLive: boolean; viewerCount?: number; profileImageUrl?: string; isChecking: boolean }>
   >(new Map());
   const liveStatusInterval = ref<number | null>(null);
 
-  // Auto DVR status tracking (by streamer_id, for when not actively monitoring)
+  // Auto DVR status tracking
   const autoDvrTracker = ref<Map<string, boolean>>(new Map());
+
+  // Computed: Stats
+  const liveCreatorsCount = computed(() => {
+    return creators.value.filter((c) => isCreatorLive(c)).length;
+  });
+
+  const monitoringCreatorsCount = computed(() => {
+    return creators.value.filter((c) => isCreatorMonitored(c)).length;
+  });
 
   // Filtered creators based on search
   const filteredCreators = computed(() => {
     if (!searchQuery.value.trim()) return creators.value;
     const query = searchQuery.value.toLowerCase();
     return creators.value.filter((creator) => {
-      // Match by creator name
       if (creator.name.toLowerCase().includes(query)) return true;
-      // Match by platform link display name or ID
       return creator.platform_links.some(
         (link) => link.display_name?.toLowerCase().includes(query) || link.platform_id.toLowerCase().includes(query)
       );
@@ -680,10 +724,7 @@
   // Load creators on mount
   onMounted(async () => {
     await loadCreators();
-    // Check live status for all pumpfun platform links
     checkAllLiveStatuses();
-
-    // Refresh live status every 60 seconds
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses();
     }, 60_000);
@@ -703,7 +744,6 @@
 
     for (const creator of creators.value) {
       for (const link of creator.platform_links) {
-        // Skip if already being monitored
         if (link.monitored_streamer_id && monitoredStreamers.value.has(link.monitored_streamer_id)) {
           continue;
         }
@@ -721,7 +761,6 @@
       }
     }
 
-    // Check PumpFun streams
     const pumpfunPromises = pumpfunLinksToCheck.map(async ({ platformId, mintId }) => {
       liveStatusMap.value.set(platformId, {
         ...liveStatusMap.value.get(platformId),
@@ -746,7 +785,6 @@
       }
     });
 
-    // Check Kick streams
     const kickPromises = kickLinksToCheck.map(async ({ linkId, platformId, channelSlug, hasProfileImage }) => {
       liveStatusMap.value.set(platformId, {
         ...liveStatusMap.value.get(platformId),
@@ -763,12 +801,9 @@
           isChecking: false,
         });
 
-        // Persist profile image to database if we got one and the link doesn't have one stored
-        // Skip org profile links (they have IDs starting with "org-link-")
         if (status.profileImageUrl && !hasProfileImage && !linkId.startsWith('org-link-')) {
           try {
             await updatePlatformLink(linkId, { profile_image_url: status.profileImageUrl });
-            // Also update local state so it persists across re-renders
             for (const creator of creators.value) {
               const link = creator.platform_links.find((l) => l.id === linkId);
               if (link) {
@@ -796,7 +831,6 @@
   async function loadCreators() {
     loading.value = true;
     try {
-      // Load local profiles
       const localProfiles = await getAllCreatorProfiles();
       console.log(
         '[CreatorProfiles] Loaded local profiles:',
@@ -815,7 +849,6 @@
         isOrgProfile: false,
       }));
 
-      // Load org profiles if user is authenticated
       if (authStore.isAuthenticated) {
         const orgResponse = await getUserAssignedCreatorProfiles();
         if (orgResponse.success && orgResponse.profiles.length > 0) {
@@ -825,8 +858,6 @@
       }
 
       creators.value = displayProfiles;
-
-      // Initialize autoDvrTracker with values from database for creators with monitored_streamer_ids
       await initializeAutoDvrTracker(displayProfiles);
     } catch (err) {
       console.error('Failed to load creators:', err);
@@ -836,7 +867,6 @@
     }
   }
 
-  // Initialize autoDvrTracker with values from DB
   async function initializeAutoDvrTracker(profiles: DisplayCreatorProfile[]) {
     const streamerIds: string[] = [];
     for (const profile of profiles) {
@@ -847,7 +877,6 @@
       }
     }
 
-    // Fetch auto_dvr status for each streamer from the database
     for (const streamerId of streamerIds) {
       try {
         const streamer = await getMonitoredStreamer(streamerId);
@@ -860,22 +889,19 @@
     }
   }
 
-  /**
-   * Convert server organization profiles to the DisplayCreatorProfile format
-   */
   function convertOrgProfilesToDisplay(orgProfiles: ServerOrganizationCreatorProfile[]): DisplayCreatorProfile[] {
     return orgProfiles.map((profile) => ({
-      id: `org-${profile.id}`, // Prefix to avoid ID collision with local profiles
+      id: `org-${profile.id}`,
       name: profile.name,
       description: profile.description,
-      profile_image_path: profile.profile_image_url, // Use URL directly
+      profile_image_path: profile.profile_image_url,
       intro_id: profile.intro_id ? `org-asset-${profile.intro_id}` : null,
       outro_id: profile.outro_id ? `org-asset-${profile.outro_id}` : null,
       watermark_id: profile.watermark_id ? `org-asset-${profile.watermark_id}` : null,
       watermark_settings: profile.watermark_settings ? JSON.stringify(profile.watermark_settings) : null,
       created_at: new Date(profile.inserted_at).getTime(),
       updated_at: new Date(profile.updated_at).getTime(),
-      user_id: null, // Org profiles don't have a local user_id
+      user_id: null,
       platform_links: profile.platform_links.map((link) => ({
         id: `org-link-${link.id}`,
         creator_profile_id: `org-${profile.id}`,
@@ -885,7 +911,7 @@
         profile_image_url: link.profile_image_url,
         is_primary: link.is_primary,
         created_at: new Date(link.inserted_at).getTime(),
-        monitored_streamer_id: null, // Org profiles don't have monitoring yet
+        monitored_streamer_id: null,
       })),
       isOrgProfile: true,
       organization_id: profile.organization_id,
@@ -894,27 +920,22 @@
     }));
   }
 
-  // Get the creator's profile image from platform links (similar to LiveClip.vue)
   function getCreatorProfileImage(creator: DisplayCreatorProfile): string | undefined {
-    // For org profiles, use the profile_image_url directly (stored as profile_image_path)
     if (creator.isOrgProfile && creator.profile_image_path) {
       return creator.profile_image_path;
     }
 
-    // First try to get from primary platform link
     const primaryLink = creator.platform_links.find((l) => l.is_primary) || creator.platform_links[0];
     if (primaryLink?.profile_image_url) {
       return primaryLink.profile_image_url;
     }
 
-    // Fallback to any platform link with a profile image
     for (const link of creator.platform_links) {
       if (link.profile_image_url) {
         return link.profile_image_url;
       }
     }
 
-    // Check liveStatusMap for dynamically fetched profile images (e.g., from Kick API)
     for (const link of creator.platform_links) {
       const liveStatus = liveStatusMap.value.get(link.platform_id);
       if (liveStatus?.profileImageUrl) {
@@ -927,11 +948,9 @@
 
   function handleImageError(event: Event, _creator: DisplayCreatorProfile) {
     const img = event.target as HTMLImageElement;
-    // Hide broken image
     img.style.display = 'none';
   }
 
-  // Platform helpers
   function getPlatformIcon(platform: PlatformId): string {
     const icons: Record<PlatformId, string> = {
       pumpfun: '/capsule.svg',
@@ -940,21 +959,6 @@
       youtube: '/youtube.svg',
     };
     return icons[platform] || '/capsule.svg';
-  }
-
-  function getPlatformColor(platform: PlatformId): string {
-    const colors: Record<PlatformId, string> = {
-      pumpfun: '#10b981',
-      kick: '#53FC18',
-      twitch: '#9146FF',
-      youtube: '#dc2626',
-    };
-    return colors[platform] || '#6b7280';
-  }
-
-  function getPlatformIconClass(_platform: PlatformId): string {
-    // Make all platform icons white
-    return 'brightness-0 invert';
   }
 
   function truncateId(id: string): string {
@@ -984,7 +988,6 @@
     return hasPumpfunLink(creator) || hasKickLink(creator);
   }
 
-  // Monitoring status helpers
   function isCreatorMonitored(creator: DisplayCreatorProfile): boolean {
     for (const link of creator.platform_links) {
       if (link.monitored_streamer_id && monitoredStreamers.value.has(link.monitored_streamer_id)) {
@@ -1002,7 +1005,6 @@
           return true;
         }
       }
-      // Check live status for pumpfun and kick
       if (link.platform === 'pumpfun' || link.platform === 'kick') {
         const status = liveStatusMap.value.get(link.platform_id);
         if (status?.isLive) {
@@ -1055,7 +1057,6 @@
     return 'IDLE';
   }
 
-  // Dialog handlers
   function openCreateDialog() {
     creatorToEdit.value = null;
     showProfileDialog.value = true;
@@ -1097,7 +1098,6 @@
     }
   }
 
-  // VOD navigation
   function viewCreatorVods(creator: DisplayCreatorProfile) {
     const primaryLink = creator.platform_links.find((l) => l.is_primary) || creator.platform_links[0];
     if (!primaryLink) {
@@ -1105,7 +1105,6 @@
       return;
     }
 
-    // Navigate to VODs page with query params
     router.push({
       path: '/vods',
       query: {
@@ -1115,15 +1114,12 @@
     });
   }
 
-  // Download dialog
   function openDownloadDialog(creator: DisplayCreatorProfile) {
     creatorToDownload.value = creator;
     showDownloadDialog.value = true;
   }
 
-  // Monitoring controls
   async function startCreatorMonitoring(creator: DisplayCreatorProfile, detectClips: boolean) {
-    // Find a monitorable link (pumpfun or kick)
     const monitorableLink = creator.platform_links.find((l) => l.platform === 'pumpfun' || l.platform === 'kick');
     if (!monitorableLink) {
       showError('No Supported Platforms', 'Live monitoring is currently only available for PumpFun and Kick streams');
@@ -1134,13 +1130,11 @@
       return;
     }
 
-    // Determine platform display name for monitoring
     const platformDisplay = monitorableLink.platform === 'kick' ? 'Kick' : 'PumpFun';
 
     try {
       let streamerId = monitorableLink.monitored_streamer_id;
 
-      // Reuse an existing monitored_streamer by mintId to avoid UNIQUE constraint errors
       if (!streamerId) {
         const existingByMint = await getMonitoredStreamerByMint(monitorableLink.platform_id);
         if (existingByMint) {
@@ -1151,16 +1145,15 @@
         }
       }
 
-      // If still none, create a new monitored_streamer
       if (!streamerId) {
         const { createMonitoredStreamer, updatePlatformLink } = await import('@/services/database');
         streamerId = await createMonitoredStreamer(
           monitorableLink.platform_id,
           monitorableLink.display_name || creator.name,
           monitorableLink.profile_image_url || undefined,
-          5, // segment duration
-          false, // auto_dvr
-          monitorableLink.platform // pass the platform type
+          5,
+          false,
+          monitorableLink.platform
         );
         await updatePlatformLink(monitorableLink.id, { monitored_streamer_id: streamerId });
         monitorableLink.monitored_streamer_id = streamerId;
@@ -1222,22 +1215,1034 @@
 </script>
 
 <style scoped>
+  /* ===== Page Container ===== */
+  .creators {
+    width: 100%;
+    min-height: 100%;
+  }
+
+  .creators__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .creators__empty-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .creators__empty-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    padding: 0.75rem 1.25rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .creators__empty-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  .creators__empty-btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* ===== Page Heading ===== */
+  .creators__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .creators__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .creators__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Actions Bar ===== */
+  .creators-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .creators-search {
+    position: relative;
+    width: 200px;
+  }
+
+  .creators-search__icon {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    pointer-events: none;
+  }
+
+  .creators-search__input {
+    height: 32px;
+    padding-left: 1.75rem;
+    background-color: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .creators-search__input:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .creators-search__input:focus {
+    border-color: var(--sidebar-accent);
+    background-color: var(--sidebar-surface);
+  }
+
+  .creators-add-btn {
+    height: 32px;
+    padding: 0 0.75rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all 150ms ease;
+  }
+
+  .creators-add-btn:hover {
+    opacity: 0.9;
+  }
+
+  .creators-add-btn__icon {
+    width: 14px;
+    height: 14px;
+    margin-right: 0.25rem;
+  }
+
+  /* ===== Stats Summary ===== */
+  .creators__stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+
+  @media (max-width: 768px) {
+    .creators__stats {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .creators-stat {
+    display: flex;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: all 200ms ease;
+  }
+
+  .creators-stat:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  .creators-stat__indicator {
+    width: 4px;
+    flex-shrink: 0;
+    background-color: var(--sidebar-border);
+  }
+
+  .creators-stat__indicator--live {
+    background-color: #ef4444;
+  }
+
+  .creators-stat__indicator--monitoring {
+    background-color: #10b981;
+  }
+
+  .creators-stat__inner {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem;
+  }
+
+  .creators-stat__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .creators-stat__icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .creators-stat__icon--live {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  .creators-stat__icon--monitoring {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .creators-stat__info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .creators-stat__label {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .creators-stat__value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .creators-stat__value--live {
+    color: #ef4444;
+  }
+
+  .creators-stat__value--monitoring {
+    color: #10b981;
+  }
+
+  .creators-stat__loading {
+    display: inline-block;
+    width: 32px;
+    height: 24px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  /* ===== Section Header ===== */
+  .creators__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.875rem;
+  }
+
+  .creators__section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+  }
+
+  .creators__section-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .creators__section-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .creators__section-title {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .creators__section-subtitle {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
+  }
+
+  /* ===== Creator List ===== */
+  .creators__list {
+    margin-top: 1rem;
+  }
+
+  .creators__list-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  /* ===== Creator Card ===== */
+  .creator-card {
+    display: flex;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: all 200ms ease;
+  }
+
+  .creator-card:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  .creator-card--monitoring {
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+
+  .creator-card--monitoring:hover {
+    border-color: rgba(16, 185, 129, 0.5);
+  }
+
+  .creator-card--live {
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  .creator-card--live:hover {
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+
+  .creator-card__indicator {
+    width: 4px;
+    flex-shrink: 0;
+    background-color: var(--sidebar-border);
+  }
+
+  .creator-card__indicator--monitoring {
+    background-color: #10b981;
+  }
+
+  .creator-card__indicator--live {
+    background-color: #ef4444;
+  }
+
+  .creator-card__inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Card Header */
+  .creator-card__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.25rem;
+  }
+
+  .creator-card__avatar-wrapper {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .creator-card__avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+  }
+
+  .creator-card__avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .creator-card__avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
+  }
+
+  .creator-card__avatar-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
+  }
+
+  .creator-card__status-dot {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--sidebar-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--sidebar-border);
+  }
+
+  .creator-card__status-dot--monitoring {
+    background-color: #10b981;
+  }
+
+  .creator-card__status-dot--live {
+    background-color: #ef4444;
+  }
+
+  .creator-card__status-dot-inner {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.8);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  .creator-card__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .creator-card__name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+  }
+
+  .creator-card__name {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .creator-card__org-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border-radius: 5px;
+  }
+
+  .creator-card__org-badge-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .creator-card__description {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .creator-card__platforms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .creator-card__platform {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 6px;
+    font-size: 0.75rem;
+  }
+
+  .creator-card__platform-icon {
+    width: 14px;
+    height: 14px;
+    opacity: 0.7;
+    filter: brightness(0) invert(1);
+  }
+
+  .creator-card__platform-name {
+    color: var(--sidebar-text-muted);
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .creator-card__assets {
+    display: flex;
+    gap: 0.375rem;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .creator-card__asset {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+  }
+
+  .creator-card__asset--intro {
+    background-color: rgba(59, 130, 246, 0.15);
+  }
+
+  .creator-card__asset--intro .creator-card__asset-icon {
+    color: #60a5fa;
+  }
+
+  .creator-card__asset--outro {
+    background-color: rgba(139, 92, 246, 0.15);
+  }
+
+  .creator-card__asset--outro .creator-card__asset-icon {
+    color: #a78bfa;
+  }
+
+  .creator-card__asset--watermark {
+    background-color: rgba(245, 158, 11, 0.15);
+  }
+
+  .creator-card__asset--watermark .creator-card__asset-icon {
+    color: #fbbf24;
+  }
+
+  .creator-card__asset-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Card Footer */
+  .creator-card__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1.25rem;
+    background-color: rgba(0, 0, 0, 0.15);
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .creator-card__status {
+    display: flex;
+    align-items: center;
+  }
+
+  .creator-card__platform-count {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* Status Badges */
+  .creator-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .creator-status__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .creator-status__spinner {
+    width: 12px;
+    height: 12px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .creator-status--monitoring {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+  }
+
+  .creator-status--monitoring .creator-status__dot {
+    background-color: #34d399;
+  }
+
+  .creator-status--live {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .creator-status--live .creator-status__dot {
+    background-color: #f87171;
+  }
+
+  .creator-status__viewers {
+    color: rgba(248, 113, 113, 0.7);
+    font-weight: 500;
+    margin-left: 0.25rem;
+  }
+
+  .creator-status--offline {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+  }
+
+  .creator-status--offline .creator-status__dot {
+    background-color: var(--sidebar-text-muted);
+    opacity: 0.5;
+    animation: none;
+  }
+
+  .creator-status--checking {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+  }
+
+  /* Actions */
+  .creator-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .creator-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .creator-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .creator-btn__rec-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #ef4444;
+  }
+
+  .creator-btn--rec {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .creator-btn--rec:hover {
+    background-color: var(--sidebar-active);
+  }
+
+  .creator-btn--auto {
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .creator-btn--auto:hover {
+    opacity: 0.9;
+  }
+
+  .creator-btn--stop {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .creator-btn--stop:hover {
+    background-color: rgba(239, 68, 68, 0.25);
+  }
+
+  .creator-btn--watch {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .creator-btn--watch:hover:not(:disabled) {
+    background-color: rgba(239, 68, 68, 0.2);
+  }
+
+  .creator-btn--watch-disabled {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    border-color: var(--sidebar-border);
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .creator-btn__dvr-badge {
+    font-size: 0.5625rem;
+    font-weight: 700;
+    padding: 0.125rem 0.375rem;
+    background-color: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border-radius: 10px;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    margin-left: 0.25rem;
+  }
+
+  .creator-btn--more {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    border-radius: 6px;
+  }
+
+  .creator-btn--more:hover {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== No Results ===== */
+  .creators__no-results {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+  }
+
+  .creators__no-results-icon {
+    width: 48px;
+    height: 48px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
+    margin-bottom: 1rem;
+  }
+
+  .creators__no-results-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+  }
+
+  .creators__no-results-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  /* ===== Loading Skeleton ===== */
+  .creators__loading {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .creator-skeleton {
+    display: flex;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .creator-skeleton__indicator {
+    width: 4px;
+    flex-shrink: 0;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .creator-skeleton__inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .creator-skeleton__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.25rem;
+  }
+
+  .creator-skeleton__avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .creator-skeleton__info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .creator-skeleton__line {
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  .creator-skeleton__line--name {
+    height: 16px;
+    width: 140px;
+  }
+
+  .creator-skeleton__line--desc {
+    height: 14px;
+    width: 220px;
+  }
+
+  .creator-skeleton__badges {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+  }
+
+  .creator-skeleton__badge {
+    height: 26px;
+    width: 80px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .creator-skeleton__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1.25rem;
+    background-color: rgba(0, 0, 0, 0.15);
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .creator-skeleton__status {
+    height: 28px;
+    width: 80px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .creator-skeleton__actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .creator-skeleton__btn {
+    height: 36px;
+    width: 70px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* ===== Animations ===== */
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   /* List Transitions */
   .list-move,
   .list-enter-active,
   .list-leave-active {
-    transition: all 0.4s ease;
+    transition: all 0.3s ease;
   }
 
   .list-enter-from,
   .list-leave-to {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(16px);
   }
 
   .list-leave-active {
     position: absolute;
-    width: 100%;
+    width: calc(100% - 2.5rem);
     z-index: 0;
+  }
+</style>
+
+<!-- Global styles for dropdown (rendered via portal outside component scope) -->
+<style>
+  /* Prevent button animation when dropdown opens */
+  .creator-btn--more {
+    transform: none !important;
+    animation: none !important;
+  }
+
+  .creator-btn--more[data-state='open'] {
+    transform: none !important;
+  }
+
+  .creator-dropdown {
+    min-width: 180px !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    z-index: 100 !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    /* Disable all slide/zoom animations, only fade */
+    animation: creatorDropdownFade 100ms ease-out !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+  }
+
+  @keyframes creatorDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .creator-dropdown__item {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.625rem !important;
+    padding: 0.625rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.8125rem !important;
+    color: var(--sidebar-text) !important;
+    cursor: pointer !important;
+  }
+
+  .creator-dropdown__item:hover,
+  .creator-dropdown__item:focus,
+  .creator-dropdown__item[data-highlighted] {
+    background-color: var(--sidebar-hover) !important;
+    outline: none !important;
+  }
+
+  .creator-dropdown__item-icon {
+    width: 15px;
+    height: 15px;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .creator-dropdown__item-badge {
+    margin-left: auto;
+    padding: 0.1875rem 0.375rem;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    border-radius: 4px;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+  }
+
+  .creator-dropdown__item-badge--active {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+  }
+
+  .creator-dropdown__item--danger {
+    color: #f87171 !important;
+  }
+
+  .creator-dropdown__item--danger:hover,
+  .creator-dropdown__item--danger:focus,
+  .creator-dropdown__item--danger[data-highlighted] {
+    background-color: rgba(248, 113, 113, 0.1) !important;
+    color: #f87171 !important;
+  }
+
+  .creator-dropdown__item--danger .creator-dropdown__item-icon {
+    color: #f87171;
+  }
+
+  .creator-dropdown__separator {
+    height: 1px !important;
+    margin: 0.25rem 0 !important;
+    background-color: var(--sidebar-border) !important;
   }
 </style>

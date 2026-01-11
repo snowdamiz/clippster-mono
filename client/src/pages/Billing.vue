@@ -7,10 +7,45 @@
       :icon="Receipt"
     >
       <template #actions>
-        <router-link to="/pricing" class="billing__buy-btn">
-          <Coins class="billing__buy-btn-icon" />
-          <span>Buy Credits</span>
-        </router-link>
+        <!-- Subscription Indicator -->
+        <div v-if="authStore.isAuthenticated" class="billing-indicator">
+          <template v-if="loadingBalance">
+            <div class="billing-indicator__skeleton"></div>
+          </template>
+          <!-- Admin State -->
+          <template v-else-if="isAdmin">
+            <div class="billing-indicator__admin">
+              <Shield class="billing-indicator__admin-icon" />
+              <span class="billing-indicator__admin-text">Admin</span>
+              <span class="billing-indicator__status billing-indicator__status--admin">Unlimited</span>
+            </div>
+          </template>
+          <template v-else-if="hasActiveSubscription">
+            <!-- Subscribed State -->
+            <div class="billing-indicator__plan">
+              <Crown class="billing-indicator__plan-icon" />
+              <span class="billing-indicator__plan-name">{{ subscriptionStatus?.tier_name }}</span>
+              <span class="billing-indicator__status" :class="indicatorStatusClass">
+                {{ subscriptionStatus?.status === 'active' ? 'Active' : 'Ending' }}
+              </span>
+            </div>
+            <div class="billing-indicator__divider"></div>
+            <div class="billing-indicator__credits">
+              <Zap class="billing-indicator__credits-icon" />
+              <span class="billing-indicator__credits-value">
+                {{ typeof hoursRemaining === 'number' ? Math.round(hoursRemaining) : hoursRemaining }}
+              </span>
+              <span class="billing-indicator__credits-unit">min</span>
+            </div>
+          </template>
+          <template v-else>
+            <!-- Not Subscribed State -->
+            <div class="billing-indicator__no-plan">
+              <CreditCard class="billing-indicator__no-plan-icon" />
+              <span class="billing-indicator__no-plan-text">No active plan</span>
+            </div>
+          </template>
+        </div>
       </template>
 
       <!-- Not Authenticated -->
@@ -27,24 +62,7 @@
         </template>
       </EmptyState>
 
-      <!-- Admin State -->
-      <EmptyState
-        v-else-if="!loadingBalance && isAdmin"
-        title="Admin Access"
-        description="You have unlimited access as an administrator. No subscription or billing needed!"
-      >
-        <template #icon>
-          <Shield class="billing__empty-icon billing__empty-icon--accent" />
-        </template>
-        <template #action>
-          <div class="billing__admin-badge">
-            <Shield class="billing__admin-badge-icon" />
-            <span>Unlimited Access</span>
-          </div>
-        </template>
-      </EmptyState>
-
-      <div v-else-if="authStore.isAuthenticated && !isAdmin" class="billing__content">
+      <div v-else class="billing__content">
         <!-- Page Heading -->
         <div class="billing__heading">
           <h1 class="billing__title">Manage Your Subscription</h1>
@@ -61,14 +79,24 @@
             ></div>
             <div class="billing-card__inner">
               <div class="billing-card__header">
-                <div class="billing-card__icon" :class="{ 'billing-card__icon--active': hasActiveSubscription }">
-                  <Crown v-if="hasActiveSubscription" />
-                  <CreditCard v-else />
+                <div class="billing-card__header-left">
+                  <div class="billing-card__icon" :class="{ 'billing-card__icon--active': hasActiveSubscription }">
+                    <Crown v-if="hasActiveSubscription" />
+                    <CreditCard v-else />
+                  </div>
+                  <div class="billing-card__header-text">
+                    <h2 class="billing-card__title">Subscription</h2>
+                    <p class="billing-card__subtitle">Your current plan</p>
+                  </div>
                 </div>
-                <div class="billing-card__header-text">
-                  <h2 class="billing-card__title">Subscription</h2>
-                  <p class="billing-card__subtitle">Your current plan</p>
-                </div>
+                <button
+                  v-if="subscriptionStatus?.status === 'active' && !loadingBalance"
+                  @click="showCancelConfirm = true"
+                  class="billing-card__cancel-btn"
+                  :disabled="cancellingSubscription"
+                >
+                  {{ cancellingSubscription ? 'Cancelling...' : 'Cancel' }}
+                </button>
               </div>
 
               <div class="billing-card__body">
@@ -111,16 +139,6 @@
                     </template>
                     <template v-else>Subscribe to unlock Clippster</template>
                   </p>
-
-                  <div v-if="subscriptionStatus?.status === 'active'" class="billing-card__actions">
-                    <button
-                      @click="showCancelConfirm = true"
-                      class="billing-card__cancel-btn"
-                      :disabled="cancellingSubscription"
-                    >
-                      {{ cancellingSubscription ? 'Cancelling...' : 'Cancel subscription' }}
-                    </button>
-                  </div>
                 </template>
               </div>
             </div>
@@ -612,6 +630,13 @@
     return 'billing-card__status--none';
   });
 
+  const indicatorStatusClass = computed(() => {
+    const status = subscriptionStatus.value?.status;
+    if (status === 'active') return 'billing-indicator__status--active';
+    if (status === 'cancelled') return 'billing-indicator__status--warning';
+    return '';
+  });
+
   function isCurrentTier(tierId: string): boolean {
     return hasActiveSubscription.value && subscriptionStatus.value?.tier === tierId;
   }
@@ -966,6 +991,136 @@
     height: 15px;
   }
 
+  /* ===== Subscription Indicator ===== */
+  .billing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.375rem 0.75rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .billing-indicator__skeleton {
+    width: 120px;
+    height: 20px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  .billing-indicator__plan {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .billing-indicator__plan-icon {
+    width: 14px;
+    height: 14px;
+    color: #fbbf24;
+  }
+
+  .billing-indicator__plan-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .billing-indicator__status {
+    font-size: 0.5625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.1875rem 0.375rem;
+    border-radius: 4px;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+  }
+
+  .billing-indicator__status--active {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+  }
+
+  .billing-indicator__status--warning {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+
+  .billing-indicator__status--admin {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .billing-indicator__admin {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .billing-indicator__admin-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-accent);
+  }
+
+  .billing-indicator__admin-text {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .billing-indicator__divider {
+    width: 1px;
+    height: 20px;
+    background-color: var(--sidebar-border);
+  }
+
+  .billing-indicator__credits {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .billing-indicator__credits-icon {
+    width: 13px;
+    height: 13px;
+    color: var(--sidebar-accent);
+  }
+
+  .billing-indicator__credits-value {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--sidebar-accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .billing-indicator__credits-unit {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  .billing-indicator__no-plan {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .billing-indicator__no-plan-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .billing-indicator__no-plan-text {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
   /* ===== Empty States ===== */
   .billing__empty-icon {
     width: 64px;
@@ -992,24 +1147,6 @@
   .billing__signin-btn:hover {
     opacity: 0.9;
     transform: translateY(-1px);
-  }
-
-  .billing__admin-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1rem;
-    background-color: rgba(6, 182, 212, 0.1);
-    border: 1px solid rgba(6, 182, 212, 0.2);
-    border-radius: 6px;
-    color: var(--sidebar-accent);
-    font-weight: 600;
-    font-size: 0.875rem;
-  }
-
-  .billing__admin-badge-icon {
-    width: 18px;
-    height: 18px;
   }
 
   /* ===== Cards Grid ===== */
@@ -1064,9 +1201,16 @@
   .billing-card__header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 0.875rem;
     padding: 1.25rem 1.5rem;
     border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .billing-card__header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
   }
 
   .billing-card__icon {
@@ -1193,12 +1337,6 @@
   .billing-card__info-muted {
     color: var(--sidebar-text-muted);
     opacity: 0.6;
-  }
-
-  .billing-card__actions {
-    margin-top: 1.25rem;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--sidebar-border);
   }
 
   .billing-card__cancel-btn {

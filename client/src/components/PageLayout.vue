@@ -31,7 +31,7 @@
         </div>
       </div>
       <div class="page-header__actions">
-        <!-- <slot name="actions"></slot> -->
+        <slot name="actions"></slot>
       </div>
     </header>
     <!-- Content -->
@@ -59,6 +59,7 @@
   /* ===== Page Header ===== */
   .page-header {
     position: sticky;
+    top: 0;
     z-index: 20;
     display: flex;
     align-items: center;
