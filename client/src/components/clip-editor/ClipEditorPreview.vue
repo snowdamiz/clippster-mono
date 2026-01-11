@@ -3425,21 +3425,15 @@
     const scale = overlayScaleFactor.value;
 
     // Scale all size-related properties
-    // We only apply the base container scale. Animation scale is handled by TrackRenderer transform.
     const finalFontSize = Math.round((overlayStyle?.fontSize || 24) * scale);
     const finalLetterSpacing = (overlayStyle?.letterSpacing || 0) * scale;
     const finalPadding = Math.round((overlayStyle?.padding || 8) * scale);
-    const finalBorderRadius = Math.round((overlayStyle?.borderRadius || 4) * scale);
     const finalBorderWidth = (overlayStyle?.border1Width || 0) * scale;
     const finalShadowOffsetX = (overlayStyle?.shadowOffsetX || 2) * scale;
     const finalShadowOffsetY = (overlayStyle?.shadowOffsetY || 2) * scale;
     const finalShadowBlur = (overlayStyle?.shadowBlur || 4) * scale;
-    const finalStrokeWidth = (overlayStyle?.strokeWidth || 1) * scale;
 
     const style: Record<string, string> = {
-      // Layout/Transform/Opacity handled by TrackRenderer via getItemStyle
-
-      // Text Content Styles
       fontFamily: overlayStyle?.fontFamily || 'sans-serif',
       fontSize: `${finalFontSize}px`,
       fontWeight: String(overlayStyle?.fontWeight || 600),
@@ -3450,33 +3444,73 @@
     };
 
     // Width handling
-    // We pass the base width/maxWidth. TrackRenderer handles overrides from drag interactions.
     if (overlayStyle?.width !== undefined && overlayStyle.width > 0) {
       style.width = `${overlayStyle.width}%`;
       style.maxWidth = `${overlayStyle.width}%`;
     } else {
       style.maxWidth = `${overlayStyle?.maxWidth || 90}%`;
-      // Use fit-content for auto-sizing when no explicit width is set
       style.width = 'fit-content';
     }
 
-    if (overlayStyle?.backgroundEnabled && overlayStyle?.backgroundColor) {
+    // Chat bubble styling (advanced - rendered to PNG on export)
+    const chatBubble = overlayStyle?.chatBubble;
+    if (chatBubble?.enabled) {
+      // Chat bubble border radius based on shape
+      let bubbleRadius = 18;
+      switch (chatBubble.shape) {
+        case 'rounded': bubbleRadius = 18; break;
+        case 'pointed': bubbleRadius = 8; break;
+        case 'cloud': bubbleRadius = 24; break;
+        case 'square': bubbleRadius = 4; break;
+      }
+      const finalBubbleRadius = Math.round(bubbleRadius * scale);
+      
+      style.backgroundColor = overlayStyle?.backgroundColor || '#007AFF';
+      style.padding = `${finalPadding}px ${Math.round(finalPadding * 1.5)}px`;
+      style.borderRadius = `${finalBubbleRadius}px`;
+      
+      // Add subtle shadow for chat bubble
+      style.boxShadow = `0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,0.3)`;
+    } else if (overlayStyle?.backgroundEnabled && overlayStyle?.backgroundColor) {
+      // Regular background (solid color - exports via ASS)
+      const finalBorderRadius = Math.round((overlayStyle?.borderRadius || 4) * scale);
       style.backgroundColor = overlayStyle.backgroundColor;
       style.padding = `${finalPadding}px`;
       style.borderRadius = `${finalBorderRadius}px`;
     }
 
-    // Apply shadow (scaled)
+    // Text shadow (exports via ASS for simple, PNG for advanced)
     if (overlayStyle?.shadowEnabled) {
       style.textShadow = `${finalShadowOffsetX}px ${finalShadowOffsetY}px ${finalShadowBlur}px ${overlayStyle.shadowColor || '#000000'}`;
     }
 
-    // Apply border using text-stroke (scaled)
+    // Outer glow effect (advanced - rendered to PNG on export)
+    if (overlayStyle?.glow?.enabled) {
+      const glowBlur = (overlayStyle.glow.blur || 20) * scale;
+      const glowColor = overlayStyle.glow.color || '#ffffff';
+      const glowOpacity = overlayStyle.glow.opacity || 0.8;
+      // Combine with existing text shadow if present
+      const existingShadow = style.textShadow || '';
+      const glowShadow = `0 0 ${glowBlur}px ${glowColor}`;
+      style.textShadow = existingShadow ? `${existingShadow}, ${glowShadow}` : glowShadow;
+    }
+
+    // Text gradient (advanced - rendered to PNG on export)
+    if (overlayStyle?.gradient?.enabled && overlayStyle.gradient.colors?.length >= 2) {
+      const colors = overlayStyle.gradient.colors
+        .sort((a, b) => a.position - b.position)
+        .map(c => `${c.color} ${c.position}%`)
+        .join(', ');
+      const angle = overlayStyle.gradient.angle || 90;
+      style.background = `linear-gradient(${angle}deg, ${colors})`;
+      style.webkitBackgroundClip = 'text';
+      style.webkitTextFillColor = 'transparent';
+      style.backgroundClip = 'text';
+    }
+
+    // Text outline/stroke (exports via ASS)
     if (overlayStyle?.border1Width && overlayStyle.border1Width > 0) {
       style.webkitTextStroke = `${finalBorderWidth}px ${overlayStyle.border1Color || '#000000'}`;
-      style.paintOrder = 'stroke fill';
-    } else if (overlayStyle?.strokeEnabled) {
-      style.webkitTextStroke = `${finalStrokeWidth}px ${overlayStyle.strokeColor || '#000000'}`;
       style.paintOrder = 'stroke fill';
     }
 

@@ -755,6 +755,106 @@ export interface TextOverlay {
   scale?: number; // Default scale factor (1.0 = 100%)
 }
 
+// Gradient configuration for text or background
+export interface GradientConfig {
+  enabled: boolean;
+  type: 'linear' | 'radial';
+  angle: number; // degrees for linear gradient
+  colors: Array<{ color: string; position: number }>; // position 0-100
+}
+
+// Glow effect configuration
+export interface GlowConfig {
+  enabled: boolean;
+  color: string;
+  blur: number;
+  spread: number;
+  opacity: number; // 0-1
+}
+
+// Shadow configuration for multiple shadows
+export interface ShadowConfig {
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  color: string;
+}
+
+// Chat bubble configuration
+export interface ChatBubbleConfig {
+  enabled: boolean;
+  shape: 'rounded' | 'pointed' | 'cloud' | 'square';
+  tailPosition: 'left' | 'right' | 'bottom-left' | 'bottom-right' | 'none';
+  tailSize: number; // pixels
+  platform?: 'imessage' | 'discord' | 'twitch' | 'whatsapp' | 'custom';
+  showAvatar?: boolean;
+  avatarUrl?: string;
+  avatarPosition?: 'left' | 'right';
+  avatarSize?: number; // pixels
+  showUsername?: boolean;
+  username?: string;
+  usernameColor?: string;
+  showTimestamp?: boolean;
+  timestamp?: string;
+}
+
+// Animation preset configuration
+export interface TextAnimationPreset {
+  entry: TextEntryAnimation;
+  exit: TextExitAnimation;
+  emphasis: TextEmphasisAnimation;
+  entryDuration: number;
+  exitDuration: number;
+  emphasisDuration: number;
+  entryDelay: number;
+  entryEasing: string;
+  exitEasing: string;
+}
+
+export type TextEntryAnimation =
+  | 'none'
+  | 'fade'
+  | 'slide-up'
+  | 'slide-down'
+  | 'slide-left'
+  | 'slide-right'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'pop'
+  | 'bounce'
+  | 'flip'
+  | 'rotate'
+  | 'blur-in'
+  | 'typewriter'
+  | 'wave'
+  | 'glitch';
+
+export type TextExitAnimation =
+  | 'none'
+  | 'fade'
+  | 'slide-up'
+  | 'slide-down'
+  | 'slide-left'
+  | 'slide-right'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'pop'
+  | 'bounce'
+  | 'flip'
+  | 'rotate'
+  | 'blur-out'
+  | 'glitch';
+
+export type TextEmphasisAnimation =
+  | 'none'
+  | 'pulse'
+  | 'shake'
+  | 'wiggle'
+  | 'glow-pulse'
+  | 'bounce-loop'
+  | 'float'
+  | 'rainbow';
+
 export interface TextOverlayStyle {
   // Font settings
   fontFamily: string;
@@ -798,6 +898,37 @@ export interface TextOverlayStyle {
   // Position offsets (fine-tuning within the overlay)
   textOffsetX: number;
   textOffsetY: number;
+
+  // === EXTENDED PROPERTIES ===
+
+  // Text Transform
+  textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
+  textDecoration?: 'none' | 'underline' | 'line-through';
+
+  // Gradient Text
+  gradient?: GradientConfig;
+
+  // Outer Glow (separate from shadow)
+  glow?: GlowConfig;
+
+  // Multiple Shadows (for layered effects like 3D, glitch)
+  shadows?: ShadowConfig[];
+
+  // Background enhancements
+  backgroundGradient?: GradientConfig;
+  backgroundBlur?: number; // Glass effect blur amount in pixels
+  backgroundOpacity?: number; // 0-1
+
+  // Border enhancements
+  borderStyle?: 'solid' | 'dashed' | 'dotted';
+  borderWidth?: number;
+  borderColor?: string;
+
+  // Chat bubble configuration
+  chatBubble?: ChatBubbleConfig;
+
+  // Animation preset (stored with style for presets)
+  animationPreset?: TextAnimationPreset;
 }
 
 export type TextAnimation =

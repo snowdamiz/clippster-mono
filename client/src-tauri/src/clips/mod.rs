@@ -10,6 +10,7 @@ pub mod livestream_clip;
 mod overlay_renderer;
 pub mod effect_renderer;
 pub mod audio_effect_renderer;
+pub mod text_renderer;
 
 // Re-export public types
 pub use types::*;

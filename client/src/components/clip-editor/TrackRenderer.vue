@@ -366,23 +366,75 @@ function getTextStyle(item: TimelineItem) {
   
   const overrides = props.itemStyleOverrides?.[item.id];
 
-  return {
+  const result: Record<string, any> = {
     fontFamily: overrides?.fontFamily || style.fontFamily,
     fontSize: overrides?.fontSize || (style.fontSize ? `${style.fontSize}px` : undefined),
     fontWeight: overrides?.fontWeight || style.fontWeight,
     color: overrides?.color || style.color || style.textColor,
     textAlign: overrides?.textAlign || style.textAlign || 'center',
-    
-    // Advanced text styles
-    textShadow: overrides?.textShadow || style.textShadow,
-    webkitTextStroke: overrides?.webkitTextStroke || style.webkitTextStroke,
-    paintOrder: overrides?.paintOrder || style.paintOrder,
-    backgroundColor: overrides?.backgroundColor || style.backgroundColor,
-    padding: overrides?.padding || style.padding,
-    borderRadius: overrides?.borderRadius || style.borderRadius,
     lineHeight: overrides?.lineHeight || style.lineHeight,
     letterSpacing: overrides?.letterSpacing || style.letterSpacing,
   };
+
+  // Shadow (exports via ASS for simple, PNG for advanced)
+  if (style.shadowEnabled) {
+    const offsetX = style.shadowOffsetX || 2;
+    const offsetY = style.shadowOffsetY || 2;
+    const blur = style.shadowBlur || 4;
+    const color = style.shadowColor || '#000000';
+    result.textShadow = `${offsetX}px ${offsetY}px ${blur}px ${color}`;
+  }
+
+  // Outer glow effect (advanced - rendered to PNG on export)
+  if (style.glow?.enabled) {
+    const glowBlur = style.glow.blur || 20;
+    const glowColor = style.glow.color || '#ffffff';
+    const existingShadow = result.textShadow || '';
+    const glowShadow = `0 0 ${glowBlur}px ${glowColor}`;
+    result.textShadow = existingShadow ? `${existingShadow}, ${glowShadow}` : glowShadow;
+  }
+
+  // Text gradient (advanced - rendered to PNG on export)
+  if (style.gradient?.enabled && style.gradient.colors?.length >= 2) {
+    const colors = style.gradient.colors
+      .sort((a: any, b: any) => a.position - b.position)
+      .map((c: any) => `${c.color} ${c.position}%`)
+      .join(', ');
+    const angle = style.gradient.angle || 90;
+    result.background = `linear-gradient(${angle}deg, ${colors})`;
+    result.webkitBackgroundClip = 'text';
+    result.webkitTextFillColor = 'transparent';
+    result.backgroundClip = 'text';
+  }
+
+  // Text stroke (exports via ASS)
+  if (style.border1Width && style.border1Width > 0) {
+    result.webkitTextStroke = `${style.border1Width}px ${style.border1Color || '#000000'}`;
+    result.paintOrder = 'stroke fill';
+  }
+
+  // Chat bubble styling (advanced - rendered to PNG on export)
+  const chatBubble = style.chatBubble;
+  if (chatBubble?.enabled) {
+    let bubbleRadius = 18;
+    switch (chatBubble.shape) {
+      case 'rounded': bubbleRadius = 18; break;
+      case 'pointed': bubbleRadius = 8; break;
+      case 'cloud': bubbleRadius = 24; break;
+      case 'square': bubbleRadius = 4; break;
+    }
+    result.backgroundColor = style.backgroundColor || '#007AFF';
+    result.padding = `${style.padding || 12}px ${(style.padding || 12) * 1.5}px`;
+    result.borderRadius = `${bubbleRadius}px`;
+    result.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+  } else if (style.backgroundEnabled && style.backgroundColor) {
+    // Regular background (exports via ASS box)
+    result.backgroundColor = style.backgroundColor;
+    result.padding = `${style.padding || 8}px`;
+    result.borderRadius = `${style.borderRadius || 4}px`;
+  }
+
+  return result;
 }
 
 function getEffectType(item: TimelineItem): string {
