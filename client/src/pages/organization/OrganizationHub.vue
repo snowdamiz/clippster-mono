@@ -209,8 +209,20 @@
   const profilesCount = computed(() => creatorProfiles.value.length);
   const assetsCount = computed(() => orgAssets.value.length);
 
+  // Tool type with optional stats
+  interface Tool {
+    id: string;
+    title: string;
+    description: string;
+    icon: typeof Users;
+    route: string;
+    color: string;
+    stat?: number | string;
+    statLabel?: string;
+  }
+
   // Tool definitions with dynamic stats
-  const teamTools = computed(() => [
+  const teamTools = computed<Tool[]>(() => [
     {
       id: 'members',
       title: 'Members',
@@ -241,7 +253,7 @@
     },
   ]);
 
-  const contentTools = computed(() => [
+  const contentTools = computed<Tool[]>(() => [
     {
       id: 'campaigns',
       title: 'Campaigns',
@@ -284,7 +296,7 @@
     },
   ]);
 
-  const managementTools = computed(() => [
+  const managementTools = computed<Tool[]>(() => [
     {
       id: 'assets',
       title: 'Assets',

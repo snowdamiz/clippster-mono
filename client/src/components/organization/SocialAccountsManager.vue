@@ -227,11 +227,12 @@
     id: number;
     user_id: number;
     role: string;
-    user: {
+    user?: {
       id: number;
       email: string;
-      name: string | null;
-      avatar_url: string | null;
+      name?: string;
+      avatar_url?: string;
+      created_by_organization_id?: number;
     };
   }
 

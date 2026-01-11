@@ -215,7 +215,7 @@
               :class="{ 'post-submissions__filter-item--active': filters.submittedByUserId === String(member.user_id) }"
               @click="filters.submittedByUserId = String(member.user_id)"
             >
-              {{ member.user.name || member.user.email }}
+              {{ member.user?.name || member.user?.email }}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -622,10 +622,12 @@
 
   interface Member {
     user_id: number;
-    user: {
+    user?: {
       id: number;
-      name: string | null;
+      name?: string;
       email: string;
+      avatar_url?: string;
+      created_by_organization_id?: number;
     };
   }
 
@@ -906,7 +908,7 @@
   function getMemberLabel(userId: string): string {
     if (userId === 'all') return 'All Members';
     const member = props.members.find((m) => String(m.user_id) === userId);
-    return member?.user.name || member?.user.email || 'All Members';
+    return member?.user?.name || member?.user?.email || 'All Members';
   }
 </script>
 
