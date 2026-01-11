@@ -51,6 +51,9 @@ export interface Organization {
   };
 }
 
+// Cache duration: 2 minutes before background refresh
+const CACHE_DURATION_MS = 2 * 60 * 1000;
+
 // Shared state cache keyed by organization ID
 // This ensures all components using useOrganization get the same reactive state
 const stateCache = new Map<
@@ -64,6 +67,8 @@ const stateCache = new Map<
     credits: Ref<OrganizationCredits>;
     myAllocation: Ref<any>;
     role: Ref<string>;
+    orgLoaded: Ref<boolean>;
+    lastFetchTime: Ref<number | null>;
     creatorProfiles: Ref<ServerOrganizationCreatorProfile[]>;
     profilesLoading: Ref<boolean>;
     profilesLoaded: Ref<boolean>;
@@ -89,6 +94,8 @@ function getOrCreateState(orgId: string) {
       credits: ref<OrganizationCredits>({ hoursRemaining: '0', hoursUsed: '0' }),
       myAllocation: ref<any>(null),
       role: ref<string>(''),
+      orgLoaded: ref(false),
+      lastFetchTime: ref<number | null>(null),
       creatorProfiles: ref<ServerOrganizationCreatorProfile[]>([]),
       profilesLoading: ref(false),
       profilesLoaded: ref(false),
@@ -136,6 +143,8 @@ export function useOrganization(orgIdOverride?: string) {
     credits,
     myAllocation,
     role,
+    orgLoaded,
+    lastFetchTime,
     creatorProfiles,
     profilesLoading,
     profilesLoaded,
@@ -167,8 +176,8 @@ export function useOrganization(orgIdOverride?: string) {
     return member.user.created_by_organization_id === Number(organizationId.value);
   }
 
-  // Load organization data
-  async function loadOrganization() {
+  // Load organization data with stale-while-revalidate caching
+  async function loadOrganization(force = false) {
     const orgId = organizationId.value;
     if (!orgId) {
       error.value = 'No organization found';
@@ -176,7 +185,22 @@ export function useOrganization(orgIdOverride?: string) {
       return;
     }
 
-    loading.value = true;
+    // Check if we have fresh cached data
+    const now = Date.now();
+    const isFresh = lastFetchTime.value && now - lastFetchTime.value < CACHE_DURATION_MS;
+
+    // If data is loaded and fresh, skip fetch entirely (unless forced)
+    if (!force && orgLoaded.value && isFresh) {
+      loading.value = false;
+      return;
+    }
+
+    // If data is loaded but stale, show existing data and refresh in background
+    // Only show loading skeleton on first load when no cached data exists
+    const isBackgroundRefresh = orgLoaded.value && !force;
+    if (!isBackgroundRefresh) {
+      loading.value = true;
+    }
     error.value = '';
 
     try {
@@ -218,6 +242,10 @@ export function useOrganization(orgIdOverride?: string) {
         };
         myAllocation.value = creditsResult.my_allocation;
       }
+
+      // Mark as loaded and update fetch time
+      orgLoaded.value = true;
+      lastFetchTime.value = Date.now();
     } catch (err: any) {
       error.value = err.message || 'Failed to load organization';
     } finally {
@@ -516,12 +544,12 @@ export function useOrganization(orgIdOverride?: string) {
     return labels[packType] || packType;
   }
 
-  // Watch for route changes
+  // Watch for route changes - force refresh when switching organizations
   watch(
     () => route.params.id,
-    () => {
-      if (organizationId.value) {
-        loadOrganization();
+    (newId, oldId) => {
+      if (organizationId.value && newId !== oldId) {
+        loadOrganization(true); // Force refresh for different org
       }
     }
   );
@@ -537,6 +565,7 @@ export function useOrganization(orgIdOverride?: string) {
     myAllocation,
     role,
     organizationId,
+    orgLoaded,
 
     // Creator profiles
     creatorProfiles,
