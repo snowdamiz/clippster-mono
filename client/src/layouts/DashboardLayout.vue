@@ -1,16 +1,16 @@
 <template>
-  <div class="dashboard-container flex">
+  <div class="dashboard-container flex h-full">
     <DashboardSidebar @show-auth-modal="showAuthModal = true" />
     <!-- Main content area with left margin to account for fixed sidebar -->
     <main
-      class="flex-1 transition-[margin-left] duration-200 ease-out dashboard-container"
+      class="flex-1 flex flex-col transition-[margin-left] duration-200 ease-out dashboard-container"
       :class="isCollapsed ? 'ml-16' : 'ml-60'"
     >
       <!-- <DashboardHeader /> -->
-      <!-- Page content with top margin to account for fixed header -->
-      <div class="pb-8 dashboard-container">
+      <!-- Page content -->
+      <div class="flex-1 min-h-0 dashboard-container">
         <router-view v-slot="{ Component }">
-          <transition name="fade" mode="out-in"><component :is="Component" /></transition>
+          <transition name="fade" mode="out-in"><component :is="Component" class="h-full" /></transition>
         </router-view>
       </div>
     </main>

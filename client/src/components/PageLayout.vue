@@ -35,7 +35,9 @@
       </div>
     </header>
     <!-- Content -->
-    <slot></slot>
+    <div class="page-layout__content">
+      <slot></slot>
+    </div>
   </div>
 </template>
 
@@ -54,12 +56,21 @@
   /* ===== Page Layout Container ===== */
   .page-layout {
     width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .page-layout__content {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   /* ===== Page Header ===== */
   .page-header {
-    position: sticky;
-    top: 0;
+    flex-shrink: 0;
     z-index: 20;
     display: flex;
     align-items: center;

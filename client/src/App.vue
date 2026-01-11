@@ -297,15 +297,16 @@
 
   .main-content {
     width: 100%;
-    height: 100vh;
-    padding-top: 32px; /* Account for fixed titlebar height (will be adjusted by JS for macOS) */
+    height: calc(100vh - 32px);
+    margin-top: 32px; /* Account for fixed titlebar height */
     overflow-y: auto;
     overflow-x: hidden;
     box-sizing: border-box;
   }
 
   .main-content.pip-content {
-    padding-top: 0; /* No title bar in PIP window */
+    height: 100vh;
+    margin-top: 0; /* No title bar in PIP window */
     overflow: hidden;
   }
 
