@@ -293,6 +293,7 @@
   import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2, Check } from 'lucide-vue-next';
   import TrackRenderer from './TrackRenderer.vue';
   import { AnimationService } from '@/services/AnimationService';
+  import { useAudioEffects } from '@/composables/useAudioEffects';
   import type {
     TextOverlay,
     Sticker,
@@ -306,6 +307,7 @@
     VideoEditorTransition,
     TransitionState,
     ClipSegment,
+    AudioTrackEffect,
   } from '@/types';
   import type { Track, TimelineItem } from '@/types/timeline-model';
   import { calculateTransitionState } from '@/types';
@@ -403,6 +405,8 @@
       isVideoMuted?: boolean;
       // Audio tracks to check if audio was extracted from video
       audioTracks?: Array<{ id: string; name?: string; linkedSourceId?: string; startTime: number; endTime: number }>;
+      // Audio effects for Web Audio API preview
+      audioEffects?: AudioTrackEffect[];
     }>(),
     {
       watermarks: () => [],
@@ -420,6 +424,7 @@
       selectedItemIds: () => new Set(),
       isVideoMuted: false,
       audioTracks: () => [],
+      audioEffects: () => [],
     }
   );
 
@@ -529,6 +534,11 @@
   const framedVideoRef = ref<HTMLVideoElement | null>(null); // Video for framed single-region mode
   const audioVideoRef = ref<HTMLVideoElement | null>(null); // Audio-only video for multi-region mode
   const preloadVideoRef = ref<HTMLVideoElement | null>(null); // Second video for seamless transitions
+
+  // Audio effects preview using Web Audio API
+  const audioEffectsRef = computed(() => props.audioEffects || []);
+  const currentTimeRef = computed(() => props.currentTime);
+  useAudioEffects(videoRef, audioEffectsRef, currentTimeRef);
   const videoContainerRef = ref<HTMLElement | null>(null);
   // ... rest of the code remains the same ...
   const overlayContainerRef = ref<HTMLElement | null>(null);

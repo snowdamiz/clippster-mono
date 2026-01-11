@@ -95,6 +95,7 @@
                   :tracks="timelineTracks"
                   :is-video-muted="isVideoMuted"
                   :audio-tracks="audioTracks"
+                  :audio-effects="audioEffects"
                   :selected-item-ids="selectedItemIds"
                   @time-update="onPreviewTimeUpdate"
                   @toggle-play="togglePlay"
