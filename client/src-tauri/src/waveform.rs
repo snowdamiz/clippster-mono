@@ -21,6 +21,7 @@ const TARGET_PEAKS: u32 = 16000;
 const WAVEFORM_SAMPLE_RATE: u32 = 16000;
 
 // Generate a hash for the video path for consistent lookup
+// Includes file size and modification time to invalidate cache when file changes
 pub fn generate_video_path_hash(video_path: &str) -> String {
     use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
@@ -33,6 +34,21 @@ pub fn generate_video_path_hash(video_path: &str) -> String {
 
     let mut hasher = DefaultHasher::new();
     path_to_hash.hash(&mut hasher);
+    
+    // Include file metadata in hash to invalidate cache when file changes
+    // This is critical for DVR segments that get regenerated with the same filename
+    if let Ok(metadata) = std::fs::metadata(&path_to_hash) {
+        // Include file size
+        metadata.len().hash(&mut hasher);
+        
+        // Include modification time if available
+        if let Ok(modified) = metadata.modified() {
+            if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                duration.as_secs().hash(&mut hasher);
+            }
+        }
+    }
+    
     format!("{:x}", hasher.finish())
 }
 

@@ -76,7 +76,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       "reasoning" => %{
         "effort" => "high"
       },
-      "max_output_tokens" => 8000
+      "max_output_tokens" => 4000
     }
 
     IO.puts("[OpenRouterAPI] Request payload prepared for Responses API")
@@ -516,7 +516,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
           "content" => decider_prompt
         }
       ],
-      "max_tokens" => 8000,
+      "max_tokens" => 4000,
       "temperature" => 0.3  # Lower temperature for more consistent synthesis
     }
 
@@ -566,7 +566,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
           "content" => user_prompt
         }
       ],
-      "max_tokens" => 8000,
+      "max_tokens" => 4000,
       "temperature" => 0.7
     }
   end

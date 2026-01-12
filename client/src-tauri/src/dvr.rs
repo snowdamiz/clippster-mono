@@ -487,16 +487,67 @@ pub async fn build_vod_from_dvr(
     fs::create_dir_all(&output_dir)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
     
-    // Create temp directory for concat file
+    // Create temp directory for prepared chunks
     let temp_dir = storage_paths.temp.join("dvr_vod");
     fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
     
-    // Create concat list file for FFmpeg
+    // Read the init segment (needed for chunks > 0 to be valid WebM files)
+    let init_segment_path = get_init_segment_path(&dvr_dir);
+    let init_segment = if init_segment_path.exists() {
+        Some(fs::read(&init_segment_path)
+            .map_err(|e| format!("Failed to read init segment: {}", e))?)
+    } else {
+        // Try to extract from chunk 0
+        let chunk0_path = dvr_dir.join("chunk_00000.webm");
+        if chunk0_path.exists() {
+            let chunk0_data = fs::read(&chunk0_path)
+                .map_err(|e| format!("Failed to read chunk 0: {}", e))?;
+            extract_init_segment(&chunk0_data)
+        } else {
+            None
+        }
+    };
+    
+    // Prepare chunk files - chunks > 0 need init segment prepended to be valid WebM
+    let mut prepared_files: Vec<PathBuf> = vec![];
+    let mut temp_files_to_cleanup: Vec<PathBuf> = vec![];
+    
+    for (idx, path) in &chunk_files {
+        if *idx == 0 {
+            // Chunk 0 is already a valid WebM file
+            prepared_files.push(path.clone());
+        } else {
+            // Chunks > 0 need init segment prepended
+            if let Some(ref init_data) = init_segment {
+                let chunk_data = fs::read(path)
+                    .map_err(|e| format!("Failed to read chunk {}: {}", idx, e))?;
+                
+                // Create a temp file with init segment + chunk data
+                let temp_filename = format!("prepared_vod_chunk_{:05}.webm", idx);
+                let temp_path = temp_dir.join(&temp_filename);
+                
+                let mut prepared_data = init_data.clone();
+                prepared_data.extend_from_slice(&chunk_data);
+                
+                fs::write(&temp_path, &prepared_data)
+                    .map_err(|e| format!("Failed to write prepared chunk {}: {}", idx, e))?;
+                
+                prepared_files.push(temp_path.clone());
+                temp_files_to_cleanup.push(temp_path);
+            } else {
+                // No init segment available, try using the raw chunk (may fail)
+                println!("[DVR] Warning: No init segment available for chunk {}, using raw file", idx);
+                prepared_files.push(path.clone());
+            }
+        }
+    }
+    
+    // Create concat list file for FFmpeg using prepared files
     let concat_list_path = temp_dir.join(format!("concat_{}.txt", uuid::Uuid::new_v4()));
     let mut concat_content = String::new();
     
-    for (_, path) in &chunk_files {
+    for path in &prepared_files {
         let escaped_path = path.to_string_lossy().replace('\\', "/").replace("'", "'\\''");
         concat_content.push_str(&format!("file '{}'\n", escaped_path));
     }
@@ -514,10 +565,14 @@ pub async fn build_vod_from_dvr(
     let encoder = crate::clips::encoder::detect_hardware_encoder(&app, "medium").await;
     
     // Build FFmpeg args for concatenation and conversion
+    // WebM from MediaRecorder has variable/broken timestamps - regenerate them
     let mut args = vec![
+        "-fflags".to_string(), "+genpts+igndts".to_string(), // Regenerate PTS, ignore DTS
         "-f".to_string(), "concat".to_string(),
         "-safe".to_string(), "0".to_string(),
         "-i".to_string(), concat_list_path.to_string_lossy().to_string(),
+        // Normalize frame rate to fix laggy playback from variable frame timing
+        "-vf".to_string(), "fps=30,setpts=PTS-STARTPTS".to_string(),
         "-c:v".to_string(), encoder.codec.clone(),
     ];
     
@@ -533,8 +588,11 @@ pub async fn build_vod_from_dvr(
     
     // Add common parameters
     args.extend_from_slice(&[
+        "-r".to_string(), "30".to_string(), // Force constant 30fps output
+        "-vsync".to_string(), "cfr".to_string(), // Constant frame rate
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
+        "-async".to_string(), "1".to_string(), // Sync audio to video
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
         "-y".to_string(),
@@ -551,8 +609,11 @@ pub async fn build_vod_from_dvr(
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
     
-    // Cleanup concat list
+    // Cleanup concat list and temp prepared files
     let _ = fs::remove_file(&concat_list_path);
+    for temp_file in temp_files_to_cleanup {
+        let _ = fs::remove_file(&temp_file);
+    }
     
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -573,5 +634,182 @@ fn sanitize_filename(name: &str) -> String {
     }
     // Trim whitespace and limit length
     result.trim().chars().take(100).collect()
+}
+
+/// Build a segment file from a range of DVR chunks
+/// Used by auto-detect to create longer segments from 4-second DVR chunks
+#[tauri::command]
+pub async fn build_segment_from_dvr_chunks(
+    app: AppHandle,
+    mint_id: String,
+    start_chunk: u32,
+    end_chunk: u32,
+    segment_number: u32,
+) -> Result<String, String> {
+    let dvr_dir = get_dvr_dir(&app, &mint_id)?;
+    
+    if !dvr_dir.exists() {
+        return Err(format!("DVR directory not found for {}", mint_id));
+    }
+    
+    // Collect chunk files in range
+    let mut chunk_files: Vec<(u32, std::path::PathBuf)> = vec![];
+    
+    for idx in start_chunk..=end_chunk {
+        let chunk_filename = format!("chunk_{:05}.webm", idx);
+        let chunk_path = dvr_dir.join(&chunk_filename);
+        
+        if chunk_path.exists() {
+            chunk_files.push((idx, chunk_path));
+        }
+    }
+    
+    if chunk_files.is_empty() {
+        return Err(format!("No DVR chunks found in range {}-{} for {}", start_chunk, end_chunk, mint_id));
+    }
+    
+    // Sort by index
+    chunk_files.sort_by_key(|(idx, _)| *idx);
+    
+    println!("[DVR] Building segment {} from {} chunks ({}->{})", 
+             segment_number, chunk_files.len(), start_chunk, end_chunk);
+    
+    // Get storage paths
+    let storage_paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    
+    // Create temp directory for segment output and prepared chunks
+    let temp_dir = storage_paths.temp.join("dvr_segments");
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    
+    // Instead of treating each chunk as a separate FFmpeg input (which causes freezing at
+    // chunk boundaries due to missing keyframes), we concatenate all chunk data into a
+    // single continuous WebM file. This allows FFmpeg to decode the entire stream properly
+    // without hitting keyframe issues at arbitrary 4-second boundaries.
+    
+    // Read the init segment (needed if segment doesn't start at chunk 0)
+    let init_segment_path = get_init_segment_path(&dvr_dir);
+    let init_segment: Option<Vec<u8>> = if init_segment_path.exists() {
+        Some(fs::read(&init_segment_path)
+            .map_err(|e| format!("Failed to read init segment: {}", e))?)
+    } else {
+        // Try to extract from chunk 0 if it exists
+        let chunk0_path = dvr_dir.join("chunk_00000.webm");
+        if chunk0_path.exists() {
+            let chunk0_data = fs::read(&chunk0_path)
+                .map_err(|e| format!("Failed to read chunk 0: {}", e))?;
+            extract_init_segment(&chunk0_data)
+        } else {
+            None
+        }
+    };
+    
+    // Build a single combined WebM file: init_segment + all chunk cluster data
+    let combined_webm_path = temp_dir.join(format!("combined_{}_{}.webm", mint_id, segment_number));
+    let mut combined_data: Vec<u8> = vec![];
+    
+    // Check if the first chunk in our range is chunk 0
+    let first_chunk_idx = chunk_files.first().map(|(idx, _)| *idx).unwrap_or(0);
+    
+    // If we don't start at chunk 0, we need to prepend the init segment
+    if first_chunk_idx != 0 {
+        if let Some(ref init_data) = init_segment {
+            println!("[DVR] Prepending init segment ({} bytes) for segment starting at chunk {}", 
+                     init_data.len(), first_chunk_idx);
+            combined_data.extend_from_slice(init_data);
+        } else {
+            return Err(format!("No init segment available for segment starting at chunk {}", first_chunk_idx));
+        }
+    }
+    
+    for (idx, path) in &chunk_files {
+        let chunk_data = fs::read(path)
+            .map_err(|e| format!("Failed to read chunk {}: {}", idx, e))?;
+        
+        if *idx == 0 {
+            // Chunk 0 contains the full WebM header + first cluster
+            combined_data.extend_from_slice(&chunk_data);
+        } else {
+            // Chunks > 0 contain only cluster data, append directly
+            combined_data.extend_from_slice(&chunk_data);
+        }
+    }
+    
+    fs::write(&combined_webm_path, &combined_data)
+        .map_err(|e| format!("Failed to write combined WebM: {}", e))?;
+    
+    println!("[DVR] Combined {} chunks into single WebM file ({} bytes)", chunk_files.len(), combined_data.len());
+    
+    // Generate output filename - use .ts format for compatibility with existing pipeline
+    let output_filename = format!("segment_{}_{}.ts", mint_id, segment_number);
+    let output_path = temp_dir.join(&output_filename);
+    
+    // Process the single combined WebM file with FFmpeg
+    // This avoids the chunk boundary issues since FFmpeg sees one continuous stream
+    let args = vec![
+        "-fflags".to_string(), "+genpts+igndts".to_string(), // Regenerate timestamps
+        "-i".to_string(), combined_webm_path.to_string_lossy().to_string(),
+        // Normalize frame rate to fix variable frame timing from MediaRecorder
+        "-vf".to_string(), "fps=30,setpts=PTS-STARTPTS".to_string(),
+        // Re-encode video to H.264 for TS compatibility
+        "-c:v".to_string(), "libx264".to_string(),
+        "-preset".to_string(), "ultrafast".to_string(),
+        "-crf".to_string(), "18".to_string(),
+        "-r".to_string(), "30".to_string(), // Force constant 30fps output
+        "-g".to_string(), "30".to_string(), // Keyframe every 1 second
+        "-keyint_min".to_string(), "30".to_string(),
+        "-sc_threshold".to_string(), "0".to_string(),
+        "-vsync".to_string(), "cfr".to_string(), // Constant frame rate
+        // Re-encode audio to AAC for TS compatibility  
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "192k".to_string(),
+        "-async".to_string(), "1".to_string(), // Sync audio to video
+        // Output format
+        "-f".to_string(), "mpegts".to_string(),
+        "-y".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ];
+    
+    println!("[DVR] Running FFmpeg to build segment from combined WebM...");
+    
+    let shell = app.shell();
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    
+    // Cleanup temporary combined WebM file
+    let _ = fs::remove_file(&combined_webm_path);
+    
+    // Log FFmpeg output for debugging
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        // Log last few lines of FFmpeg output for debugging
+        let last_lines: Vec<&str> = stderr.lines().rev().take(5).collect();
+        for line in last_lines.iter().rev() {
+            if !line.trim().is_empty() {
+                println!("[DVR] FFmpeg: {}", line.trim());
+            }
+        }
+    }
+    
+    if !output.status.success() {
+        // Log full error for debugging
+        println!("[DVR] FFmpeg failed with full output:\n{}", stderr);
+        return Err(format!("FFmpeg segment build failed: {}", stderr));
+    }
+    
+    // Log output file size for verification
+    if let Ok(metadata) = std::fs::metadata(&output_path) {
+        println!("[DVR] Segment {} built successfully: {} ({} MB)", 
+                 segment_number, output_path.display(), metadata.len() / 1024 / 1024);
+    } else {
+        println!("[DVR] Segment {} built successfully: {}", segment_number, output_path.display());
+    }
+    
+    Ok(output_path.to_string_lossy().to_string())
 }
 

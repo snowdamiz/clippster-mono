@@ -1384,6 +1384,26 @@
     return null;
   });
 
+  // Helper function to construct video URL with proper endpoint for file type
+  // MPEG-TS (.ts) files need the /ts-hls/ endpoint to be wrapped in an HLS playlist
+  // for proper A/V sync via HLS.js. Regular video files use /video/ endpoint.
+  function constructVideoUrl(filePath: string, port: number): string {
+    const encodedPath = btoa(unescape(encodeURIComponent(filePath)));
+    
+    // Check if this is a .ts file - browsers can't play MPEG-TS natively
+    // Use the HLS wrapper endpoint which generates an on-the-fly playlist
+    const isTsFile = filePath.toLowerCase().endsWith('.ts');
+    
+    if (isTsFile) {
+      // Use ts-hls endpoint which wraps the .ts file in an HLS playlist
+      // This enables HLS.js to handle A/V sync properly via PTS timestamps
+      return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
+    }
+    
+    // Regular video file - serve directly
+    return `http://localhost:${port}/video/${encodedPath}`;
+  }
+
   // Editor mode: Compute the video URL for the active source
   const editorVideoSrc = computed(() => {
     if (!editorMode.value || !activeVideoSource.value) {
@@ -1403,8 +1423,7 @@
       return null;
     }
 
-    const encodedPath = btoa(unescape(encodeURIComponent(path)));
-    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+    return constructVideoUrl(path, videoServerPort.value);
   });
 
   // Editor mode: Compute the preload URL for the next source (for seamless transitions)
@@ -1426,8 +1445,7 @@
       return null;
     }
 
-    const encodedPath = btoa(unescape(encodeURIComponent(path)));
-    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+    return constructVideoUrl(path, videoServerPort.value);
   });
 
   // The video source to use for the preview (either from props or computed for editor mode)
@@ -1463,8 +1481,7 @@
       return null;
     }
 
-    const encodedPath = btoa(unescape(encodeURIComponent(path)));
-    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+    return constructVideoUrl(path, videoServerPort.value);
   });
 
   // Effective clip start time for ManualPOIEditor - uses source trim times in editor mode
@@ -4122,8 +4139,7 @@
             const path = targetSource.source_path;
             if (path.startsWith('http://') || path.startsWith('https://')) return path;
             if (!videoServerPort.value) return null;
-            const encodedPath = btoa(unescape(encodeURIComponent(path)));
-            return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+            return constructVideoUrl(path, videoServerPort.value);
           })();
 
           // Check if the video element already has the correct src loaded

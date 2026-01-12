@@ -264,12 +264,18 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] All chunks processed. Total clips found: #{length(all_clips)}")
     IO.puts("[ClipsController] Total AI tokens used: #{total_usage_tokens}")
 
-    # Validation step - using the aggregated clips and the reconstructed full transcript
+    # Merge overlapping clips from adjacent chunks (due to chunk overlap)
+    IO.puts("[ClipsController] Merging overlapping clips from chunk boundaries...")
+    ProgressChannel.broadcast_progress(project_id, "merging", 92, "Merging overlapping clips...")
+    merged_clips = merge_overlapping_clips(all_clips)
+    IO.puts("[ClipsController] After merge: #{length(merged_clips)} clips (was #{length(all_clips)})")
+
+    # Validation step - using the merged clips and the reconstructed full transcript
     IO.puts("[ClipsController] Starting enhanced clip validation with full timeline data...")
     ProgressChannel.broadcast_progress(project_id, "validating", 95, "Validating clips with timeline data...")
 
     # Validate all clips against the reconstructed transcript
-    case ClipValidation.validate_and_correct_clips(all_clips, reconstructed_transcript, true) do
+    case ClipValidation.validate_and_correct_clips(merged_clips, reconstructed_transcript, true) do
           {:ok, validation_result} ->
             IO.puts("[ClipsController] Enhanced validation completed")
             IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
@@ -482,67 +488,90 @@ defmodule ClippsterServerWeb.ClipsController do
     results
   end
 
-  # Split a transcript into time-based chunks for processing
+  # Split a transcript into time-based chunks for processing with overlap
+  # Overlap ensures clips spanning chunk boundaries are properly detected
+  @chunk_overlap_seconds 90  # 90 seconds of overlap between chunks
+  
   defp split_transcript_into_chunks(transcript, chunk_duration_seconds) do
     segments = transcript["segments"] || []
-    _total_duration = transcript["duration"] || 0
+    total_duration = transcript["duration"] || 0
     
-    # Group segments into chunks based on time
-    {chunks, current_chunk, _} = Enum.reduce(segments, {[], [], 0}, fn segment, {chunks, current_chunk, chunk_start} ->
-      segment_start = segment["start"] || 0
-      _segment_end = segment["end"] || segment_start
-      
-      # Determine which chunk this segment belongs to
-      chunk_index = trunc(segment_start / chunk_duration_seconds)
-      expected_chunk_start = chunk_index * chunk_duration_seconds
-      
-      if chunk_start != expected_chunk_start and length(current_chunk) > 0 do
-        # Start a new chunk
-        {[{chunk_start, current_chunk} | chunks], [segment], expected_chunk_start}
-      else
-        # Add to current chunk
-        new_chunk_start = if length(current_chunk) == 0, do: expected_chunk_start, else: chunk_start
-        {chunks, current_chunk ++ [segment], new_chunk_start}
-      end
-    end)
+    # Calculate effective chunk boundaries with overlap
+    # Each chunk covers: [chunk_start, chunk_start + chunk_duration + overlap]
+    # Next chunk starts at: chunk_start + chunk_duration (so overlap region is shared)
+    effective_chunk_duration = chunk_duration_seconds
     
-    # Don't forget the last chunk - need to get the chunk_start from the accumulator
-    # Since we lost it, calculate from first segment
-    all_chunks = if length(current_chunk) > 0 do
-      first_seg_start = case hd(current_chunk) do
-        %{"start" => s} -> s
-        _ -> 0
-      end
-      chunk_start_time = trunc(first_seg_start / chunk_duration_seconds) * chunk_duration_seconds
-      [{chunk_start_time, current_chunk} | chunks]
-    else
-      chunks
-    end
-    |> Enum.reverse()
+    # Build chunks with overlap - use sliding window approach
+    chunk_boundaries = build_chunk_boundaries(total_duration, effective_chunk_duration, @chunk_overlap_seconds)
     
-    # Convert to transcript format for each chunk
-    all_chunks
+    Logger.info("[ClipsController] Building #{length(chunk_boundaries)} chunks with #{@chunk_overlap_seconds}s overlap")
+    
+    # Assign segments to chunks (segments can belong to multiple chunks due to overlap)
+    chunk_boundaries
     |> Enum.with_index()
-    |> Enum.map(fn {{chunk_start, chunk_segments}, index} ->
+    |> Enum.map(fn {{chunk_start, chunk_end}, index} ->
+      # Get all segments that fall within this chunk's time range
+      chunk_segments = Enum.filter(segments, fn segment ->
+        seg_start = segment["start"] || 0
+        seg_end = segment["end"] || seg_start
+        # Include segment if it overlaps with chunk time range
+        seg_start < chunk_end and seg_end > chunk_start
+      end)
+      
       chunk_text = chunk_segments
       |> Enum.map(&Map.get(&1, "text", ""))
       |> Enum.join(" ")
       
-      chunk_end = case List.last(chunk_segments) do
-        nil -> chunk_start + chunk_duration_seconds
-        last_seg -> Map.get(last_seg, "end", chunk_start + chunk_duration_seconds)
+      actual_chunk_end = case List.last(chunk_segments) do
+        nil -> chunk_end
+        last_seg -> Map.get(last_seg, "end", chunk_end)
       end
       
       %{
         "segments" => chunk_segments,
         "text" => chunk_text,
-        "duration" => chunk_end - chunk_start,
+        "duration" => actual_chunk_end - chunk_start,
         "language" => transcript["language"],
         "chunk_index" => index,
         "chunk_start_time" => chunk_start,
-        "chunk_end_time" => chunk_end
+        "chunk_end_time" => actual_chunk_end,
+        "has_overlap_before" => index > 0,
+        "has_overlap_after" => index < length(chunk_boundaries) - 1,
+        "overlap_seconds" => @chunk_overlap_seconds
       }
     end)
+    |> Enum.filter(fn chunk -> length(chunk["segments"]) > 0 end)
+  end
+  
+  # Build chunk boundary tuples with overlap
+  defp build_chunk_boundaries(total_duration, chunk_duration, overlap) do
+    # First chunk starts at 0
+    # Each subsequent chunk starts at previous_start + chunk_duration - overlap
+    # This creates overlapping regions between chunks
+    build_chunk_boundaries_recursive(0, total_duration, chunk_duration, overlap, [])
+    |> Enum.reverse()
+  end
+  
+  defp build_chunk_boundaries_recursive(current_start, total_duration, chunk_duration, overlap, acc) do
+    if current_start >= total_duration do
+      acc
+    else
+      chunk_end = min(current_start + chunk_duration + overlap, total_duration)
+      next_start = current_start + chunk_duration
+      
+      # Only add chunk if it has meaningful duration
+      if chunk_end - current_start > 10 do
+        build_chunk_boundaries_recursive(
+          next_start, 
+          total_duration, 
+          chunk_duration, 
+          overlap, 
+          [{current_start, chunk_end} | acc]
+        )
+      else
+        acc
+      end
+    end
   end
 
   # Process transcript chunks in parallel with multimodal detection
@@ -2150,6 +2179,131 @@ defmodule ClippsterServerWeb.ClipsController do
       _ ->
         {:error, :no_token}
     end
+  end
+
+  # Merge overlapping clips that were detected in adjacent chunks due to chunk overlap
+  # This prevents duplicate clips and ensures clips spanning chunk boundaries are properly merged
+  defp merge_overlapping_clips(clips) do
+    Logger.info("[ClipsController] Merging overlapping clips from #{length(clips)} total clips")
+    
+    # Sort clips by start time
+    sorted_clips = Enum.sort_by(clips, fn clip ->
+      get_clip_start_time(clip)
+    end)
+    
+    # Merge clips that have significant overlap (>50% of shorter clip's duration)
+    merged = Enum.reduce(sorted_clips, [], fn clip, acc ->
+      case find_overlapping_clip(clip, acc) do
+        nil ->
+          # No overlap, add clip to list
+          [clip | acc]
+        {overlapping_clip, rest} ->
+          # Found overlap, merge clips (keep the longer one with expanded boundaries)
+          merged_clip = merge_two_clips(overlapping_clip, clip)
+          [merged_clip | rest]
+      end
+    end)
+    |> Enum.reverse()
+    
+    Logger.info("[ClipsController] After merging: #{length(merged)} clips")
+    merged
+  end
+  
+  # Get the start time of a clip from its segments
+  defp get_clip_start_time(clip) do
+    segments = Map.get(clip, "segments", [])
+    case segments do
+      [first | _] -> Map.get(first, "start_time", 0)
+      [] -> 0
+    end
+  end
+  
+  # Get the end time of a clip from its segments
+  defp get_clip_end_time(clip) do
+    segments = Map.get(clip, "segments", [])
+    case List.last(segments) do
+      nil -> 0
+      last -> Map.get(last, "end_time", 0)
+    end
+  end
+  
+  # Find a clip in the accumulator that overlaps significantly with the given clip
+  defp find_overlapping_clip(clip, acc) do
+    clip_start = get_clip_start_time(clip)
+    clip_end = get_clip_end_time(clip)
+    clip_duration = clip_end - clip_start
+    
+    Enum.reduce_while(acc, nil, fn existing_clip, _result ->
+      existing_start = get_clip_start_time(existing_clip)
+      existing_end = get_clip_end_time(existing_clip)
+      existing_duration = existing_end - existing_start
+      
+      # Calculate overlap
+      overlap_start = max(clip_start, existing_start)
+      overlap_end = min(clip_end, existing_end)
+      overlap_duration = max(0, overlap_end - overlap_start)
+      
+      # Check if overlap is significant (>50% of shorter clip)
+      shorter_duration = min(clip_duration, existing_duration)
+      overlap_ratio = if shorter_duration > 0, do: overlap_duration / shorter_duration, else: 0
+      
+      if overlap_ratio > 0.5 do
+        # Found significant overlap
+        rest = Enum.filter(acc, fn c -> c != existing_clip end)
+        {:halt, {existing_clip, rest}}
+      else
+        {:cont, nil}
+      end
+    end)
+  end
+  
+  # Merge two overlapping clips, taking the union of their time ranges
+  # Keeps the clip with higher virality score as the base, but expands boundaries
+  defp merge_two_clips(clip1, clip2) do
+    clip1_start = get_clip_start_time(clip1)
+    clip1_end = get_clip_end_time(clip1)
+    clip2_start = get_clip_start_time(clip2)
+    clip2_end = get_clip_end_time(clip2)
+    
+    # Take the UNION of timestamps (wider boundaries = more context)
+    merged_start = min(clip1_start, clip2_start)
+    merged_end = max(clip1_end, clip2_end)
+    merged_duration = merged_end - merged_start
+    
+    # Use the clip with higher virality score as base
+    clip1_score = Map.get(clip1, "virality_score", 0) || 0
+    clip2_score = Map.get(clip2, "virality_score", 0) || 0
+    
+    base_clip = if clip1_score >= clip2_score, do: clip1, else: clip2
+    
+    # Update the segments with merged boundaries
+    # For simplicity, create a single continuous segment with merged boundaries
+    merged_segments = [%{
+      "start_time" => merged_start,
+      "end_time" => merged_end,
+      "duration" => merged_duration,
+      "transcript" => get_merged_transcript(clip1, clip2)
+    }]
+    
+    # Combine transcripts
+    combined_transcript = get_merged_transcript(clip1, clip2)
+    
+    Logger.info("[ClipsController] Merged clips: #{clip1_start}-#{clip1_end} + #{clip2_start}-#{clip2_end} -> #{merged_start}-#{merged_end}")
+    
+    base_clip
+    |> Map.put("segments", merged_segments)
+    |> Map.put("total_duration", merged_duration)
+    |> Map.put("combined_transcript", combined_transcript)
+    |> Map.put("type", "continuous")
+    |> Map.put("merged_from_chunks", true)
+  end
+  
+  # Get merged transcript from two clips, preferring the longer one
+  defp get_merged_transcript(clip1, clip2) do
+    t1 = Map.get(clip1, "combined_transcript", "")
+    t2 = Map.get(clip2, "combined_transcript", "")
+    
+    if String.length(t1) >= String.length(t2), do: t1, else: t2
   end
 
   # Reconstruct timeline from multiple chunk transcripts

@@ -738,6 +738,7 @@ pub fn run() {
             dvr::read_dvr_init_segment,
             dvr::read_dvr_cluster,
             dvr::build_vod_from_dvr,
+            dvr::build_segment_from_dvr_chunks,
             
             // HLS commands
             hls::start_hls_recording,

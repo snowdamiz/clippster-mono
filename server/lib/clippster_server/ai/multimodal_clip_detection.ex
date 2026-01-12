@@ -20,11 +20,13 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
 
   @detection_models [
     "anthropic/claude-haiku-4.5",
-    "google/gemini-3-flash-preview",
-    "z-ai/glm-4.7"
+    "google/gemini-3-pro-preview",
+    "z-ai/glm-4.7",
+    "openai/gpt-4o-mini",
+    "x-ai/grok-4-fast"
   ]
 
-  @decider_model "google/gemini-3-pro-preview"
+  @decider_model "x-ai/grok-4.1-fast"
 
   @doc """
   Process a single chunk using multimodal detection.
@@ -195,16 +197,17 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
     end)
     |> Enum.join("\n\n")
 
-    # Get transcript text for context
+    # Get FULL transcript text for context - no truncation to ensure complete context for clip boundary decisions
+    # The decider needs full context to make accurate decisions about clip boundaries
     transcript_text = case chunk_transcript do
-      %{"text" => text} -> String.slice(text, 0, 2000)
+      %{"text" => text} -> text  # Pass full transcript, no truncation
       _ -> "[Transcript not available]"
     end
 
     """
     You are an expert video clip curator. Multiple AI models have analyzed the same transcript segment and identified potential viral clips. Your job is to synthesize their results into a single, optimal clip list.
 
-    ## Transcript Context (truncated):
+    ## Transcript Context:
     #{transcript_text}
 
     ## Model Results:
@@ -216,18 +219,28 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
     1. **Consensus Clips**: Clips identified by 2+ models are likely high-quality. Include these with the best version (most accurate timestamps, best title, highest virality score).
 
     2. **Unique Valuable Clips**: Some models may find clips others missed. Include unique clips if they have:
-       - Virality score >= 70
+       - Virality score >= 60
        - Clear reasoning for why it's engaging
        - Proper timestamp boundaries
 
-    3. **Conflict Resolution**: When models disagree on timestamps for the same moment:
-       - Prefer tighter, more focused clips (30-90 seconds ideal)
-       - Choose timestamps that capture complete thoughts/sentences
-       - Avoid cutting mid-sentence
+    3. **Conflict Resolution - PREFER LONGER CLIPS**: When models disagree on timestamps for the same moment:
+       - **PREFER the LONGEST version** that captures full context (use the UNION of timestamps, not intersection)
+       - It is better to include extra context than to cut off important setup or punchlines
+       - Target duration range: 30 seconds to 180 seconds (longer is fine for storytelling)
+       - Choose timestamps that capture complete thoughts/sentences with proper setup
+       - Avoid cutting mid-sentence or mid-thought
+       - Include the "breathing room" - don't end clips abruptly
 
-    4. **Deduplication**: Remove overlapping clips that cover the same content. Keep the better version.
+    4. **Deduplication**: Remove overlapping clips that cover the same content. Keep the LONGER, more complete version.
 
-    5. **Quality Standards**: Each final clip must have:
+    5. **Duration Guidance**:
+       - Acceptable range: 10 seconds to 180 seconds
+       - Short punchy clips (10-30s) are good for memes/reactions
+       - Medium clips (30-90s) are good for highlights
+       - Long clips (90-180s) are good for storytelling and full context
+       - When in doubt, GO LONGER to capture full context
+
+    6. **Quality Standards**: Each final clip must have:
        - Unique id (use format: "multimodal_clip_N")
        - Compelling title
        - Accurate start_time and end_time
@@ -236,6 +249,8 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
        - socialMediaPost with caption and hashtags
        - combined_transcript
        - segments array with proper structure
+
+    **CRITICAL**: Do NOT default to short clips. If models found a 2-3 minute clip, that's likely because the full context is needed. Preserve it.
 
     Return ONLY a valid JSON object with this structure:
     ```json
@@ -246,8 +261,8 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
           "title": "...",
           "filename": "...",
           "type": "continuous",
-          "segments": [{"start_time": 0, "end_time": 60, "duration": 60, "transcript": "..."}],
-          "total_duration": 60,
+          "segments": [{"start_time": 0, "end_time": 120, "duration": 120, "transcript": "..."}],
+          "total_duration": 120,
           "combined_transcript": "...",
           "virality_score": 85,
           "reason": "...",

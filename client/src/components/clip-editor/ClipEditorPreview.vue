@@ -291,6 +291,7 @@
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2, Check } from 'lucide-vue-next';
+  import Hls from 'hls.js';
   import TrackRenderer from './TrackRenderer.vue';
   import { AnimationService } from '@/services/AnimationService';
   import { useAudioEffects } from '@/composables/useAudioEffects';
@@ -561,6 +562,95 @@
   // Crossfade animation state - uses requestAnimationFrame for smooth 60fps opacity transitions
   const crossfadeAnimationId = ref<number | null>(null);
   const crossfadeActive = ref(false);
+
+  // HLS.js instances for proper MPEG-TS (.ts) file playback with A/V sync
+  // We need separate instances for each video element that may play HLS content
+  const hlsInstances = new Map<string, Hls>();
+
+  // Check if a URL is an HLS playlist
+  function isHlsUrl(url: string | null | undefined): boolean {
+    return !!url && url.includes('.m3u8');
+  }
+
+  // Setup HLS playback for a video element
+  function setupHlsPlayback(videoElement: HTMLVideoElement, hlsUrl: string, instanceKey: string): void {
+    // Cleanup existing instance for this key
+    cleanupHlsInstance(instanceKey);
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 60,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+      });
+
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(videoElement);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log(`[ClipEditorPreview] HLS manifest parsed for ${instanceKey}`);
+      });
+
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          console.error(`[ClipEditorPreview] HLS fatal error for ${instanceKey}:`, data.type, data.details);
+          // Try to recover from fatal errors
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.log(`[ClipEditorPreview] Attempting to recover from network error for ${instanceKey}`);
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.log(`[ClipEditorPreview] Attempting to recover from media error for ${instanceKey}`);
+              hls.recoverMediaError();
+              break;
+            default:
+              cleanupHlsInstance(instanceKey);
+              break;
+          }
+        }
+      });
+
+      hlsInstances.set(instanceKey, hls);
+    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS support (Safari)
+      videoElement.src = hlsUrl;
+    } else {
+      console.error('[ClipEditorPreview] HLS not supported in this browser');
+    }
+  }
+
+  // Cleanup a specific HLS instance
+  function cleanupHlsInstance(instanceKey: string): void {
+    const hls = hlsInstances.get(instanceKey);
+    if (hls) {
+      hls.destroy();
+      hlsInstances.delete(instanceKey);
+    }
+  }
+
+  // Cleanup all HLS instances
+  function cleanupAllHlsInstances(): void {
+    hlsInstances.forEach((hls, key) => {
+      hls.destroy();
+    });
+    hlsInstances.clear();
+  }
+
+  // Setup or update HLS for a video element based on source
+  function updateVideoSource(videoElement: HTMLVideoElement | null, src: string | null | undefined, instanceKey: string): void {
+    if (!videoElement) return;
+
+    if (isHlsUrl(src)) {
+      setupHlsPlayback(videoElement, src!, instanceKey);
+    } else {
+      // Not HLS - cleanup any existing HLS instance and let native video handle it
+      cleanupHlsInstance(instanceKey);
+      // For non-HLS sources, the :src binding in the template handles it
+    }
+  }
 
   // Active preload src - keeps last src when preload is active video
   const activePreloadSrc = computed(() => {
@@ -3827,6 +3917,8 @@
     document.removeEventListener('keydown', onKeyDown);
     stopSyncLoop();
     stopCrossfadeAnimation(true); // Clean up crossfade animation and reset opacity
+    // Cleanup all HLS.js instances to prevent memory leaks
+    cleanupAllHlsInstances();
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -3846,12 +3938,89 @@
         // Don't reset activeVideoIndex - let the crossfade logic handle it
         // The preload video will continue playing and its time updates will be used
       }
+      
+      // Setup HLS for main video if source is HLS
+      if (newSrc !== oldSrc && videoRef.value) {
+        updateVideoSource(videoRef.value, newSrc, 'main');
+      }
+      // Setup HLS for framed video if source is HLS
+      if (newSrc !== oldSrc && framedVideoRef.value) {
+        updateVideoSource(framedVideoRef.value, newSrc, 'framed');
+      }
+      // Setup HLS for audio video if source is HLS
+      if (newSrc !== oldSrc && audioVideoRef.value) {
+        updateVideoSource(audioVideoRef.value, newSrc, 'audio');
+      }
     }
+  );
+
+  // Watch for preload video src changes to setup HLS
+  watch(
+    () => activePreloadSrc.value,
+    (newSrc, oldSrc) => {
+      if (newSrc !== oldSrc && preloadVideoRef.value) {
+        updateVideoSource(preloadVideoRef.value, newSrc, 'preload');
+      }
+    }
+  );
+
+  // Watch for video element refs becoming available to setup HLS if needed
+  watch(videoRef, (newElement) => {
+    if (newElement && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(newElement, props.videoSrc, 'main');
+    }
+  });
+
+  watch(framedVideoRef, (newElement) => {
+    if (newElement && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(newElement, props.videoSrc, 'framed');
+    }
+  });
+
+  watch(audioVideoRef, (newElement) => {
+    if (newElement && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(newElement, props.videoSrc, 'audio');
+    }
+  });
+
+  watch(preloadVideoRef, (newElement) => {
+    if (newElement && isHlsUrl(activePreloadSrc.value)) {
+      updateVideoSource(newElement, activePreloadSrc.value, 'preload');
+    }
+  });
+
+  // Watch for region video refs to setup HLS
+  watch(
+    regionVideoRefs,
+    (newRefs) => {
+      if (isHlsUrl(props.videoSrc)) {
+        newRefs.forEach((videoEl, idx) => {
+          if (videoEl) {
+            updateVideoSource(videoEl, props.videoSrc, `region-${idx}`);
+          }
+        });
+      }
+    },
+    { deep: true }
   );
 
   onMounted(() => {
     if (videoRef.value) {
       emit('videoElementReady', videoRef.value);
+      // Setup HLS if initial source is HLS
+      if (isHlsUrl(props.videoSrc)) {
+        updateVideoSource(videoRef.value, props.videoSrc, 'main');
+      }
+    }
+
+    // Setup HLS for framed video if available
+    if (framedVideoRef.value && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(framedVideoRef.value, props.videoSrc, 'framed');
+    }
+
+    // Setup HLS for audio video if available
+    if (audioVideoRef.value && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(audioVideoRef.value, props.videoSrc, 'audio');
     }
 
     // Set up resize observer to track container size changes
