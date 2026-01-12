@@ -90,6 +90,15 @@
           <FastForward :size="14" />
         </button>
       </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <span
+        v-if="clipCount > 0"
+        class="text-[10px] text-white/40 bg-[#161618] border border-white/[0.04] px-2 py-1 rounded-md font-medium"
+      >
+        {{ clipCount }} clip{{ clipCount !== 1 ? 's' : '' }}
+      </span>
 
       <!-- Zoom Controls Group -->
       <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
@@ -112,15 +121,6 @@
           <Plus2 :size="14" />
         </button>
       </div>
-    </div>
-
-    <div class="flex items-center gap-2">
-      <span
-        v-if="clipCount > 0"
-        class="text-[10px] text-white/40 bg-[#161618] border border-white/[0.04] px-2 py-1 rounded-md font-medium"
-      >
-        {{ clipCount }} clip{{ clipCount !== 1 ? 's' : '' }}
-      </span>
     </div>
   </div>
 </template>
