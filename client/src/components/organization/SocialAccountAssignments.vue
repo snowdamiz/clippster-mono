@@ -78,25 +78,25 @@
                     class="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0 border border-zinc-700 overflow-hidden"
                   >
                     <img
-                      v-if="member.user.avatar_url && !failedAvatars.has(member.user_id)"
+                      v-if="member.user?.avatar_url && !failedAvatars.has(member.user_id)"
                       :src="member.user.avatar_url"
-                      :alt="member.user.name || member.user.email"
+                      :alt="member.user?.name || member.user?.email"
                       class="w-9 h-9 rounded-full object-cover"
                       referrerpolicy="no-referrer"
                       @error="handleAvatarError($event, member.user_id)"
                     />
                     <span v-else class="text-xs font-medium text-zinc-400">
-                      {{ getInitials(member.user.name || member.user.email) }}
+                      {{ getInitials(member.user?.name || member.user?.email || '') }}
                     </span>
                   </div>
 
                   <!-- Member Info -->
                   <div class="flex-1 min-w-0">
                     <div class="font-medium text-sm text-white truncate">
-                      {{ member.user.name || member.user.email }}
+                      {{ member.user?.name || member.user?.email }}
                     </div>
-                    <div v-if="member.user.name" class="text-xs text-zinc-500 truncate">
-                      {{ member.user.email }}
+                    <div v-if="member.user?.name" class="text-xs text-zinc-500 truncate">
+                      {{ member.user?.email }}
                     </div>
                   </div>
 
@@ -167,11 +167,12 @@
     id: number;
     user_id: number;
     role: string;
-    user: {
+    user?: {
       id: number;
       email: string;
-      name: string | null;
-      avatar_url: string | null;
+      name?: string;
+      avatar_url?: string;
+      created_by_organization_id?: number;
     };
   }
 
@@ -210,8 +211,8 @@
 
     const query = searchQuery.value.toLowerCase();
     return props.members.filter((member) => {
-      const name = member.user.name?.toLowerCase() || '';
-      const email = member.user.email.toLowerCase();
+      const name = member.user?.name?.toLowerCase() || '';
+      const email = member.user?.email.toLowerCase() || '';
       return name.includes(query) || email.includes(query);
     });
   });

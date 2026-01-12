@@ -1,108 +1,80 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div
-        v-if="show"
-        class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
-        @click.self="closeDialog"
-      >
+      <div v-if="show" class="org-dialog__overlay" @click.self="closeDialog">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-lg w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
-          >
-            <!-- Decorative top accent -->
-            <div
-              class="h-1 w-full flex-shrink-0"
-              :class="
-                mode === 'organization'
-                  ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500'
-                  : 'bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500'
-              "
-            />
+          <div class="org-dialog org-dialog--cyan org-dialog--lg">
+            <!-- Accent Bar -->
+            <div class="org-dialog__accent org-dialog__accent--cyan" />
 
             <!-- Header -->
-            <div
-              class="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-zinc-800 bg-zinc-900/50 flex-shrink-0"
-            >
-              <div class="flex items-center gap-3">
-                <div
-                  class="w-10 h-10 rounded-xl flex items-center justify-center border"
-                  :class="
-                    mode === 'organization'
-                      ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border-emerald-500/30'
-                      : 'bg-gradient-to-br from-violet-500/20 to-purple-500/20 border-violet-500/30'
-                  "
-                >
-                  <UserCircle
-                    class="h-5 w-5"
-                    :class="mode === 'organization' ? 'text-emerald-400' : 'text-violet-400'"
-                  />
-                </div>
-                <h2 class="text-lg font-semibold text-white">
-                  {{ isEditing ? 'Edit Creator Profile' : 'Create Creator Profile' }}
-                </h2>
-              </div>
-              <button
-                @click="closeDialog"
-                class="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors border border-zinc-800"
-              >
-                <X class="w-5 h-5" />
+            <div class="org-dialog__header">
+              <button class="org-dialog__close" @click="closeDialog" title="Close">
+                <X :size="18" />
               </button>
+              <div class="org-dialog__icon org-dialog__icon--cyan">
+                <UserCircle :size="24" />
+              </div>
+              <h2 class="org-dialog__title">
+                {{ isEditing ? 'Edit Creator Profile' : 'Create Creator Profile' }}
+              </h2>
+              <p class="org-dialog__subtitle">
+                {{
+                  isEditing
+                    ? 'Update profile details and platform links'
+                    : 'Add a new creator with platform connections'
+                }}
+              </p>
             </div>
 
             <!-- Content -->
             <div
-              class="flex-1 p-5 sm:p-6 overflow-y-auto custom-scrollbar space-y-5"
+              class="org-dialog__content"
               @click="
                 openPlatformDropdown = null;
                 openAssetDropdown = null;
               "
             >
               <!-- Basic Info Section -->
-              <div class="space-y-4">
-                <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Basic Info</h3>
-
-                <div class="space-y-3">
-                  <div>
-                    <label class="block text-sm font-medium mb-1.5">Name *</label>
+              <div class="org-dialog__section">
+                <h3 class="org-dialog__section-title">Basic Info</h3>
+                <div class="org-dialog__section-items">
+                  <div class="org-dialog__field">
+                    <label class="org-dialog__label">Name *</label>
                     <input
                       v-model="formData.name"
                       type="text"
                       required
                       placeholder="Creator name"
-                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all text-sm"
+                      class="org-dialog__input"
                     />
                   </div>
 
-                  <div>
-                    <label class="block text-sm font-medium mb-1.5">
+                  <div class="org-dialog__field">
+                    <label class="org-dialog__label">
                       Description
-                      <span class="text-zinc-500 font-normal">(optional)</span>
+                      <span class="org-dialog__label-hint">(optional)</span>
                     </label>
                     <textarea
                       v-model="formData.description"
                       rows="2"
                       placeholder="Brief description of this creator..."
-                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all text-sm resize-none"
+                      class="org-dialog__input org-dialog__textarea"
                     />
                   </div>
                 </div>
               </div>
 
-              <!-- Auto DVR -->
-              <div class="flex items-start gap-3 bg-zinc-900/60 border border-zinc-800 rounded-lg p-4">
-                <div
-                  class="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500/15 to-emerald-400/5 border border-emerald-500/20 flex items-center justify-center flex-shrink-0"
-                >
-                  <Sparkles class="w-4 h-4 text-emerald-400" />
+              <!-- Auto DVR Toggle -->
+              <div class="org-dialog__feature-card">
+                <div class="org-dialog__feature-icon">
+                  <Sparkles :size="16" />
                 </div>
-                <div class="flex-1 space-y-1">
-                  <div class="flex items-center justify-between gap-3">
-                    <div>
-                      <p class="text-sm font-medium text-white">Auto DVR</p>
-                      <p class="text-xs text-zinc-400">
-                        Automatically start DVR when this creator goes live (uses REC if enabled).
-                      </p>
+                <div class="org-dialog__feature-content">
+                  <div class="org-dialog__feature-header">
+                    <div class="org-dialog__feature-text">
+                      <span class="org-dialog__feature-title">Auto DVR</span>
+                      <span class="org-dialog__feature-desc">Automatically start DVR when this creator goes live</span>
                     </div>
                     <Switch v-model:checked="formData.auto_dvr_enabled" />
                   </div>
@@ -110,47 +82,32 @@
               </div>
 
               <!-- Platform Links Section -->
-              <div class="space-y-4">
-                <div class="flex items-center justify-between">
-                  <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Platform Links</h3>
-                  <button
-                    type="button"
-                    @click="addPlatformLink"
-                    class="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors"
-                  >
-                    <Plus class="w-3.5 h-3.5" />
-                    Add Platform
+              <div class="org-dialog__section">
+                <div class="org-dialog__section-header">
+                  <h3 class="org-dialog__section-title">Platform Links</h3>
+                  <button type="button" @click="addPlatformLink" class="org-dialog__add-btn">
+                    <Plus :size="14" />
+                    <span>Add Platform</span>
                   </button>
                 </div>
 
                 <!-- Empty State -->
-                <div
-                  v-if="formData.platformLinks.length === 0"
-                  class="p-4 border border-dashed border-zinc-700 rounded-lg text-center"
-                >
-                  <p class="text-sm text-zinc-500">No platforms added yet</p>
-                  <button @click="addPlatformLink" class="mt-2 text-sm text-emerald-400 hover:underline">
-                    Add your first platform
-                  </button>
+                <div v-if="formData.platformLinks.length === 0" class="org-dialog__empty-state">
+                  <p class="org-dialog__empty-text">No platforms added yet</p>
+                  <button @click="addPlatformLink" class="org-dialog__empty-link">Add your first platform</button>
                 </div>
 
                 <!-- Platform Links List -->
-                <div v-else class="space-y-3">
-                  <div
-                    v-for="(link, index) in formData.platformLinks"
-                    :key="index"
-                    class="p-4 bg-zinc-900/60 border border-zinc-800 rounded-lg space-y-3"
-                  >
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-3">
+                <div v-else class="org-dialog__section-items">
+                  <div v-for="(link, index) in formData.platformLinks" :key="index" class="org-dialog__platform-card">
+                    <div class="org-dialog__platform-header">
+                      <div class="org-dialog__platform-left">
                         <!-- Profile Image Preview -->
-                        <div
-                          class="w-10 h-10 rounded-lg overflow-hidden bg-zinc-800 border border-zinc-700 flex items-center justify-center flex-shrink-0"
-                        >
+                        <div class="org-dialog__platform-avatar">
                           <img
                             v-if="link.profile_image_url"
                             :src="link.profile_image_url"
-                            class="w-full h-full object-cover"
+                            class="org-dialog__platform-avatar-img"
                             @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
                           />
                           <component
@@ -159,108 +116,92 @@
                               link.platform === 'pumpfun' && link.platform_id && fetchingProfileImage ? Loader2 : Users
                             "
                             :class="[
-                              'w-5 h-5 text-zinc-600',
+                              'org-dialog__platform-avatar-icon',
                               link.platform === 'pumpfun' && link.platform_id && fetchingProfileImage
-                                ? 'animate-spin'
+                                ? 'org-dialog__spin'
                                 : '',
                             ]"
                           />
                         </div>
 
                         <!-- Platform Dropdown -->
-                        <div class="relative">
+                        <div class="org-dialog__dropdown-wrapper">
                           <button
                             type="button"
                             @click.stop="togglePlatformDropdown(index)"
-                            class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-md text-white hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+                            class="org-dialog__platform-select"
                           >
                             <div
-                              class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                              class="org-dialog__platform-select-icon"
                               :style="{ backgroundColor: getPlatformColor(link.platform) }"
                             >
                               <img
                                 :src="getPlatformIcon(link.platform)"
-                                class="w-3.5 h-3.5"
+                                class="org-dialog__platform-select-icon-img"
                                 :class="getPlatformIconClass(link.platform)"
                               />
                             </div>
-                            <span class="text-sm font-medium">{{ getPlatformName(link.platform) }}</span>
+                            <span class="org-dialog__platform-select-label">{{ getPlatformName(link.platform) }}</span>
                             <ChevronDown
-                              class="w-3.5 h-3.5 text-zinc-400 transition-transform"
-                              :class="{ 'rotate-180': openPlatformDropdown === index }"
+                              class="org-dialog__chevron"
+                              :class="{ 'org-dialog__chevron--open': openPlatformDropdown === index }"
                             />
                           </button>
 
                           <!-- Platform Dropdown Menu -->
-                          <div
-                            v-if="openPlatformDropdown === index"
-                            class="absolute top-full left-0 mt-1 w-48 bg-zinc-900 border border-zinc-700 rounded-md shadow-lg z-50 overflow-hidden"
-                            @click.stop
-                          >
-                            <div class="p-1">
+                          <div v-if="openPlatformDropdown === index" class="org-dialog__dropdown" @click.stop>
+                            <div class="org-dialog__dropdown-list">
                               <button
                                 v-for="platform in availablePlatforms"
                                 :key="platform.id"
                                 type="button"
                                 @click="selectPlatform(index, platform.id)"
-                                class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2"
-                                :class="[
-                                  platform.disabled
-                                    ? 'opacity-50 cursor-not-allowed'
-                                    : 'hover:bg-zinc-800 cursor-pointer',
-                                  link.platform === platform.id ? 'bg-zinc-800' : '',
-                                ]"
+                                class="org-dialog__dropdown-item"
+                                :class="{
+                                  'org-dialog__dropdown-item--disabled': platform.disabled,
+                                  'org-dialog__dropdown-item--active': link.platform === platform.id,
+                                }"
                                 :disabled="platform.disabled"
                               >
                                 <div
-                                  class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                                  class="org-dialog__platform-select-icon"
                                   :style="{ backgroundColor: getPlatformColor(platform.id) }"
                                 >
                                   <img
                                     :src="getPlatformIcon(platform.id)"
-                                    class="w-3.5 h-3.5"
+                                    class="org-dialog__platform-select-icon-img"
                                     :class="getPlatformIconClass(platform.id)"
                                   />
                                 </div>
-                                <span class="text-sm" :class="platform.disabled ? 'text-zinc-500' : 'text-white'">
+                                <span :class="platform.disabled ? 'org-dialog__text-muted' : ''">
                                   {{ platform.name }}
                                 </span>
-                                <span
-                                  v-if="platform.disabled"
-                                  class="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full ml-auto"
-                                >
-                                  Soon
-                                </span>
+                                <span v-if="platform.disabled" class="org-dialog__dropdown-badge">Soon</span>
                               </button>
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      <div class="flex items-center gap-2">
-                        <label class="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
+                      <div class="org-dialog__platform-actions">
+                        <label class="org-dialog__platform-primary">
                           <input
                             type="radio"
                             :name="'primary-' + index"
                             :checked="link.is_primary"
                             @change="setPrimaryLink(index)"
-                            class="w-3 h-3"
                           />
                           Primary
                         </label>
-                        <button
-                          type="button"
-                          @click="removePlatformLink(index)"
-                          class="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
-                        >
-                          <Trash2 class="w-4 h-4" />
+                        <button type="button" @click="removePlatformLink(index)" class="org-dialog__platform-delete">
+                          <Trash2 :size="16" />
                         </button>
                       </div>
                     </div>
 
-                    <div class="grid gap-3">
-                      <div>
-                        <label class="block text-xs font-medium text-zinc-400 mb-1">
+                    <div class="org-dialog__platform-fields">
+                      <div class="org-dialog__field">
+                        <label class="org-dialog__label org-dialog__label--sm">
                           {{ link.platform === 'pumpfun' ? 'Mint ID or URL' : 'Channel Slug or URL' }} *
                         </label>
                         <input
@@ -270,16 +211,16 @@
                               ? 'Enter mint ID or paste PumpFun URL'
                               : 'Enter channel slug or paste URL'
                           "
-                          class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          class="org-dialog__input org-dialog__input--sm"
                           @blur="extractPlatformId(link)"
                         />
                       </div>
-                      <div>
-                        <label class="block text-xs font-medium text-zinc-400 mb-1">Display Name</label>
+                      <div class="org-dialog__field">
+                        <label class="org-dialog__label org-dialog__label--sm">Display Name</label>
                         <input
                           v-model="link.display_name"
                           placeholder="Optional display name"
-                          class="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          class="org-dialog__input org-dialog__input--sm"
                         />
                       </div>
                     </div>
@@ -287,71 +228,67 @@
                 </div>
               </div>
 
-              <!-- Asset Selection -->
-              <div class="space-y-4" @click.stop="openAssetDropdown = null">
-                <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Default Assets</h3>
-                <p class="text-xs text-zinc-500 -mt-2">
+              <!-- Asset Selection Section -->
+              <div class="org-dialog__section" @click.stop="openAssetDropdown = null">
+                <h3 class="org-dialog__section-title">Default Assets</h3>
+                <p class="org-dialog__section-desc">
                   Configure default intro, outro, and watermark for this creator's content.
                 </p>
 
-                <div class="grid gap-4">
+                <div class="org-dialog__section-items">
                   <!-- Intro Selection -->
-                  <div>
-                    <label class="block text-sm font-medium mb-2">Intro</label>
-                    <div class="flex gap-2">
-                      <div class="relative flex-1">
+                  <div class="org-dialog__asset-row">
+                    <label class="org-dialog__asset-label">Intro</label>
+                    <div class="org-dialog__asset-controls">
+                      <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
                         <button
                           type="button"
                           @click.stop="toggleAssetDropdown('intro')"
                           :disabled="uploadingIntro"
-                          class="w-full flex items-center gap-2 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-white hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all disabled:opacity-50"
+                          class="org-dialog__asset-select"
                         >
-                          <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-blue-500">
-                            <Play class="w-3.5 h-3.5 text-white" />
+                          <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--intro">
+                            <Play :size="14" />
                           </div>
-                          <span class="text-sm font-medium flex-1 text-left truncate">
+                          <span class="org-dialog__asset-select-label">
                             {{ getSelectedIntroName() }}
                           </span>
                           <ChevronDown
-                            class="w-3.5 h-3.5 text-zinc-400 transition-transform flex-shrink-0"
-                            :class="{ 'rotate-180': openAssetDropdown === 'intro' }"
+                            class="org-dialog__chevron"
+                            :class="{ 'org-dialog__chevron--open': openAssetDropdown === 'intro' }"
                           />
                         </button>
 
                         <!-- Intro Dropdown -->
                         <div
                           v-if="openAssetDropdown === 'intro'"
-                          class="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-md shadow-lg z-50 overflow-hidden"
+                          class="org-dialog__dropdown org-dialog__dropdown--full"
                           @click.stop
                         >
-                          <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                          <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
                             <button
                               type="button"
                               @click="selectIntro(null)"
-                              class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-zinc-800 cursor-pointer"
-                              :class="{ 'bg-zinc-800': formData.intro_id === null }"
+                              class="org-dialog__dropdown-item"
+                              :class="{ 'org-dialog__dropdown-item--active': formData.intro_id === null }"
                             >
-                              <div
-                                class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-zinc-700"
-                              >
-                                <X class="w-3.5 h-3.5 text-zinc-400" />
+                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
+                                <X :size="14" />
                               </div>
-                              <span class="text-sm text-zinc-400">No intro</span>
+                              <span class="org-dialog__text-muted">No intro</span>
                             </button>
                             <button
                               v-for="asset in introAssets"
                               :key="asset.id"
                               type="button"
                               @click="selectIntro(asset.id)"
-                              class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-zinc-800 cursor-pointer"
-                              :class="{ 'bg-zinc-800': formData.intro_id === asset.id }"
+                              class="org-dialog__dropdown-item"
+                              :class="{ 'org-dialog__dropdown-item--active': formData.intro_id === asset.id }"
                             >
-                              <div
-                                class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-blue-500"
-                              >
-                                <Play class="w-3.5 h-3.5 text-white" />
+                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--intro">
+                                <Play :size="14" />
                               </div>
-                              <span class="text-sm text-white truncate">{{ asset.name }}</span>
+                              <span class="org-dialog__truncate">{{ asset.name }}</span>
                             </button>
                           </div>
                         </div>
@@ -360,79 +297,75 @@
                         ref="introFileInput"
                         type="file"
                         accept="video/mp4,video/webm,video/quicktime"
-                        class="hidden"
+                        class="org-dialog__hidden"
                         @change="handleIntroUpload"
                       />
                       <button
                         type="button"
                         @click="introFileInput?.click()"
                         :disabled="uploadingIntro"
-                        class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
+                        class="org-dialog__asset-upload"
                         title="Upload new intro"
                       >
-                        <Loader2 v-if="uploadingIntro" class="h-4 w-4 animate-spin" />
-                        <Upload v-else class="h-4 w-4" />
+                        <Loader2 v-if="uploadingIntro" :size="16" class="org-dialog__spin" />
+                        <Upload v-else :size="16" />
                       </button>
                     </div>
                   </div>
 
                   <!-- Outro Selection -->
-                  <div>
-                    <label class="block text-sm font-medium mb-2">Outro</label>
-                    <div class="flex gap-2">
-                      <div class="relative flex-1">
+                  <div class="org-dialog__asset-row">
+                    <label class="org-dialog__asset-label">Outro</label>
+                    <div class="org-dialog__asset-controls">
+                      <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
                         <button
                           type="button"
                           @click.stop="toggleAssetDropdown('outro')"
                           :disabled="uploadingOutro"
-                          class="w-full flex items-center gap-2 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-white hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all disabled:opacity-50"
+                          class="org-dialog__asset-select"
                         >
-                          <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-purple-500">
-                            <SkipForward class="w-3.5 h-3.5 text-white" />
+                          <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--outro">
+                            <SkipForward :size="14" />
                           </div>
-                          <span class="text-sm font-medium flex-1 text-left truncate">
+                          <span class="org-dialog__asset-select-label">
                             {{ getSelectedOutroName() }}
                           </span>
                           <ChevronDown
-                            class="w-3.5 h-3.5 text-zinc-400 transition-transform flex-shrink-0"
-                            :class="{ 'rotate-180': openAssetDropdown === 'outro' }"
+                            class="org-dialog__chevron"
+                            :class="{ 'org-dialog__chevron--open': openAssetDropdown === 'outro' }"
                           />
                         </button>
 
                         <!-- Outro Dropdown -->
                         <div
                           v-if="openAssetDropdown === 'outro'"
-                          class="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-md shadow-lg z-50 overflow-hidden"
+                          class="org-dialog__dropdown org-dialog__dropdown--full"
                           @click.stop
                         >
-                          <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                          <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
                             <button
                               type="button"
                               @click="selectOutro(null)"
-                              class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-zinc-800 cursor-pointer"
-                              :class="{ 'bg-zinc-800': formData.outro_id === null }"
+                              class="org-dialog__dropdown-item"
+                              :class="{ 'org-dialog__dropdown-item--active': formData.outro_id === null }"
                             >
-                              <div
-                                class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-zinc-700"
-                              >
-                                <X class="w-3.5 h-3.5 text-zinc-400" />
+                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
+                                <X :size="14" />
                               </div>
-                              <span class="text-sm text-zinc-400">No outro</span>
+                              <span class="org-dialog__text-muted">No outro</span>
                             </button>
                             <button
                               v-for="asset in outroAssets"
                               :key="asset.id"
                               type="button"
                               @click="selectOutro(asset.id)"
-                              class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-zinc-800 cursor-pointer"
-                              :class="{ 'bg-zinc-800': formData.outro_id === asset.id }"
+                              class="org-dialog__dropdown-item"
+                              :class="{ 'org-dialog__dropdown-item--active': formData.outro_id === asset.id }"
                             >
-                              <div
-                                class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-purple-500"
-                              >
-                                <SkipForward class="w-3.5 h-3.5 text-white" />
+                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--outro">
+                                <SkipForward :size="14" />
                               </div>
-                              <span class="text-sm text-white truncate">{{ asset.name }}</span>
+                              <span class="org-dialog__truncate">{{ asset.name }}</span>
                             </button>
                           </div>
                         </div>
@@ -441,79 +374,75 @@
                         ref="outroFileInput"
                         type="file"
                         accept="video/mp4,video/webm,video/quicktime"
-                        class="hidden"
+                        class="org-dialog__hidden"
                         @change="handleOutroUpload"
                       />
                       <button
                         type="button"
                         @click="outroFileInput?.click()"
                         :disabled="uploadingOutro"
-                        class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
+                        class="org-dialog__asset-upload"
                         title="Upload new outro"
                       >
-                        <Loader2 v-if="uploadingOutro" class="h-4 w-4 animate-spin" />
-                        <Upload v-else class="h-4 w-4" />
+                        <Loader2 v-if="uploadingOutro" :size="16" class="org-dialog__spin" />
+                        <Upload v-else :size="16" />
                       </button>
                     </div>
                   </div>
 
                   <!-- Watermark Selection -->
-                  <div>
-                    <label class="block text-sm font-medium mb-2">Watermark</label>
-                    <div class="flex gap-2">
-                      <div class="relative flex-1">
+                  <div class="org-dialog__asset-row">
+                    <label class="org-dialog__asset-label">Watermark</label>
+                    <div class="org-dialog__asset-controls">
+                      <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
                         <button
                           type="button"
                           @click.stop="toggleAssetDropdown('watermark')"
                           :disabled="uploadingWatermark"
-                          class="w-full flex items-center gap-2 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-white hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all disabled:opacity-50"
+                          class="org-dialog__asset-select"
                         >
-                          <div class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-amber-500">
-                            <Image class="w-3.5 h-3.5 text-white" />
+                          <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--watermark">
+                            <Image :size="14" />
                           </div>
-                          <span class="text-sm font-medium flex-1 text-left truncate">
+                          <span class="org-dialog__asset-select-label">
                             {{ getSelectedWatermarkName() }}
                           </span>
                           <ChevronDown
-                            class="w-3.5 h-3.5 text-zinc-400 transition-transform flex-shrink-0"
-                            :class="{ 'rotate-180': openAssetDropdown === 'watermark' }"
+                            class="org-dialog__chevron"
+                            :class="{ 'org-dialog__chevron--open': openAssetDropdown === 'watermark' }"
                           />
                         </button>
 
                         <!-- Watermark Dropdown -->
                         <div
                           v-if="openAssetDropdown === 'watermark'"
-                          class="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-md shadow-lg z-50 overflow-hidden"
+                          class="org-dialog__dropdown org-dialog__dropdown--full"
                           @click.stop
                         >
-                          <div class="p-1 max-h-48 overflow-y-auto custom-scrollbar">
+                          <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
                             <button
                               type="button"
                               @click="selectWatermark(null)"
-                              class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-zinc-800 cursor-pointer"
-                              :class="{ 'bg-zinc-800': formData.watermark_id === null }"
+                              class="org-dialog__dropdown-item"
+                              :class="{ 'org-dialog__dropdown-item--active': formData.watermark_id === null }"
                             >
-                              <div
-                                class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-zinc-700"
-                              >
-                                <X class="w-3.5 h-3.5 text-zinc-400" />
+                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
+                                <X :size="14" />
                               </div>
-                              <span class="text-sm text-zinc-400">No watermark</span>
+                              <span class="org-dialog__text-muted">No watermark</span>
                             </button>
                             <button
                               v-for="asset in watermarkAssets"
                               :key="asset.id"
                               type="button"
                               @click="selectWatermark(asset.id)"
-                              class="w-full text-left px-3 py-2 rounded-md transition-colors flex items-center gap-2 hover:bg-zinc-800 cursor-pointer"
-                              :class="{ 'bg-zinc-800': formData.watermark_id === asset.id }"
+                              class="org-dialog__dropdown-item"
+                              :class="{ 'org-dialog__dropdown-item--active': formData.watermark_id === asset.id }"
                             >
-                              <div
-                                class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 bg-amber-500"
-                              >
-                                <Image class="w-3.5 h-3.5 text-white" />
+                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--watermark">
+                                <Image :size="14" />
                               </div>
-                              <span class="text-sm text-white truncate">{{ asset.name }}</span>
+                              <span class="org-dialog__truncate">{{ asset.name }}</span>
                             </button>
                           </div>
                         </div>
@@ -523,36 +452,33 @@
                         type="button"
                         @click="openWatermarkPositionPicker"
                         :disabled="!formData.watermark_id"
-                        class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-zinc-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        :class="{ 'border-amber-500/50 text-amber-400': formData.watermark_settings }"
+                        class="org-dialog__asset-upload"
+                        :class="{ 'org-dialog__asset-upload--active': formData.watermark_settings }"
                         title="Configure watermark position"
                       >
-                        <Settings2 class="h-4 w-4" />
+                        <Settings2 :size="16" />
                       </button>
                       <input
                         ref="watermarkFileInput"
                         type="file"
                         accept="image/png,image/jpeg,image/webp,image/gif"
-                        class="hidden"
+                        class="org-dialog__hidden"
                         @change="handleWatermarkUpload"
                       />
                       <button
                         type="button"
                         @click="watermarkFileInput?.click()"
                         :disabled="uploadingWatermark"
-                        class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
+                        class="org-dialog__asset-upload"
                         title="Upload new watermark"
                       >
-                        <Loader2 v-if="uploadingWatermark" class="h-4 w-4 animate-spin" />
-                        <Upload v-else class="h-4 w-4" />
+                        <Loader2 v-if="uploadingWatermark" :size="16" class="org-dialog__spin" />
+                        <Upload v-else :size="16" />
                       </button>
                     </div>
                     <!-- Configured indicator -->
-                    <p
-                      v-if="formData.watermark_settings"
-                      class="text-xs text-amber-400/80 mt-1.5 flex items-center gap-1"
-                    >
-                      <Settings2 class="w-3 h-3" />
+                    <p v-if="formData.watermark_settings" class="org-dialog__asset-hint">
+                      <Settings2 :size="12" />
                       Position configured for {{ getConfiguredRatiosCount() }} aspect ratio(s)
                     </p>
                   </div>
@@ -561,28 +487,21 @@
             </div>
 
             <!-- Footer -->
-            <div
-              class="flex items-center justify-end gap-3 px-5 sm:px-6 py-4 border-t border-zinc-800 bg-zinc-900/50 flex-shrink-0"
-            >
+            <div class="org-dialog__footer">
               <button
                 type="button"
                 @click="closeDialog"
                 :disabled="saving"
-                class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50"
+                class="org-dialog__btn org-dialog__btn--secondary"
               >
                 Cancel
               </button>
               <button
                 @click="handleSubmit"
                 :disabled="!isValid || saving || fetchingProfileImage"
-                class="px-5 py-2.5 text-white rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                :class="
-                  mode === 'organization'
-                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500'
-                    : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500'
-                "
+                class="org-dialog__btn org-dialog__btn--primary"
               >
-                <Loader2 v-if="saving || fetchingProfileImage" class="h-4 w-4 animate-spin" />
+                <Loader2 v-if="saving || fetchingProfileImage" :size="16" class="org-dialog__btn-spinner" />
                 {{
                   saving
                     ? 'Saving...'
@@ -1091,7 +1010,7 @@
 
   function getPlatformIconClass(platform: string): string {
     if (platform === 'kick') return '';
-    return 'brightness-200';
+    return 'org-dialog__brightness';
   }
 
   function getPlatformName(platform: string): string {
@@ -1671,10 +1590,740 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Dialog Overlay ===== */
+  .org-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+  }
+
+  /* ===== Dialog Container ===== */
+  .org-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 440px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .org-dialog--lg {
+    max-width: 560px;
+  }
+
+  /* ===== Accent Bar ===== */
+  .org-dialog__accent {
+    height: 3px;
+    flex-shrink: 0;
+  }
+
+  .org-dialog__accent--cyan {
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  }
+
+  /* ===== Header ===== */
+  .org-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .org-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    margin-bottom: 0.875rem;
+  }
+
+  .org-dialog__icon--cyan {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .org-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .org-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content ===== */
+  .org-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .org-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .org-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .org-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Sections ===== */
+  .org-dialog__section {
+    margin-bottom: 1.25rem;
+  }
+
+  .org-dialog__section:last-child {
+    margin-bottom: 0;
+  }
+
+  .org-dialog__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.625rem;
+  }
+
+  .org-dialog__section-title {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.625rem;
+  }
+
+  .org-dialog__section-header .org-dialog__section-title {
+    margin: 0;
+  }
+
+  .org-dialog__section-desc {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: -0.375rem 0 0.75rem;
+    opacity: 0.8;
+  }
+
+  .org-dialog__section-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  /* ===== Form Fields ===== */
+  .org-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .org-dialog__label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__label--sm {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-dialog__label-hint {
+    color: var(--sidebar-text-muted);
+    font-weight: 400;
+    font-size: 0.8125rem;
+  }
+
+  .org-dialog__input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .org-dialog__input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .org-dialog__input--sm {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .org-dialog__textarea {
+    resize: none;
+    min-height: 60px;
+  }
+
+  /* ===== Feature Card (Auto DVR) ===== */
+  .org-dialog__feature-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    padding: 1rem;
+    background-color: rgba(6, 182, 212, 0.05);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: 10px;
+    margin-bottom: 1.25rem;
+  }
+
+  .org-dialog__feature-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .org-dialog__feature-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-dialog__feature-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .org-dialog__feature-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .org-dialog__feature-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__feature-desc {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Add Button ===== */
+  .org-dialog__add-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+    color: var(--sidebar-accent);
+  }
+
+  .org-dialog__add-btn:hover {
+    background-color: rgba(6, 182, 212, 0.1);
+  }
+
+  /* ===== Empty State ===== */
+  .org-dialog__empty-state {
+    padding: 1.25rem;
+    border: 1px dashed var(--sidebar-border);
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .org-dialog__empty-text {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.5rem;
+  }
+
+  .org-dialog__empty-link {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+    color: var(--sidebar-accent);
+  }
+
+  .org-dialog__empty-link:hover {
+    opacity: 0.8;
+  }
+
+  /* ===== Platform Card ===== */
+  .org-dialog__platform-card {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .org-dialog__platform-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.875rem;
+  }
+
+  .org-dialog__platform-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .org-dialog__platform-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .org-dialog__platform-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .org-dialog__platform-avatar-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-dialog__platform-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+
+  .org-dialog__platform-primary {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+  }
+
+  .org-dialog__platform-primary input {
+    width: 12px;
+    height: 12px;
+  }
+
+  .org-dialog__platform-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__platform-delete:hover {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+  }
+
+  .org-dialog__platform-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  /* ===== Platform Select Button ===== */
+  .org-dialog__platform-select {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.625rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__platform-select:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .org-dialog__platform-select-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .org-dialog__platform-select-icon-img {
+    width: 14px;
+    height: 14px;
+  }
+
+  .org-dialog__platform-select-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  .org-dialog__chevron {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    transition: transform 150ms ease;
+  }
+
+  .org-dialog__chevron--open {
+    transform: rotate(180deg);
+  }
+
+  /* ===== Dropdown ===== */
+  .org-dialog__dropdown-wrapper {
+    position: relative;
+  }
+
+  .org-dialog__dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 0.25rem;
+    min-width: 180px;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    z-index: 50;
+    overflow: hidden;
+  }
+
+  .org-dialog__dropdown--full {
+    right: 0;
+  }
+
+  .org-dialog__dropdown-list {
+    padding: 0.25rem;
+  }
+
+  .org-dialog__dropdown-list--scrollable {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .org-dialog__dropdown-list--scrollable::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .org-dialog__dropdown-list--scrollable::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .org-dialog__dropdown-list--scrollable::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .org-dialog__dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+  }
+
+  .org-dialog__dropdown-item:hover:not(.org-dialog__dropdown-item--disabled) {
+    background-color: rgba(6, 182, 212, 0.1);
+    color: var(--sidebar-accent);
+  }
+
+  .org-dialog__dropdown-item--active {
+    background-color: var(--sidebar-active);
+  }
+
+  .org-dialog__dropdown-item--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-dialog__dropdown-badge {
+    margin-left: auto;
+    padding: 0.125rem 0.375rem;
+    background-color: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+    font-size: 0.625rem;
+    font-weight: 600;
+    border-radius: 9999px;
+  }
+
+  /* ===== Asset Row ===== */
+  .org-dialog__asset-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .org-dialog__asset-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__asset-controls {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .org-dialog__asset-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: #f59e0b;
+    opacity: 0.9;
+    margin: 0;
+  }
+
+  /* ===== Asset Select Button ===== */
+  .org-dialog__asset-select {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__asset-select:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+  }
+
+  .org-dialog__asset-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-dialog__asset-select-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: white;
+  }
+
+  .org-dialog__asset-select-icon--intro {
+    background-color: #3b82f6;
+  }
+
+  .org-dialog__asset-select-icon--outro {
+    background-color: #a855f7;
+  }
+
+  .org-dialog__asset-select-icon--watermark {
+    background-color: #f59e0b;
+  }
+
+  .org-dialog__asset-select-icon--none {
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-dialog__asset-select-label {
+    flex: 1;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ===== Asset Upload Button ===== */
+  .org-dialog__asset-upload {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .org-dialog__asset-upload:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__asset-upload:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-dialog__asset-upload--active {
+    border-color: rgba(245, 158, 11, 0.5);
+    color: #f59e0b;
+  }
+
+  /* ===== Footer ===== */
+  .org-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+    margin-top: 1rem;
+  }
+
+  /* ===== Buttons ===== */
+  .org-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .org-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .org-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .org-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .org-dialog__btn-spinner {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -1682,18 +2331,17 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {
@@ -1701,21 +2349,36 @@
     transform: scale(0.98);
   }
 
-  /* Custom scrollbar */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
+  /* ===== Utility Classes ===== */
+  .org-dialog__flex-1 {
+    flex: 1;
   }
 
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgb(63 63 70);
-    border-radius: 3px;
+  .org-dialog__hidden {
+    display: none;
   }
 
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgb(82 82 91);
+  .org-dialog__truncate {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .org-dialog__spin {
+    animation: spin 1s linear infinite;
+  }
+
+  .org-dialog__brightness {
+    filter: brightness(2);
+  }
+
+  .org-dialog__text-muted {
+    color: var(--sidebar-text-muted);
   }
 </style>

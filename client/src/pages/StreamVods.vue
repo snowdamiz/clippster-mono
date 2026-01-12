@@ -1,75 +1,64 @@
 <template>
-  <PageLayout
-    title="Stream VODs"
-    description="Download VODs from your favorite streaming platforms"
-    :show-header="true"
-    :icon="Video"
-  >
-    <template #actions>
-      <div class="flex items-center gap-3">
-        <!-- Recent Searches Dropdown -->
-        <div class="relative" v-if="platformStore.getRecentSearches.length > 0">
-          <button
-            @click="showRecentDropdown = !showRecentDropdown"
-            class="px-3 py-2.5 bg-muted border border-border rounded-md text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all flex items-center gap-2"
-            title="Recent searches"
-          >
-            <Clock class="h-4 w-4" />
-            <span class="text-sm">Recent</span>
-            <ChevronDown class="h-3 w-3 transition-transform" :class="{ 'rotate-180': showRecentDropdown }" />
-          </button>
-          <div
-            v-if="showRecentDropdown"
-            class="absolute top-full left-0 mt-1 w-72 bg-card border border-border rounded-md shadow-lg z-[9999] max-h-80 overflow-y-auto"
-            @click.stop
-          >
-            <div class="p-2">
-              <div class="text-xs font-medium text-muted-foreground px-2 py-1 mb-1">Recent Searches</div>
+  <div class="streamvods">
+    <PageLayout
+      title="Stream VODs"
+      description="Download VODs from your favorite streaming platforms"
+      :show-header="true"
+      :icon="Video"
+    >
+      <template #actions>
+        <div class="streamvods-actions">
+          <!-- Recent Searches Dropdown -->
+          <div class="streamvods-recent" v-if="platformStore.getRecentSearches.length > 0">
+            <button
+              @click="showRecentDropdown = !showRecentDropdown"
+              class="streamvods-recent__trigger"
+              title="Recent searches"
+            >
+              <Clock class="streamvods-recent__trigger-icon" />
+              <span class="streamvods-recent__trigger-text">Recent</span>
+              <ChevronDown
+                class="streamvods-recent__trigger-chevron"
+                :class="{ 'streamvods-recent__trigger-chevron--open': showRecentDropdown }"
+              />
+            </button>
+            <div v-if="showRecentDropdown" class="streamvods-recent__dropdown" @click.stop>
+              <div class="streamvods-recent__header">Recent Searches</div>
               <div
                 v-for="search in platformStore.getRecentSearches.slice(0, 15)"
                 :key="`${search.platform}-${search.id}`"
-                class="group"
+                class="streamvods-recent__item"
+                @click="
+                  handleRecentSearchClick(search);
+                  showRecentDropdown = false;
+                "
               >
-                <div
-                  @click="
-                    handleRecentSearchClick(search);
-                    showRecentDropdown = false;
-                  "
-                  class="w-full text-left px-3 py-2 rounded-md hover:bg-muted/80 transition-colors flex items-center gap-3 cursor-pointer"
-                >
-                  <!-- Platform Badge + Image -->
-                  <div class="relative flex-shrink-0">
-                    <div
-                      class="w-9 h-9 rounded-full overflow-hidden bg-muted border border-border/50 flex items-center justify-center"
-                    >
-                      <img v-if="search.imageUrl" :src="search.imageUrl" class="w-full h-full object-cover" />
-                      <component
-                        v-else
-                        :is="getPlatformFallbackIcon(search.platform)"
-                        class="h-4 w-4 text-muted-foreground"
-                      />
-                    </div>
-                    <!-- Platform indicator badge -->
-                    <div
-                      class="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center shadow-sm"
-                      :style="{ backgroundColor: getPlatformColor(search.platform), border: '2px solid var(--card)' }"
-                    >
-                      <img :src="getPlatformIcon(search.platform)" class="w-3 h-3" />
-                    </div>
+                <div class="streamvods-recent__avatar">
+                  <div class="streamvods-recent__avatar-img">
+                    <img v-if="search.imageUrl" :src="search.imageUrl" />
+                    <component
+                      v-else
+                      :is="getPlatformFallbackIcon(search.platform)"
+                      class="streamvods-recent__avatar-fallback"
+                    />
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2">
-                      <span class="font-medium text-sm text-foreground truncate">
-                        <template v-if="search.symbol">{{ search.symbol }}</template>
-                        <template v-else-if="search.label">{{ search.label }}</template>
-                        <template v-else>{{ truncateId(search.id) }}</template>
-                      </span>
-                    </div>
-                    <div class="text-xs text-muted-foreground truncate">
-                      <template v-if="search.name">{{ search.name }}</template>
-                      <template v-else>{{ search.displayText }}</template>
-                    </div>
+                  <div
+                    class="streamvods-recent__avatar-badge"
+                    :class="`streamvods-recent__avatar-badge--${search.platform}`"
+                  >
+                    <img :src="getPlatformIcon(search.platform)" />
                   </div>
+                </div>
+                <div class="streamvods-recent__info">
+                  <span class="streamvods-recent__name">
+                    <template v-if="search.symbol">{{ search.symbol }}</template>
+                    <template v-else-if="search.label">{{ search.label }}</template>
+                    <template v-else>{{ truncateId(search.id) }}</template>
+                  </span>
+                  <span class="streamvods-recent__detail">
+                    <template v-if="search.name">{{ search.name }}</template>
+                    <template v-else>{{ search.displayText }}</template>
+                  </span>
                 </div>
               </div>
               <button
@@ -77,401 +66,335 @@
                   platformStore.clearRecentSearches();
                   showRecentDropdown = false;
                 "
-                class="w-full text-left px-3 py-2 rounded-md hover:bg-red-500/10 text-red-400 text-xs transition-colors mt-1"
+                class="streamvods-recent__clear"
               >
                 Clear All
               </button>
             </div>
           </div>
-        </div>
 
-        <!-- Search Input with Auto-Detection -->
-        <div class="relative w-[420px] shadow-sm group">
-          <div
-            class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 pointer-events-none z-10"
-          >
+          <!-- Search Input with Auto-Detection -->
+          <div class="streamvods-search">
             <transition name="scale" mode="out-in">
               <div
                 v-if="detectedPlatform === 'pumpfun'"
-                class="w-6 h-6 bg-emerald-500 rounded-md flex items-center justify-center shadow-sm border-border/80"
+                class="streamvods-search__platform streamvods-search__platform--pumpfun"
                 key="pf"
               >
-                <img src="/capsule.svg" class="w-3.5 h-3.5 brightness-200" />
+                <img src="/capsule.svg" class="streamvods-search__platform-icon" />
               </div>
               <div
                 v-else-if="detectedPlatform === 'kick'"
-                class="w-6 h-6 bg-[#53FC18] rounded-md flex items-center justify-center shadow-sm border-border/80"
+                class="streamvods-search__platform streamvods-search__platform--kick"
                 key="kick"
               >
-                <img src="/kick.svg" class="w-3.5 h-3.5" />
+                <img src="/kick.svg" class="streamvods-search__platform-icon streamvods-search__platform-icon--dark" />
               </div>
               <div
                 v-else-if="detectedPlatform === 'twitch'"
-                class="w-6 h-6 bg-[#9146FF] rounded-md flex items-center justify-center shadow-sm border-border/80"
+                class="streamvods-search__platform streamvods-search__platform--twitch"
                 key="tw"
               >
-                <img src="/twitch.svg" class="w-3.5 h-3.5 invert brightness-200" />
+                <img src="/twitch.svg" class="streamvods-search__platform-icon" />
               </div>
               <div
                 v-else-if="detectedPlatform === 'youtube'"
-                class="w-6 h-6 bg-red-600 rounded-md flex items-center justify-center shadow-sm border-border/80"
+                class="streamvods-search__platform streamvods-search__platform--youtube"
                 key="yt"
               >
-                <img src="/youtube.svg" class="w-3.5 h-3.5 invert brightness-200" />
+                <img src="/youtube.svg" class="streamvods-search__platform-icon" />
               </div>
-              <Search v-else class="w-4 h-4 text-muted-foreground" key="search" />
+              <Search v-else class="streamvods-search__icon" key="search" />
             </transition>
+            <input
+              v-model="searchInput"
+              class="streamvods-search__input"
+              placeholder="Paste stream link, mint ID, or username..."
+              :disabled="platformStore.loading"
+              @input="detectPlatform"
+              @keyup.enter="handleSearch"
+            />
           </div>
-          <Input
-            v-model="searchInput"
-            class="h-11 pl-11 pr-28 text-sm bg-background border-border/70 rounded-lg focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
-            placeholder="Paste stream link, mint ID, or username..."
-            :disabled="platformStore.loading"
-            @input="detectPlatform"
-            @keyup.enter="handleSearch"
-          />
-          <div class="absolute right-1.5 top-1/2 -translate-y-1/2">
-            <Button
-              size="sm"
-              class="h-8 px-4 rounded-sm font-medium transition-all text-xs"
-              :disabled="!searchInput || platformStore.loading"
-              @click="handleSearch"
-            >
-              <Loader2 v-if="platformStore.loading" class="w-3.5 h-3.5 animate-spin" />
-              <Search v-else class="w-3.5 h-3.5" />
-              Search
-            </Button>
-          </div>
+          <button class="streamvods-search-btn" :disabled="!searchInput || platformStore.loading" @click="handleSearch">
+            <Loader2
+              v-if="platformStore.loading"
+              class="streamvods-search-btn__icon streamvods-search-btn__icon--spin"
+            />
+            <Search v-else class="streamvods-search-btn__icon" />
+            Search
+          </button>
         </div>
-      </div>
-    </template>
+      </template>
 
-    <!-- Loading State -->
-    <div v-if="platformStore.loading" class="space-y-6">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        <div v-for="i in 6" :key="i" class="relative bg-card rounded-md overflow-hidden aspect-video animate-pulse">
-          <div class="absolute inset-0 z-0 bg-muted/40">
-            <div class="absolute inset-0 bg-gradient-to-br from-black/10 via-transparent to-black/20"></div>
-          </div>
-          <div class="absolute top-4 right-4 z-5">
-            <div class="h-5 w-12 bg-muted/70 rounded-md"></div>
-          </div>
-          <div class="absolute bottom-2 left-2 right-2 z-5 bg-black/40 backdrop-blur-sm p-2 rounded-md">
-            <div class="h-5 bg-muted/70 rounded mb-1 w-3/4"></div>
-            <div class="h-3 bg-muted/70 rounded w-2/3"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Error State -->
-    <div v-else-if="platformStore.error" class="bg-red-500/10 border border-red-500/50 rounded-md p-6 text-center">
-      <AlertTriangle class="h-12 w-12 text-red-500 mx-auto mb-3" />
-      <h3 class="text-lg font-semibold text-red-400 mb-2">Error</h3>
-      <p class="text-muted-foreground">{{ platformStore.error }}</p>
-      <button
-        @click="handleSearch"
-        class="mt-4 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-md transition-all"
-      >
-        Try Again
-      </button>
-    </div>
-
-    <!-- VODs Grid -->
-    <div v-else-if="platformStore.clips.length > 0" class="space-y-6">
-      <!-- Filter Notice -->
       <div
-        v-if="currentPlatformConfig?.showFilterNotice"
-        class="bg-blue-500/10 border border-blue-500/50 rounded-md p-4 flex items-center gap-3"
+        class="streamvods__content"
+        :class="{ 'streamvods__content--empty': platformStore.clips.length === 0 && !platformStore.loading }"
       >
-        <AlertTriangle class="h-5 w-5 text-blue-400 flex-shrink-0" />
-        <p class="text-sm text-blue-400">{{ currentPlatformConfig.filterNoticeText }}</p>
-      </div>
+        <!-- Page Heading -->
+        <div v-if="platformStore.clips.length > 0 || platformStore.loading" class="streamvods__heading">
+          <h1 class="streamvods__title">Stream VOD Library</h1>
+          <p class="streamvods__subtitle">Search and download VODs from your favorite streaming platforms</p>
+        </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        <div
-          v-for="clip in paginatedClips"
-          :key="clip.clipId"
-          class="relative bg-card rounded-md overflow-hidden hover:border-foreground/20 cursor-pointer group aspect-video hover:scale-102 transition-all"
-          @click="handleClipClick(clip)"
-        >
-          <div
-            v-if="clip.thumbnailUrl"
-            class="absolute inset-0 z-0"
-            :style="{
-              backgroundImage: `url(${clip.thumbnailUrl})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-            }"
-          >
-            <div class="absolute inset-0 bg-black/10"></div>
-          </div>
-          <div
-            class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
-          >
-            <h3
-              class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
-            >
-              {{ clip.title }}
-            </h3>
-            <div class="flex flex-wrap items-center gap-2 text-xs text-white/70 font-medium">
-              <span>{{ formatDuration(clip.duration) }}</span>
-              <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
-              <span class="truncate">
-                {{ clip.createdAt ? formatAbsoluteDate(clip.createdAt) : 'No timestamp' }}
-              </span>
-              <template v-if="clip.createdAt">
-                <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
-                <span class="truncate">
-                  {{ formatRelativeTime(clip.createdAt) }}
-                </span>
-              </template>
+        <!-- Loading State -->
+        <div v-if="platformStore.loading" class="streamvods__loading">
+          <div class="streamvods__section-header">
+            <div class="streamvods__section-header-left">
+              <div class="streamvods__section-icon">
+                <Video />
+              </div>
+              <div class="streamvods__section-text">
+                <h2 class="streamvods__section-title">Loading VODs</h2>
+                <p class="streamvods__section-subtitle">Fetching available streams...</p>
+              </div>
             </div>
           </div>
-          <div
-            v-if="clip.thumbnailUrl"
-            class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-5 flex items-center justify-center gap-3"
-          >
-            <button
-              class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-              title="Download"
-              @click.stop="handleDownloadClip(clip)"
-            >
-              <Download class="h-5 w-5" />
-            </button>
+          <div class="streamvods__grid">
+            <div v-for="i in 6" :key="i" class="vod-card vod-card--skeleton">
+              <div class="vod-card__skeleton-bg"></div>
+              <div class="vod-card__bottom">
+                <div class="vod-card__skeleton-title"></div>
+                <div class="vod-card__skeleton-meta"></div>
+              </div>
+            </div>
           </div>
-          <div
-            v-if="!clip.thumbnailUrl"
-            class="flex items-center justify-between px-4 py-2 border-t border-border bg-[#141414]"
-          >
-            <span class="text-sm font-medium text-muted-foreground">{{ clip.clipId }}</span>
-            <button
-              class="p-2 rounded-md transition-colors hover:bg-muted"
-              title="Download"
-              @click.stop="handleDownloadClip(clip)"
-            >
-              <Download class="h-4 w-4 text-muted-foreground hover:text-foreground" />
-            </button>
+        </div>
+
+        <!-- Error State -->
+        <div v-else-if="platformStore.error" class="streamvods__error">
+          <div class="streamvods__error-icon">
+            <AlertTriangle />
           </div>
+          <h3 class="streamvods__error-title">Error</h3>
+          <p class="streamvods__error-message">{{ platformStore.error }}</p>
+          <button @click="handleSearch" class="streamvods__error-btn">Try Again</button>
+        </div>
+
+        <!-- VODs Grid -->
+        <div v-else-if="platformStore.clips.length > 0" class="streamvods__results">
+          <!-- Results Count -->
+          <div class="streamvods__results-count">
+            {{ paginatedClips.length }} {{ paginatedClips.length === 1 ? 'item' : 'items' }}
+            <span v-if="totalPages > 1">(Page {{ currentPage }} of {{ totalPages }})</span>
+          </div>
+
+          <!-- VOD Cards Grid -->
+          <div class="streamvods__grid">
+            <div v-for="clip in paginatedClips" :key="clip.clipId" class="vod-card" @click="handleClipClick(clip)">
+              <!-- Thumbnail Background -->
+              <div
+                v-if="clip.thumbnailUrl"
+                class="vod-card__thumbnail"
+                :style="{ backgroundImage: `url(${clip.thumbnailUrl})` }"
+              ></div>
+
+              <!-- Vignette Overlay -->
+              <div class="vod-card__vignette"></div>
+
+              <!-- Platform Badge -->
+              <div class="vod-card__badges">
+                <span v-if="detectedPlatform" class="vod-card__badge" :class="`vod-card__badge--${detectedPlatform}`">
+                  <img :src="getPlatformIcon(detectedPlatform)" class="vod-card__badge-icon" />
+                  {{ getPlatformDisplayName(detectedPlatform) }}
+                </span>
+                <span class="vod-card__badge vod-card__badge--duration">
+                  <Clock class="vod-card__badge-icon-svg" />
+                  {{ formatDuration(clip.duration) }}
+                </span>
+              </div>
+
+              <!-- Hover Actions -->
+              <div class="vod-card__actions">
+                <button class="vod-card__action-btn" title="Download" @click.stop="handleDownloadClip(clip)">
+                  <Download class="vod-card__action-icon" />
+                </button>
+              </div>
+
+              <!-- Bottom Info Overlay -->
+              <div class="vod-card__bottom">
+                <h3 class="vod-card__name" :title="clip.title">{{ clip.title }}</h3>
+                <div class="vod-card__meta">
+                  <span>{{ clip.createdAt ? formatAbsoluteDate(clip.createdAt) : 'No timestamp' }}</span>
+                  <template v-if="clip.createdAt">
+                    <span class="vod-card__meta-dot"></span>
+                    <span>{{ formatRelativeTime(clip.createdAt) }}</span>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div v-else class="streamvods__empty">
+          <div class="streamvods__empty-icon-wrapper">
+            <Video class="streamvods__empty-icon" />
+          </div>
+          <h3 class="streamvods__empty-title">Search for VODs</h3>
+          <p class="streamvods__empty-description">Paste a stream link, mint ID, or channel username to find VODs</p>
         </div>
       </div>
-    </div>
 
-    <!-- Empty State -->
-    <EmptyState
-      v-if="platformStore.clips.length === 0 && !platformStore.loading && !platformStore.error"
-      title="Search for VODs"
-      description="Paste a stream link, mint ID, or channel username to find VODs. Supports PumpFun and Kick."
-    >
-      <template #icon>
-        <Video class="h-16 w-16 text-muted-foreground" />
-      </template>
-      <template #default>
-        <div class="mt-6 flex flex-wrap justify-center gap-3">
-          <div class="flex items-center gap-2 px-3 py-1.5 bg-muted/30 rounded-full text-xs text-muted-foreground">
-            <img src="/capsule.svg" class="w-4 h-4" />
-            PumpFun Links & Mint IDs
-          </div>
-          <div class="flex items-center gap-2 px-3 py-1.5 bg-muted/30 rounded-full text-xs text-muted-foreground">
-            <img src="/kick.svg" class="w-4 h-4" />
-            Kick Links & Usernames
-          </div>
-          <div
-            class="flex items-center gap-2 px-3 py-1.5 bg-muted/30 rounded-full text-xs text-muted-foreground border border-amber-500/20"
-          >
-            <img src="/twitch.svg" class="w-4 h-4 opacity-50" />
-            Twitch
-            <span class="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full">Soon</span>
-          </div>
-          <div
-            class="flex items-center gap-2 px-3 py-1.5 bg-muted/30 rounded-full text-xs text-muted-foreground border border-amber-500/20"
-          >
-            <img src="/youtube.svg" class="w-4 h-4 opacity-50" />
-            YouTube
-            <span class="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full">Soon</span>
-          </div>
-        </div>
-      </template>
-    </EmptyState>
+      <!-- Pagination Footer -->
+      <PaginationFooter
+        v-if="platformStore.clips.length > 0"
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :total-items="platformStore.clips.length"
+        item-label="VOD"
+        @go-to-page="goToPage"
+        @previous="previousPage"
+        @next="nextPage"
+      />
+    </PageLayout>
 
     <!-- Download Modal -->
-    <Transition
-      enter-active-class="transition duration-200 ease-out"
-      enter-from-class="opacity-0 scale-95"
-      enter-to-class="opacity-100 scale-100"
-      leave-active-class="transition duration-150 ease-in"
-      leave-from-class="opacity-100 scale-100"
-      leave-to-class="opacity-0 scale-95"
-    >
-      <div v-if="showDownloadDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeDownloadDialog()"></div>
-        <div
-          class="relative flex flex-col w-full max-w-lg overflow-hidden bg-card border border-border shadow-2xl rounded-xl max-h-[90vh]"
-        >
-          <div class="flex items-center justify-between px-3 py-1 border-b border-border/60 bg-black/30">
-            <h2 class="text-md font-semibold text-foreground">Download Options</h2>
-            <button
-              @click="closeDownloadDialog()"
-              class="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
-            >
-              <X class="w-5 h-5" />
-            </button>
-          </div>
-          <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
-            <!-- VOD Preview -->
-            <div class="flex gap-4 p-4 mb-6 border rounded-lg bg-muted/20 border-border/50">
-              <div
-                class="relative flex-shrink-0 overflow-hidden rounded bg-black/40 w-28 aspect-video border border-border/50"
-              >
-                <img
-                  v-if="clipToDownload?.thumbnailUrl"
-                  :src="clipToDownload.thumbnailUrl"
-                  class="object-cover w-full h-full"
-                />
-                <div v-else class="flex items-center justify-center w-full h-full text-muted-foreground">
-                  <Video class="w-8 h-8 opacity-50" />
-                </div>
-              </div>
-              <div class="flex flex-col justify-center flex-1 min-w-0">
-                <h3 class="mb-1.5 text-sm font-medium leading-snug text-foreground line-clamp-2">
-                  {{ clipToDownload?.title }}
-                </h3>
-                <div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  <span class="flex items-center gap-1">
-                    <Clock class="w-3 h-3" />
-                    {{ formatDuration(clipToDownload?.duration) }}
-                  </span>
-                  <span class="text-border">|</span>
-                  <span>
-                    {{
-                      clipToDownload?.createdAt ? formatAbsoluteDate(clipToDownload?.createdAt, true) : 'No timestamp'
-                    }}
-                  </span>
-                  <span v-if="clipToDownload?.createdAt" class="text-border">|</span>
-                  <span v-if="clipToDownload?.createdAt">{{ formatRelativeTime(clipToDownload?.createdAt) }}</span>
-                </div>
-              </div>
-            </div>
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showDownloadDialog" class="download-modal__overlay" @click.self="closeDownloadDialog()">
+          <Transition name="dialog" appear>
+            <div class="download-modal">
+              <!-- Accent Bar -->
+              <div class="download-modal__accent"></div>
 
-            <!-- Time Range Selection -->
-            <div class="space-y-3 mb-6">
-              <div class="flex items-center justify-between">
-                <label class="text-xs font-semibold tracking-wider uppercase text-muted-foreground">Select Range</label>
-                <span
-                  class="text-[10px] font-medium px-2 py-0.5 rounded-full border"
-                  :class="
-                    isFullStreamSelected
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                  "
-                >
-                  {{ isFullStreamSelected ? 'Full Stream' : formatDuration(selectedDuration) }}
-                </span>
+              <!-- Header -->
+              <div class="download-modal__header">
+                <button class="download-modal__close" @click="closeDownloadDialog()" title="Close">
+                  <X :size="18" />
+                </button>
+                <div class="download-modal__icon">
+                  <Download :size="24" />
+                </div>
+                <h2 class="download-modal__title">Download Options</h2>
+                <p class="download-modal__subtitle">Configure your download settings</p>
               </div>
-              <div class="p-4 border shadow-sm bg-card border-border rounded-xl">
-                <TimeRangePicker
-                  v-model="selectedTimeRange"
-                  :total-duration="clipToDownload?.duration || 0"
-                  @change="handleTimeRangeChange"
-                />
-              </div>
-              <button
-                v-if="!isFullStreamSelected"
-                @click="resetToFullStream"
-                class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-              >
-                <RotateCcw class="w-3 h-3" />
-                Reset to full stream
-              </button>
-            </div>
 
-            <!-- Auto-Segment Option -->
-            <div
-              v-if="selectedDuration > 900"
-              class="p-4 border border-border rounded-xl bg-card shadow-sm animate-in fade-in duration-200"
-            >
-              <div class="flex items-center justify-between mb-3">
-                <label class="text-sm font-medium text-foreground flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    v-model="autoSegment"
-                    class="w-4 h-4 rounded border-muted-foreground text-purple-600 focus:ring-purple-500 bg-transparent"
-                  />
-                  <span>Auto-segment into parts</span>
-                </label>
-                <span
-                  v-if="autoSegment"
-                  class="text-[10px] font-medium bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/20"
-                >
-                  ~{{ estimatedParts }} parts
-                </span>
+              <!-- Content -->
+              <div class="download-modal__content">
+                <!-- VOD Preview Card -->
+                <div class="download-preview">
+                  <div class="download-preview__thumb">
+                    <img v-if="clipToDownload?.thumbnailUrl" :src="clipToDownload.thumbnailUrl" />
+                    <div v-else class="download-preview__placeholder">
+                      <Video :size="28" />
+                    </div>
+                  </div>
+                  <div class="download-preview__info">
+                    <h3 class="download-preview__title">{{ clipToDownload?.title }}</h3>
+                    <div class="download-preview__meta">
+                      <span class="download-preview__duration">
+                        <Clock :size="10" />
+                        {{ formatDuration(clipToDownload?.duration) }}
+                      </span>
+                      <span class="download-preview__sep">·</span>
+                      <span>
+                        {{
+                          clipToDownload?.createdAt
+                            ? formatAbsoluteDate(clipToDownload?.createdAt, true)
+                            : 'No timestamp'
+                        }}
+                      </span>
+                      <template v-if="clipToDownload?.createdAt">
+                        <span class="download-preview__sep">·</span>
+                        <span>{{ formatRelativeTime(clipToDownload?.createdAt) }}</span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Time Range Section -->
+                <div class="download-section">
+                  <div class="download-section__header">
+                    <span class="download-section__label">Select Range</span>
+                    <span
+                      class="download-section__badge"
+                      :class="
+                        isFullStreamSelected ? 'download-section__badge--full' : 'download-section__badge--partial'
+                      "
+                    >
+                      {{ isFullStreamSelected ? 'Full Stream' : formatDuration(selectedDuration) }}
+                    </span>
+                  </div>
+                  <div class="download-section__card">
+                    <TimeRangePicker
+                      v-model="selectedTimeRange"
+                      :total-duration="clipToDownload?.duration || 0"
+                      @change="handleTimeRangeChange"
+                    />
+                  </div>
+                  <button v-if="!isFullStreamSelected" @click="resetToFullStream" class="download-section__reset">
+                    <RotateCcw :size="12" />
+                    Reset to full stream
+                  </button>
+                </div>
+
+                <!-- Auto-Segment Section -->
+                <div v-if="selectedDuration > 900" class="download-section">
+                  <div class="download-segment">
+                    <div class="download-segment__header">
+                      <label class="download-segment__toggle">
+                        <input type="checkbox" v-model="autoSegment" class="download-segment__checkbox" />
+                        <span class="download-segment__label">Auto-segment into parts</span>
+                      </label>
+                      <span v-if="autoSegment" class="download-section__badge download-section__badge--partial">
+                        ~{{ estimatedParts }} parts
+                      </span>
+                    </div>
+                    <div v-if="autoSegment" class="download-segment__options">
+                      <div class="download-segment__row">
+                        <span class="download-segment__opt-label">Part Duration</span>
+                        <span class="download-segment__opt-value">{{ autoSegmentDuration }} min</span>
+                      </div>
+                      <input
+                        type="range"
+                        v-model.number="autoSegmentDuration"
+                        min="15"
+                        max="60"
+                        step="5"
+                        class="download-segment__slider"
+                      />
+                      <div class="download-segment__marks">
+                        <span>15m</span>
+                        <span>30m</span>
+                        <span>45m</span>
+                        <span>60m</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div v-if="autoSegment" class="space-y-3 pl-1 mt-4">
-                <div class="flex justify-between items-center">
-                  <span class="text-xs text-muted-foreground font-medium uppercase tracking-wider">Part Duration</span>
-                  <span class="text-xs font-medium bg-muted text-foreground px-2 py-0.5 rounded-full">
-                    {{ autoSegmentDuration }} min
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  v-model.number="autoSegmentDuration"
-                  min="15"
-                  max="60"
-                  step="5"
-                  class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-purple-500"
-                />
-                <div class="flex justify-between text-[10px] text-muted-foreground/70 px-0.5">
-                  <span>15m</span>
-                  <span>30m</span>
-                  <span>45m</span>
-                  <span>60m</span>
-                </div>
+
+              <!-- Footer -->
+              <div class="download-modal__footer">
+                <button
+                  class="download-modal__btn download-modal__btn--secondary"
+                  @click="closeDownloadDialog()"
+                  :disabled="downloadStarting"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="download-modal__btn download-modal__btn--primary"
+                  @click="downloadClipConfirmed"
+                  :disabled="downloadStarting || selectedTimeRange.endTime <= selectedTimeRange.startTime"
+                >
+                  <Loader2 v-if="downloadStarting" :size="14" class="download-modal__btn-spinner" />
+                  <span>{{ downloadStarting ? 'Starting...' : 'Start Download' }}</span>
+                </button>
               </div>
             </div>
-          </div>
-          <div class="flex items-center justify-end gap-3 px-6 py-4 border-t bg-muted/30 border-border">
-            <button
-              class="px-4 py-2 text-sm font-medium rounded-lg text-foreground hover:bg-muted"
-              @click="closeDownloadDialog()"
-              :disabled="downloadStarting"
-            >
-              Cancel
-            </button>
-            <button
-              class="flex items-center gap-2 px-6 py-2 text-sm font-semibold text-white rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              @click="downloadClipConfirmed"
-              :disabled="downloadStarting || selectedTimeRange.endTime <= selectedTimeRange.startTime"
-            >
-              <Loader2 v-if="downloadStarting" class="w-4 h-4 animate-spin" />
-              <span>{{ downloadStarting ? 'Starting...' : 'Start Download' }}</span>
-            </button>
-          </div>
+          </Transition>
         </div>
-      </div>
-    </Transition>
-
-    <!-- Pagination -->
-    <PaginationFooter
-      v-if="platformStore.clips.length > 0"
-      :current-page="currentPage"
-      :total-pages="totalPages"
-      :total-items="platformStore.clips.length"
-      item-label="VOD"
-      @go-to-page="goToPage"
-      @previous="previousPage"
-      @next="nextPage"
-    />
-  </PageLayout>
+      </Transition>
+    </Teleport>
+  </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch, Teleport, Transition } from 'vue';
   import { useRouter, useRoute } from 'vue-router';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
-  import { Button } from '@/components/ui/button';
-  import { Input } from '@/components/ui/input';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import { usePlatformStore, type PlatformClip } from '@/stores/platform';
@@ -598,7 +521,7 @@
 
   function handleClickOutside(event: Event) {
     const target = event.target as HTMLElement;
-    if (!target.closest('.relative')) {
+    if (!target.closest('.streamvods-recent')) {
       showRecentDropdown.value = false;
     }
   }
@@ -644,14 +567,14 @@
     return icons[platform] || '/capsule.svg';
   }
 
-  function getPlatformColor(platform: PlatformId): string {
-    const colors: Record<PlatformId, string> = {
-      pumpfun: '#10b981', // emerald-500
-      kick: '#53FC18',
-      twitch: '#9146FF',
-      youtube: '#dc2626', // red-600
+  function getPlatformDisplayName(platform: PlatformId): string {
+    const names: Record<PlatformId, string> = {
+      pumpfun: 'PumpFun',
+      kick: 'Kick',
+      twitch: 'Twitch',
+      youtube: 'YouTube',
     };
-    return colors[platform] || '#6b7280';
+    return names[platform] || platform;
   }
 
   function getPlatformFallbackIcon(_platform: PlatformId) {
@@ -986,6 +909,1257 @@
 </script>
 
 <style scoped>
+  /* ===== Page Container ===== */
+  .streamvods {
+    width: 100%;
+    min-height: 100%;
+  }
+
+  .streamvods__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    width: 100%;
+    flex: 1;
+  }
+
+  .streamvods__content--empty {
+    justify-content: center;
+    align-items: center;
+  }
+
+  /* ===== Page Heading ===== */
+  .streamvods__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .streamvods__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .streamvods__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Actions Bar ===== */
+  .streamvods-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* ===== Recent Searches Dropdown ===== */
+  .streamvods-recent {
+    position: relative;
+  }
+
+  .streamvods-recent__trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 32px;
+    padding: 0 0.625rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods-recent__trigger:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .streamvods-recent__trigger-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .streamvods-recent__trigger-text {
+    color: var(--sidebar-text);
+  }
+
+  .streamvods-recent__trigger-chevron {
+    width: 12px;
+    height: 12px;
+    color: var(--sidebar-text-muted);
+    transition: transform 150ms ease;
+  }
+
+  .streamvods-recent__trigger-chevron--open {
+    transform: rotate(180deg);
+  }
+
+  .streamvods-recent__dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: 280px;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    z-index: 9999;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .streamvods-recent__header {
+    padding: 0.75rem 1rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .streamvods-recent__item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .streamvods-recent__item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .streamvods-recent__avatar {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .streamvods-recent__avatar-img {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .streamvods-recent__avatar-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .streamvods-recent__avatar-fallback {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .streamvods-recent__avatar-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--sidebar-surface);
+  }
+
+  .streamvods-recent__avatar-badge img {
+    width: 10px;
+    height: 10px;
+    filter: brightness(0) invert(1);
+  }
+
+  .streamvods-recent__avatar-badge--pumpfun {
+    background-color: #10b981;
+  }
+
+  .streamvods-recent__avatar-badge--kick {
+    background-color: #53fc18;
+  }
+
+  .streamvods-recent__avatar-badge--kick img {
+    filter: brightness(0);
+  }
+
+  .streamvods-recent__avatar-badge--twitch {
+    background-color: #9146ff;
+  }
+
+  .streamvods-recent__avatar-badge--youtube {
+    background-color: #dc2626;
+  }
+
+  .streamvods-recent__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .streamvods-recent__name {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .streamvods-recent__detail {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .streamvods-recent__clear {
+    display: block;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #f87171;
+    background: transparent;
+    border: none;
+    border-top: 1px solid var(--sidebar-border);
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 150ms ease;
+  }
+
+  .streamvods-recent__clear:hover {
+    background-color: rgba(248, 113, 113, 0.1);
+  }
+
+  /* ===== Search Input ===== */
+  .streamvods-search {
+    position: relative;
+    width: 280px;
+  }
+
+  .streamvods-search__icon {
+    position: absolute;
+    left: 0.625rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    color: var(--sidebar-text-muted);
+    pointer-events: none;
+  }
+
+  .streamvods-search__platform {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+  }
+
+  .streamvods-search__platform--pumpfun {
+    background-color: #10b981;
+  }
+
+  .streamvods-search__platform--kick {
+    background-color: #53fc18;
+  }
+
+  .streamvods-search__platform--twitch {
+    background-color: #9146ff;
+  }
+
+  .streamvods-search__platform--youtube {
+    background-color: #dc2626;
+  }
+
+  .streamvods-search__platform-icon {
+    width: 12px;
+    height: 12px;
+    filter: brightness(0) invert(1);
+  }
+
+  .streamvods-search__platform-icon--dark {
+    filter: brightness(0);
+  }
+
+  .streamvods-search__input {
+    width: 100%;
+    height: 32px;
+    padding-left: 2rem;
+    padding-right: 0.75rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .streamvods-search__input::placeholder {
+    color: var(--sidebar-text-muted);
+  }
+
+  .streamvods-search__input:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .streamvods-search__input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.1);
+  }
+
+  .streamvods-search-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 32px;
+    padding: 0 0.75rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods-search-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .streamvods-search-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .streamvods-search-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .streamvods-search-btn__icon--spin {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Section Header ===== */
+  .streamvods__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .streamvods__section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .streamvods__section-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .streamvods__section-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .streamvods__section-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .streamvods__section-subtitle {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  /* ===== VOD Cards Grid ===== */
+  .streamvods__grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(1, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1400px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1800px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  @media (min-width: 2200px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(5, 1fr);
+    }
+  }
+
+  /* ===== VOD Card ===== */
+  .vod-card {
+    position: relative;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 200ms ease;
+    aspect-ratio: 16 / 9;
+  }
+
+  .vod-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    transform: scale(1.02);
+  }
+
+  .vod-card__thumbnail {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 0;
+  }
+
+  .vod-card__vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background:
+      linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.7) 35%, rgba(0, 0, 0, 0.3) 60%, transparent 100%),
+      linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 0%, transparent 40%);
+    pointer-events: none;
+  }
+
+  .vod-card__badges {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    z-index: 15;
+  }
+
+  .vod-card__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.625rem;
+    backdrop-filter: blur(8px);
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .vod-card__badge--pumpfun {
+    background-color: rgba(16, 185, 129, 0.95);
+    border: 1px solid rgba(16, 185, 129, 0.5);
+  }
+
+  .vod-card__badge--kick {
+    background-color: rgba(83, 252, 24, 0.9);
+    border: 1px solid rgba(83, 252, 24, 0.5);
+    color: #000;
+  }
+
+  .vod-card__badge--twitch {
+    background-color: rgba(145, 70, 255, 0.95);
+    border: 1px solid rgba(145, 70, 255, 0.5);
+  }
+
+  .vod-card__badge--youtube {
+    background-color: rgba(220, 38, 38, 0.95);
+    border: 1px solid rgba(220, 38, 38, 0.5);
+  }
+
+  .vod-card__badge--duration {
+    background-color: rgba(139, 92, 246, 0.95);
+    border: 1px solid rgba(139, 92, 246, 0.5);
+  }
+
+  .vod-card__badge-icon {
+    width: 11px;
+    height: 11px;
+    filter: brightness(0) invert(1);
+  }
+
+  .vod-card__badge--kick .vod-card__badge-icon {
+    filter: brightness(0);
+  }
+
+  .vod-card__badge-icon-svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .vod-card__actions {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transition: opacity 200ms ease;
+    z-index: 10;
+  }
+
+  .vod-card:hover .vod-card__actions {
+    opacity: 1;
+  }
+
+  .vod-card__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 9999px;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .vod-card__action-btn:hover {
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .vod-card__action-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .vod-card__bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 1rem;
+    padding-top: 7rem;
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.95) 0%,
+      rgba(0, 0, 0, 0.8) 40%,
+      rgba(0, 0, 0, 0.4) 70%,
+      transparent 100%
+    );
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .vod-card__name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+    line-height: 1.3;
+    transition: color 150ms ease;
+  }
+
+  .vod-card:hover .vod-card__name {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .vod-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+
+  .vod-card__meta-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
+  }
+
+  /* Skeleton Card */
+  .vod-card--skeleton {
+    pointer-events: none;
+  }
+
+  .vod-card__skeleton-bg {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .vod-card__skeleton-title {
+    height: 16px;
+    width: 65%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.05) 25%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.05) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  .vod-card__skeleton-meta {
+    height: 12px;
+    width: 40%;
+    margin-top: 0.25rem;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.03) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.03) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.15s;
+    border-radius: 3px;
+  }
+
+  /* Stagger skeleton animation delays */
+  .vod-card--skeleton:nth-child(1) .vod-card__skeleton-bg {
+    animation-delay: 0s;
+  }
+  .vod-card--skeleton:nth-child(2) .vod-card__skeleton-bg {
+    animation-delay: 0.1s;
+  }
+  .vod-card--skeleton:nth-child(3) .vod-card__skeleton-bg {
+    animation-delay: 0.2s;
+  }
+  .vod-card--skeleton:nth-child(4) .vod-card__skeleton-bg {
+    animation-delay: 0.3s;
+  }
+  .vod-card--skeleton:nth-child(5) .vod-card__skeleton-bg {
+    animation-delay: 0.4s;
+  }
+  .vod-card--skeleton:nth-child(6) .vod-card__skeleton-bg {
+    animation-delay: 0.5s;
+  }
+
+  /* ===== Results Count ===== */
+  .streamvods__results-count {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  /* ===== Error State ===== */
+  .streamvods__error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+    background-color: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 10px;
+  }
+
+  .streamvods__error-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background-color: rgba(239, 68, 68, 0.15);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+    color: #f87171;
+  }
+
+  .streamvods__error-icon svg {
+    width: 32px;
+    height: 32px;
+  }
+
+  .streamvods__error-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #f87171;
+    margin: 0 0 0.5rem;
+  }
+
+  .streamvods__error-message {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1.5rem;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  .streamvods__error-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods__error-btn:hover {
+    background-color: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+
+  /* ===== Empty State ===== */
+  .streamvods__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .streamvods__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .streamvods__empty-icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .streamvods__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .streamvods__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  /* ===== Download Modal ===== */
+  .download-modal__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+  }
+
+  .download-modal {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 520px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .download-modal__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  .download-modal__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .download-modal__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .download-modal__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .download-modal__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .download-modal__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .download-modal__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Modal Content ===== */
+  .download-modal__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem 1.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .download-modal__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .download-modal__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .download-modal__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .download-modal__content::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+
+  /* ===== Preview Card ===== */
+  .download-preview {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+    transition: all 150ms ease;
+  }
+
+  .download-preview:hover {
+    background-color: var(--sidebar-active);
+  }
+
+  .download-preview__thumb {
+    width: 90px;
+    aspect-ratio: 16 / 9;
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    flex-shrink: 0;
+  }
+
+  .download-preview__thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .download-preview__placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
+  }
+
+  .download-preview__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .download-preview__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.4;
+  }
+
+  .download-preview__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .download-preview__duration {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .download-preview__sep {
+    opacity: 0.4;
+  }
+
+  /* ===== Section Styling ===== */
+  .download-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .download-section__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0.25rem;
+  }
+
+  .download-section__label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+  }
+
+  .download-section__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    padding: 0.25rem 0.5rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .download-section__badge--full {
+    background-color: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.25);
+    color: #34d399;
+  }
+
+  .download-section__badge--partial {
+    background-color: rgba(6, 182, 212, 0.15);
+    border-color: rgba(6, 182, 212, 0.25);
+    color: var(--sidebar-accent);
+  }
+
+  .download-section__card {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+  }
+
+  .download-section__reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    transition: color 150ms ease;
+  }
+
+  .download-section__reset:hover {
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Segment Options ===== */
+  .download-segment {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+  }
+
+  .download-segment__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .download-segment__toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+  }
+
+  .download-segment__checkbox {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid var(--sidebar-border);
+    background-color: transparent;
+    cursor: pointer;
+    accent-color: var(--sidebar-accent);
+  }
+
+  .download-segment__label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .download-segment__options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid var(--sidebar-border);
+    margin-top: 0.875rem;
+  }
+
+  .download-segment__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .download-segment__opt-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+  }
+
+  .download-segment__opt-value {
+    font-size: 0.75rem;
+    font-weight: 500;
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text);
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+  }
+
+  .download-segment__slider {
+    width: 100%;
+    height: 6px;
+    background-color: var(--sidebar-surface);
+    border-radius: 3px;
+    appearance: none;
+    cursor: pointer;
+    accent-color: var(--sidebar-accent);
+  }
+
+  .download-segment__marks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+    padding: 0 2px;
+  }
+
+  /* ===== Modal Footer ===== */
+  .download-modal__footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(255, 255, 255, 0.02);
+    flex-shrink: 0;
+  }
+
+  .download-modal__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .download-modal__btn--secondary {
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    color: var(--sidebar-text);
+  }
+
+  .download-modal__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .download-modal__btn--primary {
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    padding: 0.625rem 1.5rem;
+  }
+
+  .download-modal__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .download-modal__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .download-modal__btn-spinner {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Modal Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.2s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.15s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  /* ===== Scale Transition (for search icon) ===== */
   .scale-enter-active,
   .scale-leave-active {
     transition: all 0.2s ease;
@@ -995,5 +2169,21 @@
   .scale-leave-to {
     opacity: 0;
     transform: scale(0.5);
+  }
+
+  /* ===== Animations ===== */
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
   }
 </style>

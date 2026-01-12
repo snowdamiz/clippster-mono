@@ -1,191 +1,147 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div
-        v-if="modelValue"
-        class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[9999]"
-        @click.self="close"
-        @keydown.esc="close"
-      >
+      <div v-if="modelValue" class="invite-dialog__overlay" @click.self="close" @keydown.esc="close">
         <Transition name="dialog" appear>
-          <div
-            v-if="modelValue"
-            class="relative bg-gradient-to-b from-zinc-900 to-zinc-950 border border-white/10 rounded-2xl max-w-md w-full mx-4 overflow-hidden"
-            role="dialog"
-            aria-modal="true"
-          >
-            <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500" />
+          <div v-if="modelValue" class="invite-dialog" role="dialog" aria-modal="true">
+            <!-- Accent bar -->
+            <div class="invite-dialog__accent"></div>
 
-            <!-- Close Button -->
-            <button
-              @click="close"
-              class="absolute right-4 top-4 z-10 p-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition-colors"
-            >
-              <X class="h-4 w-4 text-zinc-400" />
-            </button>
-
-            <div class="p-6">
-              <!-- Header -->
-              <div class="mb-6">
-                <h2 class="text-xl font-bold text-white mb-1">Add Team Member</h2>
-                <p class="text-zinc-400 text-sm">Invite someone to join your organization</p>
+            <!-- Header -->
+            <div class="invite-dialog__header">
+              <button class="invite-dialog__close" @click="close" title="Close">
+                <X :size="18" />
+              </button>
+              <div class="invite-dialog__icon">
+                <UserPlus :size="24" />
               </div>
+              <h2 class="invite-dialog__title">Add Team Member</h2>
+              <p class="invite-dialog__subtitle">Invite someone to join your organization</p>
+            </div>
 
-              <!-- Mode Tabs -->
-              <div class="flex gap-2 mb-6 bg-zinc-800/50 p-1 rounded-lg">
-                <button
-                  @click="mode = 'invite'"
-                  :class="[
-                    'flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all',
-                    mode === 'invite' ? 'bg-violet-600 text-white' : 'text-zinc-400 hover:text-white',
-                  ]"
-                >
-                  <span class="flex items-center justify-center gap-2">
-                    <Mail class="h-4 w-4" />
-                    Send Invite
-                  </span>
-                </button>
-                <button
-                  @click="mode = 'create'"
-                  :class="[
-                    'flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all',
-                    mode === 'create' ? 'bg-violet-600 text-white' : 'text-zinc-400 hover:text-white',
-                  ]"
-                >
-                  <span class="flex items-center justify-center gap-2">
-                    <UserPlus class="h-4 w-4" />
-                    Create Account
-                  </span>
-                </button>
-              </div>
+            <!-- Mode Tabs -->
+            <div class="invite-dialog__tabs">
+              <button
+                @click="mode = 'invite'"
+                class="invite-dialog__tab"
+                :class="{ 'invite-dialog__tab--active': mode === 'invite' }"
+              >
+                <Mail :size="14" />
+                <span>Send Invite</span>
+              </button>
+              <button
+                @click="mode = 'create'"
+                class="invite-dialog__tab"
+                :class="{ 'invite-dialog__tab--active': mode === 'create' }"
+              >
+                <UserCog :size="14" />
+                <span>Create Account</span>
+              </button>
+            </div>
 
+            <!-- Content -->
+            <div class="invite-dialog__content">
               <!-- Invite Mode -->
-              <div v-if="mode === 'invite'" class="space-y-4">
-                <p class="text-sm text-zinc-400">
+              <div v-if="mode === 'invite'" class="invite-dialog__form">
+                <p class="invite-dialog__description">
                   Send an email invitation to an existing Clippster user or someone who will create their own account.
                 </p>
 
-                <div>
-                  <label for="invite-email" class="block text-sm font-medium text-zinc-300 mb-1.5">Email Address</label>
+                <div class="invite-dialog__field">
+                  <label for="invite-email" class="invite-dialog__label">Email Address</label>
                   <input
                     id="invite-email"
                     v-model="inviteData.email"
                     type="email"
                     placeholder="colleague@example.com"
-                    class="w-full px-3 py-2.5 rounded-lg border border-zinc-700 bg-zinc-800 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 text-sm"
+                    class="invite-dialog__input"
                   />
                 </div>
 
-                <div>
-                  <label for="invite-role" class="block text-sm font-medium text-zinc-300 mb-1.5">Role</label>
-                  <select
-                    id="invite-role"
-                    v-model="inviteData.role"
-                    class="w-full px-3 py-2.5 rounded-lg border border-zinc-700 bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 text-sm"
-                  >
+                <div class="invite-dialog__field">
+                  <label for="invite-role" class="invite-dialog__label">Role</label>
+                  <select id="invite-role" v-model="inviteData.role" class="invite-dialog__select">
                     <option value="member">Member</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
 
-                <div class="bg-zinc-800/50 rounded-lg p-3">
-                  <div class="flex items-start gap-2">
-                    <Info class="h-4 w-4 text-zinc-400 flex-shrink-0 mt-0.5" />
-                    <p class="text-xs text-zinc-400">
-                      The user will receive an email with a link to accept the invitation. If they don't have a
-                      Clippster account, they'll need to create one first.
-                    </p>
+                <div class="invite-dialog__note">
+                  <div class="invite-dialog__note-icon">
+                    <Info :size="16" />
                   </div>
+                  <p class="invite-dialog__note-text">
+                    The user will receive an email with a link to accept the invitation. If they don't have a Clippster
+                    account, they'll need to create one first.
+                  </p>
                 </div>
               </div>
 
               <!-- Create Account Mode -->
-              <div v-if="mode === 'create'" class="space-y-4">
-                <p class="text-sm text-zinc-400">
+              <div v-if="mode === 'create'" class="invite-dialog__form">
+                <p class="invite-dialog__description">
                   Create an account directly for a team member. You'll share the login credentials with them.
                 </p>
 
-                <div>
-                  <label for="create-name" class="block text-sm font-medium text-zinc-300 mb-1.5">Full Name</label>
+                <div class="invite-dialog__field">
+                  <label for="create-name" class="invite-dialog__label">Full Name</label>
                   <input
                     id="create-name"
                     v-model="createData.name"
                     type="text"
                     placeholder="John Doe"
-                    class="w-full px-3 py-2.5 rounded-lg border border-zinc-700 bg-zinc-800 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 text-sm"
+                    class="invite-dialog__input"
                   />
                 </div>
 
-                <div>
-                  <label for="create-email" class="block text-sm font-medium text-zinc-300 mb-1.5">Email Address</label>
+                <div class="invite-dialog__field">
+                  <label for="create-email" class="invite-dialog__label">Email Address</label>
                   <input
                     id="create-email"
                     v-model="createData.email"
                     type="email"
                     placeholder="newmember@example.com"
-                    class="w-full px-3 py-2.5 rounded-lg border border-zinc-700 bg-zinc-800 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 text-sm"
+                    class="invite-dialog__input"
                   />
                 </div>
 
-                <div>
-                  <label for="create-password" class="block text-sm font-medium text-zinc-300 mb-1.5">Password</label>
-                  <div class="relative">
+                <div class="invite-dialog__field">
+                  <label for="create-password" class="invite-dialog__label">Password</label>
+                  <div class="invite-dialog__input-group">
                     <input
                       id="create-password"
                       v-model="createData.password"
                       :type="showPassword ? 'text' : 'password'"
                       placeholder="Temporary password"
-                      class="w-full px-3 py-2.5 pr-10 rounded-lg border border-zinc-700 bg-zinc-800 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 text-sm"
+                      class="invite-dialog__input"
                     />
-                    <button
-                      type="button"
-                      @click="showPassword = !showPassword"
-                      class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-300"
-                    >
-                      <EyeOff v-if="showPassword" class="h-4 w-4" />
-                      <Eye v-else class="h-4 w-4" />
+                    <button type="button" @click="showPassword = !showPassword" class="invite-dialog__input-toggle">
+                      <EyeOff v-if="showPassword" :size="16" />
+                      <Eye v-else :size="16" />
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    @click="generatePassword"
-                    class="mt-2 text-xs text-violet-400 hover:text-violet-300"
-                  >
+                  <button type="button" @click="generatePassword" class="invite-dialog__generate-btn">
+                    <Sparkles :size="12" />
                     Generate secure password
                   </button>
                 </div>
 
-                <div>
-                  <label for="create-role" class="block text-sm font-medium text-zinc-300 mb-1.5">Role</label>
-                  <select
-                    id="create-role"
-                    v-model="createData.role"
-                    class="w-full px-3 py-2.5 rounded-lg border border-zinc-700 bg-zinc-800 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 text-sm"
-                  >
+                <div class="invite-dialog__field">
+                  <label for="create-role" class="invite-dialog__label">Role</label>
+                  <select id="create-role" v-model="createData.role" class="invite-dialog__select">
                     <option value="member">Member</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
               </div>
+            </div>
 
-              <!-- Actions -->
-              <div class="flex gap-3 mt-6">
-                <button
-                  @click="close"
-                  class="flex-1 px-4 py-2.5 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 transition-colors text-zinc-300 font-medium text-sm"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  @click="submit"
-                  :disabled="!canSubmit"
-                  class="flex-1 px-4 py-2.5 rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {{ mode === 'invite' ? 'Send Invitation' : 'Create Account' }}
-                </button>
-              </div>
+            <!-- Footer -->
+            <div class="invite-dialog__footer">
+              <button @click="close" class="invite-dialog__btn invite-dialog__btn--secondary">Cancel</button>
+              <button @click="submit" :disabled="!canSubmit" class="invite-dialog__btn invite-dialog__btn--primary">
+                {{ mode === 'invite' ? 'Send Invitation' : 'Create Account' }}
+              </button>
             </div>
           </div>
         </Transition>
@@ -196,7 +152,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { X, Mail, UserPlus, Info, Eye, EyeOff } from 'lucide-vue-next';
+  import { X, Mail, UserPlus, UserCog, Info, Eye, EyeOff, Sparkles } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
 
@@ -320,10 +276,355 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Overlay ===== */
+  .invite-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  /* ===== Dialog Container ===== */
+  .invite-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 440px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ===== Accent Bar ===== */
+  .invite-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .invite-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .invite-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .invite-dialog__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .invite-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .invite-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .invite-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Tabs ===== */
+  .invite-dialog__tabs {
+    display: flex;
+    gap: 0.375rem;
+    padding: 0 1.5rem;
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+
+  .invite-dialog__tabs::-webkit-scrollbar {
+    height: 0;
+  }
+
+  .invite-dialog__tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .invite-dialog__tab:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .invite-dialog__tab--active {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .invite-dialog__tab--active:hover {
+    background-color: rgba(6, 182, 212, 0.2);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Content Area ===== */
+  .invite-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem 1.5rem;
+  }
+
+  .invite-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .invite-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .invite-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Form ===== */
+  .invite-dialog__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .invite-dialog__description {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin: 0;
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+  }
+
+  /* ===== Form Field ===== */
+  .invite-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .invite-dialog__label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .invite-dialog__input,
+  .invite-dialog__select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .invite-dialog__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .invite-dialog__input:focus,
+  .invite-dialog__select:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .invite-dialog__select {
+    cursor: pointer;
+  }
+
+  .invite-dialog__select option {
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Input Group ===== */
+  .invite-dialog__input-group {
+    position: relative;
+  }
+
+  .invite-dialog__input-group .invite-dialog__input {
+    padding-right: 3rem;
+  }
+
+  .invite-dialog__input-toggle {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    transition: color 150ms ease;
+  }
+
+  .invite-dialog__input-toggle:hover {
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Generate Password Button ===== */
+  .invite-dialog__generate-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0;
+    margin-top: 0.25rem;
+    background: transparent;
+    border: none;
+    font-size: 0.75rem;
+    color: var(--sidebar-accent);
+    cursor: pointer;
+    transition: color 150ms ease;
+  }
+
+  .invite-dialog__generate-btn:hover {
+    color: #67e8f9;
+  }
+
+  /* ===== Note Box ===== */
+  .invite-dialog__note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: 8px;
+  }
+
+  .invite-dialog__note-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background-color: rgba(6, 182, 212, 0.15);
+    border-radius: 6px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .invite-dialog__note-text {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ===== Footer ===== */
+  .invite-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
+  .invite-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .invite-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .invite-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .invite-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .invite-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .invite-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -331,18 +632,17 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {

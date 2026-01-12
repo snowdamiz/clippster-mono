@@ -1,64 +1,39 @@
 <template>
-  <div
-    class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-pointer"
-  >
-    <!-- Thumbnail with vignette background -->
-    <div class="aspect-video bg-muted/50 relative">
-      <!-- Thumbnail background with vignette -->
-      <div
-        v-if="clip.thumbnailUrl"
-        class="absolute inset-0 z-0"
-        :style="{
-          backgroundImage: `url(${clip.thumbnailUrl})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-        }"
-      >
-        <!-- Dark vignette overlay -->
-        <div class="absolute inset-0 bg-gradient-to-br from-black/70 via-black/50 to-black/80"></div>
-      </div>
-      <!-- Content overlay -->
-      <div class="relative z-10 h-full flex flex-col">
-        <!-- Duration Badge -->
-        <div
-          v-if="clip.duration"
-          class="absolute bottom-2 right-2 px-2 py-1 bg-black/60 text-white text-xs rounded-md backdrop-blur-sm"
-        >
-          {{ formattedDuration }}
-        </div>
-        <!-- Center placeholder if no thumbnail -->
-        <div v-if="!clip.thumbnailUrl" class="flex-1 flex items-center justify-center">
-          <Video class="h-14 w-14 text-white/60" />
-        </div>
-        <!-- Hover Overlay -->
-        <div
-          class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity"
-        >
-          <button
-            class="p-2.5 bg-white/90 hover:bg-white rounded-md transition-colors"
-            title="Download"
-            @click.stop="downloadClip"
-          >
-            <Download class="h-5 w-5 text-black" />
-          </button>
-        </div>
+  <div class="vod-card group">
+    <!-- Thumbnail background -->
+    <div v-if="clip.thumbnailUrl" class="vod-card__thumbnail" :style="{ backgroundImage: `url(${clip.thumbnailUrl})` }">
+      <div class="vod-card__vignette"></div>
+    </div>
+
+    <!-- Empty state background -->
+    <div v-else class="vod-card__thumbnail vod-card__thumbnail--empty">
+      <div class="vod-card__thumbnail-gradient"></div>
+      <div class="vod-card__empty-icon">
+        <Video class="vod-card__placeholder-icon" />
       </div>
     </div>
-    <!-- Info -->
-    <div
-      :class="[
-        'px-4 py-3 border-t',
-        clip.thumbnailUrl ? 'border-white/10 bg-black/20 backdrop-blur-sm' : 'border-border bg-card',
-      ]"
-    >
-      <h4 :class="['font-semibold truncate mb-1', clip.thumbnailUrl ? 'text-white' : 'text-foreground']">
-        {{ clip.title }}
-      </h4>
 
-      <p :class="['text-xs mb-2', clip.thumbnailUrl ? 'text-white/80' : 'text-muted-foreground']">
-        Added {{ formattedTime }}
-      </p>
+    <!-- Duration Badge -->
+    <div v-if="clip.duration" class="vod-card__badge vod-card__badge--duration">
+      <Clock class="vod-card__badge-icon" />
+      <span>{{ formattedDuration }}</span>
+    </div>
+
+    <!-- Bottom Info Overlay -->
+    <div class="vod-card__bottom">
+      <h3 class="vod-card__title" :title="clip.title">
+        {{ clip.title }}
+      </h3>
+      <div class="vod-card__meta">
+        <span class="vod-card__meta-text">Added {{ formattedTime }}</span>
+      </div>
+    </div>
+
+    <!-- Hover Actions Overlay -->
+    <div class="vod-card__hover-actions">
+      <button class="vod-card__action-btn" title="Download" @click.stop="downloadClip">
+        <Download class="vod-card__action-icon" />
+      </button>
     </div>
   </div>
 </template>
@@ -66,7 +41,7 @@
 <script setup lang="ts">
   import { computed } from 'vue';
   import { formatDuration, formatRelativeTime, type PumpFunClip } from '@/services/pumpfun';
-  import { Video, Download } from 'lucide-vue-next';
+  import { Video, Download, Clock } from 'lucide-vue-next';
 
   interface Props {
     clip: PumpFunClip;
@@ -85,3 +60,194 @@
     emit('download', props.clip);
   }
 </script>
+
+<style scoped>
+  /* ===== VOD Card ===== */
+  .vod-card {
+    position: relative;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 200ms ease;
+    aspect-ratio: 16 / 9;
+  }
+
+  .vod-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    transform: scale(1.02);
+  }
+
+  /* Thumbnail */
+  .vod-card__thumbnail {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .vod-card__vignette {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.6) 35%, rgba(0, 0, 0, 0.2) 60%, transparent 100%),
+      linear-gradient(to bottom, rgba(0, 0, 0, 0.4) 0%, transparent 30%);
+  }
+
+  .vod-card__thumbnail--empty {
+    background-color: var(--sidebar-hover);
+  }
+
+  .vod-card__thumbnail-gradient {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
+  }
+
+  /* Empty State Icon */
+  .vod-card__empty-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.2;
+  }
+
+  .vod-card__placeholder-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--sidebar-text);
+  }
+
+  /* Duration Badge */
+  .vod-card__badge {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.3rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .vod-card__badge--duration {
+    background-color: rgba(139, 92, 246, 0.95);
+    color: white;
+    border: 1px solid rgba(139, 92, 246, 0.5);
+  }
+
+  .vod-card__badge-icon {
+    width: 11px;
+    height: 11px;
+  }
+
+  /* Bottom Info Overlay */
+  .vod-card__bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 1rem;
+    padding-top: 7rem;
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.95) 0%,
+      rgba(0, 0, 0, 0.8) 40%,
+      rgba(0, 0, 0, 0.4) 70%,
+      transparent 100%
+    );
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .vod-card__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+    line-height: 1.3;
+    transition: color 150ms ease;
+  }
+
+  .vod-card:hover .vod-card__title {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .vod-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    flex-wrap: wrap;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+
+  .vod-card__meta-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Hover Actions Overlay */
+  .vod-card__hover-actions {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .vod-card:hover .vod-card__hover-actions {
+    opacity: 1;
+  }
+
+  .vod-card__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 9999px;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .vod-card__action-btn:hover {
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .vod-card__action-icon {
+    width: 20px;
+    height: 20px;
+  }
+</style>

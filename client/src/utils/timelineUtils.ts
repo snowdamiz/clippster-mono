@@ -125,20 +125,42 @@ export function hexToDarkerHex(hex: string, opacity: number = 0.4): string {
   return `#${darkerR.toString(16).padStart(2, '0')}${darkerG.toString(16).padStart(2, '0')}${darkerB.toString(16).padStart(2, '0')}`;
 }
 
-// Generate gradient colors based on run color
+// Convert hex to rgba for transparency support
+export function hexToRgba(hex: string, alpha: number = 1): string {
+  const cleanHex = hex.replace('#', '');
+  const r = parseInt(cleanHex.substr(0, 2), 16);
+  const g = parseInt(cleanHex.substr(2, 2), 16);
+  const b = parseInt(cleanHex.substr(4, 2), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Generate gradient colors based on run color - modern glass-like design
 export function generateClipGradient(runColor: string | undefined) {
-  const color = runColor || '#10B981'; // Default green if no run color
-  const bgColor = hexToDarkerHex(color, 0.4);
-  const hoverBgColor = hexToDarkerHex(color, 0.6);
-  const borderColor = hexToDarkerHex(color, 0.7);
+  const color = runColor || '#10B981'; // Default emerald if no run color
+
+  // Create color variants
+  const baseColor = hexToRgba(color, 0.35);
+  const lighterColor = hexToRgba(color, 0.25);
+  const accentColor = hexToRgba(color, 0.85);
+  const glowColor = hexToRgba(color, 0.15);
+
+  // Multi-layered gradient: top shine + base gradient + subtle bottom darkening
+  const background = `linear-gradient(180deg, 
+    ${hexToRgba(color, 0.45)} 0%, 
+    ${baseColor} 15%, 
+    ${lighterColor} 50%, 
+    ${baseColor} 85%, 
+    ${hexToRgba(color, 0.5)} 100%)`;
 
   return {
-    background: `linear-gradient(to right, ${bgColor}, ${hexToDarkerHex(color, 0.5)})`,
-    borderLeftColor: borderColor,
-    borderRightColor: borderColor,
-    borderTopColor: borderColor,
-    borderBottomColor: borderColor,
-    hoverBackground: `linear-gradient(to right, ${hoverBgColor}, ${hexToDarkerHex(color, 0.7)})`,
+    background,
+    // Strong left accent border for visual hierarchy
+    borderLeft: `3px solid ${accentColor}`,
+    borderTop: `1px solid ${hexToRgba(color, 0.4)}`,
+    borderRight: `1px solid ${hexToRgba(color, 0.3)}`,
+    borderBottom: `1px solid ${hexToRgba(color, 0.25)}`,
+    // Subtle inner glow
+    boxShadow: `inset 0 1px 0 ${hexToRgba('#ffffff', 0.08)}, inset 0 -1px 0 ${hexToRgba('#000000', 0.15)}, 0 2px 8px ${glowColor}`,
   };
 }
 

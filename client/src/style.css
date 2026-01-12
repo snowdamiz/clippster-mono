@@ -145,6 +145,26 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Custom sidebar component variables (light mode - fallback) */
+  --sidebar-bg: #fafafa;
+  --sidebar-surface: #f4f4f5;
+  --sidebar-border: #e4e4e7;
+  --sidebar-text: #18181b;
+  --sidebar-text-muted: #71717a;
+  --sidebar-hover: rgba(0, 0, 0, 0.05);
+  --sidebar-active: rgba(6, 182, 212, 0.1);
+  --sidebar-active-hover: rgba(6, 182, 212, 0.15);
+  --sidebar-accent: #0891b2;
+
+  /* Page layout component variables (light mode) */
+  --page-header-bg: #f4f4f5;
+  --page-header-border: #e4e4e7;
+  --page-header-accent: #0891b2;
+  --page-text: #18181b;
+  --page-text-muted: #71717a;
+  --page-icon-bg: rgba(8, 145, 178, 0.1);
+  --page-icon-border: rgba(8, 145, 178, 0.2);
 }
 
 .dark {
@@ -180,6 +200,26 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+
+  /* Custom sidebar component variables (dark mode) */
+  --sidebar-bg: #0a0a0b;
+  --sidebar-surface: #141416;
+  --sidebar-border: #1f1f23;
+  --sidebar-text: #fafafa;
+  --sidebar-text-muted: #71717a;
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  --sidebar-active: rgba(6, 182, 212, 0.1);
+  --sidebar-active-hover: rgba(6, 182, 212, 0.15);
+  --sidebar-accent: #06b6d4;
+
+  /* Page layout component variables (dark mode) */
+  --page-header-bg: #141416;
+  --page-header-border: #1f1f23;
+  --page-header-accent: #06b6d4;
+  --page-text: #fafafa;
+  --page-text-muted: #71717a;
+  --page-icon-bg: rgba(6, 182, 212, 0.1);
+  --page-icon-border: rgba(6, 182, 212, 0.2);
 }
 
 @layer base {

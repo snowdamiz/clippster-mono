@@ -1,5 +1,5 @@
 <template>
-  <div class="clipper-profile-page">
+  <div class="clipper-profile">
     <PageLayout
       title="My Profile"
       description="Your public clipper profile and campaign settings"
@@ -7,984 +7,518 @@
       :icon="UserCircle"
     >
       <template #actions>
-        <Button
-          @click="showEditProfileDialog = true"
-          class="group relative overflow-hidden px-5 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-lg hover:from-violet-500 hover:to-indigo-500 transition-all font-medium text-sm flex items-center gap-2 shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:-translate-y-0.5"
-        >
-          <div
-            class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-          />
-          <Pencil class="h-4 w-4 relative z-10" />
-          <span class="relative z-10">Edit Profile</span>
-        </Button>
+        <button class="edit-btn" @click="showEditProfileDialog = true">
+          <Pencil class="edit-btn__icon" />
+          Edit Profile
+        </button>
       </template>
 
-      <!-- Profile Hero Card -->
-      <div class="group relative mb-8">
-        <div
-          class="absolute inset-0 bg-gradient-to-br from-violet-500/10 to-transparent rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-        />
-        <div
-          class="relative bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-2xl overflow-hidden hover:border-border transition-all duration-300"
-        >
-          <!-- Gradient Header Bar -->
-          <div class="h-1.5 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-violet-500" />
-
-          <div class="p-6 md:p-8">
-            <div class="flex flex-col md:flex-row items-start gap-6">
-              <!-- Avatar -->
-              <div class="relative">
-                <div
-                  class="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-violet-500/30 shadow-lg shadow-violet-500/10"
-                >
-                  <img
-                    v-if="clipperProfile?.avatar_url"
-                    :src="clipperProfile.avatar_url"
-                    class="w-full h-full object-cover"
-                  />
-                  <UserCircle v-else class="w-12 h-12 text-violet-400" />
-                </div>
-                <div
-                  v-if="clipperProfile?.is_verified"
-                  class="absolute -bottom-1 -right-1 p-1.5 bg-blue-500 rounded-full border-2 border-card"
-                >
-                  <CheckCircle class="w-4 h-4 text-white" />
-                </div>
+      <div class="profile-page">
+        <!-- Profile Header -->
+        <header class="profile-header">
+          <div class="profile-header__main">
+            <div class="profile-avatar">
+              <img v-if="clipperProfile?.avatar_url" :src="clipperProfile.avatar_url" class="profile-avatar__img" />
+              <UserCircle v-else class="profile-avatar__fallback" />
+              <div v-if="clipperProfile?.is_verified" class="profile-avatar__verified">
+                <CheckCircle />
               </div>
-
-              <!-- Info -->
-              <div class="flex-1 min-w-0">
-                <div class="flex flex-wrap items-center gap-3 mb-2">
-                  <h2 class="text-2xl font-bold text-foreground tracking-tight">
-                    {{ clipperProfile?.display_name || 'Set up your profile' }}
-                  </h2>
-                  <Badge
-                    v-if="clipperProfile?.looking_for_work"
-                    class="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs font-semibold px-2.5 py-1"
-                  >
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" />
-                    Available for Work
-                  </Badge>
-                </div>
-
-                <p v-if="clipperProfile?.bio" class="text-sm text-muted-foreground mb-4 leading-relaxed max-w-2xl">
-                  {{ clipperProfile.bio }}
-                </p>
-                <p v-else class="text-sm text-muted-foreground/60 mb-4 italic">
-                  Add a bio to tell organizations about yourself
-                </p>
-
-                <!-- Tags -->
-                <div v-if="clipperProfile?.specialty_tags?.length" class="flex flex-wrap gap-2 mb-4">
-                  <span
-                    v-for="tag in clipperProfile.specialty_tags.slice(0, 5)"
-                    :key="tag"
-                    class="px-2.5 py-1 bg-muted/50 rounded-lg text-xs font-medium text-muted-foreground border border-border/50"
-                  >
-                    {{ tag }}
-                  </span>
-                </div>
-
-                <!-- Stats Row -->
-                <div class="flex flex-wrap items-center gap-4 md:gap-6">
-                  <div class="flex items-center gap-2 px-3 py-2 bg-muted/30 rounded-lg border border-border/30">
-                    <Megaphone class="w-4 h-4 text-violet-400" />
-                    <span class="text-sm">
-                      <strong class="text-foreground font-semibold">
-                        {{ clipperProfile?.total_campaigns_completed || 0 }}
-                      </strong>
-                      <span class="text-muted-foreground">campaigns</span>
-                    </span>
-                  </div>
-                  <div class="flex items-center gap-2 px-3 py-2 bg-muted/30 rounded-lg border border-border/30">
-                    <Film class="w-4 h-4 text-indigo-400" />
-                    <span class="text-sm">
-                      <strong class="text-foreground font-semibold">
-                        {{ clipperProfile?.total_clips_delivered || 0 }}
-                      </strong>
-                      <span class="text-muted-foreground">clips</span>
-                    </span>
-                  </div>
-                  <div class="flex items-center gap-2 px-3 py-2 bg-muted/30 rounded-lg border border-border/30">
-                    <Star class="w-4 h-4 text-amber-400" />
-                    <span class="text-sm">
-                      <strong class="text-foreground font-semibold">
-                        {{ clipperProfile?.total_endorsements || 0 }}
-                      </strong>
-                      <span class="text-muted-foreground">endorsements</span>
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Actions -->
-              <div class="flex flex-row md:flex-col gap-2 flex-shrink-0">
-                <Button
+            </div>
+            <div class="profile-meta">
+              <div class="profile-meta__top">
+                <h1 class="profile-name">{{ clipperProfile?.display_name || 'Set up your profile' }}</h1>
+                <span v-if="clipperProfile?.looking_for_work" class="available-badge">
+                  <span class="available-badge__dot"></span>
+                  Available
+                </span>
+                <button
                   v-if="clipperProfile?.slug && clipperProfile?.is_public"
-                  variant="outline"
-                  size="sm"
+                  class="view-public-btn"
                   @click="$router.push(`/clippers/${clipperProfile.slug}`)"
-                  class="hover:border-violet-500/50 hover:bg-violet-500/5"
                 >
-                  <Eye class="w-4 h-4 mr-2" />
+                  <Eye />
                   View Public
-                </Button>
-                <div
-                  v-if="clipperProfile && !clipperProfile.is_public"
-                  class="flex items-center gap-1.5 text-xs text-muted-foreground px-3 py-1.5 bg-muted/30 rounded-lg"
-                >
-                  <EyeOff class="w-3.5 h-3.5" />
-                  Profile is private
-                </div>
+                </button>
+                <span v-else-if="clipperProfile" class="private-badge">
+                  <EyeOff />
+                  Private
+                </span>
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tabs -->
-      <Tabs v-model="activeTab">
-        <TabsList>
-          <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
-          <TabsTrigger value="accounts">Accounts</TabsTrigger>
-          <TabsTrigger value="payments">Payments</TabsTrigger>
-          <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="leaderboard" class="space-y-6">
-          <!-- TODO Banner -->
-          <div
-            class="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-xl p-4 flex items-center gap-3"
-          >
-            <div class="p-2 bg-amber-500/20 rounded-lg">
-              <AlertTriangle class="w-5 h-5 text-amber-400" />
-            </div>
-            <div>
-              <p class="text-sm font-semibold text-amber-400">Leaderboard In Progress</p>
-              <p class="text-xs text-muted-foreground">
-                View tracking not yet implemented. See
-                <code class="bg-muted/50 px-1.5 py-0.5 rounded text-amber-400/80">docs/Leaderboard_TODO.md</code>
-                for remaining tasks.
+              <p class="profile-bio" :class="{ 'profile-bio--empty': !clipperProfile?.bio }">
+                {{ clipperProfile?.bio || 'Add a bio to tell organizations about yourself' }}
               </p>
-            </div>
-          </div>
-
-          <!-- Your Ranking Card -->
-          <div class="group relative">
-            <div
-              class="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent rounded-xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-            />
-            <div
-              class="relative bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl overflow-hidden hover:border-border transition-all duration-300"
-            >
-              <div class="h-1 w-full bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500" />
-              <div class="p-6">
-                <div class="flex items-center gap-3 mb-6">
-                  <div
-                    class="p-2.5 bg-gradient-to-br from-amber-500/20 to-yellow-500/20 rounded-xl border border-amber-500/30"
-                  >
-                    <Trophy class="h-5 w-5 text-amber-400" />
-                  </div>
-                  <div>
-                    <h3 class="font-semibold text-foreground">Your Ranking</h3>
-                    <p class="text-xs text-muted-foreground">Your performance stats</p>
-                  </div>
-                </div>
-                <div class="grid grid-cols-3 gap-4">
-                  <div class="text-center p-4 bg-muted/20 rounded-xl border border-border/30">
-                    <div
-                      class="text-3xl font-bold bg-gradient-to-r from-amber-400 to-yellow-400 bg-clip-text text-transparent"
-                    >
-                      {{ myRank || '--' }}
-                    </div>
-                    <div class="text-xs text-muted-foreground mt-1 font-medium">Global Rank</div>
-                  </div>
-                  <div class="text-center p-4 bg-muted/20 rounded-xl border border-border/30">
-                    <div class="text-3xl font-bold text-foreground">
-                      {{ clipperProfile?.total_clips_delivered || 0 }}
-                    </div>
-                    <div class="text-xs text-muted-foreground mt-1 font-medium">Clips Posted</div>
-                  </div>
-                  <div class="text-center p-4 bg-muted/20 rounded-xl border border-border/30">
-                    <div class="text-3xl font-bold text-foreground">{{ formatViews(totalViews) }}</div>
-                    <div class="text-xs text-muted-foreground mt-1 font-medium">Total Views</div>
-                  </div>
-                </div>
+              <div v-if="clipperProfile?.specialty_tags?.length" class="profile-tags">
+                <span v-for="tag in clipperProfile.specialty_tags.slice(0, 5)" :key="tag" class="profile-tag">
+                  {{ tag }}
+                </span>
               </div>
             </div>
           </div>
+          <div class="profile-stats">
+            <div class="stat">
+              <span class="stat__value">{{ clipperProfile?.total_campaigns_completed || 0 }}</span>
+              <span class="stat__label">Campaigns</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
+              <span class="stat__label">Clips</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">{{ clipperProfile?.total_endorsements || 0 }}</span>
+              <span class="stat__label">Endorsements</span>
+            </div>
+          </div>
+        </header>
 
-          <!-- Top Clippers Leaderboard -->
-          <div
-            class="bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl overflow-hidden"
+        <!-- Tab Navigation -->
+        <nav class="tabs">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            class="tab"
+            :class="{ 'tab--active': activeTab === tab.id }"
+            @click="activeTab = tab.id"
           >
-            <div class="p-6 border-b border-border/50">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <div class="p-2 bg-muted/50 rounded-lg">
-                    <Users class="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <h3 class="font-semibold text-foreground">Top Clippers</h3>
+            <component :is="tab.icon" class="tab__icon" />
+            {{ tab.label }}
+          </button>
+        </nav>
+
+        <!-- Content -->
+        <main class="content">
+          <!-- Leaderboard -->
+          <template v-if="activeTab === 'leaderboard'">
+            <div class="notice">
+              <AlertTriangle class="notice__icon" />
+              <span>
+                <strong>Leaderboard In Progress</strong>
+                — View tracking not yet implemented
+              </span>
+            </div>
+
+            <div class="ranking-row">
+              <div class="ranking-row__left">
+                <Trophy class="ranking-row__trophy" />
+                <div>
+                  <h2 class="ranking-row__title">Your Ranking</h2>
+                  <p class="ranking-row__subtitle">Global performance stats</p>
                 </div>
-                <div class="flex gap-1 bg-muted/30 rounded-lg p-1 border border-border/30">
+              </div>
+              <div class="ranking-row__stats">
+                <div class="rank-stat rank-stat--primary">
+                  <span class="rank-stat__value">{{ myRank || '--' }}</span>
+                  <span class="rank-stat__label">Rank</span>
+                </div>
+                <div class="rank-stat">
+                  <span class="rank-stat__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
+                  <span class="rank-stat__label">Clips</span>
+                </div>
+                <div class="rank-stat">
+                  <span class="rank-stat__value">{{ formatViews(totalViews) }}</span>
+                  <span class="rank-stat__label">Views</span>
+                </div>
+              </div>
+            </div>
+
+            <section class="leaderboard">
+              <div class="leaderboard__header">
+                <div class="leaderboard__title">
+                  <Users class="leaderboard__title-icon" />
+                  <h2>Top Clippers</h2>
+                </div>
+                <div class="period-switch">
                   <button
+                    :class="{ active: leaderboardPeriod === 'weekly' }"
                     @click="switchLeaderboardPeriod('weekly')"
-                    class="px-3 py-1.5 text-xs font-medium rounded-md transition-all"
-                    :class="
-                      leaderboardPeriod === 'weekly'
-                        ? 'bg-background text-foreground shadow-sm border border-border/50'
-                        : 'text-muted-foreground hover:text-foreground'
-                    "
                   >
                     Weekly
                   </button>
                   <button
+                    :class="{ active: leaderboardPeriod === 'monthly' }"
                     @click="switchLeaderboardPeriod('monthly')"
-                    class="px-3 py-1.5 text-xs font-medium rounded-md transition-all"
-                    :class="
-                      leaderboardPeriod === 'monthly'
-                        ? 'bg-background text-foreground shadow-sm border border-border/50'
-                        : 'text-muted-foreground hover:text-foreground'
-                    "
                   >
                     Monthly
                   </button>
                 </div>
               </div>
-            </div>
 
-            <div class="p-4">
-              <div v-if="loadingLeaderboard" class="space-y-3">
-                <div v-for="i in 5" :key="i" class="flex items-center gap-4 p-3 bg-muted/20 rounded-xl animate-pulse">
-                  <div class="w-8 h-8 rounded-full bg-muted/40"></div>
-                  <div class="flex-1 space-y-2">
-                    <div class="h-4 bg-muted/40 rounded w-32"></div>
-                    <div class="h-3 bg-muted/30 rounded w-24"></div>
-                  </div>
-                </div>
+              <div v-if="loadingLeaderboard" class="leaderboard__loading">
+                <div v-for="i in 5" :key="i" class="skeleton-row"></div>
               </div>
-
-              <div v-else-if="leaderboardEntries.length === 0" class="text-center py-12">
-                <div class="inline-flex items-center justify-center w-14 h-14 bg-muted/30 rounded-xl mb-4">
-                  <Trophy class="w-7 h-7 text-muted-foreground/50" />
-                </div>
-                <p class="text-sm font-medium text-foreground mb-1">No leaderboard data yet</p>
-                <p class="text-xs text-muted-foreground">Start posting clips to campaigns to appear here!</p>
+              <div v-else-if="leaderboardEntries.length === 0" class="leaderboard__empty">
+                <Trophy class="leaderboard__empty-icon" />
+                <p>No leaderboard data yet</p>
               </div>
-
-              <div v-else class="space-y-2">
+              <div v-else class="leaderboard__list">
                 <div
                   v-for="(entry, index) in leaderboardEntries"
                   :key="entry.id"
-                  class="flex items-center gap-4 p-3 rounded-xl transition-all"
-                  :class="
-                    entry.clipper_profile?.user_id === currentUserId
-                      ? 'bg-violet-500/10 border border-violet-500/30 shadow-sm'
-                      : 'bg-muted/20 hover:bg-muted/30 border border-transparent'
-                  "
+                  class="lb-entry"
+                  :class="{ 'lb-entry--you': entry.clipper_profile?.user_id === currentUserId }"
                 >
-                  <!-- Rank -->
-                  <div
-                    class="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shadow-sm"
-                    :class="{
-                      'bg-gradient-to-br from-amber-400 to-yellow-500 text-white': index === 0,
-                      'bg-gradient-to-br from-gray-300 to-gray-400 text-white': index === 1,
-                      'bg-gradient-to-br from-amber-600 to-amber-700 text-white': index === 2,
-                      'bg-muted text-muted-foreground border border-border/50': index > 2,
-                    }"
-                  >
-                    {{ index + 1 }}
+                  <span class="lb-entry__rank" :class="`lb-entry__rank--${index + 1}`">{{ index + 1 }}</span>
+                  <div class="lb-entry__avatar">
+                    <img v-if="entry.clipper_profile?.avatar_url" :src="entry.clipper_profile.avatar_url" />
+                    <UserCircle v-else />
                   </div>
-
-                  <!-- Avatar & Name -->
-                  <div class="flex items-center gap-3 flex-1 min-w-0">
-                    <div
-                      class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 flex items-center justify-center overflow-hidden flex-shrink-0 border border-violet-500/20"
-                    >
-                      <img
-                        v-if="entry.clipper_profile?.avatar_url"
-                        :src="entry.clipper_profile.avatar_url"
-                        class="w-full h-full object-cover"
-                      />
-                      <UserCircle v-else class="w-5 h-5 text-violet-400" />
-                    </div>
-                    <div class="min-w-0">
-                      <div class="font-medium text-foreground truncate text-sm">
-                        {{ entry.clipper_profile?.display_name || 'Anonymous Clipper' }}
-                        <span
-                          v-if="entry.clipper_profile?.user_id === currentUserId"
-                          class="text-xs text-violet-400 ml-1 font-semibold"
-                        >
-                          (You)
-                        </span>
-                      </div>
-                      <div class="text-xs text-muted-foreground">{{ entry.clips_delivered }} clips delivered</div>
-                    </div>
+                  <div class="lb-entry__info">
+                    <span class="lb-entry__name">
+                      {{ entry.clipper_profile?.display_name || 'Anonymous' }}
+                      <span v-if="entry.clipper_profile?.user_id === currentUserId" class="lb-entry__you">(You)</span>
+                    </span>
+                    <span class="lb-entry__clips">{{ entry.clips_delivered }} clips</span>
                   </div>
+                  <span class="lb-entry__views">{{ formatViews(entry.total_views || 0) }} views</span>
+                </div>
+              </div>
+            </section>
+          </template>
 
-                  <!-- Stats -->
-                  <div class="text-right flex-shrink-0">
-                    <div class="font-semibold text-foreground text-sm">{{ formatViews(entry.total_views || 0) }}</div>
-                    <div class="text-xs text-muted-foreground">views</div>
+          <!-- Accounts -->
+          <template v-if="activeTab === 'accounts'">
+            <section class="section">
+              <div class="section__header">
+                <div>
+                  <h2 class="section-title">Social Accounts</h2>
+                  <p class="section-subtitle">Connect your social media accounts to submit clips</p>
+                </div>
+                <button class="action-btn" @click="openAddSocialAccount">
+                  <Plus />
+                  Add Account
+                </button>
+              </div>
+
+              <div v-if="loadingSocialAccounts" class="loading-rows">
+                <div v-for="i in 2" :key="i" class="skeleton-row skeleton-row--lg"></div>
+              </div>
+              <div v-else-if="socialAccounts.length === 0" class="empty-state">
+                <Share2 class="empty-state__icon" />
+                <p class="empty-state__title">No social accounts connected</p>
+                <p class="empty-state__text">Add your social media accounts to submit clips to campaigns</p>
+                <button class="empty-state__btn" @click="openAddSocialAccount">
+                  <Plus />
+                  Add Your First Account
+                </button>
+              </div>
+              <div v-else class="list">
+                <div v-for="account in socialAccounts" :key="account.id" class="list-item">
+                  <div class="list-item__icon" :class="getPlatformClass(account.platform)">
+                    <component :is="getPlatformIcon(account.platform)" />
+                  </div>
+                  <div class="list-item__content">
+                    <span class="list-item__name">
+                      {{ account.display_name || account.username || getPlatformDisplayName(account.platform) }}
+                      <CheckCircle v-if="account.is_verified" class="verified-icon" />
+                    </span>
+                    <span class="list-item__meta">
+                      {{ getPlatformDisplayName(account.platform) }}
+                      <template v-if="account.follower_count">
+                        · {{ formatFollowers(account.follower_count) }} followers
+                      </template>
+                    </span>
+                  </div>
+                  <div class="list-item__actions">
+                    <button @click="editSocialAccount(account)" title="Edit"><Pencil /></button>
+                    <button class="danger" @click="confirmDeleteSocialAccount(account)" title="Delete">
+                      <Trash2 />
+                    </button>
                   </div>
                 </div>
               </div>
-            </div>
+            </section>
+          </template>
 
-            <div class="px-6 py-3 bg-muted/20 border-t border-border/30">
-              <p class="text-xs text-muted-foreground text-center">
-                Leaderboard based on clips posted and views from your social accounts
-              </p>
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="accounts" class="space-y-6">
-          <div class="max-w-3xl">
-            <div
-              class="bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl overflow-hidden"
-            >
-              <div class="p-6 border-b border-border/50">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-3">
-                    <div
-                      class="p-2.5 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-xl border border-blue-500/30"
-                    >
-                      <Share2 class="h-5 w-5 text-blue-400" />
-                    </div>
-                    <div>
-                      <h3 class="font-semibold text-foreground">Social Accounts</h3>
-                      <p class="text-xs text-muted-foreground">Connect your social media accounts to submit clips</p>
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    @click="openAddSocialAccount"
-                    class="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-lg shadow-blue-500/20"
-                  >
-                    <Plus class="w-4 h-4 mr-1.5" />
-                    Add Account
-                  </Button>
+          <!-- Payments -->
+          <template v-if="activeTab === 'payments'">
+            <section class="section">
+              <div class="section__header">
+                <div>
+                  <h2 class="section-title">Payment Methods</h2>
+                  <p class="section-subtitle">Add payment methods to receive your earnings</p>
                 </div>
+                <button class="action-btn action-btn--green" @click="openAddPaymentMethod">
+                  <Plus />
+                  Add Method
+                </button>
               </div>
 
-              <div class="p-4">
-                <div v-if="loadingSocialAccounts" class="space-y-3">
-                  <div v-for="i in 2" :key="i" class="flex items-center gap-4 p-4 bg-muted/20 rounded-xl animate-pulse">
-                    <div class="w-12 h-12 rounded-xl bg-muted/40"></div>
-                    <div class="flex-1 space-y-2">
-                      <div class="h-4 bg-muted/40 rounded w-32"></div>
-                      <div class="h-3 bg-muted/30 rounded w-24"></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-else-if="socialAccounts.length === 0" class="text-center py-12">
-                  <div class="inline-flex items-center justify-center w-14 h-14 bg-muted/30 rounded-xl mb-4">
-                    <Share2 class="w-7 h-7 text-muted-foreground/50" />
-                  </div>
-                  <p class="text-sm font-medium text-foreground mb-1">No social accounts connected</p>
-                  <p class="text-xs text-muted-foreground mb-4">Add your social media accounts to submit clips</p>
-                  <Button
-                    size="sm"
-                    @click="openAddSocialAccount"
-                    variant="outline"
-                    class="hover:border-blue-500/50 hover:bg-blue-500/5"
-                  >
-                    <Plus class="w-4 h-4 mr-1.5" />
-                    Add Your First Account
-                  </Button>
-                </div>
-
-                <div v-else class="space-y-3">
-                  <div
-                    v-for="account in socialAccounts"
-                    :key="account.id"
-                    class="group flex items-center justify-between p-4 bg-muted/20 hover:bg-muted/30 rounded-xl border border-transparent hover:border-border/50 transition-all"
-                  >
-                    <div class="flex items-center gap-4">
-                      <div
-                        class="w-12 h-12 rounded-xl flex items-center justify-center"
-                        :class="getPlatformBgClass(account.platform)"
-                      >
-                        <component
-                          :is="getPlatformIcon(account.platform)"
-                          class="w-6 h-6"
-                          :class="getPlatformIconClass(account.platform)"
-                        />
-                      </div>
-                      <div>
-                        <div class="flex items-center gap-2">
-                          <span class="font-semibold text-foreground">
-                            {{ account.display_name || account.username || getPlatformDisplayName(account.platform) }}
-                          </span>
-                          <CheckCircle v-if="account.is_verified" class="w-4 h-4 text-emerald-400" />
-                        </div>
-                        <div class="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                          <span>{{ getPlatformDisplayName(account.platform) }}</span>
-                          <span v-if="account.follower_count" class="flex items-center gap-1">
-                            <span class="w-1 h-1 rounded-full bg-muted-foreground/50" />
-                            {{ formatFollowers(account.follower_count) }} followers
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        @click="editSocialAccount(account)"
-                        class="h-8 w-8 hover:bg-background"
-                      >
-                        <Pencil class="w-4 h-4 text-muted-foreground" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        @click="confirmDeleteSocialAccount(account)"
-                        class="h-8 w-8 hover:bg-red-500/10"
-                      >
-                        <Trash2 class="w-4 h-4 text-red-400" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+              <div v-if="loadingPaymentMethods" class="loading-rows">
+                <div v-for="i in 2" :key="i" class="skeleton-row skeleton-row--lg"></div>
               </div>
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="payments" class="space-y-6">
-          <div class="max-w-3xl">
-            <div
-              class="bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl overflow-hidden"
-            >
-              <div class="p-6 border-b border-border/50">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-3">
-                    <div
-                      class="p-2.5 bg-gradient-to-br from-emerald-500/20 to-green-500/20 rounded-xl border border-emerald-500/30"
-                    >
-                      <Wallet class="h-5 w-5 text-emerald-400" />
-                    </div>
-                    <div>
-                      <h3 class="font-semibold text-foreground">Payment Methods</h3>
-                      <p class="text-xs text-muted-foreground">Add payment methods to receive your earnings</p>
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    @click="openAddPaymentMethod"
-                    class="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white shadow-lg shadow-emerald-500/20"
-                  >
-                    <Plus class="w-4 h-4 mr-1.5" />
-                    Add Method
-                  </Button>
-                </div>
+              <div v-else-if="paymentMethods.length === 0" class="empty-state">
+                <Wallet class="empty-state__icon" />
+                <p class="empty-state__title">No payment methods added</p>
+                <p class="empty-state__text">Add a payment method to receive your earnings from campaigns</p>
+                <button class="empty-state__btn empty-state__btn--green" @click="openAddPaymentMethod">
+                  <Plus />
+                  Add Payment Method
+                </button>
               </div>
-
-              <div class="p-4">
-                <div v-if="loadingPaymentMethods" class="space-y-3">
-                  <div v-for="i in 2" :key="i" class="flex items-center gap-4 p-4 bg-muted/20 rounded-xl animate-pulse">
-                    <div class="w-12 h-12 rounded-xl bg-muted/40"></div>
-                    <div class="flex-1 space-y-2">
-                      <div class="h-4 bg-muted/40 rounded w-24"></div>
-                      <div class="h-3 bg-muted/30 rounded w-32"></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-else-if="paymentMethods.length === 0" class="text-center py-12">
-                  <div class="inline-flex items-center justify-center w-14 h-14 bg-muted/30 rounded-xl mb-4">
-                    <Wallet class="w-7 h-7 text-muted-foreground/50" />
-                  </div>
-                  <p class="text-sm font-medium text-foreground mb-1">No payment methods added</p>
-                  <p class="text-xs text-muted-foreground mb-4">Add a payment method to receive your earnings</p>
-                  <Button
-                    size="sm"
-                    @click="openAddPaymentMethod"
-                    variant="outline"
-                    class="hover:border-emerald-500/50 hover:bg-emerald-500/5"
-                  >
-                    <Plus class="w-4 h-4 mr-1.5" />
-                    Add Your First Method
-                  </Button>
-                </div>
-
-                <div v-else class="space-y-3">
-                  <div
-                    v-for="method in paymentMethods"
-                    :key="method.id"
-                    class="group flex items-center justify-between p-4 rounded-xl border transition-all"
-                    :class="
-                      method.is_default
-                        ? 'bg-emerald-500/5 border-emerald-500/30'
-                        : 'bg-muted/20 hover:bg-muted/30 border-transparent hover:border-border/50'
-                    "
-                  >
-                    <div class="flex items-center gap-4">
-                      <div
-                        class="w-12 h-12 rounded-xl flex items-center justify-center"
-                        :class="getPaymentMethodBgClass(method.method_type)"
-                      >
-                        <component
-                          :is="getPaymentMethodIcon(method.method_type)"
-                          class="w-6 h-6"
-                          :class="getPaymentMethodIconClass(method.method_type)"
-                        />
-                      </div>
-                      <div>
-                        <div class="flex items-center gap-2">
-                          <span class="font-semibold text-foreground">
-                            {{ getPaymentMethodDisplayName(method.method_type) }}
-                          </span>
-                          <Badge
-                            v-if="method.is_default"
-                            class="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] font-semibold"
-                          >
-                            Default
-                          </Badge>
-                        </div>
-                        <div class="text-xs text-muted-foreground mt-0.5">
-                          {{ maskPaymentDetails(method.method_type, method.details) }}
-                        </div>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-1">
-                      <Button
-                        v-if="!method.is_default"
-                        variant="ghost"
-                        size="sm"
-                        @click="setDefaultPaymentMethod(method)"
-                        class="text-xs hover:bg-emerald-500/10 hover:text-emerald-400"
-                      >
-                        Set Default
-                      </Button>
-                      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          @click="editPaymentMethod(method)"
-                          class="h-8 w-8 hover:bg-background"
-                        >
-                          <Pencil class="w-4 h-4 text-muted-foreground" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          @click="confirmDeletePaymentMethod(method)"
-                          class="h-8 w-8 hover:bg-red-500/10"
-                        >
-                          <Trash2 class="w-4 h-4 text-red-400" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="campaigns" class="space-y-6">
-          <!-- Earnings Summary -->
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="group relative">
-              <div
-                class="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-              />
-              <div
-                class="relative bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl p-4 hover:border-emerald-500/30 transition-all"
-              >
-                <div class="flex items-center gap-2 mb-2">
-                  <div class="p-1.5 bg-emerald-500/20 rounded-lg">
-                    <DollarSign class="w-4 h-4 text-emerald-400" />
-                  </div>
-                </div>
+              <div v-else class="list">
                 <div
-                  class="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-green-400 bg-clip-text text-transparent"
+                  v-for="method in paymentMethods"
+                  :key="method.id"
+                  class="list-item"
+                  :class="{ 'list-item--highlight': method.is_default }"
                 >
-                  ${{ formatAmount(earningsSummary.total_earned) }}
-                </div>
-                <div class="text-xs text-muted-foreground mt-1 font-medium">Total Earned</div>
-              </div>
-            </div>
-            <div class="group relative">
-              <div
-                class="absolute inset-0 bg-gradient-to-br from-amber-500/10 to-transparent rounded-xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-              />
-              <div
-                class="relative bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl p-4 hover:border-amber-500/30 transition-all"
-              >
-                <div class="flex items-center gap-2 mb-2">
-                  <div class="p-1.5 bg-amber-500/20 rounded-lg">
-                    <Clock class="w-4 h-4 text-amber-400" />
+                  <div class="list-item__icon" :class="getPaymentClass(method.method_type)">
+                    <component :is="getPaymentMethodIcon(method.method_type)" />
+                  </div>
+                  <div class="list-item__content">
+                    <span class="list-item__name">
+                      {{ getPaymentMethodDisplayName(method.method_type) }}
+                      <span v-if="method.is_default" class="default-badge">Default</span>
+                    </span>
+                    <span class="list-item__meta">{{ maskPaymentDetails(method.method_type, method.details) }}</span>
+                  </div>
+                  <div class="list-item__actions">
+                    <button v-if="!method.is_default" class="text-btn" @click="setDefaultPaymentMethod(method)">
+                      Set Default
+                    </button>
+                    <button @click="editPaymentMethod(method)" title="Edit"><Pencil /></button>
+                    <button class="danger" @click="confirmDeletePaymentMethod(method)" title="Delete">
+                      <Trash2 />
+                    </button>
                   </div>
                 </div>
-                <div
-                  class="text-2xl font-bold bg-gradient-to-r from-amber-400 to-yellow-400 bg-clip-text text-transparent"
-                >
-                  ${{ formatAmount(earningsSummary.pending) }}
-                </div>
-                <div class="text-xs text-muted-foreground mt-1 font-medium">Pending</div>
               </div>
-            </div>
-            <div
-              class="bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl p-4 hover:border-border transition-all"
-            >
-              <div class="flex items-center gap-2 mb-2">
-                <div class="p-1.5 bg-muted/50 rounded-lg">
-                  <Upload class="w-4 h-4 text-muted-foreground" />
-                </div>
-              </div>
-              <div class="text-2xl font-bold text-foreground">{{ earningsSummary.total_submissions }}</div>
-              <div class="text-xs text-muted-foreground mt-1 font-medium">Total Submissions</div>
-            </div>
-            <div
-              class="bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl p-4 hover:border-border transition-all"
-            >
-              <div class="flex items-center gap-2 mb-2">
-                <div class="p-1.5 bg-muted/50 rounded-lg">
-                  <CheckCircle class="w-4 h-4 text-muted-foreground" />
-                </div>
-              </div>
-              <div class="text-2xl font-bold text-foreground">{{ earningsSummary.verified_submissions }}</div>
-              <div class="text-xs text-muted-foreground mt-1 font-medium">Verified</div>
-            </div>
-          </div>
+            </section>
+          </template>
 
-          <!-- Campaign History -->
-          <div
-            class="bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl overflow-hidden"
-          >
-            <div class="p-6 border-b border-border/50">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <div
-                    class="p-2 bg-gradient-to-br from-violet-500/20 to-indigo-500/20 rounded-lg border border-violet-500/30"
-                  >
-                    <Megaphone class="h-4 w-4 text-violet-400" />
-                  </div>
-                  <h3 class="font-semibold text-foreground">Campaign History</h3>
+          <!-- Campaigns -->
+          <template v-if="activeTab === 'campaigns'">
+            <div class="earnings-bar">
+              <div class="earnings-item earnings-item--earned">
+                <DollarSign />
+                <div>
+                  <span class="earnings-item__value">${{ formatAmount(earningsSummary.total_earned) }}</span>
+                  <span class="earnings-item__label">Total Earned</span>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  @click="$router.push('/campaigns')"
-                  class="hover:border-violet-500/50 hover:bg-violet-500/5"
-                >
+              </div>
+              <div class="earnings-item earnings-item--pending">
+                <Clock />
+                <div>
+                  <span class="earnings-item__value">${{ formatAmount(earningsSummary.pending) }}</span>
+                  <span class="earnings-item__label">Pending</span>
+                </div>
+              </div>
+              <div class="earnings-item">
+                <Upload />
+                <div>
+                  <span class="earnings-item__value">{{ earningsSummary.total_submissions }}</span>
+                  <span class="earnings-item__label">Submissions</span>
+                </div>
+              </div>
+              <div class="earnings-item">
+                <CheckCircle />
+                <div>
+                  <span class="earnings-item__value">{{ earningsSummary.verified_submissions }}</span>
+                  <span class="earnings-item__label">Verified</span>
+                </div>
+              </div>
+            </div>
+
+            <section class="section">
+              <div class="section__header">
+                <div>
+                  <h2 class="section-title">Campaign History</h2>
+                  <p class="section-subtitle">Campaigns you've joined</p>
+                </div>
+                <button class="browse-btn" @click="$router.push('/campaigns')">Browse Campaigns</button>
+              </div>
+
+              <div v-if="loadingCampaigns" class="loading-rows">
+                <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+              </div>
+              <div v-else-if="myCampaigns.length === 0" class="empty-state">
+                <Megaphone class="empty-state__icon" />
+                <p class="empty-state__title">No campaigns yet</p>
+                <p class="empty-state__text">Browse available campaigns and start earning</p>
+                <button class="empty-state__btn empty-state__btn--primary" @click="$router.push('/campaigns')">
                   Browse Campaigns
-                </Button>
+                </button>
               </div>
-            </div>
-
-            <div class="p-4">
-              <div v-if="loadingCampaigns" class="space-y-3">
-                <div v-for="i in 3" :key="i" class="flex items-center gap-4 p-4 bg-muted/20 rounded-xl animate-pulse">
-                  <div class="w-12 h-12 rounded-xl bg-muted/40"></div>
-                  <div class="flex-1 space-y-2">
-                    <div class="h-4 bg-muted/40 rounded w-48"></div>
-                    <div class="h-3 bg-muted/30 rounded w-32"></div>
+              <div v-else class="campaign-list">
+                <div v-for="campaign in myCampaigns" :key="campaign.id" class="campaign-row">
+                  <div class="campaign-row__main">
+                    <h3 class="campaign-row__title">{{ campaign.title }}</h3>
+                    <span class="campaign-row__org">{{ campaign.organization?.name || 'Unknown' }}</span>
                   </div>
+                  <span class="cpm-badge">${{ formatCpm(campaign.cpm) }}/1K</span>
+                  <span class="status-badge" :class="`status-badge--${campaign.status}`">{{ campaign.status }}</span>
+                  <span v-if="campaign.joined_at" class="campaign-row__date">{{ formatDate(campaign.joined_at) }}</span>
                 </div>
               </div>
+            </section>
 
-              <div v-else-if="myCampaigns.length === 0" class="text-center py-12">
-                <div class="inline-flex items-center justify-center w-14 h-14 bg-muted/30 rounded-xl mb-4">
-                  <Megaphone class="w-7 h-7 text-muted-foreground/50" />
-                </div>
-                <p class="text-sm font-medium text-foreground mb-1">No campaigns yet</p>
-                <p class="text-xs text-muted-foreground mb-4">Browse available campaigns and start earning</p>
-                <Button
-                  @click="$router.push('/campaigns')"
-                  class="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-lg shadow-violet-500/20"
-                >
-                  <Megaphone class="w-4 h-4 mr-2" />
-                  Browse Campaigns
-                </Button>
+            <section class="section">
+              <div class="section__header">
+                <h2 class="section-title">My Submissions</h2>
               </div>
 
-              <div v-else class="space-y-3">
-                <div
-                  v-for="campaign in myCampaigns"
-                  :key="campaign.id"
-                  class="group flex items-start gap-4 p-4 bg-muted/20 hover:bg-muted/30 rounded-xl border border-transparent hover:border-border/50 transition-all cursor-pointer"
-                >
-                  <div
-                    class="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 flex items-center justify-center flex-shrink-0 border border-violet-500/20"
-                  >
-                    <Megaphone class="w-6 h-6 text-violet-400" />
+              <div v-if="loadingSubmissions" class="loading-rows">
+                <div v-for="i in 3" :key="i" class="skeleton-row"></div>
+              </div>
+              <div v-else-if="mySubmissions.length === 0" class="empty-state empty-state--compact">
+                <Upload class="empty-state__icon" />
+                <p class="empty-state__title">No submissions yet</p>
+              </div>
+              <div v-else class="submission-list">
+                <div v-for="submission in mySubmissions" :key="submission.id" class="submission-row">
+                  <div class="submission-row__platform" :class="getPlatformClass(submission.platform)">
+                    <component :is="getPlatformIcon(submission.platform)" />
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center justify-between gap-2">
-                      <h4
-                        class="font-semibold text-sm text-foreground truncate group-hover:text-violet-400 transition-colors"
-                      >
-                        {{ campaign.title }}
-                      </h4>
-                      <Badge :class="getStatusBadgeClass(campaign.status)">{{ campaign.status }}</Badge>
-                    </div>
-                    <p class="text-xs text-muted-foreground mt-0.5">
-                      {{ campaign.organization?.name || 'Unknown Organization' }}
-                    </p>
-                    <div class="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                      <span class="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-md">
-                        <DollarSign class="w-3 h-3" />
-                        ${{ formatCpm(campaign.cpm) }}/1K
-                      </span>
-                      <span v-if="campaign.joined_at" class="flex items-center gap-1">
-                        <Calendar class="w-3 h-3" />
-                        Joined {{ formatDate(campaign.joined_at) }}
-                      </span>
-                    </div>
+                  <div class="submission-row__content">
+                    <a :href="submission.clip_url" target="_blank" class="submission-row__link">
+                      {{ truncateUrl(submission.clip_url) }}
+                    </a>
+                    <span class="submission-row__meta">
+                      {{ submission.campaign?.title || 'Unknown' }} · {{ submission.view_count.toLocaleString() }} views
+                    </span>
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- My Submissions -->
-          <div
-            class="bg-gradient-to-br from-card via-card to-muted/20 border border-border/80 rounded-xl overflow-hidden"
-          >
-            <div class="p-6 border-b border-border/50">
-              <div class="flex items-center gap-3">
-                <div class="p-2 bg-muted/50 rounded-lg">
-                  <Upload class="h-4 w-4 text-muted-foreground" />
-                </div>
-                <h3 class="font-semibold text-foreground">My Submissions</h3>
-              </div>
-            </div>
-
-            <div class="p-4">
-              <div v-if="loadingSubmissions" class="space-y-3">
-                <div v-for="i in 3" :key="i" class="p-4 bg-muted/20 rounded-xl animate-pulse">
-                  <div class="space-y-2">
-                    <div class="h-4 bg-muted/40 rounded w-full"></div>
-                    <div class="h-3 bg-muted/30 rounded w-48"></div>
-                  </div>
-                </div>
-              </div>
-
-              <div v-else-if="mySubmissions.length === 0" class="text-center py-12">
-                <div class="inline-flex items-center justify-center w-14 h-14 bg-muted/30 rounded-xl mb-4">
-                  <Upload class="w-7 h-7 text-muted-foreground/50" />
-                </div>
-                <p class="text-sm font-medium text-foreground mb-1">No submissions yet</p>
-                <p class="text-xs text-muted-foreground">Submit clips to campaigns to start earning</p>
-              </div>
-
-              <div v-else class="space-y-2">
-                <div
-                  v-for="submission in mySubmissions"
-                  :key="submission.id"
-                  class="group flex items-start justify-between gap-4 p-4 bg-muted/20 hover:bg-muted/30 rounded-xl border border-transparent hover:border-border/50 transition-all"
-                >
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-1">
-                      <div
-                        class="w-6 h-6 rounded-md flex items-center justify-center"
-                        :class="getPlatformBgClass(submission.platform)"
-                      >
-                        <component
-                          :is="getPlatformIcon(submission.platform)"
-                          class="w-3.5 h-3.5"
-                          :class="getPlatformIconClass(submission.platform)"
-                        />
-                      </div>
-                      <a
-                        :href="submission.clip_url"
-                        target="_blank"
-                        class="text-sm font-medium text-violet-400 hover:text-violet-300 hover:underline truncate"
-                      >
-                        {{ truncateUrl(submission.clip_url) }}
-                      </a>
-                    </div>
-                    <p class="text-xs text-muted-foreground">
-                      {{ submission.campaign?.title || 'Unknown Campaign' }}
-                    </p>
-                    <div class="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                      <span class="flex items-center gap-1">
-                        <Eye class="w-3 h-3" />
-                        {{ submission.view_count.toLocaleString() }} views
-                      </span>
-                      <span class="flex items-center gap-1">
-                        <Calendar class="w-3 h-3" />
-                        {{ formatDate(submission.inserted_at) }}
-                      </span>
-                    </div>
-                  </div>
-                  <Badge :class="getSubmissionStatusBadgeClass(submission.status)">
+                  <span class="status-badge" :class="`status-badge--${submission.status}`">
                     {{ submission.status }}
-                  </Badge>
+                  </span>
+                  <span class="submission-row__date">{{ formatDate(submission.inserted_at) }}</span>
                 </div>
               </div>
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
+            </section>
+          </template>
+        </main>
+      </div>
     </PageLayout>
 
-    <!-- Add/Edit Social Account Dialog -->
+    <!-- Dialogs -->
     <Dialog v-model:open="showSocialAccountDialog">
-      <DialogContent class="max-w-md">
+      <DialogContent class="dialog">
         <DialogHeader>
           <DialogTitle>{{ editingSocialAccount ? 'Edit' : 'Add' }} Social Account</DialogTitle>
         </DialogHeader>
-
-        <div class="space-y-4">
-          <div class="space-y-2">
+        <div class="dialog__form">
+          <div class="dialog__field">
             <Label>Platform</Label>
             <Select v-model="socialAccountForm.platform" :disabled="!!editingSocialAccount">
-              <SelectTrigger>
-                <SelectValue placeholder="Select platform" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select platform" /></SelectTrigger>
               <SelectContent>
-                <SelectItem v-for="p in CLIPPER_PLATFORMS" :key="p.value" :value="p.value">
-                  {{ p.label }}
-                </SelectItem>
+                <SelectItem v-for="p in CLIPPER_PLATFORMS" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
               </SelectContent>
             </Select>
           </div>
-
-          <div class="space-y-2">
+          <div class="dialog__field">
             <Label>Username</Label>
             <Input v-model="socialAccountForm.username" placeholder="@username" />
           </div>
-
-          <div class="space-y-2">
+          <div class="dialog__field">
             <Label>Display Name (optional)</Label>
-            <Input v-model="socialAccountForm.display_name" placeholder="Your display name" />
+            <Input v-model="socialAccountForm.display_name" placeholder="Display name" />
           </div>
-
-          <div class="space-y-2">
+          <div class="dialog__field">
             <Label>Profile URL (optional)</Label>
             <Input v-model="socialAccountForm.profile_url" placeholder="https://..." />
           </div>
-
-          <div class="space-y-2">
-            <Label>Follower Count (optional)</Label>
+          <div class="dialog__field">
+            <Label>Followers (optional)</Label>
             <Input v-model.number="socialAccountForm.follower_count" type="number" placeholder="0" />
           </div>
         </div>
-
         <DialogFooter>
           <Button variant="outline" @click="showSocialAccountDialog = false">Cancel</Button>
           <Button @click="saveSocialAccount" :disabled="savingSocialAccount || !socialAccountForm.platform">
-            <Loader2 v-if="savingSocialAccount" class="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 v-if="savingSocialAccount" class="spinner" />
             {{ editingSocialAccount ? 'Save' : 'Add' }}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <!-- Add/Edit Payment Method Dialog -->
     <Dialog v-model:open="showPaymentMethodDialog">
-      <DialogContent class="max-w-md">
+      <DialogContent class="dialog">
         <DialogHeader>
           <DialogTitle>{{ editingPaymentMethod ? 'Edit' : 'Add' }} Payment Method</DialogTitle>
         </DialogHeader>
-
-        <div class="space-y-4">
-          <div class="space-y-2">
+        <div class="dialog__form">
+          <div class="dialog__field">
             <Label>Method Type</Label>
             <Select v-model="paymentMethodForm.method_type" :disabled="!!editingPaymentMethod">
-              <SelectTrigger>
-                <SelectValue placeholder="Select method" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select method" /></SelectTrigger>
               <SelectContent>
-                <SelectItem v-for="m in PAYMENT_METHOD_TYPES" :key="m.value" :value="m.value">
-                  {{ m.label }}
-                </SelectItem>
+                <SelectItem v-for="m in PAYMENT_METHOD_TYPES" :key="m.value" :value="m.value">{{ m.label }}</SelectItem>
               </SelectContent>
             </Select>
           </div>
-
-          <!-- Dynamic fields based on method type -->
           <template v-if="paymentMethodForm.method_type === 'paypal'">
-            <div class="space-y-2">
+            <div class="dialog__field">
               <Label>PayPal Email</Label>
-              <Input v-model="paymentMethodForm.details.email" type="email" placeholder="your@email.com" />
+              <Input v-model="paymentMethodForm.details.email" type="email" placeholder="email@example.com" />
             </div>
           </template>
-
           <template v-else-if="paymentMethodForm.method_type === 'crypto'">
-            <div class="space-y-2">
+            <div class="dialog__field">
               <Label>Wallet Address</Label>
               <Input v-model="paymentMethodForm.details.wallet_address" placeholder="0x..." />
             </div>
-            <div class="space-y-2">
+            <div class="dialog__field">
               <Label>Network (optional)</Label>
-              <Input v-model="paymentMethodForm.details.network" placeholder="Ethereum, Solana, etc." />
+              <Input v-model="paymentMethodForm.details.network" placeholder="Ethereum, Solana..." />
             </div>
           </template>
-
-          <template
-            v-else-if="paymentMethodForm.method_type === 'venmo' || paymentMethodForm.method_type === 'cashapp'"
-          >
-            <div class="space-y-2">
+          <template v-else-if="['venmo', 'cashapp'].includes(paymentMethodForm.method_type)">
+            <div class="dialog__field">
               <Label>Username</Label>
               <Input v-model="paymentMethodForm.details.username" placeholder="@username" />
             </div>
           </template>
-
           <template v-else-if="paymentMethodForm.method_type === 'bank_transfer'">
-            <div class="space-y-2">
-              <Label>Account Holder Name</Label>
+            <div class="dialog__field">
+              <Label>Account Name</Label>
               <Input v-model="paymentMethodForm.details.account_name" placeholder="John Doe" />
             </div>
-            <div class="space-y-2">
+            <div class="dialog__field">
               <Label>Account Number</Label>
               <Input v-model="paymentMethodForm.details.account_number" placeholder="****1234" />
             </div>
-            <div class="space-y-2">
+            <div class="dialog__field">
               <Label>Routing Number</Label>
               <Input v-model="paymentMethodForm.details.routing_number" placeholder="123456789" />
             </div>
           </template>
-
-          <div class="flex items-center gap-2">
-            <Checkbox v-model:checked="paymentMethodForm.is_default" id="is-default" />
-            <Label for="is-default" class="text-sm font-normal">Set as default payment method</Label>
+          <div class="dialog__checkbox">
+            <Checkbox v-model:checked="paymentMethodForm.is_default" id="default-payment" />
+            <Label for="default-payment">Set as default</Label>
           </div>
         </div>
-
         <DialogFooter>
           <Button variant="outline" @click="showPaymentMethodDialog = false">Cancel</Button>
           <Button @click="savePaymentMethod" :disabled="savingPaymentMethod || !paymentMethodForm.method_type">
-            <Loader2 v-if="savingPaymentMethod" class="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 v-if="savingPaymentMethod" class="spinner" />
             {{ editingPaymentMethod ? 'Save' : 'Add' }}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <!-- Delete Confirmation Dialog -->
     <Dialog v-model:open="showDeleteDialog">
-      <DialogContent class="max-w-sm">
+      <DialogContent class="dialog dialog--small">
         <DialogHeader>
           <DialogTitle>Confirm Delete</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete this {{ deleteType }}? This action cannot be undone.
-          </DialogDescription>
+          <DialogDescription>Are you sure? This cannot be undone.</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" @click="showDeleteDialog = false">Cancel</Button>
           <Button variant="destructive" @click="confirmDelete" :disabled="deleting">
-            <Loader2 v-if="deleting" class="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 v-if="deleting" class="spinner" />
             Delete
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <!-- Edit Profile Dialog -->
     <EditProfileDialog :show="showEditProfileDialog" @close="showEditProfileDialog = false" @saved="onProfileSaved" />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted } from 'vue';
+  import { ref, reactive, onMounted, markRaw } from 'vue';
   import {
     UserCircle,
     Share2,
@@ -1005,21 +539,17 @@
     DollarSign,
     Building,
     Megaphone,
-    Calendar,
     Eye,
     EyeOff,
     Upload,
     Trophy,
     AlertTriangle,
-    Film,
-    Star,
     Clock,
     Users,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
   import { Button } from '@/components/ui/button';
-  import { Badge } from '@/components/ui/badge';
   import { Input } from '@/components/ui/input';
   import { Label } from '@/components/ui/label';
   import { Checkbox } from '@/components/ui/checkbox';
@@ -1032,7 +562,6 @@
     DialogFooter,
   } from '@/components/ui/dialog';
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-  import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
   import {
     listSocialAccounts,
     createSocialAccount,
@@ -1063,6 +592,13 @@
 
   const { toast } = useToast();
 
+  const tabs = [
+    { id: 'leaderboard', label: 'Leaderboard', icon: markRaw(Trophy) },
+    { id: 'accounts', label: 'Accounts', icon: markRaw(Share2) },
+    { id: 'payments', label: 'Payments', icon: markRaw(Wallet) },
+    { id: 'campaigns', label: 'Campaigns', icon: markRaw(Megaphone) },
+  ];
+
   const activeTab = ref('leaderboard');
   const clipperProfile = ref<ClipperProfile | null>(null);
   const loadingSocialAccounts = ref(true);
@@ -1080,7 +616,6 @@
     verified_submissions: 0,
   });
 
-  // Leaderboard state
   const loadingLeaderboard = ref(true);
   const leaderboardEntries = ref<LeaderboardEntry[]>([]);
   const myRank = ref<number | null>(null);
@@ -1093,20 +628,12 @@
     rank: number;
     clips_delivered: number;
     total_views: number;
-    clipper_profile?: {
-      id: number;
-      user_id: number;
-      display_name: string | null;
-      avatar_url: string | null;
-    };
+    clipper_profile?: { id: number; user_id: number; display_name: string | null; avatar_url: string | null };
   }
 
   const formatViews = (views: number): string => {
-    if (views >= 1000000) {
-      return (views / 1000000).toFixed(1) + 'M';
-    } else if (views >= 1000) {
-      return (views / 1000).toFixed(1) + 'K';
-    }
+    if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M';
+    if (views >= 1000) return (views / 1000).toFixed(1) + 'K';
     return views.toString();
   };
 
@@ -1120,20 +647,15 @@
   const loadLeaderboard = async () => {
     loadingLeaderboard.value = true;
     try {
-      // TODO: Replace with actual API call when backend is ready
-      // For now, use mock data or existing leaderboard endpoint
       const response = await import('@/services/clipperProfilesApi').then((m) =>
         m.getLeaderboard(leaderboardPeriod.value)
       );
       if (response.success) {
-        // Map entries to include total_views (placeholder for now)
         leaderboardEntries.value = response.entries.map((entry: any, index: number) => ({
           ...entry,
-          total_views: entry.total_views || 0, // Will be populated when API is ready
+          total_views: entry.total_views || 0,
           rank: index + 1,
         }));
-
-        // Find current user's rank
         if (currentUserId.value) {
           const myEntry = leaderboardEntries.value.find((e) => e.clipper_profile?.user_id === currentUserId.value);
           myRank.value = myEntry?.rank || null;
@@ -1166,45 +688,25 @@
     profile_url: '',
     follower_count: undefined as number | undefined,
   });
-
-  const paymentMethodForm = reactive({
-    method_type: '',
-    is_default: false,
-    details: {} as Record<string, string>,
-  });
+  const paymentMethodForm = reactive({ method_type: '', is_default: false, details: {} as Record<string, string> });
 
   const getPlatformIcon = (platform: string) => {
-    const icons: Record<string, typeof Music2> = {
-      tiktok: Music2,
-      instagram: Instagram,
-      x: Twitter,
-      youtube: Youtube,
-    };
+    const icons: Record<string, any> = { tiktok: Music2, instagram: Instagram, x: Twitter, youtube: Youtube };
     return icons[platform] || Globe;
   };
 
-  const getPlatformBgClass = (platform: string) => {
+  const getPlatformClass = (platform: string) => {
     const classes: Record<string, string> = {
-      tiktok: 'bg-gradient-to-br from-pink-500/20 to-cyan-500/20 border border-pink-500/20',
-      instagram: 'bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/20',
-      x: 'bg-gradient-to-br from-gray-500/20 to-gray-600/20 border border-gray-500/20',
-      youtube: 'bg-gradient-to-br from-red-500/20 to-red-600/20 border border-red-500/20',
+      tiktok: 'platform--tiktok',
+      instagram: 'platform--instagram',
+      x: 'platform--x',
+      youtube: 'platform--youtube',
     };
-    return classes[platform] || 'bg-muted/50 border border-border/50';
-  };
-
-  const getPlatformIconClass = (platform: string) => {
-    const classes: Record<string, string> = {
-      tiktok: 'text-pink-400',
-      instagram: 'text-purple-400',
-      x: 'text-gray-400',
-      youtube: 'text-red-400',
-    };
-    return classes[platform] || 'text-muted-foreground';
+    return classes[platform] || '';
   };
 
   const getPaymentMethodIcon = (methodType: string) => {
-    const icons: Record<string, typeof CreditCard> = {
+    const icons: Record<string, any> = {
       paypal: CreditCard,
       crypto: Bitcoin,
       venmo: Smartphone,
@@ -1214,46 +716,15 @@
     return icons[methodType] || Wallet;
   };
 
-  const getPaymentMethodBgClass = (methodType: string) => {
+  const getPaymentClass = (methodType: string) => {
     const classes: Record<string, string> = {
-      paypal: 'bg-gradient-to-br from-blue-500/20 to-blue-600/20 border border-blue-500/20',
-      crypto: 'bg-gradient-to-br from-orange-500/20 to-amber-500/20 border border-orange-500/20',
-      venmo: 'bg-gradient-to-br from-blue-400/20 to-cyan-500/20 border border-blue-400/20',
-      cashapp: 'bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/20',
-      bank_transfer: 'bg-gradient-to-br from-gray-500/20 to-slate-500/20 border border-gray-500/20',
+      paypal: 'payment--paypal',
+      crypto: 'payment--crypto',
+      venmo: 'payment--venmo',
+      cashapp: 'payment--cashapp',
+      bank_transfer: 'payment--bank',
     };
-    return classes[methodType] || 'bg-muted/50 border border-border/50';
-  };
-
-  const getPaymentMethodIconClass = (methodType: string) => {
-    const classes: Record<string, string> = {
-      paypal: 'text-blue-400',
-      crypto: 'text-orange-400',
-      venmo: 'text-blue-400',
-      cashapp: 'text-green-400',
-      bank_transfer: 'text-gray-400',
-    };
-    return classes[methodType] || 'text-muted-foreground';
-  };
-
-  const getStatusBadgeClass = (status: string) => {
-    const classes: Record<string, string> = {
-      active: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-      paused: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-      completed: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-      draft: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
-    };
-    return classes[status] || 'bg-muted/50 text-muted-foreground border-border/50';
-  };
-
-  const getSubmissionStatusBadgeClass = (status: string) => {
-    const classes: Record<string, string> = {
-      verified: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-      pending: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-      rejected: 'bg-red-500/15 text-red-400 border-red-500/30',
-      paid: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-    };
-    return classes[status] || 'bg-muted/50 text-muted-foreground border-border/50';
+    return classes[methodType] || '';
   };
 
   const formatFollowers = (count: number) => {
@@ -1262,60 +733,19 @@
     return count.toString();
   };
 
-  const formatAmount = (amount: string | number) => {
-    const value = typeof amount === 'string' ? parseFloat(amount) : amount;
-    return value.toFixed(2);
-  };
-
-  const formatCpm = (cpm: string | number) => {
-    const value = typeof cpm === 'string' ? parseFloat(cpm) : cpm;
-    return value.toFixed(2);
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
-
-  const truncateUrl = (url: string) => {
-    if (url.length > 50) {
-      return url.substring(0, 50) + '...';
-    }
-    return url;
-  };
-
-  const getStatusVariant = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      active: 'default',
-      paused: 'secondary',
-      completed: 'outline',
-      draft: 'secondary',
-    };
-    return variants[status] || 'secondary';
-  };
-
-  const getSubmissionStatusVariant = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      verified: 'default',
-      pending: 'secondary',
-      rejected: 'destructive',
-      paid: 'default',
-    };
-    return variants[status] || 'secondary';
-  };
+  const formatAmount = (amount: string | number) =>
+    (typeof amount === 'string' ? parseFloat(amount) : amount).toFixed(2);
+  const formatCpm = (cpm: string | number) => (typeof cpm === 'string' ? parseFloat(cpm) : cpm).toFixed(2);
+  const formatDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const truncateUrl = (url: string) => (url.length > 40 ? url.substring(0, 40) + '...' : url);
 
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
     try {
       const response = await listSocialAccounts();
-      if (response.success) {
-        socialAccounts.value = response.social_accounts;
-      }
+      if (response.success) socialAccounts.value = response.social_accounts;
     } catch (error) {
-      console.error('Failed to load social accounts:', error);
       toast({ title: 'Error', description: 'Failed to load social accounts' });
     } finally {
       loadingSocialAccounts.value = false;
@@ -1326,11 +756,8 @@
     loadingPaymentMethods.value = true;
     try {
       const response = await listPaymentMethods();
-      if (response.success) {
-        paymentMethods.value = response.payment_methods;
-      }
+      if (response.success) paymentMethods.value = response.payment_methods;
     } catch (error) {
-      console.error('Failed to load payment methods:', error);
       toast({ title: 'Error', description: 'Failed to load payment methods' });
     } finally {
       loadingPaymentMethods.value = false;
@@ -1371,23 +798,17 @@
         profile_url: socialAccountForm.profile_url || undefined,
         follower_count: socialAccountForm.follower_count,
       };
-
-      let response;
-      if (editingSocialAccount.value) {
-        response = await updateSocialAccount(editingSocialAccount.value.id, data);
-      } else {
-        response = await createSocialAccount(data);
-      }
-
+      const response = editingSocialAccount.value
+        ? await updateSocialAccount(editingSocialAccount.value.id, data)
+        : await createSocialAccount(data);
       if (response.success) {
         toast({ title: 'Success', description: `Social account ${editingSocialAccount.value ? 'updated' : 'added'}` });
         showSocialAccountDialog.value = false;
         await loadSocialAccounts();
       } else {
-        toast({ title: 'Error', description: response.error || 'Failed to save social account' });
+        toast({ title: 'Error', description: response.error || 'Failed to save' });
       }
     } catch (error) {
-      console.error('Failed to save social account:', error);
       toast({ title: 'Error', description: 'Failed to save social account' });
     } finally {
       savingSocialAccount.value = false;
@@ -1402,11 +823,7 @@
 
   const openAddPaymentMethod = () => {
     editingPaymentMethod.value = null;
-    Object.assign(paymentMethodForm, {
-      method_type: '',
-      is_default: false,
-      details: {},
-    });
+    Object.assign(paymentMethodForm, { method_type: '', is_default: false, details: {} });
     showPaymentMethodDialog.value = true;
   };
 
@@ -1428,26 +845,20 @@
         is_default: paymentMethodForm.is_default,
         details: paymentMethodForm.details,
       };
-
-      let response;
-      if (editingPaymentMethod.value) {
-        response = await updatePaymentMethod(editingPaymentMethod.value.id, {
-          details: data.details,
-          is_default: data.is_default,
-        });
-      } else {
-        response = await createPaymentMethod(data);
-      }
-
+      const response = editingPaymentMethod.value
+        ? await updatePaymentMethod(editingPaymentMethod.value.id, {
+            details: data.details,
+            is_default: data.is_default,
+          })
+        : await createPaymentMethod(data);
       if (response.success) {
         toast({ title: 'Success', description: `Payment method ${editingPaymentMethod.value ? 'updated' : 'added'}` });
         showPaymentMethodDialog.value = false;
         await loadPaymentMethods();
       } else {
-        toast({ title: 'Error', description: response.error || 'Failed to save payment method' });
+        toast({ title: 'Error', description: response.error || 'Failed to save' });
       }
     } catch (error) {
-      console.error('Failed to save payment method:', error);
       toast({ title: 'Error', description: 'Failed to save payment method' });
     } finally {
       savingPaymentMethod.value = false;
@@ -1458,11 +869,10 @@
     try {
       const response = await updatePaymentMethod(method.id, { is_default: true });
       if (response.success) {
-        toast({ title: 'Success', description: 'Default payment method updated' });
+        toast({ title: 'Success', description: 'Default updated' });
         await loadPaymentMethods();
       }
     } catch (error) {
-      console.error('Failed to set default:', error);
       toast({ title: 'Error', description: 'Failed to update default' });
     }
   };
@@ -1475,29 +885,20 @@
 
   const confirmDelete = async () => {
     if (!deleteTarget.value) return;
-
     deleting.value = true;
     try {
-      let response;
-      if (deleteType.value === 'social account') {
-        response = await deleteSocialAccount((deleteTarget.value as ClipperSocialAccount).id);
-      } else {
-        response = await deletePaymentMethod((deleteTarget.value as ClipperPaymentMethod).id);
-      }
-
+      const response =
+        deleteType.value === 'social account'
+          ? await deleteSocialAccount((deleteTarget.value as ClipperSocialAccount).id)
+          : await deletePaymentMethod((deleteTarget.value as ClipperPaymentMethod).id);
       if (response.success) {
-        toast({ title: 'Deleted', description: `${deleteType.value} deleted successfully` });
+        toast({ title: 'Deleted', description: `${deleteType.value} deleted` });
         showDeleteDialog.value = false;
-        if (deleteType.value === 'social account') {
-          await loadSocialAccounts();
-        } else {
-          await loadPaymentMethods();
-        }
+        deleteType.value === 'social account' ? await loadSocialAccounts() : await loadPaymentMethods();
       } else {
         toast({ title: 'Error', description: response.error || 'Failed to delete' });
       }
     } catch (error) {
-      console.error('Failed to delete:', error);
       toast({ title: 'Error', description: 'Failed to delete' });
     } finally {
       deleting.value = false;
@@ -1508,9 +909,7 @@
     loadingCampaigns.value = true;
     try {
       const response = await listMyCampaigns();
-      if (response.success) {
-        myCampaigns.value = response.campaigns;
-      }
+      if (response.success) myCampaigns.value = response.campaigns;
     } catch (error) {
       console.error('Failed to load campaigns:', error);
     } finally {
@@ -1522,9 +921,7 @@
     loadingSubmissions.value = true;
     try {
       const response = await listMySubmissions();
-      if (response.success) {
-        mySubmissions.value = response.submissions;
-      }
+      if (response.success) mySubmissions.value = response.submissions;
     } catch (error) {
       console.error('Failed to load submissions:', error);
     } finally {
@@ -1535,9 +932,7 @@
   const loadEarnings = async () => {
     try {
       const response = await getMyEarnings();
-      if (response.success) {
-        earningsSummary.value = response.summary;
-      }
+      if (response.success) earningsSummary.value = response.summary;
     } catch (error) {
       console.error('Failed to load earnings:', error);
     }
@@ -1546,25 +941,17 @@
   const loadClipperProfile = async () => {
     try {
       const response = await getMyClipperProfile();
-      if (response.success) {
-        clipperProfile.value = response.profile;
-      }
+      if (response.success) clipperProfile.value = response.profile;
     } catch (error) {
       console.error('Failed to load clipper profile:', error);
     }
   };
 
-  const onProfileSaved = () => {
-    loadClipperProfile();
-  };
+  const onProfileSaved = () => loadClipperProfile();
 
   onMounted(async () => {
-    // Load clipper profile first to get current user ID
     await loadClipperProfile();
-    if (clipperProfile.value) {
-      currentUserId.value = clipperProfile.value.user_id;
-    }
-
+    if (clipperProfile.value) currentUserId.value = clipperProfile.value.user_id;
     loadLeaderboard();
     loadSocialAccounts();
     loadPaymentMethods();
@@ -1575,7 +962,1207 @@
 </script>
 
 <style scoped>
-  .clipper-profile-page {
-    @apply h-full;
+  /* ===== Page Container ===== */
+  .clipper-profile {
+    width: 100%;
+    min-height: 100%;
+  }
+
+  .profile-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    max-width: 960px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* ===== Edit Button ===== */
+  .edit-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+
+  .edit-btn:hover {
+    opacity: 0.9;
+  }
+
+  .edit-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ===== Profile Header ===== */
+  .profile-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  @media (max-width: 768px) {
+    .profile-header {
+      flex-direction: column;
+    }
+  }
+
+  .profile-header__main {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    flex: 1;
+  }
+
+  .profile-avatar {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+    background: var(--sidebar-surface);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .profile-avatar__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .profile-avatar__fallback {
+    width: 100%;
+    height: 100%;
+    padding: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .profile-avatar__verified {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 20px;
+    height: 20px;
+    background: var(--sidebar-accent);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--sidebar-bg);
+  }
+
+  .profile-avatar__verified svg {
+    width: 10px;
+    height: 10px;
+    color: white;
+  }
+
+  .profile-meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .profile-meta__top {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.375rem;
+  }
+
+  .profile-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .available-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.1875rem 0.5rem;
+    background: rgba(16, 185, 129, 0.12);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: #10b981;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .available-badge__dot {
+    width: 5px;
+    height: 5px;
+    background: #10b981;
+    border-radius: 50%;
+  }
+
+  .view-public-btn,
+  .private-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1875rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+  }
+
+  .view-public-btn {
+    background: rgba(6, 182, 212, 0.1);
+    color: var(--sidebar-accent);
+    border: none;
+    cursor: pointer;
+    transition: background 150ms ease;
+  }
+
+  .view-public-btn:hover {
+    background: rgba(6, 182, 212, 0.18);
+  }
+
+  .view-public-btn svg,
+  .private-badge svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .private-badge {
+    background: var(--sidebar-surface);
+    color: var(--sidebar-text-muted);
+  }
+
+  .profile-bio {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.625rem;
+    line-height: 1.5;
+    max-width: 420px;
+  }
+
+  .profile-bio--empty {
+    font-style: italic;
+    opacity: 0.5;
+  }
+
+  .profile-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .profile-tag {
+    padding: 0.1875rem 0.4375rem;
+    background: rgba(6, 182, 212, 0.08);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+  }
+
+  .profile-stats {
+    display: flex;
+    gap: 2rem;
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat__value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .stat__label {
+    display: block;
+    font-size: 0.5625rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.25rem;
+  }
+
+  /* ===== Tabs ===== */
+  .tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4375rem;
+    padding: 0.625rem 0.875rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .tab:hover {
+    color: var(--sidebar-text);
+  }
+
+  .tab--active {
+    color: var(--sidebar-text);
+    border-bottom-color: var(--sidebar-accent);
+  }
+
+  .tab__icon {
+    width: 15px;
+    height: 15px;
+  }
+
+  /* ===== Content ===== */
+  .content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  /* ===== Notice ===== */
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.875rem;
+    background: rgba(245, 158, 11, 0.06);
+    border-left: 3px solid #f59e0b;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .notice__icon {
+    width: 16px;
+    height: 16px;
+    color: #f59e0b;
+    flex-shrink: 0;
+  }
+
+  .notice strong {
+    color: #fbbf24;
+  }
+
+  /* ===== Ranking Row ===== */
+  .ranking-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  @media (max-width: 640px) {
+    .ranking-row {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+
+  .ranking-row__left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .ranking-row__trophy {
+    width: 28px;
+    height: 28px;
+    color: #fbbf24;
+    flex-shrink: 0;
+  }
+
+  .ranking-row__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .ranking-row__subtitle {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
+  }
+
+  .ranking-row__stats {
+    display: flex;
+    gap: 2rem;
+  }
+
+  .rank-stat {
+    text-align: center;
+    min-width: 50px;
+  }
+
+  .rank-stat__value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .rank-stat--primary .rank-stat__value {
+    color: #fbbf24;
+  }
+
+  .rank-stat__label {
+    display: block;
+    font-size: 0.5625rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.25rem;
+  }
+
+  /* ===== Leaderboard ===== */
+  .leaderboard {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    padding: 1rem 1.125rem;
+  }
+
+  .leaderboard__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.875rem;
+  }
+
+  .leaderboard__title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .leaderboard__title-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .leaderboard__title h2 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .period-switch {
+    display: flex;
+    gap: 0;
+  }
+
+  .period-switch button {
+    padding: 0.3125rem 0.625rem;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .period-switch button:first-child {
+    border-radius: 5px 0 0 5px;
+  }
+
+  .period-switch button:last-child {
+    border-radius: 0 5px 5px 0;
+    border-left: none;
+  }
+
+  .period-switch button:hover {
+    color: var(--sidebar-text);
+  }
+
+  .period-switch button.active {
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .leaderboard__loading,
+  .loading-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .skeleton-row {
+    height: 44px;
+    background: var(--sidebar-hover);
+    border-radius: 6px;
+  }
+
+  .skeleton-row--lg {
+    height: 54px;
+  }
+
+  .leaderboard__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2.5rem 1rem;
+    color: var(--sidebar-text-muted);
+    text-align: center;
+  }
+
+  .leaderboard__empty-icon {
+    width: 36px;
+    height: 36px;
+    margin-bottom: 0.625rem;
+    opacity: 0.25;
+  }
+
+  .leaderboard__empty p {
+    font-size: 0.8125rem;
+    margin: 0;
+  }
+
+  .leaderboard__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .lb-entry {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.625rem;
+    border-radius: 6px;
+    transition: background 150ms ease;
+  }
+
+  .lb-entry:hover {
+    background: var(--sidebar-hover);
+  }
+
+  .lb-entry--you {
+    background: rgba(6, 182, 212, 0.06);
+  }
+
+  .lb-entry--you:hover {
+    background: rgba(6, 182, 212, 0.1);
+  }
+
+  .lb-entry__rank {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .lb-entry__rank--1 {
+    background: #fbbf24;
+    color: #422006;
+  }
+
+  .lb-entry__rank--2 {
+    background: #9ca3af;
+    color: #1f2937;
+  }
+
+  .lb-entry__rank--3 {
+    background: #d97706;
+    color: #fff;
+  }
+
+  .lb-entry__avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    background: var(--sidebar-hover);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .lb-entry__avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .lb-entry__avatar svg {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .lb-entry__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .lb-entry__name {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .lb-entry__you {
+    color: var(--sidebar-accent);
+    font-size: 0.625rem;
+    margin-left: 0.25rem;
+  }
+
+  .lb-entry__clips {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .lb-entry__views {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ===== Sections ===== */
+  .section {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    padding: 1rem 1.125rem;
+  }
+
+  .section__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .section-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .section-subtitle {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
+  }
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 30px;
+    padding: 0 0.75rem;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .action-btn:hover {
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  .action-btn svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .action-btn--green:hover {
+    border-color: #10b981;
+    color: #10b981;
+  }
+
+  .browse-btn {
+    height: 30px;
+    padding: 0 0.75rem;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .browse-btn:hover {
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Empty State ===== */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2.5rem 1rem;
+    text-align: center;
+  }
+
+  .empty-state--compact {
+    padding: 1.75rem 1rem;
+  }
+
+  .empty-state__icon {
+    width: 40px;
+    height: 40px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.25;
+    margin-bottom: 0.875rem;
+  }
+
+  .empty-state__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+  }
+
+  .empty-state__text {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1.125rem;
+    max-width: 260px;
+    line-height: 1.5;
+  }
+
+  .empty-state__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .empty-state__btn:hover {
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  .empty-state__btn svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .empty-state__btn--green:hover {
+    border-color: #10b981;
+    color: #10b981;
+  }
+
+  .empty-state__btn--primary {
+    background-color: var(--sidebar-accent);
+    border: none;
+    color: var(--sidebar-bg);
+  }
+
+  .empty-state__btn--primary:hover {
+    opacity: 0.9;
+    color: var(--sidebar-bg);
+  }
+
+  /* ===== List ===== */
+  .list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .list-item {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .list-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .list-item:first-child {
+    padding-top: 0;
+  }
+
+  .list-item--highlight {
+    background: rgba(16, 185, 129, 0.04);
+    padding: 0.75rem;
+    margin: 0 -0.5rem;
+    border-radius: 6px;
+    border-bottom: none;
+  }
+
+  .list-item__icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sidebar-hover);
+    flex-shrink: 0;
+  }
+
+  .list-item__icon svg {
+    width: 18px;
+    height: 18px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .list-item__content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .list-item__name {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .verified-icon {
+    width: 13px;
+    height: 13px;
+    color: #10b981;
+  }
+
+  .list-item__meta {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  .default-badge {
+    padding: 0.125rem 0.375rem;
+    background: rgba(16, 185, 129, 0.12);
+    border-radius: 3px;
+    font-size: 0.5rem;
+    font-weight: 700;
+    color: #10b981;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .list-item__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .list-item:hover .list-item__actions {
+    opacity: 1;
+  }
+
+  .list-item__actions button {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 150ms ease;
+  }
+
+  .list-item__actions button svg {
+    width: 13px;
+    height: 13px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .list-item__actions button:hover {
+    background: var(--sidebar-hover);
+  }
+
+  .list-item__actions button.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .list-item__actions button.danger svg {
+    color: #f87171;
+  }
+
+  .text-btn {
+    padding: 0.25rem 0.5rem;
+    background: transparent;
+    border: none;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: color 150ms ease;
+  }
+
+  .text-btn:hover {
+    color: #10b981;
+  }
+
+  /* ===== Platform/Payment Colors ===== */
+  .platform--tiktok {
+    background: rgba(255, 0, 80, 0.1);
+  }
+
+  .platform--tiktok svg {
+    color: #ff0050;
+  }
+
+  .platform--instagram {
+    background: rgba(225, 48, 108, 0.1);
+  }
+
+  .platform--instagram svg {
+    color: #e1306c;
+  }
+
+  .platform--x {
+    background: var(--sidebar-hover);
+  }
+
+  .platform--x svg {
+    color: var(--sidebar-text);
+  }
+
+  .platform--youtube {
+    background: rgba(255, 0, 0, 0.1);
+  }
+
+  .platform--youtube svg {
+    color: #ff0000;
+  }
+
+  .payment--paypal svg {
+    color: #0077b5;
+  }
+
+  .payment--crypto svg {
+    color: #f7931a;
+  }
+
+  .payment--venmo svg {
+    color: #008cff;
+  }
+
+  .payment--cashapp svg {
+    color: #00d960;
+  }
+
+  .payment--bank svg {
+    color: #9ca3af;
+  }
+
+  /* ===== Earnings Bar ===== */
+  .earnings-bar {
+    display: flex;
+    gap: 0.5rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    overflow-x: auto;
+  }
+
+  .earnings-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.75rem 1rem;
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .earnings-item svg {
+    width: 18px;
+    height: 18px;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .earnings-item--earned svg {
+    color: #10b981;
+  }
+
+  .earnings-item--pending svg {
+    color: #f59e0b;
+  }
+
+  .earnings-item__value {
+    display: block;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    line-height: 1;
+  }
+
+  .earnings-item--earned .earnings-item__value {
+    color: #10b981;
+  }
+
+  .earnings-item--pending .earnings-item__value {
+    color: #fbbf24;
+  }
+
+  .earnings-item__label {
+    display: block;
+    font-size: 0.5625rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 0.1875rem;
+  }
+
+  /* ===== Campaign/Submission Lists ===== */
+  .campaign-list,
+  .submission-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .campaign-row {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.625rem 0;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .campaign-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .campaign-row:first-child {
+    padding-top: 0;
+  }
+
+  .campaign-row__main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaign-row__title {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .campaign-row__org {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaign-row__date {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .cpm-badge {
+    padding: 0.1875rem 0.4375rem;
+    background: rgba(16, 185, 129, 0.1);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: #10b981;
+  }
+
+  .status-badge {
+    padding: 0.125rem 0.4375rem;
+    border-radius: 3px;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+  }
+
+  .status-badge--active,
+  .status-badge--verified {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+  }
+
+  .status-badge--paused,
+  .status-badge--pending {
+    background: rgba(245, 158, 11, 0.12);
+    color: #fbbf24;
+  }
+
+  .status-badge--completed,
+  .status-badge--paid {
+    background: rgba(6, 182, 212, 0.12);
+    color: var(--sidebar-accent);
+  }
+
+  .status-badge--rejected {
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+  }
+
+  .submission-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .submission-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .submission-row:first-child {
+    padding-top: 0;
+  }
+
+  .submission-row__platform {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sidebar-hover);
+    flex-shrink: 0;
+  }
+
+  .submission-row__platform svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .submission-row__content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .submission-row__link {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+    text-decoration: none;
+  }
+
+  .submission-row__link:hover {
+    text-decoration: underline;
+  }
+
+  .submission-row__meta {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  .submission-row__date {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ===== Dialog ===== */
+  .dialog {
+    max-width: 420px;
+  }
+
+  .dialog--small {
+    max-width: 380px;
+  }
+
+  .dialog__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.125rem;
+  }
+
+  .dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4375rem;
+  }
+
+  .dialog__checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding-top: 0.25rem;
+  }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    margin-right: 0.5rem;
+  }
+
+  /* ===== Keyframes ===== */
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

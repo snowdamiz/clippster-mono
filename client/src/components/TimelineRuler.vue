@@ -1,12 +1,12 @@
 <template>
   <div
-    class="h-8 border-b border-border/30 flex items-center bg-[#0a0a0a]/40 px-2 sticky top-0 z-50 backdrop-blur-sm timeline-ruler sticky-ruler"
+    class="h-8 border-b border-border/30 flex items-center bg-gradient-to-b from-[#141416] to-[#0d0d0e] px-2 sticky top-0 z-50 backdrop-blur-sm timeline-ruler sticky-ruler"
     @wheel="onRulerWheel"
     title="Scroll to zoom"
   >
     <!-- Track label spacer -->
-    <div class="w-16 pr-2 flex items-center justify-center">
-      <span class="text-xs text-muted-foreground/50 font-medium">Time</span>
+    <div class="w-16 pr-2 flex items-center justify-center border-r border-white/[0.04]">
+      <span class="text-[10px] text-white/40 font-medium tracking-wide">Time</span>
     </div>
     <!-- Timestamp ruler -->
     <div class="flex-1 relative h-full flex items-center">
@@ -64,7 +64,7 @@
 <style scoped>
   /* Timeline ruler styling */
   .timeline-ruler {
-    background: rgba(10, 10, 10, 0.6);
+    background: rgba(20, 20, 22, 0.8);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     user-select: none;

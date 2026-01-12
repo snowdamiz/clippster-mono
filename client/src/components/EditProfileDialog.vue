@@ -1,620 +1,541 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="show" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]">
+      <div v-if="show" class="profile-dialog__overlay" @click.self="handleClose">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-2xl w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
-          >
-            <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-violet-500 flex-shrink-0" />
+          <div class="profile-dialog">
+            <!-- Accent Bar -->
+            <div class="profile-dialog__accent" />
 
-            <div class="p-5 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar">
-              <!-- Header -->
-              <div class="mb-4 sm:mb-6 text-center">
-                <div
-                  class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/30 mb-3 sm:mb-4"
-                >
-                  <UserCircle class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-violet-400" />
-                </div>
-                <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">Edit Profile</h2>
-                <p class="text-zinc-400 text-xs sm:text-sm mt-1">
-                  Build your public portfolio to attract organizations
-                </p>
+            <!-- Header -->
+            <div class="profile-dialog__header">
+              <button class="profile-dialog__close" @click="handleClose" :disabled="saving" title="Close">
+                <X :size="18" />
+              </button>
+              <div class="profile-dialog__icon">
+                <UserCircle :size="24" />
               </div>
+              <h2 class="profile-dialog__title">Edit Profile</h2>
+              <p class="profile-dialog__subtitle">Build your public portfolio to attract organizations</p>
+            </div>
 
-              <div v-if="loading" class="flex items-center justify-center py-16">
-                <Loader2 class="w-8 h-8 animate-spin text-zinc-400" />
-              </div>
+            <!-- Loading State -->
+            <div v-if="loading" class="profile-dialog__loading">
+              <div class="profile-dialog__loading-spinner"></div>
+              <span>Loading profile...</span>
+            </div>
 
-              <div v-else class="space-y-6">
-                <!-- Profile Visibility Toggle -->
-                <div
-                  class="flex items-center justify-between p-3 sm:p-4 rounded-xl border"
-                  :class="
-                    profile.is_public ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-zinc-800/50 border-zinc-700'
-                  "
-                >
-                  <div class="flex items-center gap-3">
-                    <div :class="profile.is_public ? 'text-emerald-400' : 'text-zinc-400'">
-                      <Globe v-if="profile.is_public" class="w-5 h-5" />
-                      <Lock v-else class="w-5 h-5" />
+            <!-- Content -->
+            <div v-else class="profile-dialog__content">
+              <!-- Profile Visibility Toggle -->
+              <div
+                class="profile-dialog__visibility"
+                :class="{ 'profile-dialog__visibility--public': profile.is_public }"
+              >
+                <div class="profile-dialog__visibility-info">
+                  <div class="profile-dialog__visibility-icon">
+                    <Globe v-if="profile.is_public" :size="20" />
+                    <Lock v-else :size="20" />
+                  </div>
+                  <div>
+                    <div class="profile-dialog__visibility-title">
+                      {{ profile.is_public ? 'Profile is Public' : 'Profile is Private' }}
                     </div>
-                    <div>
-                      <div class="font-medium text-white text-sm">
-                        {{ profile.is_public ? 'Profile is Public' : 'Profile is Private' }}
-                      </div>
-                      <div class="text-xs text-zinc-400">
-                        {{ profile.is_public ? 'Organizations can find you' : 'Only you can see your profile' }}
-                      </div>
+                    <div class="profile-dialog__visibility-desc">
+                      {{ profile.is_public ? 'Organizations can find you' : 'Only you can see your profile' }}
                     </div>
                   </div>
-                  <Switch v-model:checked="profile.is_public" />
                 </div>
+                <Switch v-model:checked="profile.is_public" />
+              </div>
 
-                <!-- Basic Info Section -->
-                <div class="space-y-4">
-                  <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Basic Information</h3>
-
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Display Name</label>
+              <!-- Basic Info Section -->
+              <div class="profile-dialog__section">
+                <h3 class="profile-dialog__section-title">Basic Information</h3>
+                <div class="profile-dialog__section-items">
+                  <div class="profile-dialog__row">
+                    <div class="profile-dialog__field">
+                      <label class="profile-dialog__label">Display Name</label>
                       <input
                         v-model="profile.display_name"
                         type="text"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        class="profile-dialog__input"
                         placeholder="Your public name"
                       />
                     </div>
-
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Profile URL Slug</label>
-                      <div class="flex items-center">
-                        <span class="text-xs text-zinc-500 mr-1">/clipper/</span>
+                    <div class="profile-dialog__field">
+                      <label class="profile-dialog__label">Profile URL Slug</label>
+                      <div class="profile-dialog__input-group">
+                        <span class="profile-dialog__input-prefix">/clipper/</span>
                         <input
                           v-model="profile.slug"
                           type="text"
-                          class="flex-1 px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                          class="profile-dialog__input profile-dialog__input--with-prefix"
                           placeholder="your-slug"
                         />
                       </div>
                     </div>
                   </div>
 
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Bio</label>
+                  <div class="profile-dialog__field">
+                    <label class="profile-dialog__label">Bio</label>
                     <textarea
                       v-model="profile.bio"
                       rows="3"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all resize-y min-h-[80px]"
+                      class="profile-dialog__textarea"
                       placeholder="Tell organizations about yourself and your clipping style..."
                     ></textarea>
-                    <p class="text-xs text-zinc-500">{{ (profile.bio || '').length }}/500 characters</p>
+                    <p class="profile-dialog__hint">{{ (profile.bio || '').length }}/500 characters</p>
                   </div>
 
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Avatar</label>
-                    <div class="flex items-center gap-4">
-                      <!-- Avatar Preview -->
-                      <div class="relative">
-                        <div
-                          class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-zinc-800 border-2 border-zinc-700 overflow-hidden flex items-center justify-center"
-                        >
-                          <img
-                            v-if="profile.avatar_url"
-                            :src="profile.avatar_url"
-                            class="w-full h-full object-cover"
-                            @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
-                          />
-                          <UserCircle v-else class="w-10 h-10 text-zinc-500" />
-                        </div>
-                        <div
-                          v-if="uploadingAvatar"
-                          class="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center"
-                        >
-                          <Loader2 class="w-5 h-5 animate-spin text-white" />
+                  <!-- Avatar -->
+                  <div class="profile-dialog__field">
+                    <label class="profile-dialog__label">Avatar</label>
+                    <div class="profile-dialog__avatar-row">
+                      <div class="profile-dialog__avatar-preview">
+                        <img
+                          v-if="profile.avatar_url"
+                          :src="profile.avatar_url"
+                          class="profile-dialog__avatar-img"
+                          @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
+                        />
+                        <UserCircle v-else class="profile-dialog__avatar-placeholder" />
+                        <div v-if="uploadingAvatar" class="profile-dialog__avatar-loading">
+                          <Loader2 class="profile-dialog__avatar-spinner" />
                         </div>
                       </div>
-
-                      <!-- Upload Button -->
-                      <div class="flex-1">
+                      <div class="profile-dialog__avatar-actions">
                         <input
                           ref="avatarInputRef"
                           type="file"
                           accept="image/jpeg,image/png,image/gif,image/webp"
-                          class="hidden"
+                          class="profile-dialog__file-input"
                           @change="handleAvatarUpload"
                         />
                         <button
                           @click="($refs.avatarInputRef as HTMLInputElement)?.click()"
                           :disabled="uploadingAvatar"
-                          class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs sm:text-sm font-medium rounded-lg border border-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                          class="profile-dialog__upload-btn"
                         >
-                          <Upload class="w-4 h-4" />
+                          <Upload :size="16" />
                           {{ profile.avatar_url ? 'Change Avatar' : 'Upload Avatar' }}
                         </button>
-                        <p class="text-xs text-zinc-500 mt-1">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
+                        <p class="profile-dialog__hint">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
                       </div>
                     </div>
                   </div>
                 </div>
+              </div>
 
-                <!-- Experience & Availability -->
-                <div class="space-y-4">
-                  <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">
-                    Experience & Availability
-                  </h3>
-
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Experience Level</label>
-                      <select
-                        v-model="profile.experience_level"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
-                      >
+              <!-- Experience & Availability -->
+              <div class="profile-dialog__section">
+                <h3 class="profile-dialog__section-title">Experience & Availability</h3>
+                <div class="profile-dialog__section-items">
+                  <div class="profile-dialog__row">
+                    <div class="profile-dialog__field">
+                      <label class="profile-dialog__label">Experience Level</label>
+                      <select v-model="profile.experience_level" class="profile-dialog__select">
                         <option value="" disabled>Select level</option>
                         <option v-for="level in EXPERIENCE_LEVELS" :key="level.value" :value="level.value">
                           {{ level.label }}
                         </option>
                       </select>
                     </div>
-
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Timezone</label>
+                    <div class="profile-dialog__field">
+                      <label class="profile-dialog__label">Timezone</label>
                       <input
                         v-model="profile.timezone"
                         type="text"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        class="profile-dialog__input"
                         placeholder="America/New_York"
                       />
                     </div>
                   </div>
 
-                  <div
-                    class="flex items-center justify-between p-3 sm:p-4 bg-zinc-800/50 rounded-xl border border-zinc-700"
-                  >
-                    <div>
-                      <div class="font-medium text-white text-sm">Looking for Work</div>
-                      <div class="text-xs text-zinc-400">Show that you're available for new campaigns</div>
+                  <div class="profile-dialog__toggle-row">
+                    <div class="profile-dialog__toggle-info">
+                      <div class="profile-dialog__toggle-title">Looking for Work</div>
+                      <div class="profile-dialog__toggle-desc">Show that you're available for new campaigns</div>
                     </div>
                     <Switch v-model:checked="profile.looking_for_work" />
                   </div>
                 </div>
+              </div>
 
-                <!-- Tags Section -->
-                <div class="space-y-4">
-                  <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Specialties & Style</h3>
-
-                  <div class="space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Specialty Tags</label>
-                    <div class="flex flex-wrap gap-2">
+              <!-- Tags Section -->
+              <div class="profile-dialog__section">
+                <h3 class="profile-dialog__section-title">Specialties & Style</h3>
+                <div class="profile-dialog__section-items">
+                  <div class="profile-dialog__field">
+                    <label class="profile-dialog__label">Specialty Tags</label>
+                    <div class="profile-dialog__tags">
                       <button
                         v-for="tag in SPECIALTY_TAGS"
                         :key="tag.value"
                         @click="toggleTag('specialty_tags', tag.value)"
-                        class="px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
-                        :class="
-                          profile.specialty_tags?.includes(tag.value)
-                            ? 'bg-violet-600 text-white'
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                        "
+                        class="profile-dialog__tag"
+                        :class="{ 'profile-dialog__tag--selected': profile.specialty_tags?.includes(tag.value) }"
                       >
                         {{ tag.label }}
                       </button>
                     </div>
                   </div>
 
-                  <div class="space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Content Style Tags</label>
-                    <div class="flex flex-wrap gap-2">
+                  <div class="profile-dialog__field">
+                    <label class="profile-dialog__label">Content Style Tags</label>
+                    <div class="profile-dialog__tags">
                       <button
                         v-for="tag in CONTENT_STYLE_TAGS"
                         :key="tag.value"
                         @click="toggleTag('content_style_tags', tag.value)"
-                        class="px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
-                        :class="
-                          profile.content_style_tags?.includes(tag.value)
-                            ? 'bg-violet-600 text-white'
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                        "
+                        class="profile-dialog__tag"
+                        :class="{ 'profile-dialog__tag--selected': profile.content_style_tags?.includes(tag.value) }"
                       >
                         {{ tag.label }}
                       </button>
                     </div>
                   </div>
 
-                  <div class="space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Preferred Platforms</label>
-                    <div class="flex flex-wrap gap-2">
+                  <div class="profile-dialog__field">
+                    <label class="profile-dialog__label">Preferred Platforms</label>
+                    <div class="profile-dialog__tags">
                       <button
                         v-for="platform in PREFERRED_PLATFORMS"
                         :key="platform.value"
                         @click="toggleTag('preferred_platforms', platform.value)"
-                        class="px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
-                        :class="
-                          profile.preferred_platforms?.includes(platform.value)
-                            ? 'bg-violet-600 text-white'
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                        "
+                        class="profile-dialog__tag"
+                        :class="{
+                          'profile-dialog__tag--selected': profile.preferred_platforms?.includes(platform.value),
+                        }"
                       >
                         {{ platform.label }}
                       </button>
                     </div>
                   </div>
 
-                  <div class="space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Languages</label>
-                    <div class="flex flex-wrap gap-2">
+                  <div class="profile-dialog__field">
+                    <label class="profile-dialog__label">Languages</label>
+                    <div class="profile-dialog__tags">
                       <button
                         v-for="lang in LANGUAGES"
                         :key="lang.code"
                         @click="toggleTag('languages', lang.code)"
-                        class="px-3 py-1.5 rounded-full text-xs sm:text-sm transition-colors"
-                        :class="
-                          profile.languages?.includes(lang.code)
-                            ? 'bg-violet-600 text-white'
-                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                        "
+                        class="profile-dialog__tag"
+                        :class="{ 'profile-dialog__tag--selected': profile.languages?.includes(lang.code) }"
                       >
                         {{ lang.name }}
                       </button>
                     </div>
                   </div>
                 </div>
+              </div>
 
-                <!-- Channel Links Section -->
-                <div class="space-y-4">
-                  <div class="flex items-center justify-between">
-                    <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Clip Channel Links</h3>
-                    <button
-                      @click="openAddChannelLink"
-                      class="flex items-center gap-1 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium rounded-lg transition-colors"
-                    >
-                      <Plus class="w-3.5 h-3.5" />
-                      Add Link
-                    </button>
-                  </div>
+              <!-- Channel Links Section -->
+              <div class="profile-dialog__section">
+                <div class="profile-dialog__section-header">
+                  <h3 class="profile-dialog__section-title">Clip Channel Links</h3>
+                  <button @click="openAddChannelLink" class="profile-dialog__add-btn">
+                    <Plus :size="14" />
+                    Add Link
+                  </button>
+                </div>
 
-                  <!-- Channel Link Form -->
-                  <div
-                    v-if="showChannelLinkForm"
-                    class="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700 space-y-3"
-                  >
-                    <div class="space-y-1.5">
-                      <label class="block text-xs font-medium text-zinc-300">Platform</label>
+                <!-- Channel Link Form -->
+                <div v-if="showChannelLinkForm" class="profile-dialog__form-card">
+                  <div class="profile-dialog__form-card-items">
+                    <div class="profile-dialog__field">
+                      <label class="profile-dialog__label">Platform</label>
                       <select
                         v-model="channelLinkForm.platform"
                         :disabled="!!editingChannelLink"
-                        class="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                        class="profile-dialog__select"
                       >
                         <option value="" disabled>Select platform</option>
                         <option v-for="p in CHANNEL_PLATFORMS" :key="p.value" :value="p.value">{{ p.label }}</option>
                       </select>
                     </div>
-                    <div class="space-y-1.5">
-                      <label class="block text-xs font-medium text-zinc-300">URL</label>
+                    <div class="profile-dialog__field">
+                      <label class="profile-dialog__label">URL</label>
                       <input
                         v-model="channelLinkForm.url"
                         type="text"
-                        class="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-700 rounded-lg text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                        class="profile-dialog__input"
                         placeholder="https://..."
                       />
                     </div>
-                    <div class="space-y-1.5">
-                      <label class="block text-xs font-medium text-zinc-300">Username (optional)</label>
+                    <div class="profile-dialog__field">
+                      <label class="profile-dialog__label">
+                        Username
+                        <span class="profile-dialog__optional">(optional)</span>
+                      </label>
                       <input
                         v-model="channelLinkForm.username"
                         type="text"
-                        class="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-700 rounded-lg text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                        class="profile-dialog__input"
                         placeholder="@username"
                       />
                     </div>
-                    <div class="flex gap-2 pt-2">
-                      <button
-                        @click="showChannelLinkForm = false"
-                        class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm font-medium rounded-lg transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        @click="saveChannelLink"
-                        :disabled="savingChannelLink || !channelLinkForm.platform || !channelLinkForm.url"
-                        class="flex-1 px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                      >
-                        <Loader2 v-if="savingChannelLink" class="w-3.5 h-3.5 animate-spin" />
-                        Save
-                      </button>
-                    </div>
                   </div>
-
-                  <!-- Channel Links List -->
-                  <div
-                    v-if="channelLinks.length === 0 && !showChannelLinkForm"
-                    class="text-center py-6 bg-zinc-800/30 rounded-xl border border-zinc-800"
-                  >
-                    <Link2 class="w-8 h-8 mx-auto mb-2 text-zinc-600" />
-                    <p class="text-xs text-zinc-500">Add links to your clip channels</p>
-                  </div>
-
-                  <div v-else-if="channelLinks.length > 0" class="space-y-2">
-                    <div
-                      v-for="link in channelLinks"
-                      :key="link.id"
-                      class="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg border border-zinc-700"
-                    >
-                      <div class="flex items-center gap-3">
-                        <component :is="getPlatformIcon(link.platform)" class="w-5 h-5 text-violet-400" />
-                        <div>
-                          <div class="text-sm font-medium text-white">{{ getPlatformLabel(link.platform) }}</div>
-                          <a :href="link.url" target="_blank" class="text-xs text-violet-400 hover:underline">
-                            {{ link.username || link.url }}
-                          </a>
-                        </div>
-                      </div>
-                      <div class="flex items-center gap-1">
-                        <button
-                          @click="editChannelLinkItem(link)"
-                          class="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors"
-                        >
-                          <Pencil class="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          @click="confirmDeleteChannelLink(link)"
-                          class="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded transition-colors"
-                        >
-                          <Trash2 class="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Portfolio Clips Section -->
-                <div class="space-y-4">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <h3 class="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Portfolio Clips</h3>
-                      <p class="text-xs text-zinc-500 mt-0.5">Showcase up to 3 of your best clips (max 100MB each)</p>
-                    </div>
+                  <div class="profile-dialog__form-card-actions">
                     <button
-                      @click="
-                        showPortfolioClipForm = true;
-                        loadAvailableClips();
-                      "
-                      :disabled="portfolioClips.length >= 3"
-                      class="flex items-center gap-1 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Plus class="w-3.5 h-3.5" />
-                      Add Clip
-                    </button>
-                  </div>
-
-                  <!-- Add Clip Options -->
-                  <div
-                    v-if="showPortfolioClipForm && !showClipSelector"
-                    class="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700 space-y-4"
-                  >
-                    <div class="text-sm font-medium text-zinc-300 text-center">Choose how to add a clip</div>
-
-                    <!-- Option 1: Select from existing clips -->
-                    <button
-                      @click="showClipSelector = true"
-                      class="w-full p-4 bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-700 hover:border-violet-500/50 rounded-xl transition-all group"
-                    >
-                      <div class="flex items-center gap-3">
-                        <div class="p-2 bg-violet-500/20 rounded-lg group-hover:bg-violet-500/30 transition-colors">
-                          <Video class="w-5 h-5 text-violet-400" />
-                        </div>
-                        <div class="text-left">
-                          <div class="text-sm font-medium text-white">Select from My Clips</div>
-                          <div class="text-xs text-zinc-500">Choose from your built clips</div>
-                        </div>
-                      </div>
-                    </button>
-
-                    <!-- Option 2: Upload a file -->
-                    <div class="relative">
-                      <input
-                        ref="fileInputRef"
-                        type="file"
-                        accept="video/*"
-                        @change="handleFileUpload"
-                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        :disabled="uploadingClip"
-                      />
-                      <div
-                        class="w-full p-4 bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-700 hover:border-violet-500/50 rounded-xl transition-all group cursor-pointer"
-                        :class="{ 'opacity-50 cursor-not-allowed': uploadingClip }"
-                      >
-                        <div class="flex items-center gap-3">
-                          <div class="p-2 bg-emerald-500/20 rounded-lg group-hover:bg-emerald-500/30 transition-colors">
-                            <Plus class="w-5 h-5 text-emerald-400" />
-                          </div>
-                          <div class="text-left flex-1">
-                            <div class="text-sm font-medium text-white">Upload Video File</div>
-                            <div class="text-xs text-zinc-500">Max 100MB, MP4/MOV/WebM</div>
-                          </div>
-                          <Loader2 v-if="uploadingClip" class="w-5 h-5 text-violet-400 animate-spin" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      @click="showPortfolioClipForm = false"
-                      class="w-full px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm font-medium rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-
-                  <!-- Clip Selector -->
-                  <div v-if="showClipSelector" class="p-4 bg-zinc-800/50 rounded-xl border border-zinc-700 space-y-3">
-                    <div class="flex items-center justify-between">
-                      <div class="text-sm font-medium text-zinc-300">Select a Clip</div>
-                      <button @click="showClipSelector = false" class="text-xs text-zinc-500 hover:text-zinc-300">
-                        Back
-                      </button>
-                    </div>
-
-                    <div v-if="loadingClips" class="flex items-center justify-center py-8">
-                      <Loader2 class="w-6 h-6 text-zinc-400 animate-spin" />
-                    </div>
-
-                    <div v-else-if="availableClips.length === 0" class="text-center py-6">
-                      <Video class="w-8 h-8 mx-auto mb-2 text-zinc-600" />
-                      <p class="text-xs text-zinc-500">No built clips available</p>
-                      <p class="text-xs text-zinc-600 mt-1">Build some clips first from the Clips page</p>
-                    </div>
-
-                    <div v-else class="grid grid-cols-2 gap-2 max-h-[240px] overflow-y-auto custom-scrollbar">
-                      <button
-                        v-for="clip in availableClips"
-                        :key="clip.id"
-                        @click="selectExistingClip(clip)"
-                        :disabled="savingPortfolioClip"
-                        class="bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-700 hover:border-violet-500/50 rounded-lg overflow-hidden transition-all text-left disabled:opacity-50"
-                      >
-                        <div class="aspect-video bg-zinc-900 relative">
-                          <img
-                            v-if="getClipThumbnail(clip)"
-                            :src="getClipThumbnail(clip)!"
-                            class="w-full h-full object-cover"
-                          />
-                          <div v-else class="w-full h-full flex items-center justify-center">
-                            <Video class="w-5 h-5 text-zinc-600" />
-                          </div>
-                          <div
-                            v-if="savingPortfolioClip"
-                            class="absolute inset-0 bg-black/50 flex items-center justify-center"
-                          >
-                            <Loader2 class="w-5 h-5 text-white animate-spin" />
-                          </div>
-                        </div>
-                        <div class="p-2">
-                          <div class="text-xs font-medium text-white truncate">{{ clip.name || 'Untitled' }}</div>
-                        </div>
-                      </button>
-                    </div>
-
-                    <button
-                      @click="
-                        showClipSelector = false;
-                        showPortfolioClipForm = false;
-                      "
-                      class="w-full px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm font-medium rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-
-                  <!-- Portfolio Clips List -->
-                  <div
-                    v-if="portfolioClips.length === 0 && !showPortfolioClipForm"
-                    class="text-center py-6 bg-zinc-800/30 rounded-xl border border-zinc-800"
-                  >
-                    <Video class="w-8 h-8 mx-auto mb-2 text-zinc-600" />
-                    <p class="text-xs text-zinc-500">Add clips to showcase your work</p>
-                  </div>
-
-                  <div
-                    v-else-if="portfolioClips.length > 0 && !showPortfolioClipForm"
-                    class="grid grid-cols-1 sm:grid-cols-3 gap-3"
-                  >
-                    <div
-                      v-for="clip in portfolioClips"
-                      :key="clip.id"
-                      class="bg-zinc-800/50 rounded-xl border border-zinc-700 overflow-hidden"
-                    >
-                      <div class="aspect-video bg-zinc-900 relative">
-                        <img v-if="clip.thumbnail_url" :src="clip.thumbnail_url" class="w-full h-full object-cover" />
-                        <div v-else class="w-full h-full flex items-center justify-center">
-                          <Video class="w-6 h-6 text-zinc-600" />
-                        </div>
-                      </div>
-                      <div class="p-2">
-                        <div class="text-xs font-medium text-white truncate">{{ clip.title || 'Untitled' }}</div>
-                        <div class="flex items-center justify-between mt-1.5">
-                          <span v-if="clip.duration" class="text-[10px] text-zinc-500">
-                            {{ formatDuration(clip.duration) }}
-                          </span>
-                          <span v-else class="text-[10px] text-zinc-500">&nbsp;</span>
-                          <div class="flex items-center gap-0.5">
-                            <button
-                              @click="confirmDeletePortfolioClip(clip)"
-                              class="p-1 text-zinc-400 hover:text-red-400 hover:bg-zinc-700 rounded transition-colors"
-                            >
-                              <Trash2 class="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Delete Confirmation -->
-                <div v-if="showDeleteConfirm" class="p-4 bg-red-500/10 rounded-xl border border-red-500/30 space-y-3">
-                  <p class="text-sm text-red-400">
-                    Are you sure you want to delete this
-                    {{ deleteType === 'channel' ? 'channel link' : 'portfolio clip' }}?
-                  </p>
-                  <div class="flex gap-2">
-                    <button
-                      @click="showDeleteConfirm = false"
-                      class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm font-medium rounded-lg transition-colors"
+                      @click="showChannelLinkForm = false"
+                      class="profile-dialog__btn profile-dialog__btn--secondary"
                     >
                       Cancel
                     </button>
                     <button
-                      @click="handleDelete"
-                      :disabled="deleting"
-                      class="flex-1 px-3 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      @click="saveChannelLink"
+                      :disabled="savingChannelLink || !channelLinkForm.platform || !channelLinkForm.url"
+                      class="profile-dialog__btn profile-dialog__btn--primary"
                     >
-                      <Loader2 v-if="deleting" class="w-3.5 h-3.5 animate-spin" />
-                      Delete
+                      <Loader2 v-if="savingChannelLink" class="profile-dialog__btn-spinner" />
+                      Save
                     </button>
                   </div>
                 </div>
 
-                <!-- Error Display -->
-                <div v-if="error" class="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-red-500/10 border border-red-500/30">
-                  <p class="text-red-400 text-xs sm:text-sm">{{ error }}</p>
+                <!-- Channel Links List -->
+                <div v-if="channelLinks.length === 0 && !showChannelLinkForm" class="profile-dialog__empty">
+                  <div class="profile-dialog__empty-icon">
+                    <Link2 :size="24" />
+                  </div>
+                  <p class="profile-dialog__empty-text">Add links to your clip channels</p>
                 </div>
 
-                <!-- Success Display -->
-                <div
-                  v-if="success"
-                  class="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-emerald-500/10 border border-emerald-500/30"
-                >
-                  <p class="text-emerald-400 text-xs sm:text-sm">{{ success }}</p>
+                <div v-else-if="channelLinks.length > 0" class="profile-dialog__list">
+                  <div v-for="link in channelLinks" :key="link.id" class="profile-dialog__list-item">
+                    <div class="profile-dialog__list-item-info">
+                      <div class="profile-dialog__list-item-icon">
+                        <component :is="getPlatformIcon(link.platform)" :size="18" />
+                      </div>
+                      <div>
+                        <div class="profile-dialog__list-item-title">{{ getPlatformLabel(link.platform) }}</div>
+                        <a :href="link.url" target="_blank" class="profile-dialog__list-item-link">
+                          {{ link.username || link.url }}
+                        </a>
+                      </div>
+                    </div>
+                    <div class="profile-dialog__list-item-actions">
+                      <button @click="editChannelLinkItem(link)" class="profile-dialog__icon-btn">
+                        <Pencil :size="14" />
+                      </button>
+                      <button
+                        @click="confirmDeleteChannelLink(link)"
+                        class="profile-dialog__icon-btn profile-dialog__icon-btn--danger"
+                      >
+                        <Trash2 :size="14" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
+              </div>
 
-                <!-- Actions -->
-                <div class="flex gap-2 sm:gap-3 pt-3 sm:pt-4">
+              <!-- Portfolio Clips Section -->
+              <div class="profile-dialog__section">
+                <div class="profile-dialog__section-header">
+                  <div>
+                    <h3 class="profile-dialog__section-title">Portfolio Clips</h3>
+                    <p class="profile-dialog__section-desc">Showcase up to 3 of your best clips (max 100MB each)</p>
+                  </div>
                   <button
-                    type="button"
-                    @click="handleClose"
-                    :disabled="saving"
-                    class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    @click="
+                      showPortfolioClipForm = true;
+                      loadAvailableClips();
+                    "
+                    :disabled="portfolioClips.length >= 3"
+                    class="profile-dialog__add-btn"
+                  >
+                    <Plus :size="14" />
+                    Add Clip
+                  </button>
+                </div>
+
+                <!-- Add Clip Options -->
+                <div v-if="showPortfolioClipForm && !showClipSelector" class="profile-dialog__form-card">
+                  <div class="profile-dialog__form-card-title">Choose how to add a clip</div>
+
+                  <!-- Option 1: Select from existing clips -->
+                  <button @click="showClipSelector = true" class="profile-dialog__option-btn">
+                    <div class="profile-dialog__option-icon profile-dialog__option-icon--cyan">
+                      <Video :size="20" />
+                    </div>
+                    <div class="profile-dialog__option-info">
+                      <div class="profile-dialog__option-title">Select from My Clips</div>
+                      <div class="profile-dialog__option-desc">Choose from your built clips</div>
+                    </div>
+                  </button>
+
+                  <!-- Option 2: Upload a file -->
+                  <div class="profile-dialog__option-btn profile-dialog__option-btn--upload">
+                    <input
+                      ref="fileInputRef"
+                      type="file"
+                      accept="video/*"
+                      @change="handleFileUpload"
+                      class="profile-dialog__file-input profile-dialog__file-input--absolute"
+                      :disabled="uploadingClip"
+                    />
+                    <div class="profile-dialog__option-icon profile-dialog__option-icon--emerald">
+                      <Plus :size="20" />
+                    </div>
+                    <div class="profile-dialog__option-info">
+                      <div class="profile-dialog__option-title">Upload Video File</div>
+                      <div class="profile-dialog__option-desc">Max 100MB, MP4/MOV/WebM</div>
+                    </div>
+                    <Loader2 v-if="uploadingClip" class="profile-dialog__option-loader" />
+                  </div>
+
+                  <button
+                    @click="showPortfolioClipForm = false"
+                    class="profile-dialog__btn profile-dialog__btn--secondary profile-dialog__btn--full"
                   >
                     Cancel
                   </button>
-                  <button
-                    @click="handleSave"
-                    :disabled="saving"
-                    class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                </div>
+
+                <!-- Clip Selector -->
+                <div v-if="showClipSelector" class="profile-dialog__form-card">
+                  <div class="profile-dialog__form-card-header">
+                    <div class="profile-dialog__form-card-title">Select a Clip</div>
+                    <button @click="showClipSelector = false" class="profile-dialog__back-link">Back</button>
+                  </div>
+
+                  <div v-if="loadingClips" class="profile-dialog__loading profile-dialog__loading--inline">
+                    <div class="profile-dialog__loading-spinner"></div>
+                  </div>
+
+                  <div
+                    v-else-if="availableClips.length === 0"
+                    class="profile-dialog__empty profile-dialog__empty--inline"
                   >
-                    <div
-                      class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                    />
-                    <span v-if="saving" class="relative flex items-center justify-center">
-                      <Loader2 class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2 animate-spin" />
-                      Saving...
-                    </span>
-                    <span v-else class="relative">Save Changes</span>
+                    <div class="profile-dialog__empty-icon">
+                      <Video :size="24" />
+                    </div>
+                    <p class="profile-dialog__empty-text">No built clips available</p>
+                    <p class="profile-dialog__empty-hint">Build some clips first from the Clips page</p>
+                  </div>
+
+                  <div v-else class="profile-dialog__clip-grid">
+                    <button
+                      v-for="clip in availableClips"
+                      :key="clip.id"
+                      @click="selectExistingClip(clip)"
+                      :disabled="savingPortfolioClip"
+                      class="profile-dialog__clip-card"
+                    >
+                      <div class="profile-dialog__clip-thumb">
+                        <img
+                          v-if="getClipThumbnail(clip)"
+                          :src="getClipThumbnail(clip)!"
+                          class="profile-dialog__clip-thumb-img"
+                        />
+                        <div v-else class="profile-dialog__clip-thumb-placeholder">
+                          <Video :size="20" />
+                        </div>
+                        <div v-if="savingPortfolioClip" class="profile-dialog__clip-thumb-loading">
+                          <Loader2 class="profile-dialog__clip-thumb-spinner" />
+                        </div>
+                      </div>
+                      <div class="profile-dialog__clip-name">{{ clip.name || 'Untitled' }}</div>
+                    </button>
+                  </div>
+
+                  <button
+                    @click="
+                      showClipSelector = false;
+                      showPortfolioClipForm = false;
+                    "
+                    class="profile-dialog__btn profile-dialog__btn--secondary profile-dialog__btn--full"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <!-- Portfolio Clips List -->
+                <div v-if="portfolioClips.length === 0 && !showPortfolioClipForm" class="profile-dialog__empty">
+                  <div class="profile-dialog__empty-icon">
+                    <Video :size="24" />
+                  </div>
+                  <p class="profile-dialog__empty-text">Add clips to showcase your work</p>
+                </div>
+
+                <div
+                  v-else-if="portfolioClips.length > 0 && !showPortfolioClipForm"
+                  class="profile-dialog__portfolio-grid"
+                >
+                  <div v-for="clip in portfolioClips" :key="clip.id" class="profile-dialog__portfolio-card">
+                    <div class="profile-dialog__portfolio-thumb">
+                      <img
+                        v-if="clip.thumbnail_url"
+                        :src="clip.thumbnail_url"
+                        class="profile-dialog__portfolio-thumb-img"
+                      />
+                      <div v-else class="profile-dialog__portfolio-thumb-placeholder">
+                        <Video :size="24" />
+                      </div>
+                    </div>
+                    <div class="profile-dialog__portfolio-info">
+                      <div class="profile-dialog__portfolio-title">{{ clip.title || 'Untitled' }}</div>
+                      <div class="profile-dialog__portfolio-meta">
+                        <span v-if="clip.duration">{{ formatDuration(clip.duration) }}</span>
+                        <button
+                          @click="confirmDeletePortfolioClip(clip)"
+                          class="profile-dialog__icon-btn profile-dialog__icon-btn--small profile-dialog__icon-btn--danger"
+                        >
+                          <Trash2 :size="12" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Delete Confirmation -->
+              <div v-if="showDeleteConfirm" class="profile-dialog__alert profile-dialog__alert--danger">
+                <p class="profile-dialog__alert-text">
+                  Are you sure you want to delete this
+                  {{ deleteType === 'channel' ? 'channel link' : 'portfolio clip' }}?
+                </p>
+                <div class="profile-dialog__alert-actions">
+                  <button @click="showDeleteConfirm = false" class="profile-dialog__btn profile-dialog__btn--secondary">
+                    Cancel
+                  </button>
+                  <button
+                    @click="handleDelete"
+                    :disabled="deleting"
+                    class="profile-dialog__btn profile-dialog__btn--danger"
+                  >
+                    <Loader2 v-if="deleting" class="profile-dialog__btn-spinner" />
+                    Delete
                   </button>
                 </div>
               </div>
+
+              <!-- Error Display -->
+              <div v-if="error" class="profile-dialog__alert profile-dialog__alert--error">
+                <p class="profile-dialog__alert-text">{{ error }}</p>
+              </div>
+
+              <!-- Success Display -->
+              <div v-if="success" class="profile-dialog__alert profile-dialog__alert--success">
+                <p class="profile-dialog__alert-text">{{ success }}</p>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="profile-dialog__footer">
+              <button
+                type="button"
+                @click="handleClose"
+                :disabled="saving"
+                class="profile-dialog__btn profile-dialog__btn--secondary"
+              >
+                Cancel
+              </button>
+              <button @click="handleSave" :disabled="saving" class="profile-dialog__btn profile-dialog__btn--primary">
+                <Loader2 v-if="saving" class="profile-dialog__btn-spinner" />
+                {{ saving ? 'Saving...' : 'Save Changes' }}
+              </button>
             </div>
           </div>
         </Transition>
@@ -641,6 +562,7 @@
     Youtube,
     Twitch,
     Upload,
+    X,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
@@ -1267,10 +1189,1019 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Dialog Overlay ===== */
+  .profile-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+  }
+
+  /* ===== Dialog Container ===== */
+  .profile-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 640px;
+    margin: 1rem;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ===== Accent Bar ===== */
+  .profile-dialog__accent {
+    height: 3px;
+    flex-shrink: 0;
+    background: linear-gradient(90deg, #06b6d4, #0ea5e9, #3b82f6);
+  }
+
+  /* ===== Header ===== */
+  .profile-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .profile-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .profile-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .profile-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .profile-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    margin-bottom: 0.875rem;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+  }
+
+  .profile-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .profile-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Loading ===== */
+  .profile-dialog__loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 4rem;
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
+  }
+
+  .profile-dialog__loading--inline {
+    padding: 2rem;
+  }
+
+  .profile-dialog__loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--sidebar-border);
+    border-top-color: #06b6d4;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Content ===== */
+  .profile-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 1.5rem 1.5rem;
+    min-height: 0;
+  }
+
+  .profile-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .profile-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .profile-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .profile-dialog__content::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+
+  /* ===== Visibility Toggle ===== */
+  .profile-dialog__visibility {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    margin-bottom: 1.25rem;
+  }
+
+  .profile-dialog__visibility--public {
+    background-color: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+
+  .profile-dialog__visibility-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .profile-dialog__visibility-icon {
+    color: var(--sidebar-text-muted);
+  }
+
+  .profile-dialog__visibility--public .profile-dialog__visibility-icon {
+    color: #10b981;
+  }
+
+  .profile-dialog__visibility-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .profile-dialog__visibility-desc {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  /* ===== Sections ===== */
+  .profile-dialog__section {
+    margin-bottom: 1.5rem;
+  }
+
+  .profile-dialog__section:last-child {
+    margin-bottom: 0;
+  }
+
+  .profile-dialog__section-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .profile-dialog__section-title {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.75rem;
+  }
+
+  .profile-dialog__section-header .profile-dialog__section-title {
+    margin: 0;
+  }
+
+  .profile-dialog__section-desc {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+    opacity: 0.7;
+  }
+
+  .profile-dialog__section-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+  }
+
+  /* ===== Form Fields ===== */
+  .profile-dialog__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.875rem;
+  }
+
+  .profile-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .profile-dialog__label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .profile-dialog__optional {
+    font-weight: 400;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  .profile-dialog__input,
+  .profile-dialog__select,
+  .profile-dialog__textarea {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .profile-dialog__input::placeholder,
+  .profile-dialog__textarea::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .profile-dialog__input:focus,
+  .profile-dialog__select:focus,
+  .profile-dialog__textarea:focus {
+    outline: none;
+    border-color: transparent;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .profile-dialog__textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .profile-dialog__input-group {
+    display: flex;
+    align-items: center;
+  }
+
+  .profile-dialog__input-prefix {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-right: 0.25rem;
+    flex-shrink: 0;
+  }
+
+  .profile-dialog__input--with-prefix {
+    flex: 1;
+  }
+
+  .profile-dialog__hint {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    opacity: 0.7;
+  }
+
+  /* ===== Toggle Row ===== */
+  .profile-dialog__toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .profile-dialog__toggle-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .profile-dialog__toggle-desc {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  /* ===== Avatar ===== */
+  .profile-dialog__avatar-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .profile-dialog__avatar-preview {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+    border: 2px solid var(--sidebar-border);
+    flex-shrink: 0;
+  }
+
+  .profile-dialog__avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .profile-dialog__avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    padding: 12px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .profile-dialog__avatar-loading {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .profile-dialog__avatar-spinner {
+    width: 20px;
+    height: 20px;
+    color: white;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .profile-dialog__avatar-actions {
+    flex: 1;
+  }
+
+  .profile-dialog__file-input {
+    display: none;
+  }
+
+  .profile-dialog__file-input--absolute {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .profile-dialog__upload-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .profile-dialog__upload-btn:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .profile-dialog__upload-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ===== Tags ===== */
+  .profile-dialog__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .profile-dialog__tag {
+    padding: 0.375rem 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 20px;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .profile-dialog__tag:hover {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  .profile-dialog__tag--selected {
+    background-color: rgba(6, 182, 212, 0.15);
+    border-color: rgba(6, 182, 212, 0.4);
+    color: #06b6d4;
+  }
+
+  .profile-dialog__tag--selected:hover {
+    background-color: rgba(6, 182, 212, 0.2);
+  }
+
+  /* ===== Add Button ===== */
+  .profile-dialog__add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: linear-gradient(135deg, #06b6d4, #0ea5e9);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .profile-dialog__add-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .profile-dialog__add-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ===== Form Card ===== */
+  .profile-dialog__form-card {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    margin-top: 0.75rem;
+  }
+
+  .profile-dialog__form-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .profile-dialog__form-card-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    margin-bottom: 0.75rem;
+    text-align: center;
+  }
+
+  .profile-dialog__form-card-header .profile-dialog__form-card-title {
+    margin-bottom: 0;
+  }
+
+  .profile-dialog__form-card-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .profile-dialog__form-card-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .profile-dialog__back-link {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color 150ms ease;
+  }
+
+  .profile-dialog__back-link:hover {
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Option Buttons ===== */
+  .profile-dialog__option-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 150ms ease;
+    margin-bottom: 0.5rem;
+  }
+
+  .profile-dialog__option-btn:hover {
+    border-color: rgba(6, 182, 212, 0.4);
+    background-color: var(--sidebar-active);
+  }
+
+  .profile-dialog__option-btn--upload {
+    cursor: pointer;
+  }
+
+  .profile-dialog__option-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    flex-shrink: 0;
+    transition: background-color 150ms ease;
+  }
+
+  .profile-dialog__option-icon--cyan {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+  }
+
+  .profile-dialog__option-icon--emerald {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .profile-dialog__option-info {
+    flex: 1;
+  }
+
+  .profile-dialog__option-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .profile-dialog__option-desc {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  .profile-dialog__option-loader {
+    width: 20px;
+    height: 20px;
+    color: #06b6d4;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Empty State ===== */
+  .profile-dialog__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+    text-align: center;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    margin-top: 0.75rem;
+  }
+
+  .profile-dialog__empty--inline {
+    padding: 1.5rem;
+  }
+
+  .profile-dialog__empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    background-color: var(--sidebar-surface);
+    border-radius: 12px;
+    margin-bottom: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .profile-dialog__empty-text {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  .profile-dialog__empty-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== List ===== */
+  .profile-dialog__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .profile-dialog__list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .profile-dialog__list-item-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .profile-dialog__list-item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background-color: rgba(6, 182, 212, 0.15);
+    border-radius: 8px;
+    color: #06b6d4;
+    flex-shrink: 0;
+  }
+
+  .profile-dialog__list-item-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .profile-dialog__list-item-link {
+    font-size: 0.75rem;
+    color: #06b6d4;
+    text-decoration: none;
+    display: block;
+    margin-top: 0.125rem;
+  }
+
+  .profile-dialog__list-item-link:hover {
+    text-decoration: underline;
+  }
+
+  .profile-dialog__list-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  /* ===== Icon Button ===== */
+  .profile-dialog__icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .profile-dialog__icon-btn:hover {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  .profile-dialog__icon-btn--danger:hover {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  .profile-dialog__icon-btn--small {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* ===== Clip Grid ===== */
+  .profile-dialog__clip-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    max-height: 240px;
+    overflow-y: auto;
+    margin-bottom: 0.75rem;
+  }
+
+  .profile-dialog__clip-grid::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .profile-dialog__clip-grid::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .profile-dialog__clip-grid::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .profile-dialog__clip-card {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+  }
+
+  .profile-dialog__clip-card:hover:not(:disabled) {
+    border-color: rgba(6, 182, 212, 0.4);
+  }
+
+  .profile-dialog__clip-card:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .profile-dialog__clip-thumb {
+    aspect-ratio: 16/9;
+    background-color: var(--sidebar-hover);
+    position: relative;
+  }
+
+  .profile-dialog__clip-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .profile-dialog__clip-thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+  }
+
+  .profile-dialog__clip-thumb-loading {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .profile-dialog__clip-thumb-spinner {
+    width: 20px;
+    height: 20px;
+    color: white;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .profile-dialog__clip-name {
+    padding: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ===== Portfolio Grid ===== */
+  .profile-dialog__portfolio-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .profile-dialog__portfolio-card {
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .profile-dialog__portfolio-thumb {
+    aspect-ratio: 16/9;
+    background-color: var(--sidebar-surface);
+  }
+
+  .profile-dialog__portfolio-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .profile-dialog__portfolio-thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+  }
+
+  .profile-dialog__portfolio-info {
+    padding: 0.5rem;
+  }
+
+  .profile-dialog__portfolio-title {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .profile-dialog__portfolio-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.375rem;
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Alert ===== */
+  .profile-dialog__alert {
+    padding: 0.875rem 1rem;
+    border-radius: 10px;
+    margin-top: 1rem;
+  }
+
+  .profile-dialog__alert--error {
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .profile-dialog__alert--success {
+    background-color: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .profile-dialog__alert--danger {
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .profile-dialog__alert-text {
+    font-size: 0.8125rem;
+    margin: 0;
+  }
+
+  .profile-dialog__alert--error .profile-dialog__alert-text {
+    color: #ef4444;
+  }
+
+  .profile-dialog__alert--success .profile-dialog__alert-text {
+    color: #10b981;
+  }
+
+  .profile-dialog__alert--danger .profile-dialog__alert-text {
+    color: #ef4444;
+    margin-bottom: 0.75rem;
+  }
+
+  .profile-dialog__alert-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  /* ===== Footer ===== */
+  .profile-dialog__footer {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.2);
+  }
+
+  /* ===== Buttons ===== */
+  .profile-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .profile-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .profile-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .profile-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .profile-dialog__btn--primary {
+    background: linear-gradient(135deg, #06b6d4, #0ea5e9);
+    color: white;
+  }
+
+  .profile-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .profile-dialog__btn--danger {
+    background-color: #ef4444;
+    color: white;
+  }
+
+  .profile-dialog__btn--danger:hover:not(:disabled) {
+    background-color: #dc2626;
+  }
+
+  .profile-dialog__btn--full {
+    width: 100%;
+  }
+
+  .profile-dialog__btn-spinner {
+    width: 16px;
+    height: 16px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Animations ===== */
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -1278,18 +2209,17 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {
@@ -1297,21 +2227,14 @@
     transform: scale(0.98);
   }
 
-  /* Custom scrollbar */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
+  /* ===== Responsive ===== */
+  @media (max-width: 640px) {
+    .profile-dialog__row {
+      grid-template-columns: 1fr;
+    }
 
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgb(63 63 70);
-    border-radius: 3px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgb(82 82 91);
+    .profile-dialog__portfolio-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 </style>

@@ -2,18 +2,18 @@
   <div class="flex items-center h-14 px-2 border-b border-border/20 relative">
     <!-- Track Label -->
     <div
-      class="w-18 h-10 -ml-2 flex items-center justify-center text-xs text-center text-muted-foreground/60 sticky left-0 z-40 bg-[#101010] backdrop-blur-sm"
+      class="w-18 h-10 -ml-2 flex items-center justify-center text-xs text-center sticky left-0 z-40 bg-gradient-to-r from-[#141416] to-[#141416]/80 backdrop-blur-md border-r border-white/[0.04]"
     >
       <div>
-        <div class="font-medium">Main</div>
-        <div class="text-xs opacity-70">Video</div>
+        <div class="font-medium text-white/70 text-[10px] tracking-wide">Main</div>
+        <div class="text-[9px] text-white/40">Video</div>
       </div>
     </div>
     <!-- Video Track Content -->
     <div class="flex-1 h-10 relative flex items-center">
       <div
         data-video-track="true"
-        class="flex-1 h-8 bg-[#0a0a0a]/50 rounded-md relative cursor-pointer group overflow-hidden"
+        class="flex-1 h-8 bg-[#0a0a0b]/50 rounded-md relative cursor-pointer group overflow-hidden"
         @click="onVideoTrackClick"
         @mousemove="onTimelineTrackHover"
         @mouseleave="onTimelineMouseLeave"
@@ -27,8 +27,8 @@
         </div>
         <!-- Video Track with Waveform -->
         <div v-else class="relative w-full h-full">
-          <!-- Full video duration background (neutral gray) -->
-          <div class="absolute inset-0 bg-[#1a1a1a] rounded-md"></div>
+          <!-- Full video duration background (cool gray) -->
+          <div class="absolute inset-0 bg-[#161618] rounded-md"></div>
 
           <!-- Audio Waveform Canvas -->
           <canvas
@@ -37,17 +37,14 @@
             style="mix-blend-mode: normal; z-index: 25"
           ></canvas>
 
-          <!-- Played progress overlay (lighter gray) -->
+          <!-- Played progress overlay (cool lighter gray) -->
           <div
-            class="absolute inset-y-0 left-0 bg-[#2a2a2a] rounded-l-md transition-all duration-100 pointer-events-none z-15"
+            class="absolute inset-y-0 left-0 bg-[#1f1f23] rounded-l-md transition-all duration-100 pointer-events-none z-15"
             :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
           ></div>
 
           <!-- Loading indicator for waveform -->
-          <div
-            v-if="isLoading"
-            class="absolute inset-0 flex items-center justify-center bg-black/20 rounded-md"
-          >
+          <div v-if="isLoading" class="absolute inset-0 flex items-center justify-center bg-black/20 rounded-md">
             <div class="text-xs text-muted-foreground/60">Loading waveform...</div>
           </div>
         </div>
@@ -100,7 +97,7 @@
     const maxScale = 10; // Don't amplify more than 10x
     const finalScale = Math.min(scaleFactor, maxScale);
 
-    return peaks.map(peak => ({
+    return peaks.map((peak) => ({
       min: peak.min * finalScale,
       max: peak.max * finalScale,
     }));
@@ -153,18 +150,10 @@
       const normalizedPeaks = normalizePeaks(peaks);
 
       // Use the unified renderer with playhead support
-      renderWaveformWithPlayhead(
-        canvas,
-        normalizedPeaks,
-        rect.width,
-        rect.height,
-        props.currentTime,
-        props.duration,
-        {
-          style: 'bars',
-          useGradientColors: false, // Simple white/teal for this track
-        }
-      );
+      renderWaveformWithPlayhead(canvas, normalizedPeaks, rect.width, rect.height, props.currentTime, props.duration, {
+        style: 'bars',
+        useGradientColors: false, // Simple white/teal for this track
+      });
     } catch (error) {
       console.error('[TimelineVideoTrack] Error rendering waveform:', error);
     }
@@ -248,14 +237,14 @@
 <style scoped>
   /* Video track styling */
   .video-track {
-    background: #1a1a1a;
+    background: #161618;
     border-radius: 0.375rem;
     position: relative;
     overflow: hidden;
   }
 
   .video-track-progress {
-    background: #2a2a2a;
+    background: #1f1f23;
     transition: width 0.1s ease;
   }
 
