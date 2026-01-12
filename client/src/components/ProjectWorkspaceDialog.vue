@@ -1677,8 +1677,13 @@
       ];
     }
 
-    // Open the dialog
-    showClipEditorDialog.value = true;
+    // Close the workspace dialog first, then open the clip editor
+    close();
+
+    // Open the clip editor dialog (after a small delay to allow workspace dialog to close)
+    nextTick(() => {
+      showClipEditorDialog.value = true;
+    });
 
     console.log(
       `[ProjectWorkspaceDialog] Opening clip editor for "${clip.title}" with ${clipEditorSegments.value.length} segments`
