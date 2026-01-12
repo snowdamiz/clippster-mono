@@ -1094,11 +1094,34 @@ defmodule ClippsterServerWeb.ClipsController do
               :ok ->
                 IO.puts("[ClipsController] AI response validation successful")
 
-                # Step 5: Enhanced validation and correction using original Whisper response with word-level data
-                IO.puts("[ClipsController] Starting enhanced clip validation...")
-                IO.puts("[ClipsController] Using original Whisper response for validation...")
-                ProgressChannel.broadcast_progress(project_id, "validating", 85, "Validating and correcting clip timestamps...")
-                case ClipValidation.validate_and_correct_clips(ai_response["clips"], whisper_response, false) do
+                # Handle empty clips array - no clip-worthy content found
+                clips_list = ai_response["clips"] || []
+                if length(clips_list) == 0 do
+                  IO.puts("[ClipsController] No clips found in transcript - returning empty result")
+                  ProgressChannel.broadcast_progress(project_id, "completed", 100, "Analysis complete - no clip-worthy moments found in this segment")
+                  
+                  {:ok, %{
+                    success: true,
+                    clips: %{"clips" => []},
+                    transcript: whisper_response,
+                    processing_info: %{
+                      used_cached_transcript: processing_type == "cached",
+                      processing_type: processing_type,
+                      completion_message: "No clip-worthy moments found in this segment"
+                    },
+                    validation: %{
+                      qualityScore: 0.0,
+                      issues: [],
+                      corrections: [],
+                      clipsProcessed: 0
+                    }
+                  }}
+                else
+                  # Step 5: Enhanced validation and correction using original Whisper response with word-level data
+                  IO.puts("[ClipsController] Starting enhanced clip validation...")
+                  IO.puts("[ClipsController] Using original Whisper response for validation...")
+                  ProgressChannel.broadcast_progress(project_id, "validating", 85, "Validating and correcting clip timestamps...")
+                  case ClipValidation.validate_and_correct_clips(clips_list, whisper_response, false) do
                   {:ok, validation_result} ->
                     IO.puts("[ClipsController] Enhanced validation completed")
                     IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
@@ -1162,6 +1185,7 @@ defmodule ClippsterServerWeb.ClipsController do
                         corrections: []
                       }
                     }}
+                end
                 end
 
               {:error, reason} ->
@@ -1436,14 +1460,22 @@ defmodule ClippsterServerWeb.ClipsController do
         # Validate clips array
         clips = response["clips"]
 
-        if is_list(clips) and length(clips) > 0 do
-          # Validate each clip structure
-          case validate_clips_structure(clips) do
-            :ok -> :ok
-            error -> error
-          end
-        else
-          {:error, "clips must be a non-empty array"}
+        cond do
+          # Empty clips array is valid - means no clip-worthy content found
+          is_list(clips) and length(clips) == 0 ->
+            IO.puts("[ClipsController] AI returned empty clips array - no clip-worthy content found")
+            :ok
+
+          # Non-empty clips array - validate each clip structure
+          is_list(clips) and length(clips) > 0 ->
+            case validate_clips_structure(clips) do
+              :ok -> :ok
+              error -> error
+            end
+
+          # Not a list
+          true ->
+            {:error, "clips must be an array"}
         end
 
       error -> error

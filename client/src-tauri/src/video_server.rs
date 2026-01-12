@@ -4,6 +4,42 @@ use std::path::PathBuf;
 
 pub static VIDEO_SERVER_PORT: u16 = 48276;
 
+/// Probe the duration of a .ts file using FFmpeg
+async fn probe_ts_duration(file_path: &PathBuf) -> Result<f64, String> {
+    use tokio::process::Command;
+    use regex::Regex;
+    
+    // Get FFmpeg path - try exe dir first, then dev path, then system
+    let ffmpeg_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("ffmpeg.exe")))
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| {
+            let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("binaries")
+                .join("ffmpeg-x86_64-pc-windows-msvc.exe");
+            if dev_path.exists() { dev_path } else { PathBuf::from("ffmpeg") }
+        });
+    
+    let output = Command::new(&ffmpeg_path)
+        .args(["-i", file_path.to_str().ok_or("Invalid path")?])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let re = Regex::new(r"Duration: (\d{2}):(\d{2}):([\d.]+)").map_err(|e| e.to_string())?;
+    
+    if let Some(caps) = re.captures(&stderr) {
+        let h: f64 = caps.get(1).unwrap().as_str().parse().unwrap_or(0.0);
+        let m: f64 = caps.get(2).unwrap().as_str().parse().unwrap_or(0.0);
+        let s: f64 = caps.get(3).unwrap().as_str().parse().unwrap_or(0.0);
+        let total = h * 3600.0 + m * 60.0 + s;
+        if total > 0.0 { return Ok(total); }
+    }
+    Err("Duration not found".to_string())
+}
+
 pub async fn start_video_server_impl() {
     static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -797,8 +833,15 @@ pub async fn start_video_server_impl() {
                 ).into_response());
             }
 
-            // Use a large default duration - HLS.js will handle actual duration from the segment
-            let duration = 3600.0;
+            // Probe actual duration using FFmpeg
+            let duration = match probe_ts_duration(&file_path).await {
+                Ok(d) => { eprintln!("[ts-hls] Probed duration: {:.2}s", d); d }
+                Err(_) => {
+                    // Fallback: estimate from file size (~2MB/min)
+                    let size = tokio::fs::metadata(&file_path).await.map(|m| m.len()).unwrap_or(0);
+                    ((size as f64) / (2.0 * 1024.0 * 1024.0) * 60.0).max(10.0)
+                }
+            };
 
             // Get the filename for the segment reference
             let filename = file_path.file_name()
@@ -902,10 +945,8 @@ pub async fn start_video_server_impl() {
                         let end = std::cmp::min(requested_end, file_size - 1);
 
                         if start < file_size && start <= end {
-                            // Limit chunk size to 10MB for faster initial response
-                            const MAX_CHUNK: u64 = 10 * 1024 * 1024;
-                            let actual_end = std::cmp::min(end, start + MAX_CHUNK - 1);
-                            let content_length = actual_end - start + 1;
+                            // Serve full requested range - HLS.js needs complete segment
+                            let content_length = end - start + 1;
 
                             match tokio::fs::File::open(&file_path).await {
                                 Ok(mut file) => {
@@ -925,7 +966,7 @@ pub async fn start_video_server_impl() {
                                     }
 
                                     let response = warp::reply::with_header(buffer, "Content-Type", "video/mp2t");
-                                    let response = warp::reply::with_header(response, "Content-Range", format!("bytes {}-{}/{}", start, actual_end, file_size));
+                                    let response = warp::reply::with_header(response, "Content-Range", format!("bytes {}-{}/{}", start, end, file_size));
                                     let response = warp::reply::with_header(response, "Content-Length", content_length.to_string());
                                     let response = warp::reply::with_header(response, "Accept-Ranges", "bytes");
                                     let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
@@ -944,58 +985,22 @@ pub async fn start_video_server_impl() {
                 }
             }
 
-            // No range header - for small files serve entirely, for large files serve first chunk
-            const SMALL_FILE_THRESHOLD: u64 = 5 * 1024 * 1024; // 5MB
-            
-            if file_size <= SMALL_FILE_THRESHOLD {
-                // Small file: serve entirely
-                match tokio::fs::read(&file_path).await {
-                    Ok(content) => {
-                        let response = warp::reply::with_header(content, "Content-Type", "video/mp2t");
-                        let response = warp::reply::with_header(response, "Content-Length", file_size.to_string());
-                        let response = warp::reply::with_header(response, "Accept-Ranges", "bytes");
-                        let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
-                        let response = warp::reply::with_header(response, "Cache-Control", "max-age=3600");
-                        Ok(response.into_response())
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to read TS file {}: {}", file_path.display(), e);
-                        Ok(warp::reply::with_status(
-                            warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
-                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
-                        ).into_response())
-                    }
+            // No range header - serve entire file for VOD segments
+            match tokio::fs::read(&file_path).await {
+                Ok(content) => {
+                    let response = warp::reply::with_header(content, "Content-Type", "video/mp2t");
+                    let response = warp::reply::with_header(response, "Content-Length", file_size.to_string());
+                    let response = warp::reply::with_header(response, "Accept-Ranges", "bytes");
+                    let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
+                    let response = warp::reply::with_header(response, "Cache-Control", "max-age=3600");
+                    Ok(response.into_response())
                 }
-            } else {
-                // Large file without range header: serve first 10MB chunk with 206 to encourage range requests
-                const INITIAL_CHUNK: u64 = 10 * 1024 * 1024;
-                let chunk_size = std::cmp::min(INITIAL_CHUNK, file_size);
-                
-                match tokio::fs::File::open(&file_path).await {
-                    Ok(mut file) => {
-                        let mut buffer = vec![0u8; chunk_size as usize];
-                        if let Err(_) = file.read_exact(&mut buffer).await {
-                            return Ok(warp::reply::with_status(
-                                warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
-                                warp::http::StatusCode::INTERNAL_SERVER_ERROR
-                            ).into_response());
-                        }
-
-                        let response = warp::reply::with_header(buffer, "Content-Type", "video/mp2t");
-                        let response = warp::reply::with_header(response, "Content-Range", format!("bytes 0-{}/{}", chunk_size - 1, file_size));
-                        let response = warp::reply::with_header(response, "Content-Length", chunk_size.to_string());
-                        let response = warp::reply::with_header(response, "Accept-Ranges", "bytes");
-                        let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
-                        let response = warp::reply::with_header(response, "Cache-Control", "max-age=3600");
-                        Ok(warp::reply::with_status(response, warp::http::StatusCode::PARTIAL_CONTENT).into_response())
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to open TS file {}: {}", file_path.display(), e);
-                        Ok(warp::reply::with_status(
-                            warp::reply::json(&serde_json::json!({"error": "Cannot open file"})),
-                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
-                        ).into_response())
-                    }
+                Err(e) => {
+                    eprintln!("Failed to read TS file {}: {}", file_path.display(), e);
+                    Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
+                        warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                    ).into_response())
                 }
             }
         });

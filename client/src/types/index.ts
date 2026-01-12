@@ -288,6 +288,8 @@ export interface MediaPanelProps {
   videoDuration?: number | null; // Duration in seconds
   currentTime?: number | null; // Current video playback time in seconds
   aspectRatio: { width: number; height: number };
+  // Subtitle settings for clip building
+  subtitleSettings?: SubtitleSettings | null;
   // Creator profile default assets (auto-applied when building clips)
   creatorDefaultIntro?: IntroOutroRef | null;
   creatorDefaultOutro?: IntroOutroRef | null;

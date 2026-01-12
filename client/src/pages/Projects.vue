@@ -5181,6 +5181,7 @@
   }
 
   .folder-dialog__content--clips {
+    display: flex;
     padding: 0;
     overflow: hidden;
   }
@@ -5420,6 +5421,7 @@
   .folder-dialog__clips-layout {
     display: flex;
     flex: 1;
+    height: 100%;
     min-height: 0;
   }
 
@@ -5427,6 +5429,7 @@
   .folder-dialog__clips-list {
     width: 480px;
     flex-shrink: 0;
+    max-height: calc(85vh - 120px);
     border-right: 1px solid var(--sidebar-border);
     overflow-y: auto;
     padding: 1rem;

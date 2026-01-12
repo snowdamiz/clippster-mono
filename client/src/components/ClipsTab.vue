@@ -66,7 +66,7 @@
       </button>
     </div>
 
-    <div class="flex-1 overflow-y-auto">
+    <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
       <!-- Progress State (only when no clips exist yet) -->
       <div v-if="isGenerating && clips.length === 0" class="h-full flex flex-col items-center justify-center px-6">
         <div class="w-full max-w-xs space-y-5">
@@ -146,7 +146,7 @@
       <!-- Clips List State -->
       <div
         v-else-if="clips.length > 0"
-        class="w-full flex-1 overflow-y-auto custom-scrollbar"
+        class="w-full"
         ref="clipsScrollContainer"
       >
         <!-- Clips Grid -->
@@ -1488,6 +1488,7 @@
 
     if (!props.projectId) {
       console.error('[ClipsTab] No project ID available for clip build');
+      await showError('Cannot Build Clip', 'No project ID available. Please try reopening the project.');
       return;
     }
 
@@ -1506,6 +1507,7 @@
         start_time: clip.start_time,
         end_time: clip.end_time,
       });
+      await showError('Cannot Build Clip', 'No clip timing data found. Please edit the clip to set start and end times.');
       return;
     }
     
@@ -1513,10 +1515,24 @@
       console.log('[ClipsTab] No segments found, will use clip times for build');
     }
 
-    // Load saved aspect framing settings from clip editor
+    // Reset saved settings first (will be loaded async)
+    savedAspectRatios.value = null;
+    savedFramingMode.value = null;
+    savedFramingConfigs.value = null;
+
+    // Open dialog immediately (don't wait for async operations)
+    clipToBuild.value = clip;
+    showBuildSettingsDialog.value = true;
+
+    // Load saved aspect framing settings in background (dialog will use defaults until loaded)
+    loadSavedAspectSettings(clip.id);
+  }
+
+  // Load saved aspect framing settings asynchronously
+  async function loadSavedAspectSettings(clipId: string) {
     try {
       const { getFullClipEdit } = await import('@/services/database');
-      const clipEdit = await getFullClipEdit(clip.id);
+      const clipEdit = await getFullClipEdit(clipId);
 
       if (clipEdit) {
         const editData = JSON.parse(clipEdit.edit.edit_data);
@@ -1530,27 +1546,11 @@
             mode: savedFramingMode.value,
             configCount: savedFramingConfigs.value ? Object.keys(savedFramingConfigs.value).length : 0,
           });
-        } else {
-          // No saved settings, reset to null
-          savedAspectRatios.value = null;
-          savedFramingMode.value = null;
-          savedFramingConfigs.value = null;
         }
-      } else {
-        // No clip edit data, reset to null
-        savedAspectRatios.value = null;
-        savedFramingMode.value = null;
-        savedFramingConfigs.value = null;
       }
     } catch (err) {
       console.warn('[ClipsTab] Could not load saved aspect framing settings:', err);
-      savedAspectRatios.value = null;
-      savedFramingMode.value = null;
-      savedFramingConfigs.value = null;
     }
-
-    clipToBuild.value = clip;
-    showBuildSettingsDialog.value = true;
   }
 
   // Track if we're currently processing a build to prevent duplicates
@@ -2412,31 +2412,27 @@
 </script>
 
 <style scoped>
-  /* Custom scrollbar styling */
+  /* Custom scrollbar styling - matches ProjectWorkspaceDialog */
   .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
     background: transparent;
-    margin: 4px 0;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted-foreground) / 0.3);
-    border-radius: 4px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
-    background-clip: padding-box;
+    background-color: rgba(255, 255, 255, 0.2);
   }
 
   /* Firefox scrollbar */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
   }
 </style>

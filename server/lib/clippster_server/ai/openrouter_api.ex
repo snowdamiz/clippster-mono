@@ -302,6 +302,11 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
   # Validate clips response structure
   defp validate_clips_response(clips) do
     case clips do
+      # Empty clips array is valid - means no clip-worthy content was found
+      %{"clips" => clips_array} when is_list(clips_array) and length(clips_array) == 0 ->
+        IO.puts("[OpenRouterAPI] AI returned empty clips array - no clip-worthy content found")
+        :ok
+
       %{"clips" => clips_array} when is_list(clips_array) and length(clips_array) > 0 ->
         required_clip_fields = [
           "id", "title", "filename", "type", "segments",
@@ -333,8 +338,12 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
           {:error, missing_fields}
         end
 
+      # clips key exists but is not a list
+      %{"clips" => _} ->
+        {:error, ["clips must be an array"]}
+
       _ ->
-        {:error, ["clips array is missing or empty"]}
+        {:error, ["clips array is missing"]}
     end
   end
 
