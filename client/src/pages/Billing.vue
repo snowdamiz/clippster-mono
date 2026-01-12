@@ -72,16 +72,19 @@
         <!-- Current Subscription & Credits Row -->
         <div class="billing__cards">
           <!-- Current Subscription Card -->
-          <div class="billing-card" :class="{ 'billing-card--active': hasActiveSubscription }">
+          <div class="billing-card" :class="{ 'billing-card--active': !loadingBalance && hasActiveSubscription }">
             <div
               class="billing-card__indicator"
-              :class="{ 'billing-card__indicator--active': hasActiveSubscription }"
+              :class="{ 'billing-card__indicator--active': !loadingBalance && hasActiveSubscription }"
             ></div>
             <div class="billing-card__inner">
               <div class="billing-card__header">
                 <div class="billing-card__header-left">
-                  <div class="billing-card__icon" :class="{ 'billing-card__icon--active': hasActiveSubscription }">
-                    <Crown v-if="hasActiveSubscription" />
+                  <div
+                    class="billing-card__icon"
+                    :class="{ 'billing-card__icon--active': !loadingBalance && hasActiveSubscription }"
+                  >
+                    <Crown v-if="!loadingBalance && hasActiveSubscription" />
                     <CreditCard v-else />
                   </div>
                   <div class="billing-card__header-text">
@@ -100,46 +103,45 @@
               </div>
 
               <div class="billing-card__body">
-                <!-- Loading skeleton -->
-                <template v-if="loadingBalance">
-                  <div class="billing-skeleton">
-                    <div class="billing-skeleton__line billing-skeleton__line--lg"></div>
-                    <div class="billing-skeleton__line billing-skeleton__line--md"></div>
-                  </div>
-                </template>
-                <!-- Loaded content -->
-                <template v-else>
-                  <div class="billing-card__plan-row">
-                    <span class="billing-card__plan-name">
+                <div class="billing-card__plan-row">
+                  <span class="billing-card__plan-name">
+                    <template v-if="loadingBalance">
+                      <span class="billing-skeleton__inline billing-skeleton__inline--lg"></span>
+                    </template>
+                    <template v-else>
                       {{ subscriptionStatus?.tier_name || 'No Subscription' }}
+                    </template>
+                  </span>
+                  <span v-if="!loadingBalance" class="billing-card__status" :class="statusBadgeClass">
+                    {{ statusBadgeText }}
+                  </span>
+                  <span v-else class="billing-skeleton__inline billing-skeleton__inline--badge"></span>
+                </div>
+                <p class="billing-card__info">
+                  <template v-if="loadingBalance">
+                    <span class="billing-skeleton__inline billing-skeleton__inline--md"></span>
+                  </template>
+                  <template v-else-if="subscriptionStatus?.status === 'active'">
+                    <span class="billing-card__info-row">
+                      <CalendarCheck class="billing-card__info-icon" />
+                      Renews {{ formatDate(subscriptionStatus?.end_date) }}
+                      <span class="billing-card__info-muted">({{ subscriptionStatus?.days_remaining }} days)</span>
                     </span>
-                    <span class="billing-card__status" :class="statusBadgeClass">
-                      {{ statusBadgeText }}
+                  </template>
+                  <template v-else-if="subscriptionStatus?.status === 'cancelled'">
+                    <span class="billing-card__info-row billing-card__info-row--warning">
+                      <Clock class="billing-card__info-icon" />
+                      Access until {{ formatDate(subscriptionStatus?.end_date) }}
                     </span>
-                  </div>
-                  <p class="billing-card__info">
-                    <template v-if="subscriptionStatus?.status === 'active'">
-                      <span class="billing-card__info-row">
-                        <CalendarCheck class="billing-card__info-icon" />
-                        Renews {{ formatDate(subscriptionStatus?.end_date) }}
-                        <span class="billing-card__info-muted">({{ subscriptionStatus?.days_remaining }} days)</span>
-                      </span>
-                    </template>
-                    <template v-else-if="subscriptionStatus?.status === 'cancelled'">
-                      <span class="billing-card__info-row billing-card__info-row--warning">
-                        <Clock class="billing-card__info-icon" />
-                        Access until {{ formatDate(subscriptionStatus?.end_date) }}
-                      </span>
-                    </template>
-                    <template v-else-if="subscriptionStatus?.status === 'expired'">
-                      <span class="billing-card__info-row billing-card__info-row--danger">
-                        <AlertCircle class="billing-card__info-icon" />
-                        Expired {{ formatDate(subscriptionStatus?.end_date) }}
-                      </span>
-                    </template>
-                    <template v-else>Subscribe to unlock Clippster</template>
-                  </p>
-                </template>
+                  </template>
+                  <template v-else-if="subscriptionStatus?.status === 'expired'">
+                    <span class="billing-card__info-row billing-card__info-row--danger">
+                      <AlertCircle class="billing-card__info-icon" />
+                      Expired {{ formatDate(subscriptionStatus?.end_date) }}
+                    </span>
+                  </template>
+                  <template v-else>Subscribe to unlock Clippster</template>
+                </p>
               </div>
             </div>
           </div>
@@ -159,44 +161,44 @@
               </div>
 
               <div class="billing-card__body">
-                <!-- Loading skeleton -->
-                <template v-if="loadingBalance">
-                  <div class="billing-skeleton">
-                    <div class="billing-skeleton__line billing-skeleton__line--xl"></div>
-                    <div class="billing-skeleton__line billing-skeleton__line--sm"></div>
-                  </div>
-                </template>
-                <!-- Loaded content -->
-                <template v-else>
-                  <div class="billing-card__balance">
+                <div class="billing-card__balance">
+                  <template v-if="loadingBalance">
+                    <span class="billing-skeleton__inline billing-skeleton__inline--xl"></span>
+                  </template>
+                  <template v-else>
                     <span class="billing-card__balance-value">
                       {{ typeof hoursRemaining === 'number' ? Math.round(hoursRemaining) : hoursRemaining }}
                     </span>
                     <span class="billing-card__balance-unit">min</span>
-                  </div>
-                  <div class="billing-card__usage">
-                    <TrendingUp class="billing-card__usage-icon" />
+                  </template>
+                </div>
+                <div class="billing-card__usage">
+                  <TrendingUp class="billing-card__usage-icon" />
+                  <template v-if="loadingBalance">
+                    <span class="billing-skeleton__inline billing-skeleton__inline--sm"></span>
+                  </template>
+                  <template v-else>
                     <span>{{ Math.round(hoursUsed) }} min used total</span>
-                  </div>
+                  </template>
+                </div>
 
-                  <!-- Organization Allocations -->
-                  <div v-if="organizationAllocations.length > 0" class="billing-card__allocations">
-                    <div class="billing-card__allocations-header">
-                      <Building class="billing-card__allocations-icon" />
-                      <span>Organization Allocations</span>
-                    </div>
-                    <div class="billing-card__allocations-list">
-                      <div
-                        v-for="alloc in organizationAllocations"
-                        :key="alloc.organization_id"
-                        class="billing-card__allocation-item"
-                      >
-                        <span class="billing-card__allocation-name">{{ alloc.organization_name }}</span>
-                        <span class="billing-card__allocation-value">{{ Math.round(alloc.hours_remaining) }} min</span>
-                      </div>
+                <!-- Organization Allocations -->
+                <div v-if="!loadingBalance && organizationAllocations.length > 0" class="billing-card__allocations">
+                  <div class="billing-card__allocations-header">
+                    <Building class="billing-card__allocations-icon" />
+                    <span>Organization Allocations</span>
+                  </div>
+                  <div class="billing-card__allocations-list">
+                    <div
+                      v-for="alloc in organizationAllocations"
+                      :key="alloc.organization_id"
+                      class="billing-card__allocation-item"
+                    >
+                      <span class="billing-card__allocation-name">{{ alloc.organization_name }}</span>
+                      <span class="billing-card__allocation-value">{{ Math.round(alloc.hours_remaining) }} min</span>
                     </div>
                   </div>
-                </template>
+                </div>
               </div>
             </div>
           </div>
@@ -210,7 +212,8 @@
             </div>
             <div class="billing-plans__header-text">
               <h2 class="billing-plans__title">
-                {{ hasActiveSubscription ? 'Change Plan' : 'Choose a Plan' }}
+                <template v-if="loadingBalance">Choose a Plan</template>
+                <template v-else>{{ hasActiveSubscription ? 'Change Plan' : 'Choose a Plan' }}</template>
               </h2>
               <p class="billing-plans__subtitle">Select the plan that works best for you</p>
             </div>
@@ -221,21 +224,39 @@
             <template v-if="loadingTiers">
               <div v-for="i in 3" :key="i" class="billing-tier billing-tier--skeleton">
                 <div class="billing-tier__content">
-                  <div class="billing-skeleton">
-                    <div class="billing-skeleton__line billing-skeleton__line--sm" style="width: 60%"></div>
-                    <div class="billing-skeleton__line billing-skeleton__line--xl" style="width: 50%"></div>
+                  <div class="billing-tier__header">
+                    <h3 class="billing-tier__name">
+                      <span class="billing-skeleton__inline" style="width: 80px; height: 18px"></span>
+                    </h3>
+                    <div class="billing-tier__price">
+                      <span class="billing-skeleton__inline" style="width: 70px; height: 40px"></span>
+                    </div>
                   </div>
-                  <div class="billing-skeleton" style="margin-top: 1rem">
-                    <div class="billing-skeleton__box"></div>
+
+                  <div class="billing-tier__credits billing-tier__credits--skeleton">
+                    <span class="billing-skeleton__inline" style="width: 100%; height: 100%"></span>
                   </div>
-                  <div class="billing-skeleton" style="margin-top: 1rem">
-                    <div class="billing-skeleton__line billing-skeleton__line--sm"></div>
-                    <div class="billing-skeleton__line billing-skeleton__line--sm"></div>
-                    <div class="billing-skeleton__line billing-skeleton__line--sm"></div>
-                  </div>
-                  <div class="billing-skeleton" style="margin-top: 1rem">
-                    <div class="billing-skeleton__btn"></div>
-                  </div>
+
+                  <div class="billing-tier__divider"></div>
+
+                  <ul class="billing-tier__features">
+                    <li class="billing-tier__feature">
+                      <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
+                      <span>Full app access</span>
+                    </li>
+                    <li class="billing-tier__feature">
+                      <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
+                      <span>AI clip detection</span>
+                    </li>
+                    <li class="billing-tier__feature">
+                      <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
+                      <span>Credits roll over</span>
+                    </li>
+                  </ul>
+
+                  <button class="billing-tier__btn" disabled>
+                    <span class="billing-skeleton__inline" style="width: 80px; height: 16px"></span>
+                  </button>
                 </div>
               </div>
             </template>
@@ -327,18 +348,8 @@
           </div>
 
           <div class="billing-history__table-wrapper">
-            <div v-if="loadingHistory" class="billing-history__loading">
-              <div class="billing-history__spinner"></div>
-              <span>Loading history...</span>
-            </div>
-            <div v-else-if="paymentHistory.length === 0" class="billing-history__empty">
-              <div class="billing-history__empty-icon">
-                <Receipt />
-              </div>
-              <p class="billing-history__empty-title">No payment history yet</p>
-              <p class="billing-history__empty-subtitle">Your transactions will appear here</p>
-            </div>
-            <table v-else class="billing-history__table">
+            <!-- Always show table structure, rows show loading or content -->
+            <table class="billing-history__table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -350,31 +361,61 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="payment in paymentHistory" :key="payment.id">
-                  <td class="billing-history__cell--date">{{ formatDate(payment.date) }}</td>
-                  <td>
-                    <span
-                      class="billing-history__type"
-                      :class="
-                        payment.type === 'subscription' ? 'billing-history__type--sub' : 'billing-history__type--credit'
-                      "
-                    >
-                      {{ payment.type === 'subscription' ? 'Subscription' : 'Credits' }}
-                    </span>
-                  </td>
-                  <td class="billing-history__cell--desc">{{ payment.description }}</td>
-                  <td class="billing-history__cell--amount">${{ payment.amount.toFixed(2) }}</td>
-                  <td class="billing-history__cell--method">
-                    <CreditCard v-if="payment.method === 'stripe'" />
-                    <Wallet v-else />
-                    <span>{{ payment.method }}</span>
-                  </td>
-                  <td>
-                    <span class="billing-history__status" :class="getStatusClass(payment.status)">
-                      {{ payment.status }}
-                    </span>
-                  </td>
-                </tr>
+                <!-- Loading skeleton rows -->
+                <template v-if="loadingHistory">
+                  <tr v-for="i in 3" :key="'skeleton-' + i" class="billing-history__row--skeleton">
+                    <td><span class="billing-skeleton__inline billing-skeleton__inline--sm"></span></td>
+                    <td><span class="billing-skeleton__inline billing-skeleton__inline--badge"></span></td>
+                    <td><span class="billing-skeleton__inline billing-skeleton__inline--md"></span></td>
+                    <td><span class="billing-skeleton__inline" style="width: 50px; height: 14px"></span></td>
+                    <td><span class="billing-skeleton__inline" style="width: 60px; height: 14px"></span></td>
+                    <td><span class="billing-skeleton__inline billing-skeleton__inline--badge"></span></td>
+                  </tr>
+                </template>
+                <!-- Empty state row -->
+                <template v-else-if="paymentHistory.length === 0">
+                  <tr>
+                    <td colspan="6">
+                      <div class="billing-history__empty">
+                        <div class="billing-history__empty-icon">
+                          <Receipt />
+                        </div>
+                        <p class="billing-history__empty-title">No payment history yet</p>
+                        <p class="billing-history__empty-subtitle">Your transactions will appear here</p>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+                <!-- Actual data rows -->
+                <template v-else>
+                  <tr v-for="payment in paymentHistory" :key="payment.id">
+                    <td class="billing-history__cell--date">{{ formatDate(payment.date) }}</td>
+                    <td>
+                      <span
+                        class="billing-history__type"
+                        :class="
+                          payment.type === 'subscription'
+                            ? 'billing-history__type--sub'
+                            : 'billing-history__type--credit'
+                        "
+                      >
+                        {{ payment.type === 'subscription' ? 'Subscription' : 'Credits' }}
+                      </span>
+                    </td>
+                    <td class="billing-history__cell--desc">{{ payment.description }}</td>
+                    <td class="billing-history__cell--amount">${{ payment.amount.toFixed(2) }}</td>
+                    <td class="billing-history__cell--method">
+                      <CreditCard v-if="payment.method === 'stripe'" />
+                      <Wallet v-else />
+                      <span>{{ payment.method }}</span>
+                    </td>
+                    <td>
+                      <span class="billing-history__status" :class="getStatusClass(payment.status)">
+                        {{ payment.status }}
+                      </span>
+                    </td>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>
@@ -1628,6 +1669,18 @@
     margin-bottom: 1.25rem;
   }
 
+  .billing-tier__credits--skeleton {
+    background-color: transparent;
+    border-color: var(--sidebar-border);
+    padding: 0;
+    height: 46px;
+    overflow: hidden;
+  }
+
+  .billing-tier__credits--skeleton .billing-skeleton__inline {
+    border-radius: 8px;
+  }
+
   .billing-tier__credits-icon {
     width: 16px;
     height: 16px;
@@ -1674,6 +1727,11 @@
     height: 15px;
     color: #34d399;
     flex-shrink: 0;
+  }
+
+  .billing-tier__feature-icon--muted {
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
   }
 
   .billing-tier__btn {
@@ -1768,26 +1826,6 @@
     overflow: hidden;
   }
 
-  .billing-history__loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 3rem;
-    color: var(--sidebar-text-muted);
-    font-size: 0.875rem;
-  }
-
-  .billing-history__spinner {
-    width: 32px;
-    height: 32px;
-    border: 2px solid var(--sidebar-border);
-    border-top-color: var(--sidebar-accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
   .billing-history__empty {
     display: flex;
     flex-direction: column;
@@ -1857,6 +1895,10 @@
 
   .billing-history__table tbody tr:hover {
     background-color: var(--sidebar-hover);
+  }
+
+  .billing-history__row--skeleton:hover {
+    background-color: transparent;
   }
 
   .billing-history__table td {
@@ -2243,6 +2285,42 @@
   .billing-skeleton__line--xl {
     height: 36px;
     width: 40%;
+  }
+
+  /* Inline skeleton loaders for text placeholders */
+  .billing-skeleton__inline {
+    display: inline-block;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+    vertical-align: middle;
+  }
+
+  .billing-skeleton__inline--sm {
+    height: 14px;
+    width: 100px;
+  }
+
+  .billing-skeleton__inline--md {
+    height: 16px;
+    width: 140px;
+  }
+
+  .billing-skeleton__inline--lg {
+    height: 24px;
+    width: 120px;
+  }
+
+  .billing-skeleton__inline--xl {
+    height: 36px;
+    width: 80px;
+  }
+
+  .billing-skeleton__inline--badge {
+    height: 22px;
+    width: 60px;
+    border-radius: 5px;
   }
 
   .billing-skeleton__box {
