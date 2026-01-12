@@ -240,8 +240,48 @@ const router = createRouter({
       children: [
         {
           path: '',
-          name: 'admin-home',
-          component: () => import('@/pages/Admin.vue'),
+          name: 'admin-hub',
+          component: () => import('@/pages/admin/AdminHub.vue'),
+        },
+        {
+          path: 'users',
+          name: 'admin-users',
+          component: () => import('@/pages/admin/AdminUsers.vue'),
+        },
+        {
+          path: 'organizations',
+          name: 'admin-organizations',
+          component: () => import('@/pages/admin/AdminOrganizations.vue'),
+        },
+        {
+          path: 'bug-reports',
+          name: 'admin-bug-reports',
+          component: () => import('@/pages/admin/AdminBugReports.vue'),
+        },
+        {
+          path: 'ai-usage',
+          name: 'admin-ai-usage',
+          component: () => import('@/pages/admin/AdminAiUsage.vue'),
+        },
+        {
+          path: 'analytics',
+          name: 'admin-analytics',
+          component: () => import('@/pages/admin/AdminAnalytics.vue'),
+        },
+        {
+          path: 'beta-codes',
+          name: 'admin-beta-codes',
+          component: () => import('@/pages/admin/AdminBetaCodes.vue'),
+        },
+        {
+          path: 'waitlist',
+          name: 'admin-waitlist',
+          component: () => import('@/pages/admin/AdminWaitlist.vue'),
+        },
+        {
+          path: 'settings',
+          name: 'admin-settings',
+          component: () => import('@/pages/admin/AdminSettings.vue'),
         },
       ],
     },

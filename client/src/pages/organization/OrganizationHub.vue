@@ -617,7 +617,6 @@
     flex-shrink: 0;
     margin-left: auto;
     padding-left: 0.75rem;
-    border-left: 1px solid var(--sidebar-border);
     min-width: 48px;
   }
 

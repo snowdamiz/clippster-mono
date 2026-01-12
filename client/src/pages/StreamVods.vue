@@ -1361,8 +1361,8 @@
   }
 
   .vod-card:hover {
-    border-color: rgba(255, 255, 255, 0.2);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
     transform: scale(1.02);
   }
 
@@ -1371,6 +1371,7 @@
     inset: 0;
     background-size: cover;
     background-position: center;
+    background-repeat: no-repeat;
     z-index: 0;
   }
 
@@ -1378,7 +1379,9 @@
     position: absolute;
     inset: 0;
     z-index: 1;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.3) 40%, rgba(0, 0, 0, 0.1) 100%);
+    background:
+      linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.7) 35%, rgba(0, 0, 0, 0.3) 60%, transparent 100%),
+      linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 0%, transparent 40%);
     pointer-events: none;
   }
 
@@ -1389,61 +1392,63 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.375rem;
-    z-index: 5;
+    z-index: 15;
   }
 
   .vod-card__badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.3125rem 0.5rem;
-    background-color: rgba(255, 255, 255, 0.1);
+    gap: 0.3rem;
+    padding: 0.3rem 0.625rem;
     backdrop-filter: blur(8px);
-    border-radius: 5px;
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: white;
     text-transform: uppercase;
     letter-spacing: 0.02em;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .vod-card__badge--pumpfun {
-    background-color: rgba(16, 185, 129, 0.25);
-    color: #6ee7b7;
+    background-color: rgba(16, 185, 129, 0.95);
+    border: 1px solid rgba(16, 185, 129, 0.5);
   }
 
   .vod-card__badge--kick {
-    background-color: rgba(83, 252, 24, 0.2);
-    color: #a3e635;
+    background-color: rgba(83, 252, 24, 0.9);
+    border: 1px solid rgba(83, 252, 24, 0.5);
+    color: #000;
   }
 
   .vod-card__badge--twitch {
-    background-color: rgba(145, 70, 255, 0.25);
-    color: #c4b5fd;
+    background-color: rgba(145, 70, 255, 0.95);
+    border: 1px solid rgba(145, 70, 255, 0.5);
   }
 
   .vod-card__badge--youtube {
-    background-color: rgba(220, 38, 38, 0.25);
-    color: #fca5a5;
+    background-color: rgba(220, 38, 38, 0.95);
+    border: 1px solid rgba(220, 38, 38, 0.5);
   }
 
   .vod-card__badge--duration {
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(139, 92, 246, 0.95);
+    border: 1px solid rgba(139, 92, 246, 0.5);
   }
 
   .vod-card__badge-icon {
-    width: 10px;
-    height: 10px;
+    width: 11px;
+    height: 11px;
     filter: brightness(0) invert(1);
   }
 
   .vod-card__badge--kick .vod-card__badge-icon {
-    filter: none;
+    filter: brightness(0);
   }
 
   .vod-card__badge-icon-svg {
-    width: 10px;
-    height: 10px;
+    width: 11px;
+    height: 11px;
   }
 
   .vod-card__actions {
@@ -1453,7 +1458,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    background-color: rgba(0, 0, 0, 0.4);
+    background-color: rgba(0, 0, 0, 0.5);
     opacity: 0;
     transition: opacity 200ms ease;
     z-index: 10;
@@ -1467,26 +1472,25 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
+    padding: 0.5rem;
     background-color: rgba(255, 255, 255, 0.9);
     border: none;
-    border-radius: 50%;
+    border-radius: 9999px;
     color: #1f2937;
     cursor: pointer;
     transition: all 150ms ease;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   }
 
   .vod-card__action-btn:hover {
     background-color: white;
     transform: scale(1.1);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   }
 
   .vod-card__action-icon {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
   }
 
   .vod-card__bottom {
@@ -1496,30 +1500,44 @@
     right: 0;
     z-index: 5;
     padding: 1rem;
+    padding-top: 7rem;
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.95) 0%,
+      rgba(0, 0, 0, 0.8) 40%,
+      rgba(0, 0, 0, 0.4) 70%,
+      transparent 100%
+    );
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
   }
 
   .vod-card__name {
-    font-size: 0.9375rem;
+    font-size: 1rem;
     font-weight: 700;
     color: white;
     margin: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
     line-height: 1.3;
+    transition: color 150ms ease;
+  }
+
+  .vod-card:hover .vod-card__name {
+    color: rgba(255, 255, 255, 0.9);
   }
 
   .vod-card__meta {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.7);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   }
 
   .vod-card__meta-dot {
@@ -1527,6 +1545,7 @@
     height: 3px;
     border-radius: 50%;
     background-color: rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
   }
 
   /* Skeleton Card */

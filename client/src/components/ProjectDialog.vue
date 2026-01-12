@@ -63,11 +63,11 @@
                 </div>
               </div>
 
-              <!-- Video Selection -->
-              <div class="project-section">
+              <!-- Video Selection (only for new projects) -->
+              <div v-if="!isEdit" class="project-section">
                 <div class="project-section__header">
                   <h3 class="project-section__title">Source Videos</h3>
-                  <span v-if="!isEdit" class="project-section__required">Required</span>
+                  <span class="project-section__required">Required</span>
                 </div>
 
                 <!-- Selected Videos List -->
