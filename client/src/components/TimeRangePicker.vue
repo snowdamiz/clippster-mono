@@ -12,7 +12,7 @@
         <div class="w-full h-2 bg-muted rounded-full relative">
           <!-- Selected range -->
           <div
-            class="absolute h-full bg-purple-500 rounded-full"
+            class="absolute h-full rounded-full slider-track"
             :style="{
               left: `${(startTime / totalDuration) * 100}%`,
               right: `${100 - (endTime / totalDuration) * 100}%`,
@@ -22,7 +22,7 @@
 
         <!-- Draggable handles -->
         <div
-          class="absolute w-4 h-4 bg-purple-600 rounded-full border-2 border-white shadow-lg cursor-grab active:cursor-grabbing z-40"
+          class="absolute w-4 h-4 rounded-full border-2 border-white shadow-lg cursor-grab active:cursor-grabbing z-40 slider-handle"
           :style="{
             left: `calc(${(startTime / totalDuration) * 100}% - 8px)`,
             top: '-4px',
@@ -32,7 +32,7 @@
         ></div>
 
         <div
-          class="absolute w-4 h-4 bg-purple-600 rounded-full border-2 border-white shadow-lg cursor-grab active:cursor-grabbing z-40"
+          class="absolute w-4 h-4 rounded-full border-2 border-white shadow-lg cursor-grab active:cursor-grabbing z-40 slider-handle"
           :style="{
             left: `calc(${(endTime / totalDuration) * 100}% - 8px)`,
             top: '-4px',
@@ -248,12 +248,23 @@
 </script>
 
 <style scoped>
+  /* Slider track - uses accent color */
+  .slider-track {
+    background-color: var(--sidebar-accent, #06b6d4);
+  }
+
+  /* Slider handles - uses accent color */
+  .slider-handle {
+    background-color: var(--sidebar-accent, #06b6d4);
+    transition: transform 150ms ease;
+  }
+
   /* Handle hover and active states */
-  .w-4:hover {
+  .slider-handle:hover {
     transform: scale(1.1);
   }
 
-  .w-4:active {
+  .slider-handle:active {
     transform: scale(1.2);
   }
 </style>

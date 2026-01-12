@@ -1,149 +1,140 @@
 <template>
   <Teleport to="body">
-    <div v-if="modelValue" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div
-        ref="dialogElementRef"
-        class="bg-card rounded-md w-full h-full border border-border shadow-2xl"
-        style="margin: 30px; margin-top: 60px; max-height: calc(100vh - 80px); max-width: calc(100vw - 60px)"
-      >
-        <!-- Header -->
-        <div
-          class="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-gradient-to-r from-[#0a0a0a] via-[#0d0d0d] to-[#0a0a0a] rounded-t-lg"
-        >
-          <div class="flex items-center gap-3 min-w-0">
-            <div
-              class="w-6 h-6 rounded-sm bg-gradient-to-br from-violet-500/20 to-purple-600/20 border border-violet-500/30 flex items-center justify-center"
-            >
-              <Film class="h-3 w-3 text-violet-400" />
+    <Transition name="modal">
+      <div v-if="modelValue" class="workspace-dialog__overlay" @click.self="close">
+        <Transition name="dialog" appear>
+          <div v-if="modelValue" class="workspace-dialog" role="dialog" aria-modal="true">
+            <!-- Header -->
+            <div class="workspace-dialog__header">
+              <div class="workspace-dialog__header-left">
+                <div class="workspace-dialog__header-icon">
+                  <Film :size="14" />
+                </div>
+                <h2 class="workspace-dialog__title" :title="project?.name || 'New Project'">
+                  {{ project?.name || 'New Project' }}
+                </h2>
+              </div>
+              <button class="workspace-dialog__close" @click="close" title="Close (Esc)">
+                <X :size="16" />
+              </button>
             </div>
-            <div class="flex flex-col">
-              <h2 class="text-sm font-semibold text-foreground tracking-tight truncate">
-                {{ project?.name || 'New Project' }}
-              </h2>
+
+            <!-- Main Content Area -->
+            <div class="workspace-dialog__content">
+              <!-- Left Column: Video Player & Controls -->
+              <div
+                ref="videoPlayerSectionRef"
+                class="workspace-dialog__player-column"
+                :class="{ 'workspace-dialog__player-column--fullscreen': isFullscreen }"
+              >
+                <!-- Video Player Container -->
+                <div class="workspace-dialog__video-wrapper">
+                  <VideoPlayer
+                    :video-src="videoSrc"
+                    :video-loading="videoLoading"
+                    :video-error="videoError"
+                    :is-playing="isPlaying"
+                    :aspect-ratio="selectedAspectRatio"
+                    :focal-point="currentFocalPoint"
+                    :watermark-settings="watermarkSettings"
+                    :watermark-data="currentWatermarkData"
+                    @togglePlayPause="togglePlayPause"
+                    @timeUpdate="onTimeUpdate"
+                    @loadedMetadata="onLoadedMetadata"
+                    @videoEnded="onVideoEnded"
+                    @videoError="onVideoError"
+                    @loadStart="onLoadStart"
+                    @canPlay="onCanPlay"
+                    @retryLoad="loadVideoForProject"
+                    @videoElementReady="onVideoElementReady"
+                    @watermarkIdChange="onWatermarkIdChange"
+                  />
+                </div>
+
+                <!-- Video Controls Bar -->
+                <VideoControls
+                  :video-src="videoSrc"
+                  :video-loading="videoLoading"
+                  :is-playing="isPlaying"
+                  :current-time="currentTime"
+                  :duration="duration"
+                  :volume="volume"
+                  :is-muted="isMuted"
+                  :is-fullscreen="isFullscreen"
+                  @togglePlayPause="togglePlayPause"
+                  @toggleMute="toggleMute"
+                  @updateVolume="updateVolume"
+                  @goToBeginning="goToBeginning"
+                  @toggleFullscreen="toggleFullscreen"
+                  @seekTo="seekToTime"
+                />
+              </div>
+
+              <!-- Right Column: Media Panel -->
+              <div class="workspace-dialog__media-column">
+                <MediaPanel
+                  ref="mediaPanelRef"
+                  :is-generating="clipGenerationInProgress"
+                  :generation-progress="clipProgress"
+                  :generation-stage="clipStage"
+                  :generation-message="clipMessage"
+                  :generation-error="clipError"
+                  :project-id="project?.id"
+                  :hovered-timeline-clip-id="hoveredTimelineClipId"
+                  :is-playing-segments="isPlayingSegments"
+                  :playing-clip-id="getCurrentPlayingClipId()"
+                  :video-duration="duration"
+                  :current-time="currentTime"
+                  :aspect-ratio="selectedAspectRatio"
+                  :creator-default-intro="creatorDefaultIntro"
+                  :creator-default-outro="creatorDefaultOutro"
+                  @detectClips="onDetectClips"
+                  @cancelDetection="onCancelDetection"
+                  @clipHover="onClipHover"
+                  @scrollToTimeline="onScrollToTimeline"
+                  @deleteClip="onDeleteClip"
+                  @playClip="onPlayClip"
+                  @seekVideo="onSeekVideo"
+                  @watermarkSettingsChanged="onWatermarkSettingsChanged"
+                  @editClip="onEditClip"
+                  @addClip="onAddClip"
+                />
+              </div>
             </div>
-          </div>
-          <button
-            @click="close"
-            class="p-2 hover:bg-white/5 rounded-lg transition-all duration-200 group"
-            title="Close (Esc)"
-          >
-            <X class="h-4 w-4 text-foreground/50 group-hover:text-foreground/90 transition-colors" />
-          </button>
-        </div>
-        <!-- Main Content Area -->
-        <div class="flex flex-col" style="height: calc(100% - 22px); min-height: 0">
-          <!-- Top Row: Video Player, Transcript, and Clips -->
-          <div
-            class="flex min-h-0 border-b border-border"
-            style="flex: 1; overflow: hidden; max-height: calc(100% - 170px)"
-          >
-            <!-- Video Player Section -->
-            <div
-              ref="videoPlayerSectionRef"
-              class="w-3/5 min-w-0 p-5 border-r border-border/40 flex flex-col bg-gradient-to-br from-black/20 to-transparent"
-              :class="{ 'fullscreen-player': isFullscreen }"
-            >
-              <!-- Video Player Container -->
-              <VideoPlayer
+
+            <!-- Timeline Section -->
+            <div class="workspace-dialog__timeline">
+              <Timeline
+                ref="timelineRef"
                 :video-src="videoSrc"
-                :video-loading="videoLoading"
-                :video-error="videoError"
-                :is-playing="isPlaying"
-                :aspect-ratio="selectedAspectRatio"
-                :focal-point="currentFocalPoint"
-                :watermark-settings="watermarkSettings"
-                :watermark-data="currentWatermarkData"
-                @togglePlayPause="togglePlayPause"
-                @timeUpdate="onTimeUpdate"
-                @loadedMetadata="onLoadedMetadata"
-                @videoEnded="onVideoEnded"
-                @videoError="onVideoError"
-                @loadStart="onLoadStart"
-                @canPlay="onCanPlay"
-                @retryLoad="loadVideoForProject"
-                @videoElementReady="onVideoElementReady"
-                @watermarkIdChange="onWatermarkIdChange"
-              />
-              <!-- Video Controls Bar -->
-              <VideoControls
-                :video-src="videoSrc"
-                :video-loading="videoLoading"
-                :is-playing="isPlaying"
                 :current-time="currentTime"
                 :duration="duration"
-                :volume="volume"
-                :is-muted="isMuted"
-                :is-fullscreen="isFullscreen"
-                @togglePlayPause="togglePlayPause"
-                @toggleMute="toggleMute"
-                @updateVolume="updateVolume"
-                @goToBeginning="goToBeginning"
-                @toggleFullscreen="toggleFullscreen"
-                @seekTo="seekToTime"
-              />
-            </div>
-            <!-- Right Side: Media Section -->
-            <div class="w-2/5 min-w-0 flex flex-col flex-1 bg-gradient-to-b from-transparent to-black/10">
-              <!-- Media Section -->
-              <MediaPanel
-                ref="mediaPanelRef"
-                :is-generating="clipGenerationInProgress"
-                :generation-progress="clipProgress"
-                :generation-stage="clipStage"
-                :generation-message="clipMessage"
-                :generation-error="clipError"
-                :project-id="project?.id"
+                :timeline-hover-time="timelineHoverTime"
+                :timeline-hover-position="timelineHoverPosition"
+                :clips="timelineClips"
+                :hovered-clip-id="hoveredClipId"
                 :hovered-timeline-clip-id="hoveredTimelineClipId"
-                :is-playing-segments="isPlayingSegments"
-                :playing-clip-id="getCurrentPlayingClipId()"
-                :video-duration="duration"
-                :current-time="currentTime"
-                :aspect-ratio="selectedAspectRatio"
-                :creator-default-intro="creatorDefaultIntro"
-                :creator-default-outro="creatorDefaultOutro"
-                @detectClips="onDetectClips"
-                @cancelDetection="onCancelDetection"
-                @clipHover="onClipHover"
-                @scrollToTimeline="onScrollToTimeline"
-                @deleteClip="onDeleteClip"
-                @playClip="onPlayClip"
-                @seekVideo="onSeekVideo"
-                @watermarkSettingsChanged="onWatermarkSettingsChanged"
+                :currently-playing-clip-id="currentlyPlayingClipId"
+                :project-id="project?.id"
+                @seekTimeline="seekTimeline"
+                @timelineTrackHover="onTimelineTrackHover"
+                @timelineMouseLeave="onTimelineMouseLeave"
+                @timelineClipHover="onTimelineClipHover"
+                @timelineSegmentClick="onTimelineSegmentClick"
+                @scrollToMediaPanel="onScrollToMediaPanel"
+                @zoomChanged="handleTimelineZoomChanged"
+                @segmentUpdated="onSegmentUpdated"
+                @refreshClipsData="onRefreshClipsData"
+                @playFromTime="onPlayFromTime"
                 @editClip="onEditClip"
-                @addClip="onAddClip"
               />
             </div>
           </div>
-          <!-- Bottom Row: Timeline -->
-          <Timeline
-            ref="timelineRef"
-            :video-src="videoSrc"
-            :current-time="currentTime"
-            :duration="duration"
-            :timeline-hover-time="timelineHoverTime"
-            :timeline-hover-position="timelineHoverPosition"
-            :clips="timelineClips"
-            :hovered-clip-id="hoveredClipId"
-            :hovered-timeline-clip-id="hoveredTimelineClipId"
-            :currently-playing-clip-id="currentlyPlayingClipId"
-            :project-id="project?.id"
-            :dialog-height="dialogHeight"
-            @seekTimeline="seekTimeline"
-            @timelineTrackHover="onTimelineTrackHover"
-            @timelineMouseLeave="onTimelineMouseLeave"
-            @timelineClipHover="onTimelineClipHover"
-            @timelineSegmentClick="onTimelineSegmentClick"
-            @scrollToMediaPanel="onScrollToMediaPanel"
-            @zoomChanged="handleTimelineZoomChanged"
-            @segmentUpdated="onSegmentUpdated"
-            @refreshClipsData="onRefreshClipsData"
-            @playFromTime="onPlayFromTime"
-            @editClip="onEditClip"
-          />
-        </div>
+        </Transition>
       </div>
-    </div>
+    </Transition>
   </Teleport>
+
   <!-- Progress Modal (for error states or detailed view) -->
   <ClipGenerationProgress
     :visible="showProgress"
@@ -155,6 +146,7 @@
     :can-close="!clipGenerationInProgress"
     @close="closeProgress"
   />
+
   <!-- Delete Confirmation Modal -->
   <ConfirmationModal
     :show="showDeleteDialog"
@@ -165,6 +157,7 @@
     @close="handleDeleteDialogClose"
     @confirm="deleteClipConfirmed"
   />
+
   <!-- Clip Detection Confirmation Dialog -->
   <ClipDetectionConfirmDialog
     :model-value="showDetectConfirmDialog"
@@ -173,7 +166,8 @@
     @update:model-value="showDetectConfirmDialog = $event"
     @confirm="onDetectClipsConfirmed"
   />
-  <!-- Clip Editor Dialog -->
+
+  <!-- Clip Editor Dialog (always in video editor mode) -->
   <ClipEditorDialog
     v-model="showClipEditorDialog"
     :clip-id="clipEditorClipId"
@@ -182,6 +176,9 @@
     :clip-end-time="clipEditorEndTime"
     :clip-title="clipEditorTitle"
     :clip-segments="clipEditorSegments"
+    :editor-mode="true"
+    :editor-project-id="clipEditorProjectId"
+    :editor-project-name="clipEditorProjectName"
     :creator-watermark-id="watermarkSettings.enabled ? watermarkSettings.watermarkId : null"
     :creator-watermark-settings="
       watermarkSettings.enabled && watermarkSettings.perRatioSettings
@@ -191,48 +188,18 @@
     :creator-default-intro="creatorDefaultIntro"
     :creator-default-outro="creatorDefaultOutro"
     @save="onClipEditorSave"
+    @editor-save="onClipEditorSave"
+  />
+
+  <!-- Existing Project Dialog -->
+  <ExistingProjectDialog
+    :show="showExistingProjectDialog"
+    :existing-project="existingProjectForClip"
+    @open-existing="onOpenExistingProject"
+    @create-new="onCreateNewProject"
+    @cancel="onExistingProjectCancel"
   />
 </template>
-
-<style scoped>
-  /* Backdrop blur effects */
-  .backdrop-blur-sm {
-    backdrop-filter: blur(4px);
-  }
-
-  /* Smooth transitions */
-  .transition-colors {
-    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 150ms;
-  }
-
-  /* Ensure proper z-index layering */
-  .z-50 {
-    z-index: 50;
-  }
-
-  /* Fullscreen player styles */
-  .fullscreen-player {
-    position: fixed !important;
-    inset: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: none !important;
-    max-height: none !important;
-    z-index: 9999 !important;
-    background: #000 !important;
-    padding: 2rem !important;
-    border: none !important;
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: center !important;
-  }
-
-  .fullscreen-player :deep(.video-crop-container) {
-    max-height: calc(100vh - 8rem) !important;
-  }
-</style>
 
 <script setup lang="ts">
   import { ref, watch, computed, nextTick, onMounted, onUnmounted } from 'vue';
@@ -252,6 +219,7 @@
     getOrCreateManualSession,
   } from '@/services/database';
   import { getWatermarkImage } from '@/services/database/watermarks';
+  import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type { WatermarkSettings } from '@/types';
@@ -263,6 +231,8 @@
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
   import ClipEditorDialog from './clip-editor/ClipEditorDialog.vue';
+  import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
+  import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
@@ -315,6 +285,21 @@
   const clipEditorEndTime = ref(0);
   const clipEditorTitle = ref('');
   const clipEditorSegments = ref<{ start_time: number; end_time: number }[]>([]);
+  // Video editor mode state (always true now - clip editor mode is removed)
+  const clipEditorProjectId = ref<string | null>(null);
+  const clipEditorProjectName = ref('');
+  const isCreatingProject = ref(false);
+
+  // Existing project dialog state (shown when clip has been edited before)
+  const showExistingProjectDialog = ref(false);
+  const existingProjectForClip = ref<VideoEditorProject | null>(null);
+  const pendingClipToEdit = ref<{
+    clipId: string;
+    startTime: number;
+    endTime: number;
+    title: string;
+    segments: { start_time: number; end_time: number }[];
+  } | null>(null);
 
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
@@ -329,9 +314,6 @@
   // Component refs for scrolling
   const mediaPanelRef = ref<InstanceType<typeof MediaPanel> | null>(null);
   const timelineRef = ref<InstanceType<typeof Timeline> | null>(null);
-
-  // Dialog element ref for height tracking
-  const dialogElementRef = ref<HTMLElement | null>(null);
 
   // Video player section ref for fullscreen
   const videoPlayerSectionRef = ref<HTMLElement | null>(null);
@@ -415,14 +397,6 @@
       transcriptData.value.whisperSegments &&
       transcriptData.value.whisperSegments.length > 0
     );
-  });
-
-  // Computed property for dialog height
-  const dialogHeight = computed(() => {
-    if (!dialogElementRef.value || !props.modelValue) return null;
-
-    const rect = dialogElementRef.value.getBoundingClientRect();
-    return rect.height;
   });
 
   // Initialize progress socket
@@ -1704,7 +1678,7 @@
   }
 
   // Function to open the clip editor dialog
-  function onEditClip(clipId: string) {
+  async function onEditClip(clipId: string) {
     // Find the clip in our local data
     const clip = timelineClips.value.find((c: any) => c.id === clipId);
     if (!clip) {
@@ -1721,34 +1695,150 @@
       endTime = Math.max(...clip.segments.map((s: any) => s.end_time));
     }
 
-    // Set the editor state
-    clipEditorClipId.value = clipId;
-    clipEditorStartTime.value = startTime;
-    clipEditorEndTime.value = endTime;
-    clipEditorTitle.value = clip.title || 'Untitled Clip';
-
-    // Pass the clip's segments if it has multiple segments
+    // Build segments array
+    let segments: { start_time: number; end_time: number }[];
     if (clip.segments && clip.segments.length > 0) {
-      clipEditorSegments.value = clip.segments.map((s: any) => ({
+      segments = clip.segments.map((s: any) => ({
         start_time: s.start_time,
         end_time: s.end_time,
       }));
     } else {
-      // Single segment clip - create a segment from the clip's start/end times
-      clipEditorSegments.value = [
-        {
-          start_time: startTime,
-          end_time: endTime,
-        },
-      ];
+      segments = [{ start_time: startTime, end_time: endTime }];
     }
 
-    // Open the dialog
-    showClipEditorDialog.value = true;
+    const clipTitle = clip.title || 'Untitled Clip';
+
+    // Check if there are existing video editor projects for this clip
+    try {
+      const existingProjects = await getVideoEditorProjectsForClip(clipId);
+
+      if (existingProjects.length > 0) {
+        // Show the existing project dialog
+        existingProjectForClip.value = existingProjects[0]; // Use most recently updated
+        pendingClipToEdit.value = {
+          clipId,
+          startTime,
+          endTime,
+          title: clipTitle,
+          segments,
+        };
+        showExistingProjectDialog.value = true;
+        return;
+      }
+    } catch (error) {
+      console.warn('[ProjectWorkspaceDialog] Failed to check for existing projects:', error);
+      // Continue to create a new project
+    }
+
+    // No existing project - create a new video editor project
+    await openClipInNewProject(clipId, clipTitle, startTime, endTime, segments);
+  }
+
+  // Open clip in a new video editor project
+  async function openClipInNewProject(
+    clipId: string,
+    clipTitle: string,
+    startTime: number,
+    endTime: number,
+    segments: { start_time: number; end_time: number }[]
+  ) {
+    isCreatingProject.value = true;
+
+    try {
+      const result = await createVideoEditorProjectFromClip({
+        clipId,
+        clipTitle,
+        videoSrc: videoSrc.value,
+        clipStartTime: startTime,
+        clipEndTime: endTime,
+        clipSegments: segments,
+      });
+
+      // Set the editor state
+      clipEditorClipId.value = clipId;
+      clipEditorStartTime.value = startTime;
+      clipEditorEndTime.value = endTime;
+      clipEditorTitle.value = clipTitle;
+      clipEditorSegments.value = segments;
+      clipEditorProjectId.value = result.projectId;
+      clipEditorProjectName.value = result.projectName;
+
+      // Close the workspace dialog first, then open the clip editor
+      close();
+
+      // Open the clip editor dialog in editor mode
+      nextTick(() => {
+        showClipEditorDialog.value = true;
+      });
+
+      console.log(
+        `[ProjectWorkspaceDialog] Opening clip editor for "${clipTitle}" in video project ${result.projectId}`
+      );
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to create video editor project:', error);
+      showError('Failed to Open Editor', 'Could not create video editor project. Please try again.');
+    } finally {
+      isCreatingProject.value = false;
+    }
+  }
+
+  // Open clip in an existing video editor project
+  async function openClipInExistingProject(project: VideoEditorProject) {
+    const pending = pendingClipToEdit.value;
+    if (!pending) return;
+
+    // Set the editor state
+    clipEditorClipId.value = pending.clipId;
+    clipEditorStartTime.value = pending.startTime;
+    clipEditorEndTime.value = pending.endTime;
+    clipEditorTitle.value = pending.title;
+    clipEditorSegments.value = pending.segments;
+    clipEditorProjectId.value = project.id;
+    clipEditorProjectName.value = project.name;
+
+    // Clear pending state
+    pendingClipToEdit.value = null;
+    showExistingProjectDialog.value = false;
+    existingProjectForClip.value = null;
+
+    // Close the workspace dialog first, then open the clip editor
+    close();
+
+    // Open the clip editor dialog in editor mode
+    nextTick(() => {
+      showClipEditorDialog.value = true;
+    });
 
     console.log(
-      `[ProjectWorkspaceDialog] Opening clip editor for "${clip.title}" with ${clipEditorSegments.value.length} segments`
+      `[ProjectWorkspaceDialog] Opening clip editor for "${pending.title}" in existing project ${project.id}`
     );
+  }
+
+  // Handle existing project dialog - open existing
+  function onOpenExistingProject() {
+    if (existingProjectForClip.value) {
+      openClipInExistingProject(existingProjectForClip.value);
+    }
+  }
+
+  // Handle existing project dialog - create new
+  async function onCreateNewProject() {
+    const pending = pendingClipToEdit.value;
+    if (!pending) return;
+
+    showExistingProjectDialog.value = false;
+    existingProjectForClip.value = null;
+
+    await openClipInNewProject(pending.clipId, pending.title, pending.startTime, pending.endTime, pending.segments);
+
+    pendingClipToEdit.value = null;
+  }
+
+  // Handle existing project dialog - cancel
+  function onExistingProjectCancel() {
+    showExistingProjectDialog.value = false;
+    existingProjectForClip.value = null;
+    pendingClipToEdit.value = null;
   }
 
   // Function to handle clip editor save
@@ -2022,3 +2112,240 @@
     }
   });
 </script>
+
+<style scoped>
+  /* ========================================
+     WORKSPACE DIALOG STYLES
+     ======================================== */
+
+  /* ===== Overlay ===== */
+  .workspace-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  /* ===== Dialog Container ===== */
+  .workspace-dialog {
+    background-color: var(--sidebar-surface, #0c0c0c);
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    border-radius: 16px;
+    width: calc(100% - 60px);
+    height: calc(100% - 80px);
+    margin: 60px 30px 33px 30px;
+    max-width: 1800px;
+    max-height: 950px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow:
+      0 25px 80px rgba(0, 0, 0, 0.6),
+      0 0 1px rgba(255, 255, 255, 0.1);
+  }
+
+  /* ===== Header (Condensed) ===== */
+  .workspace-dialog__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    border-bottom: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    flex-shrink: 0;
+  }
+
+  .workspace-dialog__header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .workspace-dialog__header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: #a78bfa;
+    flex-shrink: 0;
+  }
+
+  .workspace-dialog__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text, #f4f4f5);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+
+  .workspace-dialog__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted, #71717a);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .workspace-dialog__close:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text, #f4f4f5);
+  }
+
+  /* ===== Main Content Area ===== */
+  .workspace-dialog__content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* ===== Player Column ===== */
+  .workspace-dialog__player-column {
+    width: 60%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem;
+    border-right: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, transparent 100%);
+  }
+
+  .workspace-dialog__player-column--fullscreen {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    z-index: 99999 !important;
+    background: #000 !important;
+    padding: 2rem !important;
+    border: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+  }
+
+  .workspace-dialog__video-wrapper {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .workspace-dialog__player-column--fullscreen .workspace-dialog__video-wrapper {
+    max-height: calc(100vh - 8rem);
+  }
+
+  /* ===== Media Column ===== */
+  .workspace-dialog__media-column {
+    width: 40%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
+    overflow: hidden;
+  }
+
+  /* ===== Timeline Section ===== */
+  .workspace-dialog__timeline {
+    flex-shrink: 0;
+    border-top: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    background-color: rgba(0, 0, 0, 0.25);
+  }
+
+  /* ===== Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  /* ===== Scrollbar Styling ===== */
+  .workspace-dialog__media-column :deep(::-webkit-scrollbar) {
+    width: 6px;
+  }
+
+  .workspace-dialog__media-column :deep(::-webkit-scrollbar-track) {
+    background: transparent;
+  }
+
+  .workspace-dialog__media-column :deep(::-webkit-scrollbar-thumb) {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+  }
+
+  .workspace-dialog__media-column :deep(::-webkit-scrollbar-thumb:hover) {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* ===== Responsive Adjustments ===== */
+  @media (max-width: 1400px) {
+    .workspace-dialog__player-column {
+      width: 55%;
+    }
+
+    .workspace-dialog__media-column {
+      width: 45%;
+    }
+  }
+
+  @media (max-width: 1200px) {
+    .workspace-dialog {
+      margin: 20px;
+      width: calc(100% - 40px);
+      height: calc(100% - 40px);
+      border-radius: 12px;
+    }
+
+    .workspace-dialog__player-column {
+      width: 50%;
+      padding: 1rem;
+    }
+
+    .workspace-dialog__media-column {
+      width: 50%;
+    }
+  }
+</style>

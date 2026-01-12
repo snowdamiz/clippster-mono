@@ -6,244 +6,183 @@
     :icon="Clapperboard"
   >
     <template #actions>
-      <Button @click="openCreateDialog" class="flex items-center gap-2">
-        <Plus class="h-5 w-5" />
-        New Project
-      </Button>
+      <div class="videoeditor-header-actions">
+        <!-- Search -->
+        <div class="videoeditor-header__search">
+          <Search class="videoeditor-header__search-icon" />
+          <Input v-model="searchQuery" placeholder="Search projects..." class="videoeditor-header__search-input" />
+        </div>
+
+        <!-- Sort Filter -->
+        <CustomDropdown
+          v-model="sortBy"
+          :options="sortOptions"
+          placeholder="Sort By"
+          class="videoeditor-header__sort"
+          trigger-class="videoeditor-header__dropdown-trigger"
+        />
+
+        <!-- New Project Button -->
+        <button @click="openCreateDialog" class="videoeditor-create-btn">
+          <Plus class="videoeditor-create-btn__icon" />
+          New Project
+        </button>
+      </div>
     </template>
 
-    <!-- Loading State -->
-    <div v-if="loading" class="space-y-6">
-      <SkeletonGrid />
-    </div>
-
-    <!-- Projects Content -->
-    <div v-else-if="projects.length > 0" class="space-y-8">
-      <!-- Filter Toolbar -->
-      <div class="-mt-2 bg-card flex flex-col md:flex-row gap-4 items-center justify-between">
-        <!-- Left: Search or Selection Info -->
-        <div class="flex items-center gap-3 w-full md:w-auto">
-          <!-- Selection Controls (visible when items selected) -->
-          <div v-if="selectedProjects.size > 0" class="flex items-center gap-3">
-            <button
-              @click="confirmBulkDelete"
-              class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
-            >
-              <Trash2 class="h-4 w-4" />
-              Delete ({{ selectedProjects.size }})
-            </button>
-            <span class="text-sm text-muted-foreground">{{ selectedProjects.size }} selected</span>
-            <button @click="clearSelection" class="text-xs text-muted-foreground hover:text-foreground font-medium">
-              Clear
-            </button>
-          </div>
-
-          <!-- Search (hidden when items selected) -->
-          <div v-else class="relative w-full md:w-72">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input v-model="searchQuery" placeholder="Search projects..." class="pl-9 bg-background/50" />
-          </div>
-        </div>
-
-        <!-- Right: Sort Filter -->
-        <div class="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
-          <!-- Reset Filters Button -->
-          <button
-            v-if="searchQuery"
-            @click="searchQuery = ''"
-            class="text-xs px-2 py-1 text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-md transition-colors whitespace-nowrap font-medium flex items-center gap-1"
-          >
-            <X class="h-3 w-3" />
-            Reset
-          </button>
-
-          <!-- Sort Filter -->
-          <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort By" class="w-[160px]" />
-        </div>
+    <div class="videoeditor__content" :class="{ 'videoeditor__content--empty': !loading && projects.length === 0 }">
+      <!-- Page Heading -->
+      <div v-if="projects.length > 0 || loading" class="videoeditor__heading">
+        <h1 class="videoeditor__title">Your Editor Projects</h1>
+        <p class="videoeditor__subtitle">Create multi-source video projects with professional editing tools</p>
       </div>
 
-      <!-- Projects Grid -->
-      <div v-if="filteredProjects.length > 0" class="space-y-8">
-        <div v-for="group in groupedProjects" :key="group.dateLabel" class="space-y-4">
-          <!-- Date Header -->
-          <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">{{ group.dateLabel }}</h3>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            <div
-              v-for="project in group.projects"
-              :key="project.id"
-              class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all border border-border"
-              :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isProjectSelected(project.id) }"
-              @click="openProject(project)"
-            >
-              <!-- Selection Checkbox (visible on hover or when selected) -->
-              <div
-                class="absolute top-4 right-4 z-30 transition-opacity"
-                :class="isProjectSelected(project.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-                @click.stop="toggleProjectSelection(project.id)"
-              >
-                <div
-                  :class="[
-                    'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
-                    isProjectSelected(project.id)
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-black/60 text-white hover:bg-black/80',
-                  ]"
-                >
-                  <Check v-if="isProjectSelected(project.id)" class="w-4 h-4" />
-                </div>
-              </div>
-
-              <!-- Project Card with Sources -->
-              <template v-if="getSourceCount(project.id) > 0">
-                <!-- First source thumbnail as background -->
-                <div class="absolute inset-0 z-0">
-                  <img
-                    v-if="getSourceThumbnails(project.id)[0]"
-                    :src="getSourceThumbnails(project.id)[0] ?? undefined"
-                    class="w-full h-full object-cover"
-                  />
-                  <div v-else class="w-full h-full bg-muted flex items-center justify-center">
-                    <Film class="w-12 h-12 text-muted-foreground/40" />
-                  </div>
-                </div>
-
-                <!-- Bottom Overlay with Info -->
-                <div
-                  class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
-                >
-                  <!-- Title -->
-                  <h3
-                    class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
-                    :title="project.name"
-                  >
-                    {{ project.name }}
-                  </h3>
-
-                  <!-- Metadata Row -->
-                  <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
-                    <!-- Source count badge -->
-                    <div
-                      class="flex items-center gap-1 bg-violet-500/30 text-violet-200 px-1.5 py-0.5 rounded font-medium"
-                    >
-                      <Film class="w-3 h-3" />
-                      <span>{{ getSourceCount(project.id) }}</span>
-                    </div>
-
-                    <!-- Duration -->
-                    <span v-if="project.total_duration > 0" class="truncate">
-                      {{ formatDuration(project.total_duration) }}
-                    </span>
-
-                    <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
-
-                    <!-- Time -->
-                    <span class="truncate">{{ getRelativeTime(project.updated_at) }}</span>
-                  </div>
-                </div>
-              </template>
-
-              <!-- Empty Project State (no sources) - Original styling -->
-              <template v-else>
-                <!-- Fallback background for projects without sources -->
-                <div class="absolute inset-0 z-0 bg-muted">
-                  <div class="absolute inset-0 bg-gradient-to-br from-black/50 via-black/40 to-black/50"></div>
-                  <div class="absolute inset-0 flex items-center justify-center opacity-20">
-                    <Clapperboard class="h-16 w-16 text-foreground" />
-                  </div>
-                </div>
-
-                <!-- Bottom Overlay with Info -->
-                <div
-                  class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
-                >
-                  <!-- Title -->
-                  <h3
-                    class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
-                    :title="project.name"
-                  >
-                    {{ project.name }}
-                  </h3>
-
-                  <!-- Metadata Row -->
-                  <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
-                    <span class="truncate text-white/50">Empty project</span>
-
-                    <span class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
-
-                    <!-- Time -->
-                    <span class="truncate">{{ getRelativeTime(project.updated_at) }}</span>
-                  </div>
-                </div>
-              </template>
-
-              <!-- Hover Overlay Buttons -->
-              <div
-                class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 flex items-center justify-center gap-3"
-              >
-                <button
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Open Editor"
-                  @click.stop="openProject(project)"
-                >
-                  <Play class="h-5 w-5" />
-                </button>
-
-                <button
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Edit"
-                  @click.stop="editProject(project)"
-                >
-                  <Edit class="h-5 w-5" />
-                </button>
-
-                <button
-                  class="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-110 shadow-lg"
-                  title="Delete"
-                  @click.stop="confirmDelete(project)"
-                >
-                  <Trash2 class="h-5 w-5" />
-                </button>
-              </div>
+      <!-- Loading State -->
+      <div v-if="loading" class="videoeditor__loading">
+        <!-- Skeleton Cards Grid -->
+        <div class="videoeditor__grid">
+          <div v-for="i in 6" :key="`skeleton-${i}`" class="videoeditor-card videoeditor-card--skeleton">
+            <div class="videoeditor-card__skeleton-bg"></div>
+            <div class="videoeditor-card__bottom">
+              <div class="videoeditor-skeleton__card-title"></div>
+              <div class="videoeditor-skeleton__card-meta"></div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- No Results State -->
-      <div
-        v-if="filteredProjects.length === 0"
-        class="flex flex-col items-center justify-center py-16 text-center space-y-4"
-      >
-        <div class="bg-muted rounded-full p-4">
-          <Search class="h-8 w-8 text-muted-foreground" />
+      <!-- Projects Content -->
+      <div v-else-if="projects.length > 0" class="videoeditor__main">
+        <!-- Selection Bar (shown when items selected) -->
+        <div v-if="selectedProjects.size > 0" class="videoeditor__selection-bar">
+          <button @click="confirmBulkDelete" class="videoeditor__selection-delete">
+            <Trash2 class="videoeditor__selection-icon" />
+            Delete ({{ selectedProjects.size }})
+          </button>
+          <span class="videoeditor__selection-count">{{ selectedProjects.size }} selected</span>
+          <button @click="clearSelection" class="videoeditor__selection-clear">Clear</button>
         </div>
-        <div class="space-y-1">
-          <h3 class="font-semibold text-lg">No projects found</h3>
-          <p class="text-muted-foreground text-sm max-w-sm">
+
+        <!-- Projects Grid -->
+        <div v-if="filteredProjects.length > 0" class="videoeditor__section">
+          <div v-for="group in groupedProjects" :key="group.dateLabel" class="videoeditor__date-group">
+            <!-- Date Header -->
+            <h3 class="videoeditor__section-header">{{ group.dateLabel }}</h3>
+
+            <div class="videoeditor__grid">
+              <div
+                v-for="project in group.projects"
+                :key="project.id"
+                class="videoeditor-card"
+                :class="{ 'videoeditor-card--selected': isProjectSelected(project.id) }"
+                @click="openProject(project)"
+              >
+                <!-- Selection Checkbox (visible on hover or when selected) -->
+                <div
+                  class="videoeditor-card__checkbox"
+                  :class="{ 'videoeditor-card__checkbox--visible': isProjectSelected(project.id) }"
+                  @click.stop="toggleProjectSelection(project.id)"
+                >
+                  <div
+                    class="videoeditor-card__checkbox-inner"
+                    :class="{ 'videoeditor-card__checkbox-inner--checked': isProjectSelected(project.id) }"
+                  >
+                    <Check v-if="isProjectSelected(project.id)" class="videoeditor-card__checkbox-icon" />
+                  </div>
+                </div>
+
+                <!-- Source Count Badge -->
+                <div
+                  v-if="getSourceCount(project.id) > 0"
+                  class="videoeditor-card__badge videoeditor-card__badge--sources"
+                >
+                  <Film class="videoeditor-card__badge-icon" />
+                  <span>{{ getSourceCount(project.id) }} Sources</span>
+                </div>
+
+                <!-- Thumbnail background with vignette -->
+                <div
+                  v-if="getSourceThumbnails(project.id)[0]"
+                  class="videoeditor-card__thumbnail"
+                  :style="{ backgroundImage: `url(${getSourceThumbnails(project.id)[0]})` }"
+                >
+                  <!-- Vignette overlay -->
+                  <div class="videoeditor-card__vignette"></div>
+                </div>
+                <!-- Fallback background for projects without thumbnails -->
+                <div v-else class="videoeditor-card__thumbnail videoeditor-card__thumbnail--empty">
+                  <div class="videoeditor-card__thumbnail-gradient"></div>
+                  <div class="videoeditor-card__empty-icon">
+                    <Clapperboard class="videoeditor-card__folder-icon" />
+                  </div>
+                </div>
+
+                <!-- Bottom Overlay with Info -->
+                <div class="videoeditor-card__bottom">
+                  <!-- Title -->
+                  <h3 class="videoeditor-card__title" :title="project.name">
+                    {{ project.name }}
+                  </h3>
+
+                  <!-- Metadata Row -->
+                  <div class="videoeditor-card__meta">
+                    <!-- Duration Badge -->
+                    <div v-if="project.total_duration > 0" class="videoeditor-card__duration">
+                      <Clock class="videoeditor-card__duration-icon" />
+                      <span>{{ formatDuration(project.total_duration) }}</span>
+                    </div>
+                    <span v-else class="videoeditor-card__meta-text videoeditor-card__meta-text--muted">
+                      Empty project
+                    </span>
+
+                    <span class="videoeditor-card__dot"></span>
+
+                    <!-- Time -->
+                    <span class="videoeditor-card__meta-text">{{ getRelativeTime(project.updated_at) }}</span>
+                  </div>
+                </div>
+
+                <!-- Hover Overlay Buttons -->
+                <div class="videoeditor-card__hover-actions">
+                  <button class="videoeditor-card__action-btn" title="Open Editor" @click.stop="openProject(project)">
+                    <Play class="videoeditor-card__action-icon" />
+                  </button>
+
+                  <button class="videoeditor-card__action-btn" title="Edit Details" @click.stop="editProject(project)">
+                    <Edit class="videoeditor-card__action-icon" />
+                  </button>
+
+                  <button class="videoeditor-card__action-btn" title="Delete" @click.stop="confirmDelete(project)">
+                    <Trash2 class="videoeditor-card__action-icon" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- No Results State -->
+        <div v-if="filteredProjects.length === 0" class="videoeditor__no-results">
+          <div class="videoeditor__no-results-icon-wrapper">
+            <Search class="videoeditor__no-results-icon" />
+          </div>
+          <h3 class="videoeditor__no-results-title">No projects found</h3>
+          <p class="videoeditor__no-results-description">
             We couldn't find any projects matching your search. Try adjusting your search query.
           </p>
+          <button @click="searchQuery = ''" class="videoeditor__no-results-btn">Clear search</button>
         </div>
-        <button @click="searchQuery = ''" class="text-primary hover:underline text-sm font-medium">Clear search</button>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else class="videoeditor__empty">
+        <div class="videoeditor__empty-icon-wrapper">
+          <Clapperboard class="videoeditor__empty-icon" />
+        </div>
+        <h3 class="videoeditor__empty-title">No editor projects yet</h3>
+        <p class="videoeditor__empty-description">Create your first video editing project to get started</p>
       </div>
     </div>
-
-    <!-- Empty State -->
-    <EmptyState
-      v-else
-      title="No editor projects yet"
-      description="Create your first video editing project to get started"
-    >
-      <template #icon>
-        <Clapperboard class="h-16 w-16 text-muted-foreground" />
-      </template>
-      <template #default>
-        <Button @click="openCreateDialog" class="mt-6 flex items-center gap-2">
-          <Plus class="w-4 h-4" />
-          Create Project
-        </Button>
-      </template>
-    </EmptyState>
 
     <!-- Create/Edit Dialog -->
     <VideoEditorProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
@@ -272,12 +211,9 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, watch } from 'vue';
-  import { Clapperboard, Plus, Trash2, Search, X, Check, Play, Edit, Film } from 'lucide-vue-next';
-  import { Button } from '@/components/ui/button';
+  import { Clapperboard, Plus, Trash2, Search, Check, Play, Edit, Film, Clock } from 'lucide-vue-next';
   import { Input } from '@/components/ui/input';
   import PageLayout from '@/components/PageLayout.vue';
-  import EmptyState from '@/components/EmptyState.vue';
-  import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import VideoEditorProjectDialog from '@/components/video-editor/VideoEditorProjectDialog.vue';
@@ -288,7 +224,6 @@
     createVideoEditorProject,
     updateVideoEditorProject,
     deleteVideoEditorProject,
-    getVideoEditorSourceCount,
     getVideoEditorSourcesByProjectId,
   } from '@/services/database/video-editor-projects';
   import { getFullVideoEditorEdit } from '@/services/database/video-editor-edits';
@@ -313,7 +248,7 @@
   const projects = ref<VideoEditorProject[]>([]);
   const sourceCounts = ref<Map<string, number>>(new Map());
   const projectSources = ref<Map<string, VideoEditorSource[]>>(new Map());
-  const sourceThumbnails = ref<Map<string, (string | null)[]>>(new Map()); // projectId -> array of thumbnail data URLs (null if not available)
+  const sourceThumbnails = ref<Map<string, (string | null)[]>>(new Map());
   const projectEdits = ref<Map<string, ProjectEditInfo>>(new Map());
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const searchQuery = ref('');
@@ -472,14 +407,14 @@
                 });
                 thumbnailUrls.push(dataUrl);
               } else {
-                thumbnailUrls.push(null); // Preserve position
+                thumbnailUrls.push(null);
               }
             } catch (err) {
               console.warn('[VideoEditor] Failed to load source thumbnail:', source.id, err);
-              thumbnailUrls.push(null); // Preserve position on error
+              thumbnailUrls.push(null);
             }
           } else {
-            thumbnailUrls.push(null); // No thumbnail path for this source
+            thumbnailUrls.push(null);
           }
         }
         thumbnails.set(project.id, thumbnailUrls);
@@ -534,29 +469,8 @@
     return sourceCounts.value.get(projectId) || 0;
   }
 
-  function getThumbnailUrl(projectId: string): string | null {
-    return thumbnailCache.value.get(projectId) || null;
-  }
-
   function getSourceThumbnails(projectId: string): (string | null)[] {
     return sourceThumbnails.value.get(projectId) || [];
-  }
-
-  function getProjectEditInfo(projectId: string): ProjectEditInfo {
-    return (
-      projectEdits.value.get(projectId) || {
-        hasAudio: false,
-        hasText: false,
-        hasStickers: false,
-        hasWatermarks: false,
-        hasEffects: false,
-      }
-    );
-  }
-
-  function hasAnyEdits(projectId: string): boolean {
-    const info = getProjectEditInfo(projectId);
-    return info.hasAudio || info.hasText || info.hasStickers || info.hasWatermarks || info.hasEffects;
   }
 
   function formatDuration(seconds: number): string {
@@ -680,7 +594,697 @@
 </script>
 
 <style scoped>
-  .hover\:scale-102:hover {
+  /* ===== Content Container ===== */
+  .videoeditor__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    width: 100%;
+    flex: 1;
+  }
+
+  .videoeditor__content--empty {
+    justify-content: center;
+    align-items: center;
+  }
+
+  .videoeditor__main {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .videoeditor__loading {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* ===== Page Heading ===== */
+  .videoeditor__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .videoeditor__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .videoeditor__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Header Actions ===== */
+  .videoeditor-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .videoeditor-header__search {
+    position: relative;
+    width: 200px;
+  }
+
+  .videoeditor-header__search-icon {
+    position: absolute;
+    left: 0.625rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    pointer-events: none;
+  }
+
+  .videoeditor-header__search-input {
+    width: 100%;
+    padding-left: 2rem;
+    height: 32px;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+  }
+
+  .videoeditor-header__search-input:focus {
+    border-color: var(--sidebar-accent);
+    outline: none;
+  }
+
+  .videoeditor-header__sort {
+    width: 140px;
+    flex-shrink: 0;
+  }
+
+  /* Dropdown trigger button styling */
+  :deep(.videoeditor-header__dropdown-trigger) {
+    height: 32px !important;
+    padding: 0 0.625rem !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 6px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+  }
+
+  :deep(.videoeditor-header__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  :deep(.videoeditor-header__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.videoeditor-header__dropdown-trigger svg) {
+    width: 12px !important;
+    height: 12px !important;
+    color: var(--sidebar-text-muted) !important;
+  }
+
+  .videoeditor-create-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .videoeditor-create-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .videoeditor-create-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .videoeditor-create-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ===== Skeleton Loading States ===== */
+  .videoeditor-skeleton__card-title {
+    height: 16px;
+    width: 70%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+
+  .videoeditor-skeleton__card-meta {
+    height: 12px;
+    width: 50%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.15s;
+    border-radius: 4px;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  /* ===== Selection Bar ===== */
+  .videoeditor__selection-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.625rem 1rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .videoeditor__selection-delete {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    background-color: #ef4444;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .videoeditor__selection-delete:hover:not(:disabled) {
+    background-color: #dc2626;
+  }
+
+  .videoeditor__selection-icon {
+    width: 13px;
+    height: 13px;
+  }
+
+  .videoeditor__selection-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  .videoeditor__selection-clear {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    padding: 0.375rem 0.75rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .videoeditor__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Sections ===== */
+  .videoeditor__section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .videoeditor__date-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .videoeditor__section-header {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    padding-bottom: 0.1rem;
+  }
+
+  /* ===== Projects Grid ===== */
+  .videoeditor__grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .videoeditor__grid {
+      grid-template-columns: repeat(1, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .videoeditor__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1400px) {
+    .videoeditor__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1800px) {
+    .videoeditor__grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  @media (min-width: 2200px) {
+    .videoeditor__grid {
+      grid-template-columns: repeat(5, 1fr);
+    }
+  }
+
+  /* ===== Video Editor Card ===== */
+  .videoeditor-card {
+    position: relative;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 200ms ease;
+    aspect-ratio: 16 / 9;
+  }
+
+  .videoeditor-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
     transform: scale(1.02);
+  }
+
+  .videoeditor-card--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow:
+      0 0 0 2px var(--sidebar-accent),
+      0 8px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  .videoeditor-card--skeleton {
+    pointer-events: none;
+  }
+
+  .videoeditor-card__skeleton-bg {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
+  }
+
+  /* Checkbox */
+  .videoeditor-card__checkbox {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .videoeditor-card:hover .videoeditor-card__checkbox,
+  .videoeditor-card__checkbox--visible {
+    opacity: 1;
+  }
+
+  .videoeditor-card__checkbox-inner {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 150ms ease;
+  }
+
+  .videoeditor-card__checkbox-inner:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .videoeditor-card__checkbox-inner--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .videoeditor-card__checkbox-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Badges */
+  .videoeditor-card__badge {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .videoeditor-card__badge--sources {
+    background-color: rgba(139, 92, 246, 0.9);
+    color: white;
+  }
+
+  .videoeditor-card__badge-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* Thumbnail */
+  .videoeditor-card__thumbnail {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .videoeditor-card__vignette {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 70%);
+  }
+
+  .videoeditor-card__thumbnail--empty {
+    background-color: var(--sidebar-hover);
+  }
+
+  .videoeditor-card__thumbnail-gradient {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
+  }
+
+  /* Empty State Icons */
+  .videoeditor-card__empty-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.2;
+  }
+
+  .videoeditor-card__folder-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--sidebar-text);
+  }
+
+  /* Bottom Info */
+  .videoeditor-card__bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 1rem;
+    padding-top: 7rem;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .videoeditor-card__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    line-height: 1.3;
+    transition: color 150ms ease;
+  }
+
+  .videoeditor-card:hover .videoeditor-card__title {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .videoeditor-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    flex-wrap: wrap;
+  }
+
+  .videoeditor-card__meta-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .videoeditor-card__meta-text--muted {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .videoeditor-card__dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
+  }
+
+  /* Duration Badge */
+  .videoeditor-card__duration {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.375rem;
+    background-color: rgba(139, 92, 246, 0.2);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 4px;
+    color: #c4b5fd;
+    font-weight: 600;
+  }
+
+  .videoeditor-card__duration-icon {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* Hover Actions */
+  .videoeditor-card__hover-actions {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .videoeditor-card:hover .videoeditor-card__hover-actions {
+    opacity: 1;
+  }
+
+  .videoeditor-card__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 9999px;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .videoeditor-card__action-btn:hover {
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .videoeditor-card__action-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* ===== No Results State ===== */
+  .videoeditor__no-results {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 1rem;
+    text-align: center;
+  }
+
+  .videoeditor__no-results-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background-color: var(--sidebar-hover);
+    border-radius: 9999px;
+    margin-bottom: 1rem;
+  }
+
+  .videoeditor__no-results-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .videoeditor__no-results-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+  }
+
+  .videoeditor__no-results-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1rem;
+    max-width: 24rem;
+  }
+
+  .videoeditor__no-results-btn {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+
+  .videoeditor__no-results-btn:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+  }
+
+  /* ===== Empty State ===== */
+  .videoeditor__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .videoeditor__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .videoeditor__empty-icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .videoeditor__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .videoeditor__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Video Editor page dropdown menu styling */
+  .videoeditor-header__sort + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: videoeditorDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes videoeditorDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 </style>

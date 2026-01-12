@@ -1,0 +1,1213 @@
+<template>
+  <PageLayout
+    title="Billing & Credits"
+    description="Manage your organization's credits and view payment history"
+    :show-header="true"
+    :icon="Wallet"
+    :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Billing & Credits' }]"
+  >
+    <template #actions>
+      <Button v-if="isAdmin" @click="showBuyCreditsModal = true" class="org-billing__buy-btn">
+        <Plus class="h-4 w-4" />
+        <span>Buy Credits</span>
+      </Button>
+    </template>
+
+    <div class="org-billing">
+      <!-- Page Heading -->
+      <div class="org-billing__heading">
+        <h1 class="org-billing__title">Manage Organization Credits</h1>
+        <p class="org-billing__subtitle">
+          Monitor your credit pool, allocate to team members, and track payment history
+        </p>
+      </div>
+
+      <!-- Credit Overview Cards -->
+      <div class="org-billing__cards">
+        <!-- Pool Balance Card -->
+        <div class="org-billing__card org-billing__card--pool">
+          <div class="org-billing__card-indicator org-billing__card-indicator--pool"></div>
+          <div class="org-billing__card-inner">
+            <div class="org-billing__card-header">
+              <div class="org-billing__card-icon org-billing__card-icon--pool">
+                <Coins />
+              </div>
+              <div class="org-billing__card-header-text">
+                <h3 class="org-billing__card-title">Pool Balance</h3>
+                <p class="org-billing__card-subtitle">Available for allocation</p>
+              </div>
+            </div>
+            <div class="org-billing__card-body">
+              <div class="org-billing__card-value">
+                <span class="org-billing__card-amount org-billing__card-amount--pool">
+                  {{ credits.hoursRemaining }}
+                </span>
+                <span class="org-billing__card-unit">min</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Total Used Card -->
+        <div class="org-billing__card">
+          <div class="org-billing__card-indicator"></div>
+          <div class="org-billing__card-inner">
+            <div class="org-billing__card-header">
+              <div class="org-billing__card-icon">
+                <TrendingUp />
+              </div>
+              <div class="org-billing__card-header-text">
+                <h3 class="org-billing__card-title">Total Used</h3>
+                <p class="org-billing__card-subtitle">All time usage</p>
+              </div>
+            </div>
+            <div class="org-billing__card-body">
+              <div class="org-billing__card-value">
+                <span class="org-billing__card-amount">{{ credits.hoursUsed }}</span>
+                <span class="org-billing__card-unit">min</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- My Allocation Card -->
+        <div class="org-billing__card org-billing__card--accent">
+          <div class="org-billing__card-indicator org-billing__card-indicator--accent"></div>
+          <div class="org-billing__card-inner">
+            <div class="org-billing__card-header">
+              <div class="org-billing__card-icon org-billing__card-icon--accent">
+                <User />
+              </div>
+              <div class="org-billing__card-header-text">
+                <h3 class="org-billing__card-title">My Allocation</h3>
+                <p class="org-billing__card-subtitle">Your remaining credits</p>
+              </div>
+            </div>
+            <div class="org-billing__card-body">
+              <div class="org-billing__card-value">
+                <span class="org-billing__card-amount org-billing__card-amount--accent">
+                  {{ formatAllocation(myAllocation?.hours_remaining) }}
+                </span>
+                <span class="org-billing__card-unit">min</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Member Allocations Section (Admin Only) -->
+      <section v-if="isAdmin" class="org-billing__section">
+        <div class="org-billing__section-header">
+          <div class="org-billing__section-title-group">
+            <div class="org-billing__section-icon">
+              <Users />
+            </div>
+            <div>
+              <h2 class="org-billing__section-title">Member Allocations</h2>
+              <p class="org-billing__section-subtitle">Distribute credits to {{ members.length }} team members</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Members Table -->
+        <div class="org-billing__table-wrapper">
+          <table class="org-billing__table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th class="org-billing__table-th--right">Allocated</th>
+                <th class="org-billing__table-th--right">Used</th>
+                <th class="org-billing__table-th--right">Remaining</th>
+                <th class="org-billing__table-th--right">Add Credits</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="member in members" :key="member.id" class="org-billing__table-row">
+                <td>
+                  <div class="org-billing__member-cell">
+                    <div class="org-billing__member-avatar">
+                      {{ getMemberInitials(member) }}
+                    </div>
+                    <div class="org-billing__member-details">
+                      <span class="org-billing__member-name">
+                        {{ member.user?.name || member.user?.email }}
+                      </span>
+                      <span v-if="member.user?.name && member.user?.email" class="org-billing__member-email">
+                        {{ member.user?.email }}
+                      </span>
+                    </div>
+                  </div>
+                </td>
+                <td class="org-billing__table-td--right">
+                  <span class="org-billing__table-value">
+                    {{ formatAllocation(member.allocation?.hours_allocated) }}
+                    <span class="org-billing__table-value-unit">min</span>
+                  </span>
+                </td>
+                <td class="org-billing__table-td--right">
+                  <span class="org-billing__table-value org-billing__table-value--muted">
+                    {{ formatAllocation(member.allocation?.hours_used) }}
+                    <span class="org-billing__table-value-unit">min</span>
+                  </span>
+                </td>
+                <td class="org-billing__table-td--right">
+                  <span class="org-billing__table-value org-billing__table-value--accent">
+                    {{ formatAllocation(member.allocation?.hours_remaining) }}
+                    <span class="org-billing__table-value-unit">min</span>
+                  </span>
+                </td>
+                <td class="org-billing__table-td--right">
+                  <div class="org-billing__allocate-form">
+                    <div class="org-billing__input-wrap">
+                      <Input
+                        type="number"
+                        v-model="allocations[member.user_id]"
+                        min="0"
+                        :max="poolBalance"
+                        step="0.5"
+                        placeholder="0"
+                        class="org-billing__allocate-input"
+                        :disabled="poolBalance === 0"
+                      />
+                      <span class="org-billing__input-unit">min</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      @click="handleAllocateCredits(member.user_id)"
+                      :disabled="
+                        poolBalance === 0 ||
+                        !allocations[member.user_id] ||
+                        allocations[member.user_id] <= 0 ||
+                        allocations[member.user_id] > poolBalance
+                      "
+                      class="org-billing__allocate-btn"
+                    >
+                      <Plus class="h-3.5 w-3.5" />
+                      Add
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Payment History Section (Admin Only) -->
+      <section v-if="isAdmin" class="org-billing__section">
+        <div class="org-billing__section-header">
+          <div class="org-billing__section-title-group">
+            <div class="org-billing__section-icon">
+              <History />
+            </div>
+            <div>
+              <h2 class="org-billing__section-title">Payment History</h2>
+              <p class="org-billing__section-subtitle">
+                {{
+                  transactionsTotal > 0 ? `${transactionsTotal} transactions recorded` : 'Track all credit purchases'
+                }}
+              </p>
+            </div>
+          </div>
+          <div class="org-billing__section-actions">
+            <button
+              v-if="!transactionsLoaded"
+              @click="loadTransactions(1)"
+              class="org-billing__load-btn"
+              :disabled="transactionsLoading"
+            >
+              <Loader2 v-if="transactionsLoading" class="org-billing__load-btn-spinner" />
+              <Download v-else class="org-billing__load-btn-icon" />
+              <span>{{ transactionsLoading ? 'Loading...' : 'Load History' }}</span>
+            </button>
+            <button
+              v-else-if="transactions.length > 0"
+              @click="loadTransactions(transactionsPage)"
+              class="org-billing__load-btn"
+              :disabled="transactionsLoading"
+            >
+              <RefreshCw
+                class="org-billing__load-btn-icon"
+                :class="{ 'org-billing__load-btn-icon--spin': transactionsLoading }"
+              />
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Not Loaded Yet -->
+        <div v-if="!transactionsLoaded && !transactionsLoading" class="org-billing__empty-state">
+          <div class="org-billing__empty-icon">
+            <Receipt />
+          </div>
+          <h3 class="org-billing__empty-title">No history loaded</h3>
+          <p class="org-billing__empty-desc">Click "Load History" to view your payment records</p>
+        </div>
+
+        <!-- Loading Skeleton -->
+        <div v-else-if="transactionsLoading && transactions.length === 0" class="org-billing__skeleton-list">
+          <div v-for="i in 3" :key="i" class="org-billing__skeleton-item">
+            <div class="org-billing__skeleton-icon"></div>
+            <div class="org-billing__skeleton-lines">
+              <div class="org-billing__skeleton-line" style="width: 120px"></div>
+              <div class="org-billing__skeleton-line org-billing__skeleton-line--sm" style="width: 200px"></div>
+            </div>
+            <div class="org-billing__skeleton-amount"></div>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div v-else-if="transactionsLoaded && transactions.length === 0" class="org-billing__empty-state">
+          <div class="org-billing__empty-icon">
+            <Receipt />
+          </div>
+          <h3 class="org-billing__empty-title">No payment history</h3>
+          <p class="org-billing__empty-desc">Transactions will appear here after purchasing credits</p>
+        </div>
+
+        <!-- Transaction List -->
+        <div v-else class="org-billing__history-card">
+          <div class="org-billing__history-list">
+            <div v-for="tx in transactions" :key="tx.id" class="org-billing__history-item">
+              <div
+                class="org-billing__history-icon"
+                :class="
+                  tx.payment_method === 'stripe'
+                    ? 'org-billing__history-icon--stripe'
+                    : 'org-billing__history-icon--crypto'
+                "
+              >
+                <CreditCard v-if="tx.payment_method === 'stripe'" />
+                <Wallet v-else />
+              </div>
+              <div class="org-billing__history-info">
+                <div class="org-billing__history-row">
+                  <span class="org-billing__history-pack">{{ getPackLabel(tx.pack_type) }}</span>
+                  <span class="org-billing__history-status">{{ tx.status }}</span>
+                </div>
+                <div class="org-billing__history-meta">
+                  <span>{{ formatTransactionDate(tx.purchased_at) }}</span>
+                  <span class="org-billing__history-dot">•</span>
+                  <span>{{ getPaymentMethodLabel(tx.payment_method) }}</span>
+                  <template v-if="tx.purchased_by">
+                    <span class="org-billing__history-dot">•</span>
+                    <span>{{ tx.purchased_by.name || tx.purchased_by.email }}</span>
+                  </template>
+                </div>
+              </div>
+              <div class="org-billing__history-amount">
+                <span class="org-billing__history-usd">${{ parseFloat(tx.amount_usd).toFixed(2) }}</span>
+                <span class="org-billing__history-mins">+{{ parseFloat(tx.hours_purchased).toFixed(0) }} min</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pagination -->
+          <div v-if="totalTransactionPages > 1" class="org-billing__pagination">
+            <span class="org-billing__pagination-info">Page {{ transactionsPage }} of {{ totalTransactionPages }}</span>
+            <div class="org-billing__pagination-btns">
+              <button
+                @click="loadTransactions(transactionsPage - 1)"
+                :disabled="transactionsPage <= 1 || transactionsLoading"
+                class="org-billing__pagination-btn"
+              >
+                <ChevronLeft class="h-3.5 w-3.5" />
+                Previous
+              </button>
+              <button
+                @click="loadTransactions(transactionsPage + 1)"
+                :disabled="transactionsPage >= totalTransactionPages || transactionsLoading"
+                class="org-billing__pagination-btn"
+              >
+                Next
+                <ChevronRight class="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Non-Admin View -->
+      <div v-if="!isAdmin" class="org-billing__member-view">
+        <div class="org-billing__member-view-icon">
+          <Zap />
+        </div>
+        <h3 class="org-billing__member-view-title">Your allocation is displayed above</h3>
+        <p class="org-billing__member-view-desc">
+          Contact your organization admin if you need additional credits allocated to your account
+        </p>
+      </div>
+    </div>
+
+    <!-- Buy Credits Modal -->
+    <BuyCreditsModal
+      v-model:open="showBuyCreditsModal"
+      :organization-id="organizationId ?? ''"
+      :organization-name="organization?.name ?? ''"
+      @success="handleCreditsSuccess"
+    />
+  </PageLayout>
+</template>
+
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import {
+    Wallet,
+    Coins,
+    TrendingUp,
+    User,
+    Users,
+    Receipt,
+    CreditCard,
+    RefreshCw,
+    ChevronLeft,
+    ChevronRight,
+    Loader2,
+    Plus,
+    History,
+    Download,
+    Zap,
+  } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import { Input } from '@/components/ui/input';
+  import PageLayout from '@/components/PageLayout.vue';
+  import BuyCreditsModal from '@/components/organization/BuyCreditsModal.vue';
+  import { useOrganization } from '@/composables/useOrganization';
+
+  const {
+    organizationId,
+    organization,
+    members,
+    credits,
+    myAllocation,
+    isAdmin,
+    poolBalance,
+    transactions,
+    transactionsLoading,
+    transactionsTotal,
+    transactionsPage,
+    transactionsLoaded,
+    totalTransactionPages,
+    loadOrganization,
+    loadTransactions,
+    allocateCredits,
+    formatAllocation,
+    formatTransactionDate,
+    getPaymentMethodLabel,
+    getPackLabel,
+  } = useOrganization();
+
+  const showBuyCreditsModal = ref(false);
+  const allocations = ref<Record<number, number>>({});
+
+  function getMemberInitials(member: any): string {
+    const name = member.user?.name || member.user?.email || '';
+    if (!name) return '??';
+    const parts = name.split(/[\s@]/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  }
+
+  async function handleAllocateCredits(userId: number) {
+    const minutes = allocations.value[userId];
+    const result = await allocateCredits(userId, minutes);
+    if (result.success) {
+      allocations.value[userId] = 0;
+    }
+  }
+
+  function handleCreditsSuccess() {
+    showBuyCreditsModal.value = false;
+    loadOrganization();
+  }
+</script>
+
+<style scoped>
+  /* ===== Container ===== */
+  .org-billing {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
+  }
+
+  /* ===== Page Heading ===== */
+  .org-billing__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .org-billing__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.025em;
+  }
+
+  .org-billing__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Buy Credits Button ===== */
+  .org-billing__buy-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: var(--sidebar-accent) !important;
+    color: var(--sidebar-bg) !important;
+    border: none !important;
+    font-weight: 600;
+  }
+
+  .org-billing__buy-btn:hover {
+    opacity: 0.9;
+  }
+
+  /* ===== Cards Grid ===== */
+  .org-billing__cards {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+  }
+
+  @media (min-width: 768px) {
+    .org-billing__cards {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  /* ===== Card (Flat Style) ===== */
+  .org-billing__card {
+    position: relative;
+    display: flex;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: all 200ms ease;
+  }
+
+  .org-billing__card:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  .org-billing__card-indicator {
+    width: 4px;
+    flex-shrink: 0;
+    background-color: var(--sidebar-border);
+  }
+
+  .org-billing__card-indicator--pool {
+    background-color: #10b981;
+  }
+
+  .org-billing__card-indicator--accent {
+    background-color: var(--sidebar-accent);
+  }
+
+  .org-billing__card-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .org-billing__card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .org-billing__card-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .org-billing__card-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .org-billing__card-icon--pool {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .org-billing__card-icon--accent {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .org-billing__card-header-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-billing__card-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .org-billing__card-subtitle {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
+  }
+
+  .org-billing__card-body {
+    padding: 1.25rem;
+  }
+
+  .org-billing__card-value {
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
+  }
+
+  .org-billing__card-amount {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    letter-spacing: -0.03em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .org-billing__card-amount--pool {
+    color: #10b981;
+  }
+
+  .org-billing__card-amount--accent {
+    color: var(--sidebar-accent);
+  }
+
+  .org-billing__card-unit {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  /* ===== Section Styles ===== */
+  .org-billing__section {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .org-billing__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .org-billing__section-title-group {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .org-billing__section-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .org-billing__section-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .org-billing__section-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .org-billing__section-subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
+  }
+
+  .org-billing__section-actions {
+    flex-shrink: 0;
+  }
+
+  /* ===== Table Wrapper ===== */
+  .org-billing__table-wrapper {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .org-billing__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .org-billing__table thead {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .org-billing__table th {
+    padding: 0.875rem 1.25rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+    text-align: left;
+  }
+
+  .org-billing__table-th--right {
+    text-align: right;
+  }
+
+  .org-billing__table-row {
+    border-bottom: 1px solid var(--sidebar-border);
+    transition: background-color 150ms ease;
+  }
+
+  .org-billing__table-row:last-child {
+    border-bottom: none;
+  }
+
+  .org-billing__table-row:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .org-billing__table td {
+    padding: 1rem 1.25rem;
+    vertical-align: middle;
+  }
+
+  .org-billing__table-td--right {
+    text-align: right;
+  }
+
+  .org-billing__table-value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .org-billing__table-value--muted {
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-billing__table-value--accent {
+    color: var(--sidebar-accent);
+  }
+
+  .org-billing__table-value-unit {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin-left: 0.25rem;
+  }
+
+  /* ===== Member Cell ===== */
+  .org-billing__member-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+  }
+
+  .org-billing__member-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.6));
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: var(--sidebar-bg);
+    flex-shrink: 0;
+  }
+
+  .org-billing__member-details {
+    min-width: 0;
+  }
+
+  .org-billing__member-name {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .org-billing__member-email {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 0.125rem;
+  }
+
+  /* ===== Allocate Form ===== */
+  .org-billing__allocate-form {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }
+
+  .org-billing__input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .org-billing__allocate-input {
+    width: 72px;
+    text-align: right;
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .org-billing__input-unit {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-billing__allocate-btn {
+    font-size: 0.75rem;
+    gap: 0.25rem;
+  }
+
+  /* ===== Load Button ===== */
+  .org-billing__load-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-billing__load-btn:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .org-billing__load-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-billing__load-btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .org-billing__load-btn-icon--spin {
+    animation: spin 0.8s linear infinite;
+  }
+
+  .org-billing__load-btn-spinner {
+    width: 16px;
+    height: 16px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Empty State ===== */
+  .org-billing__empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  .org-billing__empty-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--sidebar-hover);
+    margin-bottom: 1.25rem;
+  }
+
+  .org-billing__empty-icon svg {
+    width: 28px;
+    height: 28px;
+    color: var(--sidebar-accent);
+  }
+
+  .org-billing__empty-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+  }
+
+  .org-billing__empty-desc {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 300px;
+  }
+
+  /* ===== Skeleton Loaders ===== */
+  .org-billing__skeleton-list {
+    display: flex;
+    flex-direction: column;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .org-billing__skeleton-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .org-billing__skeleton-item:last-child {
+    border-bottom: none;
+  }
+
+  .org-billing__skeleton-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: linear-gradient(
+      90deg,
+      var(--sidebar-hover) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      var(--sidebar-hover) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .org-billing__skeleton-lines {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .org-billing__skeleton-line {
+    height: 14px;
+    border-radius: 4px;
+    background: linear-gradient(
+      90deg,
+      var(--sidebar-hover) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      var(--sidebar-hover) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .org-billing__skeleton-line--sm {
+    height: 12px;
+  }
+
+  .org-billing__skeleton-amount {
+    width: 70px;
+    height: 40px;
+    border-radius: 6px;
+    background: linear-gradient(
+      90deg,
+      var(--sidebar-hover) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      var(--sidebar-hover) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* ===== History Card ===== */
+  .org-billing__history-card {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .org-billing__history-list {
+    max-height: 440px;
+    overflow-y: auto;
+  }
+
+  .org-billing__history-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .org-billing__history-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .org-billing__history-list::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+  }
+
+  .org-billing__history-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.125rem 1.25rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    transition: background-color 150ms ease;
+  }
+
+  .org-billing__history-item:last-child {
+    border-bottom: none;
+  }
+
+  .org-billing__history-item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .org-billing__history-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .org-billing__history-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .org-billing__history-icon--stripe {
+    background-color: rgba(99, 91, 255, 0.12);
+    color: #635bff;
+  }
+
+  .org-billing__history-icon--crypto {
+    background-color: rgba(139, 92, 246, 0.12);
+    color: #a78bfa;
+  }
+
+  .org-billing__history-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-billing__history-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+
+  .org-billing__history-pack {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .org-billing__history-status {
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    background-color: rgba(16, 185, 129, 0.12);
+    color: #34d399;
+  }
+
+  .org-billing__history-meta {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.25rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .org-billing__history-dot {
+    opacity: 0.4;
+  }
+
+  .org-billing__history-amount {
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .org-billing__history-usd {
+    display: block;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .org-billing__history-mins {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    margin-top: 0.125rem;
+  }
+
+  /* ===== Pagination ===== */
+  .org-billing__pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.15);
+  }
+
+  .org-billing__pagination-info {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-billing__pagination-btns {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .org-billing__pagination-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background-color: var(--sidebar-hover);
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-billing__pagination-btn:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  .org-billing__pagination-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ===== Non-Admin View ===== */
+  .org-billing__member-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, transparent 60%);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  .org-billing__member-view-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 182, 212, 0.15);
+    margin-bottom: 1.25rem;
+  }
+
+  .org-billing__member-view-icon svg {
+    width: 28px;
+    height: 28px;
+    color: var(--sidebar-accent);
+  }
+
+  .org-billing__member-view-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+  }
+
+  .org-billing__member-view-desc {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 360px;
+    line-height: 1.5;
+  }
+
+  /* ===== Animations ===== */
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+</style>

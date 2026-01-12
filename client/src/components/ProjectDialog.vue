@@ -1,144 +1,119 @@
 <template>
   <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="modelValue" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
-        <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md sm:max-w-lg w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] overflow-y-auto"
-          >
-            <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
+    <Transition name="project-modal">
+      <div v-if="modelValue" class="project-modal__overlay" @click.self="close">
+        <Transition name="project-dialog" appear>
+          <div class="project-modal">
+            <!-- Accent Bar -->
+            <div class="project-modal__accent" />
 
-            <div class="p-5 sm:p-6 lg:p-8">
-              <!-- Header -->
-              <div class="mb-5 sm:mb-6 lg:mb-8 text-center">
-                <div
-                  class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-violet-500/30 mb-3 sm:mb-4"
-                >
-                  <FolderPlus v-if="!isEdit" class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-violet-400" />
-                  <Pencil v-else class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-violet-400" />
-                </div>
-                <h2 class="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                  {{ isEdit ? 'Edit Project' : 'Create Project' }}
-                </h2>
-                <p class="text-zinc-400 text-xs sm:text-sm mt-1">
-                  {{ isEdit ? 'Update project details' : 'Start a new video project' }}
-                </p>
+            <!-- Header -->
+            <div class="project-modal__header">
+              <button class="project-modal__close" @click="close" title="Close">
+                <X :size="18" />
+              </button>
+              <div class="project-modal__icon">
+                <FolderPlus v-if="!isEdit" :size="24" />
+                <Pencil v-else :size="24" />
               </div>
+              <h2 class="project-modal__title">
+                {{ isEdit ? 'Edit Project' : 'Create Project' }}
+              </h2>
+              <p class="project-modal__subtitle">
+                {{ isEdit ? 'Update project details' : 'Start a new video project' }}
+              </p>
+            </div>
 
-              <form @submit.prevent="handleSubmit" class="space-y-4 sm:space-y-5">
-                <!-- Project Name -->
-                <div class="space-y-1.5 sm:space-y-2">
-                  <label for="project-name" class="block text-xs sm:text-sm font-medium text-zinc-300">
-                    Project Name
-                    <span class="text-red-400">*</span>
-                  </label>
-                  <input
-                    id="project-name"
-                    v-model="formData.name"
-                    type="text"
-                    required
-                    placeholder="Enter project name"
-                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
-                    :class="{ 'border-red-500/50 focus:ring-red-500/50': errors.name }"
-                  />
-                  <p v-if="errors.name" class="text-xs sm:text-sm text-red-400">{{ errors.name }}</p>
-                </div>
-
-                <!-- Description -->
-                <div class="space-y-1.5 sm:space-y-2">
-                  <label for="project-description" class="block text-xs sm:text-sm font-medium text-zinc-300">
-                    Description
-                  </label>
-                  <textarea
-                    id="project-description"
-                    v-model="formData.description"
-                    rows="2"
-                    placeholder="Enter project description (optional)"
-                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all resize-none"
-                  />
-                </div>
-
-                <!-- Video Selection -->
-                <div class="space-y-2 sm:space-y-3">
-                  <label class="block text-xs sm:text-sm font-medium text-zinc-300">
-                    Source Videos
-                    <span class="text-red-400" v-if="!isEdit">*</span>
-                  </label>
-
-                  <!-- Selected Videos List -->
-                  <div
-                    v-if="selectedVideoPaths.length > 0"
-                    class="space-y-1.5 sm:space-y-2 max-h-32 sm:max-h-40 overflow-y-auto custom-scrollbar"
-                  >
-                    <div
-                      v-for="(path, index) in selectedVideoPaths"
-                      :key="index"
-                      class="p-2 sm:p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800 flex items-center justify-between gap-2 group"
-                    >
-                      <div class="flex items-center gap-2 sm:gap-3 min-w-0">
-                        <div
-                          class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-violet-500/20 flex items-center justify-center flex-shrink-0"
-                        >
-                          <Video class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-violet-400" />
-                        </div>
-                        <span class="text-xs sm:text-sm truncate text-zinc-300" :title="path">
-                          {{ getFileName(path) }}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        @click="removeVideo(index)"
-                        class="p-1 sm:p-1.5 rounded-lg hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-all sm:opacity-0 sm:group-hover:opacity-100"
-                        title="Remove"
-                      >
-                        <X class="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                      </button>
-                    </div>
+            <!-- Content -->
+            <form @submit.prevent="handleSubmit" class="project-content">
+              <!-- Project Name -->
+              <div class="project-section">
+                <h3 class="project-section__title">Project Details</h3>
+                <div class="project-section__items">
+                  <div class="project-field">
+                    <label for="project-name" class="project-field__label">
+                      Project Name
+                      <span class="project-field__required">*</span>
+                    </label>
+                    <input
+                      id="project-name"
+                      v-model="formData.name"
+                      type="text"
+                      required
+                      placeholder="Enter project name"
+                      class="project-field__input"
+                      :class="{ 'project-field__input--error': errors.name }"
+                    />
+                    <p v-if="errors.name" class="project-field__error">{{ errors.name }}</p>
                   </div>
 
-                  <!-- Select Video Button -->
-                  <button
-                    type="button"
-                    @click="openVideoSelector"
-                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/50 hover:bg-zinc-800/50 border border-zinc-800 hover:border-zinc-700 rounded-lg sm:rounded-xl text-zinc-300 transition-all flex items-center justify-center gap-2 text-sm"
-                    :class="{ 'border-red-500/50': errors.selectedVideoPaths }"
-                  >
-                    <Upload class="h-4 w-4 sm:h-5 sm:w-5" />
-                    {{ selectedVideoPaths.length > 0 ? 'Add More Videos' : 'Select Videos from Computer' }}
-                  </button>
-                  <p v-if="errors.selectedVideoPaths" class="text-xs sm:text-sm text-red-400">
-                    {{ errors.selectedVideoPaths }}
-                  </p>
-                  <p class="text-[10px] sm:text-xs text-zinc-500">
-                    Selected videos will be imported into the project workspace.
-                  </p>
+                  <div class="project-field">
+                    <label for="project-description" class="project-field__label">
+                      Description
+                      <span class="project-field__optional">(optional)</span>
+                    </label>
+                    <textarea
+                      id="project-description"
+                      v-model="formData.description"
+                      rows="2"
+                      placeholder="Enter project description"
+                      class="project-field__textarea"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Video Selection (only for new projects) -->
+              <div v-if="!isEdit" class="project-section">
+                <div class="project-section__header">
+                  <h3 class="project-section__title">Source Videos</h3>
+                  <span class="project-section__required">Required</span>
                 </div>
 
-                <!-- Action Buttons -->
-                <div class="flex gap-2 sm:gap-3 pt-3 sm:pt-4">
-                  <button
-                    type="button"
-                    @click="close"
-                    :disabled="loading"
-                    class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    :disabled="loading"
-                    class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                  >
-                    <div
-                      class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                    />
-                    <span class="relative">
-                      {{ loading ? 'Saving...' : isEdit ? 'Update Project' : 'Create Project' }}
-                    </span>
-                  </button>
+                <!-- Selected Videos List -->
+                <div v-if="selectedVideoPaths.length > 0" class="project-videos">
+                  <div v-for="(path, index) in selectedVideoPaths" :key="index" class="project-video-item">
+                    <div class="project-video-item__info">
+                      <div class="project-video-item__icon">
+                        <Video :size="16" />
+                      </div>
+                      <span class="project-video-item__name" :title="path">
+                        {{ getFileName(path) }}
+                      </span>
+                    </div>
+                    <button type="button" @click="removeVideo(index)" class="project-video-item__remove" title="Remove">
+                      <X :size="14" />
+                    </button>
+                  </div>
                 </div>
-              </form>
+
+                <!-- Select Video Button -->
+                <button
+                  type="button"
+                  @click="openVideoSelector"
+                  class="project-upload-btn"
+                  :class="{ 'project-upload-btn--error': errors.selectedVideoPaths }"
+                >
+                  <Upload :size="18" />
+                  <span>{{ selectedVideoPaths.length > 0 ? 'Add More Videos' : 'Select Videos from Computer' }}</span>
+                </button>
+
+                <p v-if="errors.selectedVideoPaths" class="project-field__error">
+                  {{ errors.selectedVideoPaths }}
+                </p>
+                <p class="project-section__hint">Selected videos will be imported into the project workspace.</p>
+              </div>
+            </form>
+
+            <!-- Footer -->
+            <div class="project-modal__footer">
+              <button type="button" @click="close" :disabled="loading" class="project-btn project-btn--secondary">
+                Cancel
+              </button>
+              <button @click="handleSubmit" :disabled="loading" class="project-btn project-btn--primary">
+                <Loader2 v-if="loading" :size="16" class="animate-spin" />
+                {{ loading ? 'Saving...' : isEdit ? 'Update Project' : 'Create Project' }}
+              </button>
             </div>
           </div>
         </Transition>
@@ -151,7 +126,7 @@
   import { ref, watch, reactive } from 'vue';
   import { open } from '@tauri-apps/plugin-dialog';
   import { type Project } from '@/services/database';
-  import { Video, X, Upload, FolderPlus, Pencil } from 'lucide-vue-next';
+  import { Video, X, Upload, FolderPlus, Pencil, Loader2 } from 'lucide-vue-next';
 
   export interface ProjectFormData {
     name: string;
@@ -303,51 +278,447 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.3s ease;
+  /* ===== Modal Overlay ===== */
+  .project-modal__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
   }
 
-  .modal-enter-from,
-  .modal-leave-to {
+  /* ===== Modal Container ===== */
+  .project-modal {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 480px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ===== Accent Bar ===== */
+  .project-modal__accent {
+    height: 3px;
+    flex-shrink: 0;
+    background: linear-gradient(90deg, #06b6d4, #0ea5e9, #3b82f6);
+  }
+
+  /* ===== Header ===== */
+  .project-modal__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .project-modal__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .project-modal__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .project-modal__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    margin-bottom: 0.875rem;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+  }
+
+  .project-modal__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .project-modal__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content Area ===== */
+  .project-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .project-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .project-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .project-content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .project-content::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+
+  /* ===== Sections ===== */
+  .project-section {
+    margin-bottom: 1.25rem;
+  }
+
+  .project-section:last-child {
+    margin-bottom: 0;
+  }
+
+  .project-section__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.625rem;
+  }
+
+  .project-section__title {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.625rem;
+  }
+
+  .project-section__header .project-section__title {
+    margin: 0;
+  }
+
+  .project-section__required {
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #ef4444;
+    opacity: 0.8;
+  }
+
+  .project-section__hint {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.5rem 0 0;
+    opacity: 0.7;
+  }
+
+  .project-section__items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  /* ===== Form Fields ===== */
+  .project-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .project-field__label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .project-field__required {
+    color: #ef4444;
+    margin-left: 0.125rem;
+  }
+
+  .project-field__optional {
+    font-weight: 400;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  .project-field__input,
+  .project-field__textarea {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .project-field__input::placeholder,
+  .project-field__textarea::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .project-field__input:focus,
+  .project-field__textarea:focus {
+    outline: none;
+    border-color: transparent;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .project-field__input--error {
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+
+  .project-field__input--error:focus {
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3);
+  }
+
+  .project-field__textarea {
+    resize: none;
+    min-height: 60px;
+  }
+
+  .project-field__error {
+    font-size: 0.75rem;
+    color: #ef4444;
+    margin: 0;
+  }
+
+  /* ===== Videos List ===== */
+  .project-videos {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 140px;
+    overflow-y: auto;
+    margin-bottom: 0.75rem;
+  }
+
+  .project-videos::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .project-videos::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .project-videos::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .project-video-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .project-video-item__info {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .project-video-item__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+    flex-shrink: 0;
+  }
+
+  .project-video-item__name {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .project-video-item__remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+    opacity: 0.6;
+  }
+
+  .project-video-item:hover .project-video-item__remove {
+    opacity: 1;
+  }
+
+  .project-video-item__remove:hover {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  /* ===== Upload Button ===== */
+  .project-upload-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px dashed var(--sidebar-border);
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .project-upload-btn:hover {
+    background-color: var(--sidebar-active);
+    border-color: rgba(6, 182, 212, 0.3);
+    color: var(--sidebar-text);
+  }
+
+  .project-upload-btn--error {
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+
+  /* ===== Footer ===== */
+  .project-modal__footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.2);
+  }
+
+  /* ===== Buttons ===== */
+  .project-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+    border: none;
+  }
+
+  .project-btn--secondary {
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    color: var(--sidebar-text-muted);
+  }
+
+  .project-btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  .project-btn--primary {
+    background: linear-gradient(135deg, #06b6d4, #0ea5e9);
+    color: white;
+  }
+
+  .project-btn--primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #0891b2, #0284c7);
+  }
+
+  .project-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ===== Modal Animations ===== */
+  .project-modal-enter-active,
+  .project-modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .project-modal-enter-from,
+  .project-modal-leave-to {
     opacity: 0;
   }
 
-  /* Dialog transition */
-  .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  .project-dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .dialog-leave-active {
-    transition: all 0.2s ease-in;
+  .project-dialog-leave-active {
+    transition: all 150ms ease-in;
   }
 
-  .dialog-enter-from {
+  .project-dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
-  .dialog-leave-to {
+  .project-dialog-leave-to {
     opacity: 0;
     transform: scale(0.98);
   }
 
-  /* Custom scrollbar */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
+  /* ===== Utility Classes ===== */
+  .animate-spin {
+    animation: spin 1s linear infinite;
   }
 
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgb(63 63 70);
-    border-radius: 3px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgb(82 82 91);
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

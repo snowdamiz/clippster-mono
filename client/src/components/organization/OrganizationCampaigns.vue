@@ -1,144 +1,166 @@
 <template>
-  <div class="organization-campaigns">
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h2 class="text-xl font-semibold text-foreground">Clipping Campaigns</h2>
-        <p class="text-sm text-muted-foreground mt-0.5">Create campaigns for clippers to promote your content</p>
-      </div>
-      <Button v-if="isAdmin" @click="openCreateDialog">
-        <Plus class="h-4 w-4 mr-1.5" />
-        Create Campaign
-      </Button>
+  <div class="campaigns">
+    <!-- Page Heading -->
+    <div class="campaigns__heading">
+      <h1 class="campaigns__title">Clipping Campaigns</h1>
+      <p class="campaigns__subtitle">Create and manage campaigns for clippers to promote your content</p>
     </div>
 
     <!-- Loading State -->
-    <div v-if="loading" class="space-y-4">
-      <div v-for="i in 3" :key="i" class="bg-card border border-border/60 rounded-xl p-4 animate-pulse">
-        <div class="flex items-start gap-4">
-          <div class="w-16 h-16 rounded-lg bg-muted/50"></div>
-          <div class="flex-1 space-y-2">
-            <div class="h-5 bg-muted/50 rounded w-48"></div>
-            <div class="h-4 bg-muted/40 rounded w-full"></div>
-            <div class="flex gap-2">
-              <div class="h-6 bg-muted/40 rounded-full w-20"></div>
-              <div class="h-6 bg-muted/40 rounded-full w-16"></div>
-            </div>
+    <div v-if="loading" class="campaigns__list">
+      <div v-for="i in 3" :key="i" class="campaigns__card campaigns__card--skeleton">
+        <div class="campaigns__card-indicator"></div>
+        <div class="campaigns__card-content">
+          <div class="campaigns__skeleton-cover"></div>
+          <div class="campaigns__skeleton-info">
+            <div class="campaigns__skeleton-title"></div>
+            <div class="campaigns__skeleton-desc"></div>
+            <div class="campaigns__skeleton-stats"></div>
           </div>
+          <div class="campaigns__skeleton-badge"></div>
         </div>
       </div>
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="campaigns.length === 0" class="text-center py-16 bg-card border border-border/60 rounded-xl">
-      <Megaphone class="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
-      <h3 class="text-lg font-medium text-foreground mb-1">No campaigns yet</h3>
-      <p class="text-sm text-muted-foreground mb-4">Create your first campaign to start working with clippers</p>
-      <Button v-if="isAdmin" @click="openCreateDialog">
-        <Plus class="h-4 w-4 mr-1.5" />
-        Create Campaign
-      </Button>
+    <div v-else-if="campaigns.length === 0" class="campaigns__empty">
+      <div class="campaigns__empty-icon-wrapper">
+        <Megaphone class="campaigns__empty-icon" />
+      </div>
+      <h3 class="campaigns__empty-title">No campaigns yet</h3>
+      <p class="campaigns__empty-text">Create your first campaign to start working with clippers</p>
     </div>
 
     <!-- Campaigns List -->
-    <div v-else class="space-y-4">
-      <div
-        v-for="campaign in campaigns"
-        :key="campaign.id"
-        class="bg-card border border-border/60 rounded-xl overflow-hidden hover:border-border transition-all"
-      >
-        <div class="flex items-start gap-4 p-4">
+    <div v-else class="campaigns__list">
+      <div v-for="campaign in campaigns" :key="campaign.id" class="campaigns__card">
+        <div
+          class="campaigns__card-indicator"
+          :class="{
+            'campaigns__card-indicator--active': campaign.status === 'active',
+            'campaigns__card-indicator--paused': campaign.status === 'paused',
+            'campaigns__card-indicator--completed': campaign.status === 'completed',
+          }"
+        ></div>
+        <div class="campaigns__card-content">
           <!-- Cover Image -->
-          <div class="w-20 h-20 rounded-lg bg-primary/10 flex-shrink-0 overflow-hidden">
-            <img v-if="campaign.cover_image_url" :src="campaign.cover_image_url" class="w-full h-full object-cover" />
-            <div v-else class="w-full h-full flex items-center justify-center">
-              <Megaphone class="w-8 h-8 text-primary/40" />
+          <div class="campaigns__cover">
+            <img v-if="campaign.cover_image_url" :src="campaign.cover_image_url" class="campaigns__cover-img" />
+            <div v-else class="campaigns__cover-fallback">
+              <Megaphone class="campaigns__cover-icon" />
+            </div>
+            <!-- Status Badge -->
+            <div
+              class="campaigns__status"
+              :class="{
+                'campaigns__status--active': campaign.status === 'active',
+                'campaigns__status--paused': campaign.status === 'paused',
+                'campaigns__status--completed': campaign.status === 'completed',
+                'campaigns__status--draft': campaign.status === 'draft',
+              }"
+            >
+              {{ campaign.status }}
             </div>
           </div>
 
           <!-- Campaign Info -->
-          <div class="flex-1 min-w-0">
-            <div class="flex items-start justify-between gap-2">
-              <div>
-                <h3 class="font-semibold text-[15px] text-foreground">{{ campaign.title }}</h3>
-                <p v-if="campaign.description" class="text-[13px] text-muted-foreground line-clamp-2 mt-0.5">
-                  {{ campaign.description }}
-                </p>
+          <div class="campaigns__info">
+            <h3 class="campaigns__name">{{ campaign.title }}</h3>
+            <p v-if="campaign.description" class="campaigns__desc">{{ campaign.description }}</p>
+
+            <!-- Meta Row -->
+            <div class="campaigns__meta">
+              <span v-if="campaign.starts_at || campaign.ends_at" class="campaigns__meta-item">
+                <Calendar class="campaigns__meta-icon" />
+                <template v-if="campaign.starts_at">{{ formatDate(campaign.starts_at) }}</template>
+                <template v-if="campaign.starts_at && campaign.ends_at">–</template>
+                <template v-if="campaign.ends_at">{{ formatDate(campaign.ends_at) }}</template>
+              </span>
+              <span v-if="campaign.allowed_platforms?.length" class="campaigns__meta-item">
+                <Globe class="campaigns__meta-icon" />
+                {{ campaign.allowed_platforms.length }} platform{{ campaign.allowed_platforms.length !== 1 ? 's' : '' }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Stats -->
+          <div class="campaigns__stats">
+            <div class="campaigns__stat">
+              <DollarSign class="campaigns__stat-icon" />
+              <div class="campaigns__stat-data">
+                <span class="campaigns__stat-value">${{ formatCpm(campaign.cpm) }}</span>
+                <span class="campaigns__stat-label">per {{ formatViews(campaign.cpm_views || 1000) }}</span>
               </div>
-              <Badge :variant="getStatusVariant(campaign.status)">{{ campaign.status }}</Badge>
             </div>
-
-            <!-- Stats Row -->
-            <div class="flex items-center gap-4 mt-3 text-[12px] text-muted-foreground">
-              <span class="flex items-center gap-1">
-                <DollarSign class="w-3.5 h-3.5" />
-                ${{ formatCpm(campaign.cpm) }}/{{ formatViews(campaign.cpm_views || 1000) }} views
-              </span>
-              <span class="flex items-center gap-1">
-                <Wallet class="w-3.5 h-3.5" />
-                ${{ formatBudget(campaign.budget) }} budget
-              </span>
-              <span class="flex items-center gap-1">
-                <Users class="w-3.5 h-3.5" />
-                {{ campaign.participants_count || 0 }} clippers
-              </span>
+            <div class="campaigns__stat">
+              <Wallet class="campaigns__stat-icon" />
+              <div class="campaigns__stat-data">
+                <span class="campaigns__stat-value">${{ formatBudget(campaign.budget) }}</span>
+                <span class="campaigns__stat-label">budget</span>
+              </div>
             </div>
-
-            <!-- Platforms -->
-            <div class="flex flex-wrap gap-1.5 mt-2">
-              <div
-                v-for="platform in campaign.allowed_platforms"
-                :key="platform"
-                class="inline-flex items-center gap-1 px-2 py-0.5 bg-muted/50 rounded-full text-[10px] font-medium text-muted-foreground"
-              >
-                <component :is="getPlatformIcon(platform)" class="w-3 h-3" />
-                {{ getPlatformDisplayName(platform) }}
+            <div class="campaigns__stat">
+              <Users class="campaigns__stat-icon" />
+              <div class="campaigns__stat-data">
+                <span class="campaigns__stat-value">{{ campaign.participants_count || 0 }}</span>
+                <span class="campaigns__stat-label">clippers</span>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Actions Footer -->
-        <div class="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t border-border/40">
-          <div class="flex items-center gap-2 text-[12px] text-muted-foreground">
-            <span v-if="campaign.starts_at">Starts {{ formatDate(campaign.starts_at) }}</span>
-            <span v-if="campaign.ends_at">· Ends {{ formatDate(campaign.ends_at) }}</span>
-          </div>
-          <div class="flex items-center gap-1">
-            <Button variant="ghost" size="sm" @click="viewCampaign(campaign)">
-              <Eye class="w-3.5 h-3.5 mr-1" />
-              View
-            </Button>
-            <Button v-if="isAdmin" variant="ghost" size="sm" @click="editCampaign(campaign)">
-              <Pencil class="w-3.5 h-3.5 mr-1" />
-              Edit
-            </Button>
+          <!-- Actions -->
+          <div class="campaigns__actions">
+            <button class="campaigns__action-btn" @click="viewCampaign(campaign)">
+              <Eye class="campaigns__action-icon" />
+            </button>
+            <button v-if="isAdmin" class="campaigns__action-btn" @click="editCampaign(campaign)">
+              <Pencil class="campaigns__action-icon" />
+            </button>
             <DropdownMenu v-if="isAdmin">
               <DropdownMenuTrigger as-child>
-                <Button variant="ghost" size="icon" class="h-8 w-8">
-                  <MoreVertical class="w-4 h-4" />
-                </Button>
+                <button class="campaigns__action-btn">
+                  <MoreVertical class="campaigns__action-icon" />
+                </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem v-if="campaign.status === 'draft'" @click="activateCampaignAction(campaign)">
-                  <Play class="w-4 h-4 mr-2" />
+              <DropdownMenuContent align="end" class="campaigns__dropdown">
+                <DropdownMenuItem
+                  v-if="campaign.status === 'draft'"
+                  @click="activateCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <Play class="campaigns__dropdown-icon" />
                   Activate
                 </DropdownMenuItem>
-                <DropdownMenuItem v-if="campaign.status === 'active'" @click="pauseCampaignAction(campaign)">
-                  <Pause class="w-4 h-4 mr-2" />
+                <DropdownMenuItem
+                  v-if="campaign.status === 'active'"
+                  @click="pauseCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <Pause class="campaigns__dropdown-icon" />
                   Pause
                 </DropdownMenuItem>
-                <DropdownMenuItem v-if="campaign.status === 'paused'" @click="activateCampaignAction(campaign)">
-                  <Play class="w-4 h-4 mr-2" />
+                <DropdownMenuItem
+                  v-if="campaign.status === 'paused'"
+                  @click="activateCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <Play class="campaigns__dropdown-icon" />
                   Resume
                 </DropdownMenuItem>
-                <DropdownMenuItem v-if="campaign.status !== 'completed'" @click="completeCampaignAction(campaign)">
-                  <CheckCircle class="w-4 h-4 mr-2" />
+                <DropdownMenuItem
+                  v-if="campaign.status !== 'completed'"
+                  @click="completeCampaignAction(campaign)"
+                  class="campaigns__dropdown-item"
+                >
+                  <CheckCircle class="campaigns__dropdown-icon" />
                   Complete
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem class="text-destructive" @click="confirmDeleteCampaign(campaign)">
-                  <Trash2 class="w-4 h-4 mr-2" />
+                <DropdownMenuSeparator class="campaigns__dropdown-sep" />
+                <DropdownMenuItem
+                  @click="confirmDeleteCampaign(campaign)"
+                  class="campaigns__dropdown-item campaigns__dropdown-item--danger"
+                >
+                  <Trash2 class="campaigns__dropdown-icon" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -153,75 +175,85 @@
       <Transition name="modal">
         <div
           v-if="showCampaignDialog"
-          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]"
+          class="campaigns-dialog__overlay"
           @click.self="showCampaignDialog = false"
+          @keydown.esc="showCampaignDialog = false"
         >
           <Transition name="dialog" appear>
             <div
-              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-xl sm:max-w-2xl w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
+              v-if="showCampaignDialog"
+              class="campaigns-dialog campaigns-dialog--form"
+              role="dialog"
+              aria-modal="true"
             >
-              <!-- Decorative top accent -->
-              <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500 flex-shrink-0" />
+              <div class="campaigns-dialog__accent campaigns-dialog__accent--purple"></div>
 
-              <div class="p-5 sm:p-6 overflow-y-auto custom-scrollbar">
-                <!-- Header -->
-                <div class="mb-4 sm:mb-6 text-center">
-                  <div
-                    class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-3 sm:mb-4"
-                  >
-                    <Megaphone class="h-5 w-5 sm:h-6 sm:w-6 text-violet-400" />
-                  </div>
-                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">
-                    {{ editingCampaign ? 'Edit Campaign' : 'Create Campaign' }}
-                  </h2>
-                  <p class="text-zinc-400 text-xs sm:text-sm mt-1">
-                    {{ editingCampaign ? 'Update your campaign details' : 'Set up a new campaign for clippers' }}
-                  </p>
+              <!-- Header -->
+              <div class="campaigns-dialog__header">
+                <button
+                  class="campaigns-dialog__close"
+                  @click="showCampaignDialog = false"
+                  title="Close"
+                  :disabled="saving"
+                >
+                  <X :size="18" />
+                </button>
+                <div class="campaigns-dialog__icon campaigns-dialog__icon--purple">
+                  <Megaphone :size="24" />
                 </div>
+                <h2 class="campaigns-dialog__title">
+                  {{ editingCampaign ? 'Edit Campaign' : 'Create Campaign' }}
+                </h2>
+                <p class="campaigns-dialog__subtitle">
+                  {{ editingCampaign ? 'Update your campaign details' : 'Set up a new campaign for clippers' }}
+                </p>
+              </div>
 
-                <form @submit.prevent="saveCampaign" class="space-y-4 sm:space-y-5">
+              <div class="campaigns-dialog__content">
+                <form @submit.prevent="saveCampaign" class="campaigns-dialog__form">
+                  <p class="campaigns-dialog__description">
+                    Create a campaign to reward clippers for promoting your content across social platforms.
+                  </p>
+
                   <!-- Title -->
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Title *</label>
+                  <div class="campaigns-dialog__field">
+                    <label class="campaigns-dialog__label">Title *</label>
                     <input
                       v-model="campaignForm.title"
                       type="text"
                       required
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                      class="campaigns-dialog__input"
                       placeholder="Campaign title"
                     />
                   </div>
 
                   <!-- Description -->
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Description</label>
+                  <div class="campaigns-dialog__field">
+                    <label class="campaigns-dialog__label">Description</label>
                     <textarea
                       v-model="campaignForm.description"
                       rows="3"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all resize-y min-h-[80px]"
+                      class="campaigns-dialog__textarea"
                       placeholder="Describe your campaign..."
                     ></textarea>
                   </div>
 
                   <!-- CPM and Views Row -->
-                  <div class="grid grid-cols-2 gap-3 sm:gap-4">
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">CPM Price ($)</label>
+                  <div class="campaigns-dialog__row">
+                    <div class="campaigns-dialog__field">
+                      <label class="campaigns-dialog__label">CPM Price ($)</label>
                       <input
                         v-model.number="campaignForm.cpm"
                         type="number"
                         step="0.01"
                         min="0"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        class="campaigns-dialog__input"
                         placeholder="0.00"
                       />
                     </div>
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Per Views</label>
-                      <select
-                        v-model="campaignForm.cpm_views"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
-                      >
+                    <div class="campaigns-dialog__field">
+                      <label class="campaigns-dialog__label">Per Views</label>
+                      <select v-model="campaignForm.cpm_views" class="campaigns-dialog__select">
                         <option :value="500">500 views</option>
                         <option :value="1000">1,000 views</option>
                         <option :value="5000">5,000 views</option>
@@ -230,82 +262,67 @@
                       </select>
                     </div>
                   </div>
-                  <p class="text-xs text-zinc-500 -mt-2">
+                  <p class="campaigns-dialog__hint">
                     ${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views
                   </p>
 
                   <!-- Budget and Min Views Row -->
-                  <div class="grid grid-cols-2 gap-3 sm:gap-4">
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Budget ($)</label>
+                  <div class="campaigns-dialog__row">
+                    <div class="campaigns-dialog__field">
+                      <label class="campaigns-dialog__label">Budget ($)</label>
                       <input
                         v-model.number="campaignForm.budget"
                         type="number"
                         step="1"
                         min="0"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        class="campaigns-dialog__input"
                         placeholder="0"
                       />
                     </div>
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Min Views for Payment</label>
+                    <div class="campaigns-dialog__field">
+                      <label class="campaigns-dialog__label">Min Views for Payment</label>
                       <input
                         v-model.number="campaignForm.min_views_for_payment"
                         type="number"
                         min="0"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        class="campaigns-dialog__input"
                         placeholder="1000"
                       />
                     </div>
                   </div>
 
                   <!-- Join Type and Dates Row -->
-                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Join Type</label>
-                      <select
-                        v-model="campaignForm.join_type"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
-                      >
+                  <div class="campaigns-dialog__row campaigns-dialog__row--3">
+                    <div class="campaigns-dialog__field">
+                      <label class="campaigns-dialog__label">Join Type</label>
+                      <select v-model="campaignForm.join_type" class="campaigns-dialog__select">
                         <option value="open">Open</option>
                         <option value="application_required">Application Required</option>
                       </select>
                     </div>
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Start Date</label>
-                      <input
-                        v-model="campaignForm.starts_at"
-                        type="datetime-local"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
-                      />
+                    <div class="campaigns-dialog__field">
+                      <label class="campaigns-dialog__label">Start Date</label>
+                      <input v-model="campaignForm.starts_at" type="datetime-local" class="campaigns-dialog__input" />
                     </div>
-                    <div class="space-y-1.5 sm:space-y-2">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">End Date</label>
-                      <input
-                        v-model="campaignForm.ends_at"
-                        type="datetime-local"
-                        class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
-                      />
+                    <div class="campaigns-dialog__field">
+                      <label class="campaigns-dialog__label">End Date</label>
+                      <input v-model="campaignForm.ends_at" type="datetime-local" class="campaigns-dialog__input" />
                     </div>
                   </div>
 
                   <!-- Allowed Platforms -->
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Allowed Platforms</label>
-                    <div
-                      class="flex flex-wrap gap-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800"
-                    >
+                  <div class="campaigns-dialog__field">
+                    <label class="campaigns-dialog__label">Allowed Platforms</label>
+                    <div class="campaigns-dialog__chips">
                       <button
                         v-for="platform in availablePlatforms"
                         :key="platform.value"
                         type="button"
                         @click="togglePlatform(platform.value)"
-                        class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all"
-                        :class="
-                          campaignForm.allowed_platforms.includes(platform.value)
-                            ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                            : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-300'
-                        "
+                        class="campaigns-dialog__chip"
+                        :class="{
+                          'campaigns-dialog__chip--active': campaignForm.allowed_platforms.includes(platform.value),
+                        }"
                       >
                         {{ platform.label }}
                       </button>
@@ -313,22 +330,18 @@
                   </div>
 
                   <!-- Payment Methods -->
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Payment Methods</label>
-                    <div
-                      class="flex flex-wrap gap-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800"
-                    >
+                  <div class="campaigns-dialog__field">
+                    <label class="campaigns-dialog__label">Payment Methods</label>
+                    <div class="campaigns-dialog__chips">
                       <button
                         v-for="method in availablePaymentMethods"
                         :key="method.value"
                         type="button"
                         @click="togglePaymentMethod(method.value)"
-                        class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all"
-                        :class="
-                          campaignForm.payment_methods.includes(method.value)
-                            ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                            : 'bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 hover:text-zinc-300'
-                        "
+                        class="campaigns-dialog__chip"
+                        :class="{
+                          'campaigns-dialog__chip--active': campaignForm.payment_methods.includes(method.value),
+                        }"
                       >
                         {{ method.label }}
                       </button>
@@ -336,91 +349,76 @@
                   </div>
 
                   <!-- Creator Profiles -->
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">
+                  <div class="campaigns-dialog__field">
+                    <label class="campaigns-dialog__label">
                       Creator Profiles
-                      <span class="text-zinc-500 font-normal ml-1">(clippers can clip these creators)</span>
+                      <span class="campaigns-dialog__label-hint">(clippers can clip these creators)</span>
                     </label>
-                    <div v-if="loadingProfiles" class="flex items-center justify-center py-4">
-                      <Loader2 class="w-5 h-5 animate-spin text-zinc-500" />
+                    <div v-if="loadingProfiles" class="campaigns-dialog__loading">
+                      <Loader2 class="campaigns-dialog__spinner" />
                     </div>
-                    <div
-                      v-else-if="availableCreatorProfiles.length === 0"
-                      class="p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800 text-center"
-                    >
-                      <p class="text-zinc-500 text-xs">
-                        No creator profiles available. Create profiles in the Creator Profiles tab first.
-                      </p>
+                    <div v-else-if="availableCreatorProfiles.length === 0" class="campaigns-dialog__empty-profiles">
+                      <p>No creator profiles available. Create profiles in the Creator Profiles tab first.</p>
                     </div>
-                    <div
-                      v-else
-                      class="space-y-2 p-3 bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-800 max-h-48 overflow-y-auto"
-                    >
+                    <div v-else class="campaigns-dialog__profiles-list">
                       <button
                         v-for="profile in availableCreatorProfiles"
                         :key="profile.id"
                         type="button"
                         @click="toggleCreatorProfile(profile.id)"
-                        class="w-full flex items-center gap-3 p-2 rounded-lg transition-all text-left"
-                        :class="
-                          selectedCreatorProfileIds.includes(profile.id)
-                            ? 'bg-violet-500/20 border border-violet-500/30'
-                            : 'bg-zinc-800/50 border border-zinc-700 hover:bg-zinc-700/50'
-                        "
+                        class="campaigns-dialog__profile"
+                        :class="{
+                          'campaigns-dialog__profile--selected': selectedCreatorProfileIds.includes(profile.id),
+                        }"
                       >
-                        <div class="w-8 h-8 rounded-full bg-zinc-700 overflow-hidden flex-shrink-0">
-                          <img
-                            v-if="profile.profile_image_url"
-                            :src="profile.profile_image_url"
-                            class="w-full h-full object-cover"
-                          />
-                          <User v-else class="w-full h-full p-1.5 text-zinc-500" />
+                        <div class="campaigns-dialog__profile-avatar">
+                          <img v-if="profile.profile_image_url" :src="profile.profile_image_url" />
+                          <User v-else class="campaigns-dialog__profile-avatar-icon" />
                         </div>
-                        <div class="flex-1 min-w-0">
-                          <div class="text-sm font-medium text-white truncate">{{ profile.name }}</div>
-                          <div v-if="profile.description" class="text-xs text-zinc-500 truncate">
+                        <div class="campaigns-dialog__profile-info">
+                          <span class="campaigns-dialog__profile-name">{{ profile.name }}</span>
+                          <span v-if="profile.description" class="campaigns-dialog__profile-desc">
                             {{ profile.description }}
-                          </div>
+                          </span>
                         </div>
-                        <div v-if="selectedCreatorProfileIds.includes(profile.id)" class="flex-shrink-0">
-                          <Check class="w-4 h-4 text-violet-400" />
+                        <div
+                          v-if="selectedCreatorProfileIds.includes(profile.id)"
+                          class="campaigns-dialog__profile-check"
+                        >
+                          <Check class="campaigns-dialog__profile-check-icon" />
                         </div>
                       </button>
                     </div>
-                    <p class="text-xs text-zinc-500">
+                    <p class="campaigns-dialog__hint">
                       {{ selectedCreatorProfileIds.length }} profile(s) selected. Each profile includes their
                       watermarks, intro/outro videos.
                     </p>
                   </div>
 
                   <!-- Global Campaign Assets -->
-                  <div class="space-y-3 p-4 bg-zinc-900/30 rounded-xl border border-zinc-800">
-                    <div class="flex items-center justify-between">
-                      <label class="block text-xs sm:text-sm font-medium text-zinc-300">Global Campaign Assets</label>
-                      <span class="text-[10px] text-zinc-500">Applied to all clips</span>
+                  <div class="campaigns-dialog__section">
+                    <div class="campaigns-dialog__section-header">
+                      <label class="campaigns-dialog__section-title">Global Campaign Assets</label>
+                      <span class="campaigns-dialog__section-badge">Applied to all clips</span>
                     </div>
-
-                    <p class="text-xs text-zinc-500 -mt-1">
+                    <p class="campaigns-dialog__section-desc">
                       These assets apply to ALL clips for this campaign, regardless of creator profile.
                     </p>
 
                     <!-- Global Intro -->
-                    <div class="space-y-1.5">
-                      <div class="flex items-center justify-between">
-                        <label class="text-xs text-zinc-400">Intro Video</label>
-                        <label class="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <div class="campaigns-dialog__asset-row">
+                      <div class="campaigns-dialog__asset-header">
+                        <label class="campaigns-dialog__asset-label">Intro Video</label>
+                        <label class="campaigns-dialog__checkbox-label">
                           <input
                             type="checkbox"
                             v-model="campaignForm.require_intro"
-                            class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-800 text-violet-500 focus:ring-violet-500/50"
+                            class="campaigns-dialog__checkbox"
                           />
                           Required
                         </label>
                       </div>
-                      <select
-                        v-model="campaignForm.global_intro_id"
-                        class="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50"
-                      >
+                      <select v-model="campaignForm.global_intro_id" class="campaigns-dialog__select">
                         <option :value="null">No intro</option>
                         <option
                           v-for="asset in availableAssets.filter((a) => a.asset_type === 'intro')"
@@ -433,22 +431,19 @@
                     </div>
 
                     <!-- Global Outro -->
-                    <div class="space-y-1.5">
-                      <div class="flex items-center justify-between">
-                        <label class="text-xs text-zinc-400">Outro Video</label>
-                        <label class="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <div class="campaigns-dialog__asset-row">
+                      <div class="campaigns-dialog__asset-header">
+                        <label class="campaigns-dialog__asset-label">Outro Video</label>
+                        <label class="campaigns-dialog__checkbox-label">
                           <input
                             type="checkbox"
                             v-model="campaignForm.require_outro"
-                            class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-800 text-violet-500 focus:ring-violet-500/50"
+                            class="campaigns-dialog__checkbox"
                           />
                           Required
                         </label>
                       </div>
-                      <select
-                        v-model="campaignForm.global_outro_id"
-                        class="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50"
-                      >
+                      <select v-model="campaignForm.global_outro_id" class="campaigns-dialog__select">
                         <option :value="null">No outro</option>
                         <option
                           v-for="asset in availableAssets.filter((a) => a.asset_type === 'outro')"
@@ -461,124 +456,106 @@
                     </div>
 
                     <!-- Global Watermarks -->
-                    <div class="space-y-1.5">
-                      <div class="flex items-center justify-between">
-                        <label class="text-xs text-zinc-400">Watermarks (per aspect ratio)</label>
-                        <label class="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <div class="campaigns-dialog__asset-row">
+                      <div class="campaigns-dialog__asset-header">
+                        <label class="campaigns-dialog__asset-label">Watermarks (per aspect ratio)</label>
+                        <label class="campaigns-dialog__checkbox-label">
                           <input
                             type="checkbox"
                             v-model="campaignForm.require_watermark"
-                            class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-800 text-violet-500 focus:ring-violet-500/50"
+                            class="campaigns-dialog__checkbox"
                           />
                           Required
                         </label>
                       </div>
-
-                      <!-- Watermark Selection Summary -->
-                      <div class="flex items-center gap-2">
-                        <div class="flex-1 px-3 py-2 bg-zinc-900/80 border border-zinc-700 rounded-lg">
-                          <div class="flex items-center gap-2 text-xs">
-                            <span class="text-zinc-400">Configured:</span>
-                            <span v-if="hasAnyWatermarkConfigured" class="text-violet-400">
-                              {{ getConfiguredWatermarkRatios() }}
-                            </span>
-                            <span v-else class="text-zinc-500">None</span>
-                          </div>
+                      <div class="campaigns-dialog__watermark-row">
+                        <div class="campaigns-dialog__watermark-status">
+                          <span class="campaigns-dialog__watermark-label">Configured:</span>
+                          <span v-if="hasAnyWatermarkConfigured" class="campaigns-dialog__watermark-value">
+                            {{ getConfiguredWatermarkRatios() }}
+                          </span>
+                          <span v-else class="campaigns-dialog__watermark-none">None</span>
                         </div>
                         <button
                           type="button"
                           @click="openWatermarkPositionPicker"
-                          class="px-3 py-2 bg-violet-500/20 hover:bg-violet-500/30 text-violet-400 text-xs font-medium rounded-lg border border-violet-500/30 transition-colors"
+                          class="campaigns-dialog__watermark-btn"
                         >
                           Configure Positions
                         </button>
                       </div>
-                      <p class="text-[10px] text-zinc-500">
+                      <p class="campaigns-dialog__hint campaigns-dialog__hint--small">
                         Set watermark images and positions for each aspect ratio (16:9, 9:16, 1:1, 4:5)
                       </p>
                     </div>
                   </div>
 
                   <!-- Cover Image -->
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Cover Image</label>
+                  <div class="campaigns-dialog__field">
+                    <label class="campaigns-dialog__label">Cover Image</label>
 
                     <!-- Image Preview -->
                     <div
                       v-if="campaignForm.cover_image_url || coverImagePreview"
-                      class="relative w-full h-32 rounded-lg sm:rounded-xl overflow-hidden bg-zinc-900/50 border border-zinc-800"
+                      class="campaigns-dialog__cover-preview"
                     >
-                      <img
-                        :src="coverImagePreview || campaignForm.cover_image_url"
-                        class="w-full h-full object-cover"
-                        @error="handleImageError"
-                      />
-                      <button
-                        type="button"
-                        @click="clearCoverImage"
-                        class="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-lg transition-colors"
-                      >
-                        <X class="w-4 h-4 text-white" />
+                      <img :src="coverImagePreview || campaignForm.cover_image_url" @error="handleImageError" />
+                      <button type="button" @click="clearCoverImage" class="campaigns-dialog__cover-remove">
+                        <X class="campaigns-dialog__cover-remove-icon" />
                       </button>
                     </div>
 
                     <!-- Upload/URL Options -->
-                    <div class="flex gap-2 items-center">
+                    <div class="campaigns-dialog__upload-row">
                       <button
                         type="button"
                         @click="triggerCoverImageUpload"
                         :disabled="uploadingCoverImage"
-                        class="px-3 sm:px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all font-medium border border-zinc-700 text-xs sm:text-sm flex items-center gap-2 disabled:opacity-50"
+                        class="campaigns-dialog__upload-btn"
                       >
-                        <Loader2 v-if="uploadingCoverImage" class="w-4 h-4 animate-spin" />
-                        <Upload v-else class="w-4 h-4" />
+                        <Loader2 v-if="uploadingCoverImage" class="campaigns-dialog__spinner" />
+                        <Upload v-else class="campaigns-dialog__upload-icon" />
                         {{ uploadingCoverImage ? 'Uploading...' : 'Upload' }}
                       </button>
                       <input
                         ref="coverImageInput"
                         type="file"
                         accept="image/*"
-                        class="hidden"
+                        class="campaigns-dialog__file-input"
                         @change="handleCoverImageSelect"
                       />
-                      <span class="text-zinc-500 text-xs">or</span>
+                      <span class="campaigns-dialog__upload-or">or</span>
                       <input
                         v-model="campaignForm.cover_image_url"
                         type="text"
                         placeholder="Paste image URL..."
-                        class="flex-1 px-3 sm:px-4 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all"
+                        class="campaigns-dialog__input campaigns-dialog__input--url"
                         @input="coverImagePreview = ''"
                       />
                     </div>
-                    <p class="text-xs text-zinc-500">Recommended size: 1200x630px</p>
-                  </div>
-
-                  <!-- Actions -->
-                  <div class="flex gap-2 sm:gap-3 pt-3 sm:pt-4">
-                    <button
-                      type="button"
-                      @click="showCampaignDialog = false"
-                      :disabled="saving"
-                      class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      :disabled="saving || !campaignForm.title"
-                      class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                    >
-                      <div
-                        class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                      />
-                      <span v-if="saving" class="relative flex items-center justify-center">
-                        <Loader2 class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2 animate-spin" />
-                        Saving...
-                      </span>
-                      <span v-else class="relative">{{ editingCampaign ? 'Save Changes' : 'Create Campaign' }}</span>
-                    </button>
+                    <p class="campaigns-dialog__hint">Recommended size: 1200x630px</p>
                   </div>
                 </form>
+              </div>
+
+              <!-- Footer -->
+              <div class="campaigns-dialog__footer">
+                <button
+                  type="button"
+                  @click="showCampaignDialog = false"
+                  :disabled="saving"
+                  class="campaigns-dialog__btn campaigns-dialog__btn--secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="saveCampaign"
+                  :disabled="saving || !campaignForm.title"
+                  class="campaigns-dialog__btn campaigns-dialog__btn--primary"
+                >
+                  <Loader2 v-if="saving" class="campaigns-dialog__btn-spinner" />
+                  {{ saving ? 'Saving...' : editingCampaign ? 'Save Changes' : 'Create Campaign' }}
+                </button>
               </div>
             </div>
           </Transition>
@@ -587,281 +564,313 @@
     </Teleport>
 
     <!-- Campaign Detail Dialog -->
-    <Dialog v-model:open="showDetailDialog">
-      <DialogContent class="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>{{ selectedCampaign?.title }}</DialogTitle>
-        </DialogHeader>
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showDetailDialog"
+          class="campaigns-dialog__overlay"
+          @click.self="showDetailDialog = false"
+          @keydown.esc="showDetailDialog = false"
+        >
+          <Transition name="dialog" appear>
+            <div
+              v-if="showDetailDialog"
+              class="campaigns-dialog campaigns-dialog--detail"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div class="campaigns-dialog__accent campaigns-dialog__accent--cyan"></div>
 
-        <Tabs v-model="detailTab" class="flex-1 overflow-hidden flex flex-col">
-          <TabsList class="grid w-full grid-cols-3">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="participants">Participants</TabsTrigger>
-            <TabsTrigger value="submissions">Submissions</TabsTrigger>
-          </TabsList>
-
-          <div class="flex-1 overflow-y-auto mt-4">
-            <!-- Overview Tab -->
-            <TabsContent value="overview" class="space-y-4">
-              <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div class="bg-muted/30 rounded-lg p-3 text-center">
-                  <div class="text-lg font-bold text-green-500">${{ formatCpm(selectedCampaign?.cpm || 0) }}</div>
-                  <div class="text-[11px] text-muted-foreground">
-                    per {{ formatViews(selectedCampaign?.cpm_views || 1000) }} views
-                  </div>
+              <!-- Header -->
+              <div class="campaigns-dialog__header">
+                <button class="campaigns-dialog__close" @click="showDetailDialog = false" title="Close">
+                  <X :size="18" />
+                </button>
+                <div class="campaigns-dialog__icon campaigns-dialog__icon--cyan">
+                  <Eye :size="24" />
                 </div>
-                <div class="bg-muted/30 rounded-lg p-3 text-center">
-                  <div class="text-lg font-bold text-foreground">
-                    ${{ formatBudget(selectedCampaign?.budget || 0) }}
-                  </div>
-                  <div class="text-[11px] text-muted-foreground">budget</div>
-                </div>
-                <div class="bg-muted/30 rounded-lg p-3 text-center">
-                  <div class="text-lg font-bold text-foreground">${{ formatBudget(selectedCampaign?.spent || 0) }}</div>
-                  <div class="text-[11px] text-muted-foreground">spent</div>
-                </div>
-                <div class="bg-muted/30 rounded-lg p-3 text-center">
-                  <div class="text-lg font-bold text-foreground">{{ participants.length }}</div>
-                  <div class="text-[11px] text-muted-foreground">participants</div>
-                </div>
+                <h2 class="campaigns-dialog__title">{{ selectedCampaign?.title }}</h2>
+                <p class="campaigns-dialog__subtitle">Campaign details and management</p>
               </div>
 
-              <div v-if="selectedCampaign?.description" class="bg-muted/20 rounded-lg p-4">
-                <h4 class="text-sm font-medium mb-2">Description</h4>
-                <p class="text-sm text-muted-foreground whitespace-pre-wrap">{{ selectedCampaign.description }}</p>
-              </div>
-            </TabsContent>
-
-            <!-- Participants Tab -->
-            <TabsContent value="participants" class="space-y-3">
-              <div v-if="loadingParticipants" class="flex items-center justify-center py-8">
-                <Loader2 class="w-6 h-6 animate-spin text-muted-foreground" />
-              </div>
-              <div v-else-if="participants.length === 0" class="text-center py-8 text-muted-foreground">
-                No participants yet
-              </div>
-              <div v-else class="space-y-3">
-                <div
-                  v-for="participant in participants"
-                  :key="participant.id"
-                  class="p-4 bg-muted/30 rounded-lg border border-border/50"
+              <!-- Tabs -->
+              <div class="campaigns-detail__tabs">
+                <button
+                  class="campaigns-detail__tab"
+                  :class="{ 'campaigns-detail__tab--active': detailTab === 'overview' }"
+                  @click="detailTab = 'overview'"
                 >
-                  <div class="flex items-start justify-between gap-4">
-                    <!-- Clipper Info -->
-                    <div class="flex items-start gap-3 flex-1 min-w-0">
-                      <div
-                        class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0"
-                      >
+                  Overview
+                </button>
+                <button
+                  class="campaigns-detail__tab"
+                  :class="{ 'campaigns-detail__tab--active': detailTab === 'participants' }"
+                  @click="detailTab = 'participants'"
+                >
+                  Participants
+                </button>
+                <button
+                  class="campaigns-detail__tab"
+                  :class="{ 'campaigns-detail__tab--active': detailTab === 'submissions' }"
+                  @click="detailTab = 'submissions'"
+                >
+                  Submissions
+                </button>
+              </div>
+
+              <!-- Content -->
+              <div class="campaigns-dialog__content">
+                <!-- Overview Tab -->
+                <div v-if="detailTab === 'overview'" class="campaigns-detail__content">
+                  <div class="campaigns-detail__stats-grid">
+                    <div class="campaigns-detail__stat-card campaigns-detail__stat-card--green">
+                      <span class="campaigns-detail__stat-value">${{ formatCpm(selectedCampaign?.cpm || 0) }}</span>
+                      <span class="campaigns-detail__stat-label">
+                        per {{ formatViews(selectedCampaign?.cpm_views || 1000) }} views
+                      </span>
+                    </div>
+                    <div class="campaigns-detail__stat-card">
+                      <span class="campaigns-detail__stat-value">
+                        ${{ formatBudget(selectedCampaign?.budget || 0) }}
+                      </span>
+                      <span class="campaigns-detail__stat-label">budget</span>
+                    </div>
+                    <div class="campaigns-detail__stat-card">
+                      <span class="campaigns-detail__stat-value">
+                        ${{ formatBudget(selectedCampaign?.spent || 0) }}
+                      </span>
+                      <span class="campaigns-detail__stat-label">spent</span>
+                    </div>
+                    <div class="campaigns-detail__stat-card">
+                      <span class="campaigns-detail__stat-value">{{ participants.length }}</span>
+                      <span class="campaigns-detail__stat-label">participants</span>
+                    </div>
+                  </div>
+
+                  <div v-if="selectedCampaign?.description" class="campaigns-detail__desc-card">
+                    <h4 class="campaigns-detail__desc-title">Description</h4>
+                    <p class="campaigns-detail__desc-text">{{ selectedCampaign.description }}</p>
+                  </div>
+                </div>
+
+                <!-- Participants Tab -->
+                <div v-else-if="detailTab === 'participants'" class="campaigns-detail__content">
+                  <div v-if="loadingParticipants" class="campaigns-detail__loading">
+                    <Loader2 class="campaigns-dialog__spinner" />
+                  </div>
+                  <div v-else-if="participants.length === 0" class="campaigns-detail__empty">No participants yet</div>
+                  <div v-else class="campaigns-detail__list">
+                    <div
+                      v-for="participant in participants"
+                      :key="participant.id"
+                      class="campaigns-detail__participant"
+                    >
+                      <div class="campaigns-detail__participant-avatar">
                         <img
                           v-if="participant.clipper_profile?.avatar_url"
                           :src="participant.clipper_profile.avatar_url"
-                          class="w-full h-full object-cover"
                         />
-                        <User v-else class="w-5 h-5 text-primary" />
+                        <User v-else class="campaigns-detail__participant-avatar-icon" />
                       </div>
-                      <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                          <span class="font-medium text-foreground">
+                      <div class="campaigns-detail__participant-info">
+                        <div class="campaigns-detail__participant-header">
+                          <span class="campaigns-detail__participant-name">
                             {{
                               participant.clipper_profile?.display_name ||
                               participant.user?.display_name ||
                               participant.user?.email
                             }}
                           </span>
-                          <CheckCircle v-if="participant.clipper_profile?.is_verified" class="w-4 h-4 text-blue-500" />
-                          <Badge
+                          <CheckCircle
+                            v-if="participant.clipper_profile?.is_verified"
+                            class="campaigns-detail__verified-icon"
+                          />
+                          <span
                             v-if="participant.clipper_profile?.experience_level"
-                            variant="outline"
-                            class="text-[10px]"
+                            class="campaigns-detail__participant-level"
                           >
                             {{ participant.clipper_profile.experience_level }}
-                          </Badge>
+                          </span>
                         </div>
-
-                        <!-- Stats Row -->
-                        <div
-                          v-if="participant.clipper_profile"
-                          class="flex items-center gap-3 mt-1 text-xs text-muted-foreground"
-                        >
+                        <div v-if="participant.clipper_profile" class="campaigns-detail__participant-stats">
                           <span>{{ participant.clipper_profile.total_campaigns_completed }} campaigns</span>
                           <span>{{ participant.clipper_profile.total_clips_delivered }} clips</span>
-                          <span>{{ participant.clipper_profile.total_endorsements }} endorsements</span>
                         </div>
-
-                        <!-- Tags -->
                         <div
                           v-if="participant.clipper_profile?.specialty_tags?.length"
-                          class="flex flex-wrap gap-1 mt-2"
+                          class="campaigns-detail__participant-tags"
                         >
                           <span
                             v-for="tag in participant.clipper_profile.specialty_tags.slice(0, 4)"
                             :key="tag"
-                            class="px-1.5 py-0.5 bg-muted/50 text-muted-foreground text-[10px] rounded"
+                            class="campaigns-detail__participant-tag"
                           >
                             {{ tag }}
                           </span>
                         </div>
-
-                        <!-- Application Note -->
-                        <div
-                          v-if="participant.application_note"
-                          class="mt-2 p-2 bg-muted/30 rounded text-xs text-muted-foreground italic"
-                        >
+                        <div v-if="participant.application_note" class="campaigns-detail__participant-note">
                           "{{ participant.application_note }}"
                         </div>
-
-                        <div class="text-[11px] text-muted-foreground mt-2">
+                        <div class="campaigns-detail__participant-meta">
                           Applied {{ formatDate(participant.inserted_at) }}
                           <router-link
                             v-if="participant.clipper_profile?.slug"
                             :to="`/clippers/${participant.clipper_profile.slug}`"
-                            class="ml-2 text-primary hover:underline"
+                            class="campaigns-detail__participant-link"
                           >
                             View Profile →
                           </router-link>
                         </div>
                       </div>
+                      <div class="campaigns-detail__participant-actions">
+                        <span
+                          class="campaigns-detail__participant-status"
+                          :class="`campaigns-detail__participant-status--${participant.status}`"
+                        >
+                          {{ participant.status }}
+                        </span>
+                        <template v-if="isAdmin && participant.status === 'pending'">
+                          <button
+                            class="campaigns-detail__action-btn campaigns-detail__action-btn--approve"
+                            @click="approveParticipantAction(participant)"
+                          >
+                            <Check :size="14" />
+                          </button>
+                          <button
+                            class="campaigns-detail__action-btn campaigns-detail__action-btn--reject"
+                            @click="rejectParticipantAction(participant)"
+                          >
+                            <X :size="14" />
+                          </button>
+                        </template>
+                      </div>
                     </div>
+                  </div>
+                </div>
 
-                    <!-- Actions -->
-                    <div class="flex items-center gap-2 flex-shrink-0">
-                      <Badge :variant="getParticipantStatusVariant(participant.status)">{{ participant.status }}</Badge>
-                      <template v-if="isAdmin && participant.status === 'pending'">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          class="text-green-500"
-                          @click="approveParticipantAction(participant)"
+                <!-- Submissions Tab -->
+                <div v-else-if="detailTab === 'submissions'" class="campaigns-detail__content">
+                  <div v-if="loadingSubmissions" class="campaigns-detail__loading">
+                    <Loader2 class="campaigns-dialog__spinner" />
+                  </div>
+                  <div v-else-if="submissions.length === 0" class="campaigns-detail__empty">No submissions yet</div>
+                  <div v-else class="campaigns-detail__list">
+                    <div v-for="submission in submissions" :key="submission.id" class="campaigns-detail__submission">
+                      <div class="campaigns-detail__submission-info">
+                        <div class="campaigns-detail__submission-header">
+                          <component
+                            :is="getPlatformIcon(submission.platform)"
+                            class="campaigns-detail__submission-platform"
+                          />
+                          <a :href="submission.clip_url" target="_blank" class="campaigns-detail__submission-url">
+                            {{ truncateUrl(submission.clip_url) }}
+                          </a>
+                        </div>
+                        <div class="campaigns-detail__submission-meta">
+                          by {{ submission.user?.display_name || submission.user?.email }} ·
+                          {{ submission.view_count.toLocaleString() }} views
+                        </div>
+                      </div>
+                      <div class="campaigns-detail__submission-actions">
+                        <span
+                          class="campaigns-detail__submission-status"
+                          :class="`campaigns-detail__submission-status--${submission.status}`"
                         >
-                          <Check class="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          class="text-destructive"
-                          @click="rejectParticipantAction(participant)"
+                          {{ submission.status }}
+                        </span>
+                        <template v-if="isAdmin && submission.status === 'pending'">
+                          <button
+                            class="campaigns-detail__action-btn campaigns-detail__action-btn--approve"
+                            @click="verifySubmissionAction(submission)"
+                          >
+                            <Check :size="14" />
+                          </button>
+                          <button
+                            class="campaigns-detail__action-btn campaigns-detail__action-btn--reject"
+                            @click="rejectSubmissionAction(submission)"
+                          >
+                            <X :size="14" />
+                          </button>
+                        </template>
+                        <button
+                          v-if="isAdmin && submission.status === 'verified'"
+                          class="campaigns-detail__pay-btn"
+                          @click="openPaymentDialog(submission)"
                         >
-                          <X class="w-3.5 h-3.5" />
-                        </Button>
-                      </template>
+                          <DollarSign :size="14" />
+                          Pay
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </TabsContent>
-
-            <!-- Submissions Tab -->
-            <TabsContent value="submissions" class="space-y-3">
-              <div v-if="loadingSubmissions" class="flex items-center justify-center py-8">
-                <Loader2 class="w-6 h-6 animate-spin text-muted-foreground" />
-              </div>
-              <div v-else-if="submissions.length === 0" class="text-center py-8 text-muted-foreground">
-                No submissions yet
-              </div>
-              <div v-else class="space-y-2">
-                <div
-                  v-for="submission in submissions"
-                  :key="submission.id"
-                  class="p-3 bg-muted/30 rounded-lg border border-border/50"
-                >
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-2 mb-1">
-                        <component :is="getPlatformIcon(submission.platform)" class="w-4 h-4 text-muted-foreground" />
-                        <a
-                          :href="submission.clip_url"
-                          target="_blank"
-                          class="text-sm text-primary hover:underline truncate"
-                        >
-                          {{ truncateUrl(submission.clip_url) }}
-                        </a>
-                      </div>
-                      <div class="text-xs text-muted-foreground">
-                        by {{ submission.user?.display_name || submission.user?.email }} ·
-                        {{ submission.view_count.toLocaleString() }} views
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <Badge :variant="getSubmissionStatusVariant(submission.status)">{{ submission.status }}</Badge>
-                      <template v-if="isAdmin && submission.status === 'pending'">
-                        <Button size="sm" variant="outline" @click="verifySubmissionAction(submission)">
-                          <Check class="w-3.5 h-3.5" />
-                        </Button>
-                        <Button size="sm" variant="outline" @click="rejectSubmissionAction(submission)">
-                          <X class="w-3.5 h-3.5" />
-                        </Button>
-                      </template>
-                      <Button
-                        v-if="isAdmin && submission.status === 'verified'"
-                        size="sm"
-                        @click="openPaymentDialog(submission)"
-                      >
-                        <DollarSign class="w-3.5 h-3.5 mr-1" />
-                        Pay
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-          </div>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Delete Confirmation Dialog -->
     <Teleport to="body">
       <Transition name="modal">
         <div
           v-if="showDeleteDialog"
-          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          class="campaigns-dialog__overlay"
           @click.self="showDeleteDialog = false"
+          @keydown.esc="showDeleteDialog = false"
         >
           <Transition name="dialog" appear>
             <div
-              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
+              v-if="showDeleteDialog"
+              class="campaigns-dialog campaigns-dialog--small"
+              role="dialog"
+              aria-modal="true"
             >
-              <!-- Decorative top accent -->
-              <div class="h-1 w-full bg-gradient-to-r from-red-500 via-rose-500 to-pink-500" />
+              <div class="campaigns-dialog__accent campaigns-dialog__accent--red"></div>
 
-              <div class="p-5 sm:p-6">
-                <div class="mb-5 text-center">
-                  <div
-                    class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-red-500/30 mb-4"
-                  >
-                    <Trash2 class="h-6 w-6 text-red-400" />
+              <!-- Header -->
+              <div class="campaigns-dialog__header">
+                <button class="campaigns-dialog__close" @click="showDeleteDialog = false" :disabled="deleting">
+                  <X :size="18" />
+                </button>
+                <div class="campaigns-dialog__icon campaigns-dialog__icon--red">
+                  <Trash2 :size="24" />
+                </div>
+                <h2 class="campaigns-dialog__title">Delete Campaign</h2>
+                <p class="campaigns-dialog__subtitle">This action cannot be undone</p>
+              </div>
+
+              <!-- Content -->
+              <div class="campaigns-dialog__content">
+                <div class="campaigns-dialog__preview">
+                  <div class="campaigns-dialog__preview-icon">
+                    <Megaphone :size="20" />
                   </div>
-                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Delete Campaign</h2>
-                  <p class="text-zinc-400 text-sm mt-1">This action cannot be undone</p>
+                  <div class="campaigns-dialog__preview-info">
+                    <span class="campaigns-dialog__preview-name">{{ campaignToDelete?.title }}</span>
+                    <span class="campaigns-dialog__preview-meta">Campaign</span>
+                  </div>
                 </div>
+              </div>
 
-                <div class="mb-5 p-4 bg-zinc-900/80 rounded-xl border border-zinc-800">
-                  <p class="text-sm text-zinc-300 text-center">
-                    Are you sure you want to delete "
-                    <span class="font-medium text-white">{{ campaignToDelete?.title }}</span>
-                    "?
-                  </p>
-                </div>
-
-                <div class="flex gap-3">
-                  <button
-                    type="button"
-                    class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm"
-                    @click="showDeleteDialog = false"
-                    :disabled="deleting"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    class="flex-1 px-4 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white rounded-xl font-semibold transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
-                    @click="deleteCampaignAction"
-                    :disabled="deleting"
-                  >
-                    <Loader2 v-if="deleting" class="h-4 w-4 animate-spin" />
-                    {{ deleting ? 'Deleting...' : 'Delete Campaign' }}
-                  </button>
-                </div>
+              <!-- Footer -->
+              <div class="campaigns-dialog__footer">
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--secondary"
+                  @click="showDeleteDialog = false"
+                  :disabled="deleting"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--danger"
+                  @click="deleteCampaignAction"
+                  :disabled="deleting"
+                >
+                  <Loader2 v-if="deleting" class="campaigns-dialog__btn-spinner" />
+                  {{ deleting ? 'Deleting...' : 'Delete Campaign' }}
+                </button>
               </div>
             </div>
           </Transition>
@@ -874,66 +883,69 @@
       <Transition name="modal">
         <div
           v-if="showPaymentDialog"
-          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          class="campaigns-dialog__overlay"
           @click.self="showPaymentDialog = false"
+          @keydown.esc="showPaymentDialog = false"
         >
           <Transition name="dialog" appear>
             <div
-              class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
+              v-if="showPaymentDialog"
+              class="campaigns-dialog campaigns-dialog--small"
+              role="dialog"
+              aria-modal="true"
             >
-              <!-- Decorative top accent -->
-              <div class="h-1 w-full bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500" />
+              <div class="campaigns-dialog__accent campaigns-dialog__accent--green"></div>
 
-              <div class="p-5 sm:p-6">
-                <div class="mb-5 text-center">
-                  <div
-                    class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 mb-4"
-                  >
-                    <DollarSign class="h-6 w-6 text-green-400" />
-                  </div>
-                  <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight">Create Payment</h2>
-                  <p class="text-zinc-400 text-sm mt-1">
-                    Pay for submission with {{ paymentSubmission?.view_count.toLocaleString() }} views
+              <!-- Header -->
+              <div class="campaigns-dialog__header">
+                <button class="campaigns-dialog__close" @click="showPaymentDialog = false" :disabled="creatingPayment">
+                  <X :size="18" />
+                </button>
+                <div class="campaigns-dialog__icon campaigns-dialog__icon--green">
+                  <DollarSign :size="24" />
+                </div>
+                <h2 class="campaigns-dialog__title">Create Payment</h2>
+                <p class="campaigns-dialog__subtitle">
+                  Pay for submission with {{ paymentSubmission?.view_count.toLocaleString() }} views
+                </p>
+              </div>
+
+              <!-- Content -->
+              <div class="campaigns-dialog__content">
+                <div class="campaigns-dialog__field">
+                  <label class="campaigns-dialog__label">Amount ($)</label>
+                  <input
+                    v-model.number="paymentAmount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    class="campaigns-dialog__input"
+                  />
+                  <p class="campaigns-dialog__hint">
+                    Suggested:
+                    <span class="campaigns-dialog__hint-value">${{ calculateSuggestedPayment().toFixed(2) }}</span>
+                    based on CPM
                   </p>
                 </div>
+              </div>
 
-                <div class="space-y-4 mb-5">
-                  <div class="space-y-2">
-                    <label class="text-sm font-medium text-zinc-300">Amount ($)</label>
-                    <input
-                      v-model.number="paymentAmount"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all text-sm"
-                    />
-                    <p class="text-xs text-zinc-500">
-                      Suggested:
-                      <span class="text-green-400 font-medium">${{ calculateSuggestedPayment().toFixed(2) }}</span>
-                      based on CPM
-                    </p>
-                  </div>
-                </div>
-
-                <div class="flex gap-3">
-                  <button
-                    type="button"
-                    class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 text-sm"
-                    @click="showPaymentDialog = false"
-                    :disabled="creatingPayment"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    class="flex-1 px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-xl font-semibold transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
-                    @click="createPaymentAction"
-                    :disabled="creatingPayment || paymentAmount <= 0"
-                  >
-                    <Loader2 v-if="creatingPayment" class="h-4 w-4 animate-spin" />
-                    {{ creatingPayment ? 'Processing...' : 'Create Payment' }}
-                  </button>
-                </div>
+              <!-- Footer -->
+              <div class="campaigns-dialog__footer">
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--secondary"
+                  @click="showPaymentDialog = false"
+                  :disabled="creatingPayment"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--success"
+                  @click="createPaymentAction"
+                  :disabled="creatingPayment || paymentAmount <= 0"
+                >
+                  <Loader2 v-if="creatingPayment" class="campaigns-dialog__btn-spinner" />
+                  {{ creatingPayment ? 'Processing...' : 'Create Payment' }}
+                </button>
               </div>
             </div>
           </Transition>
@@ -976,6 +988,7 @@
     Youtube,
     Globe,
     Upload,
+    Calendar,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
@@ -1649,13 +1662,1624 @@
       loadCampaigns();
     }
   });
+
+  defineExpose({ openCreateDialog });
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Container ===== */
+  .campaigns {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* ===== Page Heading ===== */
+  .campaigns__heading {
+    margin-bottom: 0;
+  }
+
+  .campaigns__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.025em;
+  }
+
+  .campaigns__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Campaigns List ===== */
+  .campaigns__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  /* ===== Campaign Card ===== */
+  .campaigns__card {
+    display: flex;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: all 200ms ease;
+  }
+
+  .campaigns__card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  .campaigns__card-indicator {
+    width: 3px;
+    flex-shrink: 0;
+    background-color: var(--sidebar-border);
+  }
+
+  .campaigns__card-indicator--active {
+    background: linear-gradient(to bottom, #10b981 0%, #059669 100%);
+  }
+
+  .campaigns__card-indicator--paused {
+    background: linear-gradient(to bottom, #f59e0b 0%, #d97706 100%);
+  }
+
+  .campaigns__card-indicator--completed {
+    background: linear-gradient(to bottom, #6366f1 0%, #4f46e5 100%);
+  }
+
+  .campaigns__card-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+  }
+
+  /* ===== Cover Image ===== */
+  .campaigns__cover {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-color: var(--sidebar-hover);
+  }
+
+  .campaigns__cover-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaigns__cover-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--sidebar-hover);
+  }
+
+  .campaigns__cover-icon {
+    width: 28px;
+    height: 28px;
+    color: var(--sidebar-accent);
+    opacity: 0.5;
+  }
+
+  /* ===== Status Badge ===== */
+  .campaigns__status {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    padding: 0.1875rem 0.4375rem;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    border-radius: 4px;
+    backdrop-filter: blur(4px);
+    background-color: rgba(113, 113, 122, 0.9);
+    color: white;
+  }
+
+  .campaigns__status--active {
+    background-color: rgba(16, 185, 129, 0.9);
+  }
+
+  .campaigns__status--paused {
+    background-color: rgba(245, 158, 11, 0.9);
+  }
+
+  .campaigns__status--completed {
+    background-color: rgba(99, 102, 241, 0.9);
+  }
+
+  .campaigns__status--draft {
+    background-color: rgba(113, 113, 122, 0.9);
+  }
+
+  /* ===== Campaign Info ===== */
+  .campaigns__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaigns__name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .campaigns__desc {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.5rem;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .campaigns__meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .campaigns__meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns__meta-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* ===== Stats ===== */
+  .campaigns__stats {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 0 1.25rem;
+    border-left: 1px solid var(--sidebar-border);
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 900px) {
+    .campaigns__stats {
+      display: none;
+    }
+  }
+
+  .campaigns__stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 70px;
+  }
+
+  .campaigns__stat-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .campaigns__stat-data {
+    display: flex;
+    flex-direction: column;
+    gap: 0.0625rem;
+  }
+
+  .campaigns__stat-value {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
+
+  .campaigns__stat-label {
+    font-size: 0.5625rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  /* ===== Actions ===== */
+  .campaigns__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-shrink: 0;
+  }
+
+  .campaigns__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns__action-btn:hover {
+    background-color: var(--sidebar-hover);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--sidebar-text);
+  }
+
+  .campaigns__action-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* ===== Empty State ===== */
+  .campaigns__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+    background-color: var(--sidebar-surface);
+    border: 1px dashed var(--sidebar-border);
+    border-radius: 12px;
+  }
+
+  .campaigns__empty-icon-wrapper {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--sidebar-hover);
+    margin-bottom: 1.25rem;
+  }
+
+  .campaigns__empty-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .campaigns__empty-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1.25rem;
+    max-width: 300px;
+  }
+
+  .campaigns__empty-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns__empty-btn:hover {
+    opacity: 0.9;
+  }
+
+  .campaigns__empty-btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* ===== Skeleton Loading ===== */
+  .campaigns__card--skeleton {
+    pointer-events: none;
+  }
+
+  .campaigns__skeleton-cover {
+    width: 72px;
+    height: 72px;
+    border-radius: 10px;
+    background: linear-gradient(
+      90deg,
+      var(--sidebar-hover) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      var(--sidebar-hover) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .campaigns__skeleton-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .campaigns__skeleton-title {
+    height: 18px;
+    width: 60%;
+    border-radius: 4px;
+    background: linear-gradient(
+      90deg,
+      var(--sidebar-hover) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      var(--sidebar-hover) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.1s;
+  }
+
+  .campaigns__skeleton-desc {
+    height: 14px;
+    width: 90%;
+    border-radius: 4px;
+    background: linear-gradient(
+      90deg,
+      var(--sidebar-hover) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      var(--sidebar-hover) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.15s;
+  }
+
+  .campaigns__skeleton-stats {
+    height: 12px;
+    width: 70%;
+    border-radius: 4px;
+    background: linear-gradient(
+      90deg,
+      var(--sidebar-hover) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      var(--sidebar-hover) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.2s;
+  }
+
+  .campaigns__skeleton-badge {
+    width: 60px;
+    height: 24px;
+    border-radius: 4px;
+    background: linear-gradient(
+      90deg,
+      var(--sidebar-hover) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      var(--sidebar-hover) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.25s;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  /* ===== Dialog Overlay ===== */
+  .campaigns-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  /* ===== Dialog Container ===== */
+  .campaigns-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 640px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .campaigns-dialog--form {
+    max-width: 640px;
+  }
+
+  .campaigns-dialog--detail {
+    max-width: 720px;
+  }
+
+  .campaigns-dialog--small {
+    max-width: 440px;
+  }
+
+  /* ===== Accent Bar ===== */
+  .campaigns-dialog__accent {
+    height: 3px;
+    flex-shrink: 0;
+  }
+
+  .campaigns-dialog__accent--purple {
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  }
+
+  .campaigns-dialog__accent--cyan {
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  }
+
+  .campaigns-dialog__accent--red {
+    background: linear-gradient(90deg, #ef4444, rgba(239, 68, 68, 0.5));
+  }
+
+  .campaigns-dialog__accent--green {
+    background: linear-gradient(90deg, #10b981, rgba(16, 185, 129, 0.5));
+  }
+
+  /* ===== Header ===== */
+  .campaigns-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .campaigns-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .campaigns-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .campaigns-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    margin-bottom: 0.875rem;
+  }
+
+  .campaigns-dialog__icon--purple {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns-dialog__icon--cyan {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns-dialog__icon--red {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .campaigns-dialog__icon--green {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+  }
+
+  .campaigns-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .campaigns-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content Area ===== */
+  .campaigns-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem 1.5rem;
+  }
+
+  .campaigns-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .campaigns-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .campaigns-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Form Styles ===== */
+  .campaigns-dialog__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .campaigns-dialog__description {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin: 0;
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+  }
+
+  /* ===== Form Field ===== */
+  .campaigns-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .campaigns-dialog__label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .campaigns-dialog__label-hint {
+    font-weight: 400;
+    color: var(--sidebar-text-muted);
+    margin-left: 0.25rem;
+  }
+
+  .campaigns-dialog__input,
+  .campaigns-dialog__select,
+  .campaigns-dialog__textarea {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .campaigns-dialog__input::placeholder,
+  .campaigns-dialog__textarea::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .campaigns-dialog__input:focus,
+  .campaigns-dialog__select:focus,
+  .campaigns-dialog__textarea:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .campaigns-dialog__input--url {
+    flex: 1;
+  }
+
+  .campaigns-dialog__textarea {
+    resize: vertical;
+    min-height: 80px;
+    line-height: 1.5;
+  }
+
+  .campaigns-dialog__select {
+    cursor: pointer;
+  }
+
+  .campaigns-dialog__select option {
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text);
+  }
+
+  .campaigns-dialog__row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .campaigns-dialog__row--3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  @media (max-width: 640px) {
+    .campaigns-dialog__row--3 {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .campaigns-dialog__hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-top: -0.25rem;
+  }
+
+  .campaigns-dialog__hint--small {
+    font-size: 0.6875rem;
+  }
+
+  .campaigns-dialog__hint-value {
+    color: #34d399;
+    font-weight: 600;
+  }
+
+  /* ===== Note Box ===== */
+  .campaigns-dialog__note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: 8px;
+  }
+
+  .campaigns-dialog__note-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background-color: rgba(6, 182, 212, 0.15);
+    border-radius: 6px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .campaigns-dialog__note-text {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ===== Chips ===== */
+  .campaigns-dialog__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .campaigns-dialog__chip {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns-dialog__chip:hover {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .campaigns-dialog__chip--active {
+    background-color: rgba(6, 182, 212, 0.15);
+    border-color: rgba(6, 182, 212, 0.3);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Creator Profiles List ===== */
+  .campaigns-dialog__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+
+  .campaigns-dialog__spinner {
+    width: 20px;
+    height: 20px;
+    color: var(--sidebar-text-muted);
+    animation: spin 0.8s linear infinite;
+  }
+
+  .campaigns-dialog__empty-profiles {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .campaigns-dialog__empty-profiles p {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  .campaigns-dialog__profiles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 0.5rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .campaigns-dialog__profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+    width: 100%;
+  }
+
+  .campaigns-dialog__profile:hover {
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .campaigns-dialog__profile--selected {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .campaigns-dialog__profile-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+    flex-shrink: 0;
+  }
+
+  .campaigns-dialog__profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaigns-dialog__profile-avatar-icon {
+    width: 100%;
+    height: 100%;
+    padding: 6px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns-dialog__profile-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaigns-dialog__profile-name {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .campaigns-dialog__profile-desc {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .campaigns-dialog__profile-check {
+    flex-shrink: 0;
+  }
+
+  .campaigns-dialog__profile-check-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Section ===== */
+  .campaigns-dialog__section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .campaigns-dialog__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .campaigns-dialog__section-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .campaigns-dialog__section-badge {
+    font-size: 0.625rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    padding: 0.25rem 0.5rem;
+    background-color: var(--sidebar-surface);
+    border-radius: 4px;
+  }
+
+  .campaigns-dialog__section-desc {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: -0.25rem 0 0.25rem;
+  }
+
+  .campaigns-dialog__asset-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .campaigns-dialog__asset-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .campaigns-dialog__asset-label {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns-dialog__checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+  }
+
+  .campaigns-dialog__checkbox {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    accent-color: var(--sidebar-accent);
+  }
+
+  .campaigns-dialog__watermark-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .campaigns-dialog__watermark-status {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+  }
+
+  .campaigns-dialog__watermark-label {
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns-dialog__watermark-value {
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns-dialog__watermark-none {
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns-dialog__watermark-btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+    background-color: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns-dialog__watermark-btn:hover {
+    background-color: rgba(6, 182, 212, 0.15);
+  }
+
+  /* ===== Cover Upload ===== */
+  .campaigns-dialog__cover-preview {
+    position: relative;
+    width: 100%;
+    height: 120px;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+  }
+
+  .campaigns-dialog__cover-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaigns-dialog__cover-remove {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns-dialog__cover-remove:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .campaigns-dialog__cover-remove-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .campaigns-dialog__upload-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .campaigns-dialog__upload-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns-dialog__upload-btn:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .campaigns-dialog__upload-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .campaigns-dialog__upload-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .campaigns-dialog__file-input {
+    display: none;
+  }
+
+  .campaigns-dialog__upload-or {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Preview Card ===== */
+  .campaigns-dialog__preview {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 10px;
+    margin-bottom: 1rem;
+  }
+
+  .campaigns-dialog__preview-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .campaigns-dialog__preview-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .campaigns-dialog__preview-name {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .campaigns-dialog__preview-meta {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  /* ===== Footer ===== */
+  .campaigns-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
+  .campaigns-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .campaigns-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .campaigns-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .campaigns-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .campaigns-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .campaigns-dialog__btn--danger {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+  }
+
+  .campaigns-dialog__btn--danger:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .campaigns-dialog__btn--success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+  }
+
+  .campaigns-dialog__btn--success:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .campaigns-dialog__btn-spinner {
+    width: 16px;
+    height: 16px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Detail Dialog Tabs ===== */
+  .campaigns-detail__tabs {
+    display: flex;
+    gap: 0.375rem;
+    padding: 0 1.5rem;
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+
+  .campaigns-detail__tabs::-webkit-scrollbar {
+    height: 0;
+  }
+
+  .campaigns-detail__tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .campaigns-detail__tab:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .campaigns-detail__tab--active {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns-detail__tab--active:hover {
+    background-color: rgba(6, 182, 212, 0.2);
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns-detail__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .campaigns-detail__stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.625rem;
+  }
+
+  @media (min-width: 640px) {
+    .campaigns-detail__stats-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  .campaigns-detail__stat-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .campaigns-detail__stat-card--green .campaigns-detail__stat-value {
+    color: #34d399;
+  }
+
+  .campaigns-detail__stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .campaigns-detail__stat-label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  .campaigns-detail__desc-card {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+  }
+
+  .campaigns-detail__desc-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .campaigns-detail__desc-text {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
+  .campaigns-detail__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  .campaigns-detail__empty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
+  }
+
+  .campaigns-detail__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .campaigns-detail__participant {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .campaigns-detail__participant-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    flex-shrink: 0;
+  }
+
+  .campaigns-detail__participant-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaigns-detail__participant-avatar-icon {
+    width: 100%;
+    height: 100%;
+    padding: 8px;
+    color: var(--sidebar-accent);
+  }
+
+  .campaigns-detail__participant-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaigns-detail__participant-header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+  }
+
+  .campaigns-detail__participant-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .campaigns-detail__verified-icon {
+    width: 14px;
+    height: 14px;
+    color: #3b82f6;
+  }
+
+  .campaigns-detail__participant-level {
+    font-size: 0.625rem;
+    font-weight: 500;
+    padding: 0.125rem 0.375rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 3px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns-detail__participant-stats {
+    display: flex;
+    gap: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.25rem;
+  }
+
+  .campaigns-detail__participant-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+  }
+
+  .campaigns-detail__participant-tag {
+    font-size: 0.625rem;
+    padding: 0.125rem 0.375rem;
+    background-color: var(--sidebar-surface);
+    border-radius: 3px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns-detail__participant-note {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background-color: var(--sidebar-surface);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns-detail__participant-meta {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.5rem;
+  }
+
+  .campaigns-detail__participant-link {
+    color: var(--sidebar-accent);
+    margin-left: 0.5rem;
+    text-decoration: none;
+  }
+
+  .campaigns-detail__participant-link:hover {
+    text-decoration: underline;
+  }
+
+  .campaigns-detail__participant-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-shrink: 0;
+  }
+
+  .campaigns-detail__participant-status,
+  .campaigns-detail__submission-status {
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text-muted);
+  }
+
+  .campaigns-detail__participant-status--approved,
+  .campaigns-detail__submission-status--verified,
+  .campaigns-detail__submission-status--paid {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+  }
+
+  .campaigns-detail__participant-status--pending,
+  .campaigns-detail__submission-status--pending {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+
+  .campaigns-detail__participant-status--rejected,
+  .campaigns-detail__submission-status--rejected {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .campaigns-detail__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid var(--sidebar-border);
+    background-color: var(--sidebar-surface);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns-detail__action-btn--approve {
+    color: #34d399;
+  }
+
+  .campaigns-detail__action-btn--approve:hover {
+    background-color: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+
+  .campaigns-detail__action-btn--reject {
+    color: #f87171;
+  }
+
+  .campaigns-detail__action-btn--reject:hover {
+    background-color: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  .campaigns-detail__submission {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .campaigns-detail__submission-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaigns-detail__submission-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .campaigns-detail__submission-platform {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .campaigns-detail__submission-url {
+    font-size: 0.8125rem;
+    color: var(--sidebar-accent);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .campaigns-detail__submission-url:hover {
+    text-decoration: underline;
+  }
+
+  .campaigns-detail__submission-meta {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.25rem;
+  }
+
+  .campaigns-detail__submission-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    flex-shrink: 0;
+  }
+
+  .campaigns-detail__pay-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .campaigns-detail__pay-btn:hover {
+    opacity: 0.9;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -1663,18 +3287,17 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {
@@ -1682,21 +3305,89 @@
     transform: scale(0.98);
   }
 
-  /* Custom scrollbar */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>
+
+<!-- Global styles for dropdown (rendered via portal outside component scope) -->
+<style>
+  /* Disable trigger button animations */
+  .campaigns__actions [data-state] {
+    animation: none !important;
+    transform: none !important;
   }
 
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
+  .campaigns__dropdown {
+    min-width: 140px !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    z-index: 100 !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    /* Override default slide animation with quick fade */
+    animation: campaigns-dropdown-fade 100ms ease-out !important;
+    transform: none !important;
   }
 
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgb(63 63 70);
-    border-radius: 3px;
+  @keyframes campaigns-dropdown-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgb(82 82 91);
+  /* Override Radix default animations */
+  .campaigns__dropdown[data-state='open'] {
+    animation: campaigns-dropdown-fade 100ms ease-out !important;
+  }
+
+  .campaigns__dropdown[data-state='closed'] {
+    animation: none !important;
+  }
+
+  .campaigns__dropdown-item {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.8125rem !important;
+    color: var(--sidebar-text) !important;
+    cursor: pointer !important;
+  }
+
+  .campaigns__dropdown-item:hover,
+  .campaigns__dropdown-item:focus,
+  .campaigns__dropdown-item[data-highlighted] {
+    background-color: var(--sidebar-hover) !important;
+    outline: none !important;
+  }
+
+  .campaigns__dropdown-item--danger {
+    color: #f87171 !important;
+  }
+
+  .campaigns__dropdown-item--danger:hover,
+  .campaigns__dropdown-item--danger:focus,
+  .campaigns__dropdown-item--danger[data-highlighted] {
+    background-color: rgba(239, 68, 68, 0.1) !important;
+  }
+
+  .campaigns__dropdown-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .campaigns__dropdown-sep {
+    height: 1px !important;
+    margin: 0.25rem 0 !important;
+    background-color: var(--sidebar-border) !important;
   }
 </style>

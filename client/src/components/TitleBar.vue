@@ -118,465 +118,283 @@
 
     <!-- Keyboard Shortcuts Dialog -->
     <Teleport to="body">
-      <div
-        v-if="showKeyboardShortcuts"
-        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
-      >
-        <div
-          class="bg-card rounded-lg p-6 max-w-3xl w-full mx-4 border border-border max-h-[85vh] flex flex-col relative"
-        >
-          <!-- Close Button (Top Right) -->
-          <button
-            @click="showKeyboardShortcuts = false"
-            class="absolute top-4 right-4 p-2 hover:bg-muted rounded-md transition-colors z-10"
-            title="Close"
-          >
-            <X class="h-5 w-5 text-muted-foreground" />
-          </button>
+      <Transition name="shortcuts-modal">
+        <div v-if="showKeyboardShortcuts" class="shortcuts-modal__overlay" @click.self="showKeyboardShortcuts = false">
+          <Transition name="shortcuts-dialog" appear>
+            <div class="shortcuts-modal">
+              <!-- Accent Bar -->
+              <div class="shortcuts-modal__accent"></div>
 
-          <!-- Header -->
-          <div class="mb-4 pr-10">
-            <h2 class="text-2xl font-bold text-foreground">Shortcuts & Controls</h2>
-            <p class="text-sm text-muted-foreground mt-1">Keyboard and mouse shortcuts for efficient editing</p>
-          </div>
-
-          <!-- Tabs -->
-          <div class="flex gap-6 mb-6 overflow-x-auto border-b border-border">
-            <button
-              @click="activeShortcutTab = 'playback'"
-              :class="[
-                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
-                activeShortcutTab === 'playback' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-              ]"
-            >
-              <Play :size="16" />
-              <span class="text-sm font-medium">Playback</span>
-              <span
-                v-if="activeShortcutTab === 'playback'"
-                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
-              ></span>
-            </button>
-            <button
-              @click="activeShortcutTab = 'timeline'"
-              :class="[
-                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
-                activeShortcutTab === 'timeline' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-              ]"
-            >
-              <ZoomIn :size="16" />
-              <span class="text-sm font-medium">Timeline</span>
-              <span
-                v-if="activeShortcutTab === 'timeline'"
-                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
-              ></span>
-            </button>
-            <button
-              @click="activeShortcutTab = 'selection'"
-              :class="[
-                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
-                activeShortcutTab === 'selection' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-              ]"
-            >
-              <MousePointer :size="16" />
-              <span class="text-sm font-medium">Selection</span>
-              <span
-                v-if="activeShortcutTab === 'selection'"
-                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
-              ></span>
-            </button>
-            <button
-              @click="activeShortcutTab = 'editing'"
-              :class="[
-                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
-                activeShortcutTab === 'editing' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-              ]"
-            >
-              <Edit3 :size="16" />
-              <span class="text-sm font-medium">Editing</span>
-              <span
-                v-if="activeShortcutTab === 'editing'"
-                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
-              ></span>
-            </button>
-            <button
-              @click="activeShortcutTab = 'cut'"
-              :class="[
-                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
-                activeShortcutTab === 'cut' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-              ]"
-            >
-              <Scissors :size="16" />
-              <span class="text-sm font-medium">Cut Tool</span>
-              <span
-                v-if="activeShortcutTab === 'cut'"
-                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
-              ></span>
-            </button>
-            <button
-              @click="activeShortcutTab = 'more'"
-              :class="[
-                'flex items-center gap-2 px-1 py-3 relative transition-colors whitespace-nowrap',
-                activeShortcutTab === 'more' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-              ]"
-            >
-              <MoreHorizontal :size="16" />
-              <span class="text-sm font-medium">More</span>
-              <span
-                v-if="activeShortcutTab === 'more'"
-                class="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
-              ></span>
-            </button>
-          </div>
-
-          <!-- Content -->
-          <div class="overflow-y-auto h-[480px]">
-            <!-- Playback Tab -->
-            <div v-if="activeShortcutTab === 'playback'" class="space-y-4">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Play / Pause Video</span>
-                  <kbd
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                  >
-                    Space
-                  </kbd>
+              <!-- Header -->
+              <div class="shortcuts-modal__header">
+                <button class="shortcuts-modal__close" @click="showKeyboardShortcuts = false" title="Close">
+                  <X :size="18" />
+                </button>
+                <div class="shortcuts-modal__icon">
+                  <KeyboardIcon :size="24" />
                 </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Play / Pause (Alternative)</span>
-                  <span
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                  >
-                    Click Video
-                  </span>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Seek Playhead (No Selection)</span>
-                  <div class="flex items-center gap-2">
-                    <kbd
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                    >
-                      ← →
-                    </kbd>
-                    <span class="text-xs text-muted-foreground">(Hold for 2x)</span>
-                  </div>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Seek to Time Position</span>
-                  <span
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                  >
-                    Click Video Track
-                  </span>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Scrub Through Video</span>
-                  <span
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                  >
-                    Drag Playhead
-                  </span>
-                </div>
+                <h2 class="shortcuts-modal__title">Shortcuts & Controls</h2>
+                <p class="shortcuts-modal__subtitle">Keyboard and mouse shortcuts for efficient editing</p>
               </div>
-            </div>
 
-            <!-- Timeline Tab -->
-            <div v-else-if="activeShortcutTab === 'timeline'" class="space-y-4">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Zoom In / Out</span>
-                  <div class="flex items-center gap-2">
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Scroll on Ruler
-                    </span>
-                  </div>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Zoom to Time Range</span>
-                  <div class="flex items-center gap-2">
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Click + Drag Timeline
-                    </span>
-                  </div>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Zoom Level Slider</span>
-                  <span
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                  >
-                    Drag Slider
-                  </span>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Pan Horizontally</span>
-                  <div class="flex items-center gap-2">
-                    <kbd
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                    >
-                      Ctrl
-                    </kbd>
-                    <span class="text-muted-foreground">+</span>
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Scroll
-                    </span>
-                  </div>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Pan Vertically (Through Clips)</span>
-                  <div class="flex items-center gap-2">
-                    <kbd
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                    >
-                      Alt
-                    </kbd>
-                    <span class="text-muted-foreground">+</span>
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Scroll
-                    </span>
-                  </div>
-                </div>
+              <!-- Tabs Navigation -->
+              <div class="shortcuts-tabs">
+                <button
+                  class="shortcuts-tabs__item"
+                  :class="{ 'shortcuts-tabs__item--active': activeShortcutTab === 'playback' }"
+                  @click="activeShortcutTab = 'playback'"
+                >
+                  <Play :size="14" />
+                  <span>Playback</span>
+                </button>
+                <button
+                  class="shortcuts-tabs__item"
+                  :class="{ 'shortcuts-tabs__item--active': activeShortcutTab === 'timeline' }"
+                  @click="activeShortcutTab = 'timeline'"
+                >
+                  <ZoomIn :size="14" />
+                  <span>Timeline</span>
+                </button>
+                <button
+                  class="shortcuts-tabs__item"
+                  :class="{ 'shortcuts-tabs__item--active': activeShortcutTab === 'selection' }"
+                  @click="activeShortcutTab = 'selection'"
+                >
+                  <MousePointer :size="14" />
+                  <span>Selection</span>
+                </button>
+                <button
+                  class="shortcuts-tabs__item"
+                  :class="{ 'shortcuts-tabs__item--active': activeShortcutTab === 'editing' }"
+                  @click="activeShortcutTab = 'editing'"
+                >
+                  <Edit3 :size="14" />
+                  <span>Editing</span>
+                </button>
+                <button
+                  class="shortcuts-tabs__item"
+                  :class="{ 'shortcuts-tabs__item--active': activeShortcutTab === 'cut' }"
+                  @click="activeShortcutTab = 'cut'"
+                >
+                  <Scissors :size="14" />
+                  <span>Cut Tool</span>
+                </button>
+                <button
+                  class="shortcuts-tabs__item"
+                  :class="{ 'shortcuts-tabs__item--active': activeShortcutTab === 'more' }"
+                  @click="activeShortcutTab = 'more'"
+                >
+                  <MoreHorizontal :size="14" />
+                  <span>More</span>
+                </button>
               </div>
-            </div>
 
-            <!-- Selection Tab -->
-            <div v-else-if="activeShortcutTab === 'selection'" class="space-y-4">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Select Single Segment</span>
-                  <span
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                  >
-                    Click Segment
-                  </span>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Multi-Select Segments</span>
-                  <div class="flex items-center gap-2">
-                    <kbd
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                    >
-                      Ctrl
-                    </kbd>
-                    <span class="text-muted-foreground">+</span>
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Click Segments
-                    </span>
+              <!-- Content -->
+              <div class="shortcuts-content">
+                <!-- Playback Tab -->
+                <div v-if="activeShortcutTab === 'playback'" class="shortcuts-list">
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Play / Pause Video</span>
+                    <kbd class="shortcuts-key">Space</kbd>
                   </div>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Deselect All Segments</span>
-                  <span
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                  >
-                    Click Empty Area
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Editing Tab -->
-            <div v-else-if="activeShortcutTab === 'editing'" class="space-y-4">
-              <!-- Keyboard Editing -->
-              <div>
-                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                  Keyboard Editing
-                </h3>
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Move Selected Segments</span>
-                    <div class="flex items-center gap-2">
-                      <kbd
-                        class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                      >
-                        ← →
-                      </kbd>
-                      <span class="text-xs text-muted-foreground">(Hold for 2x)</span>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Play / Pause (Alternative)</span>
+                    <span class="shortcuts-action">Click Video</span>
+                  </div>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Seek Playhead (No Selection)</span>
+                    <div class="shortcuts-list__keys">
+                      <kbd class="shortcuts-key">← →</kbd>
+                      <span class="shortcuts-list__hint">(Hold for 2x)</span>
                     </div>
                   </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Delete Selected Segments</span>
-                    <kbd
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                    >
-                      Backspace
-                    </kbd>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Seek to Time Position</span>
+                    <span class="shortcuts-action">Click Video Track</span>
                   </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Merge Selected Segments</span>
-                    <kbd
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                    >
-                      J
-                    </kbd>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Scrub Through Video</span>
+                    <span class="shortcuts-action">Drag Playhead</span>
                   </div>
                 </div>
-              </div>
 
-              <!-- Mouse Manipulation -->
-              <div>
-                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                  Mouse Manipulation
-                </h3>
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Reorder Segment Position</span>
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Drag Segment
-                    </span>
+                <!-- Timeline Tab -->
+                <div v-else-if="activeShortcutTab === 'timeline'" class="shortcuts-list">
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Zoom In / Out</span>
+                    <span class="shortcuts-action">Scroll on Ruler</span>
                   </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Trim Segment Start/End</span>
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Drag Segment Edge
-                    </span>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Zoom to Time Range</span>
+                    <span class="shortcuts-action">Click + Drag Timeline</span>
+                  </div>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Zoom Level Slider</span>
+                    <span class="shortcuts-action">Drag Slider</span>
+                  </div>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Pan Horizontally</span>
+                    <div class="shortcuts-list__keys">
+                      <kbd class="shortcuts-key">Ctrl</kbd>
+                      <span class="shortcuts-list__separator">+</span>
+                      <span class="shortcuts-action">Scroll</span>
+                    </div>
+                  </div>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Pan Vertically (Through Clips)</span>
+                    <div class="shortcuts-list__keys">
+                      <kbd class="shortcuts-key">Alt</kbd>
+                      <span class="shortcuts-list__separator">+</span>
+                      <span class="shortcuts-action">Scroll</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Selection Tab -->
+                <div v-else-if="activeShortcutTab === 'selection'" class="shortcuts-list">
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Select Single Segment</span>
+                    <span class="shortcuts-action">Click Segment</span>
+                  </div>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Multi-Select Segments</span>
+                    <div class="shortcuts-list__keys">
+                      <kbd class="shortcuts-key">Ctrl</kbd>
+                      <span class="shortcuts-list__separator">+</span>
+                      <span class="shortcuts-action">Click Segments</span>
+                    </div>
+                  </div>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Deselect All Segments</span>
+                    <span class="shortcuts-action">Click Empty Area</span>
+                  </div>
+                </div>
+
+                <!-- Editing Tab -->
+                <div v-else-if="activeShortcutTab === 'editing'" class="shortcuts-list">
+                  <div class="shortcuts-section">
+                    <h3 class="shortcuts-section__title">Keyboard Editing</h3>
+                    <div class="shortcuts-section__items">
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Move Selected Segments</span>
+                        <div class="shortcuts-list__keys">
+                          <kbd class="shortcuts-key">← →</kbd>
+                          <span class="shortcuts-list__hint">(Hold for 2x)</span>
+                        </div>
+                      </div>
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Delete Selected Segments</span>
+                        <kbd class="shortcuts-key">Backspace</kbd>
+                      </div>
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Merge Selected Segments</span>
+                        <kbd class="shortcuts-key">J</kbd>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="shortcuts-section">
+                    <h3 class="shortcuts-section__title">Mouse Manipulation</h3>
+                    <div class="shortcuts-section__items">
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Reorder Segment Position</span>
+                        <span class="shortcuts-action">Drag Segment</span>
+                      </div>
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Trim Segment Start/End</span>
+                        <span class="shortcuts-action">Drag Segment Edge</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Cut Tool Tab -->
+                <div v-else-if="activeShortcutTab === 'cut'" class="shortcuts-list">
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Toggle Cut Tool On/Off</span>
+                    <kbd class="shortcuts-key">X</kbd>
+                  </div>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Split Segment at Cursor</span>
+                    <span class="shortcuts-action">Click Segment</span>
+                  </div>
+                  <div class="shortcuts-list__item">
+                    <span class="shortcuts-list__label">Cancel Cut Tool</span>
+                    <kbd class="shortcuts-key">Esc</kbd>
+                  </div>
+                </div>
+
+                <!-- More Tab -->
+                <div v-else-if="activeShortcutTab === 'more'" class="shortcuts-list">
+                  <div class="shortcuts-section">
+                    <h3 class="shortcuts-section__title">General</h3>
+                    <div class="shortcuts-section__items">
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Exit Cut Tool / Close Dialogs</span>
+                        <kbd class="shortcuts-key">Esc</kbd>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="shortcuts-section">
+                    <h3 class="shortcuts-section__title">Timeline Toolbar</h3>
+                    <div class="shortcuts-section__items">
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Reverse 10 Seconds</span>
+                        <span class="shortcuts-action">Hold Button</span>
+                      </div>
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Forward 10 Seconds</span>
+                        <span class="shortcuts-action">Hold Button</span>
+                      </div>
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Cut Tool Button</span>
+                        <span class="shortcuts-action">Click to Toggle</span>
+                      </div>
+                      <div class="shortcuts-list__item">
+                        <span class="shortcuts-list__label">Merge Segments Button</span>
+                        <span class="shortcuts-action">Click to Merge</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Legend -->
+                  <div class="shortcuts-legend">
+                    <div class="shortcuts-legend__card">
+                      <div class="shortcuts-legend__header">
+                        <kbd class="shortcuts-key shortcuts-key--sm">Key</kbd>
+                        <span class="shortcuts-legend__title">Keyboard Shortcut</span>
+                      </div>
+                      <p class="shortcuts-legend__desc">Keys shown in monospace font</p>
+                    </div>
+                    <div class="shortcuts-legend__card">
+                      <div class="shortcuts-legend__header">
+                        <span class="shortcuts-action shortcuts-action--sm">Action</span>
+                        <span class="shortcuts-legend__title">Mouse Action</span>
+                      </div>
+                      <p class="shortcuts-legend__desc">Actions shown in regular font</p>
+                    </div>
+                  </div>
+
+                  <!-- Platform Note -->
+                  <div class="shortcuts-note">
+                    <div class="shortcuts-note__icon">
+                      <Info :size="16" />
+                    </div>
+                    <p class="shortcuts-note__text">
+                      <strong>Platform Note:</strong>
+                      <kbd class="shortcuts-key shortcuts-key--inline">Ctrl</kbd>
+                      on Windows/Linux functions as
+                      <kbd class="shortcuts-key shortcuts-key--inline">Cmd</kbd>
+                      on macOS for multi-selection and scrolling operations.
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
-
-            <!-- Cut Tool Tab -->
-            <div v-else-if="activeShortcutTab === 'cut'" class="space-y-4">
-              <div class="space-y-2">
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Toggle Cut Tool On/Off</span>
-                  <kbd
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                  >
-                    X
-                  </kbd>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Split Segment at Cursor</span>
-                  <span
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                  >
-                    Click Segment
-                  </span>
-                </div>
-                <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                  <span class="text-foreground">Cancel Cut Tool</span>
-                  <kbd
-                    class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                  >
-                    Esc
-                  </kbd>
-                </div>
-              </div>
-            </div>
-
-            <!-- More Tab -->
-            <div v-else-if="activeShortcutTab === 'more'" class="space-y-4">
-              <!-- General -->
-              <div>
-                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">General</h3>
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Exit Cut Tool / Close Dialogs</span>
-                    <kbd
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm font-mono shadow-sm"
-                    >
-                      Esc
-                    </kbd>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Timeline Toolbar Buttons -->
-              <div>
-                <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                  Timeline Toolbar
-                </h3>
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Reverse 10 Seconds</span>
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Hold Button
-                    </span>
-                  </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Forward 10 Seconds</span>
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Hold Button
-                    </span>
-                  </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Cut Tool Button</span>
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Click to Toggle
-                    </span>
-                  </div>
-                  <div class="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-                    <span class="text-foreground">Merge Segments Button</span>
-                    <span
-                      class="px-3 py-1.5 bg-background border border-border rounded-md text-foreground text-sm shadow-sm"
-                    >
-                      Click to Merge
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Legend -->
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div class="p-3 bg-muted/30 rounded-md border border-border">
-                  <div class="flex items-center gap-2 mb-1">
-                    <kbd class="px-2 py-1 bg-background border border-border rounded text-xs font-mono shadow-sm">
-                      Key
-                    </kbd>
-                    <span class="text-xs font-medium text-foreground">Keyboard Shortcut</span>
-                  </div>
-                  <p class="text-xs text-muted-foreground">Keys shown in monospace font</p>
-                </div>
-                <div class="p-3 bg-muted/30 rounded-md border border-border">
-                  <div class="flex items-center gap-2 mb-1">
-                    <span class="px-2 py-1 bg-background border border-border rounded text-xs shadow-sm">Action</span>
-                    <span class="text-xs font-medium text-foreground">Mouse Action</span>
-                  </div>
-                  <p class="text-xs text-muted-foreground">Actions shown in regular font</p>
-                </div>
-              </div>
-
-              <!-- Platform Note -->
-              <div class="p-4 bg-muted/30 rounded-md border border-border">
-                <p class="text-sm text-muted-foreground">
-                  <strong class="text-foreground">Platform Note:</strong>
-                  <kbd
-                    class="inline-flex items-center px-2 py-0.5 mx-1 bg-background border border-border rounded text-xs font-mono"
-                  >
-                    Ctrl
-                  </kbd>
-                  on Windows/Linux functions as
-                  <kbd
-                    class="inline-flex items-center px-2 py-0.5 mx-1 bg-background border border-border rounded text-xs font-mono"
-                  >
-                    Cmd
-                  </kbd>
-                  on macOS for multi-selection and scrolling operations.
-                </p>
-              </div>
-            </div>
-          </div>
+          </Transition>
         </div>
-      </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -585,7 +403,7 @@
   import { ref, onMounted, onUnmounted } from 'vue';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { invoke } from '@tauri-apps/api/core';
-  import { KeyboardIcon, Play, ZoomIn, MousePointer, Edit3, Scissors, MoreHorizontal, X } from 'lucide-vue-next';
+  import { KeyboardIcon, Play, ZoomIn, MousePointer, Edit3, Scissors, MoreHorizontal, X, Info } from 'lucide-vue-next';
 
   // Props
   interface Props {
@@ -721,7 +539,7 @@
   .titlebar-divider {
     width: 1px;
     height: 16px;
-    background-color: #3c3c3c;
+    background-color: var(--sidebar-border);
     margin-right: 6px;
   }
 
@@ -742,38 +560,38 @@
     left: 0;
     right: 0;
     z-index: 99999;
-    border-bottom: 1px solid #3c3c3c;
+    border-bottom: 1px solid var(--sidebar-border);
     box-sizing: border-box;
   }
 
   .titlebar-dark {
-    background: #070707;
-    border-bottom-color: #333;
+    background: #0a0a0b;
+    border-bottom-color: var(--sidebar-border);
   }
 
   /* Linux-specific styling */
   .titlebar-linux {
-    background: #202020;
-    border-bottom: 1px solid #3c3c3c;
+    background: #0a0a0b;
+    border-bottom: 1px solid var(--sidebar-border);
     height: 32px;
   }
 
   .titlebar-linux.titlebar-dark {
-    background: #070707;
-    border-bottom-color: #333;
+    background: #0a0a0b;
+    border-bottom-color: var(--sidebar-border);
   }
 
   /* macOS-specific styling */
   .titlebar-macos {
-    background: #202020;
-    border-bottom: 1px solid #3c3c3c;
+    background: #0a0a0b;
+    border-bottom: 1px solid var(--sidebar-border);
     height: 32px;
     margin-right: -12px;
   }
 
   .titlebar-macos.titlebar-dark {
-    background: #070707;
-    border-bottom-color: #333;
+    background: #0a0a0b;
+    border-bottom-color: var(--sidebar-border);
   }
 
   .titlebar-drag-region {
@@ -945,13 +763,13 @@
 
   /* Windows-specific styling */
   .titlebar-windows {
-    background: #202020;
-    border-bottom: 1px solid #3c3c3c;
+    background: #0a0a0b;
+    border-bottom: 1px solid var(--sidebar-border);
   }
 
   .titlebar-windows.titlebar-dark {
-    background: #070707;
-    border-bottom-color: #333;
+    background: #0a0a0b;
+    border-bottom-color: var(--sidebar-border);
   }
 
   .titlebar-controls-windows {
@@ -1035,15 +853,402 @@
   /* macOS-specific adjustments for better theme integration */
   @media (prefers-color-scheme: dark) {
     .titlebar-macos:not(.titlebar-dark) {
-      background: #070707;
-      border-bottom-color: #333;
+      background: #0a0a0b;
+      border-bottom-color: var(--sidebar-border);
     }
   }
 
   @media (prefers-color-scheme: light) {
     .titlebar-macos:not(.titlebar-dark) {
       background: rgba(248, 248, 248, 0.9);
-      border-bottom-color: rgba(0, 0, 0, 0.15);
+      border-bottom-color: var(--sidebar-border);
     }
+  }
+
+  /* ===== Shortcuts Modal ===== */
+  .shortcuts-modal__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+  }
+
+  .shortcuts-modal {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 720px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .shortcuts-modal__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  .shortcuts-modal__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .shortcuts-modal__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .shortcuts-modal__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .shortcuts-modal__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .shortcuts-modal__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .shortcuts-modal__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Tabs Navigation ===== */
+  .shortcuts-tabs {
+    display: flex;
+    gap: 0.375rem;
+    padding: 0 1.5rem;
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+
+  .shortcuts-tabs::-webkit-scrollbar {
+    height: 0;
+  }
+
+  .shortcuts-tabs__item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .shortcuts-tabs__item:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .shortcuts-tabs__item--active {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .shortcuts-tabs__item--active:hover {
+    background-color: rgba(6, 182, 212, 0.2);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Content Area ===== */
+  .shortcuts-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem 1.5rem 1.5rem;
+  }
+
+  .shortcuts-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .shortcuts-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .shortcuts-content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .shortcuts-content::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+
+  /* ===== Shortcuts List ===== */
+  .shortcuts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .shortcuts-list__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+    transition: all 150ms ease;
+  }
+
+  .shortcuts-list__item:hover {
+    background-color: var(--sidebar-active);
+  }
+
+  .shortcuts-list__label {
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .shortcuts-list__keys {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .shortcuts-list__separator {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .shortcuts-list__hint {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  /* ===== Keyboard Key Styling ===== */
+  .shortcuts-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    padding: 0.375rem 0.625rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, 'Cascadia Code', monospace;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .shortcuts-key--sm {
+    min-width: 24px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.6875rem;
+  }
+
+  .shortcuts-key--inline {
+    min-width: auto;
+    padding: 0.125rem 0.375rem;
+    font-size: 0.6875rem;
+    margin: 0 0.25rem;
+    vertical-align: middle;
+  }
+
+  /* ===== Mouse Action Styling ===== */
+  .shortcuts-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem 0.625rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .shortcuts-action--sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.6875rem;
+  }
+
+  /* ===== Sections ===== */
+  .shortcuts-section {
+    margin-bottom: 1.25rem;
+  }
+
+  .shortcuts-section:last-child {
+    margin-bottom: 0;
+  }
+
+  .shortcuts-section__title {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.625rem;
+    padding-left: 0.25rem;
+  }
+
+  .shortcuts-section__items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  /* ===== Legend Cards ===== */
+  .shortcuts-legend {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+  }
+
+  @media (max-width: 480px) {
+    .shortcuts-legend {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .shortcuts-legend__card {
+    padding: 0.875rem;
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .shortcuts-legend__header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.375rem;
+  }
+
+  .shortcuts-legend__title {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .shortcuts-legend__desc {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    opacity: 0.7;
+  }
+
+  /* ===== Platform Note ===== */
+  .shortcuts-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+    padding: 1rem;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: 8px;
+  }
+
+  .shortcuts-note__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background-color: rgba(6, 182, 212, 0.15);
+    border-radius: 6px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .shortcuts-note__text {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .shortcuts-note__text strong {
+    color: var(--sidebar-text);
+    font-weight: 600;
+  }
+
+  /* ===== Modal Animations ===== */
+  .shortcuts-modal-enter-active,
+  .shortcuts-modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .shortcuts-modal-enter-from,
+  .shortcuts-modal-leave-to {
+    opacity: 0;
+  }
+
+  .shortcuts-dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .shortcuts-dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .shortcuts-dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .shortcuts-dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 </style>

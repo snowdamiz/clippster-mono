@@ -7,308 +7,273 @@
       :icon="LayoutGrid"
     >
       <template #actions>
-        <Button
-          @click="openClipsFolder"
-          :disabled="!hasAnyClipsWithFiles"
-          :title="hasAnyClipsWithFiles ? 'Open clips folder' : 'No clips available to show in folder'"
-          class="flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Folder class="h-5 w-5" />
-          Open clips folder
-        </Button>
-      </template>
-      <!-- Loading State -->
-      <div v-if="loading" class="space-y-6">
-        <SkeletonGrid />
-      </div>
-      <!-- Content when not loading -->
+        <div class="clips-header-actions">
+          <!-- Search -->
+          <div class="clips-header__search">
+            <Search class="clips-header__search-icon" />
+            <Input v-model="searchQuery" placeholder="Search clips..." class="clips-header__search-input" />
+          </div>
 
-      <div v-else>
-        <!-- Filter Toolbar -->
-        <div
-          class="mb-6 -mt-2 bg-card flex flex-col md:flex-row gap-4 items-center justify-between"
-          v-if="displayableBuilds.length > 0"
-        >
-          <!-- Left: Search or Selection Info -->
-          <div class="flex items-center gap-3 w-full md:w-auto">
-            <!-- Selection Controls (visible when items selected) -->
-            <div v-if="totalSelectedCount > 0" class="flex items-center gap-3">
-              <button
-                @click="confirmBulkDelete"
-                class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
-              >
-                <Trash2 class="h-4 w-4" />
-                Delete ({{ totalSelectedCount }})
-              </button>
-              <span class="text-sm text-muted-foreground">{{ totalSelectedCount }} selected</span>
-              <button @click="clearSelection" class="text-xs text-muted-foreground hover:text-foreground font-medium">
-                Clear
-              </button>
+          <!-- Status Filter -->
+          <CustomDropdown
+            v-model="statusFilter"
+            :options="statusOptions"
+            placeholder="Status"
+            class="clips-header__filter"
+            trigger-class="clips-header__dropdown-trigger"
+          />
+
+          <!-- Aspect Ratio Filter (only in list view, if multiple ratios exist) -->
+          <CustomDropdown
+            v-if="viewMode === 'list' && aspectRatioOptions.length > 2"
+            v-model="aspectRatioFilter"
+            :options="aspectRatioOptions"
+            placeholder="Ratio"
+            class="clips-header__filter"
+            trigger-class="clips-header__dropdown-trigger"
+          />
+
+          <!-- Project Filter (only in list view) -->
+          <CustomDropdown
+            v-if="viewMode === 'list'"
+            v-model="projectFilter"
+            :options="projectOptions"
+            placeholder="Project"
+            class="clips-header__filter clips-header__filter--wide"
+            trigger-class="clips-header__dropdown-trigger"
+          />
+
+          <!-- Sort Filter -->
+          <CustomDropdown
+            v-model="sortBy"
+            :options="sortOptions"
+            placeholder="Sort By"
+            class="clips-header__sort"
+            trigger-class="clips-header__dropdown-trigger"
+          />
+
+          <!-- View Mode -->
+          <div class="clips-header__view-toggle">
+            <button
+              @click="viewMode = 'folders'"
+              class="clips-header__view-btn"
+              :class="{ 'clips-header__view-btn--active': viewMode === 'folders' }"
+              title="Folder View"
+            >
+              <Folder class="clips-header__view-icon" />
+            </button>
+            <button
+              @click="viewMode = 'list'"
+              class="clips-header__view-btn"
+              :class="{ 'clips-header__view-btn--active': viewMode === 'list' }"
+              title="List View"
+            >
+              <List class="clips-header__view-icon" />
+            </button>
+          </div>
+
+          <!-- Open Folder Button -->
+          <button
+            @click="openClipsFolder"
+            :disabled="!hasAnyClipsWithFiles"
+            :title="hasAnyClipsWithFiles ? 'Open clips folder' : 'No clips available'"
+            class="clips-header__folder-btn"
+          >
+            <FolderOpen class="clips-header__folder-icon" />
+          </button>
+        </div>
+      </template>
+
+      <div class="clips__content" :class="{ 'clips__content--empty': !loading && displayableBuilds.length === 0 }">
+        <!-- Page Heading -->
+        <div v-if="displayableBuilds.length > 0 || loading" class="clips__heading">
+          <h1 class="clips__title">Your Clips</h1>
+          <p class="clips__subtitle">Browse and manage your generated video clips</p>
+        </div>
+
+        <!-- Loading State -->
+        <div v-if="loading" class="clips__loading">
+          <div class="clips__grid">
+            <div v-for="i in 6" :key="`skeleton-${i}`" class="clips-card clips-card--skeleton">
+              <div class="clips-card__skeleton-bg"></div>
+              <div class="clips-card__bottom">
+                <div class="clips-skeleton__card-title"></div>
+                <div class="clips-skeleton__card-meta"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Content when not loading -->
+        <div v-else-if="displayableBuilds.length > 0" class="clips__main">
+          <!-- Selection Bar (shown when items selected) -->
+          <div v-if="totalSelectedCount > 0" class="clips__selection-bar">
+            <button @click="confirmBulkDelete" class="clips__selection-delete">
+              <Trash2 class="clips__selection-icon" />
+              Delete ({{ totalSelectedCount }})
+            </button>
+            <span class="clips__selection-count">{{ totalSelectedCount }} selected</span>
+            <button @click="clearSelection" class="clips__selection-clear">Clear</button>
+          </div>
+
+          <!-- Builds Grid -->
+          <div v-if="filteredBuilds.length > 0" class="clips__section">
+            <!-- List View - Shows individual builds as cards -->
+            <div v-if="viewMode === 'list'">
+              <div v-for="group in groupedBuilds" :key="group.dateLabel" class="clips__date-group">
+                <!-- Date Header -->
+                <h3 class="clips__section-header">{{ group.dateLabel }}</h3>
+
+                <div class="clips__grid">
+                  <div
+                    v-for="item in group.builds"
+                    :key="item.id"
+                    class="clips-card-wrapper"
+                    :class="{ 'clips-card-wrapper--selected': isBuildSelected(item.id) }"
+                  >
+                    <!-- Selection Checkbox -->
+                    <div
+                      class="clips-card__checkbox"
+                      :class="{ 'clips-card__checkbox--visible': isBuildSelected(item.id) }"
+                      @click.stop="toggleBuildSelection(item.id)"
+                    >
+                      <div
+                        class="clips-card__checkbox-inner"
+                        :class="{ 'clips-card__checkbox-inner--checked': isBuildSelected(item.id) }"
+                      >
+                        <Check v-if="isBuildSelected(item.id)" class="clips-card__checkbox-icon" />
+                      </div>
+                    </div>
+
+                    <BuildCard
+                      :build="item.build"
+                      :clip-name="item.clipName"
+                      :thumbnail-url="item.thumbnailUrl"
+                      :project-name="item.projectName"
+                      :file-path="item.filePath"
+                      :display-aspect-ratio="item.aspectRatio ?? undefined"
+                      :show-build-number="item.hasMultipleBuilds"
+                      @play="
+                        (build, filePath) => playBuild(build, filePath || item.filePath, item.clipName, item.projectId)
+                      "
+                      @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
+                      @delete="confirmDeleteBuild"
+                      @openProject="(build) => openProjectForClip(build, item.clip)"
+                      @publish="
+                        (build, filePath) => initiatePublish(build, filePath || item.filePath, item.thumbnailUrl)
+                      "
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <!-- Search (hidden when items selected) -->
-            <div v-else class="relative w-full md:w-72">
-              <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input v-model="searchQuery" placeholder="Search clips or projects..." class="pl-9 bg-background/50" />
+            <!-- Folder View -->
+            <div v-else-if="viewMode === 'folders'">
+              <div v-for="dateGroup in groupedFolderProjects" :key="dateGroup.dateLabel" class="clips__date-group">
+                <h3 class="clips__section-header">{{ dateGroup.dateLabel }}</h3>
+
+                <div class="clips__grid">
+                  <div
+                    v-for="group in dateGroup.folders"
+                    :key="group.id"
+                    class="clips-card"
+                    :class="{ 'clips-card--selected': isFolderSelected(group.id) }"
+                    @click="openFolder(group)"
+                  >
+                    <!-- Selection Checkbox -->
+                    <div
+                      class="clips-card__checkbox"
+                      :class="{ 'clips-card__checkbox--visible': isFolderSelected(group.id) }"
+                      @click.stop="toggleFolderSelection(group.id)"
+                    >
+                      <div
+                        class="clips-card__checkbox-inner"
+                        :class="{ 'clips-card__checkbox-inner--checked': isFolderSelected(group.id) }"
+                      >
+                        <Check v-if="isFolderSelected(group.id)" class="clips-card__checkbox-icon" />
+                      </div>
+                    </div>
+
+                    <!-- Count Badge -->
+                    <div class="clips-card__badge clips-card__badge--count">
+                      <FolderOpen class="clips-card__badge-icon" />
+                      <span>{{ getFolderBuildsCount(group.clips) }} Clips</span>
+                    </div>
+
+                    <!-- Thumbnail -->
+                    <div
+                      v-if="group.clips.length > 0 && getThumbnailUrl(group.clips[0])"
+                      class="clips-card__thumbnail"
+                      :style="{ backgroundImage: `url(${getThumbnailUrl(group.clips[0])})` }"
+                    >
+                      <div class="clips-card__vignette"></div>
+                    </div>
+                    <div v-else class="clips-card__thumbnail clips-card__thumbnail--empty">
+                      <div class="clips-card__thumbnail-gradient"></div>
+                      <div class="clips-card__empty-icon">
+                        <Folder class="clips-card__folder-icon" />
+                      </div>
+                    </div>
+
+                    <!-- Bottom Info -->
+                    <div class="clips-card__bottom">
+                      <h3 class="clips-card__title" :title="group.name">{{ group.name }}</h3>
+                      <div class="clips-card__meta">
+                        <span class="clips-card__meta-text">Updated {{ getRelativeTime(group.updatedAt) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- Right: Filters -->
-          <div class="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
-            <!-- Reset Filters Button -->
+          <!-- Pagination Footer -->
+          <PaginationFooter
+            v-if="filteredBuilds.length > 0 && viewMode === 'list'"
+            :current-page="currentPage"
+            :total-pages="totalPages"
+            :total-items="filteredBuilds.length"
+            item-label="build"
+            @go-to-page="goToPage"
+            @previous="previousPage"
+            @next="nextPage"
+          />
+
+          <!-- No Results State -->
+          <div v-if="filteredBuilds.length === 0" class="clips__no-results">
+            <div class="clips__no-results-icon-wrapper">
+              <Search class="clips__no-results-icon" />
+            </div>
+            <h3 class="clips__no-results-title">No builds found</h3>
+            <p class="clips__no-results-description">
+              We couldn't find any builds matching your search filters. Try adjusting your search query or filters.
+            </p>
             <button
-              v-if="searchQuery || statusFilter !== 'all' || projectFilter !== 'all' || aspectRatioFilter !== 'all'"
               @click="
                 searchQuery = '';
                 statusFilter = 'all';
                 projectFilter = 'all';
                 aspectRatioFilter = 'all';
               "
-              class="text-xs px-2 py-1 text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-md transition-colors whitespace-nowrap font-medium flex items-center gap-1"
+              class="clips__no-results-btn"
             >
-              <X class="h-3 w-3" />
-              Reset
+              Clear filters
             </button>
-
-            <!-- Status Filter -->
-            <CustomDropdown v-model="statusFilter" :options="statusOptions" placeholder="Status" class="w-[140px]" />
-
-            <!-- Aspect Ratio Filter (only in list view, if multiple ratios exist) -->
-            <CustomDropdown
-              v-if="viewMode === 'list' && aspectRatioOptions.length > 2"
-              v-model="aspectRatioFilter"
-              :options="aspectRatioOptions"
-              placeholder="Ratio"
-              class="w-[130px]"
-            />
-
-            <!-- Project Filter (only in list view) -->
-            <CustomDropdown
-              v-if="viewMode === 'list'"
-              v-model="projectFilter"
-              :options="projectOptions"
-              placeholder="Project"
-              class="w-[160px]"
-            />
-
-            <!-- Sort Filter -->
-            <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort By" class="w-[170px]" />
-
-            <!-- View Mode -->
-            <div class="bg-muted/50 rounded-md p-1 flex items-center gap-1">
-              <button
-                @click="viewMode = 'folders'"
-                :class="[
-                  'p-2 rounded transition-colors',
-                  viewMode === 'folders'
-                    ? 'bg-background shadow-sm text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                ]"
-                title="Folder View"
-              >
-                <Folder class="h-4 w-4" />
-              </button>
-              <button
-                @click="viewMode = 'list'"
-                :class="[
-                  'p-2 rounded transition-colors',
-                  viewMode === 'list'
-                    ? 'bg-background shadow-sm text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                ]"
-                title="List View"
-              >
-                <List class="h-4 w-4" />
-              </button>
-            </div>
           </div>
-        </div>
-
-        <!-- Builds Grid -->
-        <div v-if="filteredBuilds.length > 0" class="space-y-8">
-          <!-- List View - Shows individual builds as cards -->
-          <div v-if="viewMode === 'list'" class="space-y-8">
-            <div v-for="group in groupedBuilds" :key="group.dateLabel" class="space-y-4">
-              <!-- Date Header -->
-              <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
-                {{ group.dateLabel }}
-              </h3>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                <div
-                  v-for="item in group.builds"
-                  :key="item.id"
-                  class="relative group/select"
-                  :class="{
-                    'ring-2 ring-primary ring-offset-2 ring-offset-background rounded-md': isBuildSelected(item.id),
-                  }"
-                >
-                  <!-- Selection Checkbox (visible on hover or when selected) -->
-                  <div
-                    class="absolute top-4 right-4 z-30 transition-opacity"
-                    :class="isBuildSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover/select:opacity-100'"
-                    @click.stop="toggleBuildSelection(item.id)"
-                  >
-                    <div
-                      :class="[
-                        'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
-                        isBuildSelected(item.id)
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-black/60 text-white hover:bg-black/80',
-                      ]"
-                    >
-                      <Check v-if="isBuildSelected(item.id)" class="w-4 h-4" />
-                    </div>
-                  </div>
-
-                  <BuildCard
-                    :build="item.build"
-                    :clip-name="item.clipName"
-                    :thumbnail-url="item.thumbnailUrl"
-                    :project-name="item.projectName"
-                    :file-path="item.filePath"
-                    :display-aspect-ratio="item.aspectRatio ?? undefined"
-                    :show-build-number="item.hasMultipleBuilds"
-                    @play="
-                      (build, filePath) => playBuild(build, filePath || item.filePath, item.clipName, item.projectId)
-                    "
-                    @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
-                    @delete="confirmDeleteBuild"
-                    @openProject="(build) => openProjectForClip(build, item.clip)"
-                    @publish="(build, filePath) => initiatePublish(build, filePath || item.filePath, item.thumbnailUrl)"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Folder View -->
-          <div v-else-if="viewMode === 'folders'" class="space-y-8">
-            <div v-for="dateGroup in groupedFolderProjects" :key="dateGroup.dateLabel" class="space-y-4">
-              <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
-                {{ dateGroup.dateLabel }}
-              </h3>
-
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                <div
-                  v-for="group in dateGroup.folders"
-                  :key="group.id"
-                  class="relative bg-card rounded-md overflow-hidden cursor-pointer group aspect-video hover:scale-102 transition-all border border-border shadow-sm"
-                  :class="{ 'ring-2 ring-primary ring-offset-2 ring-offset-background': isFolderSelected(group.id) }"
-                  @click="openFolder(group)"
-                >
-                  <!-- Selection Checkbox (visible on hover or when selected) -->
-                  <div
-                    class="absolute top-4 right-4 z-30 transition-opacity"
-                    :class="isFolderSelected(group.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-                    @click.stop="toggleFolderSelection(group.id)"
-                  >
-                    <div
-                      :class="[
-                        'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
-                        isFolderSelected(group.id)
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-black/60 text-white hover:bg-black/80',
-                      ]"
-                    >
-                      <Check v-if="isFolderSelected(group.id)" class="w-4 h-4" />
-                    </div>
-                  </div>
-
-                  <!-- Thumbnail -->
-                  <div
-                    v-if="group.clips.length > 0 && getThumbnailUrl(group.clips[0])"
-                    class="absolute inset-0 z-0"
-                    :style="{
-                      backgroundImage: `url(${getThumbnailUrl(group.clips[0])})`,
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
-                      backgroundRepeat: 'no-repeat',
-                    }"
-                  >
-                    <!-- Dark vignette overlay handled by bottom gradient now, but keep subtle global one -->
-                    <div class="absolute inset-0 bg-black/10"></div>
-                  </div>
-                  <div v-else class="absolute inset-0 z-0 bg-muted flex items-center justify-center">
-                    <Folder class="h-16 w-16 text-muted-foreground/50" />
-                  </div>
-
-                  <!-- Count Badge -->
-                  <div
-                    class="absolute top-4 left-4 z-20 flex items-center gap-1.5 bg-blue-600/90 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-sm backdrop-blur-sm"
-                  >
-                    <FolderOpen class="w-3 h-3" />
-                    <span>{{ getFolderBuildsCount(group.clips) }} Clips</span>
-                  </div>
-
-                  <!-- Bottom Info -->
-                  <div
-                    class="absolute bottom-0 left-0 right-0 z-5 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-28 flex flex-col gap-1.5"
-                  >
-                    <h3
-                      class="text-base font-bold text-white leading-tight line-clamp-1 group-hover:text-white/90 transition-colors"
-                    >
-                      {{ group.name }}
-                    </h3>
-                    <p class="text-xs text-white/70 font-medium">Updated {{ getRelativeTime(group.updatedAt) }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- No Results State -->
-        <div
-          v-if="displayableBuilds.length > 0 && filteredBuilds.length === 0"
-          class="flex flex-col items-center justify-center py-16 text-center space-y-4"
-        >
-          <div class="bg-muted rounded-full p-4">
-            <Search class="h-8 w-8 text-muted-foreground" />
-          </div>
-          <div class="space-y-1">
-            <h3 class="font-semibold text-lg">No builds found</h3>
-            <p class="text-muted-foreground text-sm max-w-sm">
-              We couldn't find any builds matching your search filters. Try adjusting your search query or filters.
-            </p>
-          </div>
-          <button
-            @click="
-              searchQuery = '';
-              statusFilter = 'all';
-              projectFilter = 'all';
-              aspectRatioFilter = 'all';
-            "
-            class="text-primary hover:underline text-sm font-medium"
-          >
-            Clear filters
-          </button>
         </div>
 
         <!-- Empty State -->
-        <EmptyState
-          v-if="displayableBuilds.length === 0"
-          title="No builds yet"
-          description="Build your first video clip from a project to see it here"
-        >
-          <template #icon>
-            <Video class="h-16 w-16 text-muted-foreground" />
-          </template>
-        </EmptyState>
+        <div v-else class="clips__empty">
+          <div class="clips__empty-icon-wrapper">
+            <Video class="clips__empty-icon" />
+          </div>
+          <h3 class="clips__empty-title">No builds yet</h3>
+          <p class="clips__empty-description">Build your first video clip from a project to see it here</p>
+        </div>
       </div>
-      <!-- Close content when not loading -->
     </PageLayout>
-    <!-- Pagination Footer -->
-    <PaginationFooter
-      v-if="!loading && filteredBuilds.length > 0 && viewMode === 'list'"
-      :current-page="currentPage"
-      :total-pages="totalPages"
-      :total-items="filteredBuilds.length"
-      item-label="build"
-      @go-to-page="goToPage"
-      @previous="previousPage"
-      @next="nextPage"
-    />
     <!-- Folder Contents Dialog -->
     <div
       v-if="showFolderDialog && folderProject"
@@ -666,8 +631,6 @@
   import { useFormatters } from '@/composables/useFormatters';
   import { useAuthStore } from '@/stores/auth';
   import PageLayout from '@/components/PageLayout.vue';
-  import EmptyState from '@/components/EmptyState.vue';
-  import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
@@ -676,7 +639,6 @@
   import OrganizationSelectDialog from '@/components/OrganizationSelectDialog.vue';
   import PublishDialog from '@/components/organization/PublishDialog.vue';
   import { Input } from '@/components/ui/input';
-  import { Button } from '@/components/ui/button';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import {
     uploadMediaForPost,
@@ -2152,6 +2114,664 @@
     position: relative;
     width: 100%;
     min-height: 100%;
+  }
+
+  /* ===== Content Container ===== */
+  .clips__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    width: 100%;
+    flex: 1;
+  }
+
+  .clips__content--empty {
+    justify-content: center;
+    align-items: center;
+  }
+
+  .clips__main {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .clips__loading {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* ===== Page Heading ===== */
+  .clips__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .clips__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .clips__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Header Actions ===== */
+  .clips-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .clips-header__search {
+    position: relative;
+    width: 180px;
+  }
+
+  .clips-header__search-icon {
+    position: absolute;
+    left: 0.625rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    pointer-events: none;
+  }
+
+  .clips-header__search-input {
+    width: 100%;
+    padding-left: 2rem;
+    height: 32px;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+  }
+
+  .clips-header__search-input:focus {
+    border-color: var(--sidebar-accent);
+    outline: none;
+  }
+
+  .clips-header__filter {
+    width: 110px;
+    flex-shrink: 0;
+  }
+
+  .clips-header__filter--wide {
+    width: 140px;
+  }
+
+  .clips-header__sort {
+    width: 140px;
+    flex-shrink: 0;
+  }
+
+  /* Dropdown trigger button styling */
+  :deep(.clips-header__dropdown-trigger) {
+    height: 32px !important;
+    padding: 0 0.625rem !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 6px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+  }
+
+  :deep(.clips-header__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  :deep(.clips-header__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.clips-header__dropdown-trigger svg) {
+    width: 12px !important;
+    height: 12px !important;
+    color: var(--sidebar-text-muted) !important;
+  }
+
+  .clips-header__view-toggle {
+    display: flex;
+    align-items: center;
+    padding: 0.125rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    transition: opacity 150ms ease;
+  }
+
+  .clips-header__view-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clips-header__view-btn:hover:not(:disabled) {
+    color: var(--sidebar-text);
+  }
+
+  .clips-header__view-btn--active {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .clips-header__view-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .clips-header__folder-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clips-header__folder-btn:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--sidebar-text);
+  }
+
+  .clips-header__folder-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .clips-header__folder-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ===== Skeleton Loading States ===== */
+  .clips-skeleton__card-title {
+    height: 16px;
+    width: 70%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+
+  .clips-skeleton__card-meta {
+    height: 12px;
+    width: 50%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.15s;
+    border-radius: 4px;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  /* ===== Selection Bar ===== */
+  .clips__selection-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.625rem 1rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .clips__selection-delete {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    background-color: #ef4444;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clips__selection-delete:hover:not(:disabled) {
+    background-color: #dc2626;
+  }
+
+  .clips__selection-icon {
+    width: 13px;
+    height: 13px;
+  }
+
+  .clips__selection-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  .clips__selection-clear {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    padding: 0.375rem 0.75rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clips__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Sections ===== */
+  .clips__section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .clips__date-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .clips__section-header {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    padding-bottom: 0.1rem;
+  }
+
+  /* ===== Clips Grid ===== */
+  .clips__grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .clips__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .clips__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1400px) {
+    .clips__grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  @media (min-width: 1800px) {
+    .clips__grid {
+      grid-template-columns: repeat(5, 1fr);
+    }
+  }
+
+  @media (min-width: 2200px) {
+    .clips__grid {
+      grid-template-columns: repeat(6, 1fr);
+    }
+  }
+
+  /* ===== Clips Card (Folder View) ===== */
+  .clips-card {
+    position: relative;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 200ms ease;
+    aspect-ratio: 16 / 9;
+  }
+
+  .clips-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    transform: scale(1.02);
+  }
+
+  .clips-card--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow:
+      0 0 0 2px var(--sidebar-accent),
+      0 8px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  .clips-card--skeleton {
+    pointer-events: none;
+  }
+
+  .clips-card__skeleton-bg {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
+  }
+
+  /* Card wrapper for list view items */
+  .clips-card-wrapper {
+    position: relative;
+    border-radius: 10px;
+    transition: all 200ms ease;
+  }
+
+  .clips-card-wrapper--selected {
+    box-shadow:
+      0 0 0 2px var(--sidebar-accent),
+      0 8px 32px rgba(0, 0, 0, 0.25);
+  }
+
+  /* Checkbox */
+  .clips-card__checkbox {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .clips-card:hover .clips-card__checkbox,
+  .clips-card-wrapper:hover .clips-card__checkbox,
+  .clips-card__checkbox--visible {
+    opacity: 1;
+  }
+
+  .clips-card__checkbox-inner {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 150ms ease;
+  }
+
+  .clips-card__checkbox-inner:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .clips-card__checkbox-inner--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .clips-card__checkbox-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Badges */
+  .clips-card__badge {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .clips-card__badge--count {
+    background-color: rgba(37, 99, 235, 0.9);
+    color: white;
+  }
+
+  .clips-card__badge-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* Thumbnail */
+  .clips-card__thumbnail {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .clips-card__vignette {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 70%);
+  }
+
+  .clips-card__thumbnail--empty {
+    background-color: var(--sidebar-hover);
+  }
+
+  .clips-card__thumbnail-gradient {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
+  }
+
+  /* Empty State Icons */
+  .clips-card__empty-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.2;
+  }
+
+  .clips-card__folder-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--sidebar-text);
+  }
+
+  /* Bottom Info */
+  .clips-card__bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 1rem;
+    padding-top: 7rem;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .clips-card__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    line-height: 1.3;
+    transition: color 150ms ease;
+  }
+
+  .clips-card:hover .clips-card__title {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .clips-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    flex-wrap: wrap;
+  }
+
+  .clips-card__meta-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ===== No Results State ===== */
+  .clips__no-results {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 1rem;
+    text-align: center;
+  }
+
+  .clips__no-results-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background-color: var(--sidebar-hover);
+    border-radius: 9999px;
+    margin-bottom: 1rem;
+  }
+
+  .clips__no-results-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .clips__no-results-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+  }
+
+  .clips__no-results-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1rem;
+    max-width: 24rem;
+  }
+
+  .clips__no-results-btn {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+
+  .clips__no-results-btn:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+  }
+
+  /* ===== Empty State ===== */
+  .clips__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .clips__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .clips__empty-icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .clips__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .clips__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.5;
   }
 
   /* Fade transition for upload overlay */

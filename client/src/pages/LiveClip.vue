@@ -1,347 +1,302 @@
 <template>
-  <PageLayout title="Live Clip" description="Real-time clip detection" :show-header="true" :icon="Radio">
-    <template #actions>
-      <div class="relative w-[380px] shadow-sm group">
-        <div
-          class="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 pointer-events-none z-10"
-        >
-          <transition name="scale" mode="out-in">
-            <div
-              v-if="detectedPlatform === 'Youtube'"
-              class="w-6 h-6 bg-red-600 rounded-md flex items-center justify-center shadow-sm border-border/80"
-              key="yt"
-            >
-              <img src="/youtube.svg" class="w-3.5 h-3.5 invert brightness-200" />
-            </div>
-            <div
-              v-else-if="detectedPlatform === 'Twitch'"
-              class="w-6 h-6 bg-[#9146FF] rounded-md flex items-center justify-center shadow-sm border-border/80"
-              key="tw"
-            >
-              <img src="/twitch.svg" class="w-3.5 h-3.5 invert brightness-200" />
-            </div>
-            <div
-              v-else-if="detectedPlatform === 'Kick'"
-              class="w-6 h-6 bg-[#53FC18] rounded-md flex items-center justify-center shadow-sm border-border/80"
-              key="kick"
-            >
-              <img src="/kick.svg" class="w-3.5 h-3.5" />
-            </div>
-            <div
-              v-else-if="detectedPlatform === 'PumpFun'"
-              class="w-6 h-6 bg-emerald-500 rounded-md flex items-center justify-center shadow-sm border-border/80"
-              key="pf"
-            >
-              <img src="/capsule.svg" class="w-3.5 h-3.5 brightness-200" />
-            </div>
-            <Search v-else class="w-4 h-4 text-muted-foreground" key="search" />
-          </transition>
-        </div>
-
-        <Input
-          v-model="inputValue"
-          class="h-14 pl-11 pr-30 text-sm bg-background border-border/70 rounded-lg focus-visible:ring-primary/20 transition-all hover:border-primary/30 focus:border-primary/50 shadow-sm w-full"
-          placeholder="Paste stream link or Mint ID..."
-          @keyup.enter="addStreamer"
-          @input="detectPlatform"
-        />
-
-        <div class="absolute right-2.5 top-1/2 -translate-y-1/2">
-          <Button
-            size="sm"
-            class="h-8 px-4 rounded-sm font-medium transition-all text-xs"
-            :disabled="!inputValue"
-            @click="addStreamer"
-          >
-            <Plus class="w-3.5 h-3.5" />
+  <div class="liveclip">
+    <PageLayout title="Live Clip" description="Real-time clip detection" :show-header="true" :icon="Radio">
+      <template #actions>
+        <div class="liveclip-actions">
+          <div class="liveclip-search">
+            <transition name="scale" mode="out-in">
+              <div
+                v-if="detectedPlatform === 'Youtube'"
+                class="liveclip-search__platform liveclip-search__platform--youtube"
+                key="yt"
+              >
+                <img src="/youtube.svg" class="liveclip-search__platform-icon" />
+              </div>
+              <div
+                v-else-if="detectedPlatform === 'Twitch'"
+                class="liveclip-search__platform liveclip-search__platform--twitch"
+                key="tw"
+              >
+                <img src="/twitch.svg" class="liveclip-search__platform-icon" />
+              </div>
+              <div
+                v-else-if="detectedPlatform === 'Kick'"
+                class="liveclip-search__platform liveclip-search__platform--kick"
+                key="kick"
+              >
+                <img src="/kick.svg" class="liveclip-search__platform-icon liveclip-search__platform-icon--dark" />
+              </div>
+              <div
+                v-else-if="detectedPlatform === 'PumpFun'"
+                class="liveclip-search__platform liveclip-search__platform--pumpfun"
+                key="pf"
+              >
+                <img src="/capsule.svg" class="liveclip-search__platform-icon" />
+              </div>
+              <Search v-else class="liveclip-search__icon" key="search" />
+            </transition>
+            <Input
+              v-model="inputValue"
+              class="liveclip-search__input"
+              placeholder="Paste stream link or Mint ID..."
+              @keyup.enter="addStreamer"
+              @input="detectPlatform"
+            />
+          </div>
+          <Button size="sm" class="liveclip-add-btn" :disabled="!inputValue" @click="addStreamer">
+            <Plus class="liveclip-add-btn__icon" />
             Track
           </Button>
         </div>
-      </div>
-    </template>
+      </template>
 
-    <div
-      class="mx-auto pt-2 relative transition-all duration-500 ease-in-out"
-      :class="[isDetectingAny && activityLogs.length > 0 ? 'max-w-7xl' : 'max-w-full', 'pb-12']"
-    >
-      <div :class="{ 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start': isDetectingAny && activityLogs.length > 0 }">
-        <!-- Streamers List Column -->
-        <div class="w-full">
-          <div
-            v-if="streamers.length > 0"
-            class="flex items-center justify-between px-4 text-sm text-muted-foreground font-medium mb-3"
-          >
-            <span>Monitored Channels</span>
-            <span>{{ streamers.length }} total</span>
-          </div>
-
-          <div class="relative">
-            <transition-group name="list" tag="div" class="space-y-2">
-              <div
-                v-for="streamer in sortedStreamers"
-                :key="streamer.id"
-                class="group bg-card border border-border/50 rounded-xl transition-all duration-200 hover:border-primary/30 hover:bg-accent/5 shadow-sm overflow-hidden"
-                :class="{
-                  'border-green-500/30 bg-green-500/5': streamer.isDetecting,
-                  'border-red-500/20 bg-red-500/5': !streamer.isDetecting && streamer.isLive,
-                }"
-              >
-                <!-- Row 1: Streamer Identity -->
-                <div class="flex items-center gap-3 px-4 py-3">
-                  <!-- Avatar -->
-                  <div
-                    class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden relative bg-muted"
-                  >
-                    <img
-                      v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
-                      :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
-                      class="w-full h-full object-cover absolute inset-0 z-20 rounded-xl border border-border"
-                    />
-                    <div v-else class="absolute inset-0" :class="getPlatformSolidBg(streamer.platform)"></div>
-                    <img
-                      v-if="!streamer.profileImageUrl && !streamer.streamThumbnailUrl"
-                      :src="getPlatformIcon(streamer.platform)"
-                      class="w-6 h-6 relative z-10"
-                      :class="getPlatformIconClasses(streamer.platform)"
-                    />
-                  </div>
-
-                  <!-- Streamer Info -->
-                  <div class="flex-1 min-w-0">
-                    <h3 class="font-semibold text-base text-foreground truncate">
-                      {{ streamer.displayName }}
-                    </h3>
-                    <div class="flex items-center gap-2 mt-0.5">
-                      <span class="text-sm text-muted-foreground">{{ streamer.platform }}</span>
-                      <span class="text-muted-foreground/30">•</span>
-                      <!-- Status -->
-                      <span
-                        v-if="streamer.isDetecting"
-                        class="text-green-500 flex items-center gap-1.5 text-sm font-medium"
-                      >
-                        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                        {{ getStatusLabel(streamer) }}
-                      </span>
-                      <template v-else>
-                        <span v-if="streamer.isCheckingLive" class="text-muted-foreground flex items-center gap-1.5">
-                          <Loader2 class="w-3.5 h-3.5 animate-spin" />
-                        </span>
-                        <span
-                          v-else-if="streamer.isLive"
-                          class="text-red-500 flex items-center gap-1.5 text-sm font-medium"
-                        >
-                          <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                          LIVE
-                          <span v-if="streamer.viewerCount" class="text-muted-foreground font-normal">
-                            ({{ formatViewerCount(streamer.viewerCount) }} viewers)
-                          </span>
-                          <!-- DVR Ready indicator -->
-                          <span
-                            v-if="streamer.hasTempRecording"
-                            class="text-[10px] bg-green-500/20 text-green-400 px-1 py-0.5 rounded border border-green-500/30 font-normal"
-                            title="DVR recording active - rewind available"
-                          >
-                            DVR
-                          </span>
-                        </span>
-                        <span v-else class="text-muted-foreground/60 flex items-center gap-1.5 text-sm">
-                          <span class="w-2 h-2 rounded-full bg-muted-foreground/40"></span>
-                          Offline
-                        </span>
-                      </template>
-                    </div>
-                  </div>
-
-                  <!-- Delete Button (top right) -->
-                  <button
-                    v-if="!streamer.isDetecting"
-                    @click.stop="removeStreamer(streamer.id)"
-                    class="p-2 rounded-lg text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                    title="Remove streamer"
-                  >
-                    <Trash2 class="w-4 h-4" />
-                  </button>
-                </div>
-
-                <!-- Row 2: Actions -->
-                <div class="flex items-center justify-between gap-3 px-4 py-2.5 bg-muted/20 border-t border-border/30">
-                  <!-- Left: Segment Duration & Auto DVR -->
-                  <div class="flex items-center gap-4">
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs text-muted-foreground">Segment:</span>
-                      <Select
-                        :model-value="String(streamer.segmentDurationMinutes)"
-                        @update:model-value="updateSegmentDuration(streamer, Number($event))"
-                        :disabled="streamer.isDetecting"
-                      >
-                        <SelectTrigger
-                          class="h-8 w-[90px] bg-background border-border/50 text-sm"
-                          :class="{ 'opacity-50': streamer.isDetecting }"
-                        >
-                          <SelectValue :placeholder="`${streamer.segmentDurationMinutes} min`" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="3">3 min</SelectItem>
-                          <SelectItem value="5">5 min</SelectItem>
-                          <SelectItem value="10">10 min</SelectItem>
-                          <SelectItem value="15">15 min</SelectItem>
-                          <SelectItem value="30">30 min</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs text-muted-foreground">Auto DVR:</span>
-                      <button
-                        @click="updateAutoDvr(streamer, !streamer.autoDvr)"
-                        :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
-                        class="h-8 px-3 rounded-md text-xs font-medium transition-all border"
-                        :class="[
-                          streamer.autoDvr
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                            : 'bg-background text-muted-foreground border-border/50 hover:bg-muted/50',
-                          streamer.isDetecting && streamer.status === 'STOPPING' ? 'opacity-50 cursor-not-allowed' : '',
-                        ]"
-                        title="Automatically start persistent recording when streamer goes live"
-                      >
-                        {{ streamer.autoDvr ? 'On' : 'Off' }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Right: Action Buttons -->
-                  <div class="flex items-center gap-2">
-                    <template v-if="!streamer.isDetecting">
-                      <div
-                        v-if="streamer.status === 'STOPPING'"
-                        class="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-500 rounded-lg border border-amber-500/20"
-                      >
-                        <Loader2 class="w-4 h-4 animate-spin" />
-                        <span class="text-sm font-medium">Stopping...</span>
-                      </div>
-                      <template v-else>
-                        <button
-                          @click.stop="refreshLiveStatus(streamer)"
-                          class="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                          :class="{ 'animate-spin': streamer.isCheckingLive }"
-                          :disabled="streamer.isCheckingLive"
-                          title="Refresh live status"
-                        >
-                          <RefreshCw class="w-4 h-4" />
-                        </button>
-                        <!-- Watch Button (only when live) -->
-                        <button
-                          v-if="streamer.isLive"
-                          @click="openWatchDialog(streamer)"
-                          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30"
-                          :title="streamer.hasTempRecording ? 'Watch Live (DVR Ready)' : 'Watch Live'"
-                        >
-                          <Eye class="w-4 h-4" />
-                          Watch
-                          <!-- DVR Ready indicator -->
-                          <span
-                            v-if="streamer.hasTempRecording"
-                            class="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full border border-green-500/30"
-                          >
-                            DVR
-                          </span>
-                        </button>
-                        <button
-                          @click="startStreamer(streamer, false)"
-                          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-muted/50 hover:bg-muted text-foreground border border-border/50"
-                          title="Start Recording Only"
-                        >
-                          <Video class="w-4 h-4" />
-                          Rec
-                        </button>
-                        <button
-                          @click="startStreamer(streamer, true)"
-                          class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30"
-                          title="Start Auto-Detect"
-                        >
-                          <Sparkles class="w-4 h-4" />
-                          Auto Detect
-                        </button>
-                      </template>
-                    </template>
-
-                    <!-- Stop Button when Active -->
-                    <template v-else>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        class="h-9 px-5 rounded-lg text-sm font-semibold shadow-sm"
-                        @click="stopStreamer(streamer)"
-                      >
-                        <Square class="w-4 h-4 mr-2 fill-current" />
-                        Stop
-                      </Button>
-                    </template>
-                  </div>
-                </div>
-              </div>
-            </transition-group>
-          </div>
-
-          <!-- Empty State -->
-          <EmptyState
-            v-if="streamers.length === 0"
-            title="No active monitors"
-            description="Add a stream link above to start detecting clips in real-time."
-          >
-            <template #icon>
-              <Radio class="h-16 w-16 text-muted-foreground" />
-            </template>
-          </EmptyState>
+      <div class="liveclip__content" :class="{ 'liveclip__content--empty': streamers.length === 0 }">
+        <!-- Page Heading (hidden in empty state) -->
+        <div v-if="streamers.length > 0" class="liveclip__heading">
+          <h1 class="liveclip__title">Live Stream Monitor</h1>
+          <p class="liveclip__subtitle">Track streams and detect clips in real-time with AI-powered analysis</p>
         </div>
 
-        <!-- Activity Log Column -->
-        <div v-if="isDetectingAny && activityLogs.length > 0" class="w-full mt-8 lg:mt-0">
-          <div class="flex items-center justify-between px-4 text-sm text-muted-foreground font-medium mb-3">
-            <span class="flex items-center gap-2">
-              <Activity class="w-4 h-4" />
-              Real-time Activity
-            </span>
-            <span class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">Live</span>
-          </div>
+        <!-- Main Grid -->
+        <div
+          v-if="streamers.length > 0"
+          class="liveclip__grid"
+          :class="{ 'liveclip__grid--with-logs': isDetectingAny && activityLogs.length > 0 }"
+        >
+          <!-- Streamers Column -->
+          <div class="liveclip__streamers">
+            <!-- Item Count -->
+            <div class="liveclip__item-count">
+              {{ streamers.length }} {{ streamers.length === 1 ? 'channel' : 'channels' }}
+            </div>
 
-          <div class="bg-card border border-border/50 rounded-lg overflow-hidden shadow-sm h-[500px] flex flex-col">
-            <div class="flex-1 overflow-y-auto p-4 space-y-1 scroll-smooth" ref="logsContainer">
-              <transition-group name="list">
+            <!-- Streamer Cards -->
+            <div class="liveclip__list">
+              <transition-group name="list" tag="div" class="liveclip__list-inner">
                 <div
-                  v-for="log in activityLogs"
-                  :key="log.id"
-                  class="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/30 transition-colors text-sm group"
+                  v-for="streamer in sortedStreamers"
+                  :key="streamer.id"
+                  class="monitor-card"
+                  :class="{
+                    'monitor-card--active': streamer.isDetecting,
+                    'monitor-card--live': !streamer.isDetecting && streamer.isLive,
+                  }"
                 >
-                  <span class="text-muted-foreground text-xs font-mono w-16 pt-0.5">{{ log.timestamp }}</span>
-
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-0.5">
-                      <!-- Avatar or Platform Dot -->
-                      <div
-                        v-if="log.profileImageUrl || log.streamThumbnailUrl"
-                        class="w-5 h-5 rounded-full overflow-hidden flex-shrink-0 bg-muted border border-border/50"
-                      >
-                        <img :src="log.streamThumbnailUrl || log.profileImageUrl" class="w-full h-full object-cover" />
+                  <div class="monitor-card__content">
+                    <!-- Header: Avatar + Info + Status -->
+                    <div class="monitor-card__header">
+                      <div class="monitor-card__avatar">
+                        <img
+                          v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
+                          :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
+                          class="monitor-card__avatar-img"
+                        />
+                        <div
+                          v-else
+                          class="monitor-card__avatar-fallback"
+                          :class="getPlatformBgClass(streamer.platform)"
+                        >
+                          <img
+                            :src="getPlatformIcon(streamer.platform)"
+                            class="monitor-card__avatar-icon"
+                            :class="getPlatformIconClasses(streamer.platform)"
+                          />
+                        </div>
                       </div>
-                      <span v-else class="w-2 h-2 rounded-full" :class="getPlatformDotColor(log.platform)"></span>
 
-                      <span class="font-medium text-foreground">{{ log.streamerName }}</span>
+                      <div class="monitor-card__info">
+                        <h3 class="monitor-card__name">{{ streamer.displayName }}</h3>
+                        <div class="monitor-card__meta">
+                          <span class="monitor-card__platform" :class="getPlatformTextClass(streamer.platform)">
+                            {{ streamer.platform }}
+                          </span>
+                          <span class="monitor-card__divider"></span>
+                          <!-- Status Badge -->
+                          <div v-if="streamer.isDetecting" class="monitor-status monitor-status--active">
+                            <span class="monitor-status__dot"></span>
+                            {{ getStatusLabel(streamer) }}
+                          </div>
+                          <template v-else>
+                            <div v-if="streamer.isCheckingLive" class="monitor-status monitor-status--checking">
+                              <Loader2 class="monitor-status__spinner" />
+                            </div>
+                            <div v-else-if="streamer.isLive" class="monitor-status monitor-status--live">
+                              <span class="monitor-status__dot"></span>
+                              LIVE
+                              <span v-if="streamer.viewerCount" class="monitor-status__viewers">
+                                {{ formatViewerCount(streamer.viewerCount) }}
+                              </span>
+                              <span v-if="streamer.hasTempRecording" class="monitor-status__dvr">DVR</span>
+                            </div>
+                            <div v-else class="monitor-status monitor-status--offline">
+                              <span class="monitor-status__dot"></span>
+                              Offline
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+
+                      <!-- Quick Actions (top right) -->
+                      <div class="monitor-card__quick-actions">
+                        <button
+                          v-if="!streamer.isDetecting"
+                          @click.stop="refreshLiveStatus(streamer)"
+                          class="monitor-card__icon-btn"
+                          :class="{ 'monitor-card__icon-btn--spinning': streamer.isCheckingLive }"
+                          :disabled="streamer.isCheckingLive"
+                          title="Refresh status"
+                        >
+                          <RefreshCw class="monitor-card__icon-btn-icon" />
+                        </button>
+                        <button
+                          v-if="!streamer.isDetecting"
+                          @click.stop="removeStreamer(streamer.id)"
+                          class="monitor-card__icon-btn monitor-card__icon-btn--danger"
+                          title="Remove"
+                        >
+                          <Trash2 class="monitor-card__icon-btn-icon" />
+                        </button>
+                      </div>
                     </div>
-                    <p class="text-muted-foreground group-hover:text-foreground transition-colors truncate">
-                      {{ log.message }}
-                    </p>
-                  </div>
 
-                  <div v-if="log.status === 'loading'" class="pt-0.5">
-                    <Loader2 class="w-3.5 h-3.5 animate-spin text-primary" />
-                  </div>
-                  <div v-else-if="log.status === 'success'" class="pt-0.5">
-                    <Check class="w-3.5 h-3.5 text-green-500" />
+                    <!-- Controls Row -->
+                    <div class="monitor-card__controls">
+                      <!-- Left: Settings -->
+                      <div class="monitor-card__settings">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger as-child>
+                            <button
+                              class="monitor-setting__dropdown-trigger"
+                              :class="{ 'monitor-setting__dropdown-trigger--disabled': streamer.isDetecting }"
+                              :disabled="streamer.isDetecting"
+                            >
+                              {{ streamer.segmentDurationMinutes }} min
+                              <ChevronDown class="monitor-setting__dropdown-chevron" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" :side-offset="4" class="segment-dropdown">
+                            <DropdownMenuItem
+                              v-for="duration in [3, 5, 10, 15, 30]"
+                              :key="duration"
+                              class="segment-dropdown__item"
+                              :class="{
+                                'segment-dropdown__item--selected': streamer.segmentDurationMinutes === duration,
+                              }"
+                              @click="updateSegmentDuration(streamer, duration)"
+                            >
+                              {{ duration }} min
+                              <Check
+                                v-if="streamer.segmentDurationMinutes === duration"
+                                class="segment-dropdown__check"
+                              />
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <button
+                          @click="updateAutoDvr(streamer, !streamer.autoDvr)"
+                          :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
+                          class="monitor-setting__toggle"
+                          :class="{ 'monitor-setting__toggle--on': streamer.autoDvr }"
+                          title="Auto DVR"
+                        >
+                          <Video class="monitor-setting__toggle-icon" />
+                          DVR
+                        </button>
+                      </div>
+
+                      <!-- Right: Action Buttons -->
+                      <div class="monitor-card__actions">
+                        <template v-if="!streamer.isDetecting">
+                          <div v-if="streamer.status === 'STOPPING'" class="monitor-action monitor-action--stopping">
+                            <Loader2 class="monitor-action__spinner" />
+                            Stopping...
+                          </div>
+                          <template v-else>
+                            <button
+                              v-if="streamer.isLive"
+                              @click="openWatchDialog(streamer)"
+                              class="monitor-action monitor-action--watch"
+                            >
+                              <Eye class="monitor-action__icon" />
+                              Watch
+                            </button>
+                            <div class="monitor-action-group">
+                              <button @click="startStreamer(streamer, false)" class="monitor-action-group__btn">
+                                <Video class="monitor-action__icon" />
+                                Rec
+                              </button>
+                              <button
+                                @click="startStreamer(streamer, true)"
+                                class="monitor-action-group__btn monitor-action-group__btn--primary"
+                              >
+                                <Sparkles class="monitor-action__icon" />
+                                Auto
+                              </button>
+                            </div>
+                          </template>
+                        </template>
+                        <template v-else>
+                          <button class="monitor-action monitor-action--stop" @click="stopStreamer(streamer)">
+                            <Square class="monitor-action__icon" />
+                            Stop
+                          </button>
+                        </template>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </transition-group>
             </div>
           </div>
+
+          <!-- Activity Log Column -->
+          <div v-if="isDetectingAny && activityLogs.length > 0" class="liveclip__activity">
+            <div class="liveclip__section-header">
+              <div class="liveclip__section-header-left">
+                <div class="liveclip__section-icon liveclip__section-icon--activity">
+                  <Activity />
+                </div>
+                <div class="liveclip__section-text">
+                  <h2 class="liveclip__section-title">Real-time Activity</h2>
+                  <p class="liveclip__section-subtitle">Live feed</p>
+                </div>
+              </div>
+              <span class="liveclip__live-badge">Live</span>
+            </div>
+
+            <div class="activity-log">
+              <div class="activity-log__scroll" ref="logsContainer">
+                <transition-group name="list">
+                  <div v-for="log in activityLogs" :key="log.id" class="activity-log__item">
+                    <span class="activity-log__time">{{ log.timestamp }}</span>
+                    <div class="activity-log__content">
+                      <div class="activity-log__header">
+                        <div v-if="log.profileImageUrl || log.streamThumbnailUrl" class="activity-log__avatar">
+                          <img :src="log.streamThumbnailUrl || log.profileImageUrl" />
+                        </div>
+                        <span v-else class="activity-log__dot" :class="getPlatformDotClass(log.platform)"></span>
+                        <span class="activity-log__name">{{ log.streamerName }}</span>
+                      </div>
+                      <p class="activity-log__message">{{ log.message }}</p>
+                    </div>
+                    <div class="activity-log__status">
+                      <Loader2 v-if="log.status === 'loading'" class="activity-log__spinner" />
+                      <Check v-else-if="log.status === 'success'" class="activity-log__check" />
+                    </div>
+                  </div>
+                </transition-group>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div v-if="streamers.length === 0" class="liveclip__empty">
+          <div class="liveclip__empty-icon-wrapper">
+            <Radio class="liveclip__empty-icon" />
+          </div>
+          <h3 class="liveclip__empty-title">No active monitors</h3>
+          <p class="liveclip__empty-description">Add a stream link above to start detecting clips in real-time</p>
         </div>
       </div>
 
@@ -401,8 +356,8 @@
         @select="handleCampaignSelect"
         @cancel="handleCampaignCancel"
       />
-    </div>
-  </PageLayout>
+    </PageLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -420,18 +375,21 @@
     Video,
     Sparkles,
     RefreshCw,
-    Clock,
     Eye,
+    ChevronDown,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
-  import EmptyState from '@/components/EmptyState.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CampaignSelectionDialog from '@/components/campaigns/CampaignSelectionDialog.vue';
-  // import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -460,15 +418,11 @@
     isDetecting: boolean;
     mode?: 'Auto-Detect' | 'Record Only' | null;
     status?: 'LIVE' | 'WAITING' | 'IDLE' | 'STOPPING';
-    // Live status (checked independently of monitoring)
     isLive?: boolean;
     viewerCount?: number;
     isCheckingLive?: boolean;
-    // Per-streamer segment duration
     segmentDurationMinutes: number;
-    // Temp recording status (for watch-only DVR)
     hasTempRecording?: boolean;
-    // Auto DVR toggle
     autoDvr?: boolean;
   };
 
@@ -477,19 +431,16 @@
   const detectedPlatform = ref<Platform | null>(null);
   const logsContainer = ref<HTMLElement | null>(null);
 
-  // Search state
   const searchResults = ref<TokenSearchResult[]>([]);
   const showSearchDialog = ref(false);
   const isSearching = ref(false);
 
-  // Campaign selection state
   const showCampaignDialog = ref(false);
   const availableCampaigns = ref<Campaign[]>([]);
   const pendingCampaignAction = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
   const pendingWatchAction = ref<ExtendedStreamer | null>(null);
   const selectedCampaignForSession = ref<Campaign | null>(null);
 
-  // Global livestream store for watch dialog
   const livestreamStore = useLivestreamStore();
 
   const {
@@ -508,14 +459,12 @@
 
   const isDetectingAny = computed(() => monitoredStreamers.value.size > 0 || activeSessions.value.size > 0);
 
-  // Sorted streamers: Detecting/Recording first, then Live, then Offline (each group alphabetically)
   const sortedStreamers = computed(() => {
     return [...streamers.value].sort((a, b) => {
-      // Priority: 1 = Detecting/Recording, 2 = Live (not detecting), 3 = Offline
       const getPriority = (s: ExtendedStreamer) => {
-        if (s.isDetecting) return 1; // Actively recording or auto-detecting (highest priority)
-        if (s.isLive) return 2; // Live but not being monitored
-        return 3; // Offline
+        if (s.isDetecting) return 1;
+        if (s.isLive) return 2;
+        return 3;
       };
 
       const aPriority = getPriority(a);
@@ -523,14 +472,12 @@
 
       if (aPriority !== bPriority) return aPriority - bPriority;
 
-      // Then sort alphabetically by display name (case-insensitive)
       const aName = (a.displayName || a.mintId).toLowerCase();
       const bName = (b.displayName || b.mintId).toLowerCase();
       return aName.localeCompare(bName);
     });
   });
 
-  // Credit warning state
   const showCreditWarningDialog = ref(false);
   const pendingStreamerStart = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
 
@@ -538,30 +485,22 @@
 
   onMounted(async () => {
     await loadStreamers();
-    // Refresh metadata for streamers that might be missing names or images
     refreshStreamerMetadata();
-    syncDetectionState(); // Initial sync
-    // Check live status for all streamers
+    syncDetectionState();
     checkAllLiveStatuses();
 
-    // Refresh live status every 60 seconds
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses();
     }, 60_000);
 
-    // Listen for clip created events from global livestream dialog
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
-    // Refresh monitored streamers when changes occur elsewhere in the app
     window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
   async function checkAllLiveStatuses() {
-    // Check live status for all streamers in parallel
     const promises = streamers.value.map(async (streamer) => {
-      // Skip if already being monitored (we already know the status)
       if (streamer.isDetecting) return;
 
-      // Set checking state
       const index = streamers.value.findIndex((s) => s.id === streamer.id);
       if (index !== -1) {
         streamers.value[index] = { ...streamers.value[index], isCheckingLive: true };
@@ -590,7 +529,6 @@
     await Promise.all(promises);
   }
 
-  // Refresh live status for a single streamer
   async function refreshLiveStatus(streamer: ExtendedStreamer) {
     if (streamer.isDetecting) return;
 
@@ -615,22 +553,19 @@
 
   async function refreshStreamerMetadata() {
     const needsUpdate = streamers.value.filter(
-      (s) => (
+      (s) =>
         (s.platform === 'PumpFun' && (s.displayName === s.mintId || !s.profileImageUrl)) ||
         (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId))
-      )
     );
 
     if (needsUpdate.length === 0) return;
 
-    // Process sequentially to avoid rate limits
     for (const streamer of needsUpdate) {
       try {
         if (streamer.platform === 'Kick') {
-          // Fetch Kick metadata
           const status = await checkKickLivestream(streamer.mintId);
           const updates: any = {};
-          
+
           if (streamer.displayName === streamer.mintId && status.username) {
             updates.display_name = status.username;
           }
@@ -640,26 +575,20 @@
 
           if (Object.keys(updates).length > 0) {
             await updateMonitoredStreamer(streamer.id, updates);
-            // Update local state
             if (updates.display_name) streamer.displayName = updates.display_name;
             if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
           }
         } else {
-          // Use search to find token metadata (PumpFun)
           let match: TokenSearchResult | null = null;
 
-          // 1. Try DexScreener search first
           const results = await searchPumpFunTokens(streamer.mintId);
           if (results && results.length > 0) {
-            // Find exact match if possible, or take first
             match = results.find((r) => r.mint === streamer.mintId) || results[0];
           }
 
-          // 2. Fallback to server (Metaplex) if no match or missing image
           if (!match || !match.image) {
             const serverMeta = await fetchTokenMetadataFromServer(streamer.mintId);
             if (serverMeta) {
-              // Use server metadata, potentially overriding DexScreener partial result
               match = serverMeta;
             }
           }
@@ -667,7 +596,7 @@
           if (match) {
             const updates: any = {};
             if (streamer.displayName === streamer.mintId) {
-              updates.display_name = match.symbol; // Use symbol as display name
+              updates.display_name = match.symbol;
             }
             if (!streamer.profileImageUrl && match.image) {
               updates.profile_image_url = match.image;
@@ -675,7 +604,6 @@
 
             if (Object.keys(updates).length > 0) {
               await updateMonitoredStreamer(streamer.id, updates);
-              // Update local state
               if (updates.display_name) streamer.displayName = updates.display_name;
               if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
             }
@@ -688,15 +616,11 @@
   }
 
   onUnmounted(async () => {
-    // Do not stop monitoring on unmount to allow background processing
-
-    // Clean up live status polling interval
     if (liveStatusInterval.value) {
       clearInterval(liveStatusInterval.value);
       liveStatusInterval.value = null;
     }
 
-    // Remove global clip created listener
     window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
     window.removeEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
@@ -714,9 +638,7 @@
         isDetecting: !!monitored,
         mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
         status: session ? (session.isStopping ? 'STOPPING' : 'LIVE') : monitored ? 'WAITING' : 'IDLE',
-        // When actively monitoring, derive live status from session state
         isLive: monitored ? (session ? true : streamer.isLive) : streamer.isLive,
-        // Track temp recording status for DVR availability
         hasTempRecording: !!dvrSession,
       };
     });
@@ -735,16 +657,13 @@
     return `WAITING (${streamer.mode === 'Auto-Detect' ? 'AUTO' : 'REC'})`;
   }
 
-  // Open watch dialog for a live streamer (uses global store for PIP persistence)
   async function openWatchDialog(streamer: ExtendedStreamer) {
     if (!streamer.isLive) return;
 
-    // Check if this creator is part of any campaigns the user has joined
     if (streamer.creatorProfileId) {
       try {
         const response = await getCampaignsByCreatorProfile(streamer.creatorProfileId);
         if (response.success && response.campaigns.length > 0) {
-          // Show campaign selection dialog for watch mode
           availableCampaigns.value = response.campaigns;
           pendingWatchAction.value = streamer;
           showCampaignDialog.value = true;
@@ -764,7 +683,6 @@
     );
   }
 
-  // Handle clip created from watch dialog (called via global event from App.vue)
   function handleGlobalClipCreated(event: CustomEvent<{ clipPath: string; projectId: string }>) {
     const { clipPath } = event.detail;
     const currentStreamer = livestreamStore.currentStreamer;
@@ -787,12 +705,11 @@
         const monitored = monitoredStreamers.value.get(record.id);
         const session = activeSessions.value.get(record.id);
 
-        // Map platform from DB (lowercase) to display format
         const platformMap: Record<string, Platform> = {
-          'pumpfun': 'PumpFun',
-          'kick': 'Kick',
-          'twitch': 'Twitch',
-          'youtube': 'Youtube',
+          pumpfun: 'PumpFun',
+          kick: 'Kick',
+          twitch: 'Twitch',
+          youtube: 'Youtube',
         };
         const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
 
@@ -822,7 +739,6 @@
   function detectPlatform() {
     const val = inputValue.value;
 
-    // Check PumpFun using the robust extractor first (handles URLs and Mint IDs)
     if (extractMintId(val)) {
       detectedPlatform.value = 'PumpFun';
       return;
@@ -855,18 +771,18 @@
     }
   }
 
-  function getPlatformSolidBg(platform: Platform) {
+  function getPlatformBgClass(platform: Platform) {
     switch (platform) {
       case 'Youtube':
-        return 'bg-red-600';
+        return 'monitor-card__avatar-fallback--youtube';
       case 'Twitch':
-        return 'bg-[#9146FF]';
+        return 'monitor-card__avatar-fallback--twitch';
       case 'Kick':
-        return 'bg-[#53FC18]';
+        return 'monitor-card__avatar-fallback--kick';
       case 'PumpFun':
-        return 'bg-emerald-500';
+        return 'monitor-card__avatar-fallback--pumpfun';
       default:
-        return 'bg-muted';
+        return '';
     }
   }
 
@@ -877,24 +793,39 @@
       case 'PumpFun':
         return 'brightness-200';
       case 'Kick':
-        return 'brightness-0 invert-0';
+        return 'brightness-0';
       default:
         return '';
     }
   }
 
-  function getPlatformDotColor(platform: Platform) {
+  function getPlatformTextClass(platform: Platform) {
     switch (platform) {
       case 'Youtube':
-        return 'bg-red-500';
+        return 'monitor-card__platform--youtube';
       case 'Twitch':
-        return 'bg-[#9146FF]';
+        return 'monitor-card__platform--twitch';
       case 'Kick':
-        return 'bg-[#53FC18]';
+        return 'monitor-card__platform--kick';
       case 'PumpFun':
-        return 'bg-emerald-500';
+        return 'monitor-card__platform--pumpfun';
       default:
-        return 'bg-slate-500';
+        return '';
+    }
+  }
+
+  function getPlatformDotClass(platform: Platform) {
+    switch (platform) {
+      case 'Youtube':
+        return 'activity-log__dot--youtube';
+      case 'Twitch':
+        return 'activity-log__dot--twitch';
+      case 'Kick':
+        return 'activity-log__dot--kick';
+      case 'PumpFun':
+        return 'activity-log__dot--pumpfun';
+      default:
+        return '';
     }
   }
 
@@ -924,7 +855,6 @@
   async function addStreamer() {
     if (!inputValue.value) return;
 
-    // Check if it's a Kick URL/channel first
     if (detectedPlatform.value === 'Kick') {
       const channelSlug = extractChannelSlug(inputValue.value);
       if (channelSlug) {
@@ -937,7 +867,6 @@
         });
 
         try {
-          // Fetch channel info from Kick API
           const kickStatus = await checkKickLivestream(channelSlug);
           const displayName = kickStatus.username || channelSlug;
           const profileImage = kickStatus.profileImageUrl;
@@ -946,27 +875,22 @@
             streamerId: 'system',
             streamerName: 'System',
             platform: 'Kick',
-            message: kickStatus.isLive 
-              ? `Found ${displayName} - Currently LIVE!` 
-              : `Found ${displayName}`,
+            message: kickStatus.isLive ? `Found ${displayName} - Currently LIVE!` : `Found ${displayName}`,
             status: 'success',
           });
 
           await confirmAddStreamer(channelSlug, displayName, profileImage, 'kick');
         } catch (error) {
           console.error('[LiveClip] Failed to fetch Kick channel info', error);
-          // Still add the streamer with basic info
           await confirmAddStreamer(channelSlug, channelSlug, undefined, 'kick');
         }
         return;
       }
     }
 
-    // Check if it's a valid mint ID or URL first
     const mintId = extractMintId(inputValue.value);
 
     if (mintId) {
-      // Even if we have a mint ID, try to fetch metadata first for better UX
       addActivityLog({
         streamerId: 'system',
         streamerName: 'System',
@@ -980,13 +904,11 @@
 
       try {
         let match: TokenSearchResult | null = null;
-        // 1. Try DexScreener search first
         const results = await searchPumpFunTokens(mintId);
         if (results && results.length > 0) {
           match = results.find((r) => r.mint === mintId) || results[0];
         }
 
-        // 2. Fallback to server (Metaplex) if no match or missing image
         if (!match || !match.image) {
           const serverMeta = await fetchTokenMetadataFromServer(mintId);
           if (serverMeta) {
@@ -1013,7 +935,6 @@
       return;
     }
 
-    // If not a mint ID, try searching
     if (detectedPlatform.value === 'PumpFun' || !detectedPlatform.value) {
       isSearching.value = true;
       addActivityLog({
@@ -1028,9 +949,6 @@
       isSearching.value = false;
 
       if (results.length === 0) {
-        // Try to see if input value is a Mint ID but regex didn't catch it initially (unlikely if logic is correct but good fallback)
-        // OR if the user pasted a mint ID that DexScreener doesn't know yet.
-        // We can try to fetch metadata assuming it is a mint ID
         if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(inputValue.value)) {
           const serverMeta = await fetchTokenMetadataFromServer(inputValue.value);
           if (serverMeta) {
@@ -1067,7 +985,6 @@
         });
         await confirmAddStreamer(token.mint, token.symbol, token.image);
       } else {
-        // Multiple results
         searchResults.value = results;
         showSearchDialog.value = true;
       }
@@ -1075,8 +992,8 @@
   }
 
   async function confirmAddStreamer(
-    platformId: string, 
-    displayName: string, 
+    platformId: string,
+    displayName: string,
     profileImageUrl?: string,
     platform: string = 'pumpfun'
   ) {
@@ -1116,16 +1033,13 @@
 
   async function removeStreamer(id: string) {
     try {
-      // Find the streamer to get the mintId for HLS cleanup
       const streamer = streamers.value.find((s) => s.id === id);
 
       if (streamer) {
-        // Stop and cleanup any HLS recordings for this streamer
         try {
           await invoke('cleanup_hls_recordings', { mintId: streamer.mintId });
           console.log('[LiveClip] Cleaned up HLS recordings for', streamer.mintId);
         } catch (hlsError) {
-          // Log but don't fail if HLS cleanup fails (recordings may not exist)
           console.warn('[LiveClip] HLS cleanup warning:', hlsError);
         }
       }
@@ -1138,7 +1052,6 @@
   }
 
   async function startStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
-    // Check subscription access first
     const mode = detectClips ? 'Auto-Detect' : 'Record';
     if (
       !(await requireSubscription({
@@ -1146,19 +1059,17 @@
         type: 'live',
       }))
     ) {
-      return; // Gate was shown, user doesn't have access
+      return;
     }
 
-    // For auto-detect mode, also check AI access (credits)
     if (detectClips) {
       if (!(await gates.aiDetection(`Use AI clip detection for ${streamer.displayName}`))) {
-        return; // No credits available
+        return;
       }
 
       await fetchBalance();
       const balance = hoursRemaining.value;
 
-      // Check if balance is low (under 1 hour) and not unlimited
       if (balance !== 'unlimited' && typeof balance === 'number' && balance < 1) {
         pendingStreamerStart.value = { streamer, detectClips };
         showCreditWarningDialog.value = true;
@@ -1166,12 +1077,10 @@
       }
     }
 
-    // Check if this creator is part of any campaigns the user has joined
     if (streamer.creatorProfileId) {
       try {
         const response = await getCampaignsByCreatorProfile(streamer.creatorProfileId);
         if (response.success && response.campaigns.length > 0) {
-          // Show campaign selection dialog
           availableCampaigns.value = response.campaigns;
           pendingCampaignAction.value = { streamer, detectClips };
           showCampaignDialog.value = true;
@@ -1179,7 +1088,6 @@
         }
       } catch (error) {
         console.error('[LiveClip] Failed to check campaigns:', error);
-        // Continue without campaign context if check fails
       }
     }
 
@@ -1189,27 +1097,23 @@
   function handleCampaignSelect(campaign: Campaign | null) {
     selectedCampaignForSession.value = campaign;
     showCampaignDialog.value = false;
-    
-    // Handle pending start action (Record/Auto-detect)
+
     if (pendingCampaignAction.value) {
       const { streamer, detectClips } = pendingCampaignAction.value;
       pendingCampaignAction.value = null;
-      
-      // Store campaign context in livestream store for later use
+
       if (campaign) {
         livestreamStore.setSessionCampaign(streamer.id, campaign);
       }
-      
+
       executeStartStreamer(streamer, detectClips);
       return;
     }
 
-    // Handle pending watch action
     if (pendingWatchAction.value) {
       const streamer = pendingWatchAction.value;
       pendingWatchAction.value = null;
 
-      // Store campaign context in livestream store for later use
       if (campaign) {
         livestreamStore.setSessionCampaign(streamer.id, campaign);
       }
@@ -1239,13 +1143,10 @@
   }
 
   async function executeStartStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
-    // Clear logs if we are starting detection for the first time on this page view
-    // and nothing else is currently running.
     if (!isDetectingAny.value) {
       clearLogs();
     }
 
-    // Add initial activity log
     const mode = detectClips ? 'Auto Detect' : 'Record Only';
     addActivityLog({
       streamerId: streamer.id,
@@ -1259,22 +1160,18 @@
 
     await startMonitoring([streamer], { detectClips });
 
-    // Move to top of the list
     const index = streamers.value.findIndex((s) => s.id === streamer.id);
     if (index > 0) {
       const [movedStreamer] = streamers.value.splice(index, 1);
       streamers.value.unshift(movedStreamer);
     }
 
-    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async function stopStreamer(streamer: ExtendedStreamer) {
     try {
       await stopMonitoring([streamer.id]);
-
-      // Resolve pending logs
       resolvePendingLogs();
     } catch (error) {
       console.error('Failed to stop monitoring', error);
@@ -1292,7 +1189,6 @@
   async function updateSegmentDuration(streamer: ExtendedStreamer, duration: number) {
     try {
       await updateMonitoredStreamer(streamer.id, { segment_duration_minutes: duration });
-      // Update local state
       const index = streamers.value.findIndex((s) => s.id === streamer.id);
       if (index !== -1) {
         streamers.value[index] = { ...streamers.value[index], segmentDurationMinutes: duration };
@@ -1316,28 +1212,829 @@
 </script>
 
 <style scoped>
-  /* Custom Transitions */
-  .list-move,
-  .list-enter-active,
-  .list-leave-active {
-    transition: all 0.4s ease;
-  }
-
-  .list-enter-from,
-  .list-leave-to {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  .list-leave-active {
-    position: absolute;
+  /* ===== Page Container ===== */
+  .liveclip {
     width: 100%;
-    z-index: 0; /* Keep leaving items behind entering items */
+    min-height: 100%;
   }
 
-  /* Container specific overrides to prevent scrollbar jump */
-  .relative {
+  .liveclip__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+    flex: 1;
+  }
+
+  .liveclip__content--empty {
+    justify-content: center;
+    align-items: center;
+  }
+
+  /* ===== Page Heading ===== */
+  .liveclip__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .liveclip__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.02em;
+  }
+
+  .liveclip__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Actions Bar ===== */
+  .liveclip-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .liveclip-search {
     position: relative;
+    width: 240px;
+  }
+
+  .liveclip-search__icon {
+    position: absolute;
+    left: 0.625rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    color: var(--sidebar-text-muted);
+    pointer-events: none;
+  }
+
+  .liveclip-search__platform {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+  }
+
+  .liveclip-search__platform--youtube {
+    background-color: #dc2626;
+  }
+  .liveclip-search__platform--twitch {
+    background-color: #9146ff;
+  }
+  .liveclip-search__platform--kick {
+    background-color: #53fc18;
+  }
+  .liveclip-search__platform--pumpfun {
+    background-color: #10b981;
+  }
+
+  .liveclip-search__platform-icon {
+    width: 12px;
+    height: 12px;
+    filter: brightness(0) invert(1);
+  }
+
+  .liveclip-search__platform-icon--dark {
+    filter: brightness(0);
+  }
+
+  .liveclip-search__input {
+    height: 32px;
+    padding-left: 2rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .liveclip-search__input:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .liveclip-search__input:focus {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.1);
+  }
+
+  .liveclip-add-btn {
+    height: 32px;
+    padding: 0 0.75rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all 150ms ease;
+  }
+
+  .liveclip-add-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .liveclip-add-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .liveclip-add-btn__icon {
+    width: 14px;
+    height: 14px;
+    margin-right: 0.25rem;
+  }
+
+  /* ===== Grid Layout ===== */
+  .liveclip__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .liveclip__grid--with-logs {
+    grid-template-columns: 1fr 380px;
+  }
+
+  @media (max-width: 1200px) {
+    .liveclip__grid--with-logs {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* ===== Section Header ===== */
+  .liveclip__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .liveclip__section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .liveclip__section-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .liveclip__section-icon--activity {
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+  }
+
+  .liveclip__section-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .liveclip__section-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .liveclip__section-subtitle {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  .liveclip__live-badge {
+    font-size: 0.625rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* ===== Item Count ===== */
+  .liveclip__item-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+    margin-bottom: 1rem;
+  }
+
+  /* ===== Streamer List ===== */
+  .liveclip__list-inner {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  @media (max-width: 900px) {
+    .liveclip__list-inner {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* ===== Empty State ===== */
+  .liveclip__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .liveclip__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .liveclip__empty-icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .liveclip__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .liveclip__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  /* ===== Monitor Card ===== */
+  .monitor-card {
+    background-color: var(--sidebar-surface);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 200ms ease;
+  }
+
+  .monitor-card:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  .monitor-card__content {
+    padding: 1rem 1.25rem;
+  }
+
+  /* Card Header */
+  .monitor-card__header {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .monitor-card__avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .monitor-card__avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .monitor-card__avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .monitor-card__avatar-fallback--youtube {
+    background-color: #dc2626;
+  }
+  .monitor-card__avatar-fallback--twitch {
+    background-color: #9146ff;
+  }
+  .monitor-card__avatar-fallback--kick {
+    background-color: #53fc18;
+  }
+  .monitor-card__avatar-fallback--pumpfun {
+    background-color: #10b981;
+  }
+
+  .monitor-card__avatar-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .monitor-card__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .monitor-card__name {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .monitor-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .monitor-card__platform {
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .monitor-card__platform--youtube {
+    color: #ef4444;
+  }
+  .monitor-card__platform--twitch {
+    color: #a78bfa;
+  }
+  .monitor-card__platform--kick {
+    color: #53fc18;
+  }
+  .monitor-card__platform--pumpfun {
+    color: #34d399;
+  }
+
+  .monitor-card__divider {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: var(--sidebar-text-muted);
+    opacity: 0.4;
+  }
+
+  .monitor-card__quick-actions {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .monitor-card__icon-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .monitor-card__icon-btn:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .monitor-card__icon-btn--danger:hover:not(:disabled) {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+  }
+
+  .monitor-card__icon-btn--spinning {
+    animation: spin 0.8s linear infinite;
+  }
+
+  .monitor-card__icon-btn-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Status Badges */
+  .monitor-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .monitor-status__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .monitor-status__spinner {
+    width: 12px;
+    height: 12px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .monitor-status--active {
+    color: #34d399;
+  }
+
+  .monitor-status--active .monitor-status__dot {
+    background-color: #34d399;
+  }
+
+  .monitor-status--live {
+    color: #f87171;
+  }
+
+  .monitor-status--live .monitor-status__dot {
+    background-color: #f87171;
+  }
+
+  .monitor-status__viewers {
+    font-weight: 500;
+    opacity: 0.8;
+  }
+
+  .monitor-status__dvr {
+    font-size: 0.5625rem;
+    padding: 0.125rem 0.25rem;
+    background-color: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border-radius: 4px;
+    margin-left: 0.25rem;
+  }
+
+  .monitor-status--offline {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .monitor-status--offline .monitor-status__dot {
+    background-color: var(--sidebar-text-muted);
+    animation: none;
+  }
+
+  .monitor-status--checking {
+    color: var(--sidebar-text-muted);
+  }
+
+  /* Card Controls */
+  .monitor-card__controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 0.875rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 0.75rem;
+  }
+
+  .monitor-card__settings {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .monitor-setting__dropdown-trigger {
+    height: 30px;
+    padding: 0 0.5rem 0 0.625rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .monitor-setting__dropdown-trigger:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--sidebar-text);
+  }
+
+  .monitor-setting__dropdown-trigger--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .monitor-setting__dropdown-chevron {
+    width: 12px;
+    height: 12px;
+    opacity: 0.6;
+  }
+
+  .monitor-setting__toggle {
+    height: 30px;
+    padding: 0 0.625rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .monitor-setting__toggle:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .monitor-setting__toggle--on {
+    background-color: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.25);
+    color: #34d399;
+  }
+
+  .monitor-setting__toggle--on:hover:not(:disabled) {
+    background-color: rgba(16, 185, 129, 0.18);
+  }
+
+  .monitor-setting__toggle-icon {
+    width: 12px;
+    height: 12px;
+    opacity: 0.7;
+  }
+
+  .monitor-setting__toggle--on .monitor-setting__toggle-icon {
+    opacity: 1;
+  }
+
+  /* Card Actions */
+  .monitor-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* Segmented Button Group */
+  .monitor-action-group {
+    display: flex;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .monitor-action-group__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--sidebar-text-muted);
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .monitor-action-group__btn:first-child {
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .monitor-action-group__btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+  }
+
+  .monitor-action-group__btn--primary {
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+  }
+
+  .monitor-action-group__btn--primary:hover {
+    background-color: rgba(139, 92, 246, 0.25);
+    color: #c4b5fd;
+  }
+
+  /* Individual Actions */
+  .monitor-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.4375rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .monitor-action__icon {
+    width: 13px;
+    height: 13px;
+  }
+
+  .monitor-action__spinner {
+    width: 13px;
+    height: 13px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .monitor-action--stopping {
+    background-color: rgba(245, 158, 11, 0.12);
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.2);
+  }
+
+  .monitor-action--watch {
+    background-color: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.2);
+  }
+
+  .monitor-action--watch:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+  }
+
+  .monitor-action--stop {
+    background-color: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.2);
+  }
+
+  .monitor-action--stop:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+  }
+
+  /* ===== Activity Log ===== */
+  .activity-log {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    overflow: hidden;
+    height: 500px;
+  }
+
+  .activity-log__scroll {
+    height: 100%;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  .activity-log__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.625rem;
+    border-radius: 8px;
+    transition: background-color 150ms ease;
+  }
+
+  .activity-log__item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .activity-log__time {
+    font-size: 0.625rem;
+    font-family: monospace;
+    color: var(--sidebar-text-muted);
+    width: 52px;
+    flex-shrink: 0;
+    padding-top: 0.125rem;
+  }
+
+  .activity-log__content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .activity-log__header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .activity-log__avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .activity-log__avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .activity-log__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .activity-log__dot--youtube {
+    background-color: #ef4444;
+  }
+  .activity-log__dot--twitch {
+    background-color: #9146ff;
+  }
+  .activity-log__dot--kick {
+    background-color: #53fc18;
+  }
+  .activity-log__dot--pumpfun {
+    background-color: #10b981;
+  }
+
+  .activity-log__name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .activity-log__message {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .activity-log__status {
+    flex-shrink: 0;
+    padding-top: 0.125rem;
+  }
+
+  .activity-log__spinner {
+    width: 12px;
+    height: 12px;
+    color: var(--sidebar-accent);
+    animation: spin 0.8s linear infinite;
+  }
+
+  .activity-log__check {
+    width: 12px;
+    height: 12px;
+    color: #34d399;
+  }
+
+  /* ===== Animations ===== */
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .scale-enter-active,
@@ -1351,14 +2048,89 @@
     transform: scale(0.5);
   }
 
-  .slide-up-enter-active,
-  .slide-up-leave-active {
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  .list-move,
+  .list-enter-active,
+  .list-leave-active {
+    transition: all 0.3s ease;
   }
 
-  .slide-up-enter-from,
-  .slide-up-leave-to {
-    transform: translate(-50%, 100%);
+  .list-enter-from,
+  .list-leave-to {
     opacity: 0;
+    transform: translateY(16px);
+  }
+
+  .list-leave-active {
+    position: absolute;
+    z-index: 0;
+  }
+</style>
+
+<!-- Global styles for dropdown (rendered via portal outside component scope) -->
+<style>
+  /* Prevent button animation when dropdown opens */
+  .monitor-setting__dropdown-trigger {
+    transform: none !important;
+    animation: none !important;
+  }
+
+  .monitor-setting__dropdown-trigger[data-state='open'] {
+    transform: none !important;
+  }
+
+  .segment-dropdown {
+    min-width: 100px !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    z-index: 100 !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    /* Disable all slide/zoom animations, only fade */
+    animation: segmentDropdownFade 100ms ease-out !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+  }
+
+  @keyframes segmentDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .segment-dropdown__item {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 0.75rem !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text-muted) !important;
+    cursor: pointer !important;
+    transition: all 100ms ease !important;
+  }
+
+  .segment-dropdown__item:hover,
+  .segment-dropdown__item:focus,
+  .segment-dropdown__item[data-highlighted] {
+    background-color: var(--sidebar-hover) !important;
+    color: var(--sidebar-text) !important;
+    outline: none !important;
+  }
+
+  .segment-dropdown__item--selected {
+    color: var(--sidebar-text) !important;
+  }
+
+  .segment-dropdown__check {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
   }
 </style>

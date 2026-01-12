@@ -1,63 +1,57 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="show" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]">
+      <div v-if="show" class="bug-dialog__overlay" @click.self="$emit('close')">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md sm:max-w-lg w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
-          >
-            <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 flex-shrink-0" />
+          <div v-if="show" class="bug-dialog" role="dialog" aria-modal="true">
+            <!-- Accent bar -->
+            <div class="bug-dialog__accent"></div>
 
-            <div class="p-5 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar">
-              <!-- Header -->
-              <div class="mb-4 sm:mb-6 text-center">
-                <div
-                  class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 mb-3 sm:mb-4"
-                >
-                  <Bug class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-amber-400" />
-                </div>
-                <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">Report a Bug</h2>
-                <p class="text-zinc-400 text-xs sm:text-sm mt-1">Help us improve by reporting issues</p>
+            <!-- Header -->
+            <div class="bug-dialog__header">
+              <button class="bug-dialog__close" @click="$emit('close')" :disabled="submitting" title="Close">
+                <X :size="18" />
+              </button>
+              <div class="bug-dialog__icon">
+                <Bug :size="24" />
               </div>
+              <h2 class="bug-dialog__title">Report a Bug</h2>
+              <p class="bug-dialog__subtitle">Help us improve by reporting issues</p>
+            </div>
 
-              <form @submit.prevent="handleSubmit" class="space-y-4 sm:space-y-5">
+            <!-- Content -->
+            <div class="bug-dialog__content">
+              <form @submit.prevent="handleSubmit" class="bug-dialog__form">
                 <!-- Title/Summary -->
-                <div class="space-y-1.5 sm:space-y-2">
-                  <label for="title" class="block text-xs sm:text-sm font-medium text-zinc-300">Bug Title *</label>
+                <div class="bug-dialog__field">
+                  <label for="title" class="bug-dialog__label">Bug Title *</label>
                   <input
                     id="title"
                     v-model="form.title"
                     type="text"
                     required
-                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all"
                     placeholder="Brief description of the bug"
+                    class="bug-dialog__input"
                   />
                 </div>
 
                 <!-- Description -->
-                <div class="space-y-1.5 sm:space-y-2">
-                  <label for="description" class="block text-xs sm:text-sm font-medium text-zinc-300">
-                    Description *
-                  </label>
+                <div class="bug-dialog__field">
+                  <label for="description" class="bug-dialog__label">Description *</label>
                   <textarea
                     id="description"
                     v-model="form.description"
                     required
                     rows="3"
-                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all resize-y min-h-[80px]"
                     placeholder="Please describe the bug in detail, including steps to reproduce it"
+                    class="bug-dialog__input bug-dialog__textarea"
                   ></textarea>
                 </div>
 
                 <!-- Severity -->
-                <div class="space-y-1.5 sm:space-y-2">
-                  <label for="severity" class="block text-xs sm:text-sm font-medium text-zinc-300">Severity</label>
-                  <select
-                    id="severity"
-                    v-model="form.severity"
-                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all"
-                  >
+                <div class="bug-dialog__field">
+                  <label for="severity" class="bug-dialog__label">Severity</label>
+                  <select id="severity" v-model="form.severity" class="bug-dialog__select">
                     <option value="low">Low - Minor inconvenience</option>
                     <option value="medium">Medium - Feature not working correctly</option>
                     <option value="high">High - Major functionality broken</option>
@@ -66,72 +60,61 @@
                 </div>
 
                 <!-- Expected vs Actual -->
-                <div class="grid grid-cols-1 gap-3 sm:gap-4">
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label for="expected" class="block text-xs sm:text-sm font-medium text-zinc-300">
-                      Expected Behavior
-                    </label>
-                    <textarea
-                      id="expected"
-                      v-model="form.expected_behavior"
-                      rows="2"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all resize-y min-h-[50px]"
-                      placeholder="What should have happened"
-                    ></textarea>
-                  </div>
-                  <div class="space-y-1.5 sm:space-y-2">
-                    <label for="actual" class="block text-xs sm:text-sm font-medium text-zinc-300">
-                      Actual Behavior
-                    </label>
-                    <textarea
-                      id="actual"
-                      v-model="form.actual_behavior"
-                      rows="2"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all resize-y min-h-[50px]"
-                      placeholder="What actually happened"
-                    ></textarea>
-                  </div>
+                <div class="bug-dialog__field">
+                  <label for="expected" class="bug-dialog__label">
+                    Expected Behavior
+                    <span class="bug-dialog__label-hint">(optional)</span>
+                  </label>
+                  <textarea
+                    id="expected"
+                    v-model="form.expected_behavior"
+                    rows="2"
+                    placeholder="What should have happened"
+                    class="bug-dialog__input bug-dialog__textarea bug-dialog__textarea--sm"
+                  ></textarea>
+                </div>
+
+                <div class="bug-dialog__field">
+                  <label for="actual" class="bug-dialog__label">
+                    Actual Behavior
+                    <span class="bug-dialog__label-hint">(optional)</span>
+                  </label>
+                  <textarea
+                    id="actual"
+                    v-model="form.actual_behavior"
+                    rows="2"
+                    placeholder="What actually happened"
+                    class="bug-dialog__input bug-dialog__textarea bug-dialog__textarea--sm"
+                  ></textarea>
                 </div>
 
                 <!-- Error Display -->
-                <div v-if="error" class="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-red-500/10 border border-red-500/30">
-                  <p class="text-red-400 text-xs sm:text-sm">{{ error }}</p>
+                <div v-if="error" class="bug-dialog__alert bug-dialog__alert--error">
+                  <AlertCircle :size="16" />
+                  <p class="bug-dialog__alert-text">{{ error }}</p>
                 </div>
 
                 <!-- Success Display -->
-                <div
-                  v-if="success"
-                  class="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-emerald-500/10 border border-emerald-500/30"
-                >
-                  <p class="text-emerald-400 text-xs sm:text-sm">{{ success }}</p>
-                </div>
-
-                <!-- Actions -->
-                <div class="flex gap-2 sm:gap-3 pt-3 sm:pt-4">
-                  <button
-                    type="button"
-                    @click="$emit('close')"
-                    :disabled="submitting"
-                    class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    :disabled="submitting || !formIsValid"
-                    class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                  >
-                    <div
-                      class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                    />
-                    <span v-if="submitting" class="relative flex items-center justify-center">
-                      <Loader2 class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2 animate-spin" />
-                      Submitting...
-                    </span>
-                    <span v-else class="relative">Submit Report</span>
-                  </button>
+                <div v-if="success" class="bug-dialog__alert bug-dialog__alert--success">
+                  <CheckCircle :size="16" />
+                  <p class="bug-dialog__alert-text">{{ success }}</p>
                 </div>
               </form>
+            </div>
+
+            <!-- Footer -->
+            <div class="bug-dialog__footer">
+              <button @click="$emit('close')" :disabled="submitting" class="bug-dialog__btn bug-dialog__btn--secondary">
+                Cancel
+              </button>
+              <button
+                @click="handleSubmit"
+                :disabled="submitting || !formIsValid"
+                class="bug-dialog__btn bug-dialog__btn--primary"
+              >
+                <Loader2 v-if="submitting" :size="16" class="bug-dialog__spinner" />
+                {{ submitting ? 'Submitting...' : 'Submit Report' }}
+              </button>
             </div>
           </div>
         </Transition>
@@ -142,7 +125,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Loader2, Bug } from 'lucide-vue-next';
+  import { X, Loader2, Bug, AlertCircle, CheckCircle } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import api from '@/services/api';
 
@@ -210,7 +193,7 @@
       const data = response.data;
 
       if (data.success) {
-        success.value = 'Bug report submitted successfully! Thank you for helping us improve the application.';
+        success.value = 'Bug report submitted successfully! Thank you for helping us improve.';
         // Close dialog after a short delay to show success message
         setTimeout(() => {
           resetForm();
@@ -240,10 +223,278 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Overlay ===== */
+  .bug-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  /* ===== Dialog Container ===== */
+  .bug-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 480px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ===== Accent Bar ===== */
+  .bug-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .bug-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .bug-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .bug-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .bug-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .bug-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .bug-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .bug-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content Area ===== */
+  .bug-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .bug-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .bug-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .bug-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Form ===== */
+  .bug-dialog__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* ===== Form Field ===== */
+  .bug-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .bug-dialog__label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .bug-dialog__label-hint {
+    color: var(--sidebar-text-muted);
+    font-weight: 400;
+    font-size: 0.8125rem;
+  }
+
+  .bug-dialog__input,
+  .bug-dialog__select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .bug-dialog__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .bug-dialog__input:focus,
+  .bug-dialog__select:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .bug-dialog__select {
+    cursor: pointer;
+  }
+
+  .bug-dialog__select option {
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text);
+  }
+
+  .bug-dialog__textarea {
+    resize: none;
+    min-height: 80px;
+  }
+
+  .bug-dialog__textarea--sm {
+    min-height: 60px;
+  }
+
+  /* ===== Alert Box ===== */
+  .bug-dialog__alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    border-radius: 8px;
+  }
+
+  .bug-dialog__alert--error {
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #f87171;
+  }
+
+  .bug-dialog__alert--success {
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .bug-dialog__alert-text {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ===== Footer ===== */
+  .bug-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
+  .bug-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .bug-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .bug-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .bug-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .bug-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .bug-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .bug-dialog__spinner {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -251,18 +502,17 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {
@@ -270,21 +520,9 @@
     transform: scale(0.98);
   }
 
-  /* Custom scrollbar */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgb(63 63 70);
-    border-radius: 3px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgb(82 82 91);
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

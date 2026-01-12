@@ -398,6 +398,7 @@ export {
   hasVideoEditorSources,
   getVideoEditorSourceCount,
   getNextSourceStartTime,
+  getVideoEditorProjectsForClip,
   type VideoEditorProject,
   type VideoEditorSource,
   type VideoEditorProjectWithSources,

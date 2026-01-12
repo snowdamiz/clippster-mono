@@ -466,19 +466,6 @@
         :clip-end-time="effectivePOIClipEndTime"
         @confirm="onManualPOIConfigConfirm"
       />
-
-      <!-- Promote to Video Project Confirmation Dialog -->
-      <ConfirmationModal
-        :show="showPromoteToProjectDialog"
-        title="Create Video Project"
-        message="Adding sources to a clip will convert it into a Video Project. This allows you to combine multiple clips, raw videos, and imports into a single video."
-        suffix="Your current clip will be the first source in the project."
-        confirm-text="Create Project"
-        close-text="Cancel"
-        :show-cannot-undone-text="false"
-        @confirm="onPromoteConfirm"
-        @close="onPromoteCancel"
-      />
     </div>
   </Teleport>
 </template>
@@ -550,7 +537,6 @@
     createWatermark,
     updateWatermarkRecord,
     deleteWatermarkRecord,
-    getRawVideosByProjectId,
     getRawVideo,
     getClipWithBuildStatus,
     getClip,
@@ -559,7 +545,6 @@
     getClipSegmentsByClipId,
     // Video Editor imports
     getVideoEditorSourcesByProjectId,
-    createVideoEditorProject,
     createVideoEditorSource,
     updateVideoEditorSource,
     deleteVideoEditorSource,
@@ -834,16 +819,6 @@
   const crossfadeStarted = ref(false); // Whether we've started crossfade for current transition
   const lastCrossfadeTransitionId = ref<string | null>(null); // Track which transition we've started
 
-  // Promotion to Video Project state (when adding sources in clip mode)
-  const isPromotedToEditorMode = ref(false); // Local override for editor mode
-  const promotedProjectId = ref<string | null>(null); // Local project ID when promoted
-  const promotedProjectName = ref<string>(''); // Local project name when promoted
-  const showPromoteToProjectDialog = ref(false); // Show confirmation dialog
-  const pendingSourceToAdd = ref<SourceItem | null>(null); // Source waiting to be added after promotion
-  const pendingImportToAdd = ref<{ filePath: string; name: string; duration: number; thumbnailPath?: string } | null>(
-    null
-  ); // Import file waiting to be added after promotion
-
   // Intro/Outro state - track currently applied intro and outro
   interface AppliedIntroOutro {
     id: string;
@@ -864,12 +839,13 @@
   const currentIntro = ref<AppliedIntroOutro | null>(null);
   const currentOutro = ref<AppliedIntroOutro | null>(null);
 
-  // Computed: effective editor mode (prop or promoted)
-  const editorMode = computed(() => props.editorMode || isPromotedToEditorMode.value);
+  // Editor mode is now always true when opened with a project ID
+  // (clip editor mode has been removed - always use video editor mode)
+  const editorMode = computed(() => props.editorMode);
 
-  // Computed: effective editor project ID and name
-  const editorProjectId = computed(() => promotedProjectId.value || props.editorProjectId);
-  const editorProjectName = computed(() => promotedProjectName.value || props.editorProjectName);
+  // Editor project ID and name come directly from props
+  const editorProjectId = computed(() => props.editorProjectId);
+  const editorProjectName = computed(() => props.editorProjectName);
 
   // Edit data
   const trimSegments = ref<TrimSegment[]>([]);
@@ -1706,15 +1682,7 @@
 
   // Video source operations for editor mode
   async function onAddSource(source: SourceItem) {
-    // If not in editor mode (clip mode), show promotion dialog
-    if (!editorMode.value) {
-      pendingSourceToAdd.value = source;
-      pendingImportToAdd.value = null;
-      showPromoteToProjectDialog.value = true;
-      return;
-    }
-
-    // In editor mode, add source directly
+    // Always in editor mode now - add source directly
     await addSourceToProject(source);
   }
 
@@ -1769,15 +1737,7 @@
   }
 
   async function onImportFile(filePath: string, name: string, duration: number, thumbnailPath?: string) {
-    // If not in editor mode (clip mode), show promotion dialog
-    if (!editorMode.value) {
-      pendingSourceToAdd.value = null;
-      pendingImportToAdd.value = { filePath, name, duration, thumbnailPath };
-      showPromoteToProjectDialog.value = true;
-      return;
-    }
-
-    // In editor mode, import file directly
+    // Always in editor mode now - import file directly
     await importFileToProject(filePath, name, duration, thumbnailPath);
   }
 
@@ -1840,260 +1800,6 @@
       // Add image as a sticker
       await addStickerLocal(media.file_path, 'image');
     }
-  }
-
-  // Migrate existing clip edits to the video editor project
-  // This recreates text overlays, audio tracks, stickers, and watermarks in the video_editor_* tables
-  async function migrateClipEditsToVideoProject(newVideoEditorEditId: string) {
-    try {
-      // Migrate text overlays
-      const newTextOverlays: typeof textOverlays.value = [];
-      for (const overlay of textOverlays.value) {
-        const newOverlay = await createVideoEditorTextOverlay(newVideoEditorEditId, {
-          text: overlay.text,
-          start_time: overlay.startTime,
-          end_time: overlay.endTime,
-          style_data: JSON.stringify(overlay.style),
-          position_x: overlay.position.x,
-          position_y: overlay.position.y,
-          per_ratio_configs_data: overlay.perRatioConfigs ? JSON.stringify(overlay.perRatioConfigs) : undefined,
-        });
-        newTextOverlays.push({
-          id: newOverlay.id,
-          text: newOverlay.text,
-          startTime: newOverlay.start_time,
-          endTime: newOverlay.end_time,
-          position: { x: newOverlay.position_x, y: newOverlay.position_y },
-          style: JSON.parse(newOverlay.style_data || '{}'),
-          animation: overlay.animation,
-          perRatioConfigs: newOverlay.per_ratio_configs_data
-            ? JSON.parse(newOverlay.per_ratio_configs_data)
-            : undefined,
-        });
-      }
-      textOverlays.value = newTextOverlays;
-
-      // Migrate audio tracks
-      const newAudioTracks: typeof audioTracks.value = [];
-      for (const track of audioTracks.value) {
-        const newTrack = await createVideoEditorAudioTrack(newVideoEditorEditId, {
-          file_path: track.filePath,
-          name: track.name,
-          start_time: track.startTime,
-          end_time: track.endTime,
-          volume: track.volume,
-          fade_in: track.fadeIn,
-          fade_out: track.fadeOut,
-          track_order: track.trackOrder,
-          is_muted: track.isMuted ? 1 : 0,
-          is_solo: track.isSolo ? 1 : 0,
-        });
-        newAudioTracks.push({
-          id: newTrack.id,
-          filePath: newTrack.file_path,
-          name: newTrack.name,
-          startTime: newTrack.start_time,
-          endTime: newTrack.end_time,
-          volume: newTrack.volume,
-          fadeIn: newTrack.fade_in,
-          fadeOut: newTrack.fade_out,
-          trackOrder: newTrack.track_order,
-          isMuted: !!newTrack.is_muted,
-          isSolo: !!newTrack.is_solo,
-        });
-      }
-      audioTracks.value = newAudioTracks;
-
-      // Migrate stickers
-      const newStickers: typeof stickers.value = [];
-      for (const sticker of stickers.value) {
-        const newSticker = await createVideoEditorSticker(newVideoEditorEditId, {
-          sticker_path: sticker.stickerPath,
-          sticker_type: sticker.stickerType,
-          start_time: sticker.startTime,
-          end_time: sticker.endTime,
-          position_x: sticker.position.x,
-          position_y: sticker.position.y,
-          scale: sticker.scale,
-          rotation: sticker.rotation,
-          per_ratio_configs_data: sticker.perRatioConfigs ? JSON.stringify(sticker.perRatioConfigs) : undefined,
-        });
-        newStickers.push({
-          id: newSticker.id,
-          stickerPath: newSticker.sticker_path,
-          stickerType: newSticker.sticker_type as 'emoji' | 'image' | 'gif',
-          startTime: newSticker.start_time,
-          endTime: newSticker.end_time,
-          position: { x: newSticker.position_x, y: newSticker.position_y },
-          scale: newSticker.scale,
-          rotation: newSticker.rotation,
-          animation: sticker.animation,
-          perRatioConfigs: newSticker.per_ratio_configs_data
-            ? JSON.parse(newSticker.per_ratio_configs_data)
-            : undefined,
-        });
-      }
-      stickers.value = newStickers;
-
-      // Migrate watermarks
-      const newWatermarks: typeof watermarks.value = [];
-      for (const watermark of watermarks.value) {
-        const newWatermark = await createVideoEditorWatermark(newVideoEditorEditId, {
-          watermark_id: watermark.watermarkId,
-          watermark_path: watermark.filePath,
-          preview_url: watermark.previewUrl,
-          start_time: watermark.startTime,
-          end_time: watermark.endTime,
-          position_x: watermark.position.x,
-          position_y: watermark.position.y,
-          scale: watermark.scale,
-          opacity: watermark.opacity,
-          per_ratio_configs_data: watermark.perRatioConfigs ? JSON.stringify(watermark.perRatioConfigs) : undefined,
-        });
-        newWatermarks.push({
-          id: newWatermark.id,
-          watermarkId: newWatermark.watermark_id,
-          filePath: newWatermark.watermark_path,
-          previewUrl: newWatermark.preview_url || '',
-          startTime: newWatermark.start_time,
-          endTime: newWatermark.end_time,
-          position: { x: newWatermark.position_x, y: newWatermark.position_y },
-          scale: newWatermark.scale,
-          opacity: newWatermark.opacity,
-          perRatioConfigs: newWatermark.per_ratio_configs_data
-            ? JSON.parse(newWatermark.per_ratio_configs_data)
-            : undefined,
-        });
-      }
-      watermarks.value = newWatermarks;
-
-      console.log(
-        `[ClipEditorDialog] Migrated ${textOverlays.value.length} text overlays, ${audioTracks.value.length} audio tracks, ${stickers.value.length} stickers, ${watermarks.value.length} watermarks to video project`
-      );
-    } catch (error) {
-      console.error('[ClipEditorDialog] Failed to migrate clip edits:', error);
-    }
-  }
-
-  // Promote current clip to a video project
-  async function promoteToVideoProject() {
-    try {
-      // Create a new video editor project with the clip's name
-      const projectName = `${props.clipTitle || 'Untitled'} - Video Project`;
-      const newProjectId = await createVideoEditorProject(projectName);
-
-      // Get video server port for constructing video URLs
-      videoServerPort.value = await invoke<number>('get_video_server_port');
-
-      // Add the current clip as the first source
-      // First, get the clip's raw video path
-      let clipVideoPath = '';
-      let clipDuration = props.clipEndTime - props.clipStartTime;
-
-      // Try to extract path from videoSrc URL
-      if (props.videoSrc) {
-        const match = props.videoSrc.match(/\/video\/([^?]+)/);
-        if (match) {
-          try {
-            clipVideoPath = atob(match[1]);
-          } catch {
-            console.warn('[ClipEditorDialog] Failed to decode video path');
-          }
-        }
-      }
-
-      // If we have a clip ID, get the clip's raw video info
-      if (props.clipId) {
-        try {
-          const clip = await getClip(props.clipId);
-          if (clip?.project_id) {
-            const rawVideos = await getRawVideosByProjectId(clip.project_id);
-            if (rawVideos.length > 0) {
-              clipVideoPath = rawVideos[0].file_path;
-            }
-          }
-        } catch (error) {
-          console.warn('[ClipEditorDialog] Failed to get clip raw video:', error);
-        }
-      }
-
-      // Create the first source from the current clip
-      if (clipVideoPath) {
-        const firstSource = await createVideoEditorSource(newProjectId, {
-          sourceType: 'clip',
-          sourceId: props.clipId || null,
-          sourcePath: clipVideoPath,
-          sourceName: props.clipTitle || 'Clip',
-          sourceThumbnail: null,
-          sourceDuration: clipDuration,
-          startTime: 0,
-          endTime: clipDuration,
-          trimStart: props.clipStartTime,
-          trimEnd: props.clipEndTime,
-          orderIndex: 0,
-        });
-
-        videoSources.value = [firstSource];
-      }
-
-      // Create/get an edit record for the video editor project
-      const editRecord = await getOrCreateVideoEditorEdit(newProjectId);
-      videoEditorEditId.value = editRecord.id;
-
-      // Migrate existing clip edits to the video editor project
-      // Text overlays, audio tracks, stickers, and watermarks need to be recreated in the video_editor_* tables
-      await migrateClipEditsToVideoProject(editRecord.id);
-
-      // Update local state to switch to editor mode
-      promotedProjectId.value = newProjectId;
-      promotedProjectName.value = projectName;
-      isPromotedToEditorMode.value = true;
-      activeEditorTab.value = 'media';
-
-      // Recalculate project duration
-      await recalculateProjectDuration(newProjectId);
-
-      // Reset to start of timeline and seek video to correct position
-      // In editor mode, previewTime represents position on the timeline, not absolute video time
-      // Use nextTick to ensure the editorMode computed has updated
-      await nextTick();
-      seekTo(0);
-
-      // Reload transcript data now that we're in editor mode
-      // The projectId should already be set from clip mode, but trigger a refresh
-      if (projectId.value) {
-        await loadTranscriptData(projectId.value);
-      }
-
-      console.log(`[ClipEditorDialog] Promoted clip to video project: ${newProjectId}`);
-    } catch (error) {
-      console.error('[ClipEditorDialog] Failed to promote to video project:', error);
-    }
-  }
-
-  // Handle promotion dialog confirmation
-  async function onPromoteConfirm() {
-    showPromoteToProjectDialog.value = false;
-
-    // First, promote to video project
-    await promoteToVideoProject();
-
-    // Then add the pending source or import
-    if (pendingSourceToAdd.value) {
-      await addSourceToProject(pendingSourceToAdd.value);
-      pendingSourceToAdd.value = null;
-    } else if (pendingImportToAdd.value) {
-      const { filePath, name, duration, thumbnailPath } = pendingImportToAdd.value;
-      await importFileToProject(filePath, name, duration, thumbnailPath);
-      pendingImportToAdd.value = null;
-    }
-  }
-
-  // Handle promotion dialog cancel
-  function onPromoteCancel() {
-    showPromoteToProjectDialog.value = false;
-    pendingSourceToAdd.value = null;
-    pendingImportToAdd.value = null;
   }
 
   async function onDropSource(data: { source: SourceItem; position: number }) {
@@ -2961,12 +2667,6 @@
 
   // Intro/Outro handlers
   async function onAddIntro(intro: IntroOutroWithOrgProps) {
-    // Ensure we're in editor mode - if not, promote first
-    if (!editorMode.value) {
-      // For clip mode, we need to promote to video project first
-      await promoteToVideoProject();
-    }
-
     const projectId = editorProjectId.value;
     if (!projectId) return;
 
@@ -3060,11 +2760,6 @@
   }
 
   async function onAddOutro(outro: IntroOutroWithOrgProps) {
-    // Ensure we're in editor mode - if not, promote first
-    if (!editorMode.value) {
-      await promoteToVideoProject();
-    }
-
     const projectId = editorProjectId.value;
     if (!projectId) return;
 
@@ -8148,10 +7843,6 @@
         // Reset editor mode state
         videoSources.value = [];
         videoEditorEditId.value = null;
-        // Reset promotion state
-        isPromotedToEditorMode.value = false;
-        promotedProjectId.value = null;
-        promotedProjectName.value = '';
         // Reset intro/outro state
         currentIntro.value = null;
         currentOutro.value = null;

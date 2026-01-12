@@ -89,16 +89,6 @@ const router = createRouter({
           name: 'prompts-home',
           component: () => import('@/pages/Prompts.vue'),
         },
-        {
-          path: 'new',
-          name: 'prompts-new',
-          component: () => import('@/pages/NewPrompt.vue'),
-        },
-        {
-          path: ':id/edit',
-          name: 'prompts-edit',
-          component: () => import('@/pages/EditPrompt.vue'),
-        },
       ],
     },
     {
@@ -143,7 +133,6 @@ const router = createRouter({
       path: '/campaigns',
       name: 'campaigns',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -251,16 +240,56 @@ const router = createRouter({
       children: [
         {
           path: '',
-          name: 'admin-home',
-          component: () => import('@/pages/Admin.vue'),
+          name: 'admin-hub',
+          component: () => import('@/pages/admin/AdminHub.vue'),
+        },
+        {
+          path: 'users',
+          name: 'admin-users',
+          component: () => import('@/pages/admin/AdminUsers.vue'),
+        },
+        {
+          path: 'organizations',
+          name: 'admin-organizations',
+          component: () => import('@/pages/admin/AdminOrganizations.vue'),
+        },
+        {
+          path: 'bug-reports',
+          name: 'admin-bug-reports',
+          component: () => import('@/pages/admin/AdminBugReports.vue'),
+        },
+        {
+          path: 'ai-usage',
+          name: 'admin-ai-usage',
+          component: () => import('@/pages/admin/AdminAiUsage.vue'),
+        },
+        {
+          path: 'analytics',
+          name: 'admin-analytics',
+          component: () => import('@/pages/admin/AdminAnalytics.vue'),
+        },
+        {
+          path: 'beta-codes',
+          name: 'admin-beta-codes',
+          component: () => import('@/pages/admin/AdminBetaCodes.vue'),
+        },
+        {
+          path: 'waitlist',
+          name: 'admin-waitlist',
+          component: () => import('@/pages/admin/AdminWaitlist.vue'),
+        },
+        {
+          path: 'settings',
+          name: 'admin-settings',
+          component: () => import('@/pages/admin/AdminSettings.vue'),
         },
       ],
     },
-    // Authentication routes
+    // Legacy login route - redirect to home (auth is handled via AuthModal)
     {
       path: '/login',
       name: 'login',
-      component: () => import('@/components/Auth.vue'),
+      redirect: '/',
     },
     {
       path: '/reset-password/:token',
@@ -300,8 +329,58 @@ const router = createRouter({
       children: [
         {
           path: '',
-          name: 'organization-detail-home',
-          component: () => import('@/components/OrganizationDashboard.vue'),
+          name: 'organization-hub',
+          component: () => import('@/pages/organization/OrganizationHub.vue'),
+        },
+        {
+          path: 'members',
+          name: 'org-members',
+          component: () => import('@/pages/organization/OrganizationMembers.vue'),
+        },
+        {
+          path: 'creators',
+          name: 'org-creators',
+          component: () => import('@/pages/organization/OrganizationCreators.vue'),
+        },
+        {
+          path: 'campaigns',
+          name: 'org-campaigns',
+          component: () => import('@/pages/organization/OrganizationCampaigns.vue'),
+        },
+        {
+          path: 'clippers',
+          name: 'org-clippers',
+          component: () => import('@/pages/organization/OrganizationClippers.vue'),
+        },
+        {
+          path: 'shared',
+          name: 'org-shared',
+          component: () => import('@/pages/organization/OrganizationShared.vue'),
+        },
+        {
+          path: 'social',
+          name: 'org-social',
+          component: () => import('@/pages/organization/OrganizationSocial.vue'),
+        },
+        {
+          path: 'posts',
+          name: 'org-posts',
+          component: () => import('@/pages/organization/OrganizationPosts.vue'),
+        },
+        {
+          path: 'assets',
+          name: 'org-assets',
+          component: () => import('@/pages/organization/OrganizationAssets.vue'),
+        },
+        {
+          path: 'billing',
+          name: 'org-billing',
+          component: () => import('@/pages/organization/OrganizationBilling.vue'),
+        },
+        {
+          path: 'settings',
+          name: 'org-settings',
+          component: () => import('@/pages/organization/OrganizationSettings.vue'),
         },
       ],
     },
