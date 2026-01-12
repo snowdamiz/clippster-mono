@@ -1,6 +1,6 @@
 <template>
   <div
-    class="bg-gradient-to-t from-[#0a0a0a]/50 to-[#0a0a0a]/20 transition-all duration-300 ease-in-out mb-4"
+    class="bg-gradient-to-t from-[#0a0a0b]/50 to-[#0a0a0b]/20 transition-all duration-300 ease-in-out mb-4"
     :style="{
       height: calculatedHeight + 'px',
     }"
@@ -29,7 +29,7 @@
       />
       <!-- Timeline Tracks Container -->
       <div
-        class="flex-1 pr-1 mt-1 bg-[#101010] border border-white/[0.04] rounded-lg relative overflow-x-auto overflow-y-hidden backdrop-blur-sm"
+        class="flex-1 pr-1 mt-1 bg-[#141416] border border-white/[0.04] rounded-lg relative overflow-x-auto overflow-y-hidden backdrop-blur-sm"
         ref="timelineScrollContainer"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeaveGlobal"
