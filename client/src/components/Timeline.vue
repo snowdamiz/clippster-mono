@@ -1,8 +1,8 @@
 <template>
   <div
-    class="bg-gradient-to-t from-[#0a0a0a]/50 to-[#0a0a0a]/20 transition-all duration-300 ease-in-out"
+    class="bg-gradient-to-t from-[#0a0a0a]/50 to-[#0a0a0a]/20 transition-all duration-300 ease-in-out mb-4"
     :style="{
-      height: calculatedHeight + 22 + 'px',
+      height: calculatedHeight + 'px',
     }"
   >
     <div class="pt-3 px-4 h-full flex flex-col">
@@ -29,14 +29,8 @@
       />
       <!-- Timeline Tracks Container -->
       <div
-        :class="[
-          'flex-1 pr-1 bg-[#101010] border border-white/[0.04] rounded-lg relative overflow-x-auto backdrop-blur-sm',
-          shouldShowScrollbar
-            ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800'
-            : 'overflow-y-hidden',
-        ]"
+        class="flex-1 pr-1 mt-1 bg-[#101010] border border-white/[0.04] rounded-lg relative overflow-x-auto overflow-y-hidden backdrop-blur-sm"
         ref="timelineScrollContainer"
-        :style="{ maxHeight: calculatedHeight - 86 + 'px' }"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeaveGlobal"
         @mousedown="onDragStart"
@@ -263,7 +257,7 @@
   } from '../services/database';
   import { debounce, throttle } from '../utils/timelineUtils';
   import { createSeekEvent } from '../utils/videoSeekUtils';
-  import { TIMELINE_HEIGHTS, TIMELINE_BOUNDS, TRACK_DIMENSIONS, SELECTORS } from '../utils/timelineConstants';
+  import { TRACK_DIMENSIONS, SELECTORS } from '../utils/timelineConstants';
   import { TIMELINE_CONSTANTS, SEEK_CONFIG } from '../constants/timelineConstants';
   import { useTranscriptData } from '../composables/useTranscriptData';
   import { useTimelineInteraction } from '../composables/useTimelineInteraction';
@@ -294,45 +288,16 @@
     clips: () => [],
   });
 
-  // Calculate timeline height dynamically based on tracks
+  // Simple two-state height: compact when no clip is visible, expanded when a clip is shown
+  const TIMELINE_HEIGHT_COMPACT = 155; // Just header + ruler + main video track
+  const TIMELINE_HEIGHT_EXPANDED = 204; // Adds space for one clip track
+
   const calculatedHeight = computed(() => {
-    const numberOfClips = displayClips.value.length;
-
-    // Calculate total needed height with consistent padding
-    const totalHeight =
-      TIMELINE_HEIGHTS.HEADER + // Header section
-      TIMELINE_HEIGHTS.RULER + // Timeline ruler
-      TIMELINE_HEIGHTS.MAIN_TRACK + // Main video track
-      numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK + // Clip tracks
-      TIMELINE_HEIGHTS.BASE_BOTTOM_PADDING; // Consistent bottom padding
-
-    // Account for layout overflow (padding, margins, borders, sticky positioning)
-    const adjustedHeight = totalHeight - 14; // Subtract 30px to prevent overflow
-
-    // Calculate max height based on dialog height (45% of dialog height) or use default
-    const dynamicMaxHeight = props.dialogHeight ? Math.floor(props.dialogHeight * 0.45) : TIMELINE_BOUNDS.MAX_HEIGHT;
-
-    // Apply reasonable bounds
-    const finalHeight = Math.max(TIMELINE_BOUNDS.MIN_HEIGHT, Math.min(dynamicMaxHeight, adjustedHeight));
-    return finalHeight;
+    return displayClips.value.length > 0 ? TIMELINE_HEIGHT_EXPANDED : TIMELINE_HEIGHT_COMPACT;
   });
 
-  // Determine if scrollbar should be shown based on content vs container height
-  const shouldShowScrollbar = computed(() => {
-    const numberOfClips = displayClips.value.length;
-
-    // Calculate the actual content height within the tracks container
-    const tracksContentHeight =
-      TIMELINE_HEIGHTS.RULER + // Ruler (inside tracks container)
-      TIMELINE_HEIGHTS.MAIN_TRACK + // Main video track
-      numberOfClips * TIMELINE_HEIGHTS.CLIP_TRACK; // Clip tracks
-
-    // Available height within tracks container (accounting for header + padding)
-    const availableTracksHeight = calculatedHeight.value - 86; // Matches the maxHeight calculation
-
-    // Only show scrollbar when tracks content actually exceeds available tracks height
-    return tracksContentHeight > availableTracksHeight + 5; // 5px buffer to prevent premature scrollbar
-  });
+  // With fixed heights sized appropriately, scrollbar is never needed
+  const shouldShowScrollbar = computed(() => false);
 
   // Computed property to check if merge is possible
   const canMergeSegments = computed(() => canMergeSelectedSegments());

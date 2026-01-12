@@ -83,7 +83,6 @@ export interface TimelineProps {
   hoveredTimelineClipId?: string | null;
   currentlyPlayingClipId?: string | null;
   projectId?: string | null;
-  dialogHeight?: number | null;
   audioGainDb?: number; // dB gain (-20 to +20) to apply to waveform visualization
 }
 
@@ -931,7 +930,14 @@ export interface EffectSettings {
   vignette?: number;
   sharpen?: number;
   fade?: number;
-  blendMode?: 'normal' | 'screen' | 'multiply' | 'overlay' | 'soft-light' | 'hard-light' | 'difference';
+  blendMode?:
+    | 'normal'
+    | 'screen'
+    | 'multiply'
+    | 'overlay'
+    | 'soft-light'
+    | 'hard-light'
+    | 'difference';
 
   // Generic settings for future effects
   [key: string]: any;
@@ -1195,7 +1201,16 @@ export interface VideoEditorTransition {
   startTime: number; // When transition starts (sourceB.start_time)
   endTime: number; // When transition ends (sourceA.end_time)
   duration: number; // Length of the transition
-  type: 'crossfade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'wipe-left' | 'wipe-right' | 'zoom-in' | 'zoom-out';
+  type:
+    | 'crossfade'
+    | 'slide-left'
+    | 'slide-right'
+    | 'slide-up'
+    | 'slide-down'
+    | 'wipe-left'
+    | 'wipe-right'
+    | 'zoom-in'
+    | 'zoom-out';
 }
 
 // Utility function to detect transitions between overlapping sources
@@ -1257,7 +1272,7 @@ export function calculateTransitionState(
   }
 
   const progress = (currentTime - transition.startTime) / transition.duration;
-  
+
   switch (transition.type) {
     case 'slide-left':
       // B slides in from right, A slides out to left
@@ -1267,9 +1282,9 @@ export function calculateTransitionState(
         transformA: `translateX(${-progress * 100}%)`,
         transformB: `translateX(${(1 - progress) * 100}%)`,
         zIndexA: 1,
-        zIndexB: 2 // B on top
+        zIndexB: 2, // B on top
       };
-      
+
     case 'slide-right':
       // B slides in from left, A slides out to right
       return {
@@ -1278,9 +1293,9 @@ export function calculateTransitionState(
         transformA: `translateX(${progress * 100}%)`,
         transformB: `translateX(${-(1 - progress) * 100}%)`,
         zIndexA: 1,
-        zIndexB: 2
+        zIndexB: 2,
       };
-      
+
     case 'slide-up':
       // B slides in from bottom
       return {
@@ -1289,9 +1304,9 @@ export function calculateTransitionState(
         transformA: `translateY(${-progress * 100}%)`,
         transformB: `translateY(${(1 - progress) * 100}%)`,
         zIndexA: 1,
-        zIndexB: 2
+        zIndexB: 2,
       };
-      
+
     case 'slide-down':
       // B slides in from top
       return {
@@ -1300,9 +1315,9 @@ export function calculateTransitionState(
         transformA: `translateY(${progress * 100}%)`,
         transformB: `translateY(${-(1 - progress) * 100}%)`,
         zIndexA: 1,
-        zIndexB: 2
+        zIndexB: 2,
       };
-      
+
     case 'wipe-left':
       // B wipes over A from right to left
       return {
@@ -1310,9 +1325,9 @@ export function calculateTransitionState(
         opacityB: 1,
         clipPathB: `inset(0 0 0 ${(1 - progress) * 100}%)`, // Reveal B from right
         zIndexA: 1,
-        zIndexB: 2
+        zIndexB: 2,
       };
-      
+
     case 'wipe-right':
       // B wipes over A from left to right
       return {
@@ -1320,9 +1335,9 @@ export function calculateTransitionState(
         opacityB: 1,
         clipPathB: `inset(0 ${(1 - progress) * 100}% 0 0)`, // Reveal B from left
         zIndexA: 1,
-        zIndexB: 2
+        zIndexB: 2,
       };
-      
+
     case 'zoom-in':
       // A zooms in and fades out, B fades in
       return {
@@ -1331,9 +1346,9 @@ export function calculateTransitionState(
         transformA: `scale(${1 + progress})`,
         transformB: `scale(1)`,
         zIndexA: 2,
-        zIndexB: 1
+        zIndexB: 1,
       };
-      
+
     case 'zoom-out':
       // A zooms out and fades out
       return {
@@ -1342,7 +1357,7 @@ export function calculateTransitionState(
         transformA: `scale(${1 - progress * 0.5})`,
         transformB: `scale(1)`,
         zIndexA: 2,
-        zIndexB: 1
+        zIndexB: 1,
       };
 
     case 'crossfade':
@@ -1351,7 +1366,7 @@ export function calculateTransitionState(
         opacityA: 1 - progress,
         opacityB: progress,
         zIndexA: 1,
-        zIndexB: 1 // Equal z-index for blend
+        zIndexB: 1, // Equal z-index for blend
       };
   }
 }
@@ -1372,7 +1387,14 @@ export * from './timeline-model';
 // ==========================================
 
 // Transition Categories
-export type TransitionCategory = 'basic' | 'wipe' | 'slide' | 'zoom' | 'stylized' | 'shape' | 'directional';
+export type TransitionCategory =
+  | 'basic'
+  | 'wipe'
+  | 'slide'
+  | 'zoom'
+  | 'stylized'
+  | 'shape'
+  | 'directional';
 
 // Effect Categories
 export type EffectCategory = 'basic' | 'color' | 'stylized' | 'distortion' | 'motion' | 'overlay';
@@ -1560,7 +1582,16 @@ export interface AudioEffectPreset {
 
 // Web Audio API configuration for preview
 export interface WebAudioConfig {
-  nodeType: 'gain' | 'biquad' | 'delay' | 'convolver' | 'dynamics' | 'panner' | 'waveshaper' | 'worklet' | 'chain';
+  nodeType:
+    | 'gain'
+    | 'biquad'
+    | 'delay'
+    | 'convolver'
+    | 'dynamics'
+    | 'panner'
+    | 'waveshaper'
+    | 'worklet'
+    | 'chain';
   nodes?: WebAudioNodeConfig[];
   params?: Record<string, number | string>;
 }

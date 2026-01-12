@@ -391,7 +391,6 @@
     />
 
     <!-- Folder Contents Dialog -->
-    <!-- Folder Contents Dialog -->
     <Teleport to="body">
       <Transition name="modal">
         <div
