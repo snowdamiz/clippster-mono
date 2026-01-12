@@ -1,8 +1,5 @@
 <template>
-  <aside
-    class="sidebar fixed left-0 top-0 h-screen w-60 flex flex-col bg-[var(--sidebar-bg)] transition-[width_200ms_ease-out] z-40"
-    :class="{ 'sidebar--native': isNativeEnvironment }"
-  >
+  <aside class="sidebar" :class="{ 'sidebar--native': isNativeEnvironment }">
     <!-- Bug Report Dialog -->
     <BugReportDialog
       :show="showBugReportDialog"
@@ -11,43 +8,36 @@
     />
 
     <!-- ===== Header Section ===== -->
-    <div v-if="!isNativeEnvironment" class="sidebar-header flex items-center justify-between p-4 h-14">
-      <div class="flex items-center gap-2 min-w-0">
-        <img src="/logo.svg" alt="Clippster" class="w-6 h-6 shrink-0" />
-        <span
-          class="text-base font-semibold text-[var(--sidebar-text)] whitespace-nowrap overflow-hidden text-ellipsis"
-        >
-          Clippster
-        </span>
+    <div v-if="!isNativeEnvironment" class="sidebar-header">
+      <div class="sidebar-logo">
+        <img src="/logo.svg" alt="Clippster" class="sidebar-logo__image" />
+        <span class="sidebar-logo__text">Clippster</span>
       </div>
     </div>
 
     <!-- ===== Navigation Section ===== -->
-    <nav class="flex-1 overflow-hidden">
-      <div class="sidebar-nav__scroll h-full overflow-y-auto overflow-x-hidden">
-        <div class="p-3 flex flex-col gap-4">
+    <nav class="sidebar-nav">
+      <div class="sidebar-nav__scroll">
+        <div class="sidebar-nav__content">
           <template v-for="group in sortedNavigationGroups" :key="group.key">
-            <div v-if="getVisibleGroupItems(group.items).length > 0" class="flex flex-col gap-1">
+            <div v-if="getVisibleGroupItems(group.items).length > 0" class="sidebar-nav-group">
               <!-- Group Label -->
-              <div
-                v-if="group.label"
-                class="text-xs font-semibold uppercase tracking-wider text-[var(--sidebar-text-muted)] pt-2 px-3 pb-1 opacity-70"
-              >
+              <div v-if="group.label" class="sidebar-nav-group__label">
                 {{ group.label }}
               </div>
 
               <!-- Navigation Items -->
-              <ul class="sidebar-nav-group__items m-0 p-0 flex flex-col gap-0.5">
+              <ul class="sidebar-nav-group__items">
                 <li v-for="item in getVisibleGroupItems(group.items)" :key="item.path">
                   <router-link
                     :to="item.path"
-                    class="flex items-center gap-3 w-full py-2 px-3 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm transition-all duration-150 cursor-pointer hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)]"
+                    class="sidebar-nav-item"
                     :class="{ 'sidebar-nav-item--active': isActive(item.path) }"
                   >
-                    <div class="relative flex items-center justify-center shrink-0">
+                    <div class="sidebar-nav-item__icon">
                       <div
                         v-if="item.useImage"
-                        class="sidebar-nav-item__custom-icon w-[18px] h-[18px] bg-current"
+                        class="sidebar-nav-item__custom-icon"
                         :style="{
                           maskImage: `url(${item.icon})`,
                           WebkitMaskImage: `url(${item.icon})`,
@@ -55,14 +45,11 @@
                       />
                       <component v-else :is="item.icon as Component" class="w-[18px] h-[18px]" />
                       <!-- Unread badge for Messages -->
-                      <span
-                        v-if="item.name === 'Messages' && totalUnreadMessages > 0"
-                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[#ef4444] text-white rounded-lg"
-                      >
+                      <span v-if="item.name === 'Messages' && totalUnreadMessages > 0" class="sidebar-nav-item__badge">
                         {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
                       </span>
                     </div>
-                    <span class="whitespace-nowrap overflow-hidden text-ellipsis">{{ item.name }}</span>
+                    <span class="sidebar-nav-item__text">{{ item.name }}</span>
                   </router-link>
                 </li>
               </ul>
@@ -73,24 +60,19 @@
     </nav>
 
     <!-- ===== Footer Section ===== -->
-    <div class="sidebar-footer p-[0.3rem] flex flex-col gap-2">
+    <div class="sidebar-footer">
       <!-- User Profile Section -->
-      <div class="flex">
+      <div class="sidebar-user">
         <template v-if="authStore.isAuthenticated">
           <DropdownMenu>
-            <DropdownMenuTrigger
-              class="sidebar-user__trigger flex items-center gap-2 w-full py-2 px-2 rounded-md bg-transparent border-[none] text-[var(--sidebar-text)] cursor-pointer transform-none hover:bg-[var(--sidebar-hover)]"
-            >
-              <div class="w-7 h-7 shrink-0 flex items-center justify-center rounded-[20px] bg-[var(--sidebar-accent)]">
-                <span class="text-xs font-extrabold text-[#0a0a0b] uppercase">{{ userInitials }}</span>
+            <DropdownMenuTrigger class="sidebar-user__trigger">
+              <div class="sidebar-user__avatar">
+                <span class="sidebar-user__avatar-text">{{ userInitials }}</span>
               </div>
-              <span
-                class="flex-1 text-xs text-left whitespace-nowrap overflow-hidden text-ellipsis text-[var(--sidebar-text-muted)]"
-                :title="formattedAddress"
-              >
+              <span class="sidebar-user__name" :title="formattedAddress">
                 {{ formattedAddress }}
               </span>
-              <ChevronRight class="w-3.5 h-3.5 text-[var(--sidebar-text-muted)] shrink-0" />
+              <ChevronRight class="sidebar-user__chevron" />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" align="end" :side-offset="12" class="sidebar-dropdown">
               <DropdownMenuLabel class="sidebar-dropdown__label">
@@ -140,12 +122,7 @@
           </DropdownMenu>
         </template>
         <template v-else>
-          <button
-            class="flex items-center justify-center w-full py-2 px-3 rounded-md bg-[var(--sidebar-accent)] text-[var(--sidebar-bg)] border-[none] text-sm font-medium cursor-pointer transition-all duration-150 hover:opacity-90"
-            @click="showAuthModal"
-          >
-            Sign In
-          </button>
+          <button class="sidebar-signin-btn" @click="showAuthModal">Sign In</button>
         </template>
       </div>
     </div>
@@ -354,51 +331,70 @@
 </script>
 
 <style scoped>
+  /* ===== Sidebar Container ===== */
   .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    width: 240px;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--sidebar-bg);
     border-right: 1px solid var(--sidebar-border);
-  }
-
-  .sidebar-header {
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .sidebar-nav-group__items {
-    list-style: none;
-  }
-
-  .sidebar-nav-item__custom-icon {
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
-  }
-
-  .sidebar-footer {
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .sidebar-user__trigger {
-    animation: none !important;
+    transition: width 200ms ease-out;
+    z-index: 40;
   }
 
   .sidebar--native {
     padding-top: 32px; /* Account for custom titlebar */
   }
 
-  .sidebar-nav-item--active {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-accent);
+  /* ===== Header ===== */
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    height: 56px;
+    border-bottom: 1px solid var(--sidebar-border);
   }
 
-  .sidebar-nav-item--active:hover {
-    background-color: var(--sidebar-active-hover);
+  .sidebar-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
   }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
+  .sidebar-logo__image {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
   }
 
+  .sidebar-logo__text {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ===== Navigation ===== */
+  .sidebar-nav {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .sidebar-nav__scroll {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Custom scrollbar for navigation */
   .sidebar-nav__scroll::-webkit-scrollbar {
     width: 6px;
   }
@@ -420,13 +416,214 @@
     background-color: rgba(255, 255, 255, 0.25);
   }
 
+  /* Firefox scrollbar */
   .sidebar-nav__scroll {
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
   }
 
+  .sidebar-nav__content {
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* Navigation Groups */
+  .sidebar-nav-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .sidebar-nav-group__label {
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+    padding: 0.5rem 0.75rem 0.25rem;
+    opacity: 0.7;
+  }
+
+  .sidebar-nav-group__items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* Navigation Items */
+  .sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: none;
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: all 150ms ease;
+    cursor: pointer;
+  }
+
+  .sidebar-nav-item:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .sidebar-nav-item--active {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-accent);
+  }
+
+  .sidebar-nav-item--active:hover {
+    background-color: var(--sidebar-active-hover);
+  }
+
+  .sidebar-nav-item__icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .sidebar-nav-item__custom-icon {
+    width: 18px;
+    height: 18px;
+    background-color: currentColor;
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+  }
+
+  .sidebar-nav-item__text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sidebar-nav-item__badge {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.625rem;
+    font-weight: 600;
+    background-color: #ef4444;
+    color: white;
+    border-radius: 8px;
+  }
+
+  /* ===== Footer ===== */
+  .sidebar-footer {
+    padding: 0.3rem;
+    border-top: 1px solid var(--sidebar-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* User Section */
+  .sidebar-user {
+    display: flex;
+  }
+
+  .sidebar-user__trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.5rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    /* Prevent any animations/transforms from dropdown library */
+    transform: none !important;
+    animation: none !important;
+  }
+
+  .sidebar-user__trigger:hover {
+    background-color: var(--sidebar-hover);
+  }
+
   .sidebar-user__trigger[data-state='open'] {
     background-color: var(--sidebar-hover);
+  }
+
+  .sidebar-user__avatar {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 20px;
+    background-color: var(--sidebar-accent);
+  }
+
+  .sidebar-user__avatar-text {
+    font-size: 0.625rem;
+    font-weight: 800;
+    color: #0a0a0b;
+    text-transform: uppercase;
+  }
+
+  .sidebar-user__name {
+    flex: 1;
+    font-size: 0.75rem;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--sidebar-text-muted);
+  }
+
+  .sidebar-user__chevron {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  /* Sign In Button */
+  .sidebar-signin-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .sidebar-signin-btn:hover {
+    opacity: 0.9;
   }
 </style>
 

@@ -18,12 +18,16 @@
     "format:staged": "cd client && prettier --write",
     "type-check": "cd client && vue-tsc --noEmit",
     "api-demo": "node server.js",
-    "api-test": "node kick_api_demo_node.js"
+    "api-test": "node kick_api_demo_node.js",
+    "css-to-tailwind": "node scripts/css-to-tailwind.mjs"
   },
   "devDependencies": {
+    "@vue/compiler-sfc": "^3.5.13",
     "concurrently": "^9.1.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.6",
+    "magic-string": "^0.30.17",
+    "postcss": "^8.5.6",
     "prettier": "^3.6.2",
     "prettier-plugin-vue": "^1.1.6"
   },
