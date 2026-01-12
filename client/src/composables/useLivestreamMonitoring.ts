@@ -1162,9 +1162,13 @@ export function useLivestreamMonitoring() {
           }
         };
 
-        await dvrRecording.startDvrSession(streamer.mintId, streamer.id, streamer.displayName, {
+        // Start DVR session in background - don't await to avoid blocking UI updates
+        // The DVR setup can take time and we want to show LIVE status immediately
+        dvrRecording.startDvrSession(streamer.mintId, streamer.id, streamer.displayName, {
           sessionId: sessionInfo.sessionId,
           onChunkReady,
+        }).catch((err) => {
+          console.error('[LiveMonitor] DVR session failed to start:', err);
         });
 
         // Track that this is a DVR-based session
@@ -1173,6 +1177,7 @@ export function useLivestreamMonitoring() {
         });
       }
 
+      // Update activeSessions immediately so UI shows LIVE status
       activeSessions.value.set(streamer.id, {
         sessionId: sessionInfo.sessionId,
         streamerId: streamer.id,

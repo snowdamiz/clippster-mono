@@ -614,7 +614,7 @@ class PumpfunRecorder {
   async startRoom(url, token) {
     this.room = new Room();
     this.room
-      .on(RoomEvent.TrackSubscribed, (track) => this.handleTrackSubscribed(track))
+      .on(RoomEvent.TrackSubscribed, (track, publication, participant) => this.handleTrackSubscribed(track, publication, participant))
       .on(RoomEvent.TrackPublished, (publication, participant) => {
         // DIAGNOSTIC: Log when tracks are published (before subscription)
         if (DIAGNOSTIC_MODE) {
@@ -673,47 +673,122 @@ class PumpfunRecorder {
     }
   }
 
-  handleTrackSubscribed(track) {
-    // DIAGNOSTIC: Log ALL track subscriptions to debug missing video
+  handleTrackSubscribed(track, publication, participant) {
+    // Get participant identity for broadcaster vs guest detection
+    const participantIdentity = participant?.identity || 'unknown';
+    const participantSid = participant?.sid || 'unknown';
+    
+    // CRITICAL: Identify if this is the main broadcaster or a guest
+    // PumpFun main broadcaster identity typically matches the mintId or contains it
+    // Guests have different identities (usually random UUIDs or user IDs)
+    const isMainBroadcaster = this.isMainBroadcasterParticipant(participantIdentity);
+    
+    // DIAGNOSTIC: Log ALL track subscriptions with participant info
     if (DIAGNOSTIC_MODE) {
         log('DIAG: TrackSubscribed event', {
             trackSid: track?.sid,
             trackKind: track?.kind,
             kindIsAudio: track?.kind === TrackKind.KIND_AUDIO,
             kindIsVideo: track?.kind === TrackKind.KIND_VIDEO,
+            participantIdentity,
+            participantSid,
+            isMainBroadcaster,
             hasVideoReader: !!this.videoReader,
-            willProcessVideo: track?.kind === TrackKind.KIND_VIDEO && !this.videoReader
+            willProcessVideo: track?.kind === TrackKind.KIND_VIDEO && !this.videoReader && isMainBroadcaster,
+            willProcessAudio: track?.kind === TrackKind.KIND_AUDIO
         });
     }
     
+    // AUDIO: Capture ALL audio tracks (main broadcaster + guests)
+    // The AudioMixer will combine them properly
     if (track.kind === TrackKind.KIND_AUDIO) {
-      this.bindAudioStream(track);
-    } else if (track.kind === TrackKind.KIND_VIDEO && !this.videoReader) {
-      try {
-          if (track.setVideoQuality) {
-              track.setVideoQuality(VIDEO_QUALITY_HIGH);
-          }
-      } catch(e) {}
-      
-      // If we were in audio-only mode, stop synthetic video generation
-      if (this._audioOnlyMode) {
-        log('Real video track arrived, switching from audio-only mode');
-        this.stopSyntheticVideo();
-        this._audioOnlyMode = false;
-      }
-      
-      this.bindVideoStream(track);
-    } else if (track.kind === TrackKind.KIND_VIDEO && this.videoReader) {
-      // Video track received but we already have a reader - log this case
-      if (DIAGNOSTIC_MODE) {
-          log('DIAG: Video track skipped (already have reader)', {
-              trackSid: track?.sid
-          });
+      log('Binding audio track', { participantIdentity, isMainBroadcaster, trackSid: track?.sid });
+      this.bindAudioStream(track, participantIdentity);
+    } 
+    // VIDEO: Only capture from main broadcaster, NOT guests
+    else if (track.kind === TrackKind.KIND_VIDEO) {
+      if (!this.videoReader && isMainBroadcaster) {
+        log('Binding video track from main broadcaster', { participantIdentity, trackSid: track?.sid });
+        try {
+            if (track.setVideoQuality) {
+                track.setVideoQuality(VIDEO_QUALITY_HIGH);
+            }
+        } catch(e) {}
+        
+        // If we were in audio-only mode, stop synthetic video generation
+        if (this._audioOnlyMode) {
+          log('Real video track arrived, switching from audio-only mode');
+          this.stopSyntheticVideo();
+          this._audioOnlyMode = false;
+        }
+        
+        // Store the main broadcaster identity for reference
+        this._mainBroadcasterIdentity = participantIdentity;
+        this.bindVideoStream(track);
+      } else if (!this.videoReader && !isMainBroadcaster) {
+        // Guest video track - skip it but log
+        log('SKIPPING guest video track (not main broadcaster)', { 
+          participantIdentity, 
+          trackSid: track?.sid,
+          note: 'Only capturing video from main broadcaster'
+        });
+      } else if (this.videoReader) {
+        // Already have a video reader
+        if (DIAGNOSTIC_MODE) {
+            log('DIAG: Video track skipped (already have reader)', {
+                trackSid: track?.sid,
+                participantIdentity,
+                isMainBroadcaster,
+                currentBroadcaster: this._mainBroadcasterIdentity
+            });
+        }
       }
     }
   }
+  
+  // Determine if a participant is the main broadcaster based on their identity
+  // PumpFun main broadcaster identity patterns:
+  // 1. Identity matches or contains the mintId
+  // 2. Identity is the "host" or first participant
+  // 3. Identity does NOT look like a guest (guests often have UUID-like identities)
+  isMainBroadcasterParticipant(identity) {
+    if (!identity || identity === 'unknown') return false;
+    
+    // Check if identity contains the mintId (most reliable indicator)
+    if (identity.includes(this.mintId) || this.mintId.includes(identity)) {
+      return true;
+    }
+    
+    // Check for common broadcaster identity patterns
+    // PumpFun broadcasters often have identities like "host", "broadcaster", or the coin name
+    const broadcasterPatterns = ['host', 'broadcaster', 'streamer', 'main'];
+    const identityLower = identity.toLowerCase();
+    if (broadcasterPatterns.some(p => identityLower.includes(p))) {
+      return true;
+    }
+    
+    // If we haven't identified a main broadcaster yet, and this is the first video track,
+    // assume it's the main broadcaster (fallback heuristic)
+    // BUT: Check if identity looks like a guest (UUID pattern or numeric ID)
+    const looksLikeGuest = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity) ||
+                           /^guest[-_]?\d*/i.test(identity) ||
+                           /^user[-_]?\d+$/i.test(identity);
+    
+    if (looksLikeGuest) {
+      return false;
+    }
+    
+    // If no video reader yet and identity doesn't look like a guest, assume main broadcaster
+    // This handles cases where the broadcaster identity is just a username
+    if (!this.videoReader && !this._mainBroadcasterIdentity) {
+      log('Assuming first non-guest video participant is main broadcaster', { identity });
+      return true;
+    }
+    
+    return false;
+  }
 
-  async bindAudioStream(track) {
+  async bindAudioStream(track, participantIdentity = 'unknown') {
     const trackId = track.sid;
     if (this.audioTracks.has(trackId)) return;
     this.audioTracks.add(trackId);
@@ -725,7 +800,8 @@ class PumpfunRecorder {
             trackId,
             trackNumber: this.audioTracks.size,
             isFirstTrack,
-            note: isFirstTrack ? 'Primary audio track' : 'Additional audio track (will be mixed)'
+            participantIdentity,
+            note: isFirstTrack ? 'Primary audio track (main broadcaster)' : 'Additional audio track (guest - will be mixed)'
         });
     }
 

@@ -1480,14 +1480,37 @@
 
   // Clip building functions
   async function onBuildClip(clip: ClipWithVersion) {
+    console.log('[ClipsTab] onBuildClip called for clip:', clip.id, {
+      projectId: props.projectId,
+      hasSegments: !!(clip.current_version_segments && clip.current_version_segments.length > 0),
+      segmentCount: clip.current_version_segments?.length || 0,
+    });
+
     if (!props.projectId) {
       console.error('[ClipsTab] No project ID available for clip build');
       return;
     }
 
-    if (!clip.current_version_segments || clip.current_version_segments.length === 0) {
-      console.error('[ClipsTab] No segments found for clip build');
+    // Check if we have segments or can derive them from clip times
+    const hasSegments = clip.current_version_segments && clip.current_version_segments.length > 0;
+    const hasClipTimes = (clip.current_version_start_time !== undefined && clip.current_version_end_time !== undefined) ||
+                         (clip.start_time !== undefined && clip.end_time !== undefined);
+    
+    if (!hasSegments && !hasClipTimes) {
+      console.error('[ClipsTab] No segments or clip times found for clip build - clip data:', {
+        id: clip.id,
+        name: clip.name,
+        current_version_segments: clip.current_version_segments,
+        current_version_start_time: clip.current_version_start_time,
+        current_version_end_time: clip.current_version_end_time,
+        start_time: clip.start_time,
+        end_time: clip.end_time,
+      });
       return;
+    }
+    
+    if (!hasSegments) {
+      console.log('[ClipsTab] No segments found, will use clip times for build');
     }
 
     // Load saved aspect framing settings from clip editor
@@ -1614,6 +1637,28 @@
           }
         } catch (err) {
           console.warn('[ClipsTab] Could not reload segments from database, using cached data:', err);
+        }
+      }
+
+      // If no segments exist, create a synthetic segment from clip times
+      if (freshSegments.length === 0) {
+        const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+        const endTime = clip.current_version_end_time ?? clip.end_time ?? 0;
+        
+        if (endTime > startTime) {
+          console.log('[ClipsTab] Creating synthetic segment from clip times:', { startTime, endTime });
+          freshSegments = [{
+            id: `synthetic-${clip.id}`,
+            clip_version_id: clip.current_version_id || '',
+            segment_index: 0,
+            start_time: startTime,
+            end_time: endTime,
+            duration: endTime - startTime,
+            transcript: null,
+            created_at: Date.now(),
+          }];
+        } else {
+          throw new Error('Invalid clip times: end time must be greater than start time');
         }
       }
 

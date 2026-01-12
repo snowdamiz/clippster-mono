@@ -487,19 +487,22 @@
     await loadStreamers();
     refreshStreamerMetadata();
     syncDetectionState();
-    checkAllLiveStatuses();
+    checkAllLiveStatuses(true); // Include Kick on initial load
 
     liveStatusInterval.value = window.setInterval(() => {
-      checkAllLiveStatuses();
+      checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
     }, 60_000);
 
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
     window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
-  async function checkAllLiveStatuses() {
+  async function checkAllLiveStatuses(includeKick: boolean = true) {
     const promises = streamers.value.map(async (streamer) => {
       if (streamer.isDetecting) return;
+      // Skip Kick streamers on interval polling to save API requests
+      // Kick status is only checked on app open and manual refresh
+      if (!includeKick && streamer.platform === 'Kick') return;
 
       const index = streamers.value.findIndex((s) => s.id === streamer.id);
       if (index !== -1) {
@@ -647,7 +650,7 @@
   async function handleMonitoredStreamersUpdated() {
     await loadStreamers();
     await refreshStreamerMetadata();
-    await checkAllLiveStatuses();
+    await checkAllLiveStatuses(true); // Include Kick since this is a user-triggered update
   }
 
   function getStatusLabel(streamer: ExtendedStreamer) {

@@ -165,17 +165,55 @@ interface CaptureSetup {
   audioContext: AudioContext | null;
 }
 
+// Helper to identify if a participant is the main broadcaster vs a guest
+// PumpFun streams can have guests on "stage" with their own video/audio tracks
+function isMainBroadcasterParticipant(identity: string, mainBroadcasterIdentity: string | null): boolean {
+  if (!identity) return false;
+  
+  // If we already identified a main broadcaster, only they are the main broadcaster
+  if (mainBroadcasterIdentity) {
+    return identity === mainBroadcasterIdentity;
+  }
+  
+  // Skip viewer and ingress tracks - these are auxiliary
+  if (identity.includes('-viewer-') || identity.includes('-ingress')) {
+    return false;
+  }
+  
+  // Check for common broadcaster identity patterns
+  const broadcasterPatterns = ['host', 'broadcaster', 'streamer', 'main'];
+  const identityLower = identity.toLowerCase();
+  if (broadcasterPatterns.some(p => identityLower.includes(p))) {
+    return true;
+  }
+  
+  // Check if identity looks like a guest (UUID pattern or numeric ID)
+  const looksLikeGuest = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity) ||
+                         /^guest[-_]?\d*/i.test(identity) ||
+                         /^user[-_]?\d+$/i.test(identity);
+  
+  if (looksLikeGuest) {
+    return false;
+  }
+  
+  // Default: assume first non-guest participant is main broadcaster
+  return true;
+}
+
 // Wait for video and audio tracks from room and create a direct MediaStream capture
 // This approach uses the LiveKit MediaStreamTracks directly, avoiding canvas issues
+// UPDATED: Supports multiple audio tracks (main broadcaster + guests) mixed via AudioContext
 function waitForTracks(room: Room): Promise<CaptureSetup> {
   return new Promise((resolve, reject) => {
     let videoTrackRef: VideoTrack | null = null;
-    let audioTrackRef: AudioTrack | null = null;
+    // Changed: Now we collect ALL audio tracks for mixing
+    const audioTrackRefs: AudioTrack[] = [];
     let hasVideo = false;
     let hasAudio = false;
     let timeout: number | null = null;
     let startingCapture = false;
     let settled = false;
+    let mainBroadcasterIdentity: string | null = null;
 
     const cleanup = () => {
       room.off(RoomEvent.TrackSubscribed, handleTrack);
@@ -205,19 +243,43 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
         hasVideo,
         hasAudio,
         hasVideoRef: !!videoTrackRef,
-        hasAudioRef: !!audioTrackRef,
+        audioTrackCount: audioTrackRefs.length,
       });
 
-      if (hasVideo && hasAudio && videoTrackRef && audioTrackRef) {
+      if (hasVideo && hasAudio && videoTrackRef && audioTrackRefs.length > 0) {
         startingCapture = true;
         console.log('[DvrRecording] All tracks ready, starting direct capture setup');
+        console.log(`[DvrRecording] Mixing ${audioTrackRefs.length} audio track(s)`);
         cleanup();
 
         // Get the underlying MediaStreamTracks
         const videoMST = videoTrackRef.mediaStreamTrack;
-        const audioMST = audioTrackRef.mediaStreamTrack;
+        
+        // Create AudioContext to mix multiple audio tracks
+        const audioContext = new AudioContext();
+        const destination = audioContext.createMediaStreamDestination();
+        
+        // Connect all audio tracks to the mixer
+        for (const audioTrack of audioTrackRefs) {
+          const audioMST = audioTrack.mediaStreamTrack;
+          if (audioMST) {
+            const source = audioContext.createMediaStreamSource(new MediaStream([audioMST]));
+            source.connect(destination);
+            console.log(`[DvrRecording] Connected audio track to mixer: ${audioMST.label || audioMST.id}`);
+          }
+        }
+        
+        // Get the mixed audio track
+        const mixedAudioTrack = destination.stream.getAudioTracks()[0];
+        if (!mixedAudioTrack) {
+          console.error('[DvrRecording] Failed to create mixed audio track');
+          rejectOnce(new Error('Failed to create mixed audio track'));
+          return;
+        }
+        
+        console.log(`[DvrRecording] Mixed audio track created: enabled=${mixedAudioTrack.enabled}, readyState=${mixedAudioTrack.readyState}`);
 
-        if (videoMST && audioMST) {
+        if (videoMST && mixedAudioTrack) {
           // ============================================================================
           // CANVAS-BASED CAPTURE (Production-ready, resilient to SFU track muting)
           // ============================================================================
@@ -239,7 +301,7 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
             `[DvrRecording] Video track: enabled=${videoMST.enabled}, readyState=${videoMST.readyState}, muted=${videoMST.muted}`
           );
           console.log(
-            `[DvrRecording] Audio track: enabled=${audioMST.enabled}, readyState=${audioMST.readyState}, muted=${audioMST.muted}`
+            `[DvrRecording] Mixed audio track: enabled=${mixedAudioTrack.enabled}, readyState=${mixedAudioTrack.readyState}`
           );
 
           // Create a VISIBLE video element - browsers throttle hidden videos
@@ -268,28 +330,36 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
           console.log('[DvrRecording] Attached video track to consumer element');
 
           // Continuously request HIGH quality to prevent SFU from downgrading
-          const publication = (videoTrackRef as any).publication;
           let qualityRequestInterval: number | null = null;
-          if (publication && 'setVideoQuality' in publication) {
-            // Request high quality immediately
-            try {
-              (publication as RemoteTrackPublication).setVideoQuality(VideoQuality.HIGH);
-              console.log('[DvrRecording] Requested HIGH video quality');
-            } catch (e) {
-              console.log('[DvrRecording] Could not set initial video quality:', e);
-            }
-
-            // Keep requesting high quality every 5 seconds to prevent SFU from downgrading
-            qualityRequestInterval = window.setInterval(() => {
+          try {
+            console.log('[DvrRecording] Checking for publication property...');
+            const publication = (videoTrackRef as any).publication;
+            if (publication && typeof publication.setVideoQuality === 'function') {
+              // Request high quality immediately
               try {
                 (publication as RemoteTrackPublication).setVideoQuality(VideoQuality.HIGH);
+                console.log('[DvrRecording] Requested HIGH video quality');
               } catch (e) {
-                // Ignore errors
+                console.log('[DvrRecording] Could not set initial video quality:', e);
               }
-            }, 5000);
+
+              // Keep requesting high quality every 5 seconds to prevent SFU from downgrading
+              qualityRequestInterval = window.setInterval(() => {
+                try {
+                  (publication as RemoteTrackPublication).setVideoQuality(VideoQuality.HIGH);
+                } catch (e) {
+                  // Ignore errors
+                }
+              }, 5000);
+            } else {
+              console.log('[DvrRecording] No publication or setVideoQuality not available');
+            }
+          } catch (pubError) {
+            console.log('[DvrRecording] Error accessing publication:', pubError);
           }
 
           // Hidden audio element for audio track consumption
+          // Note: We don't need to attach audio tracks to elements since we're using AudioContext mixer
           const hiddenAudioElement = document.createElement('audio');
           hiddenAudioElement.id = 'dvr-audio-consumer-' + Math.random().toString(36).substr(2, 9);
           hiddenAudioElement.muted = true;
@@ -299,22 +369,52 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
           hiddenAudioElement.style.height = '0';
           hiddenAudioElement.style.opacity = '0';
           document.body.appendChild(hiddenAudioElement);
-          audioTrackRef.attach(hiddenAudioElement);
-
-          // Start playing both elements
-          try {
-            await liveKitVideoElement.play();
-            console.log('[DvrRecording] Video element playing');
-          } catch (e) {
-            console.log('[DvrRecording] Video play failed:', e);
+          // Attach all audio tracks to hidden elements to keep them active
+          for (const audioTrack of audioTrackRefs) {
+            audioTrack.attach(hiddenAudioElement);
           }
 
-          try {
-            await hiddenAudioElement.play();
-            console.log('[DvrRecording] Audio element playing');
-          } catch (e) {
-            console.log('[DvrRecording] Audio play failed:', e);
-          }
+          // Start playing both elements with retry logic and timeout
+          // LiveKit can interrupt play() or hang indefinitely
+          const playWithTimeout = (element: HTMLVideoElement | HTMLAudioElement, timeoutMs = 3000): Promise<void> => {
+            return new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => {
+                reject(new Error('Play timeout'));
+              }, timeoutMs);
+              
+              element.play()
+                .then(() => {
+                  clearTimeout(timeout);
+                  resolve();
+                })
+                .catch((err) => {
+                  clearTimeout(timeout);
+                  reject(err);
+                });
+            });
+          };
+
+          const playWithRetry = async (element: HTMLVideoElement | HTMLAudioElement, name: string, maxRetries = 3) => {
+            console.log(`[DvrRecording] Starting ${name} play attempts...`);
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                await playWithTimeout(element);
+                console.log(`[DvrRecording] ${name} element playing`);
+                return true;
+              } catch (e: any) {
+                console.log(`[DvrRecording] ${name} play attempt ${attempt} failed:`, e?.message || e?.name || e);
+                if (attempt < maxRetries) {
+                  // Wait a bit before retrying - give LiveKit time to settle
+                  await new Promise(r => setTimeout(r, 200 * attempt));
+                }
+              }
+            }
+            console.warn(`[DvrRecording] ${name} play failed after ${maxRetries} attempts, continuing anyway`);
+            return false;
+          };
+
+          await playWithRetry(liveKitVideoElement, 'Video');
+          await playWithRetry(hiddenAudioElement, 'Audio');
 
           // Wait for video to have dimensions and preferably reach high resolution
           let waitAttempts = 0;
@@ -463,8 +563,8 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
             recordingStream.addTrack(track);
             console.log(`[DvrRecording] Added canvas video track: ${track.label}`);
           });
-          recordingStream.addTrack(audioMST);
-          console.log('[DvrRecording] Added LiveKit audio track');
+          recordingStream.addTrack(mixedAudioTrack);
+          console.log('[DvrRecording] Added mixed audio track');
 
           console.log(
             '[DvrRecording] Recording stream ready:',
@@ -517,7 +617,6 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
         videoTrackRef.attach(videoElement);
         // Don't attach audio to the hidden element - we'll get it directly from the track
         // This prevents the audio from playing to the user
-        // audioTrackRef.attach(videoElement);
 
         // Start playing
         videoElement
@@ -528,7 +627,7 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
             // Wait for video to have dimensions
             const waitForDimensions = () => {
               if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-                setupCanvasCapture(videoElement, audioTrackRef!, resolveOnce);
+                setupCanvasCapture(videoElement, audioTrackRefs, resolveOnce);
               } else {
                 console.log('[DvrRecording] Waiting for video dimensions...');
                 setTimeout(waitForDimensions, 100);
@@ -542,7 +641,7 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
             console.error('[DvrRecording] Autoplay failed:', err);
             // Try to set up anyway
             setTimeout(() => {
-              setupCanvasCapture(videoElement, audioTrackRef!, resolveOnce);
+              setupCanvasCapture(videoElement, audioTrackRefs, resolveOnce);
             }, 1000);
           });
       }
@@ -550,7 +649,7 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
 
     function setupCanvasCapture(
       videoElement: HTMLVideoElement,
-      audioTrack: AudioTrack,
+      audioTracks: AudioTrack[],
       resolveCapture: (result: CaptureSetup) => void
     ) {
       // Create canvas matching video dimensions (or default if not available)
@@ -632,50 +731,72 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
 
       console.log('[DvrRecording] Canvas stream created, tracks:', canvasStream.getTracks().length);
 
-      // Now add audio track
-      // Get audio from the LiveKit track
+      // Now add audio tracks - mix multiple tracks using AudioContext
       let audioContext: AudioContext | null = null;
-      const audioMST = audioTrack.mediaStreamTrack;
 
-      if (audioMST) {
-        // Create a new MediaStream with both canvas video and LiveKit audio
-        const combinedStream = new MediaStream();
+      if (audioTracks.length > 0) {
+        // Create AudioContext to mix multiple audio tracks
+        audioContext = new AudioContext();
+        const destination = audioContext.createMediaStreamDestination();
+        
+        // Connect all audio tracks to the mixer
+        for (const audioTrack of audioTracks) {
+          const audioMST = audioTrack.mediaStreamTrack;
+          if (audioMST) {
+            const source = audioContext.createMediaStreamSource(new MediaStream([audioMST]));
+            source.connect(destination);
+            console.log(`[DvrRecording] Connected audio track to mixer: ${audioMST.label || audioMST.id}`);
+          }
+        }
+        
+        // Get the mixed audio track
+        const mixedAudioTrack = destination.stream.getAudioTracks()[0];
+        
+        if (mixedAudioTrack) {
+          // Create a new MediaStream with both canvas video and mixed audio
+          const combinedStream = new MediaStream();
 
-        // Add canvas video track
-        canvasStream.getVideoTracks().forEach((track) => {
+          // Add canvas video track
+          canvasStream.getVideoTracks().forEach((track) => {
+            console.log(
+              `[DvrRecording] Adding canvas video track: enabled=${track.enabled}, readyState=${track.readyState}`
+            );
+            combinedStream.addTrack(track);
+          });
+
+          // Add mixed audio track
           console.log(
-            `[DvrRecording] Adding canvas video track: enabled=${track.enabled}, readyState=${track.readyState}`
+            `[DvrRecording] Adding mixed audio track: enabled=${mixedAudioTrack.enabled}, readyState=${mixedAudioTrack.readyState}`
           );
-          combinedStream.addTrack(track);
-        });
+          combinedStream.addTrack(mixedAudioTrack);
 
-        // Add audio track directly (no need to go through AudioContext for recording)
-        console.log(
-          `[DvrRecording] Adding audio track: enabled=${audioMST.enabled}, readyState=${audioMST.readyState}, muted=${audioMST.muted}`
-        );
-        combinedStream.addTrack(audioMST);
-
-        console.log(
-          '[DvrRecording] Combined stream ready:',
-          combinedStream.getTracks().length,
-          'tracks'
-        );
-        combinedStream.getTracks().forEach((t) => {
           console.log(
-            `[DvrRecording] Combined track: ${t.kind}, enabled=${t.enabled}, readyState=${t.readyState}, muted=${t.muted}`
+            '[DvrRecording] Combined stream ready:',
+            combinedStream.getTracks().length,
+            'tracks'
           );
-        });
 
-        resolveCapture({
-          mediaStream: combinedStream,
-          videoElement,
-          audioElement: null, // Canvas capture doesn't need separate audio element
-          canvasElement: canvas,
-          animationId,
-          audioContext,
-        });
+          resolveCapture({
+            mediaStream: combinedStream,
+            videoElement,
+            audioElement: null, // Canvas capture doesn't need separate audio element
+            canvasElement: canvas,
+            animationId,
+            audioContext,
+          });
+        } else {
+          console.warn('[DvrRecording] Failed to create mixed audio track, proceeding with video only');
+          resolveCapture({
+            mediaStream: canvasStream,
+            videoElement,
+            audioElement: null,
+            canvasElement: canvas,
+            animationId,
+            audioContext: null,
+          });
+        }
       } else {
-        console.warn('[DvrRecording] No audio track available, proceeding with video only');
+        console.warn('[DvrRecording] No audio tracks available, proceeding with video only');
         resolveCapture({
           mediaStream: canvasStream,
           videoElement,
@@ -699,41 +820,57 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
         participant.identity
       );
 
-      // Skip viewer tracks
-      if (participant.identity.includes('-viewer-')) {
-        console.log('[DvrRecording] Skipping viewer track from:', participant.identity);
+      // Skip viewer and ingress tracks - we want the main broadcaster tracks
+      // -ingress tracks are duplicates that can cause race conditions
+      if (participant.identity.includes('-viewer-') || participant.identity.includes('-ingress')) {
+        console.log('[DvrRecording] Skipping auxiliary track from:', participant.identity);
         return;
       }
 
-      if (track.kind === Track.Kind.Video && !hasVideo) {
-        videoTrackRef = track as VideoTrack;
-        hasVideo = true;
-        console.log('[DvrRecording] Video track captured from:', participant.identity);
+      // Determine if this participant is the main broadcaster
+      const isMainBroadcaster = isMainBroadcasterParticipant(participant.identity, mainBroadcasterIdentity);
 
-        // Request high quality video to ensure we get continuous frames
-        // This prevents adaptive streaming from pausing the track
-        try {
-          publication.setVideoQuality(VideoQuality.HIGH);
-          console.log('[DvrRecording] Set video quality to HIGH');
-        } catch (e) {
-          console.log('[DvrRecording] Could not set video quality:', e);
+      // VIDEO: Only capture from main broadcaster, not guests
+      if (track.kind === Track.Kind.Video && !hasVideo) {
+        if (isMainBroadcaster) {
+          videoTrackRef = track as VideoTrack;
+          hasVideo = true;
+          mainBroadcasterIdentity = participant.identity;
+          console.log('[DvrRecording] Video track captured from main broadcaster:', participant.identity);
+
+          // Request high quality video to ensure we get continuous frames
+          // This prevents adaptive streaming from pausing the track
+          try {
+            publication.setVideoQuality(VideoQuality.HIGH);
+            console.log('[DvrRecording] Set video quality to HIGH');
+          } catch (e) {
+            console.log('[DvrRecording] Could not set video quality:', e);
+          }
+        } else {
+          console.log('[DvrRecording] SKIPPING guest video track from:', participant.identity);
         }
-      } else if (track.kind === Track.Kind.Audio && !hasAudio) {
-        audioTrackRef = track as AudioTrack;
-        hasAudio = true;
-        console.log('[DvrRecording] Audio track captured from:', participant.identity);
+      } 
+      // AUDIO: Capture ALL audio tracks (main broadcaster + guests) for mixing
+      else if (track.kind === Track.Kind.Audio) {
+        // Check if we already have this track
+        const existingTrack = audioTrackRefs.find(t => t.sid === track.sid);
+        if (!existingTrack) {
+          audioTrackRefs.push(track as AudioTrack);
+          hasAudio = true;
+          console.log(`[DvrRecording] Audio track ${audioTrackRefs.length} captured from:`, participant.identity, isMainBroadcaster ? '(main)' : '(guest)');
+        }
       }
 
       checkComplete();
     };
 
-    // Check existing tracks first - prioritize non-viewer participants
+    // Check existing tracks first - prioritize main broadcaster (not viewer or ingress)
     const participants = Array.from(room.remoteParticipants.values());
     participants.sort((a, b) => {
-      const aIsViewer = a.identity.includes('-viewer-');
-      const bIsViewer = b.identity.includes('-viewer-');
-      if (aIsViewer && !bIsViewer) return 1;
-      if (!aIsViewer && bIsViewer) return -1;
+      const aIsAuxiliary = a.identity.includes('-viewer-') || a.identity.includes('-ingress');
+      const bIsAuxiliary = b.identity.includes('-viewer-') || b.identity.includes('-ingress');
+      if (aIsAuxiliary && !bIsAuxiliary) return 1;
+      if (!aIsAuxiliary && bIsAuxiliary) return -1;
       return 0;
     });
 
@@ -810,8 +947,8 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
             // readyState >= 2 means HAVE_CURRENT_DATA
             if (videoElement.readyState >= 2 && videoElement.videoWidth > 0) {
               console.log('[DvrRecording] Video has data, setting up canvas capture');
-              if (videoTrackRef && audioTrackRef) {
-                setupCanvasCapture(videoElement, audioTrackRef, resolveOnce);
+              if (videoTrackRef && audioTrackRefs.length > 0) {
+                setupCanvasCapture(videoElement, audioTrackRefs, resolveOnce);
               } else if (videoTrackRef) {
                 // Fallback with video track only
                 console.warn('[DvrRecording] No separate audio track, using video track only');
@@ -870,8 +1007,8 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
             } else if (checkCount >= maxChecks) {
               // Timeout - proceed anyway with what we have
               console.error('[DvrRecording] Video never got data, proceeding anyway');
-              if (videoTrackRef && audioTrackRef) {
-                setupCanvasCapture(videoElement, audioTrackRef, resolveOnce);
+              if (videoTrackRef && audioTrackRefs.length > 0) {
+                setupCanvasCapture(videoElement, audioTrackRefs, resolveOnce);
               } else {
                 rejectOnce(new Error('Video never got data'));
               }

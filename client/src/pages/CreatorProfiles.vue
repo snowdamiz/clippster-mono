@@ -685,9 +685,9 @@
   // Load creators on mount
   onMounted(async () => {
     await loadCreators();
-    checkAllLiveStatuses();
+    checkAllLiveStatuses(true); // Include Kick on initial load
     liveStatusInterval.value = window.setInterval(() => {
-      checkAllLiveStatuses();
+      checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
     }, 60_000);
   });
 
@@ -698,7 +698,7 @@
     }
   });
 
-  async function checkAllLiveStatuses() {
+  async function checkAllLiveStatuses(includeKick: boolean = true) {
     const pumpfunLinksToCheck: { platformId: string; mintId: string }[] = [];
     const kickLinksToCheck: { linkId: string; platformId: string; channelSlug: string; hasProfileImage: boolean }[] =
       [];
@@ -711,7 +711,8 @@
 
         if (link.platform === 'pumpfun') {
           pumpfunLinksToCheck.push({ platformId: link.platform_id, mintId: link.platform_id });
-        } else if (link.platform === 'kick') {
+        } else if (link.platform === 'kick' && includeKick) {
+          // Only check Kick on initial load or manual refresh to save API requests
           kickLinksToCheck.push({
             linkId: link.id,
             platformId: link.platform_id,
