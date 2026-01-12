@@ -159,6 +159,7 @@
       :item-name="bugReportToDelete?.title || ''"
       suffix="?"
       confirm-text="Delete"
+      variant="destructive"
       @close="handleDeleteBugReportDialogClose"
       @confirm="deleteBugReportConfirmed"
     />

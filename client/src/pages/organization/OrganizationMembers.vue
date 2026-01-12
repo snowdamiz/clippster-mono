@@ -136,14 +136,6 @@
               'org-members__card--admin': member.role === 'admin',
             }"
           >
-            <div
-              class="org-members__card-indicator"
-              :class="{
-                'org-members__card-indicator--owner': member.role === 'owner',
-                'org-members__card-indicator--admin': member.role === 'admin',
-              }"
-            ></div>
-
             <div class="org-members__card-content">
               <!-- Main Row: Avatar, Info, Credits, Role, Actions -->
               <div class="org-members__card-row">
@@ -276,7 +268,7 @@
     <InviteMemberDialog
       v-model="showInviteDialog"
       :organization-id="organizationId ?? ''"
-      @member-added="loadOrganization"
+      @member-added="() => loadOrganization(true)"
     />
 
     <!-- Change Role Dialog -->
@@ -1172,20 +1164,6 @@
   .org-members__card:hover {
     border-color: rgba(255, 255, 255, 0.12);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  }
-
-  .org-members__card-indicator {
-    width: 3px;
-    flex-shrink: 0;
-    background-color: var(--sidebar-border);
-  }
-
-  .org-members__card-indicator--owner {
-    background: linear-gradient(to bottom, #f59e0b 0%, #d97706 100%);
-  }
-
-  .org-members__card-indicator--admin {
-    background: linear-gradient(to bottom, #06b6d4 0%, #0891b2 100%);
   }
 
   .org-members__card-content {

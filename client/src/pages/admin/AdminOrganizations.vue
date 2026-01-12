@@ -125,17 +125,29 @@
       <Transition name="modal">
         <div v-if="showOrgCreditDialog" class="admin-orgs__modal-backdrop" @click.self="handleOrgCreditDialogClose">
           <Transition name="dialog" appear>
-            <div class="admin-orgs__modal">
+            <div v-if="showOrgCreditDialog" class="admin-orgs__modal" role="dialog" aria-modal="true">
+              <!-- Accent bar -->
               <div class="admin-orgs__modal-accent"></div>
-              <div class="admin-orgs__modal-content">
-                <div class="admin-orgs__modal-header">
-                  <div class="admin-orgs__modal-icon">
-                    <CreditCard class="admin-orgs__modal-icon-svg" />
-                  </div>
-                  <h2 class="admin-orgs__modal-title">Set Organization Credits</h2>
-                  <p class="admin-orgs__modal-subtitle">{{ orgToEditCredits?.name }}</p>
-                </div>
 
+              <!-- Header -->
+              <div class="admin-orgs__modal-header">
+                <button
+                  class="admin-orgs__modal-close"
+                  @click="handleOrgCreditDialogClose"
+                  :disabled="updatingOrgCreditsId !== null"
+                  title="Close"
+                >
+                  <X :size="18" />
+                </button>
+                <div class="admin-orgs__modal-icon">
+                  <CreditCard :size="24" />
+                </div>
+                <h2 class="admin-orgs__modal-title">Set Organization Credits</h2>
+                <p class="admin-orgs__modal-subtitle">{{ orgToEditCredits?.name }}</p>
+              </div>
+
+              <!-- Content -->
+              <div class="admin-orgs__modal-content">
                 <form class="admin-orgs__modal-form" @submit.prevent="updateOrgCredits">
                   <div v-if="orgToEditCredits?.credits" class="admin-orgs__modal-balance">
                     <p class="admin-orgs__modal-balance-label">Current Balance</p>
@@ -184,30 +196,31 @@
                   </div>
 
                   <div v-if="orgCreditError" class="admin-orgs__modal-error">
-                    <p>{{ orgCreditError }}</p>
-                  </div>
-
-                  <div class="admin-orgs__modal-actions">
-                    <button
-                      type="button"
-                      class="admin-orgs__modal-btn admin-orgs__modal-btn--secondary"
-                      @click="handleOrgCreditDialogClose"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      class="admin-orgs__modal-btn admin-orgs__modal-btn--primary"
-                      :disabled="updatingOrgCreditsId !== null"
-                    >
-                      <Loader2
-                        v-if="updatingOrgCreditsId !== null"
-                        class="admin-orgs__modal-btn-icon admin-orgs__modal-btn-icon--spin"
-                      />
-                      {{ updatingOrgCreditsId !== null ? 'Saving...' : 'Save Credits' }}
-                    </button>
+                    <AlertCircle :size="16" />
+                    <p class="admin-orgs__modal-error-text">{{ orgCreditError }}</p>
                   </div>
                 </form>
+              </div>
+
+              <!-- Footer -->
+              <div class="admin-orgs__modal-footer">
+                <button
+                  type="button"
+                  class="admin-orgs__modal-btn admin-orgs__modal-btn--secondary"
+                  :disabled="updatingOrgCreditsId !== null"
+                  @click="handleOrgCreditDialogClose"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  class="admin-orgs__modal-btn admin-orgs__modal-btn--primary"
+                  :disabled="updatingOrgCreditsId !== null"
+                  @click="updateOrgCredits"
+                >
+                  <Loader2 v-if="updatingOrgCreditsId !== null" :size="16" class="admin-orgs__modal-spinner" />
+                  {{ updatingOrgCreditsId !== null ? 'Saving...' : 'Save Credits' }}
+                </button>
               </div>
             </div>
           </Transition>
@@ -219,7 +232,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
-  import { Building2, RefreshCw, Loader2, CreditCard, Users } from 'lucide-vue-next';
+  import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import api from '@/services/api';
 
@@ -685,59 +698,87 @@
     color: white;
   }
 
-  /* Modal Styles */
+  /* ===== Modal Overlay ===== */
   .admin-orgs__modal-backdrop {
     position: fixed;
     inset: 0;
     background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 50;
+    z-index: 9999;
   }
 
+  /* ===== Modal Container ===== */
   .admin-orgs__modal {
-    background: linear-gradient(to bottom, rgb(24, 24, 27), rgb(9, 9, 11));
-    border-radius: 16px;
-    max-width: 28rem;
-    width: calc(100% - 1.5rem);
-    margin: 0.75rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    overflow: hidden;
-  }
-
-  .admin-orgs__modal-accent {
-    height: 4px;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
     width: 100%;
-    background: linear-gradient(to right, #22c55e, #10b981, #14b8a6);
+    max-width: 480px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   }
 
-  .admin-orgs__modal-content {
-    padding: 1.25rem 1.5rem 2rem;
+  /* ===== Accent Bar ===== */
+  .admin-orgs__modal-accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
   }
 
+  /* ===== Header ===== */
   .admin-orgs__modal-header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
     text-align: center;
-    margin-bottom: 1.5rem;
+  }
+
+  .admin-orgs__modal-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .admin-orgs__modal-close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .admin-orgs__modal-close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .admin-orgs__modal-icon {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
+    width: 52px;
+    height: 52px;
     border-radius: 12px;
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
-    border: 1px solid rgba(34, 197, 94, 0.3);
-    margin-bottom: 1rem;
-  }
-
-  .admin-orgs__modal-icon-svg {
-    width: 24px;
-    height: 24px;
-    color: #34d399;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
   }
 
   .admin-orgs__modal-title {
@@ -745,14 +786,36 @@
     font-weight: 700;
     color: var(--sidebar-text);
     margin: 0;
+    letter-spacing: -0.02em;
   }
 
   .admin-orgs__modal-subtitle {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
     margin: 0.25rem 0 0;
   }
 
+  /* ===== Content Area ===== */
+  .admin-orgs__modal-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .admin-orgs__modal-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .admin-orgs__modal-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .admin-orgs__modal-content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Form ===== */
   .admin-orgs__modal-form {
     display: flex;
     flex-direction: column;
@@ -760,16 +823,19 @@
   }
 
   .admin-orgs__modal-balance {
-    padding: 0.75rem 1rem;
-    background-color: rgba(24, 24, 27, 0.8);
+    padding: 0.875rem;
+    background-color: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 8px;
   }
 
   .admin-orgs__modal-balance-label {
     font-size: 0.75rem;
+    font-weight: 500;
     color: var(--sidebar-text-muted);
     margin: 0 0 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
   }
 
   .admin-orgs__modal-balance-row {
@@ -784,18 +850,19 @@
 
   .admin-orgs__modal-balance-value {
     margin-left: 0.5rem;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--sidebar-text);
   }
 
   .admin-orgs__modal-balance-value--muted {
-    color: var(--sidebar-text);
+    color: var(--sidebar-text-muted);
   }
 
+  /* ===== Form Field ===== */
   .admin-orgs__modal-field {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: 0.5rem;
   }
 
   .admin-orgs__modal-label {
@@ -805,57 +872,72 @@
   }
 
   .admin-orgs__modal-input {
-    padding: 0.625rem 0.75rem;
-    background-color: rgba(24, 24, 27, 0.8);
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
     border-radius: 8px;
     color: var(--sidebar-text);
-    font-size: 0.875rem;
     transition: all 150ms ease;
-  }
-
-  .admin-orgs__modal-input:focus {
-    outline: none;
-    border-color: rgba(34, 197, 94, 0.5);
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
   }
 
   .admin-orgs__modal-input::placeholder {
     color: var(--sidebar-text-muted);
+    opacity: 0.6;
   }
 
+  .admin-orgs__modal-input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  /* ===== Error Alert ===== */
   .admin-orgs__modal-error {
-    padding: 0.75rem;
-    background-color: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
     border-radius: 8px;
-  }
-
-  .admin-orgs__modal-error p {
-    margin: 0;
-    font-size: 0.875rem;
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
     color: #f87171;
   }
 
-  .admin-orgs__modal-actions {
-    display: flex;
-    gap: 0.75rem;
-    padding-top: 0.5rem;
+  .admin-orgs__modal-error-text {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    margin: 0;
   }
 
+  /* ===== Footer ===== */
+  .admin-orgs__modal-footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
   .admin-orgs__modal-btn {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.625rem 1rem;
-    border-radius: 10px;
+    padding: 0.75rem 1rem;
     font-size: 0.875rem;
     font-weight: 600;
+    border-radius: 8px;
+    border: none;
     cursor: pointer;
     transition: all 150ms ease;
-    border: none;
+  }
+
+  .admin-orgs__modal-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .admin-orgs__modal-btn--secondary {
@@ -864,13 +946,13 @@
     border: 1px solid var(--sidebar-border);
   }
 
-  .admin-orgs__modal-btn--secondary:hover {
-    background-color: rgba(63, 63, 70, 1);
-    color: white;
+  .admin-orgs__modal-btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   .admin-orgs__modal-btn--primary {
-    background: linear-gradient(to right, #16a34a, #059669);
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
     color: white;
   }
 
@@ -878,29 +960,21 @@
     opacity: 0.9;
   }
 
-  .admin-orgs__modal-btn--primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .admin-orgs__modal-spinner {
+    animation: spin 0.8s linear infinite;
   }
 
-  .admin-orgs__modal-btn-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  .admin-orgs__modal-btn-icon--spin {
-    animation: spin 1s linear infinite;
-  }
-
+  /* ===== Animations ===== */
   @keyframes spin {
     to {
       transform: rotate(360deg);
     }
   }
 
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -909,16 +983,16 @@
   }
 
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {

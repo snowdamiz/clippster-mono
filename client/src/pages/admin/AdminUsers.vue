@@ -252,19 +252,31 @@
       <Transition name="modal">
         <div v-if="showCreditDialog" class="admin-users__modal-backdrop" @click.self="handleCreditDialogClose">
           <Transition name="dialog" appear>
-            <div class="admin-users__modal">
+            <div v-if="showCreditDialog" class="admin-users__modal" role="dialog" aria-modal="true">
+              <!-- Accent bar -->
               <div class="admin-users__modal-accent"></div>
-              <div class="admin-users__modal-content">
-                <div class="admin-users__modal-header">
-                  <div class="admin-users__modal-icon">
-                    <CreditCard class="admin-users__modal-icon-svg" />
-                  </div>
-                  <h2 class="admin-users__modal-title">Add Credits</h2>
-                  <p class="admin-users__modal-subtitle">
-                    {{ userToEditCredits ? getUserDisplayName(userToEditCredits) : '' }}
-                  </p>
-                </div>
 
+              <!-- Header -->
+              <div class="admin-users__modal-header">
+                <button
+                  class="admin-users__modal-close"
+                  @click="handleCreditDialogClose"
+                  :disabled="updatingCreditsUserId !== null"
+                  title="Close"
+                >
+                  <X :size="18" />
+                </button>
+                <div class="admin-users__modal-icon">
+                  <CreditCard :size="24" />
+                </div>
+                <h2 class="admin-users__modal-title">Add Credits</h2>
+                <p class="admin-users__modal-subtitle">
+                  {{ userToEditCredits ? getUserDisplayName(userToEditCredits) : '' }}
+                </p>
+              </div>
+
+              <!-- Content -->
+              <div class="admin-users__modal-content">
                 <form class="admin-users__modal-form" @submit.prevent="updateUserCredits">
                   <div v-if="userToEditCredits?.credits" class="admin-users__modal-balance">
                     <p class="admin-users__modal-balance-label">Current Balance</p>
@@ -315,31 +327,31 @@
                     </span>
                   </div>
 
-                  <div v-if="creditError" class="admin-users__modal-error">
-                    <p>{{ creditError }}</p>
-                  </div>
-
-                  <div class="admin-users__modal-actions">
-                    <button
-                      type="button"
-                      class="admin-users__modal-btn admin-users__modal-btn--secondary"
-                      @click="handleCreditDialogClose"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      class="admin-users__modal-btn admin-users__modal-btn--primary"
-                      :disabled="updatingCreditsUserId !== null || !creditForm.hours_to_add"
-                    >
-                      <Loader2
-                        v-if="updatingCreditsUserId !== null"
-                        class="admin-users__modal-btn-icon admin-users__modal-btn-icon--spin"
-                      />
-                      {{ updatingCreditsUserId !== null ? 'Adding...' : 'Add Credits' }}
-                    </button>
+                  <div v-if="creditError" class="admin-users__modal-alert admin-users__modal-alert--error">
+                    <AlertCircle :size="16" />
+                    <p class="admin-users__modal-alert-text">{{ creditError }}</p>
                   </div>
                 </form>
+              </div>
+
+              <!-- Footer -->
+              <div class="admin-users__modal-footer">
+                <button
+                  type="button"
+                  class="admin-users__modal-btn admin-users__modal-btn--secondary"
+                  :disabled="updatingCreditsUserId !== null"
+                  @click="handleCreditDialogClose"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="admin-users__modal-btn admin-users__modal-btn--primary"
+                  :disabled="updatingCreditsUserId !== null || !creditForm.hours_to_add"
+                  @click="updateUserCredits"
+                >
+                  <Loader2 v-if="updatingCreditsUserId !== null" :size="16" class="admin-users__modal-spinner" />
+                  {{ updatingCreditsUserId !== null ? 'Adding...' : 'Add Credits' }}
+                </button>
               </div>
             </div>
           </Transition>
@@ -356,12 +368,20 @@
           @click.self="handleSubscriptionDialogClose"
         >
           <Transition name="dialog" appear>
-            <div class="admin-users__modal admin-users__modal--wide">
-              <div class="admin-users__modal-accent admin-users__modal-accent--blue"></div>
+            <div
+              v-if="showSubscriptionDialog"
+              class="admin-users__modal admin-users__modal--wide"
+              role="dialog"
+              aria-modal="true"
+            >
+              <!-- Accent bar -->
+              <div class="admin-users__modal-accent"></div>
+
+              <!-- Header -->
               <div class="admin-users__subscription-header">
                 <div class="admin-users__subscription-header-info">
                   <div class="admin-users__subscription-header-icon">
-                    <Layers class="admin-users__subscription-header-icon-svg" />
+                    <Layers :size="20" />
                   </div>
                   <div>
                     <h2 class="admin-users__subscription-header-title">Subscription Management</h2>
@@ -370,8 +390,13 @@
                     </p>
                   </div>
                 </div>
-                <button class="admin-users__subscription-close" @click="handleSubscriptionDialogClose">
-                  <X class="admin-users__subscription-close-icon" />
+                <button
+                  class="admin-users__subscription-close"
+                  :disabled="updatingSubscriptionUserId !== null"
+                  @click="handleSubscriptionDialogClose"
+                  title="Close"
+                >
+                  <X :size="18" />
                 </button>
               </div>
 
@@ -438,13 +463,14 @@
                         Grant Credits
                       </label>
                       <button
-                        class="admin-users__subscription-btn admin-users__subscription-btn--blue"
+                        class="admin-users__subscription-btn admin-users__subscription-btn--teal"
                         :disabled="updatingSubscriptionUserId !== null"
                         @click="grantSubscription"
                       >
                         <Loader2
                           v-if="updatingSubscriptionUserId !== null"
-                          class="admin-users__subscription-btn-icon admin-users__subscription-btn-icon--spin"
+                          :size="16"
+                          class="admin-users__subscription-spinner"
                         />
                         Grant
                       </button>
@@ -472,13 +498,14 @@
                         Grant Credits
                       </label>
                       <button
-                        class="admin-users__subscription-btn admin-users__subscription-btn--green"
+                        class="admin-users__subscription-btn admin-users__subscription-btn--teal"
                         :disabled="updatingSubscriptionUserId !== null"
                         @click="extendSubscription"
                       >
                         <Loader2
                           v-if="updatingSubscriptionUserId !== null"
-                          class="admin-users__subscription-btn-icon admin-users__subscription-btn-icon--spin"
+                          :size="16"
+                          class="admin-users__subscription-spinner"
                         />
                         Extend
                       </button>
@@ -504,13 +531,14 @@
                         Grant Credits
                       </label>
                       <button
-                        class="admin-users__subscription-btn admin-users__subscription-btn--purple"
+                        class="admin-users__subscription-btn admin-users__subscription-btn--teal"
                         :disabled="updatingSubscriptionUserId !== null"
                         @click="changeSubscriptionTier"
                       >
                         <Loader2
                           v-if="updatingSubscriptionUserId !== null"
-                          class="admin-users__subscription-btn-icon admin-users__subscription-btn-icon--spin"
+                          :size="16"
+                          class="admin-users__subscription-spinner"
                         />
                         Change
                       </button>
@@ -573,8 +601,9 @@
                 </div>
 
                 <!-- Error Display -->
-                <div v-if="subscriptionError" class="admin-users__modal-error">
-                  <p>{{ subscriptionError }}</p>
+                <div v-if="subscriptionError" class="admin-users__modal-alert admin-users__modal-alert--error">
+                  <AlertCircle :size="16" />
+                  <p class="admin-users__modal-alert-text">{{ subscriptionError }}</p>
                 </div>
               </div>
             </div>
@@ -591,6 +620,7 @@
       :item-name="userToEditSubscription ? getUserDisplayName(userToEditSubscription) : ''"
       suffix="?"
       confirm-text="Cancel Subscription"
+      variant="destructive"
       @close="handleCancelSubscriptionDialogClose"
       @confirm="cancelSubscriptionConfirmed"
     />
@@ -604,6 +634,7 @@
     RefreshCw,
     Loader2,
     AlertTriangle,
+    AlertCircle,
     Copy,
     Shield,
     User,
@@ -1625,70 +1656,92 @@
     border-top: 1px solid var(--sidebar-border);
   }
 
-  /* ===== Modal ===== */
+  /* ===== Modal Overlay ===== */
   .admin-users__modal-backdrop {
     position: fixed;
     inset: 0;
     background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 50;
+    z-index: 9999;
   }
 
+  /* ===== Modal Container ===== */
   .admin-users__modal {
-    background: linear-gradient(to bottom, rgb(24, 24, 27), rgb(9, 9, 11));
-    border-radius: 16px;
-    max-width: 28rem;
-    width: calc(100% - 1.5rem);
-    margin: 0.75rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 480px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   }
 
   .admin-users__modal--wide {
     max-width: 42rem;
     max-height: 90vh;
+  }
+
+  /* ===== Accent Bar ===== */
+  .admin-users__modal-accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .admin-users__modal-header {
+    position: relative;
     display: flex;
     flex-direction: column;
-  }
-
-  .admin-users__modal-accent {
-    height: 4px;
-    width: 100%;
-    background: linear-gradient(to right, #22c55e, #10b981, #14b8a6);
-  }
-
-  .admin-users__modal-accent--blue {
-    background: linear-gradient(to right, #3b82f6, #06b6d4, #14b8a6);
-  }
-
-  .admin-users__modal-content {
-    padding: 1.25rem 1.5rem 2rem;
-  }
-
-  .admin-users__modal-header {
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
     text-align: center;
-    margin-bottom: 1.5rem;
+  }
+
+  .admin-users__modal-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .admin-users__modal-close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .admin-users__modal-close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .admin-users__modal-icon {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
+    width: 52px;
+    height: 52px;
     border-radius: 12px;
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
-    border: 1px solid rgba(34, 197, 94, 0.3);
-    margin-bottom: 1rem;
-  }
-
-  .admin-users__modal-icon-svg {
-    width: 24px;
-    height: 24px;
-    color: #34d399;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
   }
 
   .admin-users__modal-title {
@@ -1696,15 +1749,36 @@
     font-weight: 700;
     color: var(--sidebar-text);
     margin: 0;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
   }
 
   .admin-users__modal-subtitle {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
     margin: 0.25rem 0 0;
   }
 
+  /* ===== Content Area ===== */
+  .admin-users__modal-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .admin-users__modal-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .admin-users__modal-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .admin-users__modal-content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Form ===== */
   .admin-users__modal-form {
     display: flex;
     flex-direction: column;
@@ -1712,16 +1786,19 @@
   }
 
   .admin-users__modal-balance {
-    padding: 0.75rem 1rem;
-    background-color: rgba(24, 24, 27, 0.8);
+    padding: 0.875rem;
+    background-color: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 8px;
   }
 
   .admin-users__modal-balance-label {
     font-size: 0.75rem;
+    font-weight: 500;
     color: var(--sidebar-text-muted);
     margin: 0 0 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
   }
 
   .admin-users__modal-balance-row {
@@ -1736,18 +1813,19 @@
 
   .admin-users__modal-balance-value {
     margin-left: 0.5rem;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--sidebar-text);
   }
 
   .admin-users__modal-balance-value--muted {
-    color: var(--sidebar-text);
+    color: var(--sidebar-text-muted);
   }
 
+  /* ===== Form Field ===== */
   .admin-users__modal-field {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: 0.5rem;
   }
 
   .admin-users__modal-label {
@@ -1757,77 +1835,96 @@
   }
 
   .admin-users__modal-input {
-    padding: 0.625rem 0.75rem;
-    background-color: rgba(24, 24, 27, 0.8);
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
     border-radius: 8px;
     color: var(--sidebar-text);
-    font-size: 0.875rem;
     transition: all 150ms ease;
-  }
-
-  .admin-users__modal-input:focus {
-    outline: none;
-    border-color: rgba(34, 197, 94, 0.5);
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
   }
 
   .admin-users__modal-input::placeholder {
     color: var(--sidebar-text-muted);
+    opacity: 0.6;
   }
 
+  .admin-users__modal-input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  /* ===== Preview Box ===== */
   .admin-users__modal-preview {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem;
-    background-color: rgba(34, 197, 94, 0.1);
-    border: 1px solid rgba(34, 197, 94, 0.3);
+    padding: 0.875rem;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
     border-radius: 8px;
     font-size: 0.875rem;
   }
 
   .admin-users__modal-preview-label {
-    color: #86efac;
+    color: rgba(6, 182, 212, 0.8);
   }
 
   .admin-users__modal-preview-value {
     font-weight: 600;
-    color: #34d399;
+    color: var(--sidebar-accent);
   }
 
-  .admin-users__modal-error {
-    padding: 0.75rem;
-    background-color: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+  /* ===== Alert Box ===== */
+  .admin-users__modal-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
     border-radius: 8px;
   }
 
-  .admin-users__modal-error p {
-    margin: 0;
-    font-size: 0.875rem;
+  .admin-users__modal-alert--error {
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
     color: #f87171;
   }
 
-  .admin-users__modal-actions {
-    display: flex;
-    gap: 0.75rem;
-    padding-top: 0.5rem;
+  .admin-users__modal-alert-text {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    margin: 0;
   }
 
+  /* ===== Footer ===== */
+  .admin-users__modal-footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
   .admin-users__modal-btn {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.625rem 1rem;
-    border-radius: 10px;
+    padding: 0.75rem 1rem;
     font-size: 0.875rem;
     font-weight: 600;
+    border-radius: 8px;
+    border: none;
     cursor: pointer;
     transition: all 150ms ease;
-    border: none;
+  }
+
+  .admin-users__modal-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .admin-users__modal-btn--secondary {
@@ -1836,14 +1933,13 @@
     border: 1px solid var(--sidebar-border);
   }
 
-  .admin-users__modal-btn--secondary:hover {
-    background-color: rgba(63, 63, 70, 1);
-    border-color: rgba(82, 82, 91, 1);
-    color: white;
+  .admin-users__modal-btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   .admin-users__modal-btn--primary {
-    background: linear-gradient(to right, #16a34a, #059669);
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
     color: white;
   }
 
@@ -1851,21 +1947,11 @@
     opacity: 0.9;
   }
 
-  .admin-users__modal-btn--primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .admin-users__modal-spinner {
+    animation: spin 0.8s linear infinite;
   }
 
-  .admin-users__modal-btn-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  .admin-users__modal-btn-icon--spin {
-    animation: spin 1s linear infinite;
-  }
-
-  /* ===== Subscription Dialog ===== */
+  /* ===== Subscription Dialog Header ===== */
   .admin-users__subscription-header {
     display: flex;
     align-items: center;
@@ -1889,14 +1975,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-  }
-
-  .admin-users__subscription-header-icon-svg {
-    width: 20px;
-    height: 20px;
-    color: #60a5fa;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
   }
 
   .admin-users__subscription-header-title {
@@ -1913,25 +1993,30 @@
   }
 
   .admin-users__subscription-close {
-    padding: 0.5rem;
-    border-radius: 10px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
     color: var(--sidebar-text-muted);
     background: transparent;
-    border: 1px solid var(--sidebar-border);
+    border: none;
     cursor: pointer;
     transition: all 150ms ease;
   }
 
-  .admin-users__subscription-close:hover {
+  .admin-users__subscription-close:hover:not(:disabled) {
     color: var(--sidebar-text);
     background-color: var(--sidebar-hover);
   }
 
-  .admin-users__subscription-close-icon {
-    width: 20px;
-    height: 20px;
+  .admin-users__subscription-close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
+  /* ===== Subscription Content ===== */
   .admin-users__subscription-content {
     flex: 1;
     padding: 1.25rem 1.5rem;
@@ -1941,18 +2026,31 @@
     gap: 1.25rem;
   }
 
+  .admin-users__subscription-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .admin-users__subscription-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .admin-users__subscription-content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
   .admin-users__subscription-current {
     padding: 1rem;
-    background-color: rgba(24, 24, 27, 0.8);
+    background-color: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 8px;
   }
 
   .admin-users__subscription-section {
     padding: 1rem;
     background-color: rgba(24, 24, 27, 0.6);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 8px;
   }
 
   .admin-users__subscription-section--danger {
@@ -2071,13 +2169,14 @@
     border-radius: 8px;
     color: var(--sidebar-text);
     font-size: 0.875rem;
+    transition: all 150ms ease;
   }
 
   .admin-users__subscription-select:focus,
   .admin-users__subscription-input:focus {
     outline: none;
-    border-color: rgba(59, 130, 246, 0.5);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
   }
 
   .admin-users__subscription-form-actions {
@@ -2122,33 +2221,20 @@
     cursor: not-allowed;
   }
 
-  .admin-users__subscription-btn--blue {
-    background: linear-gradient(to right, #2563eb, #0891b2);
-  }
-
-  .admin-users__subscription-btn--green {
-    background: linear-gradient(to right, #16a34a, #059669);
-  }
-
-  .admin-users__subscription-btn--purple {
-    background: linear-gradient(to right, #9333ea, #6366f1);
+  .admin-users__subscription-btn--teal {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
   }
 
   .admin-users__subscription-btn--red {
-    background: linear-gradient(to right, #dc2626, #db2777);
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   }
 
   .admin-users__subscription-btn:hover:not(:disabled) {
     opacity: 0.9;
   }
 
-  .admin-users__subscription-btn-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  .admin-users__subscription-btn-icon--spin {
-    animation: spin 1s linear infinite;
+  .admin-users__subscription-spinner {
+    animation: spin 0.8s linear infinite;
   }
 
   .admin-users__subscription-history-wrapper {
