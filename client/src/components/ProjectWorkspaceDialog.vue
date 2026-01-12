@@ -167,7 +167,7 @@
     @confirm="onDetectClipsConfirmed"
   />
 
-  <!-- Clip Editor Dialog -->
+  <!-- Clip Editor Dialog (always in video editor mode) -->
   <ClipEditorDialog
     v-model="showClipEditorDialog"
     :clip-id="clipEditorClipId"
@@ -176,6 +176,9 @@
     :clip-end-time="clipEditorEndTime"
     :clip-title="clipEditorTitle"
     :clip-segments="clipEditorSegments"
+    :editor-mode="true"
+    :editor-project-id="clipEditorProjectId"
+    :editor-project-name="clipEditorProjectName"
     :creator-watermark-id="watermarkSettings.enabled ? watermarkSettings.watermarkId : null"
     :creator-watermark-settings="
       watermarkSettings.enabled && watermarkSettings.perRatioSettings
@@ -185,6 +188,16 @@
     :creator-default-intro="creatorDefaultIntro"
     :creator-default-outro="creatorDefaultOutro"
     @save="onClipEditorSave"
+    @editor-save="onClipEditorSave"
+  />
+
+  <!-- Existing Project Dialog -->
+  <ExistingProjectDialog
+    :show="showExistingProjectDialog"
+    :existing-project="existingProjectForClip"
+    @open-existing="onOpenExistingProject"
+    @create-new="onCreateNewProject"
+    @cancel="onExistingProjectCancel"
   />
 </template>
 
@@ -206,6 +219,7 @@
     getOrCreateManualSession,
   } from '@/services/database';
   import { getWatermarkImage } from '@/services/database/watermarks';
+  import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type { WatermarkSettings } from '@/types';
@@ -217,6 +231,8 @@
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
   import ClipEditorDialog from './clip-editor/ClipEditorDialog.vue';
+  import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
+  import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
@@ -269,6 +285,21 @@
   const clipEditorEndTime = ref(0);
   const clipEditorTitle = ref('');
   const clipEditorSegments = ref<{ start_time: number; end_time: number }[]>([]);
+  // Video editor mode state (always true now - clip editor mode is removed)
+  const clipEditorProjectId = ref<string | null>(null);
+  const clipEditorProjectName = ref('');
+  const isCreatingProject = ref(false);
+
+  // Existing project dialog state (shown when clip has been edited before)
+  const showExistingProjectDialog = ref(false);
+  const existingProjectForClip = ref<VideoEditorProject | null>(null);
+  const pendingClipToEdit = ref<{
+    clipId: string;
+    startTime: number;
+    endTime: number;
+    title: string;
+    segments: { start_time: number; end_time: number }[];
+  } | null>(null);
 
   // Segmented playback tracking
   const currentlyPlayingClipId = ref<string | null>(null);
@@ -1638,7 +1669,7 @@
   }
 
   // Function to open the clip editor dialog
-  function onEditClip(clipId: string) {
+  async function onEditClip(clipId: string) {
     // Find the clip in our local data
     const clip = timelineClips.value.find((c: any) => c.id === clipId);
     if (!clip) {
@@ -1655,39 +1686,150 @@
       endTime = Math.max(...clip.segments.map((s: any) => s.end_time));
     }
 
-    // Set the editor state
-    clipEditorClipId.value = clipId;
-    clipEditorStartTime.value = startTime;
-    clipEditorEndTime.value = endTime;
-    clipEditorTitle.value = clip.title || 'Untitled Clip';
-
-    // Pass the clip's segments if it has multiple segments
+    // Build segments array
+    let segments: { start_time: number; end_time: number }[];
     if (clip.segments && clip.segments.length > 0) {
-      clipEditorSegments.value = clip.segments.map((s: any) => ({
+      segments = clip.segments.map((s: any) => ({
         start_time: s.start_time,
         end_time: s.end_time,
       }));
     } else {
-      // Single segment clip - create a segment from the clip's start/end times
-      clipEditorSegments.value = [
-        {
-          start_time: startTime,
-          end_time: endTime,
-        },
-      ];
+      segments = [{ start_time: startTime, end_time: endTime }];
     }
+
+    const clipTitle = clip.title || 'Untitled Clip';
+
+    // Check if there are existing video editor projects for this clip
+    try {
+      const existingProjects = await getVideoEditorProjectsForClip(clipId);
+
+      if (existingProjects.length > 0) {
+        // Show the existing project dialog
+        existingProjectForClip.value = existingProjects[0]; // Use most recently updated
+        pendingClipToEdit.value = {
+          clipId,
+          startTime,
+          endTime,
+          title: clipTitle,
+          segments,
+        };
+        showExistingProjectDialog.value = true;
+        return;
+      }
+    } catch (error) {
+      console.warn('[ProjectWorkspaceDialog] Failed to check for existing projects:', error);
+      // Continue to create a new project
+    }
+
+    // No existing project - create a new video editor project
+    await openClipInNewProject(clipId, clipTitle, startTime, endTime, segments);
+  }
+
+  // Open clip in a new video editor project
+  async function openClipInNewProject(
+    clipId: string,
+    clipTitle: string,
+    startTime: number,
+    endTime: number,
+    segments: { start_time: number; end_time: number }[]
+  ) {
+    isCreatingProject.value = true;
+
+    try {
+      const result = await createVideoEditorProjectFromClip({
+        clipId,
+        clipTitle,
+        videoSrc: videoSrc.value,
+        clipStartTime: startTime,
+        clipEndTime: endTime,
+        clipSegments: segments,
+      });
+
+      // Set the editor state
+      clipEditorClipId.value = clipId;
+      clipEditorStartTime.value = startTime;
+      clipEditorEndTime.value = endTime;
+      clipEditorTitle.value = clipTitle;
+      clipEditorSegments.value = segments;
+      clipEditorProjectId.value = result.projectId;
+      clipEditorProjectName.value = result.projectName;
+
+      // Close the workspace dialog first, then open the clip editor
+      close();
+
+      // Open the clip editor dialog in editor mode
+      nextTick(() => {
+        showClipEditorDialog.value = true;
+      });
+
+      console.log(
+        `[ProjectWorkspaceDialog] Opening clip editor for "${clipTitle}" in video project ${result.projectId}`
+      );
+    } catch (error) {
+      console.error('[ProjectWorkspaceDialog] Failed to create video editor project:', error);
+      showError('Failed to Open Editor', 'Could not create video editor project. Please try again.');
+    } finally {
+      isCreatingProject.value = false;
+    }
+  }
+
+  // Open clip in an existing video editor project
+  async function openClipInExistingProject(project: VideoEditorProject) {
+    const pending = pendingClipToEdit.value;
+    if (!pending) return;
+
+    // Set the editor state
+    clipEditorClipId.value = pending.clipId;
+    clipEditorStartTime.value = pending.startTime;
+    clipEditorEndTime.value = pending.endTime;
+    clipEditorTitle.value = pending.title;
+    clipEditorSegments.value = pending.segments;
+    clipEditorProjectId.value = project.id;
+    clipEditorProjectName.value = project.name;
+
+    // Clear pending state
+    pendingClipToEdit.value = null;
+    showExistingProjectDialog.value = false;
+    existingProjectForClip.value = null;
 
     // Close the workspace dialog first, then open the clip editor
     close();
 
-    // Open the clip editor dialog (after a small delay to allow workspace dialog to close)
+    // Open the clip editor dialog in editor mode
     nextTick(() => {
       showClipEditorDialog.value = true;
     });
 
     console.log(
-      `[ProjectWorkspaceDialog] Opening clip editor for "${clip.title}" with ${clipEditorSegments.value.length} segments`
+      `[ProjectWorkspaceDialog] Opening clip editor for "${pending.title}" in existing project ${project.id}`
     );
+  }
+
+  // Handle existing project dialog - open existing
+  function onOpenExistingProject() {
+    if (existingProjectForClip.value) {
+      openClipInExistingProject(existingProjectForClip.value);
+    }
+  }
+
+  // Handle existing project dialog - create new
+  async function onCreateNewProject() {
+    const pending = pendingClipToEdit.value;
+    if (!pending) return;
+
+    showExistingProjectDialog.value = false;
+    existingProjectForClip.value = null;
+
+    await openClipInNewProject(pending.clipId, pending.title, pending.startTime, pending.endTime, pending.segments);
+
+    pendingClipToEdit.value = null;
+  }
+
+  // Handle existing project dialog - cancel
+  function onExistingProjectCancel() {
+    showExistingProjectDialog.value = false;
+    existingProjectForClip.value = null;
+    pendingClipToEdit.value = null;
   }
 
   // Function to handle clip editor save
