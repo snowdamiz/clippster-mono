@@ -220,8 +220,11 @@
                     <div v-if="hasCompletedBuilds(clip)" class="relative" data-action-menu>
                       <button
                         :ref="(el) => setDropdownButtonRef(el, clip.id)"
-                        class="p-1.5 hover:bg-green-500/15 rounded-md transition-colors text-green-500/70 hover:text-green-400 flex items-center gap-0.5"
-                        :class="{ 'bg-green-500/15 text-green-400': openDownloadDropdownId === clip.id }"
+                        class="p-1.5 hover:bg-emerald-500/12 rounded-md transition-all text-emerald-500/70 hover:text-emerald-400 flex items-center gap-0.5"
+                        :class="{
+                          'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30':
+                            openDownloadDropdownId === clip.id,
+                        }"
                         title="Download clip"
                         @click.stop="toggleDownloadDropdown(clip.id)"
                       >
@@ -233,14 +236,12 @@
                       <Teleport to="body">
                         <div
                           v-if="openDownloadDropdownId === clip.id"
-                          class="fixed z-[9999] w-[220px] bg-popover/95 backdrop-blur-md border border-border/60 rounded-lg shadow-xl shadow-black/20 py-1.5 overflow-hidden"
+                          class="fixed z-[9999] w-[220px] bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 overflow-hidden"
                           :style="getDropdownPosition(clip.id)"
                           data-action-menu
                           @click.stop
                         >
-                          <div
-                            class="px-3 py-1.5 text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider"
-                          >
+                          <div class="px-3 py-1.5 text-[10px] font-medium text-white/40 uppercase tracking-wider">
                             Downloads ({{ getDownloadableFilesCount(clip) }})
                           </div>
 
@@ -248,19 +249,19 @@
                           <button
                             v-for="(file, fileIdx) in getDownloadableFiles(clip)"
                             :key="`${file.build.id}-${fileIdx}`"
-                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-foreground/90 hover:bg-green-500/15 hover:text-green-400 transition-colors"
+                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-white/80 hover:bg-emerald-500/10 hover:text-emerald-400 transition-colors rounded-md mx-0"
                             @click.stop="
                               onSaveFile(file.filePath);
                               closeDownloadDropdown();
                             "
                           >
-                            <DownloadIcon class="h-4 w-4 text-green-500/70 flex-shrink-0" />
+                            <DownloadIcon class="h-4 w-4 text-emerald-500/60 flex-shrink-0" />
                             <div class="flex-1 min-w-0 text-left">
                               <div class="text-xs font-medium truncate flex items-center gap-1.5">
-                                <span v-if="file.aspectRatio" class="text-green-400/80">{{ file.aspectRatio }}</span>
-                                <span class="text-muted-foreground/60">#{{ file.build.build_number }}</span>
+                                <span v-if="file.aspectRatio" class="text-emerald-400">{{ file.aspectRatio }}</span>
+                                <span class="text-white/40">#{{ file.build.build_number }}</span>
                               </div>
-                              <div v-if="file.build.completed_at" class="text-[10px] text-muted-foreground/50 mt-0.5">
+                              <div v-if="file.build.completed_at" class="text-[10px] text-white/35 mt-0.5">
                                 {{ formatBuildDate(file.build.completed_at) }}
                               </div>
                             </div>
@@ -269,16 +270,16 @@
                           <!-- Legacy download fallback -->
                           <button
                             v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
-                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-foreground/90 hover:bg-green-500/15 hover:text-green-400 transition-colors"
+                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-white/80 hover:bg-emerald-500/10 hover:text-emerald-400 transition-colors rounded-md mx-0"
                             @click.stop="
                               onSaveBuiltClip(clip);
                               closeDownloadDropdown();
                             "
                           >
-                            <DownloadIcon class="h-4 w-4 text-green-500/70 flex-shrink-0" />
+                            <DownloadIcon class="h-4 w-4 text-emerald-500/60 flex-shrink-0" />
                             <div class="flex-1 min-w-0 text-left">
                               <div class="text-xs font-medium">Download</div>
-                              <div v-if="clip.built_at" class="text-[10px] text-muted-foreground/50 mt-0.5">
+                              <div v-if="clip.built_at" class="text-[10px] text-white/35 mt-0.5">
                                 {{ formatBuildDate(clip.built_at) }}
                               </div>
                             </div>
@@ -291,8 +292,8 @@
                     <div class="relative" data-action-menu>
                       <button
                         :ref="(el) => setActionMenuButtonRef(el, clip.id)"
-                        class="p-1.5 hover:bg-white/10 rounded-md transition-colors text-foreground/50 hover:text-foreground"
-                        :class="{ 'bg-white/10 text-foreground': openActionMenuId === clip.id }"
+                        class="p-1.5 hover:bg-white/8 rounded-md transition-all text-white/40 hover:text-white/70"
+                        :class="{ 'bg-white/10 text-white/80 ring-1 ring-white/10': openActionMenuId === clip.id }"
                         title="Clip actions"
                         @click.stop="toggleActionMenu(clip.id)"
                       >
@@ -303,56 +304,56 @@
                       <Teleport to="body">
                         <div
                           v-if="openActionMenuId === clip.id"
-                          class="fixed z-[9999] w-[200px] bg-popover/95 backdrop-blur-md border border-border/60 rounded-lg shadow-xl shadow-black/20 py-1.5 overflow-hidden"
+                          class="fixed z-[9999] w-[200px] bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 overflow-hidden"
                           :style="getActionMenuPosition(clip.id)"
                           data-action-menu
                           @click.stop
                         >
                           <!-- Edit Clip -->
                           <button
-                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-foreground/90 hover:bg-violet-500/15 hover:text-violet-400 transition-colors"
+                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-white/80 hover:bg-violet-500/12 hover:text-violet-400 transition-colors rounded-md mx-0"
                             @click.stop="
                               onEditClip(clip.id);
                               closeActionMenu();
                             "
                           >
-                            <Edit3 class="h-4 w-4" />
+                            <Edit3 class="h-4 w-4 text-white/50" />
                             <span>Edit Clip</span>
                           </button>
 
                           <!-- Play Clip -->
                           <button
-                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-foreground/90 hover:bg-blue-500/15 hover:text-blue-400 transition-colors"
+                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-white/80 hover:bg-sky-500/12 hover:text-sky-400 transition-colors rounded-md mx-0"
                             @click.stop="
                               onPlayClip(clip);
                               closeActionMenu();
                             "
                           >
-                            <PlayIcon class="h-4 w-4" />
+                            <PlayIcon class="h-4 w-4 text-white/50" />
                             <span>Play Clip</span>
                           </button>
 
                           <!-- Divider -->
-                          <div class="my-1.5 border-t border-border/40"></div>
+                          <div class="h-px bg-white/8 my-1 mx-2"></div>
 
                           <!-- Build Clip -->
                           <button
                             v-if="clip.build_status !== 'building'"
-                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-foreground/90 hover:bg-green-500/15 hover:text-green-400 transition-colors"
+                            class="w-full px-3 py-2 flex items-center gap-3 text-sm text-white/80 hover:bg-emerald-500/12 hover:text-emerald-400 transition-colors rounded-md mx-0"
                             @click.stop="
                               onBuildClip(clip);
                               closeActionMenu();
                             "
                           >
-                            <Hammer class="h-4 w-4" />
+                            <Hammer class="h-4 w-4 text-white/50" />
                             <span>Build Clip</span>
                           </button>
 
                           <!-- Delete (only if not built) -->
                           <template v-if="!hasCompletedBuilds(clip)">
-                            <div class="my-1.5 border-t border-border/40"></div>
+                            <div class="h-px bg-white/8 my-1 mx-2"></div>
                             <button
-                              class="w-full px-3 py-2 flex items-center gap-3 text-sm text-red-400/90 hover:bg-red-500/15 hover:text-red-400 transition-colors"
+                              class="w-full px-3 py-2 flex items-center gap-3 text-sm text-red-400/80 hover:bg-red-500/12 hover:text-red-400 transition-colors rounded-md mx-0"
                               @click.stop="
                                 onDeleteClip(clip.id);
                                 closeActionMenu();
