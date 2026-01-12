@@ -758,12 +758,14 @@ pub async fn build_single_segment_clip_with_settings(
         args.push(encoder.quality_value.clone());
         
         // Add common parameters
+        // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
         args.extend_from_slice(&[
+            "-fps_mode".to_string(), "cfr".to_string(),
             "-r".to_string(), frame_rate.to_string(),
             "-c:a".to_string(), "aac".to_string(),
             "-b:a".to_string(), "192k".to_string(),
             "-pix_fmt".to_string(), "yuv420p".to_string(),
-            "-avoid_negative_ts".to_string(), "1".to_string(),
+            "-avoid_negative_ts".to_string(), "make_zero".to_string(),
             "-y".to_string(),
             segment_file.to_string_lossy().to_string(),
         ]);
@@ -852,7 +854,7 @@ pub async fn build_single_segment_clip_with_settings(
                 "-safe", "0",
                 "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
                 "-c", "copy",
-                "-avoid_negative_ts", "1",
+                "-avoid_negative_ts", "make_zero",
                 "-y",
                 concat_output_path.to_str().ok_or("Invalid output path")?,
             ])
@@ -1031,13 +1033,16 @@ pub async fn build_single_segment_clip_with_settings(
     }
     
     // Add common parameters
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+    // when using input seeking with crop/filter operations
     args.extend_from_slice(&[
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
-        "-avoid_negative_ts".to_string(), "1".to_string(),
+        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
@@ -1206,10 +1211,12 @@ pub async fn build_multi_segment_clip_with_settings(
             }
             
             // Add common parameters
+            // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
             args.extend_from_slice(&[
+                "-fps_mode".to_string(), "cfr".to_string(),
                 "-r".to_string(), frame_rate_str.clone(),
                 "-pix_fmt".to_string(), "yuv420p".to_string(),
-                "-avoid_negative_ts".to_string(), "1".to_string(),
+                "-avoid_negative_ts".to_string(), "make_zero".to_string(),
                 "-y".to_string(),
                 segment_file.to_string_lossy().to_string(),
             ]);
@@ -1320,7 +1327,7 @@ pub async fn build_multi_segment_clip_with_settings(
             "-safe", "0",
             "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
             "-c", "copy",
-            "-avoid_negative_ts", "1",
+            "-avoid_negative_ts", "make_zero",
             "-y",
             concat_output_path.to_str().ok_or("Invalid output path")?,
         ])
@@ -1508,12 +1515,14 @@ pub async fn prepare_intro_outro_for_concat(
     args.push(encoder.quality_value.clone());
     
     // Add common parameters
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
     args.extend_from_slice(&[
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
-        "-avoid_negative_ts".to_string(), "1".to_string(),
+        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
@@ -1763,12 +1772,16 @@ pub async fn build_split_screen_clip(
     }
 
     // Common output parameters
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+    // when using input seeking with complex filter graphs
     args.extend_from_slice(&[
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
+        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
@@ -1932,12 +1945,16 @@ pub async fn build_dynamic_pan_clip(
     }
 
     // Common output parameters
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+    // when using input seeking with complex filter graphs
     args.extend_from_slice(&[
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
+        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
@@ -2150,6 +2167,8 @@ pub async fn build_multi_region_clip(
     let encoder = detect_hardware_encoder(app, quality).await;
 
     // Build FFmpeg args
+    // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+    // when using input seeking with complex filter graphs
     let mut args = vec![
         "-ss".to_string(), format!("{:.3}", start_time),
         "-i".to_string(), video_path.to_string(),
@@ -2158,6 +2177,7 @@ pub async fn build_multi_region_clip(
         "-map".to_string(), map_label.to_string(),
         "-map".to_string(), "0:a?".to_string(), // Map audio if present
         "-c:v".to_string(), encoder.codec.clone(),
+        "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
     ];
 
@@ -2186,7 +2206,9 @@ pub async fn build_multi_region_clip(
         }
     }
 
-    // Output
+    // Output - add avoid_negative_ts to prevent black frames at start
+    args.push("-avoid_negative_ts".to_string());
+    args.push("make_zero".to_string());
     args.push("-y".to_string());
     args.push(output_path.to_string_lossy().to_string());
 
@@ -3049,3 +3071,140 @@ pub async fn apply_clip_watermarks_to_video(
     Ok(())
 }
 
+/// Apply rendered text overlay images to a video file
+/// This handles advanced text overlays that were pre-rendered to PNG (chat bubbles, gradients, glows, etc.)
+pub async fn apply_rendered_text_overlays_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    rendered_overlays: &[(String, super::types::TextOverlaySettings)], // (image_path, overlay_settings)
+    aspect_ratio: &str,
+    quality: &str,
+) -> Result<(), String> {
+    if rendered_overlays.is_empty() {
+        return Ok(());
+    }
+
+    // Get video info for calculating positions
+    let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
+    let video_width = video_info.width as f64;
+    let video_height = video_info.height as f64;
+    
+    // Detect hardware encoder
+    let encoder = detect_hardware_encoder(app, quality).await;
+    
+    // Create temporary output path
+    let temp_output = input_path.with_extension("textimg.mp4");
+    
+    // Build filter complex for text image overlays
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut input_count = 1; // Start from 1 (0 is the main video)
+    let mut overlay_inputs: Vec<String> = Vec::new();
+    
+    // Label the main video
+    filter_parts.push("[0:v]null[base]".to_string());
+    let mut current_label = "base".to_string();
+    
+    // Process each rendered text overlay
+    for (idx, (image_path, overlay)) in rendered_overlays.iter().enumerate() {
+        // Get position for this aspect ratio (fallback to default)
+        let (pos_x_pct, pos_y_pct) = if let Some(ref configs) = overlay.per_ratio_configs {
+            if let Some(config) = configs.get(aspect_ratio) {
+                (config.position.x, config.position.y)
+            } else {
+                (overlay.position_x, overlay.position_y)
+            }
+        } else {
+            (overlay.position_x, overlay.position_y)
+        };
+        
+        // Calculate pixel position (center-anchored)
+        let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
+        let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
+        
+        let text_label = format!("txt{}", idx);
+        let next_label = format!("to{}", idx);
+        
+        // Prepare the text image (ensure RGBA format)
+        let text_filter = format!(
+            "[{}:v]format=rgba[{}]",
+            input_count, text_label
+        );
+        
+        filter_parts.push(text_filter);
+        
+        // Overlay with timing and center-anchor positioning
+        let overlay_filter = format!(
+            "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2):enable='between(t,{:.3},{:.3})'[{}]",
+            current_label,
+            text_label,
+            pos_x,
+            pos_y,
+            overlay.start_time,
+            overlay.end_time,
+            next_label
+        );
+        
+        filter_parts.push(overlay_filter);
+        current_label = next_label;
+        
+        overlay_inputs.push(image_path.clone());
+        input_count += 1;
+    }
+    
+    // If we have no filters, return early
+    if filter_parts.len() <= 1 {
+        return Ok(());
+    }
+    
+    // Build FFmpeg args
+    let mut args = vec![
+        "-i".to_string(), input_path.to_string_lossy().to_string(),
+    ];
+    
+    // Add text image inputs
+    for image_path in &overlay_inputs {
+        args.push("-i".to_string());
+        args.push(image_path.clone());
+    }
+    
+    // Build filter complex string
+    let filter_complex = filter_parts.join(";");
+    
+    args.extend(vec![
+        "-filter_complex".to_string(), filter_complex,
+        "-map".to_string(), format!("[{}]", current_label),
+        "-map".to_string(), "0:a?".to_string(), // Map audio if present
+        "-c:v".to_string(), encoder.codec.clone(),
+    ]);
+    
+    // Add preset if applicable
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+    
+    // Add quality parameter
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+    
+    // Add audio settings
+    args.push("-c:a".to_string());
+    args.push("aac".to_string());
+    args.push("-y".to_string());
+    args.push(temp_output.to_string_lossy().to_string());
+    
+    println!("[Rust] Applying {} rendered text overlays to video", rendered_overlays.len());
+    
+    // Use fallback helper for hardware encoder resilience
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg rendered text overlay failed: {}", e))?;
+    
+    // Replace original with text-overlayed version
+    std::fs::remove_file(input_path)
+        .map_err(|e| format!("Failed to remove original file: {}", e))?;
+    std::fs::rename(&temp_output, input_path)
+        .map_err(|e| format!("Failed to rename text overlay output: {}", e))?;
+    
+    println!("[Rust] Rendered text overlays applied successfully");
+    Ok(())
+}

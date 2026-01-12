@@ -111,6 +111,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { PlusIcon, VideoIcon, PlusCircleIcon } from 'lucide-vue-next';
+  import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
   import type { ManualRegion, ManualRegionRect } from '@/types';
   import { POI_REGION_COLORS } from '@/types';
@@ -147,6 +148,60 @@
   const videoRef = ref<HTMLVideoElement | null>(null);
   const containerWidth = ref(0);
   const containerHeight = ref(0);
+
+  // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
+  let hlsInstance: Hls | null = null;
+
+  function isHlsUrl(url: string | null | undefined): boolean {
+    return !!url && url.includes('.m3u8');
+  }
+
+  function cleanupHls(): void {
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
+    }
+  }
+
+  function setupHlsPlayback(videoEl: HTMLVideoElement, hlsUrl: string): void {
+    cleanupHls();
+    if (Hls.isSupported()) {
+      hlsInstance = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 60,
+      });
+      hlsInstance.loadSource(hlsUrl);
+      hlsInstance.attachMedia(videoEl);
+      hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          console.error('[POISourcePanel] HLS fatal error:', data.type, data.details);
+          cleanupHls();
+        }
+      });
+    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+      videoEl.src = hlsUrl;
+    }
+  }
+
+  // Watch for video URL changes to setup HLS if needed
+  watch(
+    () => props.videoUrl,
+    (newUrl) => {
+      if (newUrl && videoRef.value && isHlsUrl(newUrl)) {
+        setupHlsPlayback(videoRef.value, newUrl);
+      } else if (!isHlsUrl(newUrl)) {
+        cleanupHls();
+      }
+    }
+  );
+
+  // Watch for video element becoming available
+  watch(videoRef, (newElement) => {
+    if (newElement && props.videoUrl && isHlsUrl(props.videoUrl)) {
+      setupHlsPlayback(newElement, props.videoUrl);
+    }
+  });
 
   // Watch for play/pause changes
   watch(
@@ -314,6 +369,7 @@
   });
 
   onUnmounted(() => {
+    cleanupHls();
     if (resizeObserver) {
       resizeObserver.disconnect();
     }

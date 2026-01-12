@@ -128,6 +128,20 @@ export async function getRawVideosByProjectId(projectId: string): Promise<RawVid
   );
 }
 
+/**
+ * Get raw videos that belong to child projects of a parent project.
+ * Used for livestream projects where segments are stored in child projects.
+ */
+export async function getRawVideosByOriginalProjectId(
+  originalProjectId: string
+): Promise<RawVideo[]> {
+  const db = await getDatabase();
+  return await db.select<RawVideo[]>(
+    'SELECT * FROM raw_videos WHERE original_project_id = ? ORDER BY segment_number ASC, created_at ASC',
+    [originalProjectId]
+  );
+}
+
 export async function getRawVideoByPath(filePath: string): Promise<RawVideo | null> {
   const db = await getDatabase();
 

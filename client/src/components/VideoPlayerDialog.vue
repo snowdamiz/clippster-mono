@@ -226,6 +226,7 @@
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
+  import Hls from 'hls.js';
   import type { RawVideo, IntroOutro } from '@/services/database';
   import { X, Loader2, Play, Pause, VolumeX, Volume2, RotateCcw, FolderOpen, Clock } from 'lucide-vue-next';
   import { utf8ToBase64 } from '@/utils/encoding';
@@ -343,6 +344,84 @@
   const videoWidth = ref(16);
   const videoHeight = ref(9);
   const showReplayButton = ref(false);
+
+  // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
+  let hlsInstance: Hls | null = null;
+
+  // Check if a URL is an HLS playlist
+  function isHlsUrl(url: string | null | undefined): boolean {
+    return !!url && url.includes('.m3u8');
+  }
+
+  // Cleanup HLS instance
+  function cleanupHls(): void {
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
+    }
+  }
+
+  // Setup HLS playback for a video element
+  function setupHlsPlayback(videoEl: HTMLVideoElement, hlsUrl: string): void {
+    cleanupHls();
+
+    if (Hls.isSupported()) {
+      hlsInstance = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 60,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+      });
+
+      hlsInstance.loadSource(hlsUrl);
+      hlsInstance.attachMedia(videoEl);
+
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('[VideoPlayerDialog] HLS manifest parsed, ready to play');
+      });
+
+      hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          console.error('[VideoPlayerDialog] HLS fatal error:', data.type, data.details);
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.log('[VideoPlayerDialog] Attempting to recover from network error');
+              hlsInstance?.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.log('[VideoPlayerDialog] Attempting to recover from media error');
+              hlsInstance?.recoverMediaError();
+              break;
+            default:
+              cleanupHls();
+              break;
+          }
+        }
+      });
+    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS support (Safari)
+      videoEl.src = hlsUrl;
+    } else {
+      console.error('[VideoPlayerDialog] HLS not supported in this browser');
+    }
+  }
+
+  // Helper function to construct video URL with proper endpoint for file type
+  function constructVideoUrl(filePath: string, port: number): string {
+    const encodedPath = utf8ToBase64(filePath);
+
+    // Check if this is a .ts file - browsers can't play MPEG-TS natively
+    const isTsFile = filePath.toLowerCase().endsWith('.ts');
+
+    if (isTsFile) {
+      // Use ts-hls endpoint which wraps the .ts file in an HLS playlist
+      return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
+    }
+
+    // Regular video file - serve directly
+    return `http://localhost:${port}/video/${encodedPath}`;
+  }
 
   // Watermark state
   const watermarkDataUrl = ref<string | null>(null);
@@ -783,6 +862,9 @@
 
   // Initialize video source when video changes
   async function initializeVideo() {
+    // Cleanup any existing HLS instance
+    cleanupHls();
+
     // If a direct videoUrl is provided, use it directly (for cloud/remote videos)
     if (props.videoUrl) {
       resetVideoState();
@@ -802,11 +884,11 @@
       resetVideoState();
 
       const port = await invoke<number>('get_video_server_port');
-      // Use utf8ToBase64 to handle Unicode characters (like emojis) in file paths
-      const encodedPath = utf8ToBase64(filePath);
-      // Add a timestamp to prevent caching issues
+      // Use constructVideoUrl to properly handle .ts files with HLS wrapper
       const timestamp = Date.now();
-      videoSrc.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;
+      const baseUrl = constructVideoUrl(filePath, port);
+      // Add timestamp to prevent caching (append with ? or & depending on URL)
+      videoSrc.value = baseUrl.includes('?') ? `${baseUrl}&t=${timestamp}` : `${baseUrl}?t=${timestamp}`;
     } catch (err) {
       console.error('Failed to prepare video:', err);
     }
@@ -834,12 +916,33 @@
   // Watch for video changes (video prop, videoFilePath, or videoUrl)
   watch(() => [props.video, props.videoFilePath, props.videoUrl], initializeVideo, { immediate: true });
 
+  // Watch for video source changes to setup HLS if needed
+  watch(
+    () => videoSrc.value,
+    (newSrc, oldSrc) => {
+      if (newSrc && newSrc !== oldSrc && videoElement.value && isHlsUrl(newSrc)) {
+        setupHlsPlayback(videoElement.value, newSrc);
+      } else if (!isHlsUrl(newSrc)) {
+        // Not HLS - cleanup any existing instance
+        cleanupHls();
+      }
+    }
+  );
+
+  // Watch for video element becoming available to setup HLS if source is already set
+  watch(videoElement, (newElement) => {
+    if (newElement && videoSrc.value && isHlsUrl(videoSrc.value)) {
+      setupHlsPlayback(newElement, videoSrc.value);
+    }
+  });
+
   // Watch for dialog open/close to properly handle video state
   watch(
     () => props.showVideoPlayer,
     (newVal, oldVal) => {
       if (!newVal) {
         // Dialog is closing
+        cleanupHls();
         if (videoElement.value) {
           videoElement.value.pause();
           videoElement.value.currentTime = 0;
@@ -879,6 +982,8 @@
     // Cleanup drag listeners
     document.removeEventListener('mousemove', onDrag);
     document.removeEventListener('mouseup', stopDrag);
+    // Cleanup HLS instance
+    cleanupHls();
   });
 </script>
 

@@ -1190,6 +1190,7 @@
   import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import Hls from 'hls.js';
   import {
     Folder,
     Plus,
@@ -2059,12 +2060,91 @@
   const inlineHoverTime = ref<number | null>(null);
   const inlineHoverPosition = ref(0);
 
+  // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
+  let inlineHlsInstance: Hls | null = null;
+
+  // Check if a URL is an HLS playlist
+  function isHlsUrl(url: string | null | undefined): boolean {
+    return !!url && url.includes('.m3u8');
+  }
+
+  // Cleanup HLS instance
+  function cleanupInlineHls(): void {
+    if (inlineHlsInstance) {
+      inlineHlsInstance.destroy();
+      inlineHlsInstance = null;
+    }
+  }
+
+  // Setup HLS playback for the inline video element
+  function setupInlineHlsPlayback(videoEl: HTMLVideoElement, hlsUrl: string): void {
+    cleanupInlineHls();
+
+    if (Hls.isSupported()) {
+      inlineHlsInstance = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 60,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+      });
+
+      inlineHlsInstance.loadSource(hlsUrl);
+      inlineHlsInstance.attachMedia(videoEl);
+
+      inlineHlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('[Projects] HLS manifest parsed for inline video');
+      });
+
+      inlineHlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          console.error('[Projects] HLS fatal error:', data.type, data.details);
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              inlineHlsInstance?.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              inlineHlsInstance?.recoverMediaError();
+              break;
+            default:
+              cleanupInlineHls();
+              break;
+          }
+        }
+      });
+    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS support (Safari)
+      videoEl.src = hlsUrl;
+    } else {
+      console.error('[Projects] HLS not supported in this browser');
+    }
+  }
+
+  // Helper function to construct video URL with proper endpoint for file type
+  function constructInlineVideoUrl(filePath: string, port: number): string {
+    const encodedPath = utf8ToBase64(filePath);
+
+    // Check if this is a .ts file - browsers can't play MPEG-TS natively
+    const isTsFile = filePath.toLowerCase().endsWith('.ts');
+
+    if (isTsFile) {
+      // Use ts-hls endpoint which wraps the .ts file in an HLS playlist
+      return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
+    }
+
+    // Regular video file - serve directly
+    return `http://localhost:${port}/video/${encodedPath}`;
+  }
+
   // Watermark state for clip preview
   const previewWatermarkData = ref<{ dataUrl: string; width?: number; height?: number } | null>(null);
   const previewWatermarkSettings = ref<WatermarkSettings | null>(null);
 
   // Prepare video source when clip changes
   async function prepareInlineVideo() {
+    // Cleanup any existing HLS instance
+    cleanupInlineHls();
+
     if (!clipPreviewVideoPath.value) {
       inlineVideoSrc.value = null;
       return;
@@ -2073,9 +2153,11 @@
     inlineVideoLoading.value = true;
     try {
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = utf8ToBase64(clipPreviewVideoPath.value);
+      // Use constructInlineVideoUrl to properly handle .ts files with HLS wrapper
       const timestamp = Date.now();
-      inlineVideoSrc.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;
+      const baseUrl = constructInlineVideoUrl(clipPreviewVideoPath.value, port);
+      // Add timestamp to prevent caching
+      inlineVideoSrc.value = baseUrl.includes('?') ? `${baseUrl}&t=${timestamp}` : `${baseUrl}?t=${timestamp}`;
     } catch (err) {
       console.error('Failed to prepare video:', err);
       inlineVideoSrc.value = null;
@@ -2090,9 +2172,29 @@
       await prepareInlineVideo();
       await loadPreviewWatermark(newClip);
     } else {
+      cleanupInlineHls();
       inlineVideoSrc.value = null;
       previewWatermarkData.value = null;
       previewWatermarkSettings.value = null;
+    }
+  });
+
+  // Watch for inline video source changes to setup HLS if needed
+  watch(
+    () => inlineVideoSrc.value,
+    (newSrc, oldSrc) => {
+      if (newSrc && newSrc !== oldSrc && inlineVideoRef.value && isHlsUrl(newSrc)) {
+        setupInlineHlsPlayback(inlineVideoRef.value, newSrc);
+      } else if (!isHlsUrl(newSrc)) {
+        cleanupInlineHls();
+      }
+    }
+  );
+
+  // Watch for inline video element becoming available to setup HLS if source is already set
+  watch(inlineVideoRef, (newElement) => {
+    if (newElement && inlineVideoSrc.value && isHlsUrl(inlineVideoSrc.value)) {
+      setupInlineHlsPlayback(newElement, inlineVideoSrc.value);
     }
   });
 
@@ -3753,7 +3855,8 @@
   async function onProjectDetectClipsConfirmed(
     _promptId: string,
     promptContent: string,
-    organizationId: number | null = null
+    organizationId: number | null = null,
+    multimodal: boolean = false
   ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
@@ -3801,6 +3904,7 @@
               overlapSeconds: 30,
               forceReprocess: false,
               organizationId: organizationId,
+              multimodal: multimodal,
             });
 
             if (result.success) {
@@ -3941,6 +4045,8 @@
     // Cleanup drag listeners
     document.removeEventListener('mousemove', onInlineSeekDrag);
     document.removeEventListener('mouseup', stopInlineSeekDrag);
+    // Cleanup HLS instance
+    cleanupInlineHls();
 
     // Exit fullscreen if unmounting while in fullscreen
     if (document.fullscreenElement) {

@@ -11,80 +11,80 @@
       :class="isFullscreen ? 'rounded-none' : 'rounded-lg'"
       :style="{ aspectRatio: previewAspectRatio.replace(':', '/'), width: 'auto', height: 'auto' }"
     >
-      <!-- Single region mode: Main video with CSS transforms applied directly (no extra decoding) -->
+      <!-- Framed container for non-16:9 aspect ratios - always rendered but hidden when not needed -->
       <div
-        v-if="showFramedPreview && isSingleRegion"
-        class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black overflow-hidden cursor-pointer"
-        :style="getFramedContainerStyle()"
-        @click="onVideoClick"
-      >
-        <video
-          ref="videoRef"
-          :src="videoSrc || ''"
-          class="absolute max-w-none"
-          :style="getSingleRegionVideoStyle()"
-          @loadedmetadata="onLoadedMetadata"
-          @timeupdate="onTimeUpdate"
-          @ended="onEnded"
-          @play="onPlay"
-          @pause="onPause"
-        />
-      </div>
-
-      <!-- Multi-region framed container (for manually configured multiple regions) -->
-      <div
-        v-else-if="showFramedPreview"
+        v-show="showFramedPreview"
         class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black overflow-hidden"
         :style="getFramedContainerStyle()"
       >
-        <!-- Hidden main video for audio/control -->
+        <!-- Framed video element - used for non-16:9 single region mode -->
         <video
-          ref="videoRef"
+          v-show="showFramedPreview && isSingleRegion"
+          ref="framedVideoRef"
           :src="videoSrc || ''"
-          class="sr-only"
-          @loadedmetadata="onLoadedMetadata"
-          @timeupdate="onTimeUpdate"
+          class="absolute max-w-none"
+          :style="getSingleRegionVideoStyle()"
+          @loadedmetadata="onFramedVideoLoadedMetadata"
+          @timeupdate="onFramedVideoTimeUpdate"
           @ended="onEnded"
           @play="onPlay"
           @pause="onPause"
         />
 
-        <!-- Render each region from the framing config -->
-        <div
-          v-for="(region, idx) in currentFramingConfig?.regions || []"
-          :key="region.id"
-          class="absolute overflow-hidden"
-          :style="getRegionOutputStyle(region)"
-        >
-          <!-- Video crop preview - matches POI editor exactly -->
-          <video
-            :ref="(el) => setRegionVideoRef(idx, el as HTMLVideoElement)"
-            :src="videoSrc || ''"
-            class="absolute max-w-none pointer-events-none"
-            :style="getCroppedVideoStyle(region)"
-            muted
-            playsinline
-            @loadedmetadata="onRegionVideoLoaded"
-          />
-        </div>
+        <!-- Multi-region: Render each region from the framing config -->
+        <template v-if="showFramedPreview && !isSingleRegion">
+          <div
+            v-for="(region, idx) in currentFramingConfig?.regions || []"
+            :key="region.id"
+            class="absolute overflow-hidden"
+            :style="getRegionOutputStyle(region)"
+          >
+            <!-- Video crop preview - matches POI editor exactly -->
+            <video
+              :ref="(el) => setRegionVideoRef(idx, el as HTMLVideoElement)"
+              :src="videoSrc || ''"
+              class="absolute max-w-none pointer-events-none"
+              :style="getCroppedVideoStyle(region)"
+              muted
+              playsinline
+              @loadedmetadata="onRegionVideoLoaded"
+            />
+          </div>
 
-        <!-- Click handler overlay -->
-        <div class="absolute inset-0 cursor-pointer" @click="onVideoClick" />
+          <!-- Click handler overlay for multi-region -->
+          <div class="absolute inset-0" />
+        </template>
       </div>
 
-      <!-- Default 16:9 mode: Normal video display -->
+      <!-- Default 16:9 mode: Normal video display - always rendered, invisible when framed -->
+      <!-- Use visibility:hidden instead of v-show to maintain container dimensions -->
       <video
-        v-else
         ref="videoRef"
         :src="videoSrc || ''"
-        class="max-w-full max-h-full object-contain cursor-pointer"
-        :style="editorMode ? getMainVideoStyle() : getVideoFilterStyle()"
+        class="max-w-full max-h-full object-contain"
+        :style="{
+          ...(editorMode ? getMainVideoStyle() : getVideoFilterStyle()),
+          visibility: showFramedPreview ? 'hidden' : 'visible',
+          pointerEvents: 'none',
+        }"
         @loadedmetadata="onLoadedMetadata"
         @timeupdate="onTimeUpdate"
         @ended="onEnded"
         @play="onPlay"
         @pause="onPause"
-        @click="onVideoClick"
+      />
+
+      <!-- Hidden audio-only video for framed multi-region mode -->
+      <video
+        v-if="showFramedPreview && !isSingleRegion"
+        ref="audioVideoRef"
+        :src="videoSrc || ''"
+        class="sr-only"
+        @loadedmetadata="onAudioVideoLoadedMetadata"
+        @timeupdate="onAudioVideoTimeUpdate"
+        @ended="onEnded"
+        @play="onPlay"
+        @pause="onPause"
       />
 
       <!-- Preload video for seamless transitions / crossfade (editor mode only) -->
@@ -93,7 +93,7 @@
         v-if="editorMode && (preloadVideoSrc || activeVideoIndex === 1)"
         ref="preloadVideoRef"
         :src="activePreloadSrc"
-        class="max-w-full max-h-full object-contain cursor-pointer absolute inset-0 m-auto"
+        class="max-w-full max-h-full object-contain absolute inset-0 m-auto pointer-events-none"
         :style="getPreloadVideoStyle()"
         preload="auto"
         @canplaythrough="onPreloadCanPlay"
@@ -102,13 +102,12 @@
         @ended="onEnded"
         @play="onPlay"
         @pause="onPause"
-        @click="onVideoClick"
       />
 
       <!-- Overlay Container - matches video dimensions -->
       <div
         ref="overlayContainerRef"
-        class="absolute overflow-hidden"
+        class="absolute overflow-hidden z-10"
         :style="getOverlayContainerPositionStyle()"
         @click.self="onOverlayContainerClick"
       >
@@ -130,6 +129,7 @@
             :is-playing="isPlaying"
             :selected-item-ids="effectiveSelectedItemIds"
             :canvas-size="containerSize"
+            :aspect-ratio="previewAspectRatio"
             :scale-overrides="unifiedScaleOverrides"
             :rotation-overrides="unifiedRotationOverrides"
             :width-overrides="unifiedWidthOverrides"
@@ -170,15 +170,6 @@
           class="absolute inset-0 pointer-events-none"
           :style="getTemperatureStyle()"
         />
-
-        <!-- Play Button (centered, doesn't block overlay interactions) -->
-        <button
-          v-if="!isPlaying"
-          @click.stop="emit('togglePlay')"
-          class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/35 hover:bg-black/55 backdrop-blur-sm flex items-center justify-center transition-colors pointer-events-auto z-10"
-        >
-          <Play class="w-6 h-6 text-white ml-0.5" />
-        </button>
       </div>
     </div>
 
@@ -297,10 +288,12 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { Play, Pause, Volume2, VolumeX, RotateCw, SkipBack, Maximize2, Minimize2, Check } from 'lucide-vue-next';
+  import Hls from 'hls.js';
   import TrackRenderer from './TrackRenderer.vue';
   import { AnimationService } from '@/services/AnimationService';
+  import { useAudioEffects } from '@/composables/useAudioEffects';
   import type {
     TextOverlay,
     Sticker,
@@ -314,6 +307,7 @@
     VideoEditorTransition,
     TransitionState,
     ClipSegment,
+    AudioTrackEffect,
   } from '@/types';
   import type { Track, TimelineItem } from '@/types/timeline-model';
   import { calculateTransitionState } from '@/types';
@@ -357,6 +351,7 @@
   interface StickerRotateState {
     isRotating: boolean;
     id: string | null;
+    itemType: 'sticker' | 'text' | 'watermark' | null; // Track item type for proper emit
     startAngle: number;
     startRotation: number;
     centerX: number;
@@ -410,6 +405,8 @@
       isVideoMuted?: boolean;
       // Audio tracks to check if audio was extracted from video
       audioTracks?: Array<{ id: string; name?: string; linkedSourceId?: string; startTime: number; endTime: number }>;
+      // Audio effects for Web Audio API preview
+      audioEffects?: AudioTrackEffect[];
     }>(),
     {
       watermarks: () => [],
@@ -427,6 +424,7 @@
       selectedItemIds: () => new Set(),
       isVideoMuted: false,
       audioTracks: () => [],
+      audioEffects: () => [],
     }
   );
 
@@ -444,6 +442,8 @@
       position: { x: number; y: number }
     ): void;
     (e: 'updateOverlayWidth', id: string, width: number): void;
+    (e: 'updateOverlayRotation', id: string, rotation: number): void;
+    (e: 'updateOverlayScale', id: string, scale: number): void;
     (e: 'updateStickerScale', id: string, scale: number): void;
     (e: 'updateStickerRotation', id: string, rotation: number): void;
     (e: 'updateWatermarkScale', id: string, scale: number): void;
@@ -453,6 +453,8 @@
     // Completion events for undo/redo
     (e: 'overlayDragEnd', type: 'text' | 'sticker' | 'watermark', id: string): void;
     (e: 'overlayResizeEnd', id: string): void;
+    (e: 'overlayRotateEnd', id: string): void;
+    (e: 'overlayScaleEnd', id: string): void;
     (e: 'stickerResizeEnd', id: string): void;
     (e: 'stickerRotateEnd', id: string): void;
     (e: 'watermarkResizeEnd', id: string): void;
@@ -468,6 +470,11 @@
   // (Moved to lower section to avoid duplication)
 
   function handleTrackItemResizeStart(event: MouseEvent, item: TimelineItem, handle: 'tl' | 'tr' | 'bl' | 'br') {
+    console.log('[ClipEditorPreview] handleTrackItemResizeStart called', {
+      itemType: item.type,
+      itemId: item.id,
+      handle,
+    });
     // Map unified resize to legacy handlers
     if (item.type === 'sticker') {
       const sticker = props.stickers.find((s) => s.id === item.id);
@@ -476,8 +483,9 @@
       const watermark = props.watermarks.find((w) => w.id === item.id);
       if (watermark) startWatermarkResize(event, watermark);
     } else if (item.type === 'text') {
-      const side = handle === 'tr' || handle === 'br' ? 'right' : 'left';
-      startResize(event, item.id, side);
+      // Use scale-based resize for text (like stickers) for visual feedback
+      const overlay = props.textOverlays.find((o) => o.id === item.id);
+      if (overlay) startTextResize(event, overlay);
     }
   }
 
@@ -494,13 +502,25 @@
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    // Determine current rotation
+    // Determine current rotation - for text, check perRatioConfigs first
     const relativeTime = props.currentTime - item.startTime;
-    const currentRotation = AnimationService.getValueAtTime(item, 'rotation', relativeTime, item.rotation ?? 0);
+    let currentRotation = 0;
+
+    if (item.type === 'text') {
+      // For text, get rotation from perRatioConfigs or default
+      const overlay = props.textOverlays.find((o) => o.id === item.id);
+      if (overlay) {
+        const ratioConfig = overlay.perRatioConfigs?.[props.previewAspectRatio];
+        currentRotation = ratioConfig?.rotation ?? overlay.rotation ?? 0;
+      }
+    } else {
+      currentRotation = AnimationService.getValueAtTime(item, 'rotation', relativeTime, item.rotation ?? 0);
+    }
 
     // Reuse stickerRotateState as generic rotate state
     stickerRotateState.isRotating = true;
     stickerRotateState.id = item.id;
+    stickerRotateState.itemType = item.type as 'sticker' | 'text' | 'watermark';
     stickerRotateState.centerX = centerX;
     stickerRotateState.centerY = centerY;
     stickerRotateState.startRotation = currentRotation;
@@ -509,13 +529,20 @@
     const startAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * (180 / Math.PI);
     stickerRotateState.startAngle = startAngle;
 
-    document.addEventListener('mousemove', onStickerRotateMove);
-    document.addEventListener('mouseup', onStickerRotateEnd);
+    document.addEventListener('mousemove', onUnifiedRotateMove);
+    document.addEventListener('mouseup', onUnifiedRotateEnd);
   }
 
   // Refs
   const videoRef = ref<HTMLVideoElement | null>(null);
+  const framedVideoRef = ref<HTMLVideoElement | null>(null); // Video for framed single-region mode
+  const audioVideoRef = ref<HTMLVideoElement | null>(null); // Audio-only video for multi-region mode
   const preloadVideoRef = ref<HTMLVideoElement | null>(null); // Second video for seamless transitions
+
+  // Audio effects preview using Web Audio API
+  const audioEffectsRef = computed(() => props.audioEffects || []);
+  const currentTimeRef = computed(() => props.currentTime);
+  useAudioEffects(videoRef, audioEffectsRef, currentTimeRef);
   const videoContainerRef = ref<HTMLElement | null>(null);
   // ... rest of the code remains the same ...
   const overlayContainerRef = ref<HTMLElement | null>(null);
@@ -538,6 +565,99 @@
   // Crossfade animation state - uses requestAnimationFrame for smooth 60fps opacity transitions
   const crossfadeAnimationId = ref<number | null>(null);
   const crossfadeActive = ref(false);
+
+  // HLS.js instances for proper MPEG-TS (.ts) file playback with A/V sync
+  // We need separate instances for each video element that may play HLS content
+  const hlsInstances = new Map<string, Hls>();
+
+  // Check if a URL is an HLS playlist
+  function isHlsUrl(url: string | null | undefined): boolean {
+    return !!url && url.includes('.m3u8');
+  }
+
+  // Setup HLS playback for a video element
+  function setupHlsPlayback(videoElement: HTMLVideoElement, hlsUrl: string, instanceKey: string): void {
+    // Cleanup existing instance for this key
+    cleanupHlsInstance(instanceKey);
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 60,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+      });
+
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(videoElement);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log(`[ClipEditorPreview] HLS manifest parsed for ${instanceKey}`);
+      });
+
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          console.error(`[ClipEditorPreview] HLS fatal error for ${instanceKey}:`, data.type, data.details);
+          // Try to recover from fatal errors
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.log(`[ClipEditorPreview] Attempting to recover from network error for ${instanceKey}`);
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.log(`[ClipEditorPreview] Attempting to recover from media error for ${instanceKey}`);
+              hls.recoverMediaError();
+              break;
+            default:
+              cleanupHlsInstance(instanceKey);
+              break;
+          }
+        }
+      });
+
+      hlsInstances.set(instanceKey, hls);
+    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS support (Safari)
+      videoElement.src = hlsUrl;
+    } else {
+      console.error('[ClipEditorPreview] HLS not supported in this browser');
+    }
+  }
+
+  // Cleanup a specific HLS instance
+  function cleanupHlsInstance(instanceKey: string): void {
+    const hls = hlsInstances.get(instanceKey);
+    if (hls) {
+      hls.destroy();
+      hlsInstances.delete(instanceKey);
+    }
+  }
+
+  // Cleanup all HLS instances
+  function cleanupAllHlsInstances(): void {
+    hlsInstances.forEach((hls, key) => {
+      hls.destroy();
+    });
+    hlsInstances.clear();
+  }
+
+  // Setup or update HLS for a video element based on source
+  function updateVideoSource(
+    videoElement: HTMLVideoElement | null,
+    src: string | null | undefined,
+    instanceKey: string
+  ): void {
+    if (!videoElement) return;
+
+    if (isHlsUrl(src)) {
+      setupHlsPlayback(videoElement, src!, instanceKey);
+    } else {
+      // Not HLS - cleanup any existing HLS instance and let native video handle it
+      cleanupHlsInstance(instanceKey);
+      // For non-HLS sources, the :src binding in the template handles it
+    }
+  }
 
   // Active preload src - keeps last src when preload is active video
   const activePreloadSrc = computed(() => {
@@ -990,10 +1110,11 @@
     startScale: 1,
   });
 
-  // Sticker rotate state
+  // Sticker rotate state (also used for text rotation)
   const stickerRotateState = reactive<StickerRotateState>({
     isRotating: false,
     id: null,
+    itemType: null,
     startAngle: 0,
     startRotation: 0,
     centerX: 0,
@@ -1003,6 +1124,26 @@
   // Local sticker scale/rotation tracking for instant feedback during drag
   const localStickerScales = ref<Record<string, number>>({});
   const localStickerRotations = ref<Record<string, number>>({});
+
+  // Text resize state (for scale-based resizing like stickers)
+  const textResizeState = reactive<{
+    isResizing: boolean;
+    id: string | null;
+    centerX: number;
+    centerY: number;
+    startDistance: number;
+    startScale: number;
+  }>({
+    isResizing: false,
+    id: null,
+    centerX: 0,
+    centerY: 0,
+    startDistance: 0,
+    startScale: 1,
+  });
+
+  // Local text scale tracking for instant feedback during resize
+  const localTextScales = ref<Record<string, number>>({});
 
   // Watermark resize state (for scale)
   const watermarkResizeState = reactive<WatermarkResizeState>({
@@ -1060,6 +1201,7 @@
     if (stickerResizeState.id) set.add(stickerResizeState.id);
     if (watermarkResizeState.id) set.add(watermarkResizeState.id);
     if (stickerRotateState.id) set.add(stickerRotateState.id);
+    if (textResizeState.id) set.add(textResizeState.id);
 
     return set;
   });
@@ -1069,6 +1211,7 @@
     return {
       ...localStickerScales.value,
       ...localWatermarkScales.value,
+      ...localTextScales.value,
     };
   });
 
@@ -2287,8 +2430,16 @@
     e.preventDefault();
     e.stopPropagation();
 
+    console.log('[ClipEditorPreview] startResize called', { overlayId, side });
+
     const overlay = props.textOverlays.find((o) => o.id === overlayId);
-    if (!overlay || !overlayContainerRef.value) return;
+    if (!overlay || !overlayContainerRef.value) {
+      console.log('[ClipEditorPreview] startResize early return', {
+        overlay: !!overlay,
+        containerRef: !!overlayContainerRef.value,
+      });
+      return;
+    }
 
     const config = getOverlayConfigForRatio(overlay);
     const currentStyle = config.style;
@@ -2318,7 +2469,10 @@
   }
 
   function onResizeMove(e: MouseEvent) {
-    if (!resizeState.isResizing || !overlayContainerRef.value || !resizeState.id) return;
+    if (!resizeState.isResizing || !overlayContainerRef.value || !resizeState.id) {
+      return;
+    }
+    console.log('[ClipEditorPreview] onResizeMove', { id: resizeState.id, clientX: e.clientX });
 
     const container = overlayContainerRef.value;
     const rect = container.getBoundingClientRect();
@@ -2339,6 +2493,8 @@
 
     // Clamp width to reasonable bounds (10% to 100%)
     newWidth = Math.max(10, Math.min(100, newWidth));
+
+    console.log('[ClipEditorPreview] onResizeMove setting width', { id: resizeState.id, newWidth, deltaXPercent });
 
     // Set local width immediately for instant feedback
     localDragWidths.value[resizeState.id] = newWidth;
@@ -2435,6 +2591,75 @@
     document.removeEventListener('mouseup', onStickerResizeEnd);
   }
 
+  // Text resize handlers (scale-based like stickers)
+  function startTextResize(e: MouseEvent, overlay: TextOverlay) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Get the text element to find its center
+    const textEl = (e.target as HTMLElement).closest('[data-item-id]') as HTMLElement;
+    if (!textEl) return;
+
+    const rect = textEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Calculate initial distance from center to mouse
+    const startDistance = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
+
+    // Get current scale from perRatioConfigs or default to 1
+    const ratioConfig = overlay.perRatioConfigs?.[props.previewAspectRatio];
+    const currentScale = ratioConfig?.scale ?? overlay.scale ?? 1;
+
+    textResizeState.isResizing = true;
+    textResizeState.id = overlay.id;
+    textResizeState.centerX = centerX;
+    textResizeState.centerY = centerY;
+    textResizeState.startDistance = startDistance;
+    textResizeState.startScale = currentScale;
+
+    document.addEventListener('mousemove', onTextResizeMove);
+    document.addEventListener('mouseup', onTextResizeEnd);
+  }
+
+  function onTextResizeMove(e: MouseEvent) {
+    if (!textResizeState.isResizing || !textResizeState.id) return;
+
+    // Calculate current distance from center to mouse
+    const currentDistance = Math.sqrt(
+      Math.pow(e.clientX - textResizeState.centerX, 2) + Math.pow(e.clientY - textResizeState.centerY, 2)
+    );
+
+    // Scale is proportional to distance ratio
+    const distanceRatio = textResizeState.startDistance > 0 ? currentDistance / textResizeState.startDistance : 1;
+
+    let newScale = textResizeState.startScale * distanceRatio;
+
+    // Enforce minimum scale (0.1x), no maximum limit
+    newScale = Math.max(0.1, newScale);
+
+    // Set local scale immediately for instant feedback
+    localTextScales.value[textResizeState.id] = newScale;
+
+    // Emit scale update
+    emit('updateOverlayScale', textResizeState.id, newScale);
+  }
+
+  function onTextResizeEnd() {
+    if (textResizeState.id) {
+      // Emit completion event for undo/redo
+      emit('overlayScaleEnd', textResizeState.id);
+      // Clear local scale after emit completes
+      delete localTextScales.value[textResizeState.id];
+    }
+
+    textResizeState.isResizing = false;
+    textResizeState.id = null;
+
+    document.removeEventListener('mousemove', onTextResizeMove);
+    document.removeEventListener('mouseup', onTextResizeEnd);
+  }
+
   // Sticker rotation handlers
   function startStickerRotate(e: MouseEvent, stickerId: string, stickerEl: HTMLElement, currentRotation: number) {
     e.preventDefault();
@@ -2492,9 +2717,59 @@
 
     stickerRotateState.isRotating = false;
     stickerRotateState.id = null;
+    stickerRotateState.itemType = null;
 
     document.removeEventListener('mousemove', onStickerRotateMove);
     document.removeEventListener('mouseup', onStickerRotateEnd);
+  }
+
+  // Unified rotation handlers for TrackRenderer items (text, sticker, watermark)
+  function onUnifiedRotateMove(e: MouseEvent) {
+    if (!stickerRotateState.isRotating || !stickerRotateState.id) return;
+
+    // Calculate current angle from center to mouse
+    const currentAngle =
+      Math.atan2(e.clientY - stickerRotateState.centerY, e.clientX - stickerRotateState.centerX) * (180 / Math.PI);
+
+    // Calculate rotation delta
+    const angleDelta = currentAngle - stickerRotateState.startAngle;
+    let newRotation = stickerRotateState.startRotation + angleDelta;
+
+    // Normalize rotation to -180 to 180 range
+    while (newRotation > 180) newRotation -= 360;
+    while (newRotation < -180) newRotation += 360;
+
+    // Set local rotation immediately for instant feedback
+    localStickerRotations.value[stickerRotateState.id] = newRotation;
+
+    // Emit rotation update based on item type
+    const roundedRotation = Math.round(newRotation);
+    if (stickerRotateState.itemType === 'text') {
+      emit('updateOverlayRotation', stickerRotateState.id, roundedRotation);
+    } else if (stickerRotateState.itemType === 'sticker') {
+      emit('updateStickerRotation', stickerRotateState.id, roundedRotation);
+    }
+    // Watermark rotation could be added here if needed
+  }
+
+  function onUnifiedRotateEnd() {
+    if (stickerRotateState.id) {
+      // Emit completion event for undo/redo based on item type
+      if (stickerRotateState.itemType === 'text') {
+        emit('overlayRotateEnd', stickerRotateState.id);
+      } else if (stickerRotateState.itemType === 'sticker') {
+        emit('stickerRotateEnd', stickerRotateState.id);
+      }
+      // Clear local rotation after emit completes
+      delete localStickerRotations.value[stickerRotateState.id];
+    }
+
+    stickerRotateState.isRotating = false;
+    stickerRotateState.id = null;
+    stickerRotateState.itemType = null;
+
+    document.removeEventListener('mousemove', onUnifiedRotateMove);
+    document.removeEventListener('mouseup', onUnifiedRotateEnd);
   }
 
   // Methods
@@ -2681,6 +2956,69 @@
         emit('timeUpdate', segments[0].start_time);
         // Sync after segment jump
         syncAllPreviewVideos(true);
+        return;
+      }
+
+      emit('timeUpdate', currentVideoTime);
+    }
+  }
+
+  // Event handlers for framed video (single-region mode)
+  function onFramedVideoLoadedMetadata() {
+    if (framedVideoRef.value) {
+      duration.value = framedVideoRef.value.duration;
+
+      // Check if we have a pending seek time from aspect ratio switch
+      if (pendingSeekTime.value !== null) {
+        framedVideoRef.value.currentTime = pendingSeekTime.value;
+        pendingSeekTime.value = null;
+      }
+
+      updateContainerSize();
+      emit('videoElementReady', framedVideoRef.value);
+    }
+  }
+
+  function onFramedVideoTimeUpdate() {
+    if (framedVideoRef.value && !isDraggingProgress.value && showFramedPreview.value && isSingleRegion.value) {
+      const currentVideoTime = framedVideoRef.value.currentTime;
+      updateVideoMuteState(currentVideoTime);
+
+      if (props.editorMode) {
+        if (activeVideoIndex.value === 0) {
+          emit('timeUpdate', currentVideoTime);
+        }
+        return;
+      }
+
+      emit('timeUpdate', currentVideoTime);
+    }
+  }
+
+  // Event handlers for audio-only video (multi-region mode)
+  function onAudioVideoLoadedMetadata() {
+    if (audioVideoRef.value) {
+      duration.value = audioVideoRef.value.duration;
+
+      if (pendingSeekTime.value !== null) {
+        audioVideoRef.value.currentTime = pendingSeekTime.value;
+        pendingSeekTime.value = null;
+      }
+
+      updateContainerSize();
+      emit('videoElementReady', audioVideoRef.value);
+    }
+  }
+
+  function onAudioVideoTimeUpdate() {
+    if (audioVideoRef.value && !isDraggingProgress.value && showFramedPreview.value && !isSingleRegion.value) {
+      const currentVideoTime = audioVideoRef.value.currentTime;
+      updateVideoMuteState(currentVideoTime);
+
+      if (props.editorMode) {
+        if (activeVideoIndex.value === 0) {
+          emit('timeUpdate', currentVideoTime);
+        }
         return;
       }
 
@@ -3073,9 +3411,9 @@
   }
 
   function onOverlayContainerClick() {
-    // Toggle play when clicking on empty space in overlay container
+    // Clicking on empty space in overlay container clears selection
     if (!dragState.isDragging) {
-      emit('togglePlay');
+      emit('trackItemSelect', '', '');
     }
   }
 
@@ -3197,21 +3535,15 @@
     const scale = overlayScaleFactor.value;
 
     // Scale all size-related properties
-    // We only apply the base container scale. Animation scale is handled by TrackRenderer transform.
     const finalFontSize = Math.round((overlayStyle?.fontSize || 24) * scale);
     const finalLetterSpacing = (overlayStyle?.letterSpacing || 0) * scale;
     const finalPadding = Math.round((overlayStyle?.padding || 8) * scale);
-    const finalBorderRadius = Math.round((overlayStyle?.borderRadius || 4) * scale);
     const finalBorderWidth = (overlayStyle?.border1Width || 0) * scale;
     const finalShadowOffsetX = (overlayStyle?.shadowOffsetX || 2) * scale;
     const finalShadowOffsetY = (overlayStyle?.shadowOffsetY || 2) * scale;
     const finalShadowBlur = (overlayStyle?.shadowBlur || 4) * scale;
-    const finalStrokeWidth = (overlayStyle?.strokeWidth || 1) * scale;
 
     const style: Record<string, string> = {
-      // Layout/Transform/Opacity handled by TrackRenderer via getItemStyle
-
-      // Text Content Styles
       fontFamily: overlayStyle?.fontFamily || 'sans-serif',
       fontSize: `${finalFontSize}px`,
       fontWeight: String(overlayStyle?.fontWeight || 600),
@@ -3222,33 +3554,81 @@
     };
 
     // Width handling
-    // We pass the base width/maxWidth. TrackRenderer handles overrides from drag interactions.
     if (overlayStyle?.width !== undefined && overlayStyle.width > 0) {
       style.width = `${overlayStyle.width}%`;
       style.maxWidth = `${overlayStyle.width}%`;
     } else {
       style.maxWidth = `${overlayStyle?.maxWidth || 90}%`;
-      // Use fit-content for auto-sizing when no explicit width is set
       style.width = 'fit-content';
     }
 
-    if (overlayStyle?.backgroundEnabled && overlayStyle?.backgroundColor) {
+    // Chat bubble styling (advanced - rendered to PNG on export)
+    const chatBubble = overlayStyle?.chatBubble;
+    if (chatBubble?.enabled) {
+      // Chat bubble border radius based on shape
+      let bubbleRadius = 18;
+      switch (chatBubble.shape) {
+        case 'rounded':
+          bubbleRadius = 18;
+          break;
+        case 'pointed':
+          bubbleRadius = 8;
+          break;
+        case 'cloud':
+          bubbleRadius = 24;
+          break;
+        case 'square':
+          bubbleRadius = 4;
+          break;
+      }
+      const finalBubbleRadius = Math.round(bubbleRadius * scale);
+
+      style.backgroundColor = overlayStyle?.backgroundColor || '#007AFF';
+      style.padding = `${finalPadding}px ${Math.round(finalPadding * 1.5)}px`;
+      style.borderRadius = `${finalBubbleRadius}px`;
+
+      // Add subtle shadow for chat bubble
+      style.boxShadow = `0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,0.3)`;
+    } else if (overlayStyle?.backgroundEnabled && overlayStyle?.backgroundColor) {
+      // Regular background (solid color - exports via ASS)
+      const finalBorderRadius = Math.round((overlayStyle?.borderRadius || 4) * scale);
       style.backgroundColor = overlayStyle.backgroundColor;
       style.padding = `${finalPadding}px`;
       style.borderRadius = `${finalBorderRadius}px`;
     }
 
-    // Apply shadow (scaled)
+    // Text shadow (exports via ASS for simple, PNG for advanced)
     if (overlayStyle?.shadowEnabled) {
       style.textShadow = `${finalShadowOffsetX}px ${finalShadowOffsetY}px ${finalShadowBlur}px ${overlayStyle.shadowColor || '#000000'}`;
     }
 
-    // Apply border using text-stroke (scaled)
+    // Outer glow effect (advanced - rendered to PNG on export)
+    if (overlayStyle?.glow?.enabled) {
+      const glowBlur = (overlayStyle.glow.blur || 20) * scale;
+      const glowColor = overlayStyle.glow.color || '#ffffff';
+      const glowOpacity = overlayStyle.glow.opacity || 0.8;
+      // Combine with existing text shadow if present
+      const existingShadow = style.textShadow || '';
+      const glowShadow = `0 0 ${glowBlur}px ${glowColor}`;
+      style.textShadow = existingShadow ? `${existingShadow}, ${glowShadow}` : glowShadow;
+    }
+
+    // Text gradient (advanced - rendered to PNG on export)
+    if (overlayStyle?.gradient?.enabled && overlayStyle.gradient.colors?.length >= 2) {
+      const colors = overlayStyle.gradient.colors
+        .sort((a, b) => a.position - b.position)
+        .map((c) => `${c.color} ${c.position}%`)
+        .join(', ');
+      const angle = overlayStyle.gradient.angle || 90;
+      style.background = `linear-gradient(${angle}deg, ${colors})`;
+      style.webkitBackgroundClip = 'text';
+      style.webkitTextFillColor = 'transparent';
+      style.backgroundClip = 'text';
+    }
+
+    // Text outline/stroke (exports via ASS)
     if (overlayStyle?.border1Width && overlayStyle.border1Width > 0) {
       style.webkitTextStroke = `${finalBorderWidth}px ${overlayStyle.border1Color || '#000000'}`;
-      style.paintOrder = 'stroke fill';
-    } else if (overlayStyle?.strokeEnabled) {
-      style.webkitTextStroke = `${finalStrokeWidth}px ${overlayStyle.strokeColor || '#000000'}`;
       style.paintOrder = 'stroke fill';
     }
 
@@ -3430,14 +3810,67 @@
     }
   }
 
-  // Watch for framed preview mode changes
-  watch(showFramedPreview, (isFramed) => {
+  // Watch for framed preview mode changes - sync video time between modes
+  watch(showFramedPreview, (isFramed, wasFramed) => {
     if (isFramed) {
       startSyncLoop();
       // Clear old refs when switching modes
       regionVideoRefs.value = [];
+
+      // Sync time from main video to framed video when switching TO framed mode
+      if (!wasFramed && videoRef.value && !isNaN(videoRef.value.currentTime)) {
+        const currentTime = videoRef.value.currentTime;
+        const wasPaused = videoRef.value.paused;
+
+        // Use nextTick to ensure the framed video element is mounted
+        nextTick(() => {
+          if (isSingleRegion.value && framedVideoRef.value) {
+            // Ensure video is loaded before setting time
+            framedVideoRef.value.load();
+            framedVideoRef.value.currentTime = currentTime;
+            if (!wasPaused) {
+              framedVideoRef.value.play().catch(() => {});
+            }
+            // Emit the framed video as the active element
+            emit('videoElementReady', framedVideoRef.value);
+          } else if (audioVideoRef.value) {
+            audioVideoRef.value.load();
+            audioVideoRef.value.currentTime = currentTime;
+            if (!wasPaused) {
+              audioVideoRef.value.play().catch(() => {});
+            }
+            // Emit the audio video as the active element
+            emit('videoElementReady', audioVideoRef.value);
+          }
+        });
+      }
     } else {
       stopSyncLoop();
+
+      // Sync time from framed video back to main video when switching FROM framed mode
+      if (wasFramed) {
+        let currentTime = 0;
+        let wasPaused = true;
+
+        if (framedVideoRef.value && !isNaN(framedVideoRef.value.currentTime)) {
+          currentTime = framedVideoRef.value.currentTime;
+          wasPaused = framedVideoRef.value.paused;
+        } else if (audioVideoRef.value && !isNaN(audioVideoRef.value.currentTime)) {
+          currentTime = audioVideoRef.value.currentTime;
+          wasPaused = audioVideoRef.value.paused;
+        }
+
+        nextTick(() => {
+          if (videoRef.value) {
+            videoRef.value.currentTime = currentTime;
+            if (!wasPaused) {
+              videoRef.value.play().catch(() => {});
+            }
+            // Emit the main video as the active element
+            emit('videoElementReady', videoRef.value);
+          }
+        });
+      }
     }
   });
 
@@ -3458,9 +3891,21 @@
   watch(
     () => props.previewAspectRatio,
     () => {
-      // Store current video time before aspect ratio change causes video element swap
-      if (videoRef.value && !isNaN(videoRef.value.currentTime)) {
-        pendingSeekTime.value = videoRef.value.currentTime;
+      // Store current video time from whichever video is currently active
+      let currentTime: number | null = null;
+
+      if (showFramedPreview.value) {
+        if (isSingleRegion.value && framedVideoRef.value && !isNaN(framedVideoRef.value.currentTime)) {
+          currentTime = framedVideoRef.value.currentTime;
+        } else if (audioVideoRef.value && !isNaN(audioVideoRef.value.currentTime)) {
+          currentTime = audioVideoRef.value.currentTime;
+        }
+      } else if (videoRef.value && !isNaN(videoRef.value.currentTime)) {
+        currentTime = videoRef.value.currentTime;
+      }
+
+      if (currentTime !== null) {
+        pendingSeekTime.value = currentTime;
       }
 
       // Force container size update when aspect ratio changes
@@ -3490,6 +3935,8 @@
     document.removeEventListener('keydown', onKeyDown);
     stopSyncLoop();
     stopCrossfadeAnimation(true); // Clean up crossfade animation and reset opacity
+    // Cleanup all HLS.js instances to prevent memory leaks
+    cleanupAllHlsInstances();
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -3509,12 +3956,89 @@
         // Don't reset activeVideoIndex - let the crossfade logic handle it
         // The preload video will continue playing and its time updates will be used
       }
+
+      // Setup HLS for main video if source is HLS
+      if (newSrc !== oldSrc && videoRef.value) {
+        updateVideoSource(videoRef.value, newSrc, 'main');
+      }
+      // Setup HLS for framed video if source is HLS
+      if (newSrc !== oldSrc && framedVideoRef.value) {
+        updateVideoSource(framedVideoRef.value, newSrc, 'framed');
+      }
+      // Setup HLS for audio video if source is HLS
+      if (newSrc !== oldSrc && audioVideoRef.value) {
+        updateVideoSource(audioVideoRef.value, newSrc, 'audio');
+      }
     }
+  );
+
+  // Watch for preload video src changes to setup HLS
+  watch(
+    () => activePreloadSrc.value,
+    (newSrc, oldSrc) => {
+      if (newSrc !== oldSrc && preloadVideoRef.value) {
+        updateVideoSource(preloadVideoRef.value, newSrc, 'preload');
+      }
+    }
+  );
+
+  // Watch for video element refs becoming available to setup HLS if needed
+  watch(videoRef, (newElement) => {
+    if (newElement && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(newElement, props.videoSrc, 'main');
+    }
+  });
+
+  watch(framedVideoRef, (newElement) => {
+    if (newElement && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(newElement, props.videoSrc, 'framed');
+    }
+  });
+
+  watch(audioVideoRef, (newElement) => {
+    if (newElement && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(newElement, props.videoSrc, 'audio');
+    }
+  });
+
+  watch(preloadVideoRef, (newElement) => {
+    if (newElement && isHlsUrl(activePreloadSrc.value)) {
+      updateVideoSource(newElement, activePreloadSrc.value, 'preload');
+    }
+  });
+
+  // Watch for region video refs to setup HLS
+  watch(
+    regionVideoRefs,
+    (newRefs) => {
+      if (isHlsUrl(props.videoSrc)) {
+        newRefs.forEach((videoEl, idx) => {
+          if (videoEl) {
+            updateVideoSource(videoEl, props.videoSrc, `region-${idx}`);
+          }
+        });
+      }
+    },
+    { deep: true }
   );
 
   onMounted(() => {
     if (videoRef.value) {
       emit('videoElementReady', videoRef.value);
+      // Setup HLS if initial source is HLS
+      if (isHlsUrl(props.videoSrc)) {
+        updateVideoSource(videoRef.value, props.videoSrc, 'main');
+      }
+    }
+
+    // Setup HLS for framed video if available
+    if (framedVideoRef.value && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(framedVideoRef.value, props.videoSrc, 'framed');
+    }
+
+    // Setup HLS for audio video if available
+    if (audioVideoRef.value && isHlsUrl(props.videoSrc)) {
+      updateVideoSource(audioVideoRef.value, props.videoSrc, 'audio');
     }
 
     // Set up resize observer to track container size changes
@@ -3561,10 +4085,23 @@
       activeVideoIndex.value = 0;
       preloadVideoReady.value = false;
       lastPreloadSrc.value = null;
-      // Emit main video element as active
-      if (videoRef.value) {
+      // Emit the currently visible video element as active
+      if (showFramedPreview.value && isSingleRegion.value && framedVideoRef.value) {
+        emit('videoElementReady', framedVideoRef.value);
+      } else if (showFramedPreview.value && !isSingleRegion.value && audioVideoRef.value) {
+        emit('videoElementReady', audioVideoRef.value);
+      } else if (videoRef.value) {
         emit('videoElementReady', videoRef.value);
       }
+    },
+    // Expose refs for parent to access current active video
+    getActiveVideoElement: () => {
+      if (showFramedPreview.value && isSingleRegion.value) {
+        return framedVideoRef.value;
+      } else if (showFramedPreview.value && !isSingleRegion.value) {
+        return audioVideoRef.value;
+      }
+      return videoRef.value;
     },
   });
 </script>

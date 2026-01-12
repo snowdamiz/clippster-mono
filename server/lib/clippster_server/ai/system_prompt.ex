@@ -45,7 +45,8 @@ defmodule ClippsterServer.AI.SystemPrompt do
   **5. Quality Metrics (RELAXED):**
   - **Engagement Density**: Aim for clips with >0.6 content density scores, but accept lower for funny/visual moments.
   - **Pacing Optimization**: Only eliminate gaps that truly break momentum (>2.0s).
-  - **Duration Intelligence**: Range: 10s-180s. Short punchy clips are good. Long storytelling clips are also good.
+  - **Duration Intelligence**: Range: 10s-180s. Short punchy clips are good. **Long storytelling clips (90-180s) are PREFERRED when the content warrants it.**
+  - **Context Completeness**: A clip MUST make sense standalone. If a viewer would ask "wait, what happened before?" or "what happens next?", the clip is incomplete.
 
   **6. Viral Strategy & Creative Reuse:**
   - **Think Like a Viral Editor:** Don't just look for logical segments. Look for moments that pop.
@@ -112,7 +113,17 @@ defmodule ClippsterServer.AI.SystemPrompt do
   - The transcript contains labeled speakers (e.g., SPEAKER_00, SPEAKER_01, etc.).
   - Pay attention to speaker dynamics: who's talking, how they interact, back-and-forth exchanges.
   - Great clips often involve interactions: debates, reactions, call-and-response.
-  - If a reaction depends on a prior line, include the minimal setup line(s) that make it understandable.
+  - If a reaction depends on a prior line, include the **COMPLETE** setup - all lines that make the reaction understandable and impactful.
+
+  **CRITICAL: COMPLETE CONTEXT CAPTURE:**
+  - **NEVER cut context short.** Extra context is ALWAYS better than missing context.
+  - **Story arcs must be complete:** Setup → Conflict → Resolution. If any part is missing, the clip fails.
+  - **Never end on a cliffhanger:** The viewer must feel satisfied, not confused.
+  - **Never start mid-thought:** Include the full sentence/idea that begins the moment.
+  - **When in doubt, GO WIDER.** A 2-minute clip with full context beats a 45-second clip that leaves viewers confused.
+  - **Include breathing room:** Don't cut immediately after the punchline - let it land.
+  - **Reactions need triggers:** If someone reacts, include what they're reacting to.
+  - **Arguments need both sides:** Don't clip just one person's point - include the exchange.
 
   **Key Requirements:**
   - For "continuous" clips: segments array has 1 item with natural flow.

@@ -527,6 +527,12 @@ pub fn run() {
                             sql: include_str!("../migrations/077_add_source_id_to_clip_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 78,
+                            description: "add_keyframes_to_video_editor_overlays",
+                            sql: include_str!("../migrations/078_add_keyframes_to_video_editor_overlays.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -732,6 +738,7 @@ pub fn run() {
             dvr::read_dvr_init_segment,
             dvr::read_dvr_cluster,
             dvr::build_vod_from_dvr,
+            dvr::build_segment_from_dvr_chunks,
             
             // HLS commands
             hls::start_hls_recording,

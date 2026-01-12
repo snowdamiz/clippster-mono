@@ -2,6 +2,7 @@ import { ref, watch, nextTick, onMounted, computed, type Ref } from 'vue';
 import {
   type Project,
   getAllRawVideos,
+  getRawVideosByOriginalProjectId,
   type RawVideo,
   type ClipSegment,
 } from '@/services/database';
@@ -374,6 +375,18 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
         }
       }
 
+      // If no direct video found, check for raw videos in child projects (livestream segments)
+      // These are stored with original_project_id pointing to the parent project
+      if (!videoPath && projectData?.id) {
+        const childVideos = await getRawVideosByOriginalProjectId(projectData.id);
+        if (childVideos.length > 0) {
+          // Use the first segment as the video source
+          const firstSegment = childVideos[0];
+          videoPath = firstSegment.file_path;
+          currentVideo.value = firstSegment;
+        }
+      }
+
       if (!videoPath) {
         videoSrc.value = null;
         videoLoading.value = false;
@@ -382,7 +395,18 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
       const port = await invoke<number>('get_video_server_port');
       const encodedPath = utf8ToBase64(videoPath);
-      videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
+
+      // Check if this is a .ts file - browsers can't play MPEG-TS natively
+      // Use the HLS wrapper endpoint which generates an on-the-fly playlist
+      const isTsFile = videoPath.toLowerCase().endsWith('.ts');
+
+      if (isTsFile) {
+        // Use ts-hls endpoint which wraps the .ts file in an HLS playlist
+        videoSrc.value = `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
+      } else {
+        videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
+      }
+
       videoLoading.value = false;
     } catch (error) {
       videoError.value = 'Failed to connect to video server. Please try again.';
@@ -411,6 +435,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
   /**
    * Load a video directly from a file path.
    * Used for standalone clip files (DVR/livestream clips) that don't have a raw video.
+   * For .ts files (MPEG-TS segments), uses HLS wrapper endpoint since browsers can't play .ts natively.
    */
   async function loadVideoFromPath(filePath: string): Promise<boolean> {
     if (!filePath) {
@@ -423,7 +448,19 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
     try {
       const port = await invoke<number>('get_video_server_port');
       const encodedPath = utf8ToBase64(filePath);
-      videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
+
+      // Check if this is a .ts file - browsers can't play MPEG-TS natively
+      // Use the HLS wrapper endpoint which generates an on-the-fly playlist
+      const isTsFile = filePath.toLowerCase().endsWith('.ts');
+
+      if (isTsFile) {
+        // Use ts-hls endpoint which wraps the .ts file in an HLS playlist
+        videoSrc.value = `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
+      } else {
+        // Regular video file - serve directly
+        videoSrc.value = `http://localhost:${port}/video/${encodedPath}`;
+      }
+
       videoLoading.value = false;
       return true;
     } catch (error) {

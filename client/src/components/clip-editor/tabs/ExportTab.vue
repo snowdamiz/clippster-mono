@@ -234,18 +234,38 @@
 
             <!-- Actions -->
             <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <!-- Download button with dropdown for multiple aspect ratios -->
+              <div v-if="build.status === 'completed' && getOutputPaths(build).length > 0" class="relative">
+                <button
+                  @click="
+                    getOutputPaths(build).length > 1
+                      ? toggleDownloadMenu(build.id)
+                      : downloadBuildFile(build, getOutputPaths(build)[0])
+                  "
+                  class="p-1.5 rounded hover:bg-emerald-500/10 text-white/40 hover:text-emerald-400 transition-colors flex items-center gap-1"
+                  :title="getOutputPaths(build).length > 1 ? 'Download options' : 'Save As...'"
+                >
+                  <Download :size="14" />
+                  <ChevronDown v-if="getOutputPaths(build).length > 1" :size="10" />
+                </button>
+                <!-- Dropdown menu for multiple outputs -->
+                <div
+                  v-if="activeDownloadMenu === build.id && getOutputPaths(build).length > 1"
+                  class="absolute right-0 top-full mt-1 bg-zinc-800 border border-white/10 rounded-lg shadow-xl z-50 min-w-[140px] py-1"
+                >
+                  <button
+                    v-for="(path, idx) in getOutputPaths(build)"
+                    :key="idx"
+                    @click="downloadBuildFile(build, path)"
+                    class="w-full px-3 py-1.5 text-left text-xs text-white/70 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+                  >
+                    <Download :size="12" />
+                    {{ extractAspectRatioFromPath(path) }}
+                  </button>
+                </div>
+              </div>
               <button
-                v-if="build.status === 'completed' && build.file_path"
-                @click="
-                  saveVideoToLocation(build.file_path, `${props.clipName || 'video'}.${build.output_format || 'mp4'}`)
-                "
-                class="p-1.5 rounded hover:bg-emerald-500/10 text-white/40 hover:text-emerald-400 transition-colors"
-                title="Save As..."
-              >
-                <Download :size="14" />
-              </button>
-              <button
-                v-if="build.status === 'completed' && build.file_path"
+                v-if="build.status === 'completed' && (build.file_path || getOutputPaths(build).length > 0)"
                 @click="openBuildFolder(build)"
                 class="p-1.5 rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors"
                 title="Open folder"
@@ -287,6 +307,7 @@
     Layers,
     Settings,
     ChevronRight,
+    ChevronDown,
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -508,6 +529,9 @@
   const isBuilding = ref(false);
   const buildProgress = ref(0);
 
+  // Download menu state
+  const activeDownloadMenu = ref<string | null>(null);
+
   // Event listeners
   let unlistenProgress: UnlistenFn | null = null;
   let unlistenComplete: UnlistenFn | null = null;
@@ -531,6 +555,51 @@
     } catch {
       return ['16:9'];
     }
+  }
+
+  // Get output paths from a build (handles both output_paths JSON array and fallback to file_path)
+  function getOutputPaths(build: ClipBuild): string[] {
+    if (build.output_paths) {
+      try {
+        const paths = JSON.parse(build.output_paths);
+        if (Array.isArray(paths) && paths.length > 0) {
+          return paths;
+        }
+      } catch {
+        // Fall through to file_path fallback
+      }
+    }
+    // Fallback to single file_path
+    return build.file_path ? [build.file_path] : [];
+  }
+
+  // Extract aspect ratio from file path (e.g., "clip_16-9_1.mp4" -> "16:9")
+  function extractAspectRatioFromPath(path: string): string {
+    const filename = path.split(/[/\\]/).pop() || '';
+    // Match patterns like _16-9_ or _9-16_ or _1-1_ or _4-5_
+    const match = filename.match(/_(\d+)-(\d+)_/);
+    if (match) {
+      return `${match[1]}:${match[2]}`;
+    }
+    return 'Video';
+  }
+
+  // Toggle download menu for a build
+  function toggleDownloadMenu(buildId: string) {
+    if (activeDownloadMenu.value === buildId) {
+      activeDownloadMenu.value = null;
+    } else {
+      activeDownloadMenu.value = buildId;
+    }
+  }
+
+  // Download a specific build file
+  async function downloadBuildFile(build: ClipBuild, filePath: string) {
+    activeDownloadMenu.value = null;
+    const aspectRatio = extractAspectRatioFromPath(filePath);
+    const ratioSuffix = aspectRatio !== 'Video' ? `_${aspectRatio.replace(':', '-')}` : '';
+    const defaultFilename = `${props.clipName || 'video'}${ratioSuffix}.${build.output_format || 'mp4'}`;
+    await saveVideoToLocation(filePath, defaultFilename);
   }
 
   async function loadBuilds() {

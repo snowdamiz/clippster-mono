@@ -7,8 +7,9 @@ use super::effect_renderer::{ClipEffectSettings, build_effects_filter_chain};
 use super::audio_effect_renderer::{AudioEffectSettings, build_audio_effects_filter_chain};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::{generate_ass_file, generate_text_overlay_ass_file, merge_text_overlays_into_ass};
-use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video, apply_clip_watermarks_to_video};
+use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video, apply_clip_watermarks_to_video, apply_rendered_text_overlays_to_video};
 use super::font_manager::get_fonts_dir;
+use super::text_renderer::{render_text_overlay_to_png, partition_overlays};
 use super::{CancellationToken, is_build_cancelled};
 
 // Helper function to sanitize a clip name for use as a folder name
@@ -489,38 +490,70 @@ pub async fn build_clip_internal_simple(
                 None
             };
 
-            // Handle text overlays - either merge into existing subtitle ASS or create new one
+            // Handle text overlays - partition into simple (ASS) and advanced (image-based)
+            let mut rendered_text_images: Vec<(String, TextOverlaySettings)> = Vec::new();
             let final_subtitle_file = if let Some(overlays) = &text_overlays {
                 if !overlays.is_empty() {
                     let subtitle_offset = intro_duration.unwrap_or(0.0);
                     
-                    if let Some(ref sub_path) = subtitle_file {
-                        // Merge text overlays into existing subtitle ASS file
-                        println!("[Rust] Merging {} text overlays into subtitle file for aspect ratio {}", overlays.len(), aspect_ratio_str);
-                        merge_text_overlays_into_ass(
-                            sub_path,
-                            overlays,
+                    // Partition overlays: simple ones use ASS, advanced ones get rendered to PNG
+                    let (simple_overlays, advanced_overlays) = partition_overlays(overlays, &aspect_ratio_str);
+                    
+                    println!("[Rust] Text overlays for {}: {} simple (ASS), {} advanced (PNG)", 
+                        aspect_ratio_str, simple_overlays.len(), advanced_overlays.len());
+                    
+                    // Render advanced overlays to PNG images
+                    for overlay in &advanced_overlays {
+                        match render_text_overlay_to_png(
+                            overlay,
                             video_info.width,
                             video_info.height,
-                            subtitle_offset,
-                            &aspect_ratio_str
-                        ).map_err(|e| format!("Failed to merge text overlays: {}", e))?;
-                        subtitle_file.clone()
+                            &aspect_ratio_str,
+                            &clip_base_dir,
+                        ) {
+                            Ok(image_path) => {
+                                println!("[Rust] Rendered advanced text overlay {} to: {}", overlay.id, image_path);
+                                rendered_text_images.push((image_path, overlay.clone()));
+                            }
+                            Err(e) => {
+                                println!("[Rust] Warning: Failed to render advanced text overlay {}: {}", overlay.id, e);
+                                // Fall back to ASS for this overlay (add to simple list)
+                            }
+                        }
+                    }
+                    
+                    // Process simple overlays with ASS
+                    if !simple_overlays.is_empty() {
+                        if let Some(ref sub_path) = subtitle_file {
+                            // Merge simple text overlays into existing subtitle ASS file
+                            println!("[Rust] Merging {} simple text overlays into subtitle file for aspect ratio {}", simple_overlays.len(), aspect_ratio_str);
+                            merge_text_overlays_into_ass(
+                                sub_path,
+                                &simple_overlays,
+                                video_info.width,
+                                video_info.height,
+                                subtitle_offset,
+                                &aspect_ratio_str
+                            ).map_err(|e| format!("Failed to merge text overlays: {}", e))?;
+                            subtitle_file.clone()
+                        } else {
+                            // Generate standalone text overlay ASS file
+                            println!("[Rust] Generating standalone text overlay ASS file with {} overlays for aspect ratio {}", simple_overlays.len(), aspect_ratio_str);
+                            let text_overlay_path = clip_base_dir.join(format!("text_overlays_{}.ass", ratio_suffix));
+                            let text_overlay_fonts_dir = get_fonts_dir(&app).ok();
+                            generate_text_overlay_ass_file(
+                                &simple_overlays,
+                                &text_overlay_path,
+                                video_info.width,
+                                video_info.height,
+                                subtitle_offset,
+                                text_overlay_fonts_dir.as_deref(),
+                                &aspect_ratio_str
+                            ).map_err(|e| format!("Failed to generate text overlay file: {}", e))?;
+                            Some(text_overlay_path)
+                        }
                     } else {
-                        // Generate standalone text overlay ASS file
-                        println!("[Rust] Generating standalone text overlay ASS file with {} overlays for aspect ratio {}", overlays.len(), aspect_ratio_str);
-                        let text_overlay_path = clip_base_dir.join(format!("text_overlays_{}.ass", ratio_suffix));
-                        let text_overlay_fonts_dir = get_fonts_dir(&app).ok();
-                        generate_text_overlay_ass_file(
-                            overlays,
-                            &text_overlay_path,
-                            video_info.width,
-                            video_info.height,
-                            subtitle_offset,
-                            text_overlay_fonts_dir.as_deref(),
-                            &aspect_ratio_str
-                        ).map_err(|e| format!("Failed to generate text overlay file: {}", e))?;
-                        Some(text_overlay_path)
+                        subtitle_file.clone()
                     }
                 } else {
                     subtitle_file.clone()
@@ -787,6 +820,18 @@ pub async fn build_clip_internal_simple(
                         &quality
                     ).await?;
                 }
+            }
+
+            // Apply rendered text overlays (advanced styling: chat bubbles, gradients, glows)
+            if !rendered_text_images.is_empty() {
+                println!("[Rust] Applying {} rendered text overlays to {} clip", rendered_text_images.len(), aspect_ratio_str);
+                apply_rendered_text_overlays_to_video(
+                    &app,
+                    &output_path,
+                    &rendered_text_images,
+                    &aspect_ratio_str,
+                    &quality
+                ).await?;
             }
 
             // Clean up subtitle file

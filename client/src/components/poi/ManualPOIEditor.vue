@@ -190,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, computed } from 'vue';
+  import { ref, watch, computed, onUnmounted } from 'vue';
   import {
     LayoutDashboardIcon,
     XIcon,
@@ -201,6 +201,7 @@
     PauseIcon,
     RotateCcwIcon,
   } from 'lucide-vue-next';
+  import Hls from 'hls.js';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
   import type { ManualRegion, ManualFramingConfig, WatermarkSettings } from '@/types';
@@ -250,6 +251,33 @@
   const videoLoading = ref(false);
   const videoError = ref<string | null>(null);
 
+  // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
+  let hlsInstance: Hls | null = null;
+
+  function isHlsUrl(url: string | null | undefined): boolean {
+    return !!url && url.includes('.m3u8');
+  }
+
+  function cleanupHls(): void {
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
+    }
+  }
+
+  function constructVideoUrl(filePath: string, port: number): string {
+    const encodedPath = utf8ToBase64(filePath);
+    const isTsFile = filePath.toLowerCase().endsWith('.ts');
+    if (isTsFile) {
+      return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
+    }
+    return `http://localhost:${port}/video/${encodedPath}`;
+  }
+
+  onUnmounted(() => {
+    cleanupHls();
+  });
+
   // Computed clip duration
   const clipDuration = computed(() => {
     if (props.clipEndTime && props.clipStartTime) {
@@ -267,6 +295,7 @@
 
   // Load video URL using the app's video server
   async function loadVideoUrl() {
+    cleanupHls();
     if (!props.videoPath) return;
 
     videoLoading.value = true;
@@ -274,13 +303,10 @@
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      // Get the video server port
       const port = await invoke<number>('get_video_server_port');
-      // Encode the file path as base64 (using utf8ToBase64 to handle Unicode characters)
-      const encodedPath = utf8ToBase64(props.videoPath);
-      // Create the video URL with timestamp to prevent caching
       const timestamp = Date.now();
-      videoUrl.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;
+      const baseUrl = constructVideoUrl(props.videoPath, port);
+      videoUrl.value = baseUrl.includes('?') ? `${baseUrl}&t=${timestamp}` : `${baseUrl}?t=${timestamp}`;
       console.log('[POIEditor] Video URL loaded:', videoUrl.value);
     } catch (error) {
       console.error('[POIEditor] Failed to load video:', error);

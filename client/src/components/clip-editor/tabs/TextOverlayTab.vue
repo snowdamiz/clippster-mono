@@ -192,6 +192,74 @@
             <p class="text-[10px] text-white/30 mt-1">Drag resize handles in preview or set manually</p>
           </div>
 
+          <!-- Transform Row (Scale, Rotation, Position) -->
+          <div class="grid grid-cols-3 gap-3">
+            <!-- Scale -->
+            <div>
+              <label class="block text-xs text-white/50 mb-1">Scale</label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="number"
+                  :value="Math.round(getScaleForRatio(overlay) * 100)"
+                  @input="(e) => updateScale(parseInt((e.target as HTMLInputElement).value) / 100)"
+                  min="10"
+                  max="500"
+                  step="5"
+                  class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-sm text-white"
+                />
+                <span class="text-xs text-white/40">%</span>
+              </div>
+            </div>
+
+            <!-- Rotation -->
+            <div>
+              <label class="block text-xs text-white/50 mb-1">Rotation</label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="number"
+                  :value="Math.round(getRotationForRatio(overlay))"
+                  @input="(e) => updateRotation(parseInt((e.target as HTMLInputElement).value))"
+                  min="-180"
+                  max="180"
+                  step="1"
+                  class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-sm text-white"
+                />
+                <span class="text-xs text-white/40">°</span>
+              </div>
+            </div>
+
+            <!-- Position X -->
+            <div>
+              <label class="block text-xs text-white/50 mb-1">Position</label>
+              <div class="flex items-center gap-1">
+                <input
+                  type="number"
+                  :value="Math.round(getPositionForRatio(overlay).x)"
+                  @input="
+                    (e) =>
+                      updatePosition(parseInt((e.target as HTMLInputElement).value), getPositionForRatio(overlay).y)
+                  "
+                  min="0"
+                  max="100"
+                  class="w-1/2 px-2 py-2 bg-white/5 border border-white/10 rounded-md text-sm text-white"
+                  title="X position (%)"
+                />
+                <input
+                  type="number"
+                  :value="Math.round(getPositionForRatio(overlay).y)"
+                  @input="
+                    (e) =>
+                      updatePosition(getPositionForRatio(overlay).x, parseInt((e.target as HTMLInputElement).value))
+                  "
+                  min="0"
+                  max="100"
+                  class="w-1/2 px-2 py-2 bg-white/5 border border-white/10 rounded-md text-sm text-white"
+                  title="Y position (%)"
+                />
+              </div>
+            </div>
+          </div>
+
           <!-- Color & Weight Row -->
           <div class="grid grid-cols-2 gap-3">
             <!-- Text Color -->

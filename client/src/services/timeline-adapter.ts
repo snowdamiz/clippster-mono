@@ -1,10 +1,5 @@
-import { 
-  TimelineModel, 
-  Track, 
-  TimelineItem, 
-  Keyframe
-} from '@/types/timeline-model';
-import { 
+import { TimelineModel, Track, TimelineItem, Keyframe } from '@/types/timeline-model';
+import {
   VideoEditorSource,
   VideoEditorAudioTrackRecord,
   VideoEditorTextOverlayRecord,
@@ -18,7 +13,6 @@ import { FilterSegment, VideoEditorTransition } from '@/types';
  * Adapter to convert legacy/database types to the unified TimelineModel
  */
 export class TimelineAdapter {
-  
   /**
    * Converts disparate editor data into a unified TimelineModel
    */
@@ -34,29 +28,33 @@ export class TimelineAdapter {
     duration: number;
   }): TimelineModel {
     const tracks: Track[] = [];
-    
+
     // 1. Process Video Sources (Base Video Tracks)
     // Group sources by track_index
     const sourcesByTrack = new Map<number, VideoEditorSource[]>();
-    
-    data.sources.forEach(source => {
+
+    data.sources.forEach((source) => {
       const trackIndex = source.track_index || 0;
       if (!sourcesByTrack.has(trackIndex)) {
         sourcesByTrack.set(trackIndex, []);
       }
       sourcesByTrack.get(trackIndex)?.push(source);
     });
-    
+
     // Create tracks for video sources
     sourcesByTrack.forEach((trackSources, trackIndex) => {
-      const items: TimelineItem[] = trackSources.map(source => {
-        const itemKeyframes: Keyframe[] = source.keyframes_data ? JSON.parse(source.keyframes_data) : [];
-        
+      const items: TimelineItem[] = trackSources.map((source) => {
+        const itemKeyframes: Keyframe[] = source.keyframes_data
+          ? JSON.parse(source.keyframes_data)
+          : [];
+
         // Process transitions for this source (crossfades)
         if (data.transitions) {
           // Check if this source is fading out (Source A in a transition)
-          const outgoingTransitions = data.transitions.filter(t => t.sourceAId === source.id && t.type === 'crossfade');
-          outgoingTransitions.forEach(t => {
+          const outgoingTransitions = data.transitions.filter(
+            (t) => t.sourceAId === source.id && t.type === 'crossfade'
+          );
+          outgoingTransitions.forEach((t) => {
             // Fade out: 1 -> 0
             // Start of fade
             itemKeyframes.push({
@@ -64,7 +62,7 @@ export class TimelineAdapter {
               property: 'opacity',
               time: t.startTime - source.start_time,
               value: 1,
-              easing: 'linear'
+              easing: 'linear',
             });
             // End of fade
             itemKeyframes.push({
@@ -72,13 +70,15 @@ export class TimelineAdapter {
               property: 'opacity',
               time: t.endTime - source.start_time,
               value: 0,
-              easing: 'linear'
+              easing: 'linear',
             });
           });
 
           // Check if this source is fading in (Source B in a transition)
-          const incomingTransitions = data.transitions.filter(t => t.sourceBId === source.id && t.type === 'crossfade');
-          incomingTransitions.forEach(t => {
+          const incomingTransitions = data.transitions.filter(
+            (t) => t.sourceBId === source.id && t.type === 'crossfade'
+          );
+          incomingTransitions.forEach((t) => {
             // Fade in: 0 -> 1
             // Start of fade
             itemKeyframes.push({
@@ -86,7 +86,7 @@ export class TimelineAdapter {
               property: 'opacity',
               time: t.startTime - source.start_time,
               value: 0,
-              easing: 'linear'
+              easing: 'linear',
             });
             // End of fade
             itemKeyframes.push({
@@ -94,7 +94,7 @@ export class TimelineAdapter {
               property: 'opacity',
               time: t.endTime - source.start_time,
               value: 1,
-              easing: 'linear'
+              easing: 'linear',
             });
           });
         }
@@ -112,10 +112,10 @@ export class TimelineAdapter {
           isLocked: source.is_locked,
           isMuted: source.is_muted,
           originalData: source,
-          keyframes: itemKeyframes.length > 0 ? itemKeyframes : undefined
+          keyframes: itemKeyframes.length > 0 ? itemKeyframes : undefined,
         };
       });
-      
+
       tracks.push({
         id: `track-video-${trackIndex}`,
         type: 'video',
@@ -124,20 +124,20 @@ export class TimelineAdapter {
         isMuted: false,
         isLocked: false,
         isVisible: true,
-        items
+        items,
       });
     });
-    
+
     // 2. Process Overlays (Text, Sticker, Watermark)
-    // These typically sit on top of video tracks. 
+    // These typically sit on top of video tracks.
     // We'll map 'layer' property to track indices starting after the highest video track.
     // If no layer is specified, we'll assign one.
-    
+
     const maxVideoTrackIndex = Math.max(0, ...Array.from(sourcesByTrack.keys()));
     const overlayBaseIndex = maxVideoTrackIndex + 1;
-    
+
     const overlaysByLayer = new Map<number, TimelineItem[]>();
-    
+
     // Helper to get or create layer array
     const getLayer = (layer: number) => {
       if (!overlaysByLayer.has(layer)) {
@@ -145,11 +145,40 @@ export class TimelineAdapter {
       }
       return overlaysByLayer.get(layer)!;
     };
-    
+
     // Process Text
-    data.textOverlays.forEach(text => {
+    data.textOverlays.forEach((text) => {
       const layerIndex = text.layer || 0; // Relative layer index
-      // Parse style data if needed, or keep originalData
+
+      // Parse style_data and per_ratio_configs_data for TrackRenderer compatibility
+      let parsedStyle: any = {};
+      let parsedPerRatioConfigs: any = undefined;
+
+      try {
+        if (text.style_data) {
+          parsedStyle =
+            typeof text.style_data === 'string' ? JSON.parse(text.style_data) : text.style_data;
+        }
+      } catch (e) {
+        console.warn('Failed to parse text style_data', e);
+      }
+
+      try {
+        if (text.per_ratio_configs_data) {
+          parsedPerRatioConfigs =
+            typeof text.per_ratio_configs_data === 'string'
+              ? JSON.parse(text.per_ratio_configs_data)
+              : text.per_ratio_configs_data;
+        }
+      } catch (e) {
+        console.warn('Failed to parse text per_ratio_configs_data', e);
+      }
+
+      // Get rotation from perRatioConfigs or default to 0
+      // Note: The actual rotation used depends on the current aspect ratio,
+      // but we store a default here for AnimationService compatibility
+      const defaultRotation = parsedPerRatioConfigs?.['16:9']?.rotation ?? 0;
+
       const item: TimelineItem = {
         id: text.id,
         type: 'text',
@@ -158,14 +187,24 @@ export class TimelineAdapter {
         name: text.text.substring(0, 20) || 'Text',
         positionX: text.position_x / 100, // Normalize to 0-1
         positionY: text.position_y / 100, // Normalize to 0-1
-        originalData: text,
-        keyframes: text.keyframes_data ? JSON.parse(text.keyframes_data) : undefined
+        rotation: defaultRotation,
+        originalData: {
+          ...text,
+          style: parsedStyle, // Parsed style object for TrackRenderer
+          perRatioConfigs: parsedPerRatioConfigs, // Parsed per-ratio configs
+          rotation: defaultRotation, // Include rotation in originalData for TrackRenderer
+        },
+        keyframes: text.keyframes_data
+          ? JSON.parse(text.keyframes_data)
+          : text.keyframes
+            ? JSON.parse(text.keyframes)
+            : undefined,
       };
       getLayer(layerIndex).push(item);
     });
-    
+
     // Process Stickers
-    data.stickers.forEach(sticker => {
+    data.stickers.forEach((sticker) => {
       const layerIndex = sticker.layer || 0;
       const item: TimelineItem = {
         id: sticker.id,
@@ -178,13 +217,13 @@ export class TimelineAdapter {
         scale: sticker.scale,
         rotation: sticker.rotation,
         originalData: sticker,
-        keyframes: sticker.keyframes_data ? JSON.parse(sticker.keyframes_data) : undefined
+        keyframes: sticker.keyframes_data ? JSON.parse(sticker.keyframes_data) : undefined,
       };
       getLayer(layerIndex).push(item);
     });
-    
+
     // Process Watermarks
-    data.watermarks.forEach(wm => {
+    data.watermarks.forEach((wm) => {
       const layerIndex = wm.layer || 100; // Watermarks usually very top
       const item: TimelineItem = {
         id: wm.id,
@@ -198,15 +237,15 @@ export class TimelineAdapter {
         scale: wm.scale / 100, // Assuming scale is percentage 0-100
         opacity: wm.opacity / 100, // Assuming opacity is 0-100
         originalData: wm,
-        keyframes: wm.keyframes_data ? JSON.parse(wm.keyframes_data) : undefined
+        keyframes: wm.keyframes_data ? JSON.parse(wm.keyframes_data) : undefined,
       };
       getLayer(layerIndex).push(item);
     });
-    
+
     // Create tracks for overlays
     // We sort layers to ensure correct z-index
     const sortedLayers = Array.from(overlaysByLayer.keys()).sort((a, b) => a - b);
-    
+
     sortedLayers.forEach((layerIndex) => {
       const globalTrackIndex = overlayBaseIndex + layerIndex;
       tracks.push({
@@ -217,24 +256,24 @@ export class TimelineAdapter {
         isMuted: false,
         isLocked: false,
         isVisible: true,
-        items: overlaysByLayer.get(layerIndex)!
+        items: overlaysByLayer.get(layerIndex)!,
       });
     });
-    
+
     // 3. Process Audio Tracks
     // Group by trackOrder
     const audioByTrack = new Map<number, VideoEditorAudioTrackRecord[]>();
-    
-    data.audioTracks.forEach(audio => {
+
+    data.audioTracks.forEach((audio) => {
       const order = audio.track_order || 0;
       if (!audioByTrack.has(order)) {
         audioByTrack.set(order, []);
       }
       audioByTrack.get(order)?.push(audio);
     });
-    
+
     audioByTrack.forEach((trackAudioItems, order) => {
-      const items: TimelineItem[] = trackAudioItems.map(audio => ({
+      const items: TimelineItem[] = trackAudioItems.map((audio) => ({
         id: audio.id,
         type: 'audio',
         startTime: audio.start_time,
@@ -244,9 +283,11 @@ export class TimelineAdapter {
         volume: audio.volume,
         isMuted: !!audio.is_muted,
         originalData: audio,
-        keyframes: audio.keyframes_data ? JSON.parse(`{"audio":${audio.keyframes_data}}`) : undefined
+        keyframes: audio.keyframes_data
+          ? JSON.parse(`{"audio":${audio.keyframes_data}}`)
+          : undefined,
       }));
-      
+
       tracks.push({
         id: `track-audio-${order}`,
         type: 'audio',
@@ -255,7 +296,7 @@ export class TimelineAdapter {
         isMuted: false,
         isLocked: false, // Record doesn't have isLocked yet?
         isVisible: true,
-        items
+        items,
       });
     });
 
@@ -265,10 +306,11 @@ export class TimelineAdapter {
     const effectItems: TimelineItem[] = [];
 
     // Process Effects
-    data.effects.forEach(effect => {
+    data.effects.forEach((effect) => {
       let parsedSettings: any = {};
       try {
-        parsedSettings = typeof effect.settings === 'string' ? JSON.parse(effect.settings) : effect.settings;
+        parsedSettings =
+          typeof effect.settings === 'string' ? JSON.parse(effect.settings) : effect.settings;
       } catch (e) {
         console.warn('Failed to parse effect settings', e);
       }
@@ -284,13 +326,13 @@ export class TimelineAdapter {
         name: `Effect: ${effect.effect_type}`,
         originalData: {
           ...effect,
-          settings: parsedSettings // Ensure renderer gets parsed settings
-        }
+          settings: parsedSettings, // Ensure renderer gets parsed settings
+        },
       });
     });
 
     // Process Filter Segments
-    data.filterSegments.forEach(filter => {
+    data.filterSegments.forEach((filter) => {
       effectItems.push({
         id: filter.id,
         type: 'effect', // Treat filters as effects
@@ -299,8 +341,8 @@ export class TimelineAdapter {
         name: 'Filter',
         originalData: {
           effect_type: 'filter',
-          ...filter
-        }
+          ...filter,
+        },
       });
     });
 
@@ -315,13 +357,13 @@ export class TimelineAdapter {
         isMuted: false,
         isLocked: false,
         isVisible: true,
-        items: effectItems
+        items: effectItems,
       });
     }
-    
+
     return {
       tracks,
-      duration: data.duration
+      duration: data.duration,
     };
   }
 }

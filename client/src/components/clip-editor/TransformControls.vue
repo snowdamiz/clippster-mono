@@ -1,36 +1,39 @@
 <template>
   <div class="transform-controls absolute inset-0 pointer-events-none">
-    <!-- Selection Border -->
-    <div class="absolute inset-0 border-2 border-violet-500 rounded-sm pointer-events-none"></div>
+    <!-- Selection Border - scales with content (no counter-scale) -->
+    <div class="absolute inset-0 border-2 border-violet-500 rounded-sm pointer-events-none" :style="borderStyle"></div>
 
-    <!-- Resize Handles -->
+    <!-- Resize Handles - counter-scaled to stay fixed size -->
     <!-- Top Left -->
     <div
-      class="absolute -left-1.5 -top-1.5 w-3 h-3 bg-white border border-violet-500 rounded-full cursor-nw-resize pointer-events-auto z-10"
-      @mousedown.stop.prevent="$emit('resizeStart', 'tl', $event)"
+      class="handle absolute bg-white border-2 border-violet-500 rounded-full cursor-nw-resize pointer-events-auto z-50"
+      :style="handleStyle('tl')"
+      @mousedown.stop.prevent="onResizeStart('tl', $event)"
     ></div>
     <!-- Top Right -->
     <div
-      class="absolute -right-1.5 -top-1.5 w-3 h-3 bg-white border border-violet-500 rounded-full cursor-ne-resize pointer-events-auto z-10"
-      @mousedown.stop.prevent="$emit('resizeStart', 'tr', $event)"
+      class="handle absolute bg-white border-2 border-violet-500 rounded-full cursor-ne-resize pointer-events-auto z-50"
+      :style="handleStyle('tr')"
+      @mousedown.stop.prevent="onResizeStart('tr', $event)"
     ></div>
     <!-- Bottom Left -->
     <div
-      class="absolute -left-1.5 -bottom-1.5 w-3 h-3 bg-white border border-violet-500 rounded-full cursor-sw-resize pointer-events-auto z-10"
-      @mousedown.stop.prevent="$emit('resizeStart', 'bl', $event)"
+      class="handle absolute bg-white border-2 border-violet-500 rounded-full cursor-sw-resize pointer-events-auto z-50"
+      :style="handleStyle('bl')"
+      @mousedown.stop.prevent="onResizeStart('bl', $event)"
     ></div>
     <!-- Bottom Right -->
     <div
-      class="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-white border border-violet-500 rounded-full cursor-se-resize pointer-events-auto z-10"
-      @mousedown.stop.prevent="$emit('resizeStart', 'br', $event)"
+      class="handle absolute bg-white border-2 border-violet-500 rounded-full cursor-se-resize pointer-events-auto z-50"
+      :style="handleStyle('br')"
+      @mousedown.stop.prevent="onResizeStart('br', $event)"
     ></div>
 
-    <!-- Rotation Handle (Top Center offset) -->
+    <!-- Rotation Handle (Top Center offset) - counter-scaled -->
+    <div class="absolute left-1/2 bg-violet-500 pointer-events-none" :style="rotateLineStyle"></div>
     <div
-      class="absolute left-1/2 -top-8 w-0.5 h-6 bg-violet-500 -translate-x-1/2 pointer-events-none"
-    ></div>
-    <div
-      class="absolute left-1/2 -top-8 w-5 h-5 bg-white border border-violet-500 rounded-full cursor-pointer pointer-events-auto z-10 flex items-center justify-center -translate-x-1/2 shadow-sm hover:scale-110 transition-transform"
+      class="absolute left-1/2 bg-white border-2 border-violet-500 rounded-full cursor-pointer pointer-events-auto z-50 flex items-center justify-center shadow-sm hover:brightness-95 transition-all"
+      :style="rotateHandleStyle"
       @mousedown.stop.prevent="$emit('rotateStart', $event)"
     >
       <svg
@@ -52,21 +55,99 @@
 </template>
 
 <script setup lang="ts">
-// Handles are standardized:
-// tl: Top Left
-// tr: Top Right
-// bl: Bottom Left
-// br: Bottom Right
+  import { computed } from 'vue';
 
-defineEmits<{
-  (e: 'resizeStart', handle: 'tl' | 'tr' | 'bl' | 'br', event: MouseEvent): void;
-  (e: 'rotateStart', event: MouseEvent): void;
-}>();
+  const props = withDefaults(
+    defineProps<{
+      scale?: number;
+    }>(),
+    {
+      scale: 1,
+    }
+  );
+
+  const emit = defineEmits<{
+    (e: 'resizeStart', handle: 'tl' | 'tr' | 'bl' | 'br', event: MouseEvent): void;
+    (e: 'rotateStart', event: MouseEvent): void;
+  }>();
+
+  // Calculate inverse scale to counter the parent's scale transform
+  const inverseScale = computed(() => {
+    const s = props.scale || 1;
+    return s > 0 ? 1 / s : 1;
+  });
+
+  // Border style - keep border width consistent by counter-scaling it
+  const borderStyle = computed(() => ({
+    borderWidth: `${2 * inverseScale.value}px`,
+  }));
+
+  // Handle size in pixels (fixed visual size regardless of item scale)
+  const handleSize = 10;
+
+  function handleStyle(position: 'tl' | 'tr' | 'bl' | 'br') {
+    const scaledSize = handleSize * inverseScale.value;
+    const offset = scaledSize / 2;
+
+    const base: Record<string, string> = {
+      width: `${scaledSize}px`,
+      height: `${scaledSize}px`,
+      borderWidth: `${2 * inverseScale.value}px`,
+    };
+
+    switch (position) {
+      case 'tl':
+        base.left = `-${offset}px`;
+        base.top = `-${offset}px`;
+        break;
+      case 'tr':
+        base.right = `-${offset}px`;
+        base.top = `-${offset}px`;
+        break;
+      case 'bl':
+        base.left = `-${offset}px`;
+        base.bottom = `-${offset}px`;
+        break;
+      case 'br':
+        base.right = `-${offset}px`;
+        base.bottom = `-${offset}px`;
+        break;
+    }
+
+    return base;
+  }
+
+  // Rotation handle styles - counter-scaled
+  const rotateLineStyle = computed(() => {
+    const lineHeight = 24 * inverseScale.value;
+    const lineWidth = 2 * inverseScale.value;
+    return {
+      width: `${lineWidth}px`,
+      height: `${lineHeight}px`,
+      top: `-${lineHeight + 4 * inverseScale.value}px`,
+      transform: 'translateX(-50%)',
+    };
+  });
+
+  const rotateHandleStyle = computed(() => {
+    const size = 20 * inverseScale.value;
+    const lineHeight = 24 * inverseScale.value;
+    return {
+      width: `${size}px`,
+      height: `${size}px`,
+      top: `-${lineHeight + size / 2 + 8 * inverseScale.value}px`,
+      transform: 'translateX(-50%)',
+      borderWidth: `${2 * inverseScale.value}px`,
+    };
+  });
+
+  function onResizeStart(handle: 'tl' | 'tr' | 'bl' | 'br', event: MouseEvent) {
+    emit('resizeStart', handle, event);
+  }
 </script>
 
 <style scoped>
-/* Ensure handles remain circular and visible regardless of parent transform if needed */
-/* But here they are children of the transformed element, so they transform with it. 
-   Usually desirable for rotation, but scale might distort them. 
-   Ideally, we counter-scale handles, but for MVP let's assume item scale isn't extreme. */
+  .handle {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
 </style>
