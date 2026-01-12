@@ -95,6 +95,8 @@
                   :tracks="timelineTracks"
                   :is-video-muted="isVideoMuted"
                   :audio-tracks="audioTracks"
+                  :audio-effects="audioEffects"
+                  :selected-item-ids="selectedItemIds"
                   @time-update="onPreviewTimeUpdate"
                   @toggle-play="togglePlay"
                   @video-element-ready="onVideoElementReady"
@@ -102,6 +104,8 @@
                   @crossfade-completed="onCrossfadeCompleted"
                   @update-overlay-position="onUpdateOverlayPosition"
                   @update-overlay-width="onUpdateOverlayWidth"
+                  @update-overlay-rotation="onUpdateOverlayRotation"
+                  @update-overlay-scale="onUpdateOverlayScale"
                   @update-sticker-scale="onUpdateStickerScale"
                   @update-sticker-rotation="onUpdateStickerRotation"
                   @update-watermark-scale="onUpdateWatermarkScale"
@@ -109,10 +113,13 @@
                   @update-subtitle-max-width="onUpdateSubtitleMaxWidth"
                   @overlay-drag-end="onOverlayPositionChangeComplete"
                   @overlay-resize-end="onOverlayWidthChangeComplete"
+                  @overlay-rotate-end="onOverlayRotationChangeComplete"
+                  @overlay-scale-end="onOverlayScaleChangeComplete"
                   @sticker-resize-end="onStickerScaleChangeComplete"
                   @sticker-rotate-end="onStickerRotationChangeComplete"
                   @watermark-resize-end="onWatermarkScaleChangeComplete"
                   @video-ended="onVideoEnded"
+                  @track-item-select="onTrackItemSelect"
                 />
 
                 <!-- Transition frame overlay - shows last frame during source switch to avoid black flash (fallback) -->
@@ -450,14 +457,14 @@
       <!-- Manual POI Editor Dialog -->
       <ManualPOIEditor
         v-model="showManualPOIEditor"
-        :initial-config="getInitialPOIConfig(editingAspectRatio)"
+        :initial-config="getConfigForRatio(editingAspectRatio)"
         :target-aspect-ratio="editingAspectRatio"
         :source-aspect-ratio="'16:9'"
-        :thumbnail-url="effectiveThumbnailUrl ?? undefined"
-        :video-path="effectiveVideoPath ?? undefined"
+        :thumbnail-url="effectiveThumbnailUrl"
+        :video-path="effectiveVideoPath"
         :clip-start-time="effectivePOIClipStartTime"
-        :clip-end-time="effectivePOIClipEndTime ?? undefined"
-        @confirm="onManualPOIConfirm"
+        :clip-end-time="effectivePOIClipEndTime"
+        @confirm="onManualPOIConfigConfirm"
       />
     </div>
   </Teleport>
@@ -593,7 +600,7 @@
   import EffectsTab from './tabs/EffectsTab.vue';
   import ExportTab from './tabs/ExportTab.vue';
   import ClipEditorTimeline from './ClipEditorTimeline.vue';
-  import ManualPOIEditor from './ManualPOIEditor.vue';
+  import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
   import SpeedCurveEditor from './SpeedCurveEditor.vue';
   import KeyframeInspector from './KeyframeInspector.vue';
   import type { ItemType, Keyframe as TimelineKeyframe, EasingType } from '@/types/timeline-model';
@@ -848,6 +855,9 @@
   const effects = ref<Effect[]>([]);
   const watermarks = ref<ClipWatermark[]>([]);
   const filterSegments = ref<FilterSegment[]>([]);
+  
+  // Selection state for overlay items
+  const selectedItemIds = ref<Set<string>>(new Set());
 
   // Effects & Transitions
   const clipTransitions = ref<ClipTransition[]>([]);
@@ -1092,55 +1102,76 @@
         created_at: 0,
       }));
 
-      const textRecords: VideoEditorTextOverlayRecord[] = textOverlays.value.map((t) => ({
-        id: t.id,
-        edit_id: videoEditorEditId.value || '',
-        text: t.text,
-        start_time: t.startTime,
-        end_time: t.endTime,
-        position_x: t.position.x,
-        position_y: t.position.y,
-        style_data: JSON.stringify(t.style),
-        animation: t.animation,
-        per_ratio_configs_data: t.perRatioConfigs ? JSON.stringify(t.perRatioConfigs) : undefined,
-        preview_height: t.previewHeight,
-        layer: t.layer,
-        created_at: 0,
-      }));
+      const textRecords: VideoEditorTextOverlayRecord[] = textOverlays.value.map((t) => {
+        // Use per-ratio position if available for current aspect ratio
+        const ratio = previewAspectRatio.value;
+        const ratioConfig = t.perRatioConfigs?.[ratio];
+        const position = ratioConfig?.position || t.position;
+        
+        return {
+          id: t.id,
+          edit_id: videoEditorEditId.value || '',
+          text: t.text,
+          start_time: t.startTime,
+          end_time: t.endTime,
+          position_x: position.x,
+          position_y: position.y,
+          style_data: JSON.stringify(ratioConfig?.style || t.style),
+          animation: t.animation,
+          per_ratio_configs_data: t.perRatioConfigs ? JSON.stringify(t.perRatioConfigs) : undefined,
+          preview_height: t.previewHeight,
+          layer: t.layer,
+          created_at: 0,
+        };
+      });
 
-      const stickerRecords: VideoEditorStickerRecord[] = stickers.value.map((s) => ({
-        id: s.id,
-        edit_id: videoEditorEditId.value || '',
-        sticker_path: s.stickerPath,
-        sticker_type: s.stickerType,
-        start_time: s.startTime,
-        end_time: s.endTime,
-        position_x: s.position.x,
-        position_y: s.position.y,
-        scale: s.scale,
-        rotation: s.rotation,
-        animation: s.animation,
-        per_ratio_configs_data: s.perRatioConfigs ? JSON.stringify(s.perRatioConfigs) : undefined,
-        layer: s.layer,
-        created_at: 0,
-      }));
+      const stickerRecords: VideoEditorStickerRecord[] = stickers.value.map((s) => {
+        // Use per-ratio config if available for current aspect ratio
+        const ratio = previewAspectRatio.value;
+        const ratioConfig = s.perRatioConfigs?.[ratio];
+        const position = ratioConfig?.position || s.position;
+        
+        return {
+          id: s.id,
+          edit_id: videoEditorEditId.value || '',
+          sticker_path: s.stickerPath,
+          sticker_type: s.stickerType,
+          start_time: s.startTime,
+          end_time: s.endTime,
+          position_x: position.x,
+          position_y: position.y,
+          scale: ratioConfig?.scale ?? s.scale,
+          rotation: ratioConfig?.rotation ?? s.rotation,
+          animation: s.animation,
+          per_ratio_configs_data: s.perRatioConfigs ? JSON.stringify(s.perRatioConfigs) : undefined,
+          layer: s.layer,
+          created_at: 0,
+        };
+      });
 
-      const watermarkRecords: VideoEditorWatermarkRecord[] = watermarks.value.map((w) => ({
-        id: w.id,
-        edit_id: videoEditorEditId.value || '',
-        watermark_id: w.watermarkId,
-        watermark_path: w.filePath,
-        preview_url: w.previewUrl,
-        start_time: w.startTime,
-        end_time: w.endTime,
-        position_x: w.position.x,
-        position_y: w.position.y,
-        scale: w.scale,
-        opacity: w.opacity,
-        per_ratio_configs_data: w.perRatioConfigs ? JSON.stringify(w.perRatioConfigs) : undefined,
-        layer: w.layer,
-        created_at: 0,
-      }));
+      const watermarkRecords: VideoEditorWatermarkRecord[] = watermarks.value.map((w) => {
+        // Use per-ratio config if available for current aspect ratio
+        const ratio = previewAspectRatio.value;
+        const ratioConfig = w.perRatioConfigs?.[ratio];
+        const position = ratioConfig?.position || w.position;
+        
+        return {
+          id: w.id,
+          edit_id: videoEditorEditId.value || '',
+          watermark_id: w.watermarkId,
+          watermark_path: w.filePath,
+          preview_url: w.previewUrl,
+          start_time: w.startTime,
+          end_time: w.endTime,
+          position_x: position.x,
+          position_y: position.y,
+          scale: ratioConfig?.scale ?? w.scale,
+          opacity: ratioConfig?.opacity ?? w.opacity,
+          per_ratio_configs_data: w.perRatioConfigs ? JSON.stringify(w.perRatioConfigs) : undefined,
+          layer: w.layer,
+          created_at: 0,
+        };
+      });
 
       const effectRecords: VideoEditorEffectRecord[] = effects.value.map((e) => ({
         id: e.id,
@@ -1329,6 +1360,26 @@
     return null;
   });
 
+  // Helper function to construct video URL with proper endpoint for file type
+  // MPEG-TS (.ts) files need the /ts-hls/ endpoint to be wrapped in an HLS playlist
+  // for proper A/V sync via HLS.js. Regular video files use /video/ endpoint.
+  function constructVideoUrl(filePath: string, port: number): string {
+    const encodedPath = btoa(unescape(encodeURIComponent(filePath)));
+    
+    // Check if this is a .ts file - browsers can't play MPEG-TS natively
+    // Use the HLS wrapper endpoint which generates an on-the-fly playlist
+    const isTsFile = filePath.toLowerCase().endsWith('.ts');
+    
+    if (isTsFile) {
+      // Use ts-hls endpoint which wraps the .ts file in an HLS playlist
+      // This enables HLS.js to handle A/V sync properly via PTS timestamps
+      return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
+    }
+    
+    // Regular video file - serve directly
+    return `http://localhost:${port}/video/${encodedPath}`;
+  }
+
   // Editor mode: Compute the video URL for the active source
   const editorVideoSrc = computed(() => {
     if (!editorMode.value || !activeVideoSource.value) {
@@ -1348,8 +1399,7 @@
       return null;
     }
 
-    const encodedPath = btoa(unescape(encodeURIComponent(path)));
-    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+    return constructVideoUrl(path, videoServerPort.value);
   });
 
   // Editor mode: Compute the preload URL for the next source (for seamless transitions)
@@ -1371,8 +1421,7 @@
       return null;
     }
 
-    const encodedPath = btoa(unescape(encodeURIComponent(path)));
-    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+    return constructVideoUrl(path, videoServerPort.value);
   });
 
   // The video source to use for the preview (either from props or computed for editor mode)
@@ -1391,6 +1440,24 @@
       return source?.source_path || null;
     }
     return videoPath.value;
+  });
+
+  // Effective video URL for ManualPOIEditor - converts path to streaming URL
+  const effectiveVideoUrl = computed(() => {
+    const path = effectiveVideoPath.value;
+    if (!path) return null;
+
+    // If path already looks like an HTTP URL, use it directly
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+
+    // Otherwise, construct the HTTP URL from the file path using video server
+    if (!videoServerPort.value) {
+      return null;
+    }
+
+    return constructVideoUrl(path, videoServerPort.value);
   });
 
   // Effective clip start time for ManualPOIEditor - uses source trim times in editor mode
@@ -3767,8 +3834,7 @@
             const path = targetSource.source_path;
             if (path.startsWith('http://') || path.startsWith('https://')) return path;
             if (!videoServerPort.value) return null;
-            const encodedPath = btoa(unescape(encodeURIComponent(path)));
-            return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+            return constructVideoUrl(path, videoServerPort.value);
           })();
 
           // Check if the video element already has the correct src loaded
@@ -5787,6 +5853,16 @@
     }
   }
 
+  // Handle track item selection from preview
+  function onTrackItemSelect(itemId: string, type: string) {
+    // If empty itemId, clear selection; otherwise select the item
+    if (itemId) {
+      selectedItemIds.value = new Set([itemId]);
+    } else {
+      selectedItemIds.value = new Set();
+    }
+  }
+
   // Called when drag operation ends - creates undo/redo command
   async function onOverlayPositionChangeComplete(type: 'text' | 'sticker' | 'watermark', id: string) {
     const key = `${type}-${id}-position`;
@@ -5897,6 +5973,136 @@
       aspectRatio: ratio,
       originalValue: startData.value,
       newValue: finalWidth,
+      onReload: async () => {
+        if (editorMode.value) {
+          await loadEditorProject();
+        }
+      },
+    };
+
+    const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
+    await commandHistory.executeCommand(command);
+    undoRedoTrigger.value++;
+
+    overlayOperationStartValues.value.delete(key);
+  }
+
+  async function onUpdateOverlayRotation(id: string, rotation: number) {
+    const key = `text-${id}-rotation`;
+    const ratio = previewAspectRatio.value;
+
+    // Capture original value if this is the start of an operation
+    if (!overlayOperationStartValues.value.has(key)) {
+      const overlay = textOverlays.value.find((o) => o.id === id);
+      if (overlay) {
+        const config = overlay.perRatioConfigs?.[ratio];
+        const originalRotation = config?.rotation ?? overlay.rotation ?? 0;
+        overlayOperationStartValues.value.set(key, { property: 'rotation', value: originalRotation });
+      }
+    }
+
+    // Apply the update immediately for responsive UI
+    const overlay = textOverlays.value.find((o) => o.id === id);
+    if (overlay) {
+      const perRatioConfigs = overlay.perRatioConfigs || {};
+      const currentConfig = perRatioConfigs[ratio] || {
+        position: { ...overlay.position },
+        style: { ...overlay.style },
+      };
+      currentConfig.rotation = rotation;
+      perRatioConfigs[ratio] = currentConfig;
+      updateTextOverlayLocal(id, { perRatioConfigs });
+    }
+  }
+
+  async function onOverlayRotationChangeComplete(id: string) {
+    const key = `text-${id}-rotation`;
+    const startData = overlayOperationStartValues.value.get(key);
+
+    if (!startData) return;
+
+    const ratio = previewAspectRatio.value;
+    const overlay = textOverlays.value.find((o) => o.id === id);
+    const config = overlay?.perRatioConfigs?.[ratio];
+    const finalRotation = config?.rotation ?? overlay?.rotation ?? 0;
+
+    if (startData.value === finalRotation) {
+      overlayOperationStartValues.value.delete(key);
+      return;
+    }
+
+    const commandData: UpdateOverlayPropertyCommandData = {
+      type: 'text',
+      itemId: id,
+      property: 'rotation',
+      aspectRatio: ratio,
+      originalValue: startData.value,
+      newValue: finalRotation,
+      onReload: async () => {
+        if (editorMode.value) {
+          await loadEditorProject();
+        }
+      },
+    };
+
+    const command = new UpdateOverlayPropertyCommand(editorMode.value, commandData);
+    await commandHistory.executeCommand(command);
+    undoRedoTrigger.value++;
+
+    overlayOperationStartValues.value.delete(key);
+  }
+
+  async function onUpdateOverlayScale(id: string, scale: number) {
+    const key = `text-${id}-scale`;
+    const ratio = previewAspectRatio.value;
+
+    // Capture original value if this is the start of an operation
+    if (!overlayOperationStartValues.value.has(key)) {
+      const overlay = textOverlays.value.find((o) => o.id === id);
+      if (overlay) {
+        const config = overlay.perRatioConfigs?.[ratio];
+        const originalScale = config?.scale ?? overlay.scale ?? 1;
+        overlayOperationStartValues.value.set(key, { property: 'scale', value: originalScale });
+      }
+    }
+
+    // Apply the update immediately for responsive UI
+    const overlay = textOverlays.value.find((o) => o.id === id);
+    if (overlay) {
+      const perRatioConfigs = overlay.perRatioConfigs || {};
+      const currentConfig = perRatioConfigs[ratio] || {
+        position: { ...overlay.position },
+        style: { ...overlay.style },
+      };
+      currentConfig.scale = scale;
+      perRatioConfigs[ratio] = currentConfig;
+      updateTextOverlayLocal(id, { perRatioConfigs });
+    }
+  }
+
+  async function onOverlayScaleChangeComplete(id: string) {
+    const key = `text-${id}-scale`;
+    const startData = overlayOperationStartValues.value.get(key);
+
+    if (!startData) return;
+
+    const ratio = previewAspectRatio.value;
+    const overlay = textOverlays.value.find((o) => o.id === id);
+    const config = overlay?.perRatioConfigs?.[ratio];
+    const finalScale = config?.scale ?? overlay?.scale ?? 1;
+
+    if (startData.value === finalScale) {
+      overlayOperationStartValues.value.delete(key);
+      return;
+    }
+
+    const commandData: UpdateOverlayPropertyCommandData = {
+      type: 'text',
+      itemId: id,
+      property: 'scale',
+      aspectRatio: ratio,
+      originalValue: startData.value,
+      newValue: finalScale,
       onReload: async () => {
         if (editorMode.value) {
           await loadEditorProject();

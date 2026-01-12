@@ -36,6 +36,10 @@ export interface DvrChunk {
   suspect?: boolean; // Chunk was recorded during track mute - may be corrupt
 }
 
+// Callback for when a chunk is ready (used by auto-detect to process segments)
+// Can be async to support segment building operations
+export type OnChunkReadyCallback = (chunk: DvrChunk, mintId: string, streamerId: string, sessionId: string) => void | Promise<void>;
+
 // DVR session state
 export interface DvrSession {
   mintId: string;
@@ -55,6 +59,9 @@ export interface DvrSession {
   isRecording: boolean;
   streamEnded: boolean;
   chunkIndex: number;
+  // Optional callback for auto-detect mode
+  onChunkReady?: OnChunkReadyCallback;
+  sessionId?: string; // Session ID for auto-detect mode
 }
 
 // PumpFun API endpoints
@@ -304,22 +311,29 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
             console.log('[DvrRecording] Audio play failed:', e);
           }
 
-          // Wait for video to have dimensions
+          // Wait for video to have dimensions and preferably reach high resolution
           let waitAttempts = 0;
-          const maxWaitAttempts = 40; // 4 seconds max
-          while (liveKitVideoElement.videoWidth === 0 && waitAttempts < maxWaitAttempts) {
+          const maxWaitAttempts = 50; // 5 seconds max
+          const minDesiredWidth = 1280; // Wait for at least 720p if possible
+          while (waitAttempts < maxWaitAttempts) {
+            const w = liveKitVideoElement.videoWidth;
+            const h = liveKitVideoElement.videoHeight;
+            // Stop waiting if we have good resolution or waited long enough with any resolution
+            if (w >= minDesiredWidth || (w > 0 && waitAttempts >= 20)) {
+              break;
+            }
             await new Promise((r) => setTimeout(r, 100));
             waitAttempts++;
           }
 
-          const width = liveKitVideoElement.videoWidth || 1280;
-          const height = liveKitVideoElement.videoHeight || 720;
-          console.log(`[DvrRecording] Video dimensions: ${width}x${height}`);
+          let currentWidth = liveKitVideoElement.videoWidth || 1280;
+          let currentHeight = liveKitVideoElement.videoHeight || 720;
+          console.log(`[DvrRecording] Video dimensions: ${currentWidth}x${currentHeight}`);
 
           // Create canvas for capture
           const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
+          canvas.width = currentWidth;
+          canvas.height = currentHeight;
           canvas.style.position = 'fixed';
           canvas.style.width = '1px';
           canvas.style.height = '1px';
@@ -335,76 +349,84 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
             alpha: false, // Opaque canvas is faster
           })!;
 
-          // Create canvas capture stream at 30fps
-          const canvasStream = canvas.captureStream(30);
+          // Create canvas capture stream - use 0 for on-demand capture via requestFrame()
+          // This gives us precise control over frame timing
+          const canvasStream = canvas.captureStream(0);
           const capturedVideoTrack = canvasStream.getVideoTracks()[0] as
             | CanvasCaptureMediaStreamTrack
             | undefined;
 
-          // Draw loop - runs at display refresh rate but throttles actual draws to 30fps
-          let animationId = 0;
+          // Use setInterval for consistent frame timing instead of requestAnimationFrame
+          // requestAnimationFrame can be throttled by the browser when tab is not focused
           let frameCount = 0;
-          let lastDrawTime = 0;
           let lastLogTime = Date.now();
           let consecutiveMutedFrames = 0;
           let lastGoodFrame: ImageData | null = null;
-          const targetFrameMs = 1000 / 30;
           const MUTED_FRAME_THRESHOLD = 15; // ~0.5s of muted frames before using last good frame
 
-          const drawFrame = () => {
-            const now = performance.now();
+          // Use setInterval at 30fps (33.33ms) for consistent frame capture
+          const frameInterval = setInterval(() => {
+            const videoReady = liveKitVideoElement.readyState >= 2;
+            const videoMuted = videoMST.muted;
 
-            if (now - lastDrawTime >= targetFrameMs) {
-              lastDrawTime = now;
-              const videoReady = liveKitVideoElement.readyState >= 2;
-              const videoMuted = videoMST.muted;
+            // Check if video dimensions changed and resize canvas
+            const newWidth = liveKitVideoElement.videoWidth;
+            const newHeight = liveKitVideoElement.videoHeight;
+            if (newWidth > 0 && newHeight > 0 && (newWidth !== currentWidth || newHeight !== currentHeight)) {
+              console.log(`[DvrRecording] Video dimensions changed: ${currentWidth}x${currentHeight} -> ${newWidth}x${newHeight}`);
+              currentWidth = newWidth;
+              currentHeight = newHeight;
+              canvas.width = currentWidth;
+              canvas.height = currentHeight;
+              lastGoodFrame = null; // Invalidate old frame data
+            }
 
-              if (videoReady && !videoMuted) {
-                // Normal case: video is playing, draw it
-                ctx.drawImage(liveKitVideoElement, 0, 0, width, height);
-                frameCount++;
-                consecutiveMutedFrames = 0;
+            // Always draw a frame to maintain consistent timing
+            if (videoReady && !videoMuted) {
+              // Normal case: video is playing, draw it
+              ctx.drawImage(liveKitVideoElement, 0, 0, currentWidth, currentHeight);
+              frameCount++;
+              consecutiveMutedFrames = 0;
 
-                // Save this as the last good frame (every ~1 second to reduce overhead)
-                if (frameCount % 30 === 0) {
-                  try {
-                    lastGoodFrame = ctx.getImageData(0, 0, width, height);
-                  } catch (e) {
-                    // Ignore - cross-origin issues possible
-                  }
-                }
-
-                // Request frame capture
-                if (capturedVideoTrack && 'requestFrame' in capturedVideoTrack) {
-                  try {
-                    capturedVideoTrack.requestFrame();
-                  } catch (e) {}
-                }
-              } else if (videoMuted) {
-                // Track is muted by SFU - use last good frame to maintain stream continuity
-                consecutiveMutedFrames++;
-
-                if (consecutiveMutedFrames === 1) {
-                  console.warn('[DvrRecording] Video track muted by SFU, holding last frame');
-                }
-
-                // If we have a last good frame, redraw it to keep the stream alive
-                if (lastGoodFrame && consecutiveMutedFrames <= MUTED_FRAME_THRESHOLD * 30) {
-                  ctx.putImageData(lastGoodFrame, 0, 0);
-                  if (capturedVideoTrack && 'requestFrame' in capturedVideoTrack) {
-                    try {
-                      capturedVideoTrack.requestFrame();
-                    } catch (e) {}
-                  }
-                }
-
-                // Log extended muting
-                if (consecutiveMutedFrames === MUTED_FRAME_THRESHOLD) {
-                  console.error(
-                    '[DvrRecording] Video track muted for extended period - frames may be stale'
-                  );
+              // Save this as the last good frame (every ~1 second to reduce overhead)
+              if (frameCount % 30 === 0) {
+                try {
+                  lastGoodFrame = ctx.getImageData(0, 0, currentWidth, currentHeight);
+                } catch (e) {
+                  // Ignore - cross-origin issues possible
                 }
               }
+            } else if (videoMuted || !videoReady) {
+              // Track is muted or not ready - use last good frame to maintain stream continuity
+              consecutiveMutedFrames++;
+
+              if (consecutiveMutedFrames === 1 && videoMuted) {
+                console.warn('[DvrRecording] Video track muted by SFU, holding last frame');
+              }
+
+              // If we have a last good frame, redraw it to keep the stream alive
+              if (lastGoodFrame) {
+                ctx.putImageData(lastGoodFrame, 0, 0);
+              } else {
+                // No good frame yet, draw a black frame to maintain timing
+                ctx.fillStyle = 'black';
+                ctx.fillRect(0, 0, currentWidth, currentHeight);
+              }
+              frameCount++;
+
+              // Log extended muting
+              if (consecutiveMutedFrames === MUTED_FRAME_THRESHOLD) {
+                console.error(
+                  '[DvrRecording] Video track muted for extended period - frames may be stale'
+                );
+              }
+            }
+
+            // Always request frame capture to maintain consistent frame rate
+            if (capturedVideoTrack && 'requestFrame' in capturedVideoTrack) {
+              try {
+                capturedVideoTrack.requestFrame();
+              } catch (e) {}
             }
 
             // Periodic logging
@@ -419,10 +441,10 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
               frameCount = 0;
               lastLogTime = nowMs;
             }
+          }, 1000 / 30); // 30fps = 33.33ms interval
 
-            animationId = requestAnimationFrame(drawFrame);
-          };
-          animationId = requestAnimationFrame(drawFrame);
+          // Store interval ID for cleanup (cast to number for compatibility)
+          const animationId = frameInterval as unknown as number;
 
           // Create combined stream: canvas video + LiveKit audio
           const recordingStream = new MediaStream();
@@ -904,11 +926,18 @@ export function useDvrRecording() {
    * Start a background DVR session for a streamer.
    * Called by monitoring when streamer goes live.
    * Persists until streamer goes offline.
+   * 
+   * @param options.sessionId - If provided, enables auto-detect mode with segment callbacks
+   * @param options.onChunkReady - Callback fired when each chunk is saved (for auto-detect)
    */
   async function startDvrSession(
     mintId: string,
     streamerId: string,
-    displayName: string
+    displayName: string,
+    options?: {
+      sessionId?: string;
+      onChunkReady?: OnChunkReadyCallback;
+    }
   ): Promise<void> {
     // Check if already recording
     if (activeDvrSessions.value.has(mintId)) {
@@ -1012,6 +1041,9 @@ export function useDvrRecording() {
         isRecording: false,
         streamEnded: false,
         chunkIndex: 0,
+        // Auto-detect mode options
+        sessionId: options?.sessionId,
+        onChunkReady: options?.onChunkReady,
       };
 
       // Add to sessions map
@@ -1241,6 +1273,17 @@ export function useDvrRecording() {
           console.log(
             `[DvrRecording] Chunk ${chunk.index} saved for ${mintId}, total duration: ${currentSession.totalDuration}s, path: ${chunkPath}${chunk.suspect ? ' [SUSPECT]' : ''}`
           );
+
+          // Call onChunkReady callback if in auto-detect mode
+          if (currentSession.onChunkReady && currentSession.sessionId) {
+            console.log(`[DvrRecording] Calling onChunkReady for auto-detect, chunk ${chunk.index}`);
+            currentSession.onChunkReady(
+              chunk,
+              currentSession.mintId,
+              currentSession.streamerId,
+              currentSession.sessionId
+            );
+          }
         })
         .catch((error) => {
           console.error('[DvrRecording] Failed to save chunk:', error);
@@ -1374,8 +1417,10 @@ export function useDvrRecording() {
         session.mediaRecorder.stop();
       }
 
-      // Stop canvas animation frame
+      // Stop canvas animation frame/interval
       if (session.canvasAnimationId) {
+        // Try both clearInterval and cancelAnimationFrame since we use both approaches
+        clearInterval(session.canvasAnimationId);
         cancelAnimationFrame(session.canvasAnimationId);
       }
 

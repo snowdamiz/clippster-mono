@@ -748,6 +748,258 @@ pub async fn start_video_server_impl() {
             }
         });
 
+    // Single TS file HLS wrapper - generates an on-the-fly HLS playlist for a single .ts file
+    // This allows HLS.js to play standalone .ts segment files that browsers can't play natively
+    // Route: /ts-hls/{base64_file_path}/playlist.m3u8
+    let ts_hls_playlist_route = warp::path!("ts-hls" / String / "playlist.m3u8")
+        .and(warp::get())
+        .and_then(|encoded_path: String| async move {
+            use base64::{Engine as _, engine::general_purpose};
+            
+            // Decode the base64-encoded file path
+            let decoded = general_purpose::STANDARD.decode(&encoded_path)
+                .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_path))
+                .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(&encoded_path));
+            let decoded = match decoded {
+                Ok(d) => d,
+                Err(_) => {
+                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let file_path_str = match String::from_utf8(decoded) {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let file_path = PathBuf::from(&file_path_str);
+
+            // Verify the file exists and is a .ts file
+            if !file_path.exists() {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&serde_json::json!({"error": "File not found"})),
+                    warp::http::StatusCode::NOT_FOUND
+                ).into_response());
+            }
+
+            if file_path.extension().and_then(|e| e.to_str()) != Some("ts") {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&serde_json::json!({"error": "Only .ts files supported"})),
+                    warp::http::StatusCode::BAD_REQUEST
+                ).into_response());
+            }
+
+            // Use a large default duration - HLS.js will handle actual duration from the segment
+            let duration = 3600.0;
+
+            // Get the filename for the segment reference
+            let filename = file_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("segment.ts");
+
+            // Generate a simple HLS playlist for this single segment
+            let playlist = format!(
+                "#EXTM3U\n\
+                #EXT-X-VERSION:3\n\
+                #EXT-X-TARGETDURATION:{}\n\
+                #EXT-X-MEDIA-SEQUENCE:0\n\
+                #EXT-X-PLAYLIST-TYPE:VOD\n\
+                #EXTINF:{:.6},\n\
+                {}\n\
+                #EXT-X-ENDLIST\n",
+                (duration as u64) + 1,
+                duration,
+                filename
+            );
+
+            let response = warp::reply::with_header(
+                playlist,
+                "Content-Type",
+                "application/vnd.apple.mpegurl"
+            );
+            let response = warp::reply::with_header(
+                response,
+                "Access-Control-Allow-Origin",
+                "*"
+            );
+            let response = warp::reply::with_header(
+                response,
+                "Cache-Control",
+                "no-cache"
+            );
+            Ok(response.into_response())
+        });
+
+    // Single TS file segment serving route - serves the actual .ts file with Range support
+    // Route: /ts-hls/{base64_file_path}/{segment_filename}
+    let ts_hls_segment_route = warp::path!("ts-hls" / String / String)
+        .and(warp::get())
+        .and(warp::header::optional::<String>("range"))
+        .and_then(|encoded_path: String, _segment_filename: String, range_header: Option<String>| async move {
+            use base64::{Engine as _, engine::general_purpose};
+            use tokio::io::{AsyncSeekExt, AsyncReadExt};
+            
+            // Decode the base64-encoded file path
+            let decoded = general_purpose::STANDARD.decode(&encoded_path)
+                .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_path))
+                .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(&encoded_path));
+            let decoded = match decoded {
+                Ok(d) => d,
+                Err(_) => {
+                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let file_path_str = match String::from_utf8(decoded) {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
+                        warp::http::StatusCode::BAD_REQUEST
+                    ).into_response());
+                }
+            };
+
+            let file_path = PathBuf::from(&file_path_str);
+
+            if !file_path.exists() {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&serde_json::json!({"error": "Segment not found"})),
+                    warp::http::StatusCode::NOT_FOUND
+                ).into_response());
+            }
+
+            // Get file size
+            let metadata = match tokio::fs::metadata(&file_path).await {
+                Ok(m) => m,
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&serde_json::json!({"error": "Cannot read file metadata"})),
+                        warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                    ).into_response());
+                }
+            };
+            let file_size = metadata.len();
+
+            // Handle Range requests for efficient streaming (critical for large .ts files)
+            if let Some(range) = range_header {
+                if let Some(range_str) = range.strip_prefix("bytes=") {
+                    let parts: Vec<&str> = range_str.split('-').collect();
+                    if parts.len() == 2 {
+                        let start = if parts[0].is_empty() { 0 } else { parts[0].parse::<u64>().unwrap_or(0) };
+                        let requested_end = if parts[1].is_empty() { file_size - 1 } else { parts[1].parse::<u64>().unwrap_or(file_size - 1) };
+                        let end = std::cmp::min(requested_end, file_size - 1);
+
+                        if start < file_size && start <= end {
+                            // Limit chunk size to 10MB for faster initial response
+                            const MAX_CHUNK: u64 = 10 * 1024 * 1024;
+                            let actual_end = std::cmp::min(end, start + MAX_CHUNK - 1);
+                            let content_length = actual_end - start + 1;
+
+                            match tokio::fs::File::open(&file_path).await {
+                                Ok(mut file) => {
+                                    if let Err(_) = file.seek(std::io::SeekFrom::Start(start)).await {
+                                        return Ok(warp::reply::with_status(
+                                            warp::reply::json(&serde_json::json!({"error": "Cannot seek in file"})),
+                                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                                        ).into_response());
+                                    }
+
+                                    let mut buffer = vec![0u8; content_length as usize];
+                                    if let Err(_) = file.read_exact(&mut buffer).await {
+                                        return Ok(warp::reply::with_status(
+                                            warp::reply::json(&serde_json::json!({"error": "Cannot read file range"})),
+                                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                                        ).into_response());
+                                    }
+
+                                    let response = warp::reply::with_header(buffer, "Content-Type", "video/mp2t");
+                                    let response = warp::reply::with_header(response, "Content-Range", format!("bytes {}-{}/{}", start, actual_end, file_size));
+                                    let response = warp::reply::with_header(response, "Content-Length", content_length.to_string());
+                                    let response = warp::reply::with_header(response, "Accept-Ranges", "bytes");
+                                    let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
+                                    let response = warp::reply::with_header(response, "Cache-Control", "max-age=3600");
+                                    return Ok(warp::reply::with_status(response, warp::http::StatusCode::PARTIAL_CONTENT).into_response());
+                                }
+                                Err(_) => {
+                                    return Ok(warp::reply::with_status(
+                                        warp::reply::json(&serde_json::json!({"error": "Cannot open file"})),
+                                        warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                                    ).into_response());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // No range header - for small files serve entirely, for large files serve first chunk
+            const SMALL_FILE_THRESHOLD: u64 = 5 * 1024 * 1024; // 5MB
+            
+            if file_size <= SMALL_FILE_THRESHOLD {
+                // Small file: serve entirely
+                match tokio::fs::read(&file_path).await {
+                    Ok(content) => {
+                        let response = warp::reply::with_header(content, "Content-Type", "video/mp2t");
+                        let response = warp::reply::with_header(response, "Content-Length", file_size.to_string());
+                        let response = warp::reply::with_header(response, "Accept-Ranges", "bytes");
+                        let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
+                        let response = warp::reply::with_header(response, "Cache-Control", "max-age=3600");
+                        Ok(response.into_response())
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to read TS file {}: {}", file_path.display(), e);
+                        Ok(warp::reply::with_status(
+                            warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
+                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                        ).into_response())
+                    }
+                }
+            } else {
+                // Large file without range header: serve first 10MB chunk with 206 to encourage range requests
+                const INITIAL_CHUNK: u64 = 10 * 1024 * 1024;
+                let chunk_size = std::cmp::min(INITIAL_CHUNK, file_size);
+                
+                match tokio::fs::File::open(&file_path).await {
+                    Ok(mut file) => {
+                        let mut buffer = vec![0u8; chunk_size as usize];
+                        if let Err(_) = file.read_exact(&mut buffer).await {
+                            return Ok(warp::reply::with_status(
+                                warp::reply::json(&serde_json::json!({"error": "Cannot read file"})),
+                                warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                            ).into_response());
+                        }
+
+                        let response = warp::reply::with_header(buffer, "Content-Type", "video/mp2t");
+                        let response = warp::reply::with_header(response, "Content-Range", format!("bytes 0-{}/{}", chunk_size - 1, file_size));
+                        let response = warp::reply::with_header(response, "Content-Length", chunk_size.to_string());
+                        let response = warp::reply::with_header(response, "Accept-Ranges", "bytes");
+                        let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
+                        let response = warp::reply::with_header(response, "Cache-Control", "max-age=3600");
+                        Ok(warp::reply::with_status(response, warp::http::StatusCode::PARTIAL_CONTENT).into_response())
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to open TS file {}: {}", file_path.display(), e);
+                        Ok(warp::reply::with_status(
+                            warp::reply::json(&serde_json::json!({"error": "Cannot open file"})),
+                            warp::http::StatusCode::INTERNAL_SERVER_ERROR
+                        ).into_response())
+                    }
+                }
+            }
+        });
+
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "HEAD", "OPTIONS"])
@@ -759,6 +1011,8 @@ pub async fn start_video_server_impl() {
         .or(hls_playlist_route)
         .or(hls_playlist_tmp_route)
         .or(hls_segment_route)
+        .or(ts_hls_playlist_route)
+        .or(ts_hls_segment_route)
         .or(kick_hls_proxy_route)
         .with(cors);
 

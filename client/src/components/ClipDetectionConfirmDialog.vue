@@ -86,6 +86,33 @@
                 </div>
               </div>
 
+              <!-- Enhanced Multimodal Detection Toggle -->
+              <div class="mb-4 sm:mb-5 p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800">
+                <div class="flex items-center justify-between">
+                  <div class="flex-1 min-w-0 pr-3">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-white">Enhanced Detection</span>
+                      <span class="px-1.5 py-0.5 text-[10px] font-semibold bg-violet-500/20 text-violet-400 rounded">2x Credits</span>
+                    </div>
+                    <p class="text-xs text-zinc-400 mt-1">
+                      Uses 3 AI models in parallel for higher quality clip detection
+                    </p>
+                  </div>
+                  <button
+                    @click="multimodalEnabled = !multimodalEnabled"
+                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
+                    :class="multimodalEnabled ? 'bg-violet-600' : 'bg-zinc-700'"
+                    role="switch"
+                    :aria-checked="multimodalEnabled"
+                  >
+                    <span
+                      class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                      :class="multimodalEnabled ? 'translate-x-5' : 'translate-x-0'"
+                    />
+                  </button>
+                </div>
+              </div>
+
               <!-- Credit Source Selector (shown when user has org credits) -->
               <div v-if="showCreditSourceSelector" class="mb-4 sm:mb-5">
                 <label class="block text-xs sm:text-sm font-medium text-zinc-300 mb-1.5 sm:mb-2">Pay with</label>
@@ -217,7 +244,7 @@
 
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
-    confirm: [promptId: string, promptContent: string, organizationId: number | null];
+    confirm: [promptId: string, promptContent: string, organizationId: number | null, multimodal: boolean];
   }>();
 
   const showPromptDropdown = ref(false);
@@ -227,6 +254,9 @@
   const isProcessing = ref(false);
   const error = ref<string>('');
   const prompts = ref<Prompt[]>([]);
+  
+  // Multimodal detection toggle
+  const multimodalEnabled = ref(false);
 
   const authStore = useAuthStore();
 
@@ -250,6 +280,16 @@
   // Check if user is admin (has unlimited credits)
   const isAdmin = computed(() => selectedSourceHoursRemaining.value === Infinity);
 
+  // Calculate credits based on duration, transcription status, and multimodal mode
+  const calculatedCredits = computed(() => {
+    const minutesToCharge = effectiveDuration.value / 60; // Convert seconds to minutes
+    // If already transcribed, charge 0.75 credits per minute, otherwise 1.0
+    const baseRate = props.isTranscribed ? 0.75 : 1.0;
+    // Apply 2x multiplier for multimodal mode
+    const rate = multimodalEnabled.value ? baseRate * 2.0 : baseRate;
+    return minutesToCharge * rate;
+  });
+
   // Computed credit information based on selected source
   const creditInfo = computed(() => {
     if (isAdmin.value) {
@@ -260,27 +300,25 @@
       return 'Loading credit information...';
     }
 
-    const minutesToCharge = effectiveDuration.value / 60; // Convert seconds to minutes
-    // If already transcribed, charge 0.75 credits per minute, otherwise 1.0
-    const rate = props.isTranscribed ? 0.75 : 1.0;
-    const creditsToCharge = minutesToCharge * rate;
-
+    const creditsToCharge = calculatedCredits.value;
     const remaining = selectedSourceHoursRemaining.value;
     const sourceName =
       selectedOption.value?.type === 'organization' ? selectedOption.value.organizationName : 'Personal';
 
     const roundedCredits = Math.ceil(creditsToCharge);
     const roundedRemaining = Math.round(remaining);
+    
+    const multimodalNote = multimodalEnabled.value ? ' (2x for Enhanced Detection)' : '';
 
     if (remaining === 0) {
-      return `No credits remaining in ${sourceName}. This operation requires ${roundedCredits} credits.`;
+      return `No credits remaining in ${sourceName}. This operation requires ${roundedCredits} credits${multimodalNote}.`;
     }
 
     if (remaining < creditsToCharge) {
-      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits.`;
+      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits${multimodalNote}.`;
     }
 
-    return `This operation will charge ${roundedCredits} credits from ${sourceName}. You have ${roundedRemaining} credits remaining.`;
+    return `This operation will charge ${roundedCredits} credits${multimodalNote} from ${sourceName}. You have ${roundedRemaining} credits remaining.`;
   });
 
   // Close dropdown when clicking outside
@@ -334,10 +372,7 @@
 
     // Check credits for non-admin users
     if (!isAdmin.value) {
-      const minutesToCharge = effectiveDuration.value / 60;
-      // If already transcribed, charge 0.75 credits per minute, otherwise 1.0
-      const rate = props.isTranscribed ? 0.75 : 1.0;
-      const creditsToCharge = minutesToCharge * rate;
+      const creditsToCharge = calculatedCredits.value;
 
       if (!hasEnoughCredits(creditsToCharge)) {
         error.value = 'Insufficient credits for this operation';
@@ -349,8 +384,9 @@
     error.value = '';
 
     try {
-      // Include organizationId if using org credits
-      emit('confirm', selectedPromptId.value, selectedPromptContent.value, organizationIdForApi.value);
+      // Include organizationId and multimodal flag
+      console.log('[ClipDetectionConfirmDialog] Emitting confirm with multimodal:', multimodalEnabled.value);
+      emit('confirm', selectedPromptId.value, selectedPromptContent.value, organizationIdForApi.value, multimodalEnabled.value);
       emit('update:modelValue', false);
     } catch (err) {
       console.error('Detection failed:', err);
@@ -396,6 +432,9 @@
         selectedPromptName.value = '';
         selectedPromptContent.value = '';
         showPromptDropdown.value = false;
+        
+        // Reset multimodal toggle (default off)
+        multimodalEnabled.value = false;
 
         // Reset credit source selection
         resetCreditSource();

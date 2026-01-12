@@ -6,7 +6,7 @@
       :key="item.id"
       class="timeline-item absolute transform-gpu"
       :class="{ 'pointer-events-auto': !isLocked && item.type !== 'effect' }"
-      :style="getItemStyle(item)"
+      :style="{ ...getItemStyle(item), overflow: 'visible' }"
       :data-item-id="item.id"
       :data-item-type="item.type"
       @mousedown.stop="(e) => $emit('itemMousedown', e, item)"
@@ -41,13 +41,11 @@
       </div>
 
       <!-- Text Item -->
-      <div
+      <span
         v-else-if="item.type === 'text'"
-        class="w-full h-full flex items-center justify-center whitespace-pre-wrap"
+        class="whitespace-pre-wrap inline-block"
         :style="getTextStyle(item)"
-      >
-        {{ item.originalData?.text || item.name }}
-      </div>
+      >{{ item.originalData?.text || item.name }}</span>
 
       <!-- Effect Item (Filter, Blur, Flash) -->
       <div
@@ -89,9 +87,10 @@
       <!-- Transform Controls (Selection & Handles) -->
       <TransformControls
         v-if="isSelected(item.id)"
+        :scale="getItemScale(item)"
         :class="{ 'pointer-events-none': isLocked }"
-        @resize-start="(handle, e) => $emit('itemResizeStart', e, item, handle)"
-        @rotate-start="(e) => $emit('itemRotateStart', e, item)"
+        @resize-start="(handle, e) => { $emit('itemResizeStart', e, item, handle); }"
+        @rotate-start="(e) => { $emit('itemRotateStart', e, item); }"
       />
     </div>
   </div>
@@ -109,6 +108,7 @@ const props = defineProps<{
   isPlaying: boolean;
   selectedItemIds: Set<string>;
   canvasSize: { width: number; height: number };
+  aspectRatio?: string; // Current aspect ratio for per-ratio config lookups (e.g., "16:9", "9:16")
   scaleOverrides?: Record<string, number>;
   rotationOverrides?: Record<string, number>;
   widthOverrides?: Record<string, number>;
@@ -272,20 +272,42 @@ function getItemSrc(item: TimelineItem): string {
   return '';
 }
 
+// Get the current scale for an item (used by TransformControls to counter-scale)
+function getItemScale(item: TimelineItem): number {
+  const relativeTime = props.currentTime - item.startTime;
+  let scale = AnimationService.getValueAtTime(item, 'scale', relativeTime, item.scale ?? 1);
+  
+  if (props.scaleOverrides && props.scaleOverrides[item.id] !== undefined) {
+    scale = props.scaleOverrides[item.id];
+  } else if (item.type === 'text' && item.originalData?.perRatioConfigs && props.aspectRatio) {
+    const config = item.originalData.perRatioConfigs[props.aspectRatio];
+    if (config?.scale !== undefined) {
+      scale = config.scale;
+    }
+  }
+  
+  return scale;
+}
+
 function getItemStyle(item: TimelineItem) {
   // Calculate relative time within the item
   const relativeTime = props.currentTime - item.startTime;
 
-  // Calculate dynamic properties using AnimationService
-  // Default values fallback to the item's static properties or standard defaults
-  let scale = AnimationService.getValueAtTime(item, 'scale', relativeTime, item.scale ?? 1);
-  if (props.scaleOverrides && props.scaleOverrides[item.id] !== undefined) {
-    scale = props.scaleOverrides[item.id];
-  }
+  // Get scale using shared function
+  const scale = getItemScale(item);
 
+  // For rotation, check rotationOverrides first (for live drag feedback),
+  // then perRatioConfigs (for persisted per-aspect-ratio rotation),
+  // then fall back to item.rotation or AnimationService
   let rotation = AnimationService.getValueAtTime(item, 'rotation', relativeTime, item.rotation ?? 0);
   if (props.rotationOverrides && props.rotationOverrides[item.id] !== undefined) {
     rotation = props.rotationOverrides[item.id];
+  } else if (item.type === 'text' && item.originalData?.perRatioConfigs && props.aspectRatio) {
+    // For text items, check perRatioConfigs for aspect-ratio specific rotation
+    const config = item.originalData.perRatioConfigs[props.aspectRatio];
+    if (config?.rotation !== undefined) {
+      rotation = config.rotation;
+    }
   }
 
   let positionX = AnimationService.getValueAtTime(item, 'position_x', relativeTime, item.positionX ?? 0.5);
@@ -302,13 +324,20 @@ function getItemStyle(item: TimelineItem) {
   const x = positionX * 100;
   const y = positionY * 100;
   
+  // Determine width - text items use auto width (scale handles sizing)
+  let itemWidth: string = 'auto';
+  if (item.type === 'video' && !item.originalData?.isFullFrameOverlay) {
+    itemWidth = '100%';
+  }
+  // Text items always use 'auto' width - sizing is controlled via scale transform
+
   // Base transform
   const baseStyle = {
     left: `${x}%`,
     top: `${y}%`,
     transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})`,
     opacity: opacity,
-    width: item.type === 'video' && !item.originalData?.isFullFrameOverlay ? '100%' : 'auto', 
+    width: itemWidth, 
     height: item.type === 'video' && !item.originalData?.isFullFrameOverlay ? '100%' : 'auto',
   };
 
@@ -326,30 +355,86 @@ function getItemStyle(item: TimelineItem) {
 function getTextStyle(item: TimelineItem) {
   if (item.type !== 'text' || !item.originalData) return {};
   
-  const style = item.originalData.style || {};
+  // Get style from perRatioConfigs first, then fall back to default style
+  let style = item.originalData.style || {};
+  if (item.originalData.perRatioConfigs && props.aspectRatio) {
+    const ratioConfig = item.originalData.perRatioConfigs[props.aspectRatio];
+    if (ratioConfig?.style) {
+      style = { ...style, ...ratioConfig.style };
+    }
+  }
+  
   const overrides = props.itemStyleOverrides?.[item.id];
 
-  return {
+  const result: Record<string, any> = {
     fontFamily: overrides?.fontFamily || style.fontFamily,
-    fontSize: overrides?.fontSize || `${style.fontSize}px`,
+    fontSize: overrides?.fontSize || (style.fontSize ? `${style.fontSize}px` : undefined),
     fontWeight: overrides?.fontWeight || style.fontWeight,
     color: overrides?.color || style.color || style.textColor,
-    textAlign: overrides?.textAlign || style.textAlign,
-    width: (props.widthOverrides && props.widthOverrides[item.id] !== undefined) 
-      ? `${props.widthOverrides[item.id]}%` 
-      : (overrides?.width || (style.width ? `${style.width}%` : undefined)),
-    maxWidth: overrides?.maxWidth || (style.maxWidth ? `${style.maxWidth}%` : undefined),
-    
-    // Advanced text styles that might be in overrides
-    textShadow: overrides?.textShadow,
-    webkitTextStroke: overrides?.webkitTextStroke,
-    paintOrder: overrides?.paintOrder,
-    backgroundColor: overrides?.backgroundColor,
-    padding: overrides?.padding,
-    borderRadius: overrides?.borderRadius,
-    lineHeight: overrides?.lineHeight,
-    letterSpacing: overrides?.letterSpacing,
+    textAlign: overrides?.textAlign || style.textAlign || 'center',
+    lineHeight: overrides?.lineHeight || style.lineHeight,
+    letterSpacing: overrides?.letterSpacing || style.letterSpacing,
   };
+
+  // Shadow (exports via ASS for simple, PNG for advanced)
+  if (style.shadowEnabled) {
+    const offsetX = style.shadowOffsetX || 2;
+    const offsetY = style.shadowOffsetY || 2;
+    const blur = style.shadowBlur || 4;
+    const color = style.shadowColor || '#000000';
+    result.textShadow = `${offsetX}px ${offsetY}px ${blur}px ${color}`;
+  }
+
+  // Outer glow effect (advanced - rendered to PNG on export)
+  if (style.glow?.enabled) {
+    const glowBlur = style.glow.blur || 20;
+    const glowColor = style.glow.color || '#ffffff';
+    const existingShadow = result.textShadow || '';
+    const glowShadow = `0 0 ${glowBlur}px ${glowColor}`;
+    result.textShadow = existingShadow ? `${existingShadow}, ${glowShadow}` : glowShadow;
+  }
+
+  // Text gradient (advanced - rendered to PNG on export)
+  if (style.gradient?.enabled && style.gradient.colors?.length >= 2) {
+    const colors = style.gradient.colors
+      .sort((a: any, b: any) => a.position - b.position)
+      .map((c: any) => `${c.color} ${c.position}%`)
+      .join(', ');
+    const angle = style.gradient.angle || 90;
+    result.background = `linear-gradient(${angle}deg, ${colors})`;
+    result.webkitBackgroundClip = 'text';
+    result.webkitTextFillColor = 'transparent';
+    result.backgroundClip = 'text';
+  }
+
+  // Text stroke (exports via ASS)
+  if (style.border1Width && style.border1Width > 0) {
+    result.webkitTextStroke = `${style.border1Width}px ${style.border1Color || '#000000'}`;
+    result.paintOrder = 'stroke fill';
+  }
+
+  // Chat bubble styling (advanced - rendered to PNG on export)
+  const chatBubble = style.chatBubble;
+  if (chatBubble?.enabled) {
+    let bubbleRadius = 18;
+    switch (chatBubble.shape) {
+      case 'rounded': bubbleRadius = 18; break;
+      case 'pointed': bubbleRadius = 8; break;
+      case 'cloud': bubbleRadius = 24; break;
+      case 'square': bubbleRadius = 4; break;
+    }
+    result.backgroundColor = style.backgroundColor || '#007AFF';
+    result.padding = `${style.padding || 12}px ${(style.padding || 12) * 1.5}px`;
+    result.borderRadius = `${bubbleRadius}px`;
+    result.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+  } else if (style.backgroundEnabled && style.backgroundColor) {
+    // Regular background (exports via ASS box)
+    result.backgroundColor = style.backgroundColor;
+    result.padding = `${style.padding || 8}px`;
+    result.borderRadius = `${style.borderRadius || 4}px`;
+  }
+
+  return result;
 }
 
 function getEffectType(item: TimelineItem): string {

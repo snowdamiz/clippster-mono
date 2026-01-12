@@ -516,15 +516,21 @@ async fn run_kick_recorder(
     streamer_id: String,
     session_id: String,
     output_dir: String,
-    _segment_duration_minutes: u32,
+    segment_duration_minutes: u32,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
     let ffmpeg_path = resolve_ffmpeg_binary()?;
     let kick_url = format!("https://kick.com/{}", channel_slug);
     
-    // HLS segment duration in seconds (use smaller segments for lower latency)
-    let hls_segment_seconds = 4;
+    // HLS segment duration in seconds
+    // For Auto-Detect/Record: use user-configured segment duration (e.g., 5 minutes = 300 seconds)
+    // For Watch mode (segment_duration_minutes <= 1): use 4-second segments for low-latency playback
+    let hls_segment_seconds = if segment_duration_minutes <= 1 {
+        4 // Low-latency mode for live watching
+    } else {
+        segment_duration_minutes * 60 // Convert minutes to seconds for recording
+    };
     
     let playlist_path = PathBuf::from(&output_dir).join("playlist.m3u8");
     let segment_pattern = PathBuf::from(&output_dir).join("segment_%04d.ts");

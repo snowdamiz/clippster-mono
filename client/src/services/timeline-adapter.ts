@@ -149,7 +149,34 @@ export class TimelineAdapter {
     // Process Text
     data.textOverlays.forEach(text => {
       const layerIndex = text.layer || 0; // Relative layer index
-      // Parse style data if needed, or keep originalData
+      
+      // Parse style_data and per_ratio_configs_data for TrackRenderer compatibility
+      let parsedStyle: any = {};
+      let parsedPerRatioConfigs: any = undefined;
+      
+      try {
+        if (text.style_data) {
+          parsedStyle = typeof text.style_data === 'string' ? JSON.parse(text.style_data) : text.style_data;
+        }
+      } catch (e) {
+        console.warn('Failed to parse text style_data', e);
+      }
+      
+      try {
+        if (text.per_ratio_configs_data) {
+          parsedPerRatioConfigs = typeof text.per_ratio_configs_data === 'string' 
+            ? JSON.parse(text.per_ratio_configs_data) 
+            : text.per_ratio_configs_data;
+        }
+      } catch (e) {
+        console.warn('Failed to parse text per_ratio_configs_data', e);
+      }
+      
+      // Get rotation from perRatioConfigs or default to 0
+      // Note: The actual rotation used depends on the current aspect ratio, 
+      // but we store a default here for AnimationService compatibility
+      const defaultRotation = parsedPerRatioConfigs?.['16:9']?.rotation ?? 0;
+      
       const item: TimelineItem = {
         id: text.id,
         type: 'text',
@@ -158,8 +185,14 @@ export class TimelineAdapter {
         name: text.text.substring(0, 20) || 'Text',
         positionX: text.position_x / 100, // Normalize to 0-1
         positionY: text.position_y / 100, // Normalize to 0-1
-        originalData: text,
-        keyframes: text.keyframes_data ? JSON.parse(text.keyframes_data) : undefined
+        rotation: defaultRotation,
+        originalData: {
+          ...text,
+          style: parsedStyle, // Parsed style object for TrackRenderer
+          perRatioConfigs: parsedPerRatioConfigs, // Parsed per-ratio configs
+          rotation: defaultRotation, // Include rotation in originalData for TrackRenderer
+        },
+        keyframes: text.keyframes_data ? JSON.parse(text.keyframes_data) : (text.keyframes ? JSON.parse(text.keyframes) : undefined)
       };
       getLayer(layerIndex).push(item);
     });

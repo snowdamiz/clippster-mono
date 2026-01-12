@@ -163,6 +163,7 @@ export {
   getNextSegmentNumber,
   getRawVideo,
   getRawVideosByProjectId,
+  getRawVideosByOriginalProjectId,
   getRawVideoByPath,
   updateRawVideo,
   deleteRawVideo,

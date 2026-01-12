@@ -795,6 +795,102 @@ impl FramingStrategy {
 // TEXT OVERLAY TYPES
 // ============================================================================
 
+/// Gradient color stop
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradientColorStop {
+    pub color: String,
+    pub position: f32, // 0-100
+}
+
+/// Gradient configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradientConfig {
+    pub enabled: bool,
+    #[serde(rename = "type")]
+    pub gradient_type: String, // "linear" or "radial"
+    #[serde(default)]
+    pub angle: f32, // degrees for linear gradient
+    pub colors: Vec<GradientColorStop>,
+}
+
+/// Glow effect configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlowConfig {
+    pub enabled: bool,
+    pub color: String,
+    #[serde(default)]
+    pub blur: f32,
+    #[serde(default)]
+    pub spread: f32,
+    #[serde(default)]
+    pub opacity: f32, // 0-1
+}
+
+/// Shadow configuration for multiple shadows
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShadowConfig {
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub blur: f32,
+    pub color: String,
+}
+
+/// Chat bubble configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatBubbleConfig {
+    pub enabled: bool,
+    pub shape: String, // "rounded", "pointed", "cloud", "square"
+    pub tail_position: String, // "left", "right", "bottom-left", "bottom-right", "none"
+    #[serde(default)]
+    pub tail_size: f32,
+    #[serde(default)]
+    pub platform: Option<String>, // "imessage", "discord", "twitch", "whatsapp", "custom"
+    #[serde(default)]
+    pub show_avatar: Option<bool>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub avatar_position: Option<String>, // "left", "right"
+    #[serde(default)]
+    pub avatar_size: Option<f32>,
+    #[serde(default)]
+    pub show_username: Option<bool>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub username_color: Option<String>,
+    #[serde(default)]
+    pub show_timestamp: Option<bool>,
+    #[serde(default)]
+    pub timestamp: Option<String>,
+}
+
+/// Animation preset configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextAnimationPreset {
+    pub entry: String,
+    pub exit: String,
+    pub emphasis: String,
+    #[serde(default)]
+    pub entry_duration: f32,
+    #[serde(default)]
+    pub exit_duration: f32,
+    #[serde(default)]
+    pub emphasis_duration: f32,
+    #[serde(default)]
+    pub entry_delay: f32,
+    #[serde(default)]
+    pub entry_easing: Option<String>,
+    #[serde(default)]
+    pub exit_easing: Option<String>,
+}
+
 /// Text overlay style settings (matches frontend TextOverlayStyle)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -858,6 +954,50 @@ pub struct TextOverlayStyle {
     pub text_offset_x: f32,
     #[serde(default)]
     pub text_offset_y: f32,
+    
+    // === EXTENDED PROPERTIES ===
+    
+    // Text Transform
+    #[serde(default)]
+    pub text_transform: Option<String>, // "none", "uppercase", "lowercase", "capitalize"
+    #[serde(default)]
+    pub text_decoration: Option<String>, // "none", "underline", "line-through"
+    
+    // Gradient Text
+    #[serde(default)]
+    pub gradient: Option<GradientConfig>,
+    
+    // Outer Glow
+    #[serde(default)]
+    pub glow: Option<GlowConfig>,
+    
+    // Multiple Shadows
+    #[serde(default)]
+    pub shadows: Option<Vec<ShadowConfig>>,
+    
+    // Background enhancements
+    #[serde(default)]
+    pub background_gradient: Option<GradientConfig>,
+    #[serde(default)]
+    pub background_blur: Option<f32>,
+    #[serde(default)]
+    pub background_opacity: Option<f32>,
+    
+    // Border enhancements
+    #[serde(default)]
+    pub border_style: Option<String>, // "solid", "dashed", "dotted"
+    #[serde(default)]
+    pub border_width: Option<f32>,
+    #[serde(default)]
+    pub border_color: Option<String>,
+    
+    // Chat bubble
+    #[serde(default)]
+    pub chat_bubble: Option<ChatBubbleConfig>,
+    
+    // Animation preset
+    #[serde(default)]
+    pub animation_preset: Option<TextAnimationPreset>,
 }
 
 impl Default for TextOverlayStyle {
@@ -892,6 +1032,20 @@ impl Default for TextOverlayStyle {
             width: None,
             text_offset_x: 0.0,
             text_offset_y: 0.0,
+            // Extended properties
+            text_transform: None,
+            text_decoration: None,
+            gradient: None,
+            glow: None,
+            shadows: None,
+            background_gradient: None,
+            background_blur: None,
+            background_opacity: None,
+            border_style: None,
+            border_width: None,
+            border_color: None,
+            chat_bubble: None,
+            animation_preset: None,
         }
     }
 }

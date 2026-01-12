@@ -167,17 +167,6 @@
             </div>
           </div>
 
-          <!-- Animation -->
-          <div>
-            <label class="block text-[10px] text-white/50 mb-1">Animation</label>
-            <select
-              :value="sticker.animation"
-              @change="(e) => updateSticker(sticker.id, 'animation', (e.target as HTMLSelectElement).value)"
-              class="w-full px-2 py-1.5 bg-white/5 border border-white/10 rounded text-xs text-white"
-            >
-              <option v-for="anim in animationOptions" :key="anim.value" :value="anim.value">{{ anim.label }}</option>
-            </select>
-          </div>
         </div>
       </div>
     </div>
@@ -413,22 +402,6 @@
   const activeTab = ref<'personal' | 'organization'>('personal');
   const { uploadImageAsset, onUploadComplete } = useImageAssetOperations();
 
-  const animationOptions = [
-    { value: 'none', label: 'None' },
-    { value: 'bounce', label: 'Bounce' },
-    { value: 'spin', label: 'Spin' },
-    { value: 'pulse', label: 'Pulse' },
-    { value: 'shake', label: 'Shake' },
-    { value: 'float', label: 'Float' },
-    { value: 'fade', label: 'Fade' },
-  ];
-
-  const motionPresets = [
-    { value: 'none' as const, label: 'None', description: 'Static sticker' },
-    { value: 'fade' as const, label: 'Fade', description: 'Soft fade in/out', duration: 0.4 },
-    { value: 'slide-up' as const, label: 'Slide Up', description: 'Rise from bottom', duration: 0.5 },
-    { value: 'pop' as const, label: 'Pop', description: 'Pop & scale', duration: 0.35 },
-  ];
 
   // Computed
   const hasOrganizations = computed(() => {
@@ -482,25 +455,6 @@
     if (selectedStickerId.value) {
       emit('selectSticker', id);
     }
-  }
-
-  function motionPresetLabel(preset: StickerType['motionPreset']): string {
-    const found = motionPresets.find((p) => p.value === preset);
-    return found?.label || 'None';
-  }
-
-  function applyMotionPreset(preset: StickerType['motionPreset']) {
-    if (!selectedStickerId.value) return;
-    const defaultDuration = motionPresets.find((p) => p.value === preset)?.duration ?? 0.4;
-    emit('updateSticker', selectedStickerId.value, {
-      motionPreset: preset,
-      motionDuration: defaultDuration,
-    });
-  }
-
-  function updateMotionDuration(duration: number) {
-    if (!selectedStickerId.value || Number.isNaN(duration) || duration <= 0) return;
-    emit('updateSticker', selectedStickerId.value, { motionDuration: duration });
   }
 
   function switchToRatio(ratio: string) {

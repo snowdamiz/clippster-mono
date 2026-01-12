@@ -19,6 +19,7 @@ export interface ChunkedDetectionOptions {
   overlapSeconds?: number;
   forceReprocess?: boolean;
   organizationId?: number | null; // For org credit deduction
+  multimodal?: boolean; // Enable multimodal detection (3 models + decider, 2x credits)
 }
 
 export interface DetectionProgress {
@@ -59,6 +60,9 @@ export function useChunkedClipDetection() {
 
   // Track organization ID for credit deduction
   let currentOrganizationId: number | null = null;
+
+  // Track multimodal mode for enhanced detection
+  let currentMultimodal: boolean = false;
 
   // Cancel the current detection process and request server-side refund
   async function cancelDetection() {
@@ -138,6 +142,12 @@ export function useChunkedClipDetection() {
 
       // Store organization ID for credit deduction
       currentOrganizationId = options.organizationId ?? null;
+
+      // Store multimodal mode
+      console.log('[ChunkedClipDetection] Options received:', JSON.stringify(options));
+      console.log('[ChunkedClipDetection] options.multimodal value:', options.multimodal);
+      currentMultimodal = options.multimodal ?? false;
+      console.log('[ChunkedClipDetection] Multimodal mode set to:', currentMultimodal);
 
       isProcessing.value = true;
       progress.value = {
@@ -449,6 +459,10 @@ export function useChunkedClipDetection() {
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
       }
+      if (currentMultimodal) {
+        formData.append('multimodal', 'true');
+        console.log('[ChunkedClipDetection] Appending multimodal=true to formData');
+      }
 
       // Send chunk metadata instead of full transcript
       formData.append('chunks', JSON.stringify(cachedMetadata.chunks));
@@ -630,6 +644,9 @@ export function useChunkedClipDetection() {
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
       }
+      if (currentMultimodal) {
+        formData.append('multimodal', 'true');
+      }
 
       // Send cached transcript
       formData.append(
@@ -753,6 +770,9 @@ export function useChunkedClipDetection() {
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
       }
+      if (currentMultimodal) {
+        formData.append('multimodal', 'true');
+      }
 
       const response = await api.post('/clips/detect', formData, {
         headers: {
@@ -843,6 +863,9 @@ export function useChunkedClipDetection() {
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
       }
+      if (currentMultimodal) {
+        formData.append('multimodal', 'true');
+      }
 
       progress.value = {
         stage: 'detecting_clips',
@@ -876,7 +899,7 @@ export function useChunkedClipDetection() {
       // Store results in database
       const sessionId = await persistClipDetectionResults(projectId, prompt, result, {
         processingTimeMs: 0,
-        detectionModel: 'claude-3.5-sonnet-fallback',
+        detectionModel: currentMultimodal ? 'multimodal-ensemble-fallback' : 'claude-3.5-sonnet-fallback',
         serverResponseId: result.jobId || null,
       });
 

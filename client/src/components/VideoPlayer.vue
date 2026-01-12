@@ -73,10 +73,11 @@
         </div>
       </div>
       <!-- Video Element -->
+      <!-- Note: For HLS URLs (.m3u8), src is not set directly - HLS.js handles it -->
       <video
         v-else
         ref="videoElementRef"
-        :src="videoSrc || undefined"
+        :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
         crossorigin="anonymous"
         class="w-full h-full object-cover video-with-focal-point"
         :style="{
@@ -269,6 +270,7 @@
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
   import { Video, AlertTriangle, Play, Pause, Film, RotateCcw } from 'lucide-vue-next';
+  import Hls from 'hls.js';
 
   import type { WhisperSegment, WatermarkSettings, PerRatioWatermarkSettings } from '@/types';
 
@@ -397,6 +399,9 @@
   const videoElementRef = ref<HTMLVideoElement | null>(null);
   const videoContainerRef = ref<HTMLElement | null>(null);
   const containerHeight = ref<number>(1080); // Default to 1080p height
+
+  // HLS.js instance for HLS playback
+  let hlsInstance: Hls | null = null;
 
   // Web Audio API refs for gain control
   const audioContext = ref<AudioContext | null>(null);
@@ -999,6 +1004,69 @@
     }
   });
 
+  // Cleanup HLS instance
+  function cleanupHls() {
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
+    }
+  }
+
+  // Setup HLS playback for .m3u8 URLs
+  function setupHlsPlayback(videoElement: HTMLVideoElement, hlsUrl: string) {
+    cleanupHls();
+
+    if (Hls.isSupported()) {
+      hlsInstance = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 60,
+      });
+
+      hlsInstance.loadSource(hlsUrl);
+      hlsInstance.attachMedia(videoElement);
+
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('[VideoPlayer] HLS manifest parsed, ready to play');
+      });
+
+      hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          console.error('[VideoPlayer] HLS fatal error:', data.type, data.details);
+          cleanupHls();
+        }
+      });
+    } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS support (Safari)
+      videoElement.src = hlsUrl;
+    } else {
+      console.error('[VideoPlayer] HLS not supported in this browser');
+    }
+  }
+
+  // Watch for video source changes to handle HLS URLs
+  watch(
+    () => props.videoSrc,
+    (newSrc, oldSrc) => {
+      if (newSrc === oldSrc) return;
+
+      // Cleanup previous HLS instance
+      cleanupHls();
+
+      // If new source is HLS, set it up
+      if (newSrc && newSrc.includes('.m3u8') && videoElementRef.value) {
+        setupHlsPlayback(videoElementRef.value, newSrc);
+      }
+    }
+  );
+
+  // Also handle when video element becomes available after source is set
+  watch(videoElementRef, (newElement) => {
+    if (newElement && props.videoSrc?.includes('.m3u8')) {
+      setupHlsPlayback(newElement, props.videoSrc);
+    }
+  });
+
   // Watch for audioGainDb changes
   watch(
     () => props.audioGainDb,
@@ -1081,6 +1149,8 @@
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
+    // Cleanup HLS instance
+    cleanupHls();
     // Cleanup audio resources
     cleanupAudio();
   });

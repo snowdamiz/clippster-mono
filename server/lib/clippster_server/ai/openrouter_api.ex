@@ -23,7 +23,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         IO.puts("[OpenRouterAPI] API key configured")
 
         # Get model from environment or use default
-        model = System.get_env("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+        model = System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7")
         IO.puts("[OpenRouterAPI] Using model: #{model}")
         IO.puts("[OpenRouterAPI] Using Responses API with high reasoning effort")
 
@@ -76,7 +76,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       "reasoning" => %{
         "effort" => "high"
       },
-      "max_output_tokens" => 8000
+      "max_output_tokens" => 4000
     }
 
     IO.puts("[OpenRouterAPI] Request payload prepared for Responses API")
@@ -400,6 +400,218 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     end)
 
     Enum.join(field_guidance, "\n\n")
+  end
+
+  @doc """
+  Generate clips using a specific model. Used by multimodal detection.
+  Returns {:ok, ai_response, usage} or {:error, reason}.
+  """
+  def generate_clips_with_model(transcript, system_prompt, user_prompt_input, model, project_id \\ nil) do
+    IO.puts("[OpenRouterAPI] Starting clip generation with model: #{model}")
+
+    api_key = System.get_env("OPENROUTER_API_KEY")
+
+    if is_nil(api_key) do
+      {:error, "OPENROUTER_API_KEY environment variable not set"}
+    else
+      generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, 0, [], project_id)
+    end
+  rescue
+    reason ->
+      IO.puts("[OpenRouterAPI] Rescue error in generate_clips_with_model: #{inspect(reason)}")
+      {:error, "Exception: #{inspect(reason)}"}
+  end
+
+  defp generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt, missing_fields, project_id) do
+    max_attempts = 2  # Fewer retries for multimodal since we have multiple models
+
+    IO.puts("[OpenRouterAPI] Model #{model} - Attempt #{attempt + 1}/#{max_attempts}")
+
+    user_prompt = build_user_prompt(transcript, user_prompt_input, attempt)
+
+    # Build payload - use chat completions API for broader model compatibility
+    payload = build_chat_payload(model, system_prompt, user_prompt, missing_fields)
+
+    json_payload = Jason.encode!(payload)
+    options = [recv_timeout: 150_000, timeout: 150_000]  # 2.5 min timeout
+
+    # Use chat completions endpoint for broader compatibility
+    api_url = "https://openrouter.ai/api/v1/chat/completions"
+
+    case HTTPoison.post(api_url, json_payload, build_headers(api_key), options) do
+      {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
+        case Jason.decode(body) do
+          {:ok, response} ->
+            case extract_clips_from_chat_response(response) do
+              {:ok, clips} ->
+                case validate_clips_response(clips) do
+                  :ok ->
+                    usage = Map.get(response, "usage", %{})
+                    {:ok, clips, usage}
+
+                  {:error, new_missing_fields} when attempt < max_attempts - 1 ->
+                    IO.puts("[OpenRouterAPI] Model #{model} validation failed, retrying...")
+                    :timer.sleep(1000)
+                    generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, new_missing_fields, project_id)
+
+                  {:error, new_missing_fields} ->
+                    {:error, "Missing fields after retries: #{inspect(new_missing_fields)}"}
+                end
+
+              {:error, reason} ->
+                {:error, reason}
+            end
+
+          {:error, reason} ->
+            {:error, "JSON decode failed: #{inspect(reason)}"}
+        end
+
+      {:ok, %HTTPoison.Response{status_code: status_code, body: body}} when status_code >= 500 ->
+        if attempt < max_attempts - 1 do
+          :timer.sleep(2000 * (attempt + 1))
+          generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, missing_fields, project_id)
+        else
+          {:error, "Server error #{status_code}: #{String.slice(body, 0, 200)}"}
+        end
+
+      {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
+        {:error, "API error #{status_code}: #{String.slice(body, 0, 200)}"}
+
+      {:error, %HTTPoison.Error{reason: reason}} ->
+        if attempt < max_attempts - 1 do
+          :timer.sleep(2000 * (attempt + 1))
+          generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, missing_fields, project_id)
+        else
+          {:error, "Network error: #{inspect(reason)}"}
+        end
+    end
+  end
+
+  @doc """
+  Run the decider model to synthesize results from multiple detection models.
+  Returns {:ok, clips, usage} or {:error, reason}.
+  """
+  def decide_final_clips(decider_prompt, model, project_id \\ nil) do
+    IO.puts("[OpenRouterAPI] Running decider model: #{model}")
+
+    api_key = System.get_env("OPENROUTER_API_KEY")
+
+    if is_nil(api_key) do
+      {:error, "OPENROUTER_API_KEY environment variable not set"}
+    else
+      decide_final_clips_impl(decider_prompt, model, api_key, project_id)
+    end
+  rescue
+    reason ->
+      IO.puts("[OpenRouterAPI] Rescue error in decide_final_clips: #{inspect(reason)}")
+      {:error, "Exception: #{inspect(reason)}"}
+  end
+
+  defp decide_final_clips_impl(decider_prompt, model, api_key, _project_id) do
+    payload = %{
+      "model" => model,
+      "messages" => [
+        %{
+          "role" => "user",
+          "content" => decider_prompt
+        }
+      ],
+      "max_tokens" => 4000,
+      "temperature" => 0.3  # Lower temperature for more consistent synthesis
+    }
+
+    json_payload = Jason.encode!(payload)
+    options = [recv_timeout: 180_000, timeout: 180_000]  # 3 min for decider
+
+    api_url = "https://openrouter.ai/api/v1/chat/completions"
+
+    case HTTPoison.post(api_url, json_payload, build_headers(api_key), options) do
+      {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
+        case Jason.decode(body) do
+          {:ok, response} ->
+            case extract_clips_from_chat_response(response) do
+              {:ok, result} ->
+                # Extract clips from the result (decider returns {clips, synthesis_notes})
+                clips = Map.get(result, "clips", [])
+                usage = Map.get(response, "usage", %{})
+                {:ok, clips, usage}
+
+              {:error, reason} ->
+                {:error, reason}
+            end
+
+          {:error, reason} ->
+            {:error, "JSON decode failed: #{inspect(reason)}"}
+        end
+
+      {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
+        {:error, "Decider API error #{status_code}: #{String.slice(body, 0, 200)}"}
+
+      {:error, %HTTPoison.Error{reason: reason}} ->
+        {:error, "Decider network error: #{inspect(reason)}"}
+    end
+  end
+
+  # Build payload for chat completions API (broader model compatibility)
+  defp build_chat_payload(model, system_prompt, user_prompt, missing_fields) do
+    %{
+      "model" => model,
+      "messages" => [
+        %{
+          "role" => "system",
+          "content" => missing_fields_prompt(system_prompt, missing_fields)
+        },
+        %{
+          "role" => "user",
+          "content" => user_prompt
+        }
+      ],
+      "max_tokens" => 4000,
+      "temperature" => 0.7
+    }
+  end
+
+  # Extract clips from chat completions response format
+  defp extract_clips_from_chat_response(response) do
+    case response do
+      %{"choices" => [%{"message" => %{"content" => content}} | _]} when is_binary(content) ->
+        # Try to parse the content as JSON
+        case Jason.decode(content) do
+          {:ok, clips_data} ->
+            {:ok, clips_data}
+
+          {:error, _} ->
+            # Try to find JSON block in markdown code fence
+            case Regex.run(~r/```(?:json)?\s*([\s\S]*?)\s*```/, content) do
+              [_, json_block] ->
+                case Jason.decode(json_block) do
+                  {:ok, clips_data} -> {:ok, clips_data}
+                  {:error, _} -> {:error, "Invalid JSON in code block"}
+                end
+              nil ->
+                # Try to find raw JSON object
+                case Regex.run(~r/\{[\s\S]*"clips"[\s\S]*\}/, content) do
+                  [json_match] ->
+                    case Jason.decode(json_match) do
+                      {:ok, clips_data} -> {:ok, clips_data}
+                      {:error, _} -> {:error, "Could not parse JSON from response"}
+                    end
+                  nil ->
+                    {:error, "No JSON found in response"}
+                end
+            end
+        end
+
+      %{"choices" => []} ->
+        {:error, "Empty choices in response"}
+
+      _ ->
+        if Map.has_key?(response, "error") do
+          {:error, "API Error: #{inspect(response["error"])}"}
+        else
+          {:error, "Unexpected response format"}
+        end
+    end
   end
 
 end

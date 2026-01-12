@@ -1063,19 +1063,22 @@ export function useLivestreamViewer() {
       state.value.projectId = session.projectId;
       state.value.isTempRecording = false;
 
-      // Get the output directory for HLS playback
+      // Try to get the output directory for HLS playback
+      // Note: Auto-detect for PumpFun now uses DVR recording, so HLS output dir may not exist
       try {
         const outputDir = await invoke<string>('get_recording_output_dir', {
           sessionId: session.sessionId,
         });
         hlsOutputDir.value = outputDir;
+        return; // HLS recording exists, we're done
       } catch (e) {
-        console.warn('[LiveViewer] Could not get recording output dir:', e);
+        console.warn('[LiveViewer] Could not get recording output dir, starting HLS recording for playback:', e);
+        // Fall through to start HLS recording for playback
       }
-      return;
     }
 
-    // Start HLS recording via Tauri (Node.js recorder)
+    // Start HLS recording via Tauri (Node.js recorder) for video playback
+    // This is needed even if auto-detect is using DVR, because the video player needs HLS
     try {
       const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
         mintId,
@@ -1083,9 +1086,14 @@ export function useLivestreamViewer() {
         displayName,
       });
 
-      state.value.sessionId = result.sessionId;
-      state.value.isTempRecording = true;
-      state.value.projectId = null;
+      // Only update sessionId if we don't already have one from auto-detect
+      if (!state.value.sessionId) {
+        state.value.sessionId = result.sessionId;
+      }
+      state.value.isTempRecording = !session; // Temp if no auto-detect session
+      if (!session) {
+        state.value.projectId = null;
+      }
       hlsOutputDir.value = result.outputDir;
       state.value.dvrStartTime = Date.now();
     } catch (error) {
@@ -1191,63 +1199,106 @@ export function useLivestreamViewer() {
   async function checkAndRestartRecorderIfNeeded() {
     if (isRestartingRecorder || isIntentionalDisconnect) return;
 
-    const channelSlug = state.value.mintId; // For Kick, mintId is the channel slug
+    const mintId = state.value.mintId;
     const streamerId = state.value.streamerId;
+    const platform = state.value.platform;
 
-    if (!channelSlug || !streamerId) {
-      console.warn('[LiveViewer] Cannot restart recorder: missing channelSlug or streamerId');
+    if (!mintId || !streamerId) {
+      console.warn('[LiveViewer] Cannot restart recorder: missing mintId or streamerId');
       return;
     }
 
     isRestartingRecorder = true;
 
     try {
-      const kickStatus = await checkKickLivestream(channelSlug);
+      // Check if stream is still live based on platform
+      let isLive = false;
+      
+      if (platform === 'Kick') {
+        const kickStatus = await checkKickLivestream(mintId);
+        isLive = kickStatus.isLive;
+      } else {
+        // PumpFun - use the existing fetchLiveStatus function
+        const pumpFunStatus = await fetchLiveStatus(mintId);
+        isLive = pumpFunStatus.isLive;
+      }
 
-      if (kickStatus.isLive) {
+      if (isLive) {
         console.log(
           '[LiveViewer] Stream is still live but segments stalled, restarting recorder...'
         );
         state.value.isBuffering = true;
 
-        // Stop existing recording first
-        try {
-          await stopKickRecording(channelSlug);
-        } catch (stopError) {
-          console.warn('[LiveViewer] Error stopping old recording:', stopError);
-        }
-
-        // Wait a moment for cleanup
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        // Start new recording
-        const newSessionId = `kick-view-${channelSlug}-${Date.now()}`;
-        state.value.tempSessionId = newSessionId;
-
-        try {
-          await startKickRecording(channelSlug, streamerId, newSessionId, 1);
-
-          const newOutputDir = await invoke<string>('get_kick_session_output_dir', {
-            sessionId: newSessionId,
-          });
-          console.log('[LiveViewer] Recorder restarted, new output dir:', newOutputDir);
-
-          // Reset segment tracking
-          lastSegmentCount = 0;
-          lastSegmentTime = Date.now();
-
-          // Update output dir and reinitialize playback
-          hlsOutputDir.value = newOutputDir;
-
-          if (hlsVideoElement.value) {
-            await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
-            hlsPlayback.play();
-            state.value.isBuffering = false;
-            console.log('[LiveViewer] Playback reinitialized after recorder restart');
+        if (platform === 'Kick') {
+          // Kick-specific restart logic
+          try {
+            await stopKickRecording(mintId);
+          } catch (stopError) {
+            console.warn('[LiveViewer] Error stopping old Kick recording:', stopError);
           }
-        } catch (restartError) {
-          console.error('[LiveViewer] Failed to restart recording:', restartError);
-          state.value.connectionError = 'Recording stopped and failed to restart';
+
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
+          const newSessionId = `kick-view-${mintId}-${Date.now()}`;
+          state.value.tempSessionId = newSessionId;
+
+          try {
+            await startKickRecording(mintId, streamerId, newSessionId, 1);
+
+            const newOutputDir = await invoke<string>('get_kick_session_output_dir', {
+              sessionId: newSessionId,
+            });
+            console.log('[LiveViewer] Kick recorder restarted, new output dir:', newOutputDir);
+
+            lastSegmentCount = 0;
+            lastSegmentTime = Date.now();
+            hlsOutputDir.value = newOutputDir;
+
+            if (hlsVideoElement.value) {
+              await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
+              hlsPlayback.play();
+              state.value.isBuffering = false;
+              console.log('[LiveViewer] Playback reinitialized after Kick recorder restart');
+            }
+          } catch (restartError) {
+            console.error('[LiveViewer] Failed to restart Kick recording:', restartError);
+            state.value.connectionError = 'Recording stopped and failed to restart';
+          }
+        } else {
+          // PumpFun-specific restart logic
+          try {
+            await invoke('stop_hls_recording', { mintId });
+          } catch (stopError) {
+            console.warn('[LiveViewer] Error stopping old PumpFun recording:', stopError);
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
+          try {
+            const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
+              mintId,
+              streamerId,
+              displayName: state.value.displayName || 'Unknown',
+            });
+
+            console.log('[LiveViewer] PumpFun recorder restarted, new output dir:', result.outputDir);
+
+            state.value.sessionId = result.sessionId;
+            state.value.isTempRecording = true;
+            lastSegmentCount = 0;
+            lastSegmentTime = Date.now();
+            hlsOutputDir.value = result.outputDir;
+
+            if (hlsVideoElement.value) {
+              await hlsPlayback.initialize(hlsVideoElement.value, result.outputDir);
+              hlsPlayback.play();
+              state.value.isBuffering = false;
+              console.log('[LiveViewer] Playback reinitialized after PumpFun recorder restart');
+            }
+          } catch (restartError) {
+            console.error('[LiveViewer] Failed to restart PumpFun recording:', restartError);
+            state.value.connectionError = 'Recording stopped and failed to restart';
+          }
         }
       } else {
         console.log('[LiveViewer] Stream is no longer live');
@@ -1474,7 +1525,8 @@ export function useLivestreamViewer() {
       }
     });
 
-    // Listen for recorder exit - attempt to restart if stream is still live
+    // Listen for recorder exit - attempt to restart if stream is still live (Kick only)
+    // Note: PumpFun recorder exit is handled via segment stall detection
     const recorderExitUnlisten = await listen<{
       streamerId: string;
       sessionId: string;
@@ -1483,12 +1535,12 @@ export function useLivestreamViewer() {
     }>('recorder-exit', async (event) => {
       const { streamerId, channelSlug } = event.payload;
 
-      // Only handle if this is our current stream and we're still supposed to be connected
-      if (streamerId !== state.value.streamerId || isIntentionalDisconnect) {
+      // Only handle if this is our current stream, it's a Kick stream, and we're still supposed to be connected
+      if (streamerId !== state.value.streamerId || isIntentionalDisconnect || state.value.platform !== 'Kick') {
         return;
       }
 
-      console.log('[LiveViewer] Recorder exited unexpectedly, checking if stream is still live...');
+      console.log('[LiveViewer] Kick recorder exited unexpectedly, checking if stream is still live...');
 
       // Check if stream is still live
       try {
@@ -1510,7 +1562,7 @@ export function useLivestreamViewer() {
               sessionId: newSessionId,
             });
 
-            console.log('[LiveViewer] Recording restarted, new output dir:', newOutputDir);
+            console.log('[LiveViewer] Kick recording restarted, new output dir:', newOutputDir);
 
             // Update the HLS output dir - this will trigger the watcher to reinitialize playback
             hlsOutputDir.value = newOutputDir;
@@ -1520,10 +1572,10 @@ export function useLivestreamViewer() {
               await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
               hlsPlayback.play();
               state.value.isBuffering = false;
-              console.log('[LiveViewer] Playback reinitialized after recorder restart');
+              console.log('[LiveViewer] Playback reinitialized after Kick recorder restart');
             }
           } catch (restartError) {
-            console.error('[LiveViewer] Failed to restart recording:', restartError);
+            console.error('[LiveViewer] Failed to restart Kick recording:', restartError);
             state.value.connectionError = 'Recording stopped and failed to restart';
           }
         } else {

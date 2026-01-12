@@ -48,6 +48,8 @@ tauri-plugin-updater = { version = "2.3", default-features = false, features = [
 tauri-plugin-process = "2.3"
 tauri-plugin-global-shortcut = "2"
 log = "0.4"
+# Text-to-image rendering for advanced text overlays (chat bubbles, gradients, glows)
+resvg = "0.44"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"

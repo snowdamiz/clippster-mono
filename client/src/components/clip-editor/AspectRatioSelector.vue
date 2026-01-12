@@ -20,11 +20,12 @@
       v-for="ratio in otherRatios"
       :key="ratio.value"
       @click="onRatioClick(ratio.value)"
+      @mousedown="clearTooltip"
       :class="[
         'group flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-all border relative',
         getRatioButtonClasses(ratio.value),
       ]"
-      :title="getRatioTooltip(ratio.value)"
+      :title="tooltipVisible ? getRatioTooltip(ratio.value) : ''"
     >
       <!-- Ratio preview shape -->
       <div class="border border-current rounded-[2px]" :style="ratio.style"></div>
@@ -50,9 +51,20 @@
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue';
+  import { computed, ref } from 'vue';
   import { Check } from 'lucide-vue-next';
   import type { ManualFramingConfigs } from '@/types';
+  
+  // Track tooltip visibility to hide it when opening dialog
+  const tooltipVisible = ref(true);
+  
+  function clearTooltip() {
+    tooltipVisible.value = false;
+    // Re-enable tooltip after a short delay (after dialog opens)
+    setTimeout(() => {
+      tooltipVisible.value = true;
+    }, 500);
+  }
 
   interface OtherRatio {
     value: string;

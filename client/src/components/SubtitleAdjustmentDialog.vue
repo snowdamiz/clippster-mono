@@ -210,8 +210,9 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, computed } from 'vue';
+  import { ref, watch, computed, onUnmounted } from 'vue';
   import { Type, XIcon, CheckIcon, PlayIcon, PauseIcon, RotateCcwIcon } from 'lucide-vue-next';
+  import Hls from 'hls.js';
   import type { SubtitleSettings, SubtitleOverride } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
 
@@ -252,6 +253,54 @@
   const videoUrl = ref<string | null>(null);
   const videoElement = ref<HTMLVideoElement | null>(null);
   const previewContainer = ref<HTMLElement | null>(null);
+
+  // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
+  let hlsInstance: Hls | null = null;
+
+  function isHlsUrl(url: string | null | undefined): boolean {
+    return !!url && url.includes('.m3u8');
+  }
+
+  function cleanupHls(): void {
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
+    }
+  }
+
+  function setupHlsPlayback(videoEl: HTMLVideoElement, hlsUrl: string): void {
+    cleanupHls();
+    if (Hls.isSupported()) {
+      hlsInstance = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 60,
+      });
+      hlsInstance.loadSource(hlsUrl);
+      hlsInstance.attachMedia(videoEl);
+      hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          console.error('[SubtitleAdjustment] HLS fatal error:', data.type, data.details);
+          cleanupHls();
+        }
+      });
+    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+      videoEl.src = hlsUrl;
+    }
+  }
+
+  function constructVideoUrl(filePath: string, port: number): string {
+    const encodedPath = utf8ToBase64(filePath);
+    const isTsFile = filePath.toLowerCase().endsWith('.ts');
+    if (isTsFile) {
+      return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
+    }
+    return `http://localhost:${port}/video/${encodedPath}`;
+  }
+
+  onUnmounted(() => {
+    cleanupHls();
+  });
 
   // Computed clip duration
   const clipDuration = computed(() => {
@@ -348,18 +397,38 @@
 
   // Load video URL
   async function loadVideoUrl() {
+    cleanupHls();
     if (!props.videoPath) return;
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const port = await invoke<number>('get_video_server_port');
-      const encodedPath = utf8ToBase64(props.videoPath);
       const timestamp = Date.now();
-      videoUrl.value = `http://localhost:${port}/video/${encodedPath}?t=${timestamp}`;
+      const baseUrl = constructVideoUrl(props.videoPath, port);
+      videoUrl.value = baseUrl.includes('?') ? `${baseUrl}&t=${timestamp}` : `${baseUrl}?t=${timestamp}`;
     } catch (error) {
       console.error('[SubtitleAdjustment] Failed to load video:', error);
     }
   }
+
+  // Watch for video URL changes to setup HLS if needed
+  watch(
+    () => videoUrl.value,
+    (newUrl) => {
+      if (newUrl && videoElement.value && isHlsUrl(newUrl)) {
+        setupHlsPlayback(videoElement.value, newUrl);
+      } else if (!isHlsUrl(newUrl)) {
+        cleanupHls();
+      }
+    }
+  );
+
+  // Watch for video element becoming available
+  watch(videoElement, (newElement) => {
+    if (newElement && videoUrl.value && isHlsUrl(videoUrl.value)) {
+      setupHlsPlayback(newElement, videoUrl.value);
+    }
+  });
 
   // Video event handlers
   function onTimeUpdate() {
