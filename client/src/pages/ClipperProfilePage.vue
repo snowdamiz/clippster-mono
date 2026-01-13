@@ -7,13 +7,31 @@
       :icon="UserCircle"
     >
       <template #actions>
-        <button class="edit-btn" @click="showEditProfileDialog = true">
+        <button v-if="isProfileConfigured" class="edit-btn" @click="showEditProfileDialog = true">
           <Pencil class="edit-btn__icon" />
           Edit Profile
         </button>
       </template>
 
-      <div class="profile-page">
+      <!-- Empty State (when profile not configured) -->
+      <div v-if="!isProfileConfigured" class="profile-page profile-page--empty">
+        <div class="profile-empty">
+          <div class="profile-empty__icon-wrapper">
+            <UserCircle class="profile-empty__icon" />
+          </div>
+          <h3 class="profile-empty__title">No clipper profile yet</h3>
+          <p class="profile-empty__description">
+            Set up your public profile to join campaigns, showcase your work, and get discovered by organizations
+          </p>
+          <button class="profile-empty__btn" @click="showOnboardingWizard = true">
+            <Plus class="profile-empty__btn-icon" />
+            Create Profile
+          </button>
+        </div>
+      </div>
+
+      <!-- Profile Content (when profile configured) -->
+      <div v-else class="profile-page">
         <!-- Profile Header -->
         <header class="profile-header">
           <div class="profile-header__main">
@@ -692,11 +710,17 @@
       @close="showPublishDialog = false"
       @published="onPostPublished"
     />
+
+    <ClipperProfileOnboardingWizard
+      :show="showOnboardingWizard"
+      @close="showOnboardingWizard = false"
+      @complete="onOnboardingComplete"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted, onUnmounted, markRaw } from 'vue';
+  import { ref, reactive, onMounted, onUnmounted, markRaw, computed } from 'vue';
   import {
     UserCircle,
     Share2,
@@ -731,6 +755,7 @@
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
   import UserPostsList from '@/components/UserPostsList.vue';
   import UserPublishDialog from '@/components/UserPublishDialog.vue';
+  import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Label } from '@/components/ui/label';
@@ -854,6 +879,7 @@
   const showEditProfileDialog = ref(false);
   const showPublishDialog = ref(false);
   const showPlatformSelectionDialog = ref(false);
+  const showOnboardingWizard = ref(false);
 
   const connectingInstagram = ref(false);
   const selectedPlatform = ref<string | null>(null);
@@ -1206,6 +1232,19 @@
 
   const onProfileSaved = () => loadClipperProfile();
 
+  // Check if profile is configured
+  const isProfileConfigured = computed(() => {
+    return (
+      clipperProfile.value && clipperProfile.value.display_name && clipperProfile.value.display_name.trim().length > 0
+    );
+  });
+
+  // Handle onboarding completion
+  const onOnboardingComplete = () => {
+    showOnboardingWizard.value = false;
+    loadClipperProfile();
+  };
+
   onMounted(async () => {
     await loadClipperProfile();
     if (clipperProfile.value) currentUserId.value = clipperProfile.value.user_id;
@@ -1239,6 +1278,12 @@
     max-width: 1400px;
     margin: 0 auto;
     width: 100%;
+    flex: 1;
+  }
+
+  .profile-page--empty {
+    justify-content: center;
+    align-items: center;
   }
 
   /* ===== Edit Button ===== */
@@ -3171,5 +3216,70 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* ===== Empty State ===== */
+  .profile-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .profile-empty__icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .profile-empty__icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .profile-empty__title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .profile-empty__description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1.5rem;
+    max-width: 380px;
+    line-height: 1.5;
+  }
+
+  .profile-empty__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .profile-empty__btn:hover {
+    opacity: 0.9;
+  }
+
+  .profile-empty__btn-icon {
+    width: 14px;
+    height: 14px;
   }
 </style>
