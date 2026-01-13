@@ -648,12 +648,14 @@ async fn run_kick_recorder(
                         for seg in segment_count..new_count {
                             let seg_path = PathBuf::from(&output_dir).join(format!("segment_{:04}.ts", seg));
                             if seg_path.exists() {
+                                // FFmpeg uses 0-indexed segments, but frontend expects 1-indexed
+                                let segment_number = seg + 1;
                                 let _ = app.emit("segment-ready", KickSegmentReadyPayload {
                                     streamer_id: streamer_id.clone(),
                                     session_id: session_id.clone(),
                                     channel_slug: channel_slug.clone(),
                                     mint_id: channel_slug.clone(), // For Kick, mintId = channel_slug
-                                    segment: seg,
+                                    segment: segment_number,
                                     path: seg_path.to_string_lossy().to_string(),
                                     duration: hls_segment_seconds as f64,
                                 });

@@ -261,13 +261,20 @@ pub async fn generate_thumbnail(app: tauri::AppHandle, video_path: String) -> Re
     // Get storage paths
     let paths = init_storage_dirs()?;
     
-    // Generate thumbnail filename based on video filename
+    // Generate thumbnail filename based on video filename and parent dir (session ID) to avoid collisions
     let video_stem = video
         .file_stem()
         .and_then(|s| s.to_str())
         .ok_or("Failed to get video filename")?;
     
-    let thumbnail_filename = format!("{}_thumb.jpg", video_stem);
+    // Get parent dir name (session ID) for uniqueness
+    let parent_dir = video
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+
+    let thumbnail_filename = format!("{}_{}_thumb.jpg", parent_dir, video_stem);
     let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
     
     // Use ffmpeg sidecar to generate thumbnail at 1 second mark
@@ -325,7 +332,15 @@ pub async fn generate_thumbnail_at_timestamp(
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or("Failed to get video filename")?;
-        format!("{}_{:.2}_thumb.jpg", video_stem, timestamp_seconds)
+            
+        // Get parent dir name (session ID) for uniqueness
+        let parent_dir = video
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+            
+        format!("{}_{}_{:.2}_thumb.jpg", parent_dir, video_stem, timestamp_seconds)
     };
     
     let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);

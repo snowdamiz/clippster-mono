@@ -152,7 +152,7 @@
               <!-- Watermark Overlay -->
               <div
                 v-if="showWatermark && watermarkUrl"
-                class="absolute inset-0 pointer-events-none z-30"
+                class="absolute inset-0 pointer-events-none z-10"
                 :style="watermarkStyle"
               >
                 <img :src="watermarkUrl" alt="Watermark" class="w-full h-full object-contain" />

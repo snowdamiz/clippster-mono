@@ -1159,17 +1159,6 @@
       clearLogs();
     }
 
-    const mode = detectClips ? 'Auto Detect' : 'Record Only';
-    addActivityLog({
-      streamerId: streamer.id,
-      streamerName: streamer.displayName || streamer.mintId.slice(0, 8),
-      platform: 'PumpFun',
-      mintId: streamer.mintId,
-      message: `Started monitoring (${mode}). Waiting for stream to go live...`,
-      status: 'loading',
-      profileImageUrl: streamer.profileImageUrl,
-    });
-
     await startMonitoring([streamer], { detectClips });
 
     const index = streamers.value.findIndex((s) => s.id === streamer.id);
@@ -1955,12 +1944,15 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     overflow: hidden;
-    max-height: calc(100vh - 280px);
+    display: flex;
+    flex-direction: column;
+    max-height: 500px;
     min-height: 300px;
   }
 
   .activity-log__scroll {
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 1rem;
   }

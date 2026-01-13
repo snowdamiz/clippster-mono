@@ -104,18 +104,19 @@
       <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
         <button
           @click="zoomOut"
-          :disabled="localZoomLevel <= minZoom"
+          :disabled="localSliderPosition <= 0"
           class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/8 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           title="Zoom out"
         >
           <Minus :size="14" />
         </button>
         <span class="text-[11px] text-white/50 font-mono tabular-nums min-w-[38px] text-center select-none px-1">
-          {{ Math.round(localZoomLevel * 100) }}%
+          {{ Math.round(localSliderPosition * 100) }}%
         </span>
         <button
           @click="zoomIn"
-          class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/8"
+          :disabled="localSliderPosition >= 1"
+          class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/8 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           title="Zoom in"
         >
           <Plus2 :size="14" />
@@ -135,10 +136,8 @@
     canAddClip: boolean;
     isSeeking: boolean;
     seekDirection: 'forward' | 'reverse' | null;
-    zoomLevel: number;
-    minZoom: number;
-    maxZoom: number;
-    zoomStep: number;
+    /** Slider position 0-1 (0% to 100%) */
+    sliderPosition: number;
     clipCount: number;
     canMergeSegments: boolean;
   }
@@ -150,41 +149,32 @@
     toggleAddClipMode: [];
     startContinuousSeeking: [direction: 'forward' | 'reverse'];
     stopContinuousSeeking: [];
-    zoomChanged: [zoomLevel: number];
+    sliderChanged: [sliderPosition: number];
     mergeSegments: [];
   }>();
 
-  const localZoomLevel = ref(props.zoomLevel);
+  const localSliderPosition = ref(props.sliderPosition);
 
-  // Keep local zoom level in sync with props
+  // Keep local slider position in sync with props
   watch(
-    () => props.zoomLevel,
-    (newZoomLevel) => {
-      localZoomLevel.value = newZoomLevel;
+    () => props.sliderPosition,
+    (newSliderPosition) => {
+      localSliderPosition.value = newSliderPosition;
     }
   );
 
-  // Calculate dynamic zoom step based on current zoom level
-  // Lower zoom = smaller steps, higher zoom = larger steps
-  function getZoomStep(): number {
-    if (localZoomLevel.value < 2) return 0.1;
-    if (localZoomLevel.value < 5) return 0.25;
-    if (localZoomLevel.value < 10) return 0.5;
-    if (localZoomLevel.value < 50) return 1;
-    if (localZoomLevel.value < 100) return 5;
-    return 10;
-  }
+  // Fixed slider step for consistent button behavior
+  const SLIDER_STEP = 0.05; // 5% per click
 
   function zoomIn() {
-    const step = getZoomStep();
-    localZoomLevel.value = localZoomLevel.value + step;
-    emit('zoomChanged', localZoomLevel.value);
+    const newSlider = Math.min(1, localSliderPosition.value + SLIDER_STEP);
+    localSliderPosition.value = newSlider;
+    emit('sliderChanged', newSlider);
   }
 
   function zoomOut() {
-    const step = getZoomStep();
-    const newZoom = Math.max(props.minZoom, localZoomLevel.value - step);
-    localZoomLevel.value = newZoom;
-    emit('zoomChanged', localZoomLevel.value);
+    const newSlider = Math.max(0, localSliderPosition.value - SLIDER_STEP);
+    localSliderPosition.value = newSlider;
+    emit('sliderChanged', newSlider);
   }
 </script>
