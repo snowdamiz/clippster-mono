@@ -112,7 +112,7 @@
               </Transition>
             </div>
             <!-- Custom Video Controls -->
-            <div class="flex-shrink-0 bg-black/60 backdrop-blur-sm">
+            <div class="flex-shrink-0 bg-black/60 backdrop-blur-sm relative z-20">
               <!-- Full-width Timeline/Seek Bar -->
               <div
                 ref="timelineRef"

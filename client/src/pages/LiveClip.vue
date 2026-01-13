@@ -236,6 +236,15 @@
                           </template>
                         </template>
                         <template v-else>
+                          <!-- Watch button available even while detecting/recording -->
+                          <button
+                            v-if="streamer.isLive"
+                            @click="openWatchDialog(streamer)"
+                            class="monitor-action monitor-action--watch"
+                          >
+                            <Eye class="monitor-action__icon" />
+                            Watch
+                          </button>
                           <button class="monitor-action monitor-action--stop" @click="stopStreamer(streamer)">
                             <Square class="monitor-action__icon" />
                             Stop
@@ -487,7 +496,7 @@
     await loadStreamers();
     refreshStreamerMetadata();
     syncDetectionState();
-    checkAllLiveStatuses(true); // Include Kick on initial load
+    checkAllLiveStatuses(false); // Skip Kick - only check on manual refresh
 
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
@@ -1150,17 +1159,6 @@
       clearLogs();
     }
 
-    const mode = detectClips ? 'Auto Detect' : 'Record Only';
-    addActivityLog({
-      streamerId: streamer.id,
-      streamerName: streamer.displayName || streamer.mintId.slice(0, 8),
-      platform: 'PumpFun',
-      mintId: streamer.mintId,
-      message: `Started monitoring (${mode}). Waiting for stream to go live...`,
-      status: 'loading',
-      profileImageUrl: streamer.profileImageUrl,
-    });
-
     await startMonitoring([streamer], { detectClips });
 
     const index = streamers.value.findIndex((s) => s.id === streamer.id);
@@ -1380,6 +1378,26 @@
     }
   }
 
+  /* ===== Streamers Column ===== */
+  .liveclip__streamers {
+    min-width: 0; /* Prevent grid blowout */
+  }
+
+  /* ===== Activity Column ===== */
+  .liveclip__activity {
+    position: sticky;
+    top: 1rem;
+    align-self: start;
+    max-height: calc(100vh - 200px);
+  }
+
+  @media (max-width: 1200px) {
+    .liveclip__activity {
+      position: static;
+      max-height: none;
+    }
+  }
+
   /* ===== Section Header ===== */
   .liveclip__section-header {
     display: flex;
@@ -1452,6 +1470,18 @@
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 0.75rem;
+  }
+
+  /* When activity panel is present, use single column for streamer cards */
+  .liveclip__grid--with-logs .liveclip__list-inner {
+    grid-template-columns: 1fr;
+  }
+
+  /* On wider screens with activity panel, allow 2 columns again */
+  @media (min-width: 1400px) {
+    .liveclip__grid--with-logs .liveclip__list-inner {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 
   @media (max-width: 900px) {
@@ -1914,11 +1944,15 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     overflow: hidden;
-    height: 500px;
+    display: flex;
+    flex-direction: column;
+    max-height: 500px;
+    min-height: 300px;
   }
 
   .activity-log__scroll {
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 1rem;
   }

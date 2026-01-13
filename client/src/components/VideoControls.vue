@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="videoSrc && !videoLoading"
-    class="bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04] mt-1.5"
+    class="bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04] mt-1.5 relative z-20"
   >
     <!-- Control Buttons and Time Display -->
     <div class="flex items-center justify-between px-1.5 py-1.5">

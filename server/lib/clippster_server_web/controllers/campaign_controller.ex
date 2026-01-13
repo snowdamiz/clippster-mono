@@ -990,15 +990,33 @@ defmodule ClippsterServerWeb.CampaignController do
 
   defp serialize_creator_profile(nil), do: nil
   defp serialize_creator_profile(profile) do
+    # Get profile image from platform links if not set directly on profile
+    platform_links = if Ecto.assoc_loaded?(profile.platform_links), do: profile.platform_links, else: []
+    
+    # Find first platform link with a profile image
+    platform_image = Enum.find_value(platform_links, fn link -> link.profile_image_url end)
+    
     %{
       id: profile.id,
       name: profile.name,
       description: profile.description,
-      profile_image_url: profile.profile_image_url,
+      profile_image_url: profile.profile_image_url || platform_image,
       watermark_settings: profile.watermark_settings,
       intro: if(Ecto.assoc_loaded?(profile.intro) && profile.intro, do: serialize_asset(profile.intro), else: nil),
       outro: if(Ecto.assoc_loaded?(profile.outro) && profile.outro, do: serialize_asset(profile.outro), else: nil),
-      watermark: if(Ecto.assoc_loaded?(profile.watermark) && profile.watermark, do: serialize_asset(profile.watermark), else: nil)
+      watermark: if(Ecto.assoc_loaded?(profile.watermark) && profile.watermark, do: serialize_asset(profile.watermark), else: nil),
+      platform_links: Enum.map(platform_links, &serialize_platform_link/1)
+    }
+  end
+
+  defp serialize_platform_link(link) do
+    %{
+      id: link.id,
+      platform: link.platform,
+      platform_id: link.platform_id,
+      display_name: link.display_name,
+      profile_image_url: link.profile_image_url,
+      is_primary: link.is_primary
     }
   end
 

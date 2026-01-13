@@ -13,17 +13,14 @@
         :canAddClip="canAddClip"
         :isSeeking="isSeeking"
         :seekDirection="seekDirection"
-        :zoomLevel="zoomLevel"
-        :minZoom="minZoom"
-        :maxZoom="maxZoom"
-        :zoomStep="zoomStep"
+        :sliderPosition="sliderPosition"
         :clipCount="displayClips.length"
         :canMergeSegments="canMergeSegments"
         @toggleCutTool="toggleCutTool"
         @toggleAddClipMode="toggleAddClipMode"
         @startContinuousSeeking="startContinuousSeeking"
         @stopContinuousSeeking="stopContinuousSeeking"
-        @zoomChanged="onZoomSliderChange"
+        @sliderChanged="onSliderChange"
         @mergeSegments="mergeSelectedSegments"
         ref="timelineHeaderRef"
       />
@@ -326,6 +323,7 @@
     endDragSelection,
     setTimelineBoundsWhenStable,
     setZoomLevel,
+    setZoomFromSlider,
   } = useTimelineInteraction(
     timelineScrollContainer,
     computed(() => props.duration),
@@ -349,6 +347,7 @@
   const minZoom = computed(() => zoomState.value.minZoom);
   const maxZoom = computed(() => zoomState.value.maxZoom);
   const zoomStep = computed(() => zoomState.value.zoomStep);
+  const sliderPosition = computed(() => zoomState.value.sliderPosition);
 
   const isPanning = computed(() => panState.value.isPanning);
   const isDragging = computed(() => dragSelectionState.value.isDragging);
@@ -799,10 +798,33 @@
 
   // Zoom, pan, and drag selection functions are now managed by useTimelineInteraction composable
 
-  // Zoom slider change handler
-  function onZoomSliderChange(newZoomLevel: number) {
-    // Update the zoom level in the composable
-    setZoomLevel(newZoomLevel);
+  // Slider change handler (receives slider position 0-1)
+  function onSliderChange(newSliderPosition: number) {
+    // Anchor zoom to the current viewport center so content doesn't jump away
+    const container = timelineScrollContainer.value;
+    const timelineContent = container?.querySelector('.timeline-content-wrapper') as HTMLElement | null;
+
+    const oldContentWidth = timelineContent?.getBoundingClientRect().width ?? container?.scrollWidth ?? 1;
+    const containerWidth = container?.clientWidth ?? 1;
+    const oldScrollLeft = container?.scrollLeft ?? 0;
+    // Anchor in absolute content space (including track label area)
+    const anchorContentX = oldScrollLeft + containerWidth / 2;
+
+    // Update the zoom level from slider position (exponential mapping)
+    setZoomFromSlider(newSliderPosition);
+
+    nextTick(() => {
+      if (!container) return;
+      const newContentWidth =
+        (container.querySelector('.timeline-content-wrapper') as HTMLElement | null)?.getBoundingClientRect().width ??
+        container.scrollWidth ??
+        oldContentWidth;
+      const scale = newContentWidth / oldContentWidth;
+      const targetCenter = anchorContentX * scale;
+      const newScrollLeft = Math.max(0, targetCenter - containerWidth / 2);
+      const maxScrollLeft = Math.max(0, newContentWidth - containerWidth);
+      container.scrollLeft = Math.min(newScrollLeft, maxScrollLeft);
+    });
 
     // Update CSS variable for filled track
     updateSliderProgress(zoomSlider.value);

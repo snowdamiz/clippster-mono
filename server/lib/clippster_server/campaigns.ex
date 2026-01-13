@@ -48,7 +48,7 @@ defmodule ClippsterServer.Campaigns do
   def get_campaign_with_details(id) do
     Campaign
     |> where([c], c.id == ^id)
-    |> preload([:organization, :creator_profile, participants: :user])
+    |> preload([:organization, :creator_profile, :global_intro, :global_outro, participants: :user, creator_profiles: :platform_links])
     |> Repo.one()
   end
 
@@ -89,7 +89,7 @@ defmodule ClippsterServer.Campaigns do
     |> order_by([c], desc: c.inserted_at)
     |> limit(^limit)
     |> offset(^offset)
-    |> preload([:organization, :creator_profile, :creator_profiles, :global_intro, :global_outro])
+    |> preload([:organization, :creator_profile, :global_intro, :global_outro, creator_profiles: :platform_links])
     |> Repo.all()
   end
 
@@ -104,7 +104,7 @@ defmodule ClippsterServer.Campaigns do
       :creator_profile,
       :global_intro,
       :global_outro,
-      creator_profiles: [:intro, :outro, :watermark]
+      creator_profiles: [:intro, :outro, :watermark, :platform_links]
     ])
     |> Repo.one()
   end
@@ -246,7 +246,7 @@ defmodule ClippsterServer.Campaigns do
   def list_campaign_creator_profiles(campaign_id) do
     from(ccp in CampaignCreatorProfile,
       where: ccp.campaign_id == ^campaign_id,
-      preload: [creator_profile: [:intro, :outro, :watermark]]
+      preload: [creator_profile: [:intro, :outro, :watermark, :platform_links]]
     )
     |> Repo.all()
   end
@@ -402,7 +402,7 @@ defmodule ClippsterServer.Campaigns do
       where: p.user_id == ^user_id and p.status == "approved",
       join: c in Campaign, on: c.id == p.campaign_id,
       order_by: [desc: p.inserted_at],
-      preload: [campaign: [:organization, :creator_profile, :creator_profiles, :global_intro, :global_outro]]
+      preload: [campaign: [:organization, :creator_profile, :global_intro, :global_outro, creator_profiles: :platform_links]]
 
     query = if status do
       where(query, [p, c], c.status == ^status)
@@ -424,7 +424,7 @@ defmodule ClippsterServer.Campaigns do
       where: ccp.creator_profile_id == ^creator_profile_id,
       where: c.status == "active",
       order_by: [desc: p.inserted_at],
-      preload: [campaign: [:organization, :creator_profile, :creator_profiles, :global_intro, :global_outro]],
+      preload: [campaign: [:organization, :creator_profile, :global_intro, :global_outro, creator_profiles: :platform_links]],
       distinct: true
     )
     |> Repo.all()

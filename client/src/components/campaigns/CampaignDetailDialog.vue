@@ -42,6 +42,55 @@
                   <p class="campaign-dialog__description">{{ campaignDetails.description }}</p>
                 </div>
 
+                <!-- Creator Profiles Section -->
+                <div
+                  v-if="campaignDetails.creator_profiles && campaignDetails.creator_profiles.length > 0"
+                  class="campaign-dialog__section"
+                >
+                  <h3 class="campaign-dialog__section-title">Streamers to Clip</h3>
+                  <div class="campaign-dialog__creators">
+                    <div
+                      v-for="profile in campaignDetails.creator_profiles"
+                      :key="profile.id"
+                      class="campaign-dialog__creator"
+                    >
+                      <div class="campaign-dialog__creator-avatar">
+                        <img
+                          v-if="profile.profile_image_url"
+                          :src="profile.profile_image_url"
+                          :alt="profile.name"
+                          class="campaign-dialog__creator-img"
+                        />
+                        <div v-else class="campaign-dialog__creator-fallback">
+                          {{ profile.name?.charAt(0) }}
+                        </div>
+                      </div>
+                      <div class="campaign-dialog__creator-info">
+                        <div class="campaign-dialog__creator-name">{{ profile.name }}</div>
+                        <div
+                          v-if="profile.platform_links && profile.platform_links.length > 0"
+                          class="campaign-dialog__creator-links"
+                        >
+                          <a
+                            v-for="link in profile.platform_links"
+                            :key="link.id"
+                            :href="getStreamerUrl(link.platform, link.platform_id)"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="campaign-dialog__creator-link"
+                            :title="`View on ${getPlatformDisplayName(link.platform)}`"
+                            @click.stop
+                          >
+                            <component :is="getStreamerPlatformIcon(link.platform)" :size="12" />
+                            <span>{{ link.display_name || link.platform_id }}</span>
+                            <ExternalLink :size="10" class="campaign-dialog__creator-link-external" />
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- Stats Grid -->
                 <div class="campaign-dialog__stats-grid">
                   <div class="campaign-dialog__stat campaign-dialog__stat--primary">
@@ -323,6 +372,9 @@
     Eye,
     Banknote,
     Users,
+    ExternalLink,
+    Radio,
+    Tv,
   } from 'lucide-vue-next';
   import {
     getCampaign,
@@ -376,6 +428,31 @@
       youtube: Youtube,
     };
     return icons[platform] || Globe;
+  };
+
+  const getStreamerPlatformIcon = (platform: string) => {
+    const icons: Record<string, typeof Radio> = {
+      kick: Tv,
+      pumpfun: Radio,
+      twitch: Tv,
+      youtube: Youtube,
+    };
+    return icons[platform] || Globe;
+  };
+
+  const getStreamerUrl = (platform: string, platformId: string) => {
+    switch (platform) {
+      case 'kick':
+        return `https://kick.com/${platformId}`;
+      case 'pumpfun':
+        return `https://pump.fun/coin/${platformId}`;
+      case 'twitch':
+        return `https://twitch.tv/${platformId}`;
+      case 'youtube':
+        return `https://youtube.com/@${platformId}`;
+      default:
+        return '#';
+    }
   };
 
   const formatCpm = (cpm: string | number) => {
@@ -725,6 +802,98 @@
     margin: 0;
     white-space: pre-wrap;
     opacity: 0.9;
+  }
+
+  /* ===== Creator Profiles ===== */
+  .campaign-dialog__creators {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .campaign-dialog__creator {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .campaign-dialog__creator-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .campaign-dialog__creator-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .campaign-dialog__creator-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .campaign-dialog__creator-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaign-dialog__creator-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin-bottom: 0.375rem;
+  }
+
+  .campaign-dialog__creator-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .campaign-dialog__creator-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 4px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    text-decoration: none;
+    transition: all 150ms ease;
+  }
+
+  .campaign-dialog__creator-link:hover {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.3);
+    color: var(--sidebar-accent);
+  }
+
+  .campaign-dialog__creator-link-external {
+    opacity: 0.5;
+  }
+
+  .campaign-dialog__creator-link:hover .campaign-dialog__creator-link-external {
+    opacity: 1;
   }
 
   /* ===== Row Layout ===== */

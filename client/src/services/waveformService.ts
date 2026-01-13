@@ -180,7 +180,7 @@ function resolveLocalPath(url: string): string | null {
   if (/^[a-zA-Z]:[/\\]/.test(url) || url.startsWith('/')) {
     return url;
   }
-  
+
   // Check for streaming server URL: http://localhost:PORT/video/BASE64
   const streamingMatch = url.match(/^http:\/\/localhost:\d+\/video\/([A-Za-z0-9+/=]+)$/);
   if (streamingMatch) {
@@ -191,7 +191,7 @@ function resolveLocalPath(url: string): string | null {
       // Invalid base64, continue to other checks
     }
   }
-  
+
   const markers = ['asset://localhost/', 'http://asset.localhost/', 'https://asset.localhost/'];
   for (const marker of markers) {
     const idx = url.indexOf(marker);
@@ -223,10 +223,10 @@ async function fetchViaStreamingServer(path: string): Promise<ArrayBuffer | null
 
     while (true) {
       if (totalSize !== null && offset >= totalSize) break;
-      const end = totalSize !== null 
-        ? Math.min(totalSize - 1, offset + CHUNK_SIZE - 1) 
+      const end = totalSize !== null
+        ? Math.min(totalSize - 1, offset + CHUNK_SIZE - 1)
         : offset + CHUNK_SIZE - 1;
-      
+
       const resp = await fetch(streamingUrl, { headers: { Range: `bytes=${offset}-${end}` } });
 
       if (resp.status === 416) break; // Range not satisfiable
@@ -257,7 +257,7 @@ async function fetchViaStreamingServer(path: string): Promise<ArrayBuffer | null
       combined.set(p, writeOffset);
       writeOffset += p.byteLength;
     }
-    
+
     return combined.buffer;
   } catch (error) {
     console.error('[WaveformService] Streaming server fetch failed:', error);
@@ -266,7 +266,92 @@ async function fetchViaStreamingServer(path: string): Promise<ArrayBuffer | null
 }
 
 /**
+ * Extract audio from a video file using FFmpeg via Rust backend.
+ * This creates a temporary WAV file that's much smaller than the video,
+ * avoiding memory allocation failures for large video files.
+ * Returns the path to the extracted audio file.
+ */
+async function extractAudioViaRust(localPath: string): Promise<string | null> {
+  try {
+    console.log('[WaveformService] Extracting audio via Rust/FFmpeg for:', localPath);
+
+    // Use the extract_audio_to_file command which saves to a temp file
+    // We use a hash of the path as source_id to get consistent caching
+    const pathHash = localPath.split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0).toString(16);
+
+    const result = await invoke<{ file_path: string; filename: string; duration: number }>(
+      'extract_audio_to_file',
+      {
+        videoPath: localPath,
+        sourceId: `waveform_${pathHash}`,
+        trimStart: null,
+        trimDuration: null,
+      }
+    );
+
+    if (result && result.file_path) {
+      console.log('[WaveformService] Audio extracted to:', result.file_path, 'duration:', result.duration);
+      return result.file_path;
+    }
+    return null;
+  } catch (error) {
+    console.warn('[WaveformService] Rust audio extraction failed:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch audio file content using Tauri command to avoid HTTP range/CORS issues
+ * We use read_file_as_data_url because it's already available in storage backend
+ * and bypasses the 416/403 errors we see with the streaming server.
+ */
+async function fetchAudioFile(audioPath: string): Promise<ArrayBuffer | null> {
+  try {
+    console.log('[WaveformService] Reading audio file via Tauri:', audioPath);
+
+    // Use existing read_file_as_data_url command (returns base64 data URI)
+    const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: audioPath });
+
+    if (!dataUrl) {
+      console.warn('[WaveformService] No data returned for audio file');
+      return null;
+    }
+
+    // Parse data URL: "data:mime;base64,payload"
+    const commaIndex = dataUrl.indexOf(',');
+    if (commaIndex === -1) {
+      console.warn('[WaveformService] Invalid data URL format');
+      return null;
+    }
+
+    const base64 = dataUrl.substring(commaIndex + 1);
+
+    // Decode base64 to binary string
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+
+    console.log('[WaveformService] Audio file read success, size:', len);
+
+    // Convert to Uint8Array/ArrayBuffer
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    return bytes.buffer;
+  } catch (error) {
+    console.error('[WaveformService] Audio file read failed:', error);
+    return null;
+  }
+}
+
+/**
  * Extract raw audio data from a video/audio file using Web Audio API
+ * For local video files, we first extract audio via FFmpeg to avoid loading
+ * the entire video file into memory (which fails for large files).
  */
 async function extractAudioFromFile(filePath: string): Promise<{ data: AudioData; fileSize: number }> {
   let arrayBuffer: ArrayBuffer;
@@ -275,19 +360,38 @@ async function extractAudioFromFile(filePath: string): Promise<{ data: AudioData
   const localPath = resolveLocalPath(filePath);
 
   if (localPath) {
-    // Try streaming server first (most reliable for Tauri)
-    const streamBuffer = await fetchViaStreamingServer(localPath);
-    if (streamBuffer) {
-      arrayBuffer = streamBuffer;
-      fileSize = streamBuffer.byteLength;
-    } else {
-      // Fallback to convertFileSrc
-      const url = convertFileSrc(localPath);
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch video: ${response.status} ${response.statusText}`);
+    // For local files, try to extract audio via FFmpeg first (avoids loading entire video)
+    const extractedAudioPath = await extractAudioViaRust(localPath);
+
+    if (extractedAudioPath) {
+      // Fetch the extracted audio file (much smaller than video)
+      const audioBuffer = await fetchAudioFile(extractedAudioPath);
+      if (audioBuffer) {
+        console.log('[WaveformService] Using extracted audio file, size:', audioBuffer.byteLength);
+        arrayBuffer = audioBuffer;
+        fileSize = audioBuffer.byteLength;
+      } else {
+        // Fallback: try streaming the extracted file via convertFileSrc
+        try {
+          const url = convertFileSrc(extractedAudioPath);
+          const response = await fetch(url);
+          if (response.ok) {
+            arrayBuffer = await response.arrayBuffer();
+            fileSize = arrayBuffer.byteLength;
+          } else {
+            throw new Error('Failed to fetch extracted audio');
+          }
+        } catch (error) {
+          console.warn('[WaveformService] Could not fetch extracted audio, falling back to video:', error);
+          // Fall through to video loading
+          arrayBuffer = await loadVideoDirectly(localPath);
+          fileSize = arrayBuffer.byteLength;
+        }
       }
-      arrayBuffer = await response.arrayBuffer();
+    } else {
+      // FFmpeg extraction failed, try loading video directly (may fail for large files)
+      console.warn('[WaveformService] FFmpeg extraction failed, attempting direct video load');
+      arrayBuffer = await loadVideoDirectly(localPath);
       fileSize = arrayBuffer.byteLength;
     }
   } else {
@@ -332,6 +436,26 @@ async function extractAudioFromFile(filePath: string): Promise<{ data: AudioData
   } finally {
     await audioContext.close();
   }
+}
+
+/**
+ * Helper to load video file directly (used as fallback when FFmpeg extraction fails)
+ * This may fail for very large video files due to memory constraints.
+ */
+async function loadVideoDirectly(localPath: string): Promise<ArrayBuffer> {
+  // Try streaming server first (most reliable for Tauri)
+  const streamBuffer = await fetchViaStreamingServer(localPath);
+  if (streamBuffer) {
+    return streamBuffer;
+  }
+
+  // Fallback to convertFileSrc
+  const url = convertFileSrc(localPath);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch video: ${response.status} ${response.statusText}`);
+  }
+  return await response.arrayBuffer();
 }
 
 // ============================================================================

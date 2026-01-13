@@ -1856,6 +1856,18 @@
     }
   }
 
+  // Wait for a clip element to be present in the clips list (MediaPanel -> ClipsTab)
+  async function waitForClipElement(clipId: string, attempts = 10, delayMs = 100): Promise<boolean> {
+    for (let i = 0; i < attempts; i++) {
+      await nextTick();
+      if (mediaPanelRef.value?.hasClipElement?.(clipId)) {
+        return true;
+      }
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+    return false;
+  }
+
   // Function to scroll to and highlight a specific clip in both ClipsTab and Timeline
   async function scrollToAndSelectClip(clipId: string) {
     // Wait for DOM to update
@@ -1863,16 +1875,24 @@
 
     // Small delay to ensure components are fully mounted
     setTimeout(() => {
+      // Find clip data for snapping playhead/timeline
+      const clip = timelineClips.value.find((c) => c.id === clipId);
+      const clipStart = clip?.start_time ?? clip?.startTime ?? clip?.segments?.[0]?.start_time ?? 0;
+
       // Clear any existing hover states first
       hoveredClipId.value = null;
       hoveredTimelineClipId.value = null;
 
       // Use another nextTick to ensure the clear has propagated
       nextTick(() => {
-        // Scroll in MediaPanel/ClipsTab
-        if (mediaPanelRef.value) {
-          mediaPanelRef.value.scrollClipIntoView(clipId);
-        }
+        // Scroll in MediaPanel/ClipsTab after the element exists
+        waitForClipElement(clipId).then((found) => {
+          if (found && mediaPanelRef.value) {
+            mediaPanelRef.value.scrollClipIntoView(clipId);
+          } else {
+            console.warn('[ProjectWorkspaceDialog] Clip element not found for scroll:', clipId);
+          }
+        });
 
         // Reveal the clip in the timeline (makes it visible if hidden)
         if (timelineRef.value) {
@@ -1883,6 +1903,11 @@
         nextTick(() => {
           scrollToClipInTimeline(clipId);
         });
+
+        // Snap playhead to the clip start so the segment stays in view
+        if (clipStart != null && !Number.isNaN(clipStart)) {
+          seekToTime(clipStart);
+        }
 
         // Set BOTH hover states to highlight the clip in both places
         // hoveredClipId highlights in ClipsTab, hoveredTimelineClipId highlights in Timeline

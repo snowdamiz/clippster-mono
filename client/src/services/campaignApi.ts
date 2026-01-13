@@ -28,6 +28,15 @@ export interface CampaignAsset {
   mime_type: string | null;
 }
 
+export interface CampaignCreatorPlatformLink {
+  id: number;
+  platform: string;
+  platform_id: string;
+  display_name: string | null;
+  profile_image_url: string | null;
+  is_primary: boolean;
+}
+
 export interface CampaignCreatorProfile {
   id: number;
   name: string;
@@ -37,6 +46,7 @@ export interface CampaignCreatorProfile {
   intro?: CampaignAsset | null;
   outro?: CampaignAsset | null;
   watermark?: CampaignAsset | null;
+  platform_links?: CampaignCreatorPlatformLink[];
 }
 
 export interface Campaign {

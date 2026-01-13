@@ -768,6 +768,12 @@ async function initializeListeners() {
     // Filter out overly verbose messages
     if (message.includes('Encoder waiting for media')) return;
     if (message.includes('Resolution changed')) return;
+    // Filter Kick recorder verbose startup messages
+    if (message.includes('Starting stream capture')) return;
+    if (message.includes('Starting Kick recording')) return;
+    if (message.includes('Starting HLS recording')) return;
+    // Filter periodic status updates (e.g., "Recording: 5 segments, 300s")
+    if (message.includes('Recording:') && message.includes('segments')) return;
 
     const info = await getStreamerInfo(streamerId);
 
@@ -875,7 +881,34 @@ export function useLivestreamMonitoring() {
       monitoredStreamers.value.set(streamer.id, { streamer, options });
     }
 
-    // Start polling if not running
+    // Handle Kick streamers immediately - they are skipped by regular polling
+    // to avoid hitting the API too frequently, but we need to check them once on start
+    const kickStreamers = streamers.filter((s) => s.platform === 'Kick');
+    for (const streamer of kickStreamers) {
+      const config = monitoredStreamers.value.get(streamer.id);
+      if (!config) continue;
+
+      try {
+        const status = await fetchLiveStatus(streamer.mintId, 'Kick');
+        await updateMonitoredStreamer(streamer.id, {
+          last_check_timestamp: Math.floor(Date.now() / 1000),
+          is_currently_live: status.isLive ? 1 : 0,
+        });
+
+        const sessionActive = activeSessions.value.has(streamer.id);
+
+        if (status.isLive && !sessionActive) {
+          console.log('[LiveMonitor] Kick streamer is live, starting recording:', streamer.mintId);
+          await handleStreamStart(streamer, status, config.options);
+        } else if (!status.isLive) {
+          console.log('[LiveMonitor] Kick streamer is offline, will wait for manual refresh:', streamer.mintId);
+        }
+      } catch (error) {
+        console.warn('[LiveMonitor] Failed to check Kick streamer status:', streamer.mintId, error);
+      }
+    }
+
+    // Start polling if not running (for non-Kick streamers)
     if (!pollingHandle.value) {
       await pollAllStreamers(); // Initial immediate poll
       pollingHandle.value = window.setInterval(() => {
@@ -1013,6 +1046,10 @@ export function useLivestreamMonitoring() {
       // Check if still monitored (in case it was removed while polling)
       const config = monitoredStreamers.value.get(streamer.id);
       if (!config) continue;
+
+      // Skip Kick streamers - they should only be checked on manual refresh
+      // to avoid hitting the API too frequently
+      if (streamer.platform === 'Kick') continue;
 
       // Use platform-aware live status check
       const status = await fetchLiveStatus(streamer.mintId, streamer.platform);

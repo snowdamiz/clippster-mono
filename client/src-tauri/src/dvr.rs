@@ -683,74 +683,56 @@ pub async fn build_segment_from_dvr_chunks(
     std::fs::create_dir_all(&temp_dir)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
     
-    // Instead of treating each chunk as a separate FFmpeg input (which causes freezing at
-    // chunk boundaries due to missing keyframes), we concatenate all chunk data into a
-    // single continuous WebM file. This allows FFmpeg to decode the entire stream properly
-    // without hitting keyframe issues at arbitrary 4-second boundaries.
-    
-    // Read the init segment (needed if segment doesn't start at chunk 0)
-    let init_segment_path = get_init_segment_path(&dvr_dir);
-    let init_segment: Option<Vec<u8>> = if init_segment_path.exists() {
-        Some(fs::read(&init_segment_path)
-            .map_err(|e| format!("Failed to read init segment: {}", e))?)
+    // Read init segment (from chunk 0) for cases where we start mid-stream
+    let init_path = get_init_segment_path(&dvr_dir);
+    let init_segment: Option<Vec<u8>> = if init_path.exists() {
+        Some(fs::read(&init_path).map_err(|e| format!("Failed to read init segment: {}", e))?)
     } else {
-        // Try to extract from chunk 0 if it exists
+        // Try to extract from chunk 0 if present
         let chunk0_path = dvr_dir.join("chunk_00000.webm");
         if chunk0_path.exists() {
             let chunk0_data = fs::read(&chunk0_path)
-                .map_err(|e| format!("Failed to read chunk 0: {}", e))?;
+                .map_err(|e| format!("Failed to read chunk 0 for init extraction: {}", e))?;
             extract_init_segment(&chunk0_data)
         } else {
             None
         }
     };
     
-    // Build a single combined WebM file: init_segment + all chunk cluster data
+    // Build a single combined WebM: init (if needed) + chunk data
     let combined_webm_path = temp_dir.join(format!("combined_{}_{}.webm", mint_id, segment_number));
     let mut combined_data: Vec<u8> = vec![];
     
-    // Check if the first chunk in our range is chunk 0
     let first_chunk_idx = chunk_files.first().map(|(idx, _)| *idx).unwrap_or(0);
-    
-    // If we don't start at chunk 0, we need to prepend the init segment
     if first_chunk_idx != 0 {
-        if let Some(ref init_data) = init_segment {
-            println!("[DVR] Prepending init segment ({} bytes) for segment starting at chunk {}", 
-                     init_data.len(), first_chunk_idx);
-            combined_data.extend_from_slice(init_data);
+        // prepend init segment when starting mid-stream
+        if let Some(ref init) = init_segment {
+            combined_data.extend_from_slice(init);
+            println!("[DVR] Prepended init segment ({} bytes) for segment starting at chunk {}", init.len(), first_chunk_idx);
         } else {
             return Err(format!("No init segment available for segment starting at chunk {}", first_chunk_idx));
         }
     }
     
     for (idx, path) in &chunk_files {
-        let chunk_data = fs::read(path)
+        let chunk_bytes = fs::read(path)
             .map_err(|e| format!("Failed to read chunk {}: {}", idx, e))?;
-        
-        if *idx == 0 {
-            // Chunk 0 contains the full WebM header + first cluster
-            combined_data.extend_from_slice(&chunk_data);
-        } else {
-            // Chunks > 0 contain only cluster data, append directly
-            combined_data.extend_from_slice(&chunk_data);
-        }
+        combined_data.extend_from_slice(&chunk_bytes);
     }
     
     fs::write(&combined_webm_path, &combined_data)
         .map_err(|e| format!("Failed to write combined WebM: {}", e))?;
     
-    println!("[DVR] Combined {} chunks into single WebM file ({} bytes)", chunk_files.len(), combined_data.len());
+    println!("[DVR] Combined {} chunks into single WebM ({} bytes)", chunk_files.len(), combined_data.len());
     
     // Generate output filename - use .ts format for compatibility with existing pipeline
     let output_filename = format!("segment_{}_{}.ts", mint_id, segment_number);
     let output_path = temp_dir.join(&output_filename);
     
-    // Process the single combined WebM file with FFmpeg
-    // This avoids the chunk boundary issues since FFmpeg sees one continuous stream
+    // Process combined WebM with FFmpeg
     let args = vec![
-        "-fflags".to_string(), "+genpts+igndts".to_string(), // Regenerate timestamps
+        "-fflags".to_string(), "+genpts+igndts".to_string(), // regenerate timestamps
         "-i".to_string(), combined_webm_path.to_string_lossy().to_string(),
-        // Normalize frame rate to fix variable frame timing from MediaRecorder
         "-vf".to_string(), "fps=30,setpts=PTS-STARTPTS".to_string(),
         // Re-encode video to H.264 for TS compatibility
         "-c:v".to_string(), "libx264".to_string(),
@@ -760,18 +742,16 @@ pub async fn build_segment_from_dvr_chunks(
         "-g".to_string(), "30".to_string(), // Keyframe every 1 second
         "-keyint_min".to_string(), "30".to_string(),
         "-sc_threshold".to_string(), "0".to_string(),
-        "-vsync".to_string(), "cfr".to_string(), // Constant frame rate
         // Re-encode audio to AAC for TS compatibility  
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
-        "-async".to_string(), "1".to_string(), // Sync audio to video
         // Output format
         "-f".to_string(), "mpegts".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ];
     
-    println!("[DVR] Running FFmpeg to build segment from combined WebM...");
+    println!("[DVR] Running FFmpeg on combined WebM to build segment from {} chunks...", chunk_files.len());
     
     let shell = app.shell();
     let output = shell.sidecar("ffmpeg")
@@ -781,7 +761,7 @@ pub async fn build_segment_from_dvr_chunks(
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
     
-    // Cleanup temporary combined WebM file
+    // Cleanup combined file
     let _ = fs::remove_file(&combined_webm_path);
     
     // Log FFmpeg output for debugging

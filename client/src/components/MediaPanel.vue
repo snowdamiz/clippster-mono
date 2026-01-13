@@ -1,5 +1,5 @@
 <template>
-  <div class="px-4 flex flex-col flex-1 h-full" data-media-panel>
+  <div class="px-4 flex flex-col flex-1 h-full min-h-0" data-media-panel>
     <!-- Header -->
     <div class="flex items-center justify-between gap-2 py-2.5 border-b border-white/10 -mx-4 px-4 bg-[#0d0d0d]">
       <!-- Title -->
@@ -13,21 +13,21 @@
       <!-- Actions -->
       <div class="flex items-center gap-2">
         <!-- Progress Bar (when detecting) -->
-        <div v-if="isGenerating && clips.length > 0" class="flex items-center gap-2 min-w-[140px]">
+        <div v-if="props.isGenerating && clips.length > 0" class="flex items-center gap-2 min-w-[140px]">
           <div class="flex-1 space-y-0.5">
             <div class="h-1 w-full bg-white/5 rounded-full overflow-hidden">
               <div
                 class="h-full bg-gradient-to-r from-violet-500 to-purple-500 transition-all duration-500 ease-out"
-                :class="{ 'animate-pulse': generationProgress === 0 }"
-                :style="{ width: `${Math.max(generationProgress, 5)}%` }"
+                :class="{ 'animate-pulse': props.generationProgress === 0 }"
+                :style="{ width: `${Math.max(props.generationProgress, 5)}%` }"
               ></div>
             </div>
             <div class="flex justify-between items-center text-[9px] text-muted-foreground/70">
               <span class="flex items-center gap-1">
                 <LoaderIcon class="w-2 h-2 animate-spin text-violet-400" />
-                <span class="truncate max-w-[60px]">{{ generationStage || 'Processing' }}</span>
+                <span class="truncate max-w-[60px]">{{ props.generationStage || 'Processing' }}</span>
               </span>
-              <span class="font-mono tabular-nums">{{ Math.round(generationProgress) }}%</span>
+              <span class="font-mono tabular-nums">{{ Math.round(props.generationProgress) }}%</span>
             </div>
           </div>
           <button
@@ -65,22 +65,24 @@
     <!-- Clips Content -->
     <ClipsTab
       ref="clipsTabRef"
-      :project-id="projectId"
+      class="flex-1 min-h-0"
+      :project-id="props.projectId"
       :clips="clips"
-      :is-generating="isGenerating"
-      :generation-progress="generationProgress"
-      :generation-stage="generationStage"
-      :generation-message="generationMessage"
-      :generation-error="generationError"
-      :playing-clip-id="playingClipId"
-      :is-playing-segments="isPlayingSegments"
-      :hovered-timeline-clip-id="hoveredTimelineClipId"
-      :video-duration="videoDuration || 0"
+      :is-generating="props.isGenerating"
+      :generation-progress="props.generationProgress"
+      :generation-stage="props.generationStage"
+      :generation-message="props.generationMessage"
+      :generation-error="props.generationError"
+      :playing-clip-id="props.playingClipId"
+      :is-playing-segments="props.isPlayingSegments"
+      :hovered-timeline-clip-id="props.hoveredTimelineClipId"
+      :video-duration="props.videoDuration || 0"
       :prompts="prompts"
       :transcript-data="transcriptData"
       :watermark-settings="watermarkSettings"
-      :creator-default-intro="creatorDefaultIntro"
-      :creator-default-outro="creatorDefaultOutro"
+      :subtitle-settings="props.subtitleSettings"
+      :creator-default-intro="props.creatorDefaultIntro"
+      :creator-default-outro="props.creatorDefaultOutro"
       :hide-header="true"
       @detect-clips="handleDetectClips"
       @cancel-detection="handleCancelDetection"
@@ -132,6 +134,7 @@
     videoDuration: null,
     currentTime: null,
     aspectRatio: () => ({ width: 16, height: 9 }),
+    subtitleSettings: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
   });
@@ -607,10 +610,10 @@
     scrollClipIntoView: (clipId: string) => {
       clipsTabRef.value?.scrollClipIntoView(clipId);
     },
+    hasClipElement: (clipId: string) => clipsTabRef.value?.hasClipElement?.(clipId) ?? false,
     getWatermarkSettings: () => watermarkSettings.value,
     setWatermarkSettings: (settings: WatermarkSettings) => {
       watermarkSettings.value = settings;
-      emit('watermarkSettingsChanged', settings);
     },
   });
 </script>

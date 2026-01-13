@@ -1,5 +1,5 @@
 <template>
-  <div v-if="modelValue" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+  <div v-if="modelValue" class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/80 backdrop-blur-sm">
     <div
       class="bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl w-[900px] max-w-[95vw] max-h-[95vh] flex flex-col overflow-hidden"
     >

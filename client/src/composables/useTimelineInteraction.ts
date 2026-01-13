@@ -24,6 +24,8 @@ export interface ZoomState {
   minZoom: number;
   maxZoom: number;
   zoomStep: number;
+  /** Slider position 0-1 (0% to 100%) mapped exponentially to zoomLevel */
+  sliderPosition: number;
 }
 
 export interface TimelineInteractionOptions {
@@ -56,7 +58,25 @@ export function useTimelineInteraction(
     minZoom,
     maxZoom,
     zoomStep,
+    sliderPosition: 0,
   });
+
+  // Exponential zoom mapping functions
+  // Slider range: 0 to 1 (0% to 100%)
+  // Zoom range: 1 (fit all) to maxZoom
+  function sliderToZoom(slider: number): number {
+    if (slider <= 0) return 1;
+    if (slider >= 1) return maxZoom;
+    // Exponential mapping: slider=0 → zoom=1, slider=1 → zoom=maxZoom
+    return Math.pow(maxZoom, slider);
+  }
+
+  function zoomToSlider(zoom: number): number {
+    if (zoom <= 1) return 0;
+    if (zoom >= maxZoom) return 1;
+    // Logarithmic inverse: zoom=1 → slider=0, zoom=maxZoom → slider=1
+    return Math.log(zoom) / Math.log(maxZoom);
+  }
 
   // Pan state
   const panState = ref<PanState>({
@@ -82,7 +102,17 @@ export function useTimelineInteraction(
   function setZoomLevel(newZoom: number) {
     const clampedZoom = Math.max(minZoom, Math.min(maxZoom, newZoom));
     zoomState.value.zoomLevel = clampedZoom;
+    zoomState.value.sliderPosition = zoomToSlider(clampedZoom);
     onZoomChange?.(clampedZoom);
+  }
+
+  // Set zoom from slider position (0-1)
+  function setZoomFromSlider(sliderPosition: number) {
+    const clampedSlider = Math.max(0, Math.min(1, sliderPosition));
+    const newZoom = sliderToZoom(clampedSlider);
+    zoomState.value.zoomLevel = newZoom;
+    zoomState.value.sliderPosition = clampedSlider;
+    onZoomChange?.(newZoom);
   }
 
   // Calculate dynamic zoom step based on current zoom level
@@ -426,6 +456,7 @@ export function useTimelineInteraction(
 
     // Zoom functions
     setZoomLevel,
+    setZoomFromSlider,
     handleRulerWheel,
     updateSliderProgress,
 

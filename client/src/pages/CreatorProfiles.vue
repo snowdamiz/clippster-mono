@@ -445,6 +445,7 @@
   } from '@/services/database';
   import {
     getUserAssignedCreatorProfiles,
+    updatePlatformLink as updateOrgPlatformLink,
     type ServerOrganizationCreatorProfile,
   } from '@/services/organizationProfilesApi';
   import { useAuthStore } from '@/stores/auth';
@@ -700,8 +701,15 @@
 
   async function checkAllLiveStatuses(includeKick: boolean = true) {
     const pumpfunLinksToCheck: { platformId: string; mintId: string }[] = [];
-    const kickLinksToCheck: { linkId: string; platformId: string; channelSlug: string; hasProfileImage: boolean }[] =
-      [];
+    const kickLinksToCheck: {
+      linkId: string;
+      platformId: string;
+      channelSlug: string;
+      hasProfileImage: boolean;
+      isOrgLink: boolean;
+      organizationId?: number;
+      profileId?: number;
+    }[] = [];
 
     for (const creator of creators.value) {
       for (const link of creator.platform_links) {
@@ -713,11 +721,15 @@
           pumpfunLinksToCheck.push({ platformId: link.platform_id, mintId: link.platform_id });
         } else if (link.platform === 'kick' && includeKick) {
           // Only check Kick on initial load or manual refresh to save API requests
+          const isOrgLink = link.id.startsWith('org-link-');
           kickLinksToCheck.push({
             linkId: link.id,
             platformId: link.platform_id,
             channelSlug: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
+            isOrgLink,
+            organizationId: isOrgLink ? creator.organization_id : undefined,
+            profileId: isOrgLink ? creator.server_id : undefined,
           });
         }
       }
@@ -747,45 +759,58 @@
       }
     });
 
-    const kickPromises = kickLinksToCheck.map(async ({ linkId, platformId, channelSlug, hasProfileImage }) => {
-      liveStatusMap.value.set(platformId, {
-        ...liveStatusMap.value.get(platformId),
-        isLive: liveStatusMap.value.get(platformId)?.isLive ?? false,
-        isChecking: true,
-      });
-
-      try {
-        const status = await checkKickLivestream(channelSlug);
-        liveStatusMap.value.set(platformId, {
-          isLive: status.isLive,
-          viewerCount: status.viewerCount,
-          profileImageUrl: status.profileImageUrl,
-          isChecking: false,
-        });
-
-        if (status.profileImageUrl && !hasProfileImage && !linkId.startsWith('org-link-')) {
-          try {
-            await updatePlatformLink(linkId, { profile_image_url: status.profileImageUrl });
-            for (const creator of creators.value) {
-              const link = creator.platform_links.find((l) => l.id === linkId);
-              if (link) {
-                link.profile_image_url = status.profileImageUrl;
-                break;
-              }
-            }
-          } catch (updateError) {
-            console.warn('[CreatorProfiles] Failed to persist Kick profile image:', updateError);
-          }
-        }
-      } catch (error) {
-        console.error('[CreatorProfiles] Failed to check Kick live status for', channelSlug, error);
+    const kickPromises = kickLinksToCheck.map(
+      async ({ linkId, platformId, channelSlug, hasProfileImage, isOrgLink, organizationId, profileId }) => {
         liveStatusMap.value.set(platformId, {
           ...liveStatusMap.value.get(platformId),
-          isLive: false,
-          isChecking: false,
+          isLive: liveStatusMap.value.get(platformId)?.isLive ?? false,
+          isChecking: true,
         });
+
+        try {
+          const status = await checkKickLivestream(channelSlug);
+          liveStatusMap.value.set(platformId, {
+            isLive: status.isLive,
+            viewerCount: status.viewerCount,
+            profileImageUrl: status.profileImageUrl,
+            isChecking: false,
+          });
+
+          // Persist profile image if we got one and don't have one stored
+          if (status.profileImageUrl && !hasProfileImage) {
+            try {
+              if (isOrgLink && organizationId && profileId) {
+                // Update org platform link via server API
+                const serverLinkId = parseInt(linkId.replace('org-link-', ''), 10);
+                await updateOrgPlatformLink(organizationId, profileId, serverLinkId, {
+                  profile_image_url: status.profileImageUrl,
+                });
+              } else {
+                // Update local platform link
+                await updatePlatformLink(linkId, { profile_image_url: status.profileImageUrl });
+              }
+              // Update local state
+              for (const creator of creators.value) {
+                const link = creator.platform_links.find((l) => l.id === linkId);
+                if (link) {
+                  link.profile_image_url = status.profileImageUrl;
+                  break;
+                }
+              }
+            } catch (updateError) {
+              console.warn('[CreatorProfiles] Failed to persist Kick profile image:', updateError);
+            }
+          }
+        } catch (error) {
+          console.error('[CreatorProfiles] Failed to check Kick live status for', channelSlug, error);
+          liveStatusMap.value.set(platformId, {
+            ...liveStatusMap.value.get(platformId),
+            isLive: false,
+            isChecking: false,
+          });
+        }
       }
-    });
+    );
 
     await Promise.all([...pumpfunPromises, ...kickPromises]);
   }
