@@ -593,228 +593,27 @@
 
                     <!-- Clips List -->
                     <div v-else class="folder-dialog__clips-items">
-                      <div
-                        v-for="(clip, index) in folderClips"
-                        :key="clip.id"
-                        class="folder-dialog__clip-card"
-                        :class="{ 'folder-dialog__clip-card--active': clipToPreview?.id === clip.id }"
-                        @click="previewClip(clip)"
-                      >
-                        <!-- Left accent bar -->
-                        <div
-                          v-if="clip.run_number"
-                          class="folder-dialog__clip-accent"
-                          :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
-                        ></div>
-
-                        <div class="folder-dialog__clip-content">
-                          <!-- Thumbnail -->
-                          <div class="folder-dialog__clip-thumb">
-                            <div
-                              v-if="getClipThumbnailUrl(clip)"
-                              class="folder-dialog__clip-thumb-img"
-                              :style="{ backgroundImage: `url(${getClipThumbnailUrl(clip)})` }"
-                            ></div>
-                            <div v-else class="folder-dialog__clip-thumb-placeholder">
-                              <Video :size="24" />
-                            </div>
-                            <div class="folder-dialog__clip-thumb-duration">{{ getClipDuration(clip) }}</div>
-                            <div class="folder-dialog__clip-thumb-hover">
-                              <PlayIcon :size="24" />
-                            </div>
-                          </div>
-
-                          <!-- Content -->
-                          <div class="folder-dialog__clip-details">
-                            <!-- Header -->
-                            <div class="folder-dialog__clip-header">
-                              <div class="folder-dialog__clip-title-row">
-                                <span class="folder-dialog__clip-index">#{{ index + 1 }}</span>
-                                <h5 class="folder-dialog__clip-title">
-                                  {{ clip.current_version?.name || clip.name || 'Untitled Clip' }}
-                                </h5>
-                              </div>
-
-                              <!-- Actions -->
-                              <div
-                                class="folder-dialog__clip-actions"
-                                :class="{
-                                  'folder-dialog__clip-actions--visible':
-                                    hasCompletedBuilds(clip) || clip.build_status === 'building',
-                                }"
-                              >
-                                <button
-                                  class="folder-dialog__clip-action folder-dialog__clip-action--preview"
-                                  title="Preview clip"
-                                  @click.stop="previewClip(clip)"
-                                >
-                                  <PlayIcon :size="16" />
-                                </button>
-                                <button
-                                  class="folder-dialog__clip-action folder-dialog__clip-action--edit"
-                                  title="Edit in Segment"
-                                  @click.stop="openSegmentWithClip(clip)"
-                                >
-                                  <ExternalLink :size="16" />
-                                </button>
-                                <button
-                                  v-if="clip.build_status !== 'building'"
-                                  class="folder-dialog__clip-action folder-dialog__clip-action--build"
-                                  title="Build clip"
-                                  @click.stop="onFolderBuildClip(clip)"
-                                >
-                                  <Hammer :size="16" />
-                                </button>
-
-                                <!-- Download dropdown -->
-                                <div v-if="hasCompletedBuilds(clip)" class="folder-dialog__clip-download">
-                                  <button
-                                    :ref="(el) => setFolderDropdownButtonRef(el, clip.id)"
-                                    class="folder-dialog__clip-action folder-dialog__clip-action--download"
-                                    title="Download built clip"
-                                    @click.stop="toggleFolderDownloadDropdown(clip.id)"
-                                  >
-                                    <DownloadIcon :size="16" />
-                                    <ChevronDownIcon :size="12" />
-                                  </button>
-
-                                  <Teleport to="body">
-                                    <div
-                                      v-if="folderDownloadDropdownId === clip.id"
-                                      class="folder-dialog__download-menu"
-                                      :style="getFolderDropdownPosition(clip.id)"
-                                      @click.stop
-                                    >
-                                      <div class="folder-dialog__download-header">
-                                        <span>Downloads ({{ getDownloadableFilesCount(clip) }})</span>
-                                      </div>
-                                      <button
-                                        v-for="(file, fileIdx) in getDownloadableFiles(clip)"
-                                        :key="`${file.build.id}-${fileIdx}`"
-                                        class="folder-dialog__download-item"
-                                        @click.stop="
-                                          onFolderSaveFile(file.filePath);
-                                          closeFolderDownloadDropdown();
-                                        "
-                                      >
-                                        <DownloadIcon :size="16" class="folder-dialog__download-item-icon" />
-                                        <div class="folder-dialog__download-item-info">
-                                          <div class="folder-dialog__download-item-name">
-                                            <span v-if="file.aspectRatio" class="folder-dialog__download-item-ratio">
-                                              {{ file.aspectRatio }}
-                                            </span>
-                                            <span class="folder-dialog__download-item-number">
-                                              #{{ file.build.build_number }}
-                                            </span>
-                                            <span class="folder-dialog__download-item-filename">
-                                              {{ getBuildFileName(file.filePath) }}
-                                            </span>
-                                          </div>
-                                          <div class="folder-dialog__download-item-meta">
-                                            <span v-if="file.build.completed_at">
-                                              {{ formatBuildDate(file.build.completed_at) }}
-                                            </span>
-                                            <span
-                                              v-if="file.build.file_size && getDownloadableFiles(clip).length === 1"
-                                            >
-                                              {{ formatFileSize(file.build.file_size) }}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </button>
-                                      <button
-                                        v-if="getDownloadableFilesCount(clip) === 0 && clip.built_file_path"
-                                        class="folder-dialog__download-item"
-                                        @click.stop="
-                                          onFolderSaveFile(clip.built_file_path);
-                                          closeFolderDownloadDropdown();
-                                        "
-                                      >
-                                        <DownloadIcon :size="16" class="folder-dialog__download-item-icon" />
-                                        <div class="folder-dialog__download-item-info">
-                                          <div class="folder-dialog__download-item-name">
-                                            {{ getBuildFileName(clip.built_file_path) }}
-                                          </div>
-                                        </div>
-                                      </button>
-                                    </div>
-                                  </Teleport>
-                                </div>
-
-                                <button
-                                  v-if="!hasCompletedBuilds(clip)"
-                                  class="folder-dialog__clip-action folder-dialog__clip-action--delete"
-                                  title="Delete clip"
-                                  @click.stop="deleteFolderClip(clip.id)"
-                                >
-                                  <Trash2 :size="16" />
-                                </button>
-                              </div>
-                            </div>
-
-                            <!-- Metrics Row -->
-                            <div class="folder-dialog__clip-metrics">
-                              <div class="folder-dialog__clip-badge folder-dialog__clip-badge--segment">
-                                <FolderOpen :size="12" />
-                                <span>{{ clip.segment_name }}</span>
-                              </div>
-                              <div
-                                v-if="
-                                  clip.current_version_virality_score !== undefined &&
-                                  clip.current_version_virality_score !== null
-                                "
-                                class="folder-dialog__clip-badge"
-                                :class="getViralityColorClass(clip.current_version_virality_score)"
-                                title="Predicted Virality Score"
-                              >
-                                <Flame :size="12" />
-                                <span>{{ Math.round(clip.current_version_virality_score) }}%</span>
-                              </div>
-                              <div
-                                v-if="clip.current_version_confidence_score"
-                                class="folder-dialog__clip-badge folder-dialog__clip-badge--confidence"
-                                title="AI Confidence Score"
-                              >
-                                <BrainIcon :size="12" />
-                                <span>{{ Math.round((clip.current_version_confidence_score || 0) * 100) }}%</span>
-                              </div>
-                            </div>
-
-                            <!-- Footer -->
-                            <div class="folder-dialog__clip-footer">
-                              <div class="folder-dialog__clip-time">
-                                <span>
-                                  {{ formatClipTime(clip.current_version_start_time || 0) }} -
-                                  {{ formatClipTime(clip.current_version_end_time || 0) }}
-                                </span>
-                                <span
-                                  v-if="clip.build_status === 'building'"
-                                  class="folder-dialog__clip-status folder-dialog__clip-status--building"
-                                >
-                                  <Loader2 :size="12" class="folder-dialog__spin" />
-                                  Building...
-                                </span>
-                                <span
-                                  v-else-if="hasCompletedBuilds(clip)"
-                                  class="folder-dialog__clip-status folder-dialog__clip-status--built"
-                                >
-                                  <Check :size="12" />
-                                  {{ getDownloadableFilesCount(clip) || 1 }} File{{
-                                    (getDownloadableFilesCount(clip) || 1) !== 1 ? 's' : ''
-                                  }}
-                                </span>
-                              </div>
-                              <div v-if="clip.run_number" class="folder-dialog__clip-run">
-                                <div
-                                  class="folder-dialog__clip-run-dot"
-                                  :style="{ backgroundColor: clip.session_run_color || '#8B5CF6' }"
-                                ></div>
-                                Run {{ clip.run_number }}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      <ClipsTab
+                        :clips="folderClips"
+                        :project-id="folderProject?.id || null"
+                        :hide-header="false"
+                        :is-generating="false"
+                        :generation-progress="0"
+                        :generation-stage="''"
+                        :generation-message="''"
+                        :generation-error="''"
+                        :playing-clip-id="clipToPreview?.id || null"
+                        :is-playing-segments="false"
+                        :hovered-timeline-clip-id="null"
+                        :video-duration="0"
+                        :prompts="[]"
+                        :transcript-data="null"
+                        @play-clip="onClipsTabPlayClip"
+                        @delete-clip="deleteFolderClip"
+                        @edit-clip="onClipsTabEditClip"
+                        @refresh-clips="onClipsTabRefreshClips"
+                        @detect-clips="onClipsTabDetectClips"
+                      />
                     </div>
                   </div>
 
@@ -1237,6 +1036,7 @@
     getWatermarkByServerId,
     type Project,
     type RawVideo,
+    type ClipWithVersion,
     type ClipWithVersionAndSegment,
     type IntroOutro,
     type WatermarkSettings,
@@ -1261,6 +1061,7 @@
     type BuildSettings,
     type IntroOutroItem,
   } from '@/components/ClipBuildSettingsDialog.vue';
+  import ClipsTab from '@/components/ClipsTab.vue';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
@@ -1611,6 +1412,41 @@
   const folderClipToBuild = ref<ClipWithVersionAndSegment | null>(null);
   const showFolderBuildDialog = ref(false);
   const folderDownloadDropdownId = ref<string | null>(null);
+
+  // Folder clips grouping: Completed vs Found Clips
+  const folderClipSections = computed(() => {
+    const isCompleted = (clip: ClipWithVersionAndSegment) =>
+      hasCompletedBuilds(clip) ||
+      clip.build_status === 'completed' ||
+      (clip.status === 'generated' && Boolean(clip.built_file_path));
+
+    const completed = folderClips.value
+      .filter((clip) => isCompleted(clip))
+      .sort((a, b) => {
+        const aBuilt = a.built_at || a.current_version_created_at || a.created_at || 0;
+        const bBuilt = b.built_at || b.current_version_created_at || b.created_at || 0;
+        return bBuilt - aBuilt;
+      });
+
+    const found = folderClips.value.filter((clip) => !isCompleted(clip));
+
+    return [
+      { title: 'Completed', accentClass: 'folder-dialog__clips-section-dot--completed', clips: completed },
+      { title: 'Found Clips', accentClass: 'folder-dialog__clips-section-dot--found', clips: found },
+    ].filter((section) => section.clips.length > 0 || section.title === 'Found Clips');
+  });
+
+  // Map for stable numbering across sections
+  const folderClipIndexMap = computed(() => {
+    const map = new Map<string, number>();
+    let idx = 0;
+    for (const section of folderClipSections.value) {
+      for (const clip of section.clips) {
+        map.set(clip.id, idx++);
+      }
+    }
+    return map;
+  });
 
   // Creator profile defaults for folder dialog builds
   const folderCreatorDefaultIntro = ref<IntroOutro | null>(null);
@@ -2658,6 +2494,30 @@
       success('Clip deleted', 'The clip has been removed.');
     } catch (e) {
       error('Failed to delete clip', 'An error occurred while deleting the clip.');
+    }
+  }
+
+  function onClipsTabPlayClip(clip: ClipWithVersion) {
+    const fullClip = folderClips.value.find((c) => c.id === clip.id);
+    if (fullClip) {
+      previewClip(fullClip);
+    }
+  }
+
+  function onClipsTabEditClip(clipId: string) {
+    const clip = folderClips.value.find((c) => c.id === clipId);
+    if (clip) {
+      openSegmentWithClip(clip);
+    }
+  }
+
+  async function onClipsTabRefreshClips() {
+    await loadFolderClips();
+  }
+
+  function onClipsTabDetectClips() {
+    if (folderProject) {
+      startProjectDetection(folderProject);
     }
   }
 
@@ -5496,6 +5356,61 @@
     flex-direction: column;
     gap: 0.75rem;
     padding-bottom: 1rem;
+  }
+
+  /* ===== Clip Sections (Completed / Found) ===== */
+  .folder-dialog__clips-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .folder-dialog__clips-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.25rem 0.125rem;
+    color: var(--sidebar-text-muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .folder-dialog__clips-section-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+  }
+
+  .folder-dialog__clips-section-label {
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .folder-dialog__clips-section-count {
+    font-variant-numeric: tabular-nums;
+    color: var(--sidebar-text-muted);
+    font-weight: 600;
+    opacity: 0.8;
+  }
+
+  .folder-dialog__clips-section-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 9999px;
+    display: inline-block;
+  }
+
+  .folder-dialog__clips-section-dot--completed {
+    background-color: #22c55e;
+  }
+
+  .folder-dialog__clips-section-dot--found {
+    background-color: #9ca3af;
   }
 
   /* ===== Clip Card ===== */

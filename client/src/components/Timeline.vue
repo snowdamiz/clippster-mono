@@ -806,8 +806,9 @@
 
     const oldContentWidth = timelineContent?.getBoundingClientRect().width ?? container?.scrollWidth ?? 1;
     const containerWidth = container?.clientWidth ?? 1;
-    const oldCenter = (container?.scrollLeft ?? 0) + containerWidth / 2;
-    const anchorRatio = Math.max(0, Math.min(1, oldCenter / oldContentWidth));
+    const oldScrollLeft = container?.scrollLeft ?? 0;
+    // Anchor in absolute content space (including track label area)
+    const anchorContentX = oldScrollLeft + containerWidth / 2;
 
     // Update the zoom level from slider position (exponential mapping)
     setZoomFromSlider(newSliderPosition);
@@ -818,7 +819,8 @@
         (container.querySelector('.timeline-content-wrapper') as HTMLElement | null)?.getBoundingClientRect().width ??
         container.scrollWidth ??
         oldContentWidth;
-      const targetCenter = anchorRatio * newContentWidth;
+      const scale = newContentWidth / oldContentWidth;
+      const targetCenter = anchorContentX * scale;
       const newScrollLeft = Math.max(0, targetCenter - containerWidth / 2);
       const maxScrollLeft = Math.max(0, newContentWidth - containerWidth);
       container.scrollLeft = Math.min(newScrollLeft, maxScrollLeft);
