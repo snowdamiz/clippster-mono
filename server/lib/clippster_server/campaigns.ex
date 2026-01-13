@@ -772,6 +772,78 @@ defmodule ClippsterServer.Campaigns do
   end
 
   # ============================================================================
+  # User Posts
+  # ============================================================================
+
+  alias ClippsterServer.Campaigns.UserPost
+
+  @doc """
+  Creates a user post.
+  """
+  def create_user_post(%User{} = user, attrs) do
+    %UserPost{}
+    |> UserPost.create_changeset(Map.put(attrs, :user_id, user.id))
+    |> Repo.insert()
+  end
+
+  @doc """
+  Gets a user post by ID.
+  """
+  def get_user_post(id) do
+    Repo.get(UserPost, id)
+  end
+
+  @doc """
+  Lists all posts for a user.
+  """
+  def list_user_posts(user_id) do
+    from(p in UserPost,
+      where: p.user_id == ^user_id,
+      order_by: [desc: p.inserted_at]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Lists posts for a user filtered by account.
+  """
+  def list_user_posts_by_account(user_id, account_id) do
+    from(p in UserPost,
+      where: p.user_id == ^user_id and p.clipper_social_account_id == ^account_id,
+      order_by: [desc: p.inserted_at]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Updates user post analytics.
+  """
+  def update_user_post_analytics(%UserPost{} = post, analytics) do
+    post
+    |> UserPost.analytics_changeset(analytics)
+    |> Repo.update()
+  end
+
+  @doc """
+  Gets posts needing analytics sync (for background worker).
+  """
+  def get_user_posts_needing_sync(opts \\ []) do
+    limit = Keyword.get(opts, :limit, 50)
+
+    # Get posts that haven't been synced in the last hour
+    one_hour_ago = DateTime.utc_now() |> DateTime.add(-3600, :second)
+
+    from(p in UserPost,
+      where: p.status == "published",
+      where: is_nil(p.synced_at) or p.synced_at < ^one_hour_ago,
+      order_by: [asc: p.synced_at],
+      limit: ^limit,
+      preload: [:clipper_social_account]
+    )
+    |> Repo.all()
+  end
+
+  # ============================================================================
   # Clipper Payment Methods
   # ============================================================================
 

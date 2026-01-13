@@ -634,6 +634,35 @@ pub async fn poll_instagram_auth_result() -> Result<Option<InstagramAuthResult>,
 }
 
 #[tauri::command]
+pub async fn start_user_instagram_oauth(
+    app: tauri::AppHandle,
+    auth_token: String,
+) -> Result<(), String> {
+    // Clear any previous auth result
+    *INSTAGRAM_AUTH_RESULT.lock().unwrap() = None;
+
+    // Start local callback server (reuse the same server)
+    start_instagram_callback_server(app.clone());
+
+    // Get API base URL from environment or config
+    let api_base = std::env::var("API_URL")
+        .unwrap_or_else(|_| "http://localhost:4000".to_string());
+
+    // Build the user Instagram OAuth initiation URL
+    let auth_url = format!(
+        "{}/api/auth/user-instagram/start?callback_port={}&auth_token={}",
+        api_base,
+        INSTAGRAM_AUTH_SERVER_PORT,
+        urlencoding::encode(&auth_token)
+    );
+
+    tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn start_email_verification_listener(app: tauri::AppHandle) -> Result<(), String> {
     start_email_verification_callback_server(app);
     Ok(())

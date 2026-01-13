@@ -635,6 +635,7 @@ pub fn run() {
             auth::poll_email_verification_result,
             auth::open_instagram_auth_window,
             auth::poll_instagram_auth_result,
+            auth::start_user_instagram_oauth,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,

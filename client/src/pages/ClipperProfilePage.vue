@@ -88,43 +88,40 @@
         <main class="content">
           <!-- Leaderboard -->
           <template v-if="activeTab === 'leaderboard'">
-            <div class="notice">
-              <AlertTriangle class="notice__icon" />
-              <span>
-                <strong>Leaderboard In Progress</strong>
-                — View tracking not yet implemented
-              </span>
-            </div>
-
-            <div class="ranking-row">
-              <div class="ranking-row__left">
-                <Trophy class="ranking-row__trophy" />
-                <div>
+            <div class="ranking-card">
+              <div class="ranking-row">
+                <div class="ranking-row__header-icon">
+                  <Trophy />
+                </div>
+                <div class="ranking-row__header-text">
                   <h2 class="ranking-row__title">Your Ranking</h2>
                   <p class="ranking-row__subtitle">Global performance stats</p>
                 </div>
-              </div>
-              <div class="ranking-row__stats">
-                <div class="rank-stat rank-stat--primary">
-                  <span class="rank-stat__value">{{ myRank || '--' }}</span>
-                  <span class="rank-stat__label">Rank</span>
-                </div>
-                <div class="rank-stat">
-                  <span class="rank-stat__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
-                  <span class="rank-stat__label">Clips</span>
-                </div>
-                <div class="rank-stat">
-                  <span class="rank-stat__value">{{ formatViews(totalViews) }}</span>
-                  <span class="rank-stat__label">Views</span>
+                <div class="ranking-row__stats">
+                  <div class="rank-stat rank-stat--primary">
+                    <span class="rank-stat__value">{{ myRank || '--' }}</span>
+                    <span class="rank-stat__label">Rank</span>
+                  </div>
+                  <div class="rank-stat">
+                    <span class="rank-stat__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
+                    <span class="rank-stat__label">Clips</span>
+                  </div>
+                  <div class="rank-stat">
+                    <span class="rank-stat__value">{{ formatViews(totalViews) }}</span>
+                    <span class="rank-stat__label">Views</span>
+                  </div>
                 </div>
               </div>
             </div>
 
             <section class="leaderboard">
               <div class="leaderboard__header">
-                <div class="leaderboard__title">
-                  <Users class="leaderboard__title-icon" />
-                  <h2>Top Clippers</h2>
+                <div class="leaderboard__header-icon">
+                  <Users />
+                </div>
+                <div class="leaderboard__header-text">
+                  <h2 class="leaderboard__title">Top Clippers</h2>
+                  <p class="leaderboard__subtitle">Global performance rankings</p>
                 </div>
                 <div class="period-switch">
                   <button
@@ -178,13 +175,16 @@
           <template v-if="activeTab === 'accounts'">
             <section class="section">
               <div class="section__header">
-                <div>
-                  <h2 class="section-title">Social Accounts</h2>
-                  <p class="section-subtitle">Connect your social media accounts to submit clips</p>
+                <div class="section__header-icon">
+                  <Share2 />
                 </div>
-                <button class="action-btn" @click="openAddSocialAccount">
+                <div class="section__header-text">
+                  <h2 class="section-title">Social Accounts</h2>
+                  <p class="section-subtitle">Connect your social media accounts to post and track analytics</p>
+                </div>
+                <button class="action-btn" @click="showPlatformSelectionDialog = true">
                   <Plus />
-                  Add Account
+                  Connect Account
                 </button>
               </div>
 
@@ -194,37 +194,58 @@
               <div v-else-if="socialAccounts.length === 0" class="empty-state">
                 <Share2 class="empty-state__icon" />
                 <p class="empty-state__title">No social accounts connected</p>
-                <p class="empty-state__text">Add your social media accounts to submit clips to campaigns</p>
-                <button class="empty-state__btn" @click="openAddSocialAccount">
+                <p class="empty-state__text">Connect your social media accounts to post videos and track analytics</p>
+                <button class="empty-state__btn" @click="showPlatformSelectionDialog = true">
                   <Plus />
-                  Add Your First Account
+                  Connect Account
                 </button>
               </div>
               <div v-else class="list">
                 <div v-for="account in socialAccounts" :key="account.id" class="list-item">
-                  <div class="list-item__icon" :class="getPlatformClass(account.platform)">
+                  <div class="list-item__icon" :class="getPlatformIconClass(account.platform)">
                     <component :is="getPlatformIcon(account.platform)" />
                   </div>
                   <div class="list-item__content">
-                    <span class="list-item__name">
-                      {{ account.display_name || account.username || getPlatformDisplayName(account.platform) }}
-                      <CheckCircle v-if="account.is_verified" class="verified-icon" />
-                    </span>
+                    <span class="list-item__name">@{{ account.username }}</span>
                     <span class="list-item__meta">
-                      {{ getPlatformDisplayName(account.platform) }}
-                      <template v-if="account.follower_count">
-                        · {{ formatFollowers(account.follower_count) }} followers
+                      {{ getPlatformName(account.platform) }}
+                      <template v-if="account.display_name">· {{ account.display_name }}</template>
+                      <template v-if="account.connected_at">
+                        · Connected {{ formatDate(account.connected_at) }}
+                      </template>
+                      <template v-if="isTokenExpiringSoon(account)">
+                        ·
+                        <span class="token-expiring">Token expiring soon</span>
                       </template>
                     </span>
                   </div>
                   <div class="list-item__actions">
-                    <button @click="editSocialAccount(account)" title="Edit"><Pencil /></button>
-                    <button class="danger" @click="confirmDeleteSocialAccount(account)" title="Delete">
+                    <button @click="viewAccountPosts(account)" title="View Posts"><Eye /></button>
+                    <button class="danger" @click="confirmDeleteSocialAccount(account)" title="Disconnect">
                       <Trash2 />
                     </button>
                   </div>
                 </div>
               </div>
+            </section>
+
+            <!-- Posts Section -->
+            <section v-if="selectedAccountForPosts" class="section">
+              <div class="section__header">
+                <div class="section__header-icon">
+                  <Upload />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section-title">Posts from @{{ selectedAccountForPosts.username }}</h2>
+                  <p class="section-subtitle">Your published posts and analytics</p>
+                </div>
+                <button class="action-btn" @click="openPublishDialog">
+                  <Upload />
+                  Post Video
+                </button>
+              </div>
+
+              <UserPostsList :account-id="selectedAccountForPosts.id" />
             </section>
           </template>
 
@@ -232,7 +253,10 @@
           <template v-if="activeTab === 'payments'">
             <section class="section">
               <div class="section__header">
-                <div>
+                <div class="section__header-icon section__header-icon--green">
+                  <Wallet />
+                </div>
+                <div class="section__header-text">
                   <h2 class="section-title">Payment Methods</h2>
                   <p class="section-subtitle">Add payment methods to receive your earnings</p>
                 </div>
@@ -320,7 +344,10 @@
 
             <section class="section">
               <div class="section__header">
-                <div>
+                <div class="section__header-icon section__header-icon--purple">
+                  <Megaphone />
+                </div>
+                <div class="section__header-text">
                   <h2 class="section-title">Campaign History</h2>
                   <p class="section-subtitle">Campaigns you've joined</p>
                 </div>
@@ -353,7 +380,13 @@
 
             <section class="section">
               <div class="section__header">
-                <h2 class="section-title">My Submissions</h2>
+                <div class="section__header-icon">
+                  <Upload />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section-title">My Submissions</h2>
+                  <p class="section-subtitle">Your submitted clips and their status</p>
+                </div>
               </div>
 
               <div v-if="loadingSubmissions" class="loading-rows">
@@ -365,7 +398,7 @@
               </div>
               <div v-else class="submission-list">
                 <div v-for="submission in mySubmissions" :key="submission.id" class="submission-row">
-                  <div class="submission-row__platform" :class="getPlatformClass(submission.platform)">
+                  <div class="submission-row__platform" :class="getSubmissionPlatformClass(submission.platform)">
                     <component :is="getPlatformIcon(submission.platform)" />
                   </div>
                   <div class="submission-row__content">
@@ -389,113 +422,250 @@
     </PageLayout>
 
     <!-- Dialogs -->
-    <Dialog v-model:open="showSocialAccountDialog">
-      <DialogContent class="dialog">
-        <DialogHeader>
-          <DialogTitle>{{ editingSocialAccount ? 'Edit' : 'Add' }} Social Account</DialogTitle>
-        </DialogHeader>
-        <div class="dialog__form">
-          <div class="dialog__field">
-            <Label>Platform</Label>
-            <Select v-model="socialAccountForm.platform" :disabled="!!editingSocialAccount">
-              <SelectTrigger><SelectValue placeholder="Select platform" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="p in CLIPPER_PLATFORMS" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div class="dialog__field">
-            <Label>Username</Label>
-            <Input v-model="socialAccountForm.username" placeholder="@username" />
-          </div>
-          <div class="dialog__field">
-            <Label>Display Name (optional)</Label>
-            <Input v-model="socialAccountForm.display_name" placeholder="Display name" />
-          </div>
-          <div class="dialog__field">
-            <Label>Profile URL (optional)</Label>
-            <Input v-model="socialAccountForm.profile_url" placeholder="https://..." />
-          </div>
-          <div class="dialog__field">
-            <Label>Followers (optional)</Label>
-            <Input v-model.number="socialAccountForm.follower_count" type="number" placeholder="0" />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" @click="showSocialAccountDialog = false">Cancel</Button>
-          <Button @click="saveSocialAccount" :disabled="savingSocialAccount || !socialAccountForm.platform">
-            <Loader2 v-if="savingSocialAccount" class="spinner" />
-            {{ editingSocialAccount ? 'Save' : 'Add' }}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showPlatformSelectionDialog"
+          class="platform-dialog__overlay"
+          @click.self="showPlatformSelectionDialog = false"
+        >
+          <Transition name="dialog" appear>
+            <div class="platform-dialog" role="dialog" aria-modal="true">
+              <!-- Accent bar -->
+              <div class="platform-dialog__accent"></div>
 
-    <Dialog v-model:open="showPaymentMethodDialog">
-      <DialogContent class="dialog">
-        <DialogHeader>
-          <DialogTitle>{{ editingPaymentMethod ? 'Edit' : 'Add' }} Payment Method</DialogTitle>
-        </DialogHeader>
-        <div class="dialog__form">
-          <div class="dialog__field">
-            <Label>Method Type</Label>
-            <Select v-model="paymentMethodForm.method_type" :disabled="!!editingPaymentMethod">
-              <SelectTrigger><SelectValue placeholder="Select method" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="m in PAYMENT_METHOD_TYPES" :key="m.value" :value="m.value">{{ m.label }}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <template v-if="paymentMethodForm.method_type === 'paypal'">
-            <div class="dialog__field">
-              <Label>PayPal Email</Label>
-              <Input v-model="paymentMethodForm.details.email" type="email" placeholder="email@example.com" />
+              <!-- Header -->
+              <div class="platform-dialog__header">
+                <button
+                  class="platform-dialog__close"
+                  @click="showPlatformSelectionDialog = false"
+                  :disabled="connectingInstagram"
+                  title="Close"
+                >
+                  <X :size="18" />
+                </button>
+                <div class="platform-dialog__icon">
+                  <Share2 :size="24" />
+                </div>
+                <h2 class="platform-dialog__title">Connect Social Account</h2>
+                <p class="platform-dialog__subtitle">Choose a platform to connect and start posting</p>
+              </div>
+
+              <!-- Content -->
+              <div class="platform-dialog__content">
+                <div class="platform-grid">
+                  <button
+                    v-for="platform in availablePlatforms"
+                    :key="platform.id"
+                    class="platform-option"
+                    :class="{ 'platform-option--disabled': !platform.available }"
+                    :disabled="!platform.available || connectingInstagram"
+                    @click="connectPlatform(platform.id)"
+                  >
+                    <div class="platform-option__icon" :class="platform.iconClass">
+                      <component :is="platform.icon" />
+                    </div>
+                    <div class="platform-option__content">
+                      <span class="platform-option__name">{{ platform.name }}</span>
+                      <span v-if="!platform.available" class="platform-option__badge">Coming Soon</span>
+                    </div>
+                    <Loader2
+                      v-if="connectingInstagram && selectedPlatform === platform.id"
+                      class="platform-option__spinner"
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="platform-dialog__footer">
+                <button
+                  @click="showPlatformSelectionDialog = false"
+                  :disabled="connectingInstagram"
+                  class="platform-dialog__btn platform-dialog__btn--secondary"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          </template>
-          <template v-else-if="paymentMethodForm.method_type === 'crypto'">
-            <div class="dialog__field">
-              <Label>Wallet Address</Label>
-              <Input v-model="paymentMethodForm.details.wallet_address" placeholder="0x..." />
-            </div>
-            <div class="dialog__field">
-              <Label>Network (optional)</Label>
-              <Input v-model="paymentMethodForm.details.network" placeholder="Ethereum, Solana..." />
-            </div>
-          </template>
-          <template v-else-if="['venmo', 'cashapp'].includes(paymentMethodForm.method_type)">
-            <div class="dialog__field">
-              <Label>Username</Label>
-              <Input v-model="paymentMethodForm.details.username" placeholder="@username" />
-            </div>
-          </template>
-          <template v-else-if="paymentMethodForm.method_type === 'bank_transfer'">
-            <div class="dialog__field">
-              <Label>Account Name</Label>
-              <Input v-model="paymentMethodForm.details.account_name" placeholder="John Doe" />
-            </div>
-            <div class="dialog__field">
-              <Label>Account Number</Label>
-              <Input v-model="paymentMethodForm.details.account_number" placeholder="****1234" />
-            </div>
-            <div class="dialog__field">
-              <Label>Routing Number</Label>
-              <Input v-model="paymentMethodForm.details.routing_number" placeholder="123456789" />
-            </div>
-          </template>
-          <div class="dialog__checkbox">
-            <Checkbox v-model:checked="paymentMethodForm.is_default" id="default-payment" />
-            <Label for="default-payment">Set as default</Label>
-          </div>
+          </Transition>
         </div>
-        <DialogFooter>
-          <Button variant="outline" @click="showPaymentMethodDialog = false">Cancel</Button>
-          <Button @click="savePaymentMethod" :disabled="savingPaymentMethod || !paymentMethodForm.method_type">
-            <Loader2 v-if="savingPaymentMethod" class="spinner" />
-            {{ editingPaymentMethod ? 'Save' : 'Add' }}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </Transition>
+    </Teleport>
+
+    <!-- Payment Method Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showPaymentMethodDialog" class="payment-dialog__overlay" @click.self="closePaymentMethodDialog">
+          <Transition name="dialog" appear>
+            <div class="payment-dialog">
+              <div class="payment-dialog__accent"></div>
+              <div class="payment-dialog__header">
+                <button
+                  class="payment-dialog__close"
+                  @click="closePaymentMethodDialog"
+                  title="Close"
+                  :disabled="savingPaymentMethod"
+                >
+                  <X :size="18" />
+                </button>
+                <div class="payment-dialog__icon">
+                  <Wallet :size="24" />
+                </div>
+                <h2 class="payment-dialog__title">{{ editingPaymentMethod ? 'Edit' : 'Add' }} Payment Method</h2>
+                <p class="payment-dialog__subtitle">
+                  {{
+                    editingPaymentMethod
+                      ? 'Update your payment method details'
+                      : 'Add a new payment method to receive earnings'
+                  }}
+                </p>
+              </div>
+
+              <form @submit.prevent="savePaymentMethod" class="payment-dialog__form">
+                <div class="payment-dialog__content">
+                  <div class="payment-dialog__field" @click.stop>
+                    <label class="payment-dialog__label">Method Type</label>
+                    <div class="payment-dialog__dropdown-wrapper">
+                      <button
+                        ref="paymentMethodDropdownTrigger"
+                        type="button"
+                        @click="togglePaymentMethodDropdown"
+                        :disabled="!!editingPaymentMethod"
+                        class="payment-dialog__dropdown-trigger"
+                      >
+                        <span class="payment-dialog__dropdown-label">{{ getSelectedPaymentMethodLabel() }}</span>
+                        <ChevronDown
+                          class="payment-dialog__chevron"
+                          :class="{ 'payment-dialog__chevron--open': showPaymentMethodDropdown }"
+                        />
+                      </button>
+                      <Teleport to="body">
+                        <div
+                          v-if="showPaymentMethodDropdown"
+                          class="payment-dialog__dropdown-backdrop"
+                          @click="showPaymentMethodDropdown = false"
+                        >
+                          <div class="payment-dialog__dropdown" :style="paymentMethodDropdownStyle" @click.stop>
+                            <div class="payment-dialog__dropdown-list">
+                              <button
+                                v-for="m in PAYMENT_METHOD_TYPES"
+                                :key="m.value"
+                                type="button"
+                                @click="selectPaymentMethodType(m.value)"
+                                class="payment-dialog__dropdown-item"
+                                :class="{
+                                  'payment-dialog__dropdown-item--active': paymentMethodForm.method_type === m.value,
+                                }"
+                              >
+                                {{ m.label }}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </Teleport>
+                    </div>
+                  </div>
+
+                  <template v-if="paymentMethodForm.method_type === 'paypal'">
+                    <div class="payment-dialog__field">
+                      <label class="payment-dialog__label">PayPal Email</label>
+                      <Input
+                        v-model="paymentMethodForm.details.email"
+                        type="email"
+                        placeholder="email@example.com"
+                        class="payment-dialog__input"
+                      />
+                    </div>
+                  </template>
+
+                  <template v-else-if="paymentMethodForm.method_type === 'crypto'">
+                    <div class="payment-dialog__field">
+                      <label class="payment-dialog__label">Wallet Address</label>
+                      <Input
+                        v-model="paymentMethodForm.details.wallet_address"
+                        placeholder="0x..."
+                        class="payment-dialog__input"
+                      />
+                    </div>
+                    <div class="payment-dialog__field">
+                      <label class="payment-dialog__label">Network (optional)</label>
+                      <Input
+                        v-model="paymentMethodForm.details.network"
+                        placeholder="Ethereum, Solana..."
+                        class="payment-dialog__input"
+                      />
+                    </div>
+                  </template>
+
+                  <template v-else-if="['venmo', 'cashapp'].includes(paymentMethodForm.method_type)">
+                    <div class="payment-dialog__field">
+                      <label class="payment-dialog__label">Username</label>
+                      <Input
+                        v-model="paymentMethodForm.details.username"
+                        placeholder="@username"
+                        class="payment-dialog__input"
+                      />
+                    </div>
+                  </template>
+
+                  <template v-else-if="paymentMethodForm.method_type === 'bank_transfer'">
+                    <div class="payment-dialog__field">
+                      <label class="payment-dialog__label">Account Name</label>
+                      <Input
+                        v-model="paymentMethodForm.details.account_name"
+                        placeholder="John Doe"
+                        class="payment-dialog__input"
+                      />
+                    </div>
+                    <div class="payment-dialog__field">
+                      <label class="payment-dialog__label">Account Number</label>
+                      <Input
+                        v-model="paymentMethodForm.details.account_number"
+                        placeholder="****1234"
+                        class="payment-dialog__input"
+                      />
+                    </div>
+                    <div class="payment-dialog__field">
+                      <label class="payment-dialog__label">Routing Number</label>
+                      <Input
+                        v-model="paymentMethodForm.details.routing_number"
+                        placeholder="123456789"
+                        class="payment-dialog__input"
+                      />
+                    </div>
+                  </template>
+
+                  <div class="payment-dialog__checkbox">
+                    <Checkbox v-model:checked="paymentMethodForm.is_default" id="default-payment" />
+                    <label for="default-payment" class="payment-dialog__checkbox-label">Set as default</label>
+                  </div>
+                </div>
+
+                <div class="payment-dialog__footer">
+                  <button
+                    type="button"
+                    class="payment-dialog__btn payment-dialog__btn--secondary"
+                    @click="closePaymentMethodDialog"
+                    :disabled="savingPaymentMethod"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    class="payment-dialog__btn payment-dialog__btn--primary"
+                    :disabled="savingPaymentMethod || !paymentMethodForm.method_type"
+                  >
+                    <Loader2 v-if="savingPaymentMethod" class="payment-dialog__btn-spinner" />
+                    {{ editingPaymentMethod ? 'Save Changes' : 'Add Method' }}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
 
     <Dialog v-model:open="showDeleteDialog">
       <DialogContent class="dialog dialog--small">
@@ -514,11 +684,19 @@
     </Dialog>
 
     <EditProfileDialog :show="showEditProfileDialog" @close="showEditProfileDialog = false" @saved="onProfileSaved" />
+
+    <UserPublishDialog
+      v-if="showPublishDialog && selectedAccountForPosts"
+      :show="showPublishDialog"
+      :account="selectedAccountForPosts"
+      @close="showPublishDialog = false"
+      @published="onPostPublished"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted, markRaw } from 'vue';
+  import { ref, reactive, onMounted, onUnmounted, markRaw } from 'vue';
   import {
     UserCircle,
     Share2,
@@ -546,9 +724,13 @@
     AlertTriangle,
     Clock,
     Users,
+    X,
+    ChevronDown,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
+  import UserPostsList from '@/components/UserPostsList.vue';
+  import UserPublishDialog from '@/components/UserPublishDialog.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Label } from '@/components/ui/label';
@@ -561,24 +743,23 @@
     DialogDescription,
     DialogFooter,
   } from '@/components/ui/dialog';
-  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
   import {
-    listSocialAccounts,
-    createSocialAccount,
-    updateSocialAccount,
-    deleteSocialAccount,
     listPaymentMethods,
     createPaymentMethod,
     updatePaymentMethod,
     deletePaymentMethod,
-    type ClipperSocialAccount,
     type ClipperPaymentMethod,
-    getPlatformDisplayName,
     getPaymentMethodDisplayName,
     maskPaymentDetails,
-    CLIPPER_PLATFORMS,
     PAYMENT_METHOD_TYPES,
   } from '@/services/clipperProfileApi';
+  import {
+    listUserInstagramAccounts,
+    disconnectUserInstagramAccount,
+    startUserInstagramOAuth,
+    isTokenExpiringSoon,
+    type UserInstagramAccount,
+  } from '@/services/userInstagramApi';
   import { getMyClipperProfile, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
     listMyCampaigns,
@@ -605,7 +786,7 @@
   const loadingPaymentMethods = ref(true);
   const loadingCampaigns = ref(true);
   const loadingSubmissions = ref(true);
-  const socialAccounts = ref<ClipperSocialAccount[]>([]);
+  const socialAccounts = ref<UserInstagramAccount[]>([]);
   const paymentMethods = ref<ClipperPaymentMethod[]>([]);
   const myCampaigns = ref<Campaign[]>([]);
   const mySubmissions = ref<CampaignSubmission[]>([]);
@@ -668,26 +849,57 @@
     }
   };
 
-  const showSocialAccountDialog = ref(false);
   const showPaymentMethodDialog = ref(false);
   const showDeleteDialog = ref(false);
   const showEditProfileDialog = ref(false);
+  const showPublishDialog = ref(false);
+  const showPlatformSelectionDialog = ref(false);
 
-  const editingSocialAccount = ref<ClipperSocialAccount | null>(null);
+  const connectingInstagram = ref(false);
+  const selectedPlatform = ref<string | null>(null);
+  const selectedAccountForPosts = ref<UserInstagramAccount | null>(null);
   const editingPaymentMethod = ref<ClipperPaymentMethod | null>(null);
-  const savingSocialAccount = ref(false);
   const savingPaymentMethod = ref(false);
+  const showPaymentMethodDropdown = ref(false);
+  const paymentMethodDropdownTrigger = ref<HTMLButtonElement | null>(null);
+  const paymentMethodDropdownStyle = ref<Record<string, string>>({});
   const deleting = ref(false);
   const deleteType = ref<'social account' | 'payment method'>('social account');
-  const deleteTarget = ref<ClipperSocialAccount | ClipperPaymentMethod | null>(null);
+  const deleteTarget = ref<UserInstagramAccount | ClipperPaymentMethod | null>(null);
 
-  const socialAccountForm = reactive({
-    platform: '',
-    username: '',
-    display_name: '',
-    profile_url: '',
-    follower_count: undefined as number | undefined,
-  });
+  let cleanupInstagramAuth: (() => void) | null = null;
+
+  const availablePlatforms = [
+    {
+      id: 'instagram',
+      name: 'Instagram',
+      icon: markRaw(Instagram),
+      iconClass: 'platform-card__icon--instagram',
+      available: true,
+    },
+    {
+      id: 'tiktok',
+      name: 'TikTok',
+      icon: markRaw(Music2),
+      iconClass: 'platform-card__icon--tiktok',
+      available: false,
+    },
+    {
+      id: 'x',
+      name: 'X (Twitter)',
+      icon: markRaw(Twitter),
+      iconClass: 'platform-card__icon--x',
+      available: false,
+    },
+    {
+      id: 'youtube',
+      name: 'YouTube Shorts',
+      icon: markRaw(Youtube),
+      iconClass: 'platform-card__icon--youtube',
+      available: false,
+    },
+  ];
+
   const paymentMethodForm = reactive({ method_type: '', is_default: false, details: {} as Record<string, string> });
 
   const getPlatformIcon = (platform: string) => {
@@ -695,7 +907,17 @@
     return icons[platform] || Globe;
   };
 
-  const getPlatformClass = (platform: string) => {
+  const getPlatformIconClass = (platform: string) => {
+    const classes: Record<string, string> = {
+      instagram: 'list-item__icon--instagram',
+      tiktok: 'list-item__icon--tiktok',
+      x: 'list-item__icon--x',
+      youtube: 'list-item__icon--youtube',
+    };
+    return classes[platform] || '';
+  };
+
+  const getSubmissionPlatformClass = (platform: string) => {
     const classes: Record<string, string> = {
       tiktok: 'platform--tiktok',
       instagram: 'platform--instagram',
@@ -703,6 +925,16 @@
       youtube: 'platform--youtube',
     };
     return classes[platform] || '';
+  };
+
+  const getPlatformName = (platform: string) => {
+    const names: Record<string, string> = {
+      instagram: 'Instagram',
+      tiktok: 'TikTok',
+      x: 'X (Twitter)',
+      youtube: 'YouTube Shorts',
+    };
+    return names[platform] || platform;
   };
 
   const getPaymentMethodIcon = (methodType: string) => {
@@ -743,13 +975,54 @@
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
     try {
-      const response = await listSocialAccounts();
-      if (response.success) socialAccounts.value = response.social_accounts;
+      const response = await listUserInstagramAccounts();
+      if (response.success) socialAccounts.value = response.accounts as any[];
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to load social accounts' });
+      toast({ title: 'Error', description: 'Failed to load Instagram accounts' });
     } finally {
       loadingSocialAccounts.value = false;
     }
+  };
+
+  const connectPlatform = async (platformId: string) => {
+    selectedPlatform.value = platformId;
+
+    if (platformId === 'instagram') {
+      connectingInstagram.value = true;
+      try {
+        cleanupInstagramAuth = await startUserInstagramOAuth((result) => {
+          if (result.success && result.account) {
+            toast({ title: 'Success', description: `Instagram account @${result.account.username} connected` });
+            loadSocialAccounts();
+            showPlatformSelectionDialog.value = false;
+          } else if (result.error) {
+            toast({ title: 'Error', description: result.error });
+          }
+          connectingInstagram.value = false;
+          selectedPlatform.value = null;
+        });
+      } catch (error) {
+        console.error('Failed to connect Instagram:', error);
+        toast({ title: 'Error', description: 'Failed to connect Instagram' });
+        connectingInstagram.value = false;
+        selectedPlatform.value = null;
+      }
+    } else {
+      toast({ title: 'Coming Soon', description: `${platformId.toUpperCase()} integration coming soon` });
+    }
+  };
+
+  const viewAccountPosts = (account: UserInstagramAccount) => {
+    selectedAccountForPosts.value = account;
+  };
+
+  const openPublishDialog = () => {
+    showPublishDialog.value = true;
+  };
+
+  const onPostPublished = () => {
+    // Refresh posts list if needed
+    toast({ title: 'Success', description: 'Post published successfully' });
   };
 
   const loadPaymentMethods = async () => {
@@ -764,58 +1037,7 @@
     }
   };
 
-  const openAddSocialAccount = () => {
-    editingSocialAccount.value = null;
-    Object.assign(socialAccountForm, {
-      platform: '',
-      username: '',
-      display_name: '',
-      profile_url: '',
-      follower_count: undefined,
-    });
-    showSocialAccountDialog.value = true;
-  };
-
-  const editSocialAccount = (account: ClipperSocialAccount) => {
-    editingSocialAccount.value = account;
-    Object.assign(socialAccountForm, {
-      platform: account.platform,
-      username: account.username || '',
-      display_name: account.display_name || '',
-      profile_url: account.profile_url || '',
-      follower_count: account.follower_count || undefined,
-    });
-    showSocialAccountDialog.value = true;
-  };
-
-  const saveSocialAccount = async () => {
-    savingSocialAccount.value = true;
-    try {
-      const data = {
-        platform: socialAccountForm.platform,
-        username: socialAccountForm.username || undefined,
-        display_name: socialAccountForm.display_name || undefined,
-        profile_url: socialAccountForm.profile_url || undefined,
-        follower_count: socialAccountForm.follower_count,
-      };
-      const response = editingSocialAccount.value
-        ? await updateSocialAccount(editingSocialAccount.value.id, data)
-        : await createSocialAccount(data);
-      if (response.success) {
-        toast({ title: 'Success', description: `Social account ${editingSocialAccount.value ? 'updated' : 'added'}` });
-        showSocialAccountDialog.value = false;
-        await loadSocialAccounts();
-      } else {
-        toast({ title: 'Error', description: response.error || 'Failed to save' });
-      }
-    } catch (error) {
-      toast({ title: 'Error', description: 'Failed to save social account' });
-    } finally {
-      savingSocialAccount.value = false;
-    }
-  };
-
-  const confirmDeleteSocialAccount = (account: ClipperSocialAccount) => {
+  const confirmDeleteSocialAccount = (account: UserInstagramAccount) => {
     deleteType.value = 'social account';
     deleteTarget.value = account;
     showDeleteDialog.value = true;
@@ -825,6 +1047,41 @@
     editingPaymentMethod.value = null;
     Object.assign(paymentMethodForm, { method_type: '', is_default: false, details: {} });
     showPaymentMethodDialog.value = true;
+    showPaymentMethodDropdown.value = false;
+  };
+
+  const getSelectedPaymentMethodLabel = () => {
+    if (!paymentMethodForm.method_type) return 'Select method';
+    const method = PAYMENT_METHOD_TYPES.find((m) => m.value === paymentMethodForm.method_type);
+    return method?.label || 'Select method';
+  };
+
+  const selectPaymentMethodType = (value: string) => {
+    paymentMethodForm.method_type = value;
+    showPaymentMethodDropdown.value = false;
+  };
+
+  const togglePaymentMethodDropdown = () => {
+    if (showPaymentMethodDropdown.value) {
+      showPaymentMethodDropdown.value = false;
+      return;
+    }
+    // Calculate position based on trigger button
+    if (paymentMethodDropdownTrigger.value) {
+      const rect = paymentMethodDropdownTrigger.value.getBoundingClientRect();
+      paymentMethodDropdownStyle.value = {
+        top: `${rect.bottom + 4}px`,
+        left: `${rect.left}px`,
+        width: `${rect.width}px`,
+      };
+    }
+    showPaymentMethodDropdown.value = true;
+  };
+
+  const closePaymentMethodDialog = () => {
+    if (savingPaymentMethod.value) return;
+    showPaymentMethodDialog.value = false;
+    showPaymentMethodDropdown.value = false;
   };
 
   const editPaymentMethod = (method: ClipperPaymentMethod) => {
@@ -889,10 +1146,10 @@
     try {
       const response =
         deleteType.value === 'social account'
-          ? await deleteSocialAccount((deleteTarget.value as ClipperSocialAccount).id)
+          ? await disconnectUserInstagramAccount((deleteTarget.value as UserInstagramAccount).id)
           : await deletePaymentMethod((deleteTarget.value as ClipperPaymentMethod).id);
       if (response.success) {
-        toast({ title: 'Deleted', description: `${deleteType.value} deleted` });
+        toast({ title: 'Deleted', description: `${deleteType.value} disconnected` });
         showDeleteDialog.value = false;
         deleteType.value === 'social account' ? await loadSocialAccounts() : await loadPaymentMethods();
       } else {
@@ -959,6 +1216,12 @@
     loadMySubmissions();
     loadEarnings();
   });
+
+  onUnmounted(() => {
+    if (cleanupInstagramAuth) {
+      cleanupInstagramAuth();
+    }
+  });
 </script>
 
 <style scoped>
@@ -973,7 +1236,7 @@
     flex-direction: column;
     gap: 1.5rem;
     padding: 1.5rem;
-    max-width: 960px;
+    max-width: 1400px;
     margin: 0 auto;
     width: 100%;
   }
@@ -1010,11 +1273,9 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 2rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 1px solid var(--sidebar-border);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 640px) {
     .profile-header {
       flex-direction: column;
     }
@@ -1095,7 +1356,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.1875rem 0.5rem;
+    padding: 0.25rem 0.5rem;
     background: rgba(16, 185, 129, 0.12);
     border-radius: 4px;
     font-size: 0.625rem;
@@ -1117,7 +1378,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.1875rem 0.5rem;
+    padding: 0.25rem 0.5rem;
     border-radius: 4px;
     font-size: 0.625rem;
     font-weight: 600;
@@ -1132,7 +1393,7 @@
   }
 
   .view-public-btn:hover {
-    background: rgba(6, 182, 212, 0.18);
+    background: rgba(6, 182, 212, 0.15);
   }
 
   .view-public-btn svg,
@@ -1166,11 +1427,11 @@
   }
 
   .profile-tag {
-    padding: 0.1875rem 0.4375rem;
-    background: rgba(6, 182, 212, 0.08);
+    padding: 0.25rem 0.4375rem;
+    background: rgba(6, 182, 212, 0.1);
     border-radius: 4px;
     font-size: 0.625rem;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--sidebar-accent);
   }
 
@@ -1269,45 +1530,59 @@
     color: #fbbf24;
   }
 
+  /* ===== Ranking Card ===== */
+  .ranking-card {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    padding: 1rem 1.125rem;
+  }
+
   /* ===== Ranking Row ===== */
   .ranking-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 2rem;
-    padding: 1rem 0;
-    border-bottom: 1px solid var(--sidebar-border);
+    gap: 0.875rem;
   }
 
   @media (max-width: 640px) {
     .ranking-row {
-      flex-direction: column;
-      align-items: flex-start;
+      flex-wrap: wrap;
     }
   }
 
-  .ranking-row__left {
+  .ranking-row__header-icon {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-  }
-
-  .ranking-row__trophy {
-    width: 28px;
-    height: 28px;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: rgba(245, 158, 11, 0.15);
     color: #fbbf24;
     flex-shrink: 0;
   }
 
+  .ranking-row__header-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .ranking-row__header-text {
+    flex: 1;
+    min-width: 0;
+  }
+
   .ranking-row__title {
-    font-size: 0.9375rem;
+    font-size: 1.0625rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0;
+    letter-spacing: -0.01em;
   }
 
   .ranking-row__subtitle {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     color: var(--sidebar-text-muted);
     margin: 0.125rem 0 0;
   }
@@ -1315,6 +1590,15 @@
   .ranking-row__stats {
     display: flex;
     gap: 2rem;
+    margin-left: auto;
+  }
+
+  @media (max-width: 640px) {
+    .ranking-row__stats {
+      width: 100%;
+      margin-left: 0;
+      margin-top: 0.75rem;
+    }
   }
 
   .rank-stat {
@@ -1355,32 +1639,50 @@
   .leaderboard__header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.875rem;
+    gap: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .leaderboard__header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    flex-shrink: 0;
+  }
+
+  .leaderboard__header-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .leaderboard__header-text {
+    flex: 1;
+    min-width: 0;
   }
 
   .leaderboard__title {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .leaderboard__title-icon {
-    width: 16px;
-    height: 16px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .leaderboard__title h2 {
-    font-size: 0.875rem;
+    font-size: 1.0625rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .leaderboard__subtitle {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
   }
 
   .period-switch {
     display: flex;
     gap: 0;
+    margin-left: auto;
   }
 
   .period-switch button {
@@ -1439,8 +1741,8 @@
   }
 
   .leaderboard__empty-icon {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     margin-bottom: 0.625rem;
     opacity: 0.25;
   }
@@ -1570,21 +1872,53 @@
 
   .section__header {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
+    align-items: center;
+    gap: 0.875rem;
     margin-bottom: 1rem;
   }
 
+  .section__header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .section__header-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .section__header-icon--green {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .section__header-icon--purple {
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+  }
+
+  .section__header-text {
+    flex: 1;
+    min-width: 0;
+  }
+
   .section-title {
-    font-size: 0.9375rem;
+    font-size: 1.0625rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0;
+    letter-spacing: -0.01em;
   }
 
   .section-subtitle {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     color: var(--sidebar-text-muted);
     margin: 0.125rem 0 0;
   }
@@ -1593,7 +1927,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    height: 30px;
+    height: 32px;
     padding: 0 0.75rem;
     background: transparent;
     border: 1px solid var(--sidebar-border);
@@ -1603,6 +1937,8 @@
     color: var(--sidebar-text);
     cursor: pointer;
     transition: all 150ms ease;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   .action-btn:hover {
@@ -1621,7 +1957,7 @@
   }
 
   .browse-btn {
-    height: 30px;
+    height: 32px;
     padding: 0 0.75rem;
     background: transparent;
     border: 1px solid var(--sidebar-border);
@@ -1631,6 +1967,8 @@
     color: var(--sidebar-text);
     cursor: pointer;
     transition: all 150ms ease;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   .browse-btn:hover {
@@ -1647,30 +1985,41 @@
     text-align: center;
   }
 
+  .empty-state__icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
   .empty-state--compact {
     padding: 1.75rem 1rem;
   }
 
   .empty-state__icon {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     color: var(--sidebar-text-muted);
     opacity: 0.25;
     margin-bottom: 0.875rem;
   }
 
   .empty-state__title {
-    font-size: 0.875rem;
+    font-size: 1.125rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0 0 0.25rem;
   }
 
   .empty-state__text {
-    font-size: 0.75rem;
+    font-size: 0.875rem;
     color: var(--sidebar-text-muted);
     margin: 0 0 1.125rem;
-    max-width: 260px;
+    max-width: 320px;
     line-height: 1.5;
   }
 
@@ -1861,6 +2210,38 @@
   }
 
   /* ===== Platform/Payment Colors ===== */
+  .list-item__icon--instagram {
+    background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  }
+
+  .list-item__icon--instagram svg {
+    color: white;
+  }
+
+  .list-item__icon--tiktok {
+    background: #000000;
+  }
+
+  .list-item__icon--tiktok svg {
+    color: #ff0050;
+  }
+
+  .list-item__icon--x {
+    background: #000000;
+  }
+
+  .list-item__icon--x svg {
+    color: white;
+  }
+
+  .list-item__icon--youtube {
+    background: linear-gradient(135deg, #ff0000, #cc0000);
+  }
+
+  .list-item__icon--youtube svg {
+    color: white;
+  }
+
   .platform--tiktok {
     background: rgba(255, 0, 80, 0.1);
   }
@@ -1875,6 +2256,277 @@
 
   .platform--instagram svg {
     color: #e1306c;
+  }
+
+  .token-expiring {
+    color: #f59e0b;
+    font-weight: 600;
+  }
+
+  /* ===== Platform Selection Dialog ===== */
+  .platform-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  .platform-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    width: 100%;
+    max-width: 500px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .platform-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  .platform-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .platform-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .platform-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .platform-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .platform-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .platform-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .platform-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  .platform-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .platform-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .platform-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .platform-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .platform-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .platform-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 1.5rem 1rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 180ms ease;
+    position: relative;
+  }
+
+  .platform-option:hover:not(.platform-option--disabled) {
+    border-color: var(--sidebar-accent);
+    background: var(--sidebar-active);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  .platform-option--disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .platform-option__icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .platform-option__icon svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .platform-card__icon--instagram {
+    background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  }
+
+  .platform-card__icon--instagram svg {
+    color: white;
+  }
+
+  .platform-card__icon--tiktok {
+    background: #000000;
+    border: 1px solid rgba(255, 0, 80, 0.3);
+  }
+
+  .platform-card__icon--tiktok svg {
+    color: #ff0050;
+  }
+
+  .platform-card__icon--x {
+    background: #000000;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .platform-card__icon--x svg {
+    color: white;
+  }
+
+  .platform-card__icon--youtube {
+    background: linear-gradient(135deg, #ff0000, #cc0000);
+  }
+
+  .platform-card__icon--youtube svg {
+    color: white;
+  }
+
+  .platform-option__content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    width: 100%;
+  }
+
+  .platform-option__name {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .platform-option__badge {
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.1875rem 0.5rem;
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    border-radius: 4px;
+  }
+
+  .platform-option__spinner {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    width: 16px;
+    height: 16px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .platform-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .platform-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .platform-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .platform-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .platform-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   .platform--x {
@@ -1916,9 +2568,7 @@
   /* ===== Earnings Bar ===== */
   .earnings-bar {
     display: flex;
-    gap: 0.5rem;
-    padding-bottom: 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
+    gap: 0.75rem;
     overflow-x: auto;
   }
 
@@ -1935,8 +2585,8 @@
   }
 
   .earnings-item svg {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     color: var(--sidebar-text-muted);
     flex-shrink: 0;
   }
@@ -1985,7 +2635,7 @@
     display: flex;
     align-items: center;
     gap: 0.875rem;
-    padding: 0.625rem 0;
+    padding: 0.75rem 0;
     border-bottom: 1px solid var(--sidebar-border);
   }
 
@@ -2021,8 +2671,8 @@
   }
 
   .cpm-badge {
-    padding: 0.1875rem 0.4375rem;
-    background: rgba(16, 185, 129, 0.1);
+    padding: 0.25rem 0.4375rem;
+    background: rgba(16, 185, 129, 0.12);
     border-radius: 4px;
     font-size: 0.625rem;
     font-weight: 700;
@@ -2067,7 +2717,7 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.5rem 0;
+    padding: 0.75rem 0;
     border-bottom: 1px solid var(--sidebar-border);
   }
 
@@ -2157,6 +2807,363 @@
     width: 14px;
     height: 14px;
     margin-right: 0.5rem;
+  }
+
+  /* ===== Payment Method Dialog ===== */
+  .payment-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+  }
+
+  .payment-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    width: 100%;
+    max-width: 480px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .payment-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  .payment-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .payment-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .payment-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .payment-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .payment-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .payment-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .payment-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  .payment-dialog__form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .payment-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .payment-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .payment-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .payment-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .payment-dialog__field {
+    margin-bottom: 1rem;
+  }
+
+  .payment-dialog__label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    margin-bottom: 0.5rem;
+  }
+
+  .payment-dialog__input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .payment-dialog__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .payment-dialog__input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  /* ===== Custom Dropdown ===== */
+  .payment-dialog__dropdown-wrapper {
+    position: relative;
+  }
+
+  .payment-dialog__dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 44px;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .payment-dialog__dropdown-trigger:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .payment-dialog__dropdown-trigger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .payment-dialog__dropdown-label {
+    flex: 1;
+    text-align: left;
+  }
+
+  .payment-dialog__chevron {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+    transition: transform 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .payment-dialog__chevron--open {
+    transform: rotate(180deg);
+  }
+
+  .payment-dialog__dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+  }
+
+  .payment-dialog__dropdown {
+    position: fixed;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    z-index: 10001;
+    overflow: hidden;
+  }
+
+  .payment-dialog__dropdown-list {
+    padding: 0.25rem;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .payment-dialog__dropdown-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .payment-dialog__dropdown-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .payment-dialog__dropdown-list::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .payment-dialog__dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+  }
+
+  .payment-dialog__dropdown-item:hover {
+    background-color: rgba(6, 182, 212, 0.1);
+    color: var(--sidebar-accent);
+  }
+
+  .payment-dialog__dropdown-item--active {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    font-weight: 600;
+  }
+
+  .payment-dialog__checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.75rem 0 0;
+  }
+
+  .payment-dialog__checkbox-label {
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    cursor: pointer;
+  }
+
+  .payment-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .payment-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .payment-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .payment-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .payment-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .payment-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .payment-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .payment-dialog__btn-spinner {
+    width: 16px;
+    height: 16px;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 
   /* ===== Keyframes ===== */

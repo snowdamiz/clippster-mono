@@ -76,6 +76,10 @@ defmodule ClippsterServerWeb.Router do
     # Instagram OAuth routes (for Tauri desktop app)
     get "/auth/instagram/start", InstagramAuthController, :start_oauth
     get "/auth/instagram/callback", InstagramAuthController, :oauth_callback
+
+    # User Instagram OAuth routes (for individual users/clippers)
+    get "/auth/user-instagram/start", UserInstagramAuthController, :start_oauth
+    get "/auth/user-instagram/callback", UserInstagramAuthController, :oauth_callback
     # The client obtains tokens via FB.login() and sends them to POST /social-accounts
 
     # Email authentication routes
@@ -324,19 +328,25 @@ defmodule ClippsterServerWeb.Router do
     put "/user/payment-methods/:id", ClipperProfileController, :update_payment_method
     delete "/user/payment-methods/:id", ClipperProfileController, :delete_payment_method
 
+    # User Instagram posts (personal posting, not campaigns)
+    post "/user/instagram/publish", UserPostsController, :publish
+    get "/user/posts", UserPostsController, :index
+    get "/user/posts/:id", UserPostsController, :show
+    post "/user/posts/:id/sync", UserPostsController, :sync_analytics
+
     # ============================================================================
     # Clipper Profiles - User's Own Profile
     # ============================================================================
     get "/user/clipper-profile", ClipperProfilesController, :show_own
     put "/user/clipper-profile", ClipperProfilesController, :update_own
     post "/user/clipper-profile/avatar", ClipperProfilesController, :upload_avatar
-    
+
     # Channel links
     get "/user/clipper-profile/channel-links", ClipperProfilesController, :list_channel_links
     post "/user/clipper-profile/channel-links", ClipperProfilesController, :create_channel_link
     put "/user/clipper-profile/channel-links/:id", ClipperProfilesController, :update_channel_link
     delete "/user/clipper-profile/channel-links/:id", ClipperProfilesController, :delete_channel_link
-    
+
     # Portfolio clips
     get "/user/clipper-profile/portfolio-clips", ClipperProfilesController, :list_portfolio_clips
     post "/user/clipper-profile/portfolio-clips", ClipperProfilesController, :create_portfolio_clip
