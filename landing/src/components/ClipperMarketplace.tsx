@@ -1,147 +1,144 @@
-import { Users, DollarSign, Trophy, Briefcase, TrendingUp, Star, ChevronRight } from 'lucide-react'
+import { Users, DollarSign, Trophy, Briefcase, TrendingUp, Star, Check, Clock, Play } from 'lucide-react'
 
-// Clipper Profile Card SVG
+// Clipper Profile Card - Clean HTML/CSS version
 function ClipperProfileGraphic() {
   return (
-    <svg viewBox="0 0 280 200" fill="none" className="w-full h-auto">
-      <defs>
-        <linearGradient id="clipperGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#8b5cf6"/>
-          <stop offset="100%" stopColor="#7c3aed"/>
-        </linearGradient>
-        <linearGradient id="rankGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#fbbf24"/>
-          <stop offset="100%" stopColor="#f59e0b"/>
-        </linearGradient>
-      </defs>
-      
-      {/* Card background */}
-      <rect width="280" height="200" rx="12" fill="#141416" stroke="#1f1f23" strokeWidth="1"/>
-      
-      {/* Profile header */}
-      <rect x="0" y="0" width="280" height="60" rx="12" fill="#1f1f23"/>
-      <rect x="0" y="48" width="280" height="12" fill="#1f1f23"/>
-      
-      {/* Avatar */}
-      <circle cx="40" cy="50" r="28" fill="url(#clipperGrad)"/>
-      <text x="40" y="56" fill="white" fontSize="18" textAnchor="middle" fontWeight="700">JD</text>
-      
-      {/* Verified badge */}
-      <circle cx="58" cy="68" r="9" fill="#10b981"/>
-      <path d="M54 68 L57 71 L63 65" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-      
-      {/* Name and rank */}
-      <text x="80" y="42" fill="#e4e4e7" fontSize="13" fontWeight="600">John Doe</text>
-      <rect x="80" y="48" width="52" height="16" rx="4" fill="url(#rankGrad)"/>
-      <text x="106" y="60" fill="#422006" fontSize="9" textAnchor="middle" fontWeight="700">#12 Rank</text>
-      
-      {/* Available badge */}
-      <rect x="190" y="36" width="74" height="22" rx="6" fill="#10b981" opacity="0.15"/>
-      <circle cx="206" cy="47" r="4" fill="#10b981">
-        <animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/>
-      </circle>
-      <text x="240" y="51" fill="#10b981" fontSize="9" fontWeight="500" textAnchor="middle">Available</text>
+    <div className="w-full bg-[#101012] rounded-xl overflow-hidden select-none">
+      {/* Header */}
+      <div className="bg-[#18181b] px-4 py-4">
+        <div className="flex items-center justify-between">
+          {/* Avatar and info */}
+          <div className="flex items-center gap-3">
+            {/* Avatar */}
+            <div className="relative">
+              <div className="w-12 h-12 rounded-full bg-violet-600 flex items-center justify-center">
+                <span className="text-white font-semibold text-base">JD</span>
+              </div>
+              {/* Verified badge */}
+              <div className="absolute -bottom-0.5 -right-0.5 w-4.5 h-4.5 bg-emerald-500 rounded-full flex items-center justify-center ring-2 ring-[#18181b]">
+                <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+              </div>
+            </div>
+            
+            {/* Name and rank */}
+            <div>
+              <span className="text-white font-medium text-sm block">John Doe</span>
+              <span className="text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded mt-1 inline-block">#12 Rank</span>
+            </div>
+          </div>
+          
+          {/* Availability status */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className="text-[10px] font-medium text-emerald-500">Available</span>
+          </div>
+        </div>
+      </div>
       
       {/* Stats row */}
-      <rect x="16" y="84" width="248" height="50" rx="8" fill="#0a0a0b"/>
-      
-      {/* Stat items */}
-      <g>
-        <text x="56" y="104" fill="#71717a" fontSize="9" textAnchor="middle">Campaigns</text>
-        <text x="56" y="122" fill="#e4e4e7" fontSize="16" textAnchor="middle" fontWeight="700">24</text>
-      </g>
-      
-      <line x1="98" y1="92" x2="98" y2="126" stroke="#1f1f23" strokeWidth="1"/>
-      
-      <g>
-        <text x="140" y="104" fill="#71717a" fontSize="9" textAnchor="middle">Clips</text>
-        <text x="140" y="122" fill="#e4e4e7" fontSize="16" textAnchor="middle" fontWeight="700">847</text>
-      </g>
-      
-      <line x1="182" y1="92" x2="182" y2="126" stroke="#1f1f23" strokeWidth="1"/>
-      
-      <g>
-        <text x="224" y="104" fill="#71717a" fontSize="9" textAnchor="middle">Endorsements</text>
-        <text x="224" y="122" fill="#10b981" fontSize="16" textAnchor="middle" fontWeight="700">156</text>
-      </g>
+      <div className="grid grid-cols-3 divide-x divide-[#1f1f23] border-b border-[#1f1f23]">
+        <div className="py-3 text-center">
+          <p className="text-[9px] text-zinc-500 uppercase tracking-wider">Campaigns</p>
+          <p className="text-base font-semibold text-white mt-0.5">24</p>
+        </div>
+        <div className="py-3 text-center">
+          <p className="text-[9px] text-zinc-500 uppercase tracking-wider">Clips</p>
+          <p className="text-base font-semibold text-white mt-0.5">847</p>
+        </div>
+        <div className="py-3 text-center">
+          <p className="text-[9px] text-zinc-500 uppercase tracking-wider">Endorsements</p>
+          <p className="text-base font-semibold text-emerald-500 mt-0.5">156</p>
+        </div>
+      </div>
       
       {/* Tags */}
-      <rect x="16" y="142" width="56" height="20" rx="5" fill="#8b5cf6" opacity="0.15"/>
-      <text x="44" y="156" fill="#a78bfa" fontSize="8" textAnchor="middle" fontWeight="500">Gaming</text>
+      <div className="flex gap-1.5 px-4 py-3">
+        <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-zinc-800 text-zinc-400">
+          Gaming
+        </span>
+        <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-zinc-800 text-zinc-400">
+          Twitch
+        </span>
+        <span className="px-2 py-0.5 text-[10px] font-medium rounded bg-zinc-800 text-zinc-400">
+          Shorts
+        </span>
+      </div>
       
-      <rect x="78" y="142" width="50" height="20" rx="5" fill="#06b6d4" opacity="0.15"/>
-      <text x="103" y="156" fill="#06b6d4" fontSize="8" textAnchor="middle" fontWeight="500">Twitch</text>
-      
-      <rect x="134" y="142" width="46" height="20" rx="5" fill="#10b981" opacity="0.15"/>
-      <text x="157" y="156" fill="#34d399" fontSize="8" textAnchor="middle" fontWeight="500">Shorts</text>
-      
-      {/* Hire button */}
-      <rect x="16" y="170" width="248" height="24" rx="6" fill="url(#clipperGrad)"/>
-      <text x="140" y="186" fill="white" fontSize="11" textAnchor="middle" fontWeight="600">View Profile</text>
-    </svg>
+      {/* View Profile button */}
+      <div className="px-4 pb-4">
+        <button className="w-full py-2 rounded-lg bg-violet-600 text-white text-xs font-medium">
+          View Profile
+        </button>
+      </div>
+    </div>
   )
 }
 
-// Campaign Card SVG
+// Campaign Card - Clean HTML/CSS version
 function CampaignCardGraphic() {
   return (
-    <svg viewBox="0 0 280 200" fill="none" className="w-full h-auto">
-      <defs>
-        <linearGradient id="campaignGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#10b981"/>
-          <stop offset="100%" stopColor="#059669"/>
-        </linearGradient>
-      </defs>
+    <div className="w-full bg-[#101012] rounded-xl overflow-hidden select-none">
+      {/* Cover image area with video thumbnails */}
+      <div className="relative bg-[#18181b] p-2.5">
+        {/* Thumbnail grid */}
+        <div className="grid grid-cols-4 gap-1.5">
+          {[...Array(4)].map((_, i) => (
+            <div 
+              key={i} 
+              className="aspect-video bg-zinc-800 rounded flex items-center justify-center"
+            >
+              <Play className="w-3 h-3 text-zinc-600" />
+            </div>
+          ))}
+        </div>
+        
+        {/* CPM Badge */}
+        <div className="absolute bottom-0 right-2.5 translate-y-1/2 px-2.5 py-1.5 rounded-md bg-emerald-600">
+          <p className="text-white font-semibold text-xs leading-none">$3.50</p>
+          <p className="text-emerald-200 text-[8px] leading-none mt-0.5">/1K views</p>
+        </div>
+      </div>
       
-      {/* Card background */}
-      <rect width="280" height="200" rx="12" fill="#141416" stroke="#1f1f23" strokeWidth="1"/>
+      {/* Campaign info */}
+      <div className="px-4 pt-5 pb-3">
+        <h4 className="text-white font-medium text-sm">Gaming Highlights Q1</h4>
+        
+        {/* Organization */}
+        <div className="flex items-center gap-2 mt-1.5">
+          <div className="w-4 h-4 rounded bg-violet-600 flex items-center justify-center">
+            <span className="text-[8px] font-semibold text-white">G</span>
+          </div>
+          <span className="text-xs text-zinc-500">GameStream Pro</span>
+        </div>
+      </div>
       
-      {/* Cover image area */}
-      <rect x="0" y="0" width="280" height="70" rx="12" fill="#1f1f23"/>
-      <rect x="0" y="58" width="280" height="12" fill="#1f1f23"/>
+      {/* Stats row */}
+      <div className="mx-4 mb-3 flex items-center justify-between bg-[#18181b] rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] text-zinc-500 uppercase tracking-wider">Clippers</span>
+          <span className="text-sm font-semibold text-white">45</span>
+        </div>
+        <div className="w-px h-3 bg-zinc-700" />
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] text-zinc-500 uppercase tracking-wider">Budget</span>
+          <span className="text-sm font-semibold text-emerald-500">$5,000</span>
+        </div>
+      </div>
       
-      {/* Decorative pattern */}
-      <rect x="12" y="12" width="256" height="46" rx="6" fill="#27272a"/>
-      <rect x="20" y="20" width="60" height="30" rx="4" fill="#3f3f46"/>
-      <rect x="88" y="20" width="60" height="30" rx="4" fill="#3f3f46"/>
-      <rect x="156" y="20" width="60" height="30" rx="4" fill="#3f3f46"/>
-      <rect x="224" y="20" width="36" height="30" rx="4" fill="#3f3f46"/>
-      
-      {/* CPM badge */}
-      <rect x="200" y="58" width="68" height="28" rx="6" fill="url(#campaignGrad)"/>
-      <text x="234" y="70" fill="white" fontSize="11" textAnchor="middle" fontWeight="700">$3.50</text>
-      <text x="234" y="81" fill="rgba(255,255,255,0.8)" fontSize="8" textAnchor="middle">/1K views</text>
-      
-      {/* Campaign title */}
-      <text x="16" y="102" fill="#e4e4e7" fontSize="13" fontWeight="600">Gaming Highlights Q1</text>
-      
-      {/* Organization */}
-      <rect x="16" y="110" width="20" height="20" rx="5" fill="#8b5cf6"/>
-      <text x="26" y="124" fill="white" fontSize="10" textAnchor="middle" fontWeight="600">G</text>
-      <text x="42" y="124" fill="#71717a" fontSize="10">GameStream Pro</text>
-      
-      {/* Stats */}
-      <rect x="16" y="138" width="248" height="28" rx="6" fill="#0a0a0b"/>
-      
-      <text x="54" y="156" fill="#71717a" fontSize="9" textAnchor="middle">Clippers</text>
-      <text x="98" y="156" fill="#e4e4e7" fontSize="11" textAnchor="middle" fontWeight="600">45</text>
-      
-      <line x1="130" y1="144" x2="130" y2="160" stroke="#1f1f23" strokeWidth="1"/>
-      
-      <text x="166" y="156" fill="#71717a" fontSize="9" textAnchor="middle">Budget</text>
-      <text x="208" y="156" fill="#10b981" fontSize="11" textAnchor="middle" fontWeight="600">$5,000</text>
-      
-      {/* Join button */}
-      <rect x="16" y="174" width="120" height="22" rx="6" fill="url(#campaignGrad)"/>
-      <text x="76" y="189" fill="white" fontSize="10" textAnchor="middle" fontWeight="600">Join Campaign</text>
-      
-      {/* Status badge */}
-      <rect x="144" y="174" width="60" height="22" rx="6" fill="#22c55e" opacity="0.15"/>
-      <text x="174" y="189" fill="#22c55e" fontSize="9" textAnchor="middle" fontWeight="500">Active</text>
-      
-      {/* Time remaining */}
-      <text x="256" y="189" fill="#71717a" fontSize="9" textAnchor="end">14 days left</text>
-    </svg>
+      {/* Bottom actions */}
+      <div className="flex items-center gap-2 px-4 pb-4">
+        <button className="flex-1 py-2 rounded-lg bg-emerald-600 text-white text-xs font-medium">
+          Join Campaign
+        </button>
+        <div className="px-2.5 py-2 rounded-lg bg-emerald-500/10">
+          <span className="text-[10px] font-medium text-emerald-500">Active</span>
+        </div>
+        <div className="flex items-center gap-1 text-zinc-500">
+          <Clock className="w-3 h-3" />
+          <span className="text-[10px]">14 days</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -175,16 +172,12 @@ export function ClipperMarketplace() {
         <div className="text-center mb-16 lg:mb-20">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#1f1f23] bg-[#141416] mb-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Marketplace</span>
           </div>
           
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-5 tracking-[-0.02em]">
-            Connect clippers with{' '}
-            <span className="relative inline-block">
-              <span className="relative z-10">opportunities</span>
-              <span className="absolute -bottom-1 left-0 right-0 h-3 bg-gradient-to-r from-violet-500/20 via-emerald-500/20 to-violet-500/20 blur-sm" />
-            </span>
+            Connect clippers with opportunities
           </h2>
           
           <p className="text-zinc-400 max-w-2xl mx-auto text-lg leading-relaxed">
@@ -195,7 +188,7 @@ export function ClipperMarketplace() {
         {/* Two-column layout */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
           {/* For Clippers */}
-          <div className="group p-6 lg:p-8 rounded-[12px] border border-[#1f1f23] bg-[#141416]/50 backdrop-blur-sm transition-all duration-200 hover:border-violet-500/30 hover:bg-[#141416]/80 hover:shadow-2xl hover:shadow-violet-500/5">
+          <div className="group p-6 lg:p-8 rounded-xl border border-[#1f1f23] bg-[#141416]/80">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-violet-500/30 bg-violet-500/15 text-xs font-medium text-violet-400 mb-6">
               <Users className="w-3.5 h-3.5" />
               For Clippers
@@ -210,7 +203,7 @@ export function ClipperMarketplace() {
             </p>
             
             {/* Profile card preview */}
-            <div className="rounded-[10px] border border-[#1f1f23] bg-[#141416] p-3 mb-6 overflow-hidden transition-all duration-200 group-hover:border-violet-500/20">
+            <div className="mb-6">
               <ClipperProfileGraphic />
             </div>
             
@@ -225,16 +218,10 @@ export function ClipperMarketplace() {
                 </li>
               ))}
             </ul>
-            
-            {/* CTA */}
-            <div className="mt-8 flex items-center gap-2 text-sm font-medium text-violet-400 group/link cursor-pointer">
-              <span>Create your clipper profile</span>
-              <ChevronRight className="w-4 h-4 transition-transform group-hover/link:translate-x-1" />
-            </div>
           </div>
 
           {/* For Organizations */}
-          <div className="group p-6 lg:p-8 rounded-[12px] border border-[#1f1f23] bg-[#141416]/50 backdrop-blur-sm transition-all duration-200 hover:border-emerald-500/30 hover:bg-[#141416]/80 hover:shadow-2xl hover:shadow-emerald-500/5">
+          <div className="group p-6 lg:p-8 rounded-xl border border-[#1f1f23] bg-[#141416]/80">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/15 text-xs font-medium text-emerald-400 mb-6">
               <Briefcase className="w-3.5 h-3.5" />
               For Organizations
@@ -249,7 +236,7 @@ export function ClipperMarketplace() {
             </p>
             
             {/* Campaign card preview */}
-            <div className="rounded-[10px] border border-[#1f1f23] bg-[#141416] p-3 mb-6 overflow-hidden transition-all duration-200 group-hover:border-emerald-500/20">
+            <div className="mb-6">
               <CampaignCardGraphic />
             </div>
             
@@ -264,31 +251,25 @@ export function ClipperMarketplace() {
                 </li>
               ))}
             </ul>
-            
-            {/* CTA */}
-            <div className="mt-8 flex items-center gap-2 text-sm font-medium text-emerald-400 group/link cursor-pointer">
-              <span>Create your organization</span>
-              <ChevronRight className="w-4 h-4 transition-transform group-hover/link:translate-x-1" />
-            </div>
           </div>
         </div>
 
         {/* Bottom stats */}
         <div className="mt-16 flex flex-wrap justify-center gap-8 lg:gap-16">
           <div className="text-center">
-            <p className="text-3xl sm:text-4xl font-bold text-white">2,400+</p>
+            <p className="text-3xl sm:text-4xl font-bold text-white">0</p>
             <p className="text-sm text-zinc-500 mt-1">Active Clippers</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl sm:text-4xl font-bold text-white">$120K+</p>
+            <p className="text-3xl sm:text-4xl font-bold text-white">0</p>
             <p className="text-sm text-zinc-500 mt-1">Paid to Clippers</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl sm:text-4xl font-bold text-white">50+</p>
+            <p className="text-3xl sm:text-4xl font-bold text-white">0</p>
             <p className="text-sm text-zinc-500 mt-1">Active Campaigns</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl sm:text-4xl font-bold text-white">15M+</p>
+            <p className="text-3xl sm:text-4xl font-bold text-white">0</p>
             <p className="text-sm text-zinc-500 mt-1">Views Generated</p>
           </div>
         </div>

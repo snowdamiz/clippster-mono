@@ -1,4 +1,4 @@
-import { Star, ChevronRight, Apple, Monitor, Loader2, Clock, Sparkles } from 'lucide-react'
+import { ChevronRight, Apple, Monitor, Loader2, Clock, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 import { useDownloadContext } from '../context/DownloadContext'

@@ -1,11 +1,11 @@
-import { Link2, Sparkles, Scissors, Upload } from 'lucide-react'
+import { MonitorPlay, Sparkles, Scissors, Upload } from 'lucide-react'
 
 const steps = [
   {
     number: '1',
     title: 'Connect',
-    description: 'Link your Twitch, YouTube, or Kick account with secure OAuth authentication.',
-    icon: Link2,
+    description: 'Watch Kick or PumpFun streams live, download VODs directly, or upload your own videos—no account linking required.',
+    icon: MonitorPlay,
     gradient: 'from-cyan-500 to-cyan-600',
     iconBg: 'bg-cyan-500/15',
     iconColor: 'text-cyan-500 group-hover:text-cyan-400',

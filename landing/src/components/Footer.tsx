@@ -10,19 +10,9 @@ const links: Record<string, LinkItem[]> = {
     { label: 'Full Pricing', href: '/pricing', isPage: true },
     { label: 'Changelog', href: '#' },
   ],
-  Company: [
-    { label: 'About', href: '#' },
-    { label: 'Blog', href: '#' },
-    { label: 'Careers', href: '#' },
-  ],
-  Resources: [
-    { label: 'Docs', href: '#' },
-    { label: 'Support', href: '#' },
-    { label: 'Community', href: '#' },
-  ],
   Legal: [
-    { label: 'Privacy', href: '#' },
-    { label: 'Terms', href: '#' },
+    { label: 'Privacy', href: '/privacy', isPage: true },
+    { label: 'Terms', href: '/terms', isPage: true },
   ],
 }
 
@@ -47,9 +37,9 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="py-12 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-8">
+        <div className="py-12 grid grid-cols-2 sm:grid-cols-4 gap-8">
           {/* Brand */}
-          <div className="col-span-2 sm:col-span-3 md:col-span-2">
+          <div className="col-span-2">
             <Link to="/" className="flex items-center gap-3 mb-5">
               <img 
                 src="/logo-icon.svg" 
@@ -118,9 +108,8 @@ export function Footer() {
             © {new Date().getFullYear()} Clippster. All rights reserved.
           </p>
           <div className="flex items-center gap-6 text-xs text-zinc-600">
-            <a href="#" className="hover:text-cyan-400 transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-cyan-400 transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-cyan-400 transition-colors">Cookies</a>
+            <Link to="/privacy" className="hover:text-cyan-400 transition-colors">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-cyan-400 transition-colors">Terms of Service</Link>
           </div>
         </div>
       </div>

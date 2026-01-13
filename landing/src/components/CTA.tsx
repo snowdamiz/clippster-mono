@@ -48,7 +48,7 @@ export function CTA() {
         </div>
         
         {/* Headline */}
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-5 tracking-[-0.02em]">
+        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-9 tracking-[-0.02em]">
           Ready to go{' '}
           <span className="relative inline-block">
             <span className="gradient-text">viral</span>

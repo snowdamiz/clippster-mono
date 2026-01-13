@@ -903,8 +903,8 @@ export function PricingPage() {
           </div>
           <div className="flex items-center gap-6 text-xs text-zinc-600">
             <Link to="/" className="hover:text-zinc-400 transition-colors">Home</Link>
-            <a href="#" className="hover:text-zinc-400 transition-colors">Privacy</a>
-            <a href="#" className="hover:text-zinc-400 transition-colors">Terms</a>
+            <Link to="/privacy" className="hover:text-zinc-400 transition-colors">Privacy</Link>
+            <Link to="/terms" className="hover:text-zinc-400 transition-colors">Terms</Link>
           </div>
         </div>
       </footer>

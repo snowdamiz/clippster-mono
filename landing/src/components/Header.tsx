@@ -57,12 +57,12 @@ export function Header() {
             <img 
               src="/logo-icon.svg" 
               alt="Clippster" 
-              className="w-8 h-8"
+              className="w-6 h-6"
             />
             <img 
               src="/logo.svg" 
               alt="Clippster" 
-              className="h-5"
+              className="h-5 mt-1"
             />
           </Link>
 
