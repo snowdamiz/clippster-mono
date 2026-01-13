@@ -48,7 +48,9 @@
                         </div>
                       </div>
                       <div class="credits-dialog__pack-value">{{ pack.hours }} min</div>
-                      <div class="credits-dialog__pack-price">${{ Math.round(pack.usd) }}</div>
+                      <div class="credits-dialog__pack-price">
+                        ${{ pack.usd % 1 === 0 ? pack.usd : pack.usd.toFixed(2) }}
+                      </div>
                     </button>
                   </div>
                 </template>

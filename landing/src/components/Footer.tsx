@@ -30,16 +30,16 @@ const platforms = ['TikTok', 'YouTube Shorts', 'Instagram Reels', 'X/Twitter', '
 
 export function Footer() {
   return (
-    <footer className="border-t border-zinc-800">
+    <footer className="border-t border-[#1f1f23]">
       <div className="max-w-6xl mx-auto px-6">
         {/* Platforms */}
-        <div className="py-8 border-b border-zinc-800">
+        <div className="py-8 border-b border-[#1f1f23]">
           <div className="flex flex-wrap items-center justify-center gap-3">
             <span className="text-sm text-zinc-500 mr-2">Export to:</span>
             {platforms.map((platform) => (
               <span 
                 key={platform} 
-                className="px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-400"
+                className="px-3 py-1.5 rounded-lg bg-[#141416] border border-[#1f1f23] text-xs text-zinc-400 hover:border-[rgba(255,255,255,0.1)] hover:text-zinc-300 transition-colors"
               >
                 {platform}
               </span>
@@ -75,7 +75,7 @@ export function Footer() {
                   key={label}
                   href="#"
                   aria-label={label}
-                  className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 hover:text-white hover:border-zinc-700 transition-colors"
+                  className="w-10 h-10 rounded-[10px] bg-[#141416] border border-[#1f1f23] flex items-center justify-center text-zinc-500 hover:text-cyan-400 hover:border-[rgba(255,255,255,0.1)] transition-colors"
                 >
                   <Icon className="w-4 h-4" />
                 </a>
@@ -93,14 +93,14 @@ export function Footer() {
                     {item.isPage ? (
                       <Link 
                         to={item.href} 
-                        className="text-sm text-zinc-500 hover:text-white transition-colors"
+                        className="text-sm text-zinc-500 hover:text-cyan-400 transition-colors"
                       >
                         {item.label}
                       </Link>
                     ) : (
                       <a 
                         href={item.href} 
-                        className="text-sm text-zinc-500 hover:text-white transition-colors"
+                        className="text-sm text-zinc-500 hover:text-cyan-400 transition-colors"
                       >
                         {item.label}
                       </a>
@@ -113,14 +113,14 @@ export function Footer() {
         </div>
         
         {/* Bottom */}
-        <div className="py-6 border-t border-zinc-800 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="py-6 border-t border-[#1f1f23] flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-xs text-zinc-600">
             © {new Date().getFullYear()} Clippster. All rights reserved.
           </p>
           <div className="flex items-center gap-6 text-xs text-zinc-600">
-            <a href="#" className="hover:text-zinc-400 transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-zinc-400 transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-zinc-400 transition-colors">Cookies</a>
+            <a href="#" className="hover:text-cyan-400 transition-colors">Privacy Policy</a>
+            <a href="#" className="hover:text-cyan-400 transition-colors">Terms of Service</a>
+            <a href="#" className="hover:text-cyan-400 transition-colors">Cookies</a>
           </div>
         </div>
       </div>

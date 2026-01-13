@@ -1,10 +1,11 @@
-import { Brain, Clock, Shield, Zap, Share2, Wand2, type LucideIcon } from 'lucide-react'
+import { Brain, Clock, Shield, Zap, Share2, Wand2, PictureInPicture2, Building2, DollarSign, type LucideIcon } from 'lucide-react'
 
 interface Feature {
   icon: LucideIcon
   title: string
   description: string
   stat?: { value: string; label: string }
+  accentColor?: 'cyan' | 'purple' | 'pink' | 'green'
 }
 
 const features: Feature[] = [
@@ -13,66 +14,121 @@ const features: Feature[] = [
     title: 'AI Highlight Detection',
     description: 'Neural networks analyze your content in real-time, identifying peak moments, clutch plays, and viral-worthy reactions automatically.',
     stat: { value: '95%', label: 'accuracy' },
+    accentColor: 'cyan',
   },
   {
-    icon: Clock,
-    title: 'Real-Time Processing',
-    description: 'Clips are generated live as you stream. Post highlights before the stream ends with minimal latency.',
-    stat: { value: '<30s', label: 'latency' },
+    icon: PictureInPicture2,
+    title: 'Picture-in-Picture Mode',
+    description: 'Watch live streams in a floating window while you work. Clip with hotkeys or let AI detect highlights automatically.',
+    stat: { value: 'Always', label: 'on-top' },
+    accentColor: 'purple',
   },
   {
     icon: Wand2,
     title: 'Auto-Captions',
     description: 'AI-generated captions with perfect timing. Multiple styling presets and language support built in.',
     stat: { value: '40+', label: 'languages' },
+    accentColor: 'pink',
+  },
+  {
+    icon: Building2,
+    title: 'Organization Tools',
+    description: 'Run campaigns, recruit clippers, manage teams, and track submissions. Everything you need to scale content creation.',
+    stat: { value: 'Full', label: 'dashboard' },
+    accentColor: 'green',
+  },
+  {
+    icon: Clock,
+    title: 'Real-Time Processing',
+    description: 'Clips are generated live as you stream. Post highlights before the stream ends with minimal latency.',
+    stat: { value: '<30s', label: 'latency' },
+    accentColor: 'cyan',
+  },
+  {
+    icon: DollarSign,
+    title: 'Clipper Marketplace',
+    description: 'Build your reputation, join campaigns, and earn money for views. Connect clippers with organizations.',
+    stat: { value: 'CPM', label: 'earnings' },
+    accentColor: 'purple',
   },
   {
     icon: Share2,
     title: 'Multi-Platform Export',
     description: 'One click to publish everywhere. Auto-optimized aspect ratios and formats for each platform.',
     stat: { value: '5+', label: 'platforms' },
+    accentColor: 'pink',
   },
   {
     icon: Shield,
     title: 'Secure & Private',
-    description: 'Wallet authentication keeps your account safe. Your content stays on your machine.',
+    description: 'Your content stays on your machine. Local processing means your videos never leave your computer unless you export them.',
+    accentColor: 'green',
   },
   {
     icon: Zap,
     title: 'Batch Processing',
     description: 'Process multiple streams at once. Queue content and let the AI work in the background.',
+    accentColor: 'cyan',
   },
 ]
 
+const accentStyles = {
+  cyan: {
+    indicator: 'bg-gradient-to-b from-cyan-500 to-cyan-600',
+    iconBg: 'bg-cyan-500/15',
+    iconColor: 'text-cyan-500 group-hover:text-cyan-400',
+    statColor: 'text-cyan-500',
+  },
+  purple: {
+    indicator: 'bg-gradient-to-b from-violet-500 to-violet-600',
+    iconBg: 'bg-violet-500/15',
+    iconColor: 'text-violet-500 group-hover:text-violet-400',
+    statColor: 'text-violet-500',
+  },
+  pink: {
+    indicator: 'bg-gradient-to-b from-pink-500 to-pink-600',
+    iconBg: 'bg-pink-500/15',
+    iconColor: 'text-pink-500 group-hover:text-pink-400',
+    statColor: 'text-pink-500',
+  },
+  green: {
+    indicator: 'bg-gradient-to-b from-emerald-500 to-emerald-600',
+    iconBg: 'bg-emerald-500/15',
+    iconColor: 'text-emerald-500 group-hover:text-emerald-400',
+    statColor: 'text-emerald-500',
+  },
+}
+
 function FeatureCard({ feature }: { feature: Feature }) {
   const Icon = feature.icon
+  const accent = accentStyles[feature.accentColor || 'cyan']
   
   return (
-    <div className="group relative p-6 lg:p-8 rounded-2xl border border-zinc-800/60 bg-zinc-900/30 hover:bg-zinc-900/60 hover:border-zinc-700/60 transition-all duration-300">
-      {/* Icon */}
-      <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500/10 to-violet-500/10 border border-zinc-800 flex items-center justify-center mb-5 group-hover:border-zinc-700 transition-colors">
-        <Icon className="w-5 h-5 text-zinc-400 group-hover:text-zinc-300 transition-colors" />
-      </div>
-      
-      {/* Title + Stat */}
-      <div className="flex items-baseline justify-between gap-4 mb-3">
-        <h3 className="font-display text-lg font-semibold text-white tracking-tight">
-          {feature.title}
-        </h3>
-        {feature.stat && (
-          <div className="text-right shrink-0">
-            <span className="text-lg font-semibold bg-gradient-to-r from-blue-400 to-violet-400 bg-clip-text text-transparent">
-              {feature.stat.value}
-            </span>
-            <span className="text-xs text-zinc-600 ml-1">{feature.stat.label}</span>
-          </div>
-        )}
-      </div>
-      
-      {/* Description */}
-      <p className="text-zinc-500 text-sm leading-relaxed group-hover:text-zinc-400 transition-colors">
-        {feature.description}
-      </p>
+    <div className="group relative rounded-[10px] border border-[#1f1f23] bg-[#141416] hover:border-[rgba(255,255,255,0.1)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)] transition-all duration-200 overflow-hidden p-5 lg:p-6">
+        {/* Icon */}
+        <div className={`w-10 h-10 rounded-[10px] ${accent.iconBg} flex items-center justify-center mb-4`}>
+          <Icon className={`w-5 h-5 ${accent.iconColor} transition-colors`} />
+        </div>
+        
+        {/* Title + Stat */}
+        <div className="flex items-baseline justify-between gap-4 mb-2">
+          <h3 className="text-base font-semibold text-white tracking-[-0.01em]">
+            {feature.title}
+          </h3>
+          {feature.stat && (
+            <div className="text-right shrink-0">
+              <span className={`text-lg font-bold ${accent.statColor}`}>
+                {feature.stat.value}
+              </span>
+              <span className="text-[11px] text-zinc-500 ml-1">{feature.stat.label}</span>
+            </div>
+          )}
+        </div>
+        
+        {/* Description */}
+        <p className="text-zinc-500 text-sm leading-relaxed group-hover:text-zinc-400 transition-colors">
+          {feature.description}
+        </p>
     </div>
   )
 }
@@ -84,22 +140,22 @@ export function Features() {
       
       {/* Subtle background */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-gradient-to-b from-blue-500/[0.03] to-violet-500/[0.02] rounded-full blur-3xl" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-gradient-to-b from-cyan-500/[0.03] to-cyan-600/[0.02] rounded-full blur-3xl" />
       </div>
       
       <div className="relative z-10 max-w-6xl mx-auto px-6">
         {/* Header */}
         <div className="text-center mb-16 lg:mb-20">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 mb-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#1f1f23] bg-[#141416] mb-6">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
             <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Features</span>
           </div>
           
-          <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-5 tracking-tight">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-5 tracking-[-0.02em]">
             Everything you need to{' '}
             <span className="relative">
               <span className="relative z-10">go viral</span>
-              <span className="absolute -bottom-1 left-0 right-0 h-3 bg-gradient-to-r from-blue-500/20 via-violet-500/20 to-blue-500/20 blur-sm" />
+              <span className="absolute -bottom-1 left-0 right-0 h-3 bg-gradient-to-r from-cyan-500/20 via-cyan-400/20 to-cyan-500/20 blur-sm" />
             </span>
           </h2>
           

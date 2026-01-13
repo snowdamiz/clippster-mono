@@ -619,8 +619,7 @@
   }
 
   .titlebar-logo-icon {
-    height: 20px;
-    margin-top: -2px;
+    height: 14px;
     width: auto;
   }
 

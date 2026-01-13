@@ -5,10 +5,11 @@ import { useDownloads } from '../hooks/usePlatform'
 import { useDownloadContext } from '../context/DownloadContext'
 
 const navLinks: { href: string; label: string; isPage?: boolean }[] = [
+  { href: '#product', label: 'Product' },
   { href: '#features', label: 'Features' },
-  { href: '/pricing', label: 'Pricing', isPage: true },
+  { href: '#marketplace', label: 'Marketplace' },
   { href: '#how-it-works', label: 'How it Works' },
-  { href: '#testimonials', label: 'Testimonials' },
+  { href: '/pricing', label: 'Pricing', isPage: true },
 ]
 
 export function Header() {
@@ -46,8 +47,8 @@ export function Header() {
   }
 
   return (
-    <header className={`fixed top-0 left-0 right-0 z-50 transition-all border-b border-zinc-800/0 duration-200 ${
-      isScrolled ? 'bg-[#09090b]/80 backdrop-blur-lg border-b border-zinc-800/40' : ''
+    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${
+      isScrolled ? 'bg-[#0a0a0b]/80 backdrop-blur-lg border-b border-[#1f1f23]' : 'border-b border-transparent'
     }`}>
       <div className="max-w-6xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
@@ -95,13 +96,13 @@ export function Header() {
           {/* Download Buttons */}
           <div className="hidden md:flex items-center gap-3">
             {isLoading ? (
-              <div className="px-5 py-2.5 rounded-full bg-white/50 text-zinc-900 font-medium text-sm flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
+              <div className="px-5 py-2.5 rounded-lg bg-[#141416] border border-[#1f1f23] text-zinc-300 font-medium text-sm flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
               </div>
             ) : !downloadsEnabled ? (
               <button
                 onClick={openWaitlistModal}
-                className="px-5 py-2.5 rounded-full bg-white/10 text-white/70 font-medium text-sm border border-white/20 flex items-center gap-2 cursor-pointer hover:bg-white/15 hover:border-white/30 transition-colors"
+                className="px-5 py-2.5 rounded-lg bg-[#141416] text-zinc-300 font-medium text-sm border border-[#1f1f23] flex items-center gap-2 cursor-pointer hover:border-[rgba(255,255,255,0.1)] hover:text-white transition-colors"
               >
                 <Clock className="w-4 h-4" />
                 Coming Soon
@@ -111,7 +112,7 @@ export function Header() {
                 {secondaryDownload && (
                   <a
                     href={secondaryDownload.downloadUrl}
-                    className="p-2 text-zinc-400 hover:text-white transition-colors"
+                    className="p-2 text-zinc-400 hover:text-cyan-400 transition-colors"
                     title={`Download for ${secondaryDownload.label}`}
                   >
                     {secondaryDownload.platform.os === 'mac' ? (
@@ -123,7 +124,7 @@ export function Header() {
                 )}
                 <a
                   href={primaryDownload.downloadUrl}
-                  className="px-5 py-2.5 rounded-full bg-white text-zinc-900 font-medium text-sm hover:bg-zinc-100 transition-colors flex items-center gap-2"
+                  className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-medium text-sm hover:from-cyan-400 hover:to-cyan-500 transition-colors flex items-center gap-2 shadow-lg shadow-cyan-500/20"
                 >
                   {primaryDownload.platform.os === 'mac' ? (
                     <Apple className="w-4 h-4" />
@@ -148,14 +149,14 @@ export function Header() {
 
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
-        <div className="md:hidden mx-6 mt-1 p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
+        <div className="md:hidden mx-6 mt-1 p-4 rounded-[10px] bg-[#141416] border border-[#1f1f23]">
           <nav className="flex flex-col gap-1">
             {navLinks.map((link) => (
               link.isPage ? (
                 <Link
                   key={link.href}
                   to={link.href}
-                  className="px-4 py-3 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                  className="px-4 py-3 text-zinc-300 hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   {link.label}
@@ -164,7 +165,7 @@ export function Header() {
                 <a
                   key={link.href}
                   href={link.href}
-                  className="px-4 py-3 text-zinc-300 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                  className="px-4 py-3 text-zinc-300 hover:text-white hover:bg-[rgba(255,255,255,0.05)] rounded-lg transition-colors"
                   onClick={() => {
                     setIsMobileMenuOpen(false)
                     handleNavClick(link.href)
@@ -174,14 +175,14 @@ export function Header() {
                 </a>
               )
             ))}
-            <div className="mt-3 pt-3 border-t border-zinc-800 space-y-2">
+            <div className="mt-3 pt-3 border-t border-[#1f1f23] space-y-2">
               {!downloadsEnabled ? (
                 <button
                   onClick={() => {
                     setIsMobileMenuOpen(false)
                     openWaitlistModal()
                   }}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-white/10 text-white/70 font-medium border border-white/20"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-[rgba(255,255,255,0.05)] text-zinc-300 font-medium border border-[#1f1f23]"
                 >
                   <Clock className="w-4 h-4" />
                   Coming Soon
@@ -190,7 +191,7 @@ export function Header() {
                 <>
                   <a
                     href={primaryDownload.downloadUrl}
-                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-white text-zinc-900 font-medium"
+                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-medium"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
                     {primaryDownload.platform.os === 'mac' ? (
@@ -203,7 +204,7 @@ export function Header() {
                   {secondaryDownload && (
                     <a
                       href={secondaryDownload.downloadUrl}
-                      className="flex items-center justify-center gap-2 px-4 py-3 text-zinc-400 hover:text-white rounded-lg"
+                      className="flex items-center justify-center gap-2 px-4 py-3 text-zinc-400 hover:text-cyan-400 rounded-lg"
                       onClick={() => setIsMobileMenuOpen(false)}
                     >
                       {secondaryDownload.platform.os === 'mac' ? (
