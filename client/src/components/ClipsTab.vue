@@ -2405,9 +2405,10 @@
     }
   }
 
-  // Expose methods
+  // Expose functions to parent
   defineExpose({
     scrollClipIntoView,
+    hasClipElement: (clipId: string) => clipElements.value.has(clipId),
   });
 </script>
 

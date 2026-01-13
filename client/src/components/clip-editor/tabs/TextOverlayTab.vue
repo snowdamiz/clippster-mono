@@ -717,6 +717,53 @@
     return ratioConfig?.position || overlay.position;
   }
 
+  // Scale helpers (treat scale as fontSize relative to the base style fontSize)
+  function getScaleForRatio(overlay: TextOverlay): number {
+    const baseFontSize = overlay.style.fontSize || 32;
+    const currentFontSize = getStyleForRatio(overlay).fontSize || baseFontSize;
+    return currentFontSize / baseFontSize;
+  }
+
+  function updateScale(scale: number) {
+    if (!selectedOverlay.value || Number.isNaN(scale)) return;
+    const baseFontSize = selectedOverlay.value.style.fontSize || 32;
+    const newSize = Math.max(8, baseFontSize * scale);
+    updateStyle('fontSize', newSize);
+  }
+
+  // Rotation helpers (rotation is an optional style property)
+  function getRotationForRatio(overlay: TextOverlay): number {
+    const style = getStyleForRatio(overlay) as any;
+    return typeof style.rotation === 'number' ? style.rotation : 0;
+  }
+
+  function updateRotation(deg: number) {
+    if (!selectedOverlay.value || Number.isNaN(deg)) return;
+    updateStyle('rotation' as any, deg);
+  }
+
+  // Position helper to update per-ratio position
+  function updatePosition(x: number, y: number) {
+    if (!selectedOverlay.value || Number.isNaN(x) || Number.isNaN(y)) return;
+    const ratio = props.previewAspectRatio;
+    const overlay = selectedOverlay.value;
+
+    // Clamp to 0-100
+    const clampedX = Math.max(0, Math.min(100, x));
+    const clampedY = Math.max(0, Math.min(100, y));
+
+    const perRatioConfigs = overlay.perRatioConfigs ? { ...overlay.perRatioConfigs } : {};
+    const currentConfig = perRatioConfigs[ratio] || {
+      position: { ...overlay.position },
+      style: { ...overlay.style },
+    };
+
+    currentConfig.position = { x: clampedX, y: clampedY };
+    perRatioConfigs[ratio] = currentConfig;
+
+    emit('updateText', selectedOverlayId.value!, { perRatioConfigs });
+  }
+
   // Check if an aspect ratio has been configured with custom framing
   function isRatioConfigured(ratio: string): boolean {
     const config = props.framingConfigs[ratio as keyof ManualFramingConfigs];
