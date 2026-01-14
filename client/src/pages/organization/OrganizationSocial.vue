@@ -326,6 +326,21 @@
         </div>
       </section>
 
+      <!-- Scheduled Posts Section -->
+      <section class="social-accounts__section">
+        <div class="social-accounts__section-header">
+          <div class="social-accounts__section-header-icon">
+            <Clock />
+          </div>
+          <div class="social-accounts__section-header-text">
+            <h2 class="social-accounts__section-title">Scheduled Posts</h2>
+            <p class="social-accounts__section-subtitle">View and manage scheduled posts for your organization</p>
+          </div>
+        </div>
+
+        <OrgScheduledPostsList v-if="organizationId" :organization-id="organizationId" />
+      </section>
+
       <!-- Assignments Dialog -->
       <SocialAccountAssignments
         v-if="selectedAccount"
@@ -409,6 +424,7 @@
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import SocialAccountAssignments from '@/components/organization/SocialAccountAssignments.vue';
+  import OrgScheduledPostsList from '@/components/organization/OrgScheduledPostsList.vue';
   import { useOrganization } from '@/composables/useOrganization';
   import { useToast } from '@/composables/useToast';
   import {

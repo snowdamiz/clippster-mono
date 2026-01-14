@@ -343,6 +343,31 @@ defmodule ClippsterServerWeb.Router do
     post "/user/posts/:id/sync", UserPostsController, :sync_analytics
 
     # ============================================================================
+    # Social Media Scheduling
+    # ============================================================================
+
+    # Schedule a post for future publishing
+    post "/social/schedule", SchedulingController, :schedule
+
+    # List user's scheduled posts
+    get "/social/scheduled", SchedulingController, :index
+
+    # Get/update/cancel/retry a scheduled post
+    get "/social/scheduled/:id", SchedulingController, :show
+    put "/social/scheduled/:id", SchedulingController, :update
+    post "/social/scheduled/:id/cancel", SchedulingController, :cancel
+    post "/social/scheduled/:id/retry", SchedulingController, :retry
+
+    # Organization scheduled posts (admin view)
+    get "/organizations/:organization_id/scheduled-posts", SchedulingController, :org_scheduled_posts
+
+    # External post submissions (link submissions)
+    post "/organizations/:organization_id/external-posts", SchedulingController, :submit_external_post
+    get "/organizations/:organization_id/external-posts", SchedulingController, :list_external_posts
+    post "/organizations/:organization_id/external-posts/:id/approve", SchedulingController, :approve_external_post
+    post "/organizations/:organization_id/external-posts/:id/reject", SchedulingController, :reject_external_post
+
+    # ============================================================================
     # Clipper Profiles - User's Own Profile
     # ============================================================================
     get "/user/clipper-profile", ClipperProfilesController, :show_own

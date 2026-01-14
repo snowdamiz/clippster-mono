@@ -761,6 +761,16 @@ defmodule ClippsterServer.Campaigns do
   end
 
   @doc """
+  Updates social account tokens (for token refresh).
+  Used by the scheduled post worker to refresh tokens before publishing.
+  """
+  def update_social_account_tokens(%ClipperSocialAccount{} = account, attrs) do
+    account
+    |> ClipperSocialAccount.update_tokens_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
   Lists social accounts for a user.
   """
   def list_user_social_accounts(user_id) do

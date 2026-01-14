@@ -9,6 +9,10 @@ defmodule ClippsterServer.Organizations.Organization do
     field :logo_url, :string
     field :settings, :map, default: %{}
 
+    # Instagram scheduling settings
+    field :allow_personal_instagram, :boolean, default: true
+    field :scheduling_enabled, :boolean, default: true
+
     belongs_to :owner, ClippsterServer.Accounts.User
     has_many :members, ClippsterServer.Organizations.OrganizationMember
     has_many :invitations, ClippsterServer.Organizations.OrganizationInvitation
@@ -22,7 +26,7 @@ defmodule ClippsterServer.Organizations.Organization do
   """
   def create_changeset(organization, attrs) do
     organization
-    |> cast(attrs, [:name, :description, :logo_url, :owner_id, :settings])
+    |> cast(attrs, [:name, :description, :logo_url, :owner_id, :settings, :allow_personal_instagram, :scheduling_enabled])
     |> validate_required([:name, :owner_id])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)
@@ -36,7 +40,7 @@ defmodule ClippsterServer.Organizations.Organization do
   """
   def update_changeset(organization, attrs) do
     organization
-    |> cast(attrs, [:name, :description, :logo_url, :settings])
+    |> cast(attrs, [:name, :description, :logo_url, :settings, :allow_personal_instagram, :scheduling_enabled])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)
     |> maybe_regenerate_slug()

@@ -1,88 +1,150 @@
 # Instagram Scheduling & Posting Plan
 
 ## 1) Product / UX flows
-- Entry points: From a built clip → "Share → Instagram → Schedule".
-- Inputs: Caption (enforce IG limits), scheduled date/time (user/org TZ), IG account selector, org/campaign/creator context selection (if multiple).
+- ✅ Entry points: From a built clip → "Share → Instagram → Schedule". *(Implemented: PublishDialog.vue for org, UserPublishDialog.vue for personal with scheduling support)*
+- ✅ Inputs: Caption (enforce IG limits), scheduled date/time, IG account selector, org/campaign/creator context selection.
+  - Caption with 2200 char limit: ✅ Implemented
+  - Scheduled date/time: ✅ Implemented (date/time picker in both dialogs)
+  - IG account selector: ✅ Implemented
+  - Creator profile selector: ✅ Implemented (optional in PublishDialog)
 - Defaults and account eligibility:
-  - If clipper is working on a creator assigned by an org (or picked an org/campaign) and that org has an IG linked/assigned:
-    - Only that org IG is usable unless the org toggled “allow personal accounts”.
-    - If allowed, default = org IG; personal IGs also selectable.
-  - If multiple orgs/campaigns for the same creator: clipper chooses org/campaign first; that choice determines default IG and personal-allowed flag.
-  - If the creator profile was created by the clipper (or is not in any org), clipper can use personal IG freely.
-- States: queued, publishing, posted, failed, canceled; show timestamps and post URL when available.
-- Actions: cancel/edit while queued; retry after failure (with guardrails).
+  - ✅ If clipper is working on a creator assigned by an org (or picked an org/campaign) and that org has an IG linked/assigned:
+    - ✅ "Allow personal accounts" toggle on organizations
+    - ✅ `scheduling_enabled` toggle on organizations
+  - ⚠️ If multiple orgs/campaigns for the same creator: clipper chooses org/campaign first - partial support via campaign_id field
+  - ✅ If the creator profile was created by the clipper (or is not in any org), clipper can use personal IG freely.
+- ✅ States: pending, scheduled, publishing, published, failed, canceled; show timestamps and post URL when available.
+- ✅ Actions: cancel/edit while queued; retry after failure (with guardrails). *(ScheduledPostsList.vue with edit/cancel dialogs)*
 - Visibility to orgs:
-  - Auto-visible when posted via org IG.
-  - If posted via personal IG, org sees it only when clipper submits the post link to that org/campaign/creator.
+  - ✅ Auto-visible when posted via org IG.
+  - ✅ If posted via personal IG, org sees it when clipper submits the post link. *(ExternalPostSubmitDialog.vue, ExternalPostSubmission schema)*
 
 ## 2) Data model
-- Extend `post_submissions` (or add if missing):
-  - `id`, `organization_id` (nullable for personal/no-org), `campaign_id` (nullable), `creator_id`, `clip_id`, `platform="instagram"`.
-  - `owner_type` (`org` or `user`), `organization_social_account_id` (for org IG), `user_social_account_id` (for personal IG).
-  - `status`, `scheduled_at`, `started_at`, `completed_at`, `locked_at`, `attempts`, `max_attempts`.
-  - `caption`, `media_url`, `media_type`, `platform_post_id`, `platform_post_url`, `error_code`, `error_message`.
-  - Timestamps; indexes on `status`, `scheduled_at`, `organization_social_account_id`, `user_social_account_id`.
-- Social accounts:
-  - Support owner scoping: org-owned vs user-owned; encrypted tokens; `token_expires_at`.
-  - For org IG assignment: link to creators/campaigns and eligible clippers.
+- ✅ `post_submissions` table (extended via migration `20260115000002_add_instagram_scheduling_fields.exs`):
+  - ✅ `id`, `organization_id`, `organization_creator_profile_id`, `submitted_by_user_id`, `platform`
+  - ✅ `organization_social_account_id` (for org IG)
+  - ✅ `user_social_account_id` (for personal IG)
+  - ✅ `owner_type` (`org` or `user`)
+  - ✅ `campaign_id`, `clip_id`
+  - ✅ `caption`, `media_url`, `media_type`, `post_id`, `post_url`, `error_message`
+  - ✅ `scheduled_at`, `started_at`, `completed_at`, `locked_at`, `attempts`, `max_attempts`
+  - ✅ `status` (pending/scheduled/publishing/published/failed/canceled), timestamps, indexes
+- ✅ `external_post_submissions` table for link submissions
+- ✅ Social accounts:
+  - ✅ `organization_social_accounts` table - org-owned accounts with encrypted tokens, `token_expires_at`
+  - ✅ `clipper_social_accounts` table - user-owned accounts with encrypted tokens
+  - ✅ `social_account_assignments` - link clippers to org accounts
+- ✅ Organizations: `allow_personal_instagram`, `scheduling_enabled` fields
 
 ## 3) Backend APIs & logic
-- Auth/connect:
-  - Keep admin-only for org IG connections.
-  - Allow clippers to connect their own IG accounts (user-owned records), no org gate.
-- Scheduling API:
-  - `POST /clips/:clip_id/social/schedule` with `platform=instagram`, `scheduled_at`, `caption`, `account_id` (+ flags to disambiguate org vs user), `org_id`/`campaign_id`/`creator_id` context.
-  - Validate: membership, context eligibility, org rules (personal allowed?), media readiness, caption limits, future time, and that the chosen account is permitted for that context.
-- Queue/worker:
-  - Enqueue job at `scheduled_at`; worker locks row, sets `publishing`.
-  - Token handling: decrypt, refresh if near expiry; fail with actionable error if refresh/auth fails.
-  - Media: presign R2/private URLs as already supported.
-  - Publish: call `Instagram.publish_media` with caption, ig_user_id; store post ID/URL.
-  - Retry policy: transient (5xx/429) exponential backoff with cap; permanent (auth/permission/media) fail fast.
-  - Idempotency: unique job per submission + row lock.
-- Cancellation/edit:
-  - Allowed while queued and not locked; update schedule/caption/account or cancel.
-- Observability: structured logs with submission id/org/clip/account; metrics for status counts, latency, retries; PulseKit events with context.
+- ✅ Auth/connect:
+  - ✅ Admin-only for org IG connections (`InstagramAuthController`)
+  - ✅ Clippers can connect their own IG accounts (`UserInstagramAuthController`, `ClipperProfileController`)
+- ✅ Scheduling API (`SchedulingController`):
+  - ✅ `POST /social/schedule` - schedule a post for future publishing
+  - ✅ `GET /social/scheduled` - list user's scheduled posts
+  - ✅ `GET /social/scheduled/:id` - get a scheduled post
+  - ✅ `PUT /social/scheduled/:id` - update a scheduled post
+  - ✅ `POST /social/scheduled/:id/cancel` - cancel a scheduled post
+  - ✅ External post submissions: `POST/GET /organizations/:org_id/external-posts`, approve/reject endpoints
+  - ✅ Existing: `POST /organizations/:org_id/posts/publish` for immediate publish
+  - ✅ Existing: `POST /user/instagram/publish` for user immediate publish
+- ✅ Queue/worker (`ScheduledPostWorker`):
+  - ✅ Polls every minute for posts ready to publish
+  - ✅ Row locking to prevent duplicate processing
+  - ✅ Token handling: decrypt via `TokenEncryption`, refresh via `TokenRefreshWorker`
+  - ✅ Media: presign R2/private URLs in `instagram.ex`
+  - ✅ Publish: `Instagram.publish_media` with caption, ig_user_id; store post ID/URL
+  - ✅ Retry policy: exponential backoff, distinguishes transient vs permanent errors
+  - ✅ Idempotency: optimistic locking via `locked_at` field
+- ✅ Cancellation/edit:
+  - ✅ `cancel_changeset`, `update_scheduled_changeset` in PostSubmission
+  - ✅ `can_edit?`, `can_cancel?` helper functions
+- ✅ Observability: PulseKit events throughout `instagram.ex`, `PostSubmissionController`, `ScheduledPostWorker`
 
 ## 4) Frontend
-- Share/Schedule modal:
-  - Context selector (org/campaign/creator) shown when multiple; determines eligible accounts and personal-allowed flag.
-  - IG account picker: show only org IG if personal disallowed; otherwise group as “Org account (default)” and “My accounts”.
-  - Caption field with char/hashtag limits; date/time picker with TZ hint; validation inline.
-- Clip detail → “Social posts” table:
-  - Status chips, scheduled time, chosen account, attempts, errors, post URL; actions: retry, cancel/edit while queued.
-- Link submission UI (for personal IG visibility to org):
-  - On creator profile: “Submit IG post link” with fields: IG URL, clip selection, org/campaign selection (if applicable), optional notes.
-  - Status: pending/accepted if org wants approval; otherwise auto-accept.
-- Admin/org views:
-  - Org can see posts made via org IG automatically; for personal IG, only those with submitted links to that org/campaign/creator.
-  - Filters by status, org/campaign, creator, account, user.
+- ✅ Share/Schedule modal:
+  - ✅ IG account picker in `PublishDialog.vue` - shows assigned accounts for members, all for admins
+  - ✅ Caption field with 2200 char limit and hashtag count validation (30 max)
+  - ✅ Date/time picker with minimum 5 minutes in future validation
+  - ✅ Schedule toggle with relative time display
+- ✅ Scheduled posts management (`ScheduledPostsList.vue`):
+  - ✅ Status filters (all/scheduled/publishing/published/failed/canceled)
+  - ✅ Status chips, chosen account, errors, post URL
+  - ✅ Scheduled time, attempts display
+  - ✅ Edit dialog for caption and schedule time
+  - ✅ Cancel confirmation dialog
+- ✅ Link submission UI (`ExternalPostSubmitDialog.vue`):
+  - ✅ Platform selector (Instagram, TikTok, YouTube, Twitter)
+  - ✅ Post URL input with platform validation
+  - ✅ Creator profile and campaign selection
+  - ✅ Optional analytics input (views, likes)
+- ✅ Admin/org views (`PostSubmissionsList.vue`, `OrganizationSocial.vue`):
+  - ✅ Org can see posts made via org IG automatically
+  - ✅ External post submissions list with approve/reject
+  - ✅ Filters by status, platform, creator, member
+- ✅ API service (`schedulingApi.ts`):
+  - ✅ All scheduling CRUD operations
+  - ✅ External post submission operations
+  - ✅ Helper functions for date formatting and validation
 
 ## 5) Policy/eligibility rules
-- Org-assigned creator + org IG present:
-  - If org disallows personal: only org IG is shown/usable.
-  - If org allows personal: default to org IG; personal IG selectable.
-- Multi-org/campaign creator:
-  - Clipper must pick org/campaign up front; that drives default IG and personal-allowed flag.
-- Independent/self-created creator (or no org context):
-  - Personal IG allowed by default; org rules don’t apply.
-- Visibility to orgs:
-  - Auto when posted via org IG.
-  - For personal IG: org visibility only when the clipper submits the link to that org/campaign/creator; analytics only if we have a token for that posting account.
+- ✅ Org-assigned creator + org IG present:
+  - ✅ "Allow personal accounts" toggle on organizations
+  - ✅ `scheduling_enabled` toggle on organizations
+- ⚠️ Multi-org/campaign creator:
+  - ⚠️ Context selection via campaign_id - full UI grouping not implemented
+- ✅ Independent/self-created creator (or no org context):
+  - ✅ Personal IG allowed by default (`UserPublishDialog.vue`)
+- ✅ Visibility to orgs:
+  - ✅ Auto when posted via org IG
+  - ✅ Personal IG link submission via `ExternalPostSubmission`
 
 ## 6) Compliance & constraints (Instagram Graph)
-- Scopes: `instagram_business_content_publish`, `instagram_business_basic`.
-- Business/Creator accounts only, linked FB Page as required.
-- Caption limits: 2,200 chars, 30 hashtags (enforce client + server).
-- Media constraints: MP4/H.264/AAC; ≤15 minutes; aspect ratio 4:5–16:9; validate server-side pre-queue.
-- Rate limits: handle 429 with backoff; log usage.
+- ✅ Scopes: `instagram_business_content_publish`, `instagram_business_basic`, `instagram_business_manage_insights` configured
+- ✅ Business/Creator accounts - Instagram API integration complete in `instagram.ex`
+- ✅ Caption limits: 2,200 chars enforced client-side, 30 hashtags validated in both frontend and backend
+- ✅ PARTIAL - Media constraints: supports MP4 video/reels; ❌ no explicit validation for duration/aspect ratio pre-queue
+- ✅ Rate limits: timeout handling, exponential backoff in `AnalyticsSyncWorker` and `ScheduledPostWorker`
 
 ## 7) Security & audit
-- Tokens encrypted at rest; refresh paths for org and user accounts.
-- Audit trails: who connected the account; who scheduled; which account (org vs user) was used; status transitions with timestamps.
-- Org kill switch: disable personal IG usage per org; revoke org accounts as needed.
+- ✅ Tokens encrypted at rest (`TokenEncryption` module); refresh via `TokenRefreshWorker` for org and user accounts
+- ✅ Audit trails:
+  - ✅ `connected_at`, `submitted_by_user_id` tracked
+  - ✅ Status transitions with timestamps (`posted_at`, `started_at`, `completed_at`, `last_synced_at`)
+  - ✅ `attempts` counter for retry tracking
+- ✅ Org controls: `allow_personal_instagram`, `scheduling_enabled` per organization
 
 ## 8) Rollout & testing
-- Feature flag by org for scheduling + personal-allowed toggle.
-- Dry-run mode in staging; real IG test account validation.
-- Tests: happy path schedule/post; token refresh; expired/invalid tokens; rate-limit retries; cancellation; validation failures; org-policy enforcement (personal disallowed vs allowed); link-submission visibility rules.
+- ✅ Organization-level `scheduling_enabled` toggle
+- ❌ Dry-run mode in staging - not implemented
+- ❌ Tests: No automated tests found for Instagram posting flow
+
+---
+
+## Implementation Summary
+
+### ✅ Fully Completed
+- Instagram OAuth for org accounts (`InstagramAuthController`)
+- Instagram OAuth for user/clipper accounts (`UserInstagramAuthController`)
+- Token encryption and automatic refresh (`TokenEncryption`, `TokenRefreshWorker`)
+- Immediate publish to Instagram for orgs (`PostSubmissionController`, `PublishDialog.vue`)
+- Immediate publish to Instagram for users (`UserPostsController`, `UserPublishDialog.vue`)
+- **Scheduling** - Full scheduling support with date/time picker, schedule toggle, scheduled status
+- **ScheduledPostWorker** - GenServer that polls and publishes scheduled posts with retry logic
+- **Cancel/edit queued posts** - Edit/cancel dialogs in `ScheduledPostsList.vue`
+- **Link submission** - `ExternalPostSubmission` schema and `ExternalPostSubmitDialog.vue`
+- **Org policy rules** - `allow_personal_instagram`, `scheduling_enabled` on organizations
+- Post analytics sync (`AnalyticsSyncWorker`, `PostSubmissionsList.vue`)
+- Media upload to R2 with presigned URLs
+- PulseKit observability/logging
+- Hashtag validation (30 max) in frontend and backend
+- API service for scheduling operations (`schedulingApi.ts`)
+
+### ⚠️ Partially Completed
+- Multi-org/campaign context selection UI (backend supports campaign_id, frontend grouping not complete)
+- Media constraint validation (duration/aspect ratio not pre-validated)
+
+### ❌ Not Implemented
+- **Automated tests** - No test coverage for Instagram flow
+- **Dry-run mode** - Staging dry-run not implemented

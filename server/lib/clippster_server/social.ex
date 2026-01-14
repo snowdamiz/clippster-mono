@@ -443,4 +443,324 @@ defmodule ClippsterServer.Social do
 
     Repo.one(query)
   end
+
+  # ============================================================================
+  # Scheduling Functions
+  # ============================================================================
+
+  @doc """
+  Schedules a post for future publishing.
+  """
+  def schedule_post(attrs, %User{} = user) do
+    %PostSubmission{}
+    |> PostSubmission.schedule_changeset(Map.put(attrs, :submitted_by_user_id, user.id))
+    |> Repo.insert()
+  end
+
+  @doc """
+  Creates a post for immediate publishing (no scheduling).
+  """
+  def create_immediate_post(attrs, %User{} = user) do
+    %PostSubmission{}
+    |> PostSubmission.create_changeset(Map.put(attrs, :submitted_by_user_id, user.id))
+    |> Repo.insert()
+  end
+
+  @doc """
+  Updates a scheduled post (before it's locked).
+  """
+  def update_scheduled_post(%PostSubmission{} = post, attrs, %User{} = user) do
+    # Verify the user can edit this post
+    if can_user_edit_post?(post, user) do
+      post
+      |> PostSubmission.update_scheduled_changeset(attrs)
+      |> Repo.update()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Cancels a scheduled post.
+  """
+  def cancel_scheduled_post(%PostSubmission{} = post, %User{} = user) do
+    if can_user_edit_post?(post, user) do
+      post
+      |> PostSubmission.cancel_changeset()
+      |> Repo.update()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Gets scheduled posts that are ready to publish.
+  """
+  def get_scheduled_posts_ready_to_publish(now, limit \\ 20) do
+    PostSubmission
+    |> where([p], p.status == "scheduled")
+    |> where([p], p.scheduled_at <= ^now)
+    |> where([p], is_nil(p.locked_at))
+    |> order_by([p], asc: p.scheduled_at)
+    |> limit(^limit)
+    |> preload([:organization_social_account, :user_social_account])
+    |> Repo.all()
+  end
+
+  @doc """
+  Locks a post for publishing (prevents concurrent processing).
+  Uses optimistic locking by checking locked_at is still nil.
+  """
+  def lock_post_for_publishing(%PostSubmission{} = post) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    result =
+      from(p in PostSubmission,
+        where: p.id == ^post.id,
+        where: is_nil(p.locked_at),
+        where: p.status in ["scheduled", "pending"]
+      )
+      |> Repo.update_all(
+        set: [
+          locked_at: now,
+          started_at: now,
+          status: "publishing",
+          updated_at: now
+        ]
+      )
+
+    case result do
+      {1, _} ->
+        # Successfully locked, fetch the updated post
+        {:ok, get_post_submission(post.id)}
+
+      {0, _} ->
+        {:error, :already_locked}
+    end
+  end
+
+  @doc """
+  Unlocks a post for retry after transient failure.
+  """
+  def unlock_post_for_retry(%PostSubmission{} = post) do
+    post
+    |> PostSubmission.unlock_changeset()
+    |> Repo.update()
+  end
+
+  @doc """
+  Increments the attempt counter for a post.
+  """
+  def increment_post_attempt(%PostSubmission{} = post) do
+    post
+    |> PostSubmission.increment_attempt_changeset()
+    |> Repo.update()
+  end
+
+  @doc """
+  Gets all scheduled posts for a user.
+  """
+  def get_user_scheduled_posts(user_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 50)
+    status = Keyword.get(opts, :status)
+
+    query =
+      from p in PostSubmission,
+        where: p.submitted_by_user_id == ^user_id,
+        order_by: [desc: p.scheduled_at],
+        limit: ^limit,
+        preload: [:user_social_account, :organization_social_account]
+
+    query = if status, do: where(query, [p], p.status == ^status), else: query
+
+    Repo.all(query)
+  end
+
+  @doc """
+  Gets all scheduled posts for an organization (admin view).
+  """
+  def get_org_scheduled_posts(organization_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 50)
+    offset = Keyword.get(opts, :offset, 0)
+    status = Keyword.get(opts, :status)
+
+    query =
+      from p in PostSubmission,
+        where: p.organization_id == ^organization_id,
+        where: p.owner_type == "org",
+        order_by: [desc: p.scheduled_at, desc: p.inserted_at],
+        limit: ^limit,
+        offset: ^offset,
+        preload: [:organization_social_account, :organization_creator_profile, :submitted_by_user, :campaign]
+
+    query = if status, do: where(query, [p], p.status == ^status), else: query
+
+    posts = Repo.all(query)
+
+    # Get total count
+    count_query =
+      from p in PostSubmission,
+        where: p.organization_id == ^organization_id,
+        where: p.owner_type == "org",
+        select: count(p.id)
+
+    count_query = if status, do: where(count_query, [p], p.status == ^status), else: count_query
+
+    total = Repo.one(count_query)
+
+    {:ok, %{posts: posts, total: total}}
+  end
+
+  @doc """
+  Retries a failed scheduled post.
+  Resets the post to scheduled status and clears the lock.
+  """
+  def retry_failed_post(%PostSubmission{} = post, %User{} = _user) do
+    cond do
+      post.status != "failed" ->
+        {:error, :not_failed}
+
+      post.attempts >= post.max_attempts + 3 ->
+        # Allow 3 extra manual retries beyond max_attempts
+        {:error, :max_retries_exceeded}
+
+      true ->
+        post
+        |> PostSubmission.retry_changeset()
+        |> Repo.update()
+    end
+  end
+
+  # ============================================================================
+  # External Post Submissions (Link Submissions)
+  # ============================================================================
+
+  alias ClippsterServer.Social.ExternalPostSubmission
+
+  @doc """
+  Creates an external post submission (link submission).
+  """
+  def create_external_post_submission(organization_id, attrs, %User{} = user) do
+    if Organizations.is_member?(organization_id, user.id) do
+      %ExternalPostSubmission{}
+      |> ExternalPostSubmission.create_changeset(
+        attrs
+        |> Map.put(:organization_id, organization_id)
+        |> Map.put(:submitted_by_user_id, user.id)
+      )
+      |> Repo.insert()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Lists external post submissions for an organization.
+  """
+  def list_external_post_submissions(organization_id, opts \\ []) do
+    status = Keyword.get(opts, :status)
+    creator_profile_id = Keyword.get(opts, :creator_profile_id)
+    campaign_id = Keyword.get(opts, :campaign_id)
+    limit = Keyword.get(opts, :limit, 50)
+    offset = Keyword.get(opts, :offset, 0)
+
+    query =
+      from e in ExternalPostSubmission,
+        where: e.organization_id == ^organization_id,
+        order_by: [desc: e.inserted_at],
+        limit: ^limit,
+        offset: ^offset,
+        preload: [:submitted_by_user, :reviewed_by_user, :organization_creator_profile, :campaign]
+
+    query = if status, do: where(query, [e], e.status == ^status), else: query
+    query = if creator_profile_id, do: where(query, [e], e.organization_creator_profile_id == ^creator_profile_id), else: query
+    query = if campaign_id, do: where(query, [e], e.campaign_id == ^campaign_id), else: query
+
+    posts = Repo.all(query)
+
+    # Get total count
+    count_query =
+      from e in ExternalPostSubmission,
+        where: e.organization_id == ^organization_id,
+        select: count(e.id)
+
+    count_query = if status, do: where(count_query, [e], e.status == ^status), else: count_query
+    count_query = if creator_profile_id, do: where(count_query, [e], e.organization_creator_profile_id == ^creator_profile_id), else: count_query
+    count_query = if campaign_id, do: where(count_query, [e], e.campaign_id == ^campaign_id), else: count_query
+
+    total = Repo.one(count_query)
+
+    {:ok, %{posts: posts, total: total}}
+  end
+
+  @doc """
+  Gets an external post submission by ID.
+  """
+  def get_external_post_submission(organization_id, id) do
+    ExternalPostSubmission
+    |> where([e], e.organization_id == ^organization_id and e.id == ^id)
+    |> preload([:submitted_by_user, :reviewed_by_user, :organization_creator_profile, :campaign])
+    |> Repo.one()
+  end
+
+  @doc """
+  Approves an external post submission.
+  Admin only.
+  """
+  def approve_external_post_submission(%ExternalPostSubmission{} = submission, %User{} = admin) do
+    if Organizations.is_admin?(submission.organization_id, admin.id) do
+      submission
+      |> ExternalPostSubmission.approve_changeset(admin.id)
+      |> Repo.update()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Rejects an external post submission.
+  Admin only.
+  """
+  def reject_external_post_submission(%ExternalPostSubmission{} = submission, %User{} = admin, notes \\ nil) do
+    if Organizations.is_admin?(submission.organization_id, admin.id) do
+      submission
+      |> ExternalPostSubmission.reject_changeset(admin.id, notes)
+      |> Repo.update()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Updates analytics for an external post submission.
+  """
+  def update_external_post_analytics(%ExternalPostSubmission{} = submission, attrs, %User{} = user) do
+    # Allow the submitter or admins to update
+    if submission.submitted_by_user_id == user.id or Organizations.is_admin?(submission.organization_id, user.id) do
+      submission
+      |> ExternalPostSubmission.update_analytics_changeset(attrs)
+      |> Repo.update()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  # ============================================================================
+  # Helper Functions
+  # ============================================================================
+
+  defp can_user_edit_post?(%PostSubmission{} = post, %User{} = user) do
+    cond do
+      # User submitted the post
+      post.submitted_by_user_id == user.id ->
+        PostSubmission.can_edit?(post)
+
+      # User is an admin of the org
+      post.organization_id && Organizations.is_admin?(post.organization_id, user.id) ->
+        PostSubmission.can_edit?(post)
+
+      true ->
+        false
+    end
+  end
 end

@@ -708,11 +708,11 @@
 
     <EditProfileDialog :show="showEditProfileDialog" @close="showEditProfileDialog = false" @saved="onProfileSaved" />
 
-    <UserPublishDialog
-      v-if="showPublishDialog && selectedAccountForPosts"
-      :show="showPublishDialog"
-      :account="selectedAccountForPosts"
-      @close="showPublishDialog = false"
+    <InstagramPublishDialog
+      :open="showPublishDialog"
+      :media-url="publishMediaUrl"
+      :thumbnail-url="publishThumbnailUrl"
+      @close="closePublishDialog"
       @published="onPostPublished"
     />
 
@@ -759,7 +759,7 @@
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
   import UserPostsList from '@/components/UserPostsList.vue';
-  import UserPublishDialog from '@/components/UserPublishDialog.vue';
+  import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
@@ -894,6 +894,8 @@
   const showPublishDialog = ref(false);
   const showPlatformSelectionDialog = ref(false);
   const showOnboardingWizard = ref(false);
+  const publishMediaUrl = ref('');
+  const publishThumbnailUrl = ref('');
 
   const connectingInstagram = ref(false);
   const selectedPlatform = ref<string | null>(null);
@@ -1058,6 +1060,12 @@
 
   const openPublishDialog = () => {
     showPublishDialog.value = true;
+  };
+
+  const closePublishDialog = () => {
+    showPublishDialog.value = false;
+    publishMediaUrl.value = '';
+    publishThumbnailUrl.value = '';
   };
 
   const onPostPublished = () => {

@@ -603,10 +603,10 @@
     />
 
     <!-- Publish to Instagram Dialog -->
-    <PublishDialog
-      v-if="selectedOrganization"
+    <InstagramPublishDialog
       :open="showPublishDialog"
-      :organization-id="selectedOrganization.id"
+      :organization-id="selectedOrganization?.id"
+      :organization-name="selectedOrganization?.name"
       :media-url="publishMediaUrl"
       :thumbnail-url="publishThumbnailUrl"
       :media-type="'video'"
@@ -853,7 +853,7 @@
   import BuildCard from '@/components/BuildCard.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
   import OrganizationSelectDialog from '@/components/OrganizationSelectDialog.vue';
-  import PublishDialog from '@/components/organization/PublishDialog.vue';
+  import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
