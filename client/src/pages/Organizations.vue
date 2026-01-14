@@ -7,13 +7,17 @@
       :icon="Building2"
     >
       <template #actions>
-        <Button v-if="canCreateOrg" @click="router.push('/organization/setup')" class="org__create-btn">
+        <Button
+          v-if="canCreateOrg && organizations.length > 0"
+          @click="router.push('/organization/setup')"
+          class="org__create-btn"
+        >
           <Plus class="org__create-btn-icon" />
           Create Organization
         </Button>
       </template>
 
-      <div class="org__content">
+      <div class="org__content" :class="{ 'org__content--empty': !loading && organizations.length === 0 }">
         <!-- Page Heading -->
         <div v-if="organizations.length > 0 || loading" class="org__heading">
           <h1 class="org__title">Your Organizations</h1>
@@ -133,13 +137,7 @@
             <Building2 class="org__empty-icon" />
           </div>
           <h3 class="org__empty-title">No Organizations</h3>
-          <p class="org__empty-description">
-            You're not a member of any organizations yet. Create one or ask to be invited to an existing organization.
-          </p>
-          <Button v-if="canCreateOrg" @click="router.push('/organization/setup')" class="org__empty-btn">
-            <Plus class="org__empty-btn-icon" />
-            Create Organization
-          </Button>
+          <p class="org__empty-description">You're not a member of any organizations yet</p>
         </div>
       </div>
     </PageLayout>
@@ -255,6 +253,12 @@
     max-width: 900px;
     margin: 0 auto;
     width: 100%;
+    flex: 1;
+  }
+
+  .org__content--empty {
+    justify-content: center;
+    align-items: center;
   }
 
   /* ===== Page Heading ===== */
@@ -605,7 +609,6 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 4rem 1rem;
     text-align: center;
   }
 
@@ -627,30 +630,18 @@
   }
 
   .org__empty-title {
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0 0 0.5rem;
-    letter-spacing: -0.01em;
   }
 
   .org__empty-description {
     font-size: 0.875rem;
     color: var(--sidebar-text-muted);
-    margin: 0 0 1.5rem;
-    max-width: 360px;
-    line-height: 1.6;
-  }
-
-  .org__empty-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .org__empty-btn-icon {
-    width: 16px;
-    height: 16px;
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.5;
   }
 
   /* ===== List Transitions ===== */

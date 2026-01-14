@@ -244,6 +244,10 @@
       if (item.orgOnly) {
         return isOrgAccountOwner.value;
       }
+      // Always show Organizations page (even if not a member of any organization)
+      if (item.path === '/organizations') {
+        return true;
+      }
       // Check organization member items
       if (item.orgMember) {
         if (isOrgAccountOwner.value) return true;
