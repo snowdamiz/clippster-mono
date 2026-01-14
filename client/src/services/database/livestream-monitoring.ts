@@ -29,6 +29,22 @@ export async function getAllMonitoredStreamers(): Promise<MonitoredStreamerRecor
   );
 }
 
+export async function getAutoDvrStreamers(): Promise<MonitoredStreamerRecord[]> {
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    return await db.select<MonitoredStreamerRecord[]>(
+      'SELECT * FROM monitored_streamers WHERE user_id IS NULL AND auto_dvr = 1 ORDER BY created_at DESC'
+    );
+  }
+
+  return await db.select<MonitoredStreamerRecord[]>(
+    'SELECT * FROM monitored_streamers WHERE (user_id = ? OR user_id IS NULL) AND auto_dvr = 1 ORDER BY created_at DESC',
+    [userId]
+  );
+}
+
 export async function getMonitoredStreamer(id: string): Promise<MonitoredStreamerRecord | null> {
   const db = await getDatabase();
   const result = await db.select<MonitoredStreamerRecord[]>(

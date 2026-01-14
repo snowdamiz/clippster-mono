@@ -163,35 +163,6 @@
                     <div class="monitor-card__controls">
                       <!-- Left: Settings -->
                       <div class="monitor-card__settings">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger as-child>
-                            <button
-                              class="monitor-setting__dropdown-trigger"
-                              :class="{ 'monitor-setting__dropdown-trigger--disabled': streamer.isDetecting }"
-                              :disabled="streamer.isDetecting"
-                            >
-                              {{ streamer.segmentDurationMinutes }} min
-                              <ChevronDown class="monitor-setting__dropdown-chevron" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" :side-offset="4" class="segment-dropdown">
-                            <DropdownMenuItem
-                              v-for="duration in [3, 5, 10, 15, 30]"
-                              :key="duration"
-                              class="segment-dropdown__item"
-                              :class="{
-                                'segment-dropdown__item--selected': streamer.segmentDurationMinutes === duration,
-                              }"
-                              @click="updateSegmentDuration(streamer, duration)"
-                            >
-                              {{ duration }} min
-                              <Check
-                                v-if="streamer.segmentDurationMinutes === duration"
-                                class="segment-dropdown__check"
-                              />
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
                         <button
                           @click="updateAutoDvr(streamer, !streamer.autoDvr)"
                           :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
@@ -358,6 +329,115 @@
         @confirm="confirmCreditWarning"
       />
 
+      <!-- Segment & Prompt Selection Dialog -->
+      <Teleport to="body">
+        <Transition name="modal">
+          <div v-if="showSegmentDialog" class="segment-dialog__overlay" @click.self="closeSegmentDialog">
+            <Transition name="dialog" appear>
+              <div v-if="showSegmentDialog" class="segment-dialog" role="dialog" aria-modal="true">
+                <!-- Accent bar -->
+                <div class="segment-dialog__accent"></div>
+
+                <!-- Header -->
+                <div class="segment-dialog__header">
+                  <button class="segment-dialog__close" @click="closeSegmentDialog" title="Close">
+                    <X :size="18" />
+                  </button>
+                  <div class="segment-dialog__icon">
+                    <Sparkles v-if="pendingMode === 'auto'" :size="24" />
+                    <Video v-else :size="24" />
+                  </div>
+                  <h2 class="segment-dialog__title">
+                    {{ pendingMode === 'auto' ? 'Auto-Detect Settings' : 'Record Settings' }}
+                  </h2>
+                  <p class="segment-dialog__subtitle">
+                    {{ pendingMode === 'auto' ? 'AI-powered clip detection' : 'Record stream segments' }}
+                  </p>
+                </div>
+
+                <!-- Content -->
+                <div class="segment-dialog__content">
+                  <!-- Duration Selection -->
+                  <div class="segment-dialog__field">
+                    <label class="segment-dialog__label">Segment Duration</label>
+                    <div class="segment-dialog__duration-grid">
+                      <button
+                        v-for="duration in pendingMode === 'auto' ? availableDurationsAuto : availableDurationsRecord"
+                        :key="duration"
+                        class="segment-dialog__duration-btn"
+                        :class="{ 'segment-dialog__duration-btn--selected': selectedDuration === duration }"
+                        @click="selectDuration(duration)"
+                      >
+                        {{ duration === 0 ? 'Entire' : `${duration} min` }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Prompt Selection (Auto only) -->
+                  <div v-if="pendingMode === 'auto'" class="segment-dialog__field">
+                    <label class="segment-dialog__label">Detection Prompt</label>
+                    <div ref="dropdownTriggerRef" class="segment-dialog__dropdown-wrapper">
+                      <button
+                        class="segment-dialog__dropdown-trigger"
+                        @click="togglePromptDropdown"
+                      >
+                        <span class="segment-dialog__dropdown-value" :class="{ 'segment-dialog__dropdown-value--placeholder': !selectedPromptName }">
+                          {{ selectedPromptName || 'Select a prompt...' }}
+                        </span>
+                        <ChevronDown
+                          class="segment-dialog__dropdown-chevron"
+                          :class="{ 'segment-dialog__dropdown-chevron--open': showPromptDropdown }"
+                          :size="16"
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="segment-dialog__footer">
+                  <button class="segment-dialog__btn segment-dialog__btn--secondary" @click="closeSegmentDialog">
+                    Cancel
+                  </button>
+                  <button
+                    class="segment-dialog__btn segment-dialog__btn--primary"
+                    :disabled="pendingMode === 'auto' && !selectedPromptId"
+                    @click="handleConfirmSegmentDialog"
+                  >
+                    Start
+                  </button>
+                </div>
+              </div>
+            </Transition>
+          </div>
+        </Transition>
+      </Teleport>
+
+      <!-- Teleported Prompt Dropdown Menu -->
+      <Teleport to="body">
+        <div
+          v-if="showPromptDropdown"
+          class="segment-dialog__dropdown-menu"
+          :style="dropdownMenuStyle"
+        >
+          <div v-if="loadingPrompts" class="segment-dialog__dropdown-loading">
+            Loading prompts...
+          </div>
+          <div v-else-if="prompts.length === 0" class="segment-dialog__dropdown-empty">
+            No prompts available
+          </div>
+          <button
+            v-for="prompt in prompts"
+            :key="prompt.id"
+            class="segment-dialog__dropdown-item"
+            :class="{ 'segment-dialog__dropdown-item--selected': selectedPromptId === prompt.id }"
+            @click="selectPromptAndClose(prompt)"
+          >
+            {{ prompt.name }}
+          </button>
+        </div>
+      </Teleport>
+
       <!-- Campaign Selection Dialog -->
       <CampaignSelectionDialog
         :is-open="showCampaignDialog"
@@ -385,18 +465,13 @@
     Sparkles,
     RefreshCw,
     Eye,
+    X,
     ChevronDown,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-  import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-  } from '@/components/ui/dropdown-menu';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CampaignSelectionDialog from '@/components/campaigns/CampaignSelectionDialog.vue';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
@@ -450,6 +525,23 @@
   const pendingWatchAction = ref<ExtendedStreamer | null>(null);
   const selectedCampaignForSession = ref<Campaign | null>(null);
 
+  // Segment & prompt selection dialog state
+  const showSegmentDialog = ref(false);
+  const pendingMode = ref<'auto' | 'record' | null>(null);
+  const pendingStreamerSelection = ref<ExtendedStreamer | null>(null);
+  const selectedDuration = ref<number>(5);
+  const availableDurationsAuto = [3, 5, 10, 15, 30];
+  const availableDurationsRecord = [3, 5, 10, 15, 30, 60, 0]; // 0 => Entire stream
+
+  const prompts = ref<{ id: string; name: string; content: string }[]>([]);
+  const loadingPrompts = ref(false);
+  const selectedPromptId = ref<string>('');
+  const selectedPromptName = ref<string>('');
+  const selectedPromptContent = ref<string>('');
+  const showPromptDropdown = ref(false);
+  const dropdownTriggerRef = ref<HTMLElement | null>(null);
+  const dropdownMenuStyle = ref<{ top: string; left: string; width: string }>({ top: '0px', left: '0px', width: '300px' });
+
   const livestreamStore = useLivestreamStore();
 
   const {
@@ -462,6 +554,7 @@
     clearLogs,
     dvrSessions,
     hasDvrRecording,
+    initAutoDvrPolling,
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
@@ -497,6 +590,9 @@
     refreshStreamerMetadata();
     syncDetectionState();
     checkAllLiveStatuses(false); // Skip Kick - only check on manual refresh
+
+    // Initialize Auto DVR polling for streamers with auto_dvr enabled
+    initAutoDvrPolling();
 
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
@@ -1064,46 +1160,19 @@
   }
 
   async function startStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
-    const mode = detectClips ? 'Auto-Detect' : 'Record';
-    if (
-      !(await requireSubscription({
-        context: `${mode} mode for ${streamer.displayName}`,
-        type: 'live',
-      }))
-    ) {
-      return;
+    // Open selection dialog instead of immediate start
+    pendingMode.value = detectClips ? 'auto' : 'record';
+    pendingStreamerSelection.value = streamer;
+    selectedDuration.value = streamer.segmentDurationMinutes || 5;
+    selectedPromptId.value = '';
+    selectedPromptName.value = '';
+    selectedPromptContent.value = '';
+
+    if (detectClips && prompts.value.length === 0) {
+      await loadPrompts();
     }
 
-    if (detectClips) {
-      if (!(await gates.aiDetection(`Use AI clip detection for ${streamer.displayName}`))) {
-        return;
-      }
-
-      await fetchBalance();
-      const balance = hoursRemaining.value;
-
-      if (balance !== 'unlimited' && typeof balance === 'number' && balance < 1) {
-        pendingStreamerStart.value = { streamer, detectClips };
-        showCreditWarningDialog.value = true;
-        return;
-      }
-    }
-
-    if (streamer.creatorProfileId) {
-      try {
-        const response = await getCampaignsByCreatorProfile(streamer.creatorProfileId);
-        if (response.success && response.campaigns.length > 0) {
-          availableCampaigns.value = response.campaigns;
-          pendingCampaignAction.value = { streamer, detectClips };
-          showCampaignDialog.value = true;
-          return;
-        }
-      } catch (error) {
-        console.error('[LiveClip] Failed to check campaigns:', error);
-      }
-    }
-
-    await executeStartStreamer(streamer, detectClips);
+    showSegmentDialog.value = true;
   }
 
   function handleCampaignSelect(campaign: Campaign | null) {
@@ -1148,18 +1217,38 @@
 
   function confirmCreditWarning() {
     if (pendingStreamerStart.value) {
-      executeStartStreamer(pendingStreamerStart.value.streamer, pendingStreamerStart.value.detectClips);
+      executeStartStreamer(pendingStreamerStart.value.streamer, pendingStreamerStart.value.detectClips, selectedDuration.value, {
+        promptId: selectedPromptId.value || undefined,
+        promptContent: selectedPromptContent.value || undefined,
+      });
       pendingStreamerStart.value = null;
     }
     showCreditWarningDialog.value = false;
   }
 
-  async function executeStartStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
+  async function executeStartStreamer(
+    streamer: ExtendedStreamer,
+    detectClips: boolean,
+    durationOverride?: number,
+    prompt?: { promptId?: string; promptContent?: string }
+  ) {
     if (!isDetectingAny.value) {
       clearLogs();
     }
 
-    await startMonitoring([streamer], { detectClips });
+    const segmentDurationMinutes =
+      typeof durationOverride === 'number' ? durationOverride : streamer.segmentDurationMinutes;
+
+    if (typeof segmentDurationMinutes === 'number' && segmentDurationMinutes > 0) {
+      await updateSegmentDuration(streamer, segmentDurationMinutes);
+    }
+
+    await startMonitoring([streamer], {
+      detectClips,
+      segmentDurationMinutes: segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5,
+      promptId: prompt?.promptId,
+      promptContent: prompt?.promptContent,
+    });
 
     const index = streamers.value.findIndex((s) => s.id === streamer.id);
     if (index > 0) {
@@ -1174,9 +1263,143 @@
     try {
       await stopMonitoring([streamer.id]);
       resolvePendingLogs();
+      addActivityLog({
+        streamerId: streamer.id,
+        streamerName: streamer.displayName,
+        platform: streamer.platform,
+        mintId: streamer.mintId,
+        message: `${streamer.isDetecting ? 'Detection' : 'Recording'} stopped by user`,
+        status: 'success',
+        profileImageUrl: streamer.profileImageUrl,
+      });
     } catch (error) {
       console.error('Failed to stop monitoring', error);
     }
+  }
+
+  async function loadPrompts() {
+    try {
+      loadingPrompts.value = true;
+      const { getAllPrompts } = await import('@/services/database');
+      const list = await getAllPrompts();
+      prompts.value = list || [];
+
+      // Auto-select default prompt if none selected
+      if (prompts.value.length > 0 && !selectedPromptId.value) {
+        const defaultPrompt = prompts.value.find((p) => p.name === 'Default Clip Detector');
+        const promptToSelect = defaultPrompt || prompts.value[0];
+        selectedPromptId.value = promptToSelect.id;
+        selectedPromptName.value = promptToSelect.name;
+        selectedPromptContent.value = promptToSelect.content;
+      }
+    } catch (e) {
+      console.error('[LiveClip] Failed to load prompts', e);
+    } finally {
+      loadingPrompts.value = false;
+    }
+  }
+
+  function openSegmentDialogFor(streamer: ExtendedStreamer, mode: 'auto' | 'record') {
+    pendingMode.value = mode;
+    pendingStreamerSelection.value = streamer;
+    selectedDuration.value = streamer.segmentDurationMinutes || 5;
+    showSegmentDialog.value = true;
+  }
+
+  function handleConfirmSegmentDialog() {
+    if (!pendingStreamerSelection.value || !pendingMode.value) return;
+    const detectClips = pendingMode.value === 'auto';
+
+    // Validate prompt for auto
+    if (detectClips && !selectedPromptId.value) {
+      return;
+    }
+
+    const streamer = pendingStreamerSelection.value;
+    showSegmentDialog.value = false;
+
+    // Existing gating/credits flow reused
+    proceedStartWithGuards(streamer, detectClips);
+  }
+
+  async function proceedStartWithGuards(streamer: ExtendedStreamer, detectClips: boolean) {
+    const modeLabel = detectClips ? 'Auto-Detect' : 'Record';
+    if (
+      !(await requireSubscription({
+        context: `${modeLabel} mode for ${streamer.displayName}`,
+        type: 'live',
+      }))
+    ) {
+      return;
+    }
+
+    if (detectClips) {
+      if (!(await gates.aiDetection(`Use AI clip detection for ${streamer.displayName}`))) {
+        return;
+      }
+
+      await fetchBalance();
+      const balance = hoursRemaining.value;
+
+      if (balance !== 'unlimited' && typeof balance === 'number' && balance < 1) {
+        pendingStreamerStart.value = { streamer, detectClips };
+        showCreditWarningDialog.value = true;
+        return;
+      }
+    }
+
+    if (streamer.creatorProfileId) {
+      try {
+        const response = await getCampaignsByCreatorProfile(streamer.creatorProfileId);
+        if (response.success && response.campaigns.length > 0) {
+          availableCampaigns.value = response.campaigns;
+          pendingCampaignAction.value = { streamer, detectClips };
+          showCampaignDialog.value = true;
+          return;
+        }
+      } catch (error) {
+        console.error('[LiveClip] Failed to check campaigns:', error);
+      }
+    }
+
+    await executeStartStreamer(streamer, detectClips, selectedDuration.value, {
+      promptId: selectedPromptId.value || undefined,
+      promptContent: selectedPromptContent.value || undefined,
+    });
+  }
+
+  function closeSegmentDialog() {
+    showSegmentDialog.value = false;
+    showPromptDropdown.value = false;
+    pendingMode.value = null;
+    pendingStreamerSelection.value = null;
+  }
+
+  function selectDuration(duration: number) {
+    selectedDuration.value = duration;
+  }
+
+  function selectPrompt(prompt: { id: string; name: string; content: string }) {
+    selectedPromptId.value = prompt.id;
+    selectedPromptName.value = prompt.name;
+    selectedPromptContent.value = prompt.content;
+  }
+
+  function selectPromptAndClose(prompt: { id: string; name: string; content: string }) {
+    selectPrompt(prompt);
+    showPromptDropdown.value = false;
+  }
+
+  function togglePromptDropdown() {
+    if (!showPromptDropdown.value && dropdownTriggerRef.value) {
+      const rect = dropdownTriggerRef.value.getBoundingClientRect();
+      dropdownMenuStyle.value = {
+        top: `${rect.bottom + 4}px`,
+        left: `${rect.left}px`,
+        width: `${rect.width}px`,
+      };
+    }
+    showPromptDropdown.value = !showPromptDropdown.value;
   }
 
   function resolvePendingLogs() {
@@ -2103,71 +2326,350 @@
   }
 </style>
 
-<!-- Global styles for dropdown (rendered via portal outside component scope) -->
+<!-- Global styles for segment dialog (matching BugReportDialog design) -->
 <style>
-  /* Prevent button animation when dropdown opens */
-  .monitor-setting__dropdown-trigger {
-    transform: none !important;
-    animation: none !important;
+  /* ===== Overlay ===== */
+  .segment-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
   }
 
-  .monitor-setting__dropdown-trigger[data-state='open'] {
-    transform: none !important;
+  /* ===== Dialog Container ===== */
+  .segment-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 440px;
+    margin: 1rem;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   }
 
-  .segment-dropdown {
-    min-width: 100px !important;
-    background-color: var(--sidebar-surface) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 8px !important;
-    padding: 0.25rem !important;
-    z-index: 100 !important;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
-    /* Disable all slide/zoom animations, only fade */
-    animation: segmentDropdownFade 100ms ease-out !important;
-    --tw-enter-translate-x: 0 !important;
-    --tw-enter-translate-y: 0 !important;
-    --tw-enter-scale: 1 !important;
-  }
-
-  @keyframes segmentDropdownFade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  .segment-dropdown__item {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    gap: 0.75rem !important;
-    padding: 0.5rem 0.75rem !important;
-    border-radius: 5px !important;
-    font-size: 0.75rem !important;
-    color: var(--sidebar-text-muted) !important;
-    cursor: pointer !important;
-    transition: all 100ms ease !important;
-  }
-
-  .segment-dropdown__item:hover,
-  .segment-dropdown__item:focus,
-  .segment-dropdown__item[data-highlighted] {
-    background-color: var(--sidebar-hover) !important;
-    color: var(--sidebar-text) !important;
-    outline: none !important;
-  }
-
-  .segment-dropdown__item--selected {
-    color: var(--sidebar-text) !important;
-  }
-
-  .segment-dropdown__check {
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-accent);
+  /* ===== Accent Bar ===== */
+  .segment-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
     flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .segment-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .segment-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .segment-dialog__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .segment-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .segment-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .segment-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content Area ===== */
+  .segment-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .segment-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .segment-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .segment-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Field ===== */
+  .segment-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .segment-dialog__field:last-child {
+    margin-bottom: 0;
+  }
+
+  .segment-dialog__label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Duration Grid ===== */
+  .segment-dialog__duration-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+
+  .segment-dialog__duration-btn {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .segment-dialog__duration-btn:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--sidebar-text);
+  }
+
+  .segment-dialog__duration-btn--selected {
+    background-color: rgba(6, 182, 212, 0.15);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Dropdown ===== */
+  .segment-dialog__dropdown-wrapper {
+    position: relative;
+  }
+
+  .segment-dialog__dropdown-trigger {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+  }
+
+  .segment-dialog__dropdown-trigger:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .segment-dialog__dropdown-trigger:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .segment-dialog__dropdown-value {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .segment-dialog__dropdown-value--placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .segment-dialog__dropdown-chevron {
+    flex-shrink: 0;
+    color: var(--sidebar-text-muted);
+    transition: transform 150ms ease;
+  }
+
+  .segment-dialog__dropdown-chevron--open {
+    transform: rotate(180deg);
+  }
+
+  .segment-dialog__dropdown-menu {
+    position: fixed;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 10000;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  .segment-dialog__dropdown-menu::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .segment-dialog__dropdown-menu::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .segment-dialog__dropdown-menu::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .segment-dialog__dropdown-loading,
+  .segment-dialog__dropdown-empty {
+    padding: 0.75rem 1rem;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .segment-dialog__dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 100ms ease;
+  }
+
+  .segment-dialog__dropdown-item:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .segment-dialog__dropdown-item--selected {
+    background-color: rgba(6, 182, 212, 0.1);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Footer ===== */
+  .segment-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
+  .segment-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .segment-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .segment-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .segment-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .segment-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .segment-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  /* ===== Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 </style>

@@ -207,6 +207,8 @@ export function useLivestreamViewer() {
   let lastSegmentCount = 0;
   let lastSegmentTime = Date.now();
   let isRestartingRecorder = false;
+  let recorderRestartCount = 0;
+  const MAX_RECORDER_RESTARTS = 3; // Stop trying after 3 failed restarts
   const SEGMENT_STALL_THRESHOLD = 30000; // 30 seconds without new segments = stalled
 
   // Update timers
@@ -732,39 +734,47 @@ export function useLivestreamViewer() {
         livekitUrl = 'wss://' + livekitUrl;
       }
 
-      // Create and connect to LiveKit room (for WebRTC playback AND viewer tracking)
-      room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-        videoCaptureDefaults: {
-          resolution: { width: 1280, height: 720 },
-        },
-      });
-
-      // Set up room event handlers (for WebRTC playback, viewer count, and connection status)
-      setupRoomEventHandlers(room);
-
-      // Connect to room with auto-subscribe for WebRTC playback
-      await room.connect(livekitUrl, token, { autoSubscribe: true });
-
-      // Attach any existing tracks (streamer may already be publishing)
-      attachExistingTracks();
+      // Start HLS recording FIRST - this is the primary playback method
+      // Do this before WebRTC so playback works even if WebRTC fails
+      if (autoStartRecording) {
+        await ensureHlsRecordingAvailable(streamerId, mintId, displayName, profileImageUrl);
+      }
 
       state.value.connectionState = 'connected';
       reconnectAttempts = 0;
 
-      // Video tracks sometimes arrive after initial connection - retry check after delay
-      if (!remoteVideoTrack) {
-        setTimeout(() => {
-          if (!remoteVideoTrack && room?.state === 'connected') {
-            attachExistingTracks();
-          }
-        }, 2000);
-      }
+      // Create and connect to LiveKit room (for WebRTC viewer tracking - optional)
+      // WebRTC connection failure should NOT block HLS playback
+      try {
+        room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+          videoCaptureDefaults: {
+            resolution: { width: 1280, height: 720 },
+          },
+        });
 
-      // Start HLS recording for playback and clipping
-      if (autoStartRecording) {
-        await ensureHlsRecordingAvailable(streamerId, mintId, displayName, profileImageUrl);
+        // Set up room event handlers (for WebRTC playback, viewer count, and connection status)
+        setupRoomEventHandlers(room);
+
+        // Connect to room with auto-subscribe for WebRTC playback
+        await room.connect(livekitUrl, token, { autoSubscribe: true });
+
+        // Attach any existing tracks (streamer may already be publishing)
+        attachExistingTracks();
+
+        // Video tracks sometimes arrive after initial connection - retry check after delay
+        if (!remoteVideoTrack) {
+          setTimeout(() => {
+            if (!remoteVideoTrack && room?.state === 'connected') {
+              attachExistingTracks();
+            }
+          }, 2000);
+        }
+      } catch (webrtcError) {
+        // WebRTC failed but HLS recording is already started - continue with HLS-only mode
+        console.warn('[LiveViewer] WebRTC connection failed, continuing with HLS-only:', webrtcError);
+        room = null;
       }
 
       // Start live edge update timer
@@ -1087,6 +1097,7 @@ export function useLivestreamViewer() {
         mintId,
         streamerId,
         displayName,
+        resumeDir: null, // New session, not resuming
       });
 
       // Only update sessionId if we don't already have one from auto-detect
@@ -1109,6 +1120,7 @@ export function useLivestreamViewer() {
   let isHlsInitializing = false;
 
   // Initialize HLS playback (for DVR mode - uses separate video element)
+  // Gates on playlist + first segment readiness to avoid 404 loops
   async function initializeHlsPlayback() {
     // Use hlsVideoElement if available, otherwise fall back to main videoElement
     const hlsElement = hlsVideoElement.value || videoElement.value;
@@ -1125,6 +1137,14 @@ export function useLivestreamViewer() {
     hlsPlayback.setMuted(state.value.isMuted);
 
     try {
+      // Gate initialization on playlist + first segment readiness to avoid 404 loops
+      const ready = await hlsPlayback.waitForPlaylistReady(hlsOutputDir.value);
+      if (!ready) {
+        console.warn('[LiveViewer] Playlist/segments not ready, skipping HLS init');
+        // Don't set error - recording may still be starting
+        return;
+      }
+
       const success = await hlsPlayback.initialize(hlsElement, hlsOutputDir.value);
 
       if (success) {
@@ -1165,14 +1185,38 @@ export function useLivestreamViewer() {
         if (segments.length > lastSegmentCount) {
           lastSegmentCount = segments.length;
           lastSegmentTime = Date.now();
+          
+          // Reset restart counter when segments are flowing - recording is working
+          if (recorderRestartCount > 0) {
+            console.log('[LiveViewer] Segments flowing again, resetting restart counter');
+            recorderRestartCount = 0;
+          }
 
           // Log segment update only when count changes
           if (segments.length !== previousCount) {
+            // Check for gaps in segment numbers
+            const segmentNumbers = segments.map(s => s.segmentNumber);
+            const gaps: number[] = [];
+            for (let i = 1; i < segmentNumbers.length; i++) {
+              const expected = segmentNumbers[i - 1] + 1;
+              if (segmentNumbers[i] !== expected) {
+                // Add all missing segment numbers
+                for (let missing = expected; missing < segmentNumbers[i]; missing++) {
+                  gaps.push(missing);
+                }
+              }
+            }
+            
+            if (gaps.length > 0) {
+              console.warn(`[LiveViewer] ⚠️ SEGMENT GAPS detected! Missing segment numbers: ${gaps.join(', ')}`);
+            }
+            
             console.log(
               '[LiveViewer] Segments updated:',
               segments.length,
               'Duration:',
-              segments[segments.length - 1].endTime.toFixed(1) + 's'
+              segments[segments.length - 1].endTime.toFixed(1) + 's',
+              gaps.length > 0 ? `| GAPS: ${gaps.length}` : ''
             );
           }
         } else {
@@ -1211,6 +1255,18 @@ export function useLivestreamViewer() {
       return;
     }
 
+    // Check if we've exceeded max restart attempts
+    if (recorderRestartCount >= MAX_RECORDER_RESTARTS) {
+      console.error(
+        `[LiveViewer] Max recorder restarts (${MAX_RECORDER_RESTARTS}) exceeded. Recording may have failed.`
+      );
+      state.value.connectionError = 'Recording stopped - too many restart attempts. Stream may be unavailable.';
+      return;
+    }
+
+    recorderRestartCount++;
+    console.log(`[LiveViewer] Recorder restart attempt ${recorderRestartCount}/${MAX_RECORDER_RESTARTS}`);
+    
     isRestartingRecorder = true;
 
     try {
@@ -1269,6 +1325,9 @@ export function useLivestreamViewer() {
           }
         } else {
           // PumpFun-specific restart logic
+          // Save the current output directory so we can resume in the same location
+          const currentOutputDir = hlsOutputDir.value;
+          
           try {
             await invoke('stop_hls_recording', { mintId });
           } catch (stopError) {
@@ -1278,23 +1337,25 @@ export function useLivestreamViewer() {
           await new Promise((resolve) => setTimeout(resolve, 1000));
 
           try {
+            // Resume in the same directory to preserve DVR content
             const result = await invoke<{ sessionId: string; outputDir: string }>(
               'start_hls_recording',
               {
                 mintId,
                 streamerId,
                 displayName: state.value.displayName || 'Unknown',
+                resumeDir: currentOutputDir, // Resume in same directory to preserve DVR
               }
             );
 
             console.log(
-              '[LiveViewer] PumpFun recorder restarted, new output dir:',
+              '[LiveViewer] PumpFun recorder resumed in existing dir:',
               result.outputDir
             );
 
             state.value.sessionId = result.sessionId;
             state.value.isTempRecording = true;
-            lastSegmentCount = 0;
+            // Don't reset segment count - we're resuming, not starting fresh
             lastSegmentTime = Date.now();
             hlsOutputDir.value = result.outputDir;
 
@@ -1718,14 +1779,10 @@ export function useLivestreamViewer() {
   }
 
   // Set HLS video element reference (for DVR playback)
+  // Note: Don't auto-initialize HLS here - let the hlsOutputDir watcher handle it
+  // after connect() starts the recording and sets a fresh hlsOutputDir
   function setHlsVideoElement(element: HTMLVideoElement | null) {
     hlsVideoElement.value = element;
-
-    // If we're already connected and have HLS output, initialize playback (but don't start it)
-    if (element && state.value.connectionState === 'connected' && hlsOutputDir.value) {
-      // Initialize HLS in background for DVR, but don't play yet
-      initializeHlsPlayback();
-    }
   }
 
   // Playback controls
@@ -1890,15 +1947,54 @@ export function useLivestreamViewer() {
     () => hlsOutputDir.value,
     async (outputDir, oldOutputDir) => {
       // Only initialize if this is a new output dir (not just reconnecting to same stream)
+      // Use hlsVideoElement (preferred) or videoElement as fallback
+      const hlsElement = hlsVideoElement.value || videoElement.value;
       if (
         outputDir &&
         outputDir !== oldOutputDir &&
-        videoElement.value &&
+        hlsElement &&
         state.value.connectionState === 'connected' &&
         !hlsPlayback.state.value.isInitialized
       ) {
         // Small delay to let FFmpeg start creating files
         await new Promise((r) => setTimeout(r, 500));
+        await initializeHlsPlayback();
+      }
+    }
+  );
+
+  // Watch for HLS video element to be set (may happen after hlsOutputDir is ready)
+  watch(
+    () => hlsVideoElement.value,
+    async (element) => {
+      if (
+        element &&
+        hlsOutputDir.value &&
+        state.value.connectionState === 'connected' &&
+        !hlsPlayback.state.value.isInitialized
+      ) {
+        // Small delay to let FFmpeg start creating files
+        await new Promise((r) => setTimeout(r, 500));
+        await initializeHlsPlayback();
+      }
+    }
+  );
+
+  // Watch for segments to become available - retry HLS init if it failed earlier
+  // This handles the case where waitForPlaylistReady timed out but segments are now available
+  watch(
+    () => state.value.availableSegments.length,
+    async (segmentCount) => {
+      // Only retry if we have segments, HLS isn't initialized, and we're not currently initializing
+      if (
+        segmentCount >= 2 &&
+        hlsOutputDir.value &&
+        (hlsVideoElement.value || videoElement.value) &&
+        state.value.connectionState === 'connected' &&
+        !hlsPlayback.state.value.isInitialized &&
+        !isHlsInitializing
+      ) {
+        console.log('[LiveViewer] Segments available, retrying HLS initialization');
         await initializeHlsPlayback();
       }
     }

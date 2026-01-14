@@ -219,6 +219,7 @@ export {
 // Livestream monitoring exports
 export {
   getAllMonitoredStreamers,
+  getAutoDvrStreamers,
   getMonitoredStreamer,
   getMonitoredStreamerByMint,
   createMonitoredStreamer,

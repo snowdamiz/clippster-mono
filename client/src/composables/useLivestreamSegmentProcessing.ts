@@ -46,6 +46,7 @@ export function useLivestreamSegmentProcessing() {
     sessionId: string,
     payload: SegmentEventPayload,
     detectClips: boolean = true,
+    promptContent?: string,
     onProgress?: (status: string) => void
   ) {
     const session = await getLivestreamSession(sessionId);
@@ -90,6 +91,7 @@ export function useLivestreamSegmentProcessing() {
       projectId: session.project_id,
       detectClips,
       duration: payload.duration,
+      promptContent,
       onProgress,
     });
 
@@ -201,7 +203,7 @@ export function useLivestreamSegmentProcessing() {
 
         const formData = new FormData();
         formData.append('project_id', segmentProjectId);
-        formData.append('prompt', DEFAULT_LIVE_PROMPT);
+        formData.append('prompt', job.promptContent || DEFAULT_LIVE_PROMPT);
         formData.append('audio', audioFile, audioFile.name);
         if (job.duration) {
           formData.append('duration', job.duration.toString());
@@ -217,7 +219,7 @@ export function useLivestreamSegmentProcessing() {
           if (response.data?.success) {
             const detectionSessionId = await persistClipDetectionResults(
               segmentProjectId,
-              DEFAULT_LIVE_PROMPT,
+              job.promptContent || DEFAULT_LIVE_PROMPT,
               response.data,
               {
                 processingTimeMs: 0,

@@ -100,12 +100,14 @@ fn resolve_service_script(app: &tauri::AppHandle, script_name: &str) -> Result<S
 
 /// Start HLS recording for a livestream
 /// This starts the Node.js recorder which outputs HLS format (.ts segments + .m3u8 playlist)
+/// If resume_dir is provided, it will continue recording to that directory instead of creating a new one
 #[tauri::command]
 pub async fn start_hls_recording(
     app: tauri::AppHandle,
     mint_id: String,
     streamer_id: String,
     _display_name: String,
+    resume_dir: Option<String>,
 ) -> Result<HlsRecordingResult, String> {
     // Check if already recording
     {
@@ -124,15 +126,26 @@ pub async fn start_hls_recording(
     let storage_paths = storage::init_storage_dirs()
         .map_err(|e| format!("Failed to initialize storage: {}", e))?;
 
-    // Create unique session ID
-    let session_id = format!("hls_{}_{}", mint_id, chrono::Utc::now().timestamp());
-    
-    // Output directory for HLS segments
-    let output_dir = storage_paths
-        .videos
-        .join("hls_live")
-        .join(&mint_id)
-        .join(&session_id);
+    // Use resume_dir if provided, otherwise create a new unique session
+    let (session_id, output_dir) = if let Some(ref resume_path) = resume_dir {
+        // Extract session_id from the resume path (last component)
+        let path = std::path::Path::new(resume_path);
+        let session = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&format!("hls_{}_{}", mint_id, chrono::Utc::now().timestamp()))
+            .to_string();
+        println!("[HLS] Resuming recording in existing directory: {}", resume_path);
+        (session, std::path::PathBuf::from(resume_path))
+    } else {
+        // Create unique session ID and new directory
+        let session = format!("hls_{}_{}", mint_id, chrono::Utc::now().timestamp());
+        let dir = storage_paths
+            .videos
+            .join("hls_live")
+            .join(&mint_id)
+            .join(&session);
+        (session, dir)
+    };
     
     std::fs::create_dir_all(&output_dir)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;

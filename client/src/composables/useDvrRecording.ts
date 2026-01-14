@@ -1165,14 +1165,36 @@ export function useDvrRecording() {
     // Track consecutive bad chunks for recovery
     let consecutiveBadChunks = 0;
     const MAX_CONSECUTIVE_BAD_CHUNKS = 3;
+    
+    // Detailed timing tracking for gap detection
+    let lastChunkReceivedAt = Date.now();
+    let chunkTimingLog: { index: number; receivedAt: number; deltaMs: number }[] = [];
 
     recorder.ondataavailable = (event) => {
+      const now = Date.now();
+      const deltaMs = now - lastChunkReceivedAt;
+      const expectedDeltaMs = DVR_CHUNK_DURATION_SECONDS * 1000;
+      const driftMs = deltaMs - expectedDeltaMs;
+      
       const chunkSize = event.data.size;
       const wasMutedDuringChunk = mutedDuringChunk;
       mutedDuringChunk = false; // Reset for next chunk
 
+      // Log timing info
+      chunkTimingLog.push({ index: localChunkIndex, receivedAt: now, deltaMs });
+      if (chunkTimingLog.length > 20) chunkTimingLog.shift(); // Keep last 20
+      
+      // Warn if chunk arrived significantly late (>500ms drift)
+      if (Math.abs(driftMs) > 500) {
+        console.warn(
+          `[DvrRecording] ⚠️ TIMING DRIFT: Chunk ${localChunkIndex} arrived ${driftMs > 0 ? 'LATE' : 'EARLY'} by ${Math.abs(driftMs)}ms (expected ${expectedDeltaMs}ms, got ${deltaMs}ms)`
+        );
+      }
+      
+      lastChunkReceivedAt = now;
+
       console.log(
-        `[DvrRecording] ondataavailable fired, size: ${chunkSize} bytes, mutedDuringChunk: ${wasMutedDuringChunk}, currentlyMuted: ${videoTrackMuted}`
+        `[DvrRecording] ondataavailable fired, chunk ${localChunkIndex}, size: ${chunkSize} bytes, delta: ${deltaMs}ms, drift: ${driftMs > 0 ? '+' : ''}${driftMs}ms, mutedDuringChunk: ${wasMutedDuringChunk}`
       );
 
       // Determine if this chunk is likely corrupt

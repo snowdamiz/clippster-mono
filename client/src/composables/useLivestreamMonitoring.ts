@@ -6,6 +6,7 @@ import {
   endLivestreamSession,
   updateMonitoredStreamer,
   getMonitoredStreamer,
+  getAutoDvrStreamers,
   deleteProject,
   hasRawVideosForProject,
   hasClipsForProject,
@@ -32,6 +33,7 @@ import { useDvrRecording } from './useDvrRecording';
 import { useToast } from './useToast';
 
 const POLL_INTERVAL_MS = 30_000;
+const AUTO_DVR_POLL_INTERVAL_MS = 60_000; // Poll Auto DVR streamers every 60 seconds
 
 // Global State
 type MonitoredStreamerEntry = { streamer: MonitoredStreamer; options: { detectClips: boolean } };
@@ -50,6 +52,10 @@ const isMonitoring = computed(() => monitoredStreamers.value.size > 0);
 // Track DVR sessions for watched (but not persistently recorded) streamers
 // Key: streamerId, Value: { mintId }
 const dvrSessions = ref<DvrSessionsMap>(new Map());
+
+// Auto DVR polling state
+let autoDvrPollingHandle: number | null = null;
+let autoDvrInitialized = false;
 
 // Track chunk aggregation state for DVR-based auto-detect sessions
 // Key: streamerId, Value: aggregation state
@@ -606,10 +612,12 @@ async function handleDvrSegmentReady(payload: SegmentEventPayload) {
     }
   }
 
-  await handleSegmentReady(payload.sessionId, payload, detectClips, (status) => {
+  const promptContent = session?.promptContent;
+
+  await handleSegmentReady(payload.sessionId, payload, detectClips, promptContent, (status: string) => {
+    const normalized = status.toLowerCase();
     const isSuccess = status.includes('Found') || status.includes('Detection skipped');
-    const isError =
-      status.toLowerCase().includes('error') || status.toLowerCase().includes('failed');
+    const isError = normalized.includes('error') || normalized.includes('failed');
 
     updateActivityLog(processingLogId, {
       message: status,
@@ -701,16 +709,24 @@ async function initializeListeners() {
       }
     }
 
-    await handleSegmentReady(payload.sessionId, payload, detectClips, (status) => {
-      const isSuccess = status.includes('Found') || status.includes('Detection skipped');
-      const isError =
-        status.toLowerCase().includes('error') || status.toLowerCase().includes('failed');
+    const promptContent = session?.promptContent;
 
-      updateActivityLog(processingLogId, {
-        message: status,
-        status: isSuccess ? 'success' : isError ? 'info' : 'loading',
-      });
-    });
+    await handleSegmentReady(
+      payload.sessionId,
+      payload,
+      detectClips,
+      promptContent,
+      (status: string) => {
+        const normalized = status.toLowerCase();
+        const isSuccess = status.includes('Found') || status.includes('Detection skipped');
+        const isError = normalized.includes('error') || normalized.includes('failed');
+
+        updateActivityLog(processingLogId, {
+          message: status,
+          status: isSuccess ? 'success' : isError ? 'info' : 'loading',
+        });
+      }
+    );
   });
 
   const streamEndedUnlisten = await listen<{ streamerId: string; mintId: string }>(
@@ -865,9 +881,16 @@ async function initializeListeners() {
 export { fetchLiveStatus };
 
 export function useLivestreamMonitoring() {
+  type StartOptions = {
+    detectClips: boolean;
+    segmentDurationMinutes?: number;
+    promptId?: string;
+    promptContent?: string;
+  };
+
   async function startMonitoring(
     streamers: MonitoredStreamer[],
-    options: { detectClips: boolean } = { detectClips: true }
+    options: StartOptions = { detectClips: true }
   ) {
     if (streamers.length === 0) {
       return;
@@ -1087,11 +1110,7 @@ export function useLivestreamMonitoring() {
     }
   }
 
-  async function handleStreamStart(
-    streamer: MonitoredStreamer,
-    status: LiveStatus,
-    options: { detectClips: boolean }
-  ) {
+  async function handleStreamStart(streamer: MonitoredStreamer, status: LiveStatus, options: StartOptions) {
     try {
       const sessionInfo = await createLivestreamSession(
         streamer.id,
@@ -1101,7 +1120,9 @@ export function useLivestreamMonitoring() {
       );
 
       // Use the streamer's configured segment duration, defaulting to 5 minutes
-      const segmentDuration = streamer.segmentDurationMinutes ?? 5;
+      const requestedDuration = options.segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5;
+      const segmentDuration = requestedDuration > 0 ? requestedDuration : 5;
+      const isInfiniteSegment = options.segmentDurationMinutes === 0;
 
       // Start platform-specific recording
       if (streamer.platform === 'Kick') {
@@ -1119,8 +1140,10 @@ export function useLivestreamMonitoring() {
         // DVR chunks are 4 seconds each. We need to aggregate them into longer segments
         // for clip detection. Calculate how many chunks make up one segment.
         const DVR_CHUNK_DURATION = 4; // seconds
-        const segmentDurationSeconds = segmentDuration * 60;
-        const chunksPerSegment = Math.ceil(segmentDurationSeconds / DVR_CHUNK_DURATION);
+        const segmentDurationSeconds = isInfiniteSegment ? Number.MAX_SAFE_INTEGER : segmentDuration * 60;
+        const chunksPerSegment = isInfiniteSegment
+          ? Number.MAX_SAFE_INTEGER
+          : Math.ceil(segmentDurationSeconds / DVR_CHUNK_DURATION);
 
         // Initialize chunk aggregation state for this streamer
         chunkAggregationState.set(streamer.id, {
@@ -1230,6 +1253,8 @@ export function useLivestreamMonitoring() {
         profileImageUrl: streamer.profileImageUrl,
         detectClips: options.detectClips,
         segmentDurationMinutes: segmentDuration,
+        promptId: options.promptId,
+        promptContent: options.promptContent,
       });
 
       // Add log
@@ -1276,6 +1301,108 @@ export function useLivestreamMonitoring() {
     segmentLogIds.clear();
   }
 
+  // ============================================
+  // Auto DVR System
+  // Automatically starts DVR recording when streamers with auto_dvr=true go live
+  // ============================================
+
+  async function initAutoDvrPolling() {
+    if (autoDvrInitialized) return;
+    autoDvrInitialized = true;
+
+    console.log('[LiveMonitor] Initializing Auto DVR polling system');
+
+    // Do initial poll immediately
+    await pollAutoDvrStreamers();
+
+    // Start periodic polling
+    autoDvrPollingHandle = window.setInterval(pollAutoDvrStreamers, AUTO_DVR_POLL_INTERVAL_MS);
+  }
+
+  function stopAutoDvrPolling() {
+    if (autoDvrPollingHandle !== null) {
+      clearInterval(autoDvrPollingHandle);
+      autoDvrPollingHandle = null;
+    }
+    autoDvrInitialized = false;
+    console.log('[LiveMonitor] Stopped Auto DVR polling');
+  }
+
+  async function pollAutoDvrStreamers() {
+    try {
+      // Get all streamers with auto_dvr enabled from database
+      const autoDvrRecords = await getAutoDvrStreamers();
+
+      if (autoDvrRecords.length === 0) return;
+
+      console.log(`[LiveMonitor] Polling ${autoDvrRecords.length} Auto DVR streamers`);
+
+      for (const record of autoDvrRecords) {
+        // Skip if already has an active recording session (from Auto-Detect or Record mode)
+        if (activeSessions.value.has(record.id)) continue;
+
+        // Convert record to MonitoredStreamer type
+        const streamer: MonitoredStreamer = {
+          id: record.id,
+          mintId: record.mint_id,
+          displayName: record.display_name,
+          platform: (record.platform as SupportedLivestreamPlatform) || 'PumpFun',
+          lastCheckTimestamp: record.last_check_timestamp,
+          isCurrentlyLive: Boolean(record.is_currently_live),
+          currentSessionId: record.current_session_id,
+          selected: false,
+          isDetecting: false,
+          profileImageUrl: record.profile_image_url || undefined,
+          segmentDurationMinutes: record.segment_duration_minutes,
+          autoDvr: Boolean(record.auto_dvr),
+        };
+
+        // Check if stream is live
+        const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
+
+        // Update live status in database
+        await updateMonitoredStreamer(streamer.id, {
+          last_check_timestamp: Math.floor(Date.now() / 1000),
+          is_currently_live: status.isLive ? 1 : 0,
+        });
+
+        const hasDvrRecording = dvrSessions.value.has(streamer.id);
+
+        if (status.isLive && !hasDvrRecording) {
+          // Stream is live and no DVR recording - start one
+          console.log(`[LiveMonitor] Auto DVR: Starting DVR for live streamer ${streamer.displayName}`);
+          const started = await startDvrRecordingForStreamer(streamer);
+          if (started) {
+            addActivityLog({
+              streamerId: streamer.id,
+              streamerName: streamer.displayName,
+              platform: streamer.platform,
+              mintId: streamer.mintId,
+              profileImageUrl: streamer.profileImageUrl,
+              message: 'Auto DVR started - streamer went live',
+              status: 'success',
+            });
+          }
+        } else if (!status.isLive && hasDvrRecording) {
+          // Stream ended - stop DVR recording
+          console.log(`[LiveMonitor] Auto DVR: Stopping DVR for offline streamer ${streamer.displayName}`);
+          await handleDvrStreamEnd(streamer.id, streamer.mintId);
+          addActivityLog({
+            streamerId: streamer.id,
+            streamerName: streamer.displayName,
+            platform: streamer.platform,
+            mintId: streamer.mintId,
+            profileImageUrl: streamer.profileImageUrl,
+            message: 'Auto DVR stopped - stream ended',
+            status: 'info',
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[LiveMonitor] Auto DVR polling error:', error);
+    }
+  }
+
   return {
     startMonitoring,
     stopMonitoring,
@@ -1302,5 +1429,8 @@ export function useLivestreamMonitoring() {
     getKickDvrSession,
     startKickDvrRecording,
     stopKickDvrRecording,
+    // Auto DVR exports
+    initAutoDvrPolling,
+    stopAutoDvrPolling,
   };
 }

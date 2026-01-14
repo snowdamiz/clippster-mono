@@ -404,7 +404,7 @@ class PumpfunRecorder {
     
     this.currentWidth = 0;
     this.currentHeight = 0;
-    this.lastSegmentNumber = -1;
+    this.lastSegmentNumber = this.scanExistingSegments(); // Resume from existing segments
     
     this.fpsSamples = [];
     this.fpsDetected = false;
@@ -452,6 +452,55 @@ class PumpfunRecorder {
     this._diagnosticLastHealthLog = 0; // Timestamp of last health log
     this._diagnosticStreamProfile = null; // Captured stream characteristics
     this._diagnosticPlaneWarnings = new Set(); // Track unique plane warnings
+  }
+
+  /**
+   * Scan existing segments in the output directory to find the highest segment number.
+   * This allows resuming recording without overwriting existing segments.
+   * Also populates processedSegments to avoid re-emitting existing segments.
+   * @returns {number} The highest segment number found, or -1 if no segments exist
+   */
+  scanExistingSegments() {
+    try {
+      if (!fs.existsSync(this.outputDir)) {
+        return -1;
+      }
+      
+      const files = fs.readdirSync(this.outputDir);
+      let maxSegmentNumber = -1;
+      
+      for (const file of files) {
+        if (!file.startsWith(this.segmentPrefix) || !file.endsWith('.ts')) {
+          continue;
+        }
+        
+        // Extract segment number from filename like "segment_00037.ts"
+        const segmentNumber = this.extractSegmentNumber(file);
+        if (segmentNumber !== null) {
+          // Mark as processed so we don't re-emit
+          const fullPath = path.join(this.outputDir, file);
+          this.processedSegments.add(fullPath);
+          
+          if (segmentNumber > maxSegmentNumber) {
+            maxSegmentNumber = segmentNumber;
+          }
+        }
+      }
+      
+      if (maxSegmentNumber >= 0) {
+        log('RESUME: Found existing segments', {
+          outputDir: this.outputDir,
+          highestSegment: maxSegmentNumber,
+          nextSegment: maxSegmentNumber + 1,
+          existingSegmentsMarked: this.processedSegments.size,
+        });
+      }
+      
+      return maxSegmentNumber;
+    } catch (error) {
+      console.warn('[Recorder] Failed to scan existing segments:', error);
+      return -1;
+    }
   }
 
   async getHardwareEncoderArgs() {
