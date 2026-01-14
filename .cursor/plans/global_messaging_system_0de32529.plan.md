@@ -198,4 +198,3 @@ onMounted(async () => {
 
 1. Click "Message" on clipper card -> redirects to Messages, creates conversation, pre-fills input
 2. User not in any shared org with target -> global conversation created successfully
-3. Existing global conversation with same user -> returns existing, doesn't create duplicate

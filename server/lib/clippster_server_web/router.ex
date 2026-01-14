@@ -163,6 +163,13 @@ defmodule ClippsterServerWeb.Router do
     # Bug report creation (requires authentication)
     post "/bug-reports", BugReportsController, :create
 
+    # Organization application management (requires authentication)
+    post "/organization-applications", OrganizationApplicationController, :create
+    get "/organization-applications/my-application", OrganizationApplicationController, :my_application
+    put "/organization-applications/:id", OrganizationApplicationController, :update
+    delete "/organization-applications/:id", OrganizationApplicationController, :delete_own
+    post "/organization-applications/:id/logo", OrganizationApplicationController, :upload_logo
+
     # OAuth account linking routes
     post "/auth/link/google", AuthController, :link_google_account
 
@@ -438,6 +445,12 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin waitlist management
     get "/admin/waitlist", WaitlistController, :index
+
+    # Admin organization application management
+    get "/admin/organization-applications", OrganizationApplicationController, :index
+    put "/admin/organization-applications/:id/approve", OrganizationApplicationController, :approve
+    put "/admin/organization-applications/:id/reject", OrganizationApplicationController, :reject
+    delete "/admin/organization-applications/:id", OrganizationApplicationController, :delete
   end
 
 

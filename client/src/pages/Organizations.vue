@@ -7,19 +7,22 @@
       :icon="Building2"
     >
       <template #actions>
-        <Button
-          v-if="canCreateOrg && organizations.length > 0"
-          @click="router.push('/organization/setup')"
+        <button
+          v-if="canCreateOrg && (!userApplication || userApplication.status === 'rejected')"
+          @click="showApplicationDialog = true"
           class="org__create-btn"
         >
           <Plus class="org__create-btn-icon" />
-          Create Organization
-        </Button>
+          {{ userApplication?.status === 'rejected' ? 'Reapply for Organization' : 'Apply for Organization' }}
+        </button>
       </template>
 
-      <div class="org__content" :class="{ 'org__content--empty': !loading && organizations.length === 0 }">
+      <div
+        class="org__content"
+        :class="{ 'org__content--empty': !loading && organizations.length === 0 && !userApplication }"
+      >
         <!-- Page Heading -->
-        <div v-if="organizations.length > 0 || loading" class="org__heading">
+        <div v-if="organizations.length > 0 || loading || userApplication" class="org__heading">
           <h1 class="org__title">Your Organizations</h1>
           <p class="org__subtitle">View and manage organizations you belong to</p>
         </div>
@@ -131,6 +134,143 @@
           </div>
         </div>
 
+        <!-- Organization Application Section -->
+        <div v-else-if="userApplication" class="org__main">
+          <div class="org__list-header">
+            <span class="org__list-label">Your Application</span>
+            <span class="org__list-count">1 application</span>
+          </div>
+
+          <div class="org__grid">
+            <div class="org-card org-card--application">
+              <!-- Left Accent Indicator -->
+              <div
+                class="org-card__indicator"
+                :class="{
+                  'org-card__indicator--pending': userApplication.status === 'pending',
+                  'org-card__indicator--approved': userApplication.status === 'approved',
+                  'org-card__indicator--rejected': userApplication.status === 'rejected',
+                }"
+              ></div>
+
+              <div class="org-card__inner">
+                <div class="org-card__content">
+                  <!-- Logo -->
+                  <div class="org-card__logo">
+                    <img
+                      v-if="userApplication.logo_url && !applicationLogoFailed"
+                      :src="userApplication.logo_url"
+                      :alt="userApplication.name"
+                      class="org-card__logo-img"
+                      referrerpolicy="no-referrer"
+                      @error="handleApplicationLogoError"
+                    />
+                    <div v-else class="org-card__logo-fallback">
+                      <FileText class="org-card__logo-icon" />
+                    </div>
+                  </div>
+
+                  <!-- Application Info -->
+                  <div class="org-card__info">
+                    <div class="org-card__name-row">
+                      <h3 class="org-card__name">{{ userApplication.name }}</h3>
+                      <span
+                        class="org-card__role"
+                        :class="{
+                          'org-card__role--pending': userApplication.status === 'pending',
+                          'org-card__role--approved': userApplication.status === 'approved',
+                          'org-card__role--rejected': userApplication.status === 'rejected',
+                        }"
+                      >
+                        {{ userApplication.status }}
+                      </span>
+                    </div>
+                    <p class="org-card__description">
+                      {{ userApplication.description }}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Application Details -->
+                <div class="org-card__details">
+                  <div class="org-card__detail-row">
+                    <Clock class="org-card__detail-icon" />
+                    <span class="org-card__detail-value">{{ formatDate(userApplication.inserted_at) }}</span>
+                  </div>
+                  <div class="org-card__detail-row">
+                    <Building2 class="org-card__detail-icon" />
+                    <span class="org-card__detail-value">{{ userApplication.team_size }}</span>
+                  </div>
+                </div>
+
+                <!-- Menu Button -->
+                <div
+                  v-if="userApplication.status === 'pending' || userApplication.status === 'rejected'"
+                  class="org-card__menu"
+                  data-app-menu
+                >
+                  <button
+                    ref="applicationMenuButtonRef"
+                    class="org-card__menu-btn"
+                    :class="{ 'org-card__menu-btn--active': showApplicationMenu }"
+                    @click.stop="toggleApplicationMenu"
+                  >
+                    <MoreVertical class="org-card__menu-icon" />
+                  </button>
+
+                  <!-- Menu Dropdown -->
+                  <Teleport to="body">
+                    <div
+                      v-if="showApplicationMenu"
+                      class="org-card__menu-dropdown"
+                      :style="applicationMenuPosition"
+                      data-app-menu
+                      @click.stop
+                    >
+                      <button
+                        v-if="userApplication.status === 'pending'"
+                        class="org-card__menu-item org-card__menu-item--blue"
+                        @click.stop="
+                          editApplication();
+                          closeApplicationMenu();
+                        "
+                      >
+                        <Edit class="org-card__menu-item-icon" />
+                        <span>Edit Application</span>
+                      </button>
+                      <div v-if="userApplication.status === 'pending'" class="org-card__menu-divider"></div>
+                      <button
+                        class="org-card__menu-item org-card__menu-item--red"
+                        :disabled="deletingApplication"
+                        @click.stop="
+                          confirmDeleteApplication();
+                          closeApplicationMenu();
+                        "
+                      >
+                        <Loader2
+                          v-if="deletingApplication"
+                          class="org-card__menu-item-icon org-card__menu-item-icon--spin"
+                        />
+                        <Trash2 v-else class="org-card__menu-item-icon" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </Teleport>
+                </div>
+              </div>
+
+              <!-- Admin Notes (if present) -->
+              <div v-if="userApplication.admin_notes" class="org-card__notes">
+                <AlertCircle class="org-card__notes-icon" />
+                <div class="org-card__notes-content">
+                  <span class="org-card__notes-label">Admin Notes:</span>
+                  <p class="org-card__notes-text">{{ userApplication.admin_notes }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Empty State -->
         <div v-else class="org__empty">
           <div class="org__empty-icon-wrapper">
@@ -141,16 +281,53 @@
         </div>
       </div>
     </PageLayout>
+
+    <!-- Organization Application Dialog -->
+    <OrganizationApplicationDialog
+      :show="showApplicationDialog"
+      :application="editingApplication ? userApplication : null"
+      @close="
+        showApplicationDialog = false;
+        editingApplication = false;
+      "
+      @submitted="handleApplicationSubmitted"
+    />
+
+    <!-- Delete Confirmation Modal -->
+    <ConfirmationModal
+      :show="showDeleteApplicationDialog"
+      title="Delete Application"
+      message="Are you sure you want to delete your organization application?"
+      suffix="This action cannot be undone."
+      confirm-text="Delete"
+      variant="destructive"
+      @close="handleDeleteApplicationDialogClose"
+      @confirm="deleteApplicationConfirmed"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
-  import { Building2, Plus, Clock, ChevronRight } from 'lucide-vue-next';
+  import {
+    Building2,
+    Plus,
+    Clock,
+    ChevronRight,
+    FileText,
+    AlertCircle,
+    Edit,
+    Trash2,
+    Loader2,
+    MoreVertical,
+  } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
+  import { useToast } from '@/composables/useToast';
   import PageLayout from '@/components/PageLayout.vue';
-  import { Button } from '@/components/ui/button';
+  import OrganizationApplicationDialog from '@/components/OrganizationApplicationDialog.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import api from '@/services/api';
 
   const router = useRouter();
   const authStore = useAuthStore();
@@ -159,6 +336,16 @@
   const organizations = ref<any[]>([]);
   const failedImages = ref<Set<string>>(new Set());
   const orgCredits = ref<Record<string, { hours_remaining: string; hours_used: string }>>({});
+  const showApplicationDialog = ref(false);
+  const userApplication = ref<any>(null);
+  const deletingApplication = ref(false);
+  const showDeleteApplicationDialog = ref(false);
+  const editingApplication = ref(false);
+  const showApplicationMenu = ref(false);
+  const applicationMenuButtonRef = ref<HTMLElement | null>(null);
+  const applicationLogoFailed = ref(false);
+
+  const { success: showSuccessToast } = useToast();
 
   const canCreateOrg = computed(() => {
     // User can create org if:
@@ -174,7 +361,7 @@
       return;
     }
 
-    await loadOrganizations();
+    await Promise.all([loadOrganizations(), loadUserApplication()]);
 
     // If user is only a member of one org AND is an admin/owner, go directly to it
     // Regular members stay on this page - they don't have access to the dashboard
@@ -185,6 +372,9 @@
         return;
       }
     }
+
+    // Add click outside listener for application menu
+    document.addEventListener('click', handleApplicationMenuClickOutside);
   });
 
   async function loadOrganizations() {
@@ -230,12 +420,125 @@
     failedImages.value.add(orgId);
   }
 
+  function handleApplicationLogoError() {
+    applicationLogoFailed.value = true;
+  }
+
   function formatCredits(value: string | undefined): string {
     if (!value) return '0';
     const num = parseFloat(value);
     if (isNaN(num)) return '0';
     return Math.round(num).toString();
   }
+
+  function formatDate(dateString: string): string {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+
+  async function loadUserApplication() {
+    try {
+      const response = await api.get('/organization-applications/my-application');
+      const data = response.data;
+
+      if (data.success && data.application) {
+        userApplication.value = data.application;
+      }
+    } catch (error) {
+      console.error('Failed to load user application:', error);
+    }
+  }
+
+  async function handleApplicationSubmitted() {
+    await loadUserApplication();
+    editingApplication.value = false;
+  }
+
+  function editApplication() {
+    editingApplication.value = true;
+    showApplicationDialog.value = true;
+  }
+
+  function confirmDeleteApplication() {
+    showDeleteApplicationDialog.value = true;
+  }
+
+  async function deleteApplicationConfirmed() {
+    if (!userApplication.value) return;
+
+    deletingApplication.value = true;
+
+    try {
+      const response = await api.delete(`/organization-applications/${userApplication.value.id}`);
+      const data = response.data;
+
+      if (data.success) {
+        showSuccessToast('Application Deleted', 'Your organization application has been deleted');
+        userApplication.value = null;
+      }
+    } catch (error: any) {
+      console.error('Failed to delete application:', error);
+    } finally {
+      deletingApplication.value = false;
+      showDeleteApplicationDialog.value = false;
+    }
+  }
+
+  function handleDeleteApplicationDialogClose() {
+    showDeleteApplicationDialog.value = false;
+  }
+
+  function toggleApplicationMenu() {
+    showApplicationMenu.value = !showApplicationMenu.value;
+  }
+
+  function closeApplicationMenu() {
+    showApplicationMenu.value = false;
+  }
+
+  const applicationMenuPosition = computed(() => {
+    const button = applicationMenuButtonRef.value;
+    if (!button) return { top: '0px', left: '0px' };
+
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 180;
+    const menuMaxHeight = 120;
+    const padding = 8;
+
+    let left = rect.right - menuWidth;
+    if (left < padding) left = padding;
+
+    const viewportWidth = window.innerWidth;
+    if (left + menuWidth > viewportWidth - padding) {
+      left = viewportWidth - menuWidth - padding;
+    }
+
+    let top = rect.bottom + 4;
+    const viewportHeight = window.innerHeight;
+    if (top + menuMaxHeight > viewportHeight - padding) {
+      top = rect.top - menuMaxHeight - 4;
+      if (top < padding) top = padding;
+    }
+
+    return { top: `${top}px`, left: `${left}px` };
+  });
+
+  function handleApplicationMenuClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('[data-app-menu]')) {
+      if (showApplicationMenu.value) {
+        showApplicationMenu.value = false;
+      }
+    }
+  }
+
+  onUnmounted(() => {
+    document.removeEventListener('click', handleApplicationMenuClickOutside);
+  });
 </script>
 
 <style scoped>
@@ -250,7 +553,7 @@
     flex-direction: column;
     gap: 1.5rem;
     padding: 1.5rem;
-    max-width: 900px;
+    max-width: 1200px;
     margin: 0 auto;
     width: 100%;
     flex: 1;
@@ -286,11 +589,30 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org__create-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .org__create-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .org__create-btn-icon {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
   }
 
   /* ===== List Header ===== */
@@ -642,6 +964,202 @@
     margin: 0;
     max-width: 320px;
     line-height: 1.5;
+  }
+
+  /* ===== Application-specific Card Styles ===== */
+  .org-card--application {
+    cursor: default;
+  }
+
+  .org-card--application:hover {
+    transform: none;
+  }
+
+  .org-card__indicator--pending {
+    background-color: #f59e0b;
+  }
+
+  .org-card__indicator--approved {
+    background-color: #10b981;
+  }
+
+  .org-card__indicator--rejected {
+    background-color: #ef4444;
+  }
+
+  .org-card__role--pending {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+
+  .org-card__role--approved {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .org-card__role--rejected {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .org-card__details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    flex-shrink: 0;
+  }
+
+  .org-card__detail-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .org-card__detail-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-card__detail-value {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* Menu Button */
+  .org-card__menu {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-left: 0.5rem;
+  }
+
+  .org-card__menu-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-card__menu-btn:hover,
+  .org-card__menu-btn--active {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .org-card__menu-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .org-card__menu-dropdown {
+    position: fixed;
+    z-index: 9999;
+    width: 180px;
+    background-color: rgba(24, 24, 27, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    padding: 0.375rem 0;
+    overflow: hidden;
+  }
+
+  .org-card__menu-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+  }
+
+  .org-card__menu-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-card__menu-item--blue:hover:not(:disabled) {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .org-card__menu-item--red:hover:not(:disabled) {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .org-card__menu-item-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .org-card__menu-item-icon--spin {
+    animation: spin 0.8s linear infinite;
+  }
+
+  .org-card__menu-divider {
+    margin: 0.375rem 0;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* Admin Notes within Card */
+  .org-card__notes {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    background-color: rgba(239, 68, 68, 0.08);
+    border-top: 1px solid rgba(239, 68, 68, 0.2);
+  }
+
+  .org-card__notes-icon {
+    width: 16px;
+    height: 16px;
+    color: #f87171;
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+  }
+
+  .org-card__notes-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-card__notes-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #f87171;
+    display: block;
+    margin-bottom: 0.375rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .org-card__notes-text {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   /* ===== List Transitions ===== */
