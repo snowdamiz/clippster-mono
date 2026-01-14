@@ -5556,7 +5556,7 @@
     max-height: calc(85vh - 120px);
     border-right: 1px solid var(--sidebar-border);
     overflow-y: auto;
-    padding: 1rem;
+    padding: 0 1rem 1rem 1rem;
   }
 
   .folder-dialog__clips-list::-webkit-scrollbar {
