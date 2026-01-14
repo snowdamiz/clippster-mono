@@ -130,13 +130,13 @@
       <div class="org-clippers__toolbar">
         <!-- Available for Work -->
         <div class="org-clippers__filter-toggle">
-          <Switch v-model:checked="filters.looking_for_work" @update:checked="loadClippers" />
+          <Switch v-model="filters.looking_for_work" @update:modelValue="loadClippers" />
           <span class="org-clippers__filter-toggle-label">Available for work</span>
         </div>
 
         <!-- Verified Only -->
         <div class="org-clippers__filter-toggle">
-          <Switch v-model:checked="filters.verified_only" @update:checked="loadClippers" />
+          <Switch v-model="filters.verified_only" @update:modelValue="loadClippers" />
           <span class="org-clippers__filter-toggle-label">Verified only</span>
         </div>
 
@@ -292,8 +292,6 @@
           <X class="org-clippers__clear-icon" />
           Clear
         </button>
-
-        <span class="org-clippers__results-count">{{ clippers.length }} clippers</span>
       </div>
 
       <!-- Loading State -->

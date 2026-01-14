@@ -15,13 +15,13 @@
             <!-- Looking for Work -->
             <div class="flex items-center justify-between">
               <Label class="text-sm">Available for work</Label>
-              <Switch v-model:checked="filters.looking_for_work" @update:checked="loadClippers" />
+              <Switch v-model="filters.looking_for_work" @update:modelValue="loadClippers" />
             </div>
 
             <!-- Verified Only -->
             <div class="flex items-center justify-between">
               <Label class="text-sm">Verified only</Label>
-              <Switch v-model:checked="filters.verified_only" @update:checked="loadClippers" />
+              <Switch v-model="filters.verified_only" @update:modelValue="loadClippers" />
             </div>
 
             <!-- Experience Level -->
@@ -49,9 +49,11 @@
                   :key="tag.value"
                   @click="toggleFilter('specialty_tags', tag.value)"
                   class="px-2 py-1 rounded-full text-xs transition-colors"
-                  :class="filters.specialty_tags.includes(tag.value) 
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+                  :class="
+                    filters.specialty_tags.includes(tag.value)
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                  "
                 >
                   {{ tag.label }}
                 </button>
@@ -67,23 +69,25 @@
                   :key="platform.value"
                   @click="toggleFilter('preferred_platforms', platform.value)"
                   class="px-2 py-1 rounded-full text-xs transition-colors"
-                  :class="filters.preferred_platforms.includes(platform.value) 
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted'"
+                  :class="
+                    filters.preferred_platforms.includes(platform.value)
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                  "
                 >
                   {{ platform.label }}
                 </button>
               </div>
             </div>
 
-            <Button variant="outline" size="sm" class="w-full" @click="clearFilters">
-              Clear Filters
-            </Button>
+            <Button variant="outline" size="sm" class="w-full" @click="clearFilters">Clear Filters</Button>
           </div>
 
           <!-- Leaderboard Link -->
           <router-link to="/clippers/leaderboard" class="block">
-            <div class="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-xl p-4 hover:border-amber-500/50 transition-colors">
+            <div
+              class="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-xl p-4 hover:border-amber-500/50 transition-colors"
+            >
               <div class="flex items-center gap-2 text-amber-500 mb-1">
                 <Trophy class="w-4 h-4" />
                 <span class="font-semibold text-sm">Leaderboard</span>
@@ -115,13 +119,10 @@
           </div>
 
           <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <router-link
-              v-for="clipper in clippers"
-              :key="clipper.id"
-              :to="`/clippers/${clipper.slug}`"
-              class="block"
-            >
-              <div class="bg-card border border-border/60 rounded-xl p-4 hover:border-primary/30 hover:shadow-lg transition-all">
+            <router-link v-for="clipper in clippers" :key="clipper.id" :to="`/clippers/${clipper.slug}`" class="block">
+              <div
+                class="bg-card border border-border/60 rounded-xl p-4 hover:border-primary/30 hover:shadow-lg transition-all"
+              >
                 <!-- Header -->
                 <div class="flex items-start gap-3 mb-3">
                   <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
@@ -130,14 +131,19 @@
                   </div>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-1.5">
-                      <span class="font-semibold text-foreground truncate">{{ clipper.display_name || 'Unnamed' }}</span>
+                      <span class="font-semibold text-foreground truncate">
+                        {{ clipper.display_name || 'Unnamed' }}
+                      </span>
                       <CheckCircle v-if="clipper.is_verified" class="w-4 h-4 text-blue-500 flex-shrink-0" />
                     </div>
                     <div class="text-xs text-muted-foreground">
                       {{ getExperienceLevelLabel(clipper.experience_level || '') }}
                     </div>
                   </div>
-                  <div v-if="clipper.looking_for_work" class="px-2 py-0.5 bg-green-500/10 text-green-500 text-[10px] font-medium rounded-full">
+                  <div
+                    v-if="clipper.looking_for_work"
+                    class="px-2 py-0.5 bg-green-500/10 text-green-500 text-[10px] font-medium rounded-full"
+                  >
                     Available
                   </div>
                 </div>
@@ -173,78 +179,81 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue';
-import { Users, Trophy, UserCircle, CheckCircle } from 'lucide-vue-next';
-import PageLayout from '@/components/PageLayout.vue';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  listClippers,
-  type ClipperProfile,
-  EXPERIENCE_LEVELS, SPECIALTY_TAGS, PREFERRED_PLATFORMS,
-  getExperienceLevelLabel, getSpecialtyTagLabel
-} from '@/services/clipperProfilesApi';
+  import { ref, reactive, onMounted } from 'vue';
+  import { Users, Trophy, UserCircle, CheckCircle } from 'lucide-vue-next';
+  import PageLayout from '@/components/PageLayout.vue';
+  import { Button } from '@/components/ui/button';
+  import { Label } from '@/components/ui/label';
+  import { Switch } from '@/components/ui/switch';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+  import {
+    listClippers,
+    type ClipperProfile,
+    EXPERIENCE_LEVELS,
+    SPECIALTY_TAGS,
+    PREFERRED_PLATFORMS,
+    getExperienceLevelLabel,
+    getSpecialtyTagLabel,
+  } from '@/services/clipperProfilesApi';
 
-const loading = ref(true);
-const clippers = ref<ClipperProfile[]>([]);
+  const loading = ref(true);
+  const clippers = ref<ClipperProfile[]>([]);
 
-const filters = reactive({
-  looking_for_work: false,
-  verified_only: false,
-  experience_level: 'any',
-  specialty_tags: [] as string[],
-  preferred_platforms: [] as string[]
-});
+  const filters = reactive({
+    looking_for_work: false,
+    verified_only: false,
+    experience_level: 'any',
+    specialty_tags: [] as string[],
+    preferred_platforms: [] as string[],
+  });
 
-const loadClippers = async () => {
-  loading.value = true;
-  try {
-    const response = await listClippers({
-      looking_for_work: filters.looking_for_work || undefined,
-      verified_only: filters.verified_only || undefined,
-      experience_level: filters.experience_level !== 'any' ? filters.experience_level : undefined,
-      specialty_tags: filters.specialty_tags.length ? filters.specialty_tags : undefined,
-      preferred_platforms: filters.preferred_platforms.length ? filters.preferred_platforms : undefined
-    });
-    if (response.success) {
-      clippers.value = response.profiles;
+  const loadClippers = async () => {
+    loading.value = true;
+    try {
+      const response = await listClippers({
+        looking_for_work: filters.looking_for_work || undefined,
+        verified_only: filters.verified_only || undefined,
+        experience_level: filters.experience_level !== 'any' ? filters.experience_level : undefined,
+        specialty_tags: filters.specialty_tags.length ? filters.specialty_tags : undefined,
+        preferred_platforms: filters.preferred_platforms.length ? filters.preferred_platforms : undefined,
+      });
+      if (response.success) {
+        clippers.value = response.profiles;
+      }
+    } catch (error) {
+      console.error('Failed to load clippers:', error);
+    } finally {
+      loading.value = false;
     }
-  } catch (error) {
-    console.error('Failed to load clippers:', error);
-  } finally {
-    loading.value = false;
-  }
-};
+  };
 
-const toggleFilter = (field: 'specialty_tags' | 'preferred_platforms', value: string) => {
-  const arr = filters[field];
-  const idx = arr.indexOf(value);
-  if (idx >= 0) {
-    arr.splice(idx, 1);
-  } else {
-    arr.push(value);
-  }
-  loadClippers();
-};
+  const toggleFilter = (field: 'specialty_tags' | 'preferred_platforms', value: string) => {
+    const arr = filters[field];
+    const idx = arr.indexOf(value);
+    if (idx >= 0) {
+      arr.splice(idx, 1);
+    } else {
+      arr.push(value);
+    }
+    loadClippers();
+  };
 
-const clearFilters = () => {
-  filters.looking_for_work = false;
-  filters.verified_only = false;
-  filters.experience_level = 'any';
-  filters.specialty_tags = [];
-  filters.preferred_platforms = [];
-  loadClippers();
-};
+  const clearFilters = () => {
+    filters.looking_for_work = false;
+    filters.verified_only = false;
+    filters.experience_level = 'any';
+    filters.specialty_tags = [];
+    filters.preferred_platforms = [];
+    loadClippers();
+  };
 
-onMounted(() => {
-  loadClippers();
-});
+  onMounted(() => {
+    loadClippers();
+  });
 </script>
 
 <style scoped>
-.clipper-directory-page {
-  @apply h-full;
-}
+  .clipper-directory-page {
+    @apply h-full;
+  }
 </style>

@@ -32,7 +32,7 @@
               </div>
             </div>
           </div>
-          <Switch v-model:checked="profile.is_public" @update:checked="saveProfile" />
+          <Switch v-model="profile.is_public" @update:modelValue="saveProfile" />
         </div>
 
         <!-- Basic Info Section -->
@@ -167,7 +167,7 @@
               <div class="font-medium text-foreground">Looking for Work</div>
               <div class="text-sm text-muted-foreground">Show that you're available for new campaigns</div>
             </div>
-            <Switch v-model:checked="profile.looking_for_work" @update:checked="saveProfile" />
+            <Switch v-model="profile.looking_for_work" @update:modelValue="saveProfile" />
           </div>
         </div>
 

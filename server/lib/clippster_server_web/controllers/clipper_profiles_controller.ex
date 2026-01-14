@@ -35,8 +35,13 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   def update_own(conn, params) do
     user = conn.assigns.current_user
 
+    # Debug: log incoming is_public value
+    require Logger
+    Logger.debug("update_own params is_public: #{inspect(params["is_public"])}")
+
     with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
          {:ok, updated_profile} <- ClipperProfiles.update_profile(profile, params) do
+      Logger.debug("update_own result is_public: #{inspect(updated_profile.is_public)}")
       updated_profile = ClippsterServer.Repo.preload(updated_profile, [:channel_links, :portfolio_clips, :badges])
       json(conn, %{success: true, profile: serialize_profile(updated_profile)})
     else

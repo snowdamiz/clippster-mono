@@ -114,9 +114,20 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
       url ->
         detected = detect_platform(url)
         current_platform = get_change(changeset, :platform)
-        
-        if is_nil(current_platform) and detected do
+
+        changeset = if is_nil(current_platform) and detected do
           put_change(changeset, :platform, detected)
+        else
+          changeset
+        end
+
+        # Extract post ID if we have a platform
+        platform = get_field(changeset, :platform) || detected
+        if platform && is_nil(get_change(changeset, :platform_post_id)) do
+          case extract_post_id(url, platform) do
+            {:ok, post_id} -> put_change(changeset, :platform_post_id, post_id)
+            _ -> changeset
+          end
         else
           changeset
         end
@@ -128,7 +139,7 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
   """
   def detect_platform(url) when is_binary(url) do
     url_lower = String.downcase(url)
-    
+
     cond do
       String.contains?(url_lower, "tiktok.com") -> "tiktok"
       String.contains?(url_lower, "instagram.com") -> "instagram"
@@ -139,6 +150,77 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
   end
 
   def detect_platform(_), do: nil
+
+  @doc """
+  Extracts post ID from URL based on platform.
+
+  ## Examples
+
+      iex> extract_post_id("https://www.instagram.com/reel/ABC123/", "instagram")
+      {:ok, "ABC123"}
+
+      iex> extract_post_id("https://www.tiktok.com/@user/video/7123456789/", "tiktok")
+      {:ok, "7123456789"}
+
+      iex> extract_post_id("https://youtube.com/shorts/XYZ789", "youtube")
+      {:ok, "XYZ789"}
+  """
+  def extract_post_id(url, platform) when is_binary(url) and is_binary(platform) do
+    case platform do
+      "instagram" -> extract_instagram_post_id(url)
+      "tiktok" -> extract_tiktok_post_id(url)
+      "youtube" -> extract_youtube_post_id(url)
+      "x" -> extract_x_post_id(url)
+      _ -> {:error, :unsupported_platform}
+    end
+  end
+
+  def extract_post_id(_, _), do: {:error, :invalid_input}
+
+  # Instagram: https://www.instagram.com/reel/ABC123/ or /p/ABC123/
+  defp extract_instagram_post_id(url) do
+    cond do
+      Regex.match?(~r/instagram\.com\/(reel|p)\/([A-Za-z0-9_-]+)/, url) ->
+        case Regex.run(~r/instagram\.com\/(reel|p)\/([A-Za-z0-9_-]+)/, url) do
+          [_, _, post_id] -> {:ok, post_id}
+          _ -> {:error, :parse_failed}
+        end
+      true -> {:error, :invalid_url}
+    end
+  end
+
+  # TikTok: https://www.tiktok.com/@user/video/7123456789/
+  defp extract_tiktok_post_id(url) do
+    case Regex.run(~r/tiktok\.com\/.*\/video\/(\d+)/, url) do
+      [_, post_id] -> {:ok, post_id}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  # YouTube: https://youtube.com/shorts/XYZ789 or youtu.be/XYZ789
+  defp extract_youtube_post_id(url) do
+    cond do
+      Regex.match?(~r/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/, url) ->
+        case Regex.run(~r/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/, url) do
+          [_, post_id] -> {:ok, post_id}
+          _ -> {:error, :parse_failed}
+        end
+      Regex.match?(~r/youtu\.be\/([A-Za-z0-9_-]+)/, url) ->
+        case Regex.run(~r/youtu\.be\/([A-Za-z0-9_-]+)/, url) do
+          [_, post_id] -> {:ok, post_id}
+          _ -> {:error, :parse_failed}
+        end
+      true -> {:error, :invalid_url}
+    end
+  end
+
+  # X/Twitter: https://x.com/user/status/1234567890 or twitter.com/user/status/1234567890
+  defp extract_x_post_id(url) do
+    case Regex.run(~r/(x\.com|twitter\.com)\/.*\/status\/(\d+)/, url) do
+      [_, _, post_id] -> {:ok, post_id}
+      _ -> {:error, :invalid_url}
+    end
+  end
 
   def statuses, do: @statuses
   def platforms, do: @platforms

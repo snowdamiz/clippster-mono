@@ -165,7 +165,7 @@
                       <div class="onboarding-wizard__toggle-title">Looking for Work</div>
                       <div class="onboarding-wizard__toggle-desc">Show that you're available for new campaigns</div>
                     </div>
-                    <Switch v-model:checked="profile.looking_for_work" />
+                    <Switch v-model="profile.looking_for_work" />
                   </div>
                 </div>
               </div>
@@ -290,7 +290,7 @@
                         </div>
                       </div>
                     </div>
-                    <Switch v-model:checked="profile.is_public" />
+                    <Switch v-model="profile.is_public" />
                   </div>
 
                   <!-- Summary Card -->

@@ -23,7 +23,7 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
   @impl true
   def handle_info(:check_and_calculate, state) do
     now = DateTime.utc_now()
-    
+
     # Check if it's Monday for weekly leaderboard
     if Date.day_of_week(now) == 1 and now.hour == 0 and now.minute < 5 do
       Logger.info("[LeaderboardWorker] Calculating weekly leaderboard...")
@@ -75,7 +75,7 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
     profiles = ClipperProfiles.list_all_public_profiles()
 
     # Calculate scores for each profile
-    scored_profiles = 
+    scored_profiles =
       profiles
       |> Enum.map(fn profile ->
         stats = calculate_period_stats(profile, period_start, period_end)
@@ -97,6 +97,7 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
         clips_delivered: stats.clips_delivered,
         campaigns_active: stats.campaigns_active,
         endorsements_received: stats.endorsements_received,
+        total_views: stats.total_views,
         score: score
       })
     end)
@@ -107,22 +108,31 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
   defp calculate_period_stats(profile, period_start, period_end) do
     # Get clips delivered in period
     clips_delivered = ClipperProfiles.count_clips_in_period(profile.user_id, period_start, period_end)
-    
+
     # Get campaigns active in period
     campaigns_active = ClipperProfiles.count_campaigns_in_period(profile.user_id, period_start, period_end)
-    
+
     # Get endorsements received in period
     endorsements_received = ClipperProfiles.count_endorsements_in_period(profile.id, period_start, period_end)
+
+    # Get total views from campaign submissions in period
+    total_views = ClipperProfiles.count_views_in_period(profile.user_id, period_start, period_end)
 
     %{
       clips_delivered: clips_delivered,
       campaigns_active: campaigns_active,
-      endorsements_received: endorsements_received
+      endorsements_received: endorsements_received,
+      total_views: total_views
     }
   end
 
   defp calculate_score(stats) do
-    # score = (clips_delivered * 10) + (endorsements_received * 50) + (campaigns_active * 25)
-    (stats.clips_delivered * 10) + (stats.endorsements_received * 50) + (stats.campaigns_active * 25)
+    # Updated formula: clips*10 + views/1000 + endorsements*50 + campaigns*25
+    clips_score = stats.clips_delivered * 10
+    views_score = div(stats.total_views, 1000)
+    endorsements_score = stats.endorsements_received * 50
+    campaigns_score = stats.campaigns_active * 25
+
+    clips_score + views_score + endorsements_score + campaigns_score
   end
 end

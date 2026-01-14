@@ -76,7 +76,7 @@
                       <span class="org-dialog__feature-title">Auto DVR</span>
                       <span class="org-dialog__feature-desc">Automatically start DVR when this creator goes live</span>
                     </div>
-                    <Switch v-model:checked="formData.auto_dvr_enabled" />
+                    <Switch v-model="formData.auto_dvr_enabled" />
                   </div>
                 </div>
               </div>
