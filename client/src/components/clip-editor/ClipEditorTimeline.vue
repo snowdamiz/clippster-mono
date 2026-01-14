@@ -1,79 +1,49 @@
 <template>
-  <div class="transition-all duration-300 ease-in-out h-full">
-    <div class="pt-2 px-3 pb-1 flex flex-col h-full gap-2">
-      <!-- Timeline Header - Redesigned CapCut Style -->
-      <div class="flex items-center justify-between pr-2 flex-shrink-0 text-white/70 text-[12px]">
-        <div class="flex items-center gap-2">
+  <div class="timeline-container">
+    <div class="timeline-wrapper">
+      <!-- Timeline Header -->
+      <div class="timeline-header">
+        <div class="timeline-header__left">
           <!-- Selection & Edit Tools Group -->
-          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
+          <div class="timeline-toolbar-group">
             <button
               @click="setTool('move')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isMoveTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isMoveTool ? 'timeline-tool-button--active' : '']"
               title="Move Tool (V)"
             >
               <MousePointer2 :size="14" />
             </button>
             <button
               @click="setTool('razor')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isRazorTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isRazorTool ? 'timeline-tool-button--active' : '']"
               title="Razor Tool (C)"
             >
               <Scissors :size="14" />
             </button>
             <button
               @click="setTool('ripple')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isRippleTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isRippleTool ? 'timeline-tool-button--active' : '']"
               title="Ripple Edit (B)"
             >
               <MoveHorizontal :size="14" />
             </button>
             <button
               @click="setTool('roll')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isRollTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isRollTool ? 'timeline-tool-button--active' : '']"
               title="Roll Edit (N)"
             >
               <Columns :size="14" />
             </button>
             <button
               @click="setTool('slip')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isSlipTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isSlipTool ? 'timeline-tool-button--active' : '']"
               title="Slip Tool (Y)"
             >
               <ArrowLeftRight :size="14" />
             </button>
             <button
               @click="setTool('slide')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isSlideTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isSlideTool ? 'timeline-tool-button--active' : '']"
               title="Slide Tool (U)"
             >
               <BoxSelect :size="14" />
@@ -81,20 +51,21 @@
           </div>
 
           <!-- Actions Group -->
-          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
+          <div class="timeline-toolbar-group">
             <button
               @click="performCutAtPlayhead"
-              class="p-1.5 rounded-md transition-all duration-150 text-orange-400/70 hover:text-orange-300 hover:bg-orange-500/15"
+              class="timeline-action-button timeline-action-button--split"
               title="Split at playhead (Ctrl+K)"
             >
               <Scissors :size="14" />
               <span class="sr-only">Split</span>
             </button>
-            <div class="w-px h-4 bg-white/8 mx-0.5"></div>
+            <div class="timeline-toolbar-separator"></div>
             <button
               @click="emit('undo')"
               :disabled="!canUndo"
-              class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-blue-300 hover:bg-blue-500/15 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="timeline-action-button"
+              :class="!canUndo ? 'timeline-action-button--disabled' : ''"
               title="Undo (Ctrl+Z)"
             >
               <Undo2 :size="14" />
@@ -102,7 +73,8 @@
             <button
               @click="emit('redo')"
               :disabled="!canRedo"
-              class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-blue-300 hover:bg-blue-500/15 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="timeline-action-button"
+              :class="!canRedo ? 'timeline-action-button--disabled' : ''"
               title="Redo (Ctrl+Y)"
             >
               <Redo2 :size="14" />
@@ -110,7 +82,7 @@
           </div>
 
           <!-- Playback Controls Group -->
-          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
+          <div class="timeline-toolbar-group">
             <button
               @mousedown="startContinuousSeeking('reverse')"
               @mouseup="stopContinuousSeeking"
@@ -118,10 +90,8 @@
               @touchstart="startContinuousSeeking('reverse')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isSeeking && seekDirection === 'reverse'
-                  ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
-                  : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
+                'timeline-playback-button',
+                isSeeking && seekDirection === 'reverse' ? 'timeline-playback-button--active' : '',
               ]"
               title="Seek backward (← arrow key)"
             >
@@ -134,10 +104,8 @@
               @touchstart="startContinuousSeeking('forward')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isSeeking && seekDirection === 'forward'
-                  ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
-                  : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
+                'timeline-playback-button',
+                isSeeking && seekDirection === 'forward' ? 'timeline-playback-button--active' : '',
               ]"
               title="Seek forward (→ arrow key)"
             >
@@ -147,150 +115,125 @@
         </div>
 
         <!-- Right Side Controls -->
-        <div class="flex items-center gap-2">
+        <div class="timeline-header__right">
           <!-- Snap Settings -->
-          <div class="relative group/snap">
+          <div class="timeline-snap-menu">
             <button
-              class="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border transition-all duration-150"
-              :class="
-                snapEnabled
-                  ? 'text-violet-300 bg-violet-500/15 border-violet-500/30 shadow-[0_0_8px_rgba(139,92,246,0.15)]'
-                  : 'text-white/50 bg-[#161618] border-white/[0.04] hover:bg-white/8'
-              "
+              :class="['timeline-snap-button', snapEnabled ? 'timeline-snap-button--enabled' : '']"
               @click="snapMenuOpen = !snapMenuOpen"
             >
-              <Magnet :size="12" :class="snapEnabled ? 'text-violet-400' : 'text-white/40'" />
-              <span class="font-medium">Snap</span>
-              <ChevronDown :size="10" :class="snapEnabled ? 'text-violet-400/60' : 'text-white/30'" />
+              <Magnet :size="12" />
+              <span>Snap</span>
+              <ChevronDown :size="10" />
             </button>
             <!-- Snap options dropdown -->
-            <div
-              v-if="snapMenuOpen"
-              class="absolute right-0 top-full mt-1.5 bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 min-w-[190px] z-[100]"
-              @mouseleave="snapMenuOpen = false"
-            >
-              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">
-                Snap Settings
-              </div>
-              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
-                <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
-                <span class="text-sm text-white/80">Enable Snapping</span>
+            <div v-if="snapMenuOpen" class="timeline-snap-dropdown" @mouseleave="snapMenuOpen = false">
+              <div class="timeline-snap-dropdown__header">Snap Settings</div>
+              <label class="timeline-snap-dropdown__item">
+                <input type="checkbox" v-model="snapEnabled" class="timeline-snap-dropdown__checkbox" />
+                <span>Enable Snapping</span>
               </label>
-              <div class="h-px bg-white/8 my-1"></div>
-              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Snap To</div>
+              <div class="timeline-snap-dropdown__divider"></div>
+              <div class="timeline-snap-dropdown__header">Snap To</div>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.playhead"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Playhead</span>
+                <span>Playhead</span>
               </label>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.segmentEdges"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Segment Edges</span>
+                <span>Segment Edges</span>
               </label>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.markers"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Markers</span>
+                <span>Markers</span>
               </label>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.grid"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Grid (1s intervals)</span>
+                <span>Grid (1s intervals)</span>
               </label>
-              <div class="h-px bg-white/8 my-1"></div>
-              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Behavior</div>
+              <div class="timeline-snap-dropdown__divider"></div>
+              <div class="timeline-snap-dropdown__header">Behavior</div>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.magnetic"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Magnetic Timeline</span>
+                <span>Magnetic Timeline</span>
               </label>
-              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
-                <input type="checkbox" v-model="frameSnapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
-                <span class="text-sm text-white/80">Snap to Frames</span>
+              <label class="timeline-snap-dropdown__item">
+                <input type="checkbox" v-model="frameSnapEnabled" class="timeline-snap-dropdown__checkbox" />
+                <span>Snap to Frames</span>
               </label>
             </div>
           </div>
 
           <!-- Segment Count Badge -->
-          <span
-            v-if="sortedTrimSegments.length > 1"
-            class="text-[11px] text-violet-300 bg-violet-500/15 px-2.5 py-1.5 rounded-lg font-medium border border-violet-500/20"
-          >
+          <span v-if="sortedTrimSegments.length > 1" class="timeline-badge timeline-badge--segments">
             {{ sortedTrimSegments.length }} segments
           </span>
 
           <!-- Duration Badge -->
-          <span
-            class="text-[11px] text-white/60 bg-[#161618] px-2.5 py-1.5 rounded-lg font-mono tabular-nums border border-white/[0.04]"
-          >
+          <span class="timeline-badge timeline-badge--duration">
             {{ formatTime(totalDuration) }}
           </span>
 
           <!-- Zoom Controls Group (far right) -->
-          <div
-            class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04] relative group/zoom"
-          >
+          <div class="timeline-toolbar-group timeline-zoom-group">
             <button
               @click="zoomOut"
               :disabled="zoomLevel <= MIN_ZOOM"
-              class="p-1 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/10 disabled:text-white/15 disabled:cursor-not-allowed"
+              class="timeline-zoom-button"
+              :class="zoomLevel <= MIN_ZOOM ? 'timeline-zoom-button--disabled' : ''"
               title="Zoom out"
             >
               <Minus :size="13" />
             </button>
-            <button
-              @click="zoomMenuOpen = !zoomMenuOpen"
-              class="text-[11px] text-white/70 font-mono tabular-nums min-w-[52px] text-center select-none px-1.5 py-0.5 rounded hover:bg-white/8 transition-colors cursor-pointer"
-              title="Select zoom level"
-            >
+            <button @click="zoomMenuOpen = !zoomMenuOpen" class="timeline-zoom-display" title="Select zoom level">
               {{ getZoomDisplayText() }}
             </button>
 
             <!-- Zoom Presets Dropdown -->
-            <div
-              v-if="zoomMenuOpen"
-              class="absolute top-full right-0 mt-1.5 bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 min-w-[150px] z-[100]"
-              @mouseleave="zoomMenuOpen = false"
-            >
-              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">Zoom Presets</div>
+            <div v-if="zoomMenuOpen" class="timeline-zoom-dropdown" @mouseleave="zoomMenuOpen = false">
+              <div class="timeline-zoom-dropdown__header">Zoom Presets</div>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomToFit();
@@ -299,10 +242,10 @@
                 "
               >
                 <span>Fit to Screen</span>
-                <span class="text-white/30 text-xs font-mono">Z</span>
+                <span class="timeline-zoom-dropdown__shortcut">Z</span>
               </button>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomToSelection();
@@ -311,11 +254,11 @@
                 "
               >
                 <span>Fit Selection</span>
-                <span class="text-white/30 text-xs font-mono">⇧Z</span>
+                <span class="timeline-zoom-dropdown__shortcut">⇧Z</span>
               </button>
-              <div class="h-px bg-white/8 my-1"></div>
+              <div class="timeline-zoom-dropdown__divider"></div>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomLevel = 1.0;
@@ -326,7 +269,7 @@
                 <span>100% (Baseline)</span>
               </button>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomLevel = 2.0;
@@ -337,7 +280,7 @@
                 <span>200%</span>
               </button>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomLevel = 5.0;
@@ -351,7 +294,9 @@
 
             <button
               @click="zoomIn"
-              class="p-1 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/10"
+              :disabled="zoomLevel >= MAX_ZOOM"
+              class="timeline-zoom-button"
+              :class="zoomLevel >= MAX_ZOOM ? 'timeline-zoom-button--disabled' : ''"
               title="Zoom in"
             >
               <Plus :size="13" />
@@ -363,7 +308,7 @@
       <!-- Timeline Tracks Container -->
       <div
         ref="timelineScrollContainer"
-        class="bg-[#0d0d0d] rounded-lg relative overflow-y-auto overflow-x-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#3a3a3a] scrollbar-track-[#0d0d0d] border border-white/[0.03] flex flex-col"
+        class="timeline-tracks-container"
         :style="{ cursor: getTimelineCursor() }"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
@@ -372,11 +317,7 @@
         @scroll="onTimelineScroll"
       >
         <!-- Marquee Selection Rectangle -->
-        <div
-          v-if="marqueeStyle"
-          class="absolute border-2 border-cyan-500 bg-cyan-500/15 pointer-events-none z-[100] rounded"
-          :style="marqueeStyle"
-        ></div>
+        <div v-if="marqueeStyle" class="timeline-marquee" :style="marqueeStyle"></div>
 
         <!-- Drag Ghost Element - positioned via direct DOM manipulation for zero-lag dragging -->
         <div
@@ -560,16 +501,14 @@
                   (isDraggingSource && dragSourceInfo?.targetTrackIndex === layerGroup.layer),
               }"
             >
-              <div
-                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              >
+              <div class="track-label timeline-track-label">
                 <div class="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
                   <span class="text-[10px] font-bold text-purple-400">{{ layerGroup.layer }}</span>
                 </div>
                 <span class="font-medium text-white/60">Layer</span>
               </div>
               <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
 
                 <!-- Extended timeline area indicator (beyond source videos) -->
                 <div
@@ -595,7 +534,7 @@
                     @mousedown="(e) => onSourceMouseDown(e, overlayItem.item)"
                     @click.stop="selectItem('source', overlayItem.item.id)"
                   >
-                    <div class="absolute inset-0 bg-[#161618]"></div>
+                    <div class="timeline-track-content-bg"></div>
                     <span
                       class="relative z-10 text-xs text-cyan-400 font-medium truncate px-1 drop-shadow-sm pointer-events-none"
                     >
@@ -834,16 +773,14 @@
               v-if="textOverlays.length > 0 && visualOverlayLayers.length === 0"
               class="flex items-center h-11 relative border-b border-white/[0.04]"
             >
-              <div
-                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              >
+              <div class="track-label timeline-track-label">
                 <div class="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
                   <Type :size="11" class="text-amber-400" />
                 </div>
                 <span class="font-medium text-white/60">Text</span>
               </div>
               <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
                 <div
                   v-for="overlay in textOverlays"
                   :key="overlay.id"
@@ -888,16 +825,14 @@
             </div>
 
             <div v-if="effects.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
-              <div
-                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              >
+              <div class="track-label timeline-track-label">
                 <div class="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
                   <Sparkles :size="11" class="text-cyan-400" />
                 </div>
                 <span class="font-medium text-white/60">Effects</span>
               </div>
               <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
                 <div
                   v-for="effect in effects"
                   :key="effect.id"
@@ -932,16 +867,14 @@
             </div>
 
             <div v-if="filterSegments.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
-              <div
-                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              >
+              <div class="track-label timeline-track-label">
                 <div class="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
                   <Palette :size="11" class="text-sky-400" />
                 </div>
                 <span class="font-medium text-white/60">Filters</span>
               </div>
               <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
                 <div
                   v-for="filterSeg in filterSegments"
                   :key="filterSeg.id"
@@ -978,9 +911,7 @@
             <!-- Source Track (Primary Video - Editor Mode) -->
             <template v-if="editorMode">
               <div class="flex items-center h-[72px] relative border-b border-white/[0.04]">
-                <div
-                  class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
-                >
+                <div class="track-label timeline-track-label timeline-track-label--overlay">
                   <!-- Track type icon and label -->
                   <div class="flex items-center gap-2 mb-1.5">
                     <div class="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
@@ -1028,7 +959,7 @@
                   @drop.prevent="onTimelineDrop"
                 >
                   <!-- Background - split into source area and extended area -->
-                  <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                  <div class="timeline-track-label-bg"></div>
 
                   <!-- Extended timeline area indicator (beyond source videos) -->
                   <div
@@ -1095,7 +1026,7 @@
                     @contextmenu.prevent="onSourceContextMenu($event, source)"
                   >
                     <!-- Video thumbnails background (filmstrip style) -->
-                    <div class="absolute inset-0 bg-[#161618] flex overflow-hidden">
+                    <div class="timeline-track-content-bg timeline-track-content-bg--flex">
                       <!-- Loading placeholder skeleton -->
                       <div v-if="!source.source_thumbnail" class="absolute inset-0 flex items-center justify-center">
                         <div class="flex gap-1">
@@ -1147,9 +1078,7 @@
             <!-- Single Video Track (Clip Mode) -->
             <template v-else>
               <div class="flex items-center h-[72px] relative border-b border-white/[0.04]">
-                <div
-                  class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
-                >
+                <div class="track-label timeline-track-label timeline-track-label--overlay">
                   <!-- Track type icon and label -->
                   <div class="flex items-center gap-2 mb-1.5">
                     <div class="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
@@ -1190,7 +1119,7 @@
                 </div>
                 <div ref="videoTrackContentRef" class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
                   <!-- Background -->
-                  <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                  <div class="timeline-track-label-bg"></div>
 
                   <!-- Clip Mode: Trim Segments -->
                   <template v-for="(segmentLayout, _index) in segmentLayouts" :key="segmentLayout.segment.id">
@@ -1222,7 +1151,7 @@
                     >
                       <div class="absolute inset-0 bg-black flex overflow-hidden">
                         <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
-                        <div class="absolute inset-0 bg-[#161618]"></div>
+                        <div class="timeline-track-content-bg"></div>
                       </div>
                       <canvas
                         :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
@@ -1249,9 +1178,7 @@
                 'opacity-40': !track.isHidden && (track.isMuted || (hasAnySoloedAudioTrack && !track.isSolo)),
               }"
             >
-              <div
-                class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-emerald-500"
-              >
+              <div class="track-label timeline-track-label timeline-track-label--watermark">
                 <!-- Hidden view: single row with icon, name, and show button -->
                 <div v-if="track.isHidden" class="flex items-center gap-1.5">
                   <div class="w-4 h-4 rounded bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
@@ -1333,7 +1260,7 @@
                 class="flex-1 h-full relative z-[10]"
                 @click="onTrackContentClick"
               >
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
 
                 <!-- Hidden state: show simplified bar -->
                 <div v-if="track.isHidden" class="absolute inset-x-0 top-1 bottom-1 pointer-events-none">
@@ -1476,9 +1403,7 @@
               :key="'placeholder-bottom-' + n"
               class="flex items-center h-8 relative"
             >
-              <div
-                class="track-label w-[120px] h-full sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              ></div>
+              <div class="track-label timeline-track-label"></div>
               <div class="flex-1 h-full relative z-[10] bg-[#111111]"></div>
             </div>
 
@@ -2263,6 +2188,7 @@
   // Zoom system: 0% = fit-to-width (full video visible), positive % = zoomed in
   // MIN_ZOOM represents the fit-to-width baseline (calculated dynamically)
   const MIN_ZOOM = ref(1.0); // Will be calculated based on viewport width
+  const MAX_ZOOM = 100; // Maximum zoom level (100x from baseline)
   const baselineZoom = ref(1.0); // The fit-to-width zoom level (1.0 = 100% of container)
   const zoomLevel = ref(1.0); // Start at baseline (fit-to-width)
   const zoomMenuOpen = ref(false);
@@ -2281,7 +2207,7 @@
 
   function zoomIn() {
     const step = getZoomStep();
-    zoomLevel.value = zoomLevel.value + step;
+    zoomLevel.value = Math.min(MAX_ZOOM, zoomLevel.value + step);
     ticksZoomLevel.value = zoomLevel.value; // Sync immediately for button clicks
     nextTick(updateVisibleTimeRange);
   }
@@ -8581,6 +8507,465 @@
 </script>
 
 <style scoped>
+  /* ========================================
+     TIMELINE COMPONENT STYLES
+     ======================================== */
+
+  /* ===== Container ===== */
+  .timeline-container {
+    transition: all 300ms ease-in-out;
+    height: 100%;
+  }
+
+  .timeline-wrapper {
+    padding: 0.5rem 0.75rem 0.25rem;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 0.5rem;
+  }
+
+  /* ===== Header ===== */
+  .timeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-right: 0.5rem;
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.75rem;
+  }
+
+  .timeline-header__left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .timeline-header__right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* ===== Toolbar Groups ===== */
+  .timeline-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    background-color: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    padding: 0.25rem 0.375rem;
+  }
+
+  .timeline-toolbar-separator {
+    width: 1px;
+    height: 1rem;
+    background-color: rgba(255, 255, 255, 0.08);
+    margin: 0 0.125rem;
+  }
+
+  /* ===== Tool Buttons ===== */
+  .timeline-tool-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-tool-button:hover {
+    color: rgba(255, 255, 255, 1);
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-tool-button--active {
+    color: #a78bfa;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(168, 85, 247, 0.15) 100%);
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.2);
+  }
+
+  /* ===== Action Buttons ===== */
+  .timeline-action-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-action-button:hover {
+    color: #60a5fa;
+    background-color: rgba(59, 130, 246, 0.15);
+  }
+
+  .timeline-action-button--split {
+    color: rgba(251, 146, 60, 0.7);
+  }
+
+  .timeline-action-button--split:hover {
+    color: #fb923c;
+    background-color: rgba(251, 146, 60, 0.15);
+  }
+
+  .timeline-action-button--disabled {
+    color: rgba(255, 255, 255, 0.15);
+    cursor: not-allowed;
+  }
+
+  .timeline-action-button--disabled:hover {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.15);
+  }
+
+  /* ===== Playback Buttons ===== */
+  .timeline-playback-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-playback-button:hover {
+    color: #fbbf24;
+    background-color: rgba(245, 158, 11, 0.15);
+  }
+
+  .timeline-playback-button--active {
+    color: #fbbf24;
+    background: linear-gradient(to bottom, rgba(245, 158, 11, 0.25), rgba(245, 158, 11, 0.15));
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+  }
+
+  /* ===== Badges ===== */
+  .timeline-badge {
+    font-size: 0.6875rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 8px;
+    font-weight: 500;
+    border: 1px solid;
+  }
+
+  .timeline-badge--segments {
+    color: #a78bfa;
+    background-color: rgba(139, 92, 246, 0.15);
+    border-color: rgba(139, 92, 246, 0.2);
+  }
+
+  .timeline-badge--duration {
+    color: rgba(255, 255, 255, 0.6);
+    background-color: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.04);
+    font-family: ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ===== Snap Menu ===== */
+  .timeline-snap-menu {
+    position: relative;
+  }
+
+  .timeline-snap-button {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 8px;
+    border: 1px solid;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.5);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-snap-button:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-snap-button--enabled {
+    color: #a78bfa;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%);
+    border-color: rgba(139, 92, 246, 0.3);
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.15);
+  }
+
+  .timeline-snap-dropdown {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 0.375rem;
+    background-color: var(--sidebar-surface, #0c0c0c);
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    padding: 0.375rem 0;
+    min-width: 190px;
+    z-index: 100;
+  }
+
+  .timeline-snap-dropdown__header {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.625rem;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+
+  .timeline-snap-dropdown__item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .timeline-snap-dropdown__item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-snap-dropdown__item--disabled {
+    opacity: 0.4;
+  }
+
+  .timeline-snap-dropdown__item span {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .timeline-snap-dropdown__checkbox {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    accent-color: #8b5cf6;
+  }
+
+  .timeline-snap-dropdown__divider {
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.08);
+    margin: 0.25rem 0;
+  }
+
+  /* ===== Zoom Controls ===== */
+  .timeline-zoom-group {
+    position: relative;
+  }
+
+  .timeline-zoom-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-zoom-button:hover {
+    color: rgba(255, 255, 255, 1);
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .timeline-zoom-button--disabled {
+    color: rgba(255, 255, 255, 0.15);
+    cursor: not-allowed;
+  }
+
+  .timeline-zoom-display {
+    font-size: 0.6875rem;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    min-width: 52px;
+    text-align: center;
+    user-select: none;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .timeline-zoom-display:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-zoom-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.375rem;
+    background-color: var(--sidebar-surface, #0c0c0c);
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    padding: 0.375rem 0;
+    min-width: 150px;
+    z-index: 100;
+  }
+
+  .timeline-zoom-dropdown__header {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.625rem;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+
+  .timeline-zoom-dropdown__item {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-size: 0.875rem;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    transition: background-color 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .timeline-zoom-dropdown__item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-zoom-dropdown__shortcut {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 0.75rem;
+    font-family: ui-monospace, monospace;
+  }
+
+  .timeline-zoom-dropdown__divider {
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.08);
+    margin: 0.25rem 0;
+  }
+
+  /* ===== Track Labels ===== */
+  .timeline-track-label {
+    width: 120px;
+    height: 100%;
+    padding-left: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    position: sticky;
+    left: 0;
+    z-index: 70;
+    background-color: rgba(14, 14, 16, 1);
+    flex-shrink: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .timeline-track-label--overlay {
+    padding-left: 0.75rem;
+    padding-right: 0.5rem;
+    flex-direction: column;
+    justify-content: center;
+    font-size: 0.6875rem;
+    border-left: 2px solid #8b5cf6;
+  }
+
+  .timeline-track-label--watermark {
+    padding-left: 0.75rem;
+    padding-right: 0.5rem;
+    flex-direction: column;
+    justify-content: center;
+    font-size: 0.6875rem;
+    border-left: 2px solid #10b981;
+  }
+
+  .timeline-track-label-bg {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(17, 17, 17, 1);
+    cursor: pointer;
+  }
+
+  .timeline-track-content-bg {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(22, 22, 24, 1);
+  }
+
+  .timeline-track-content-bg--flex {
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ===== Marquee Selection ===== */
+  .timeline-marquee {
+    position: absolute;
+    border: 2px solid #a78bfa;
+    background-color: rgba(139, 92, 246, 0.15);
+    pointer-events: none;
+    z-index: 100;
+    border-radius: 4px;
+  }
+
+  /* ===== Timeline Tracks Container ===== */
+  .timeline-tracks-container {
+    background-color: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    position: relative;
+    overflow-y: auto;
+    overflow-x: auto;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Custom scrollbar for timeline */
+  .timeline-tracks-container::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .timeline-tracks-container::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  .timeline-tracks-container::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+  }
+
+  .timeline-tracks-container::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* ===== Legacy Timeline Styles ===== */
   /* Timeline ruler styling */
   .timeline-ruler {
     background: rgba(10, 10, 10, 0.6);

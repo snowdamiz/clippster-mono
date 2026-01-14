@@ -7,9 +7,9 @@
     <!-- Video Container - constrained to aspect ratio -->
     <div
       ref="videoContainerRef"
-      class="flex items-center justify-center bg-black overflow-hidden relative max-w-full max-h-full"
+      class="flex items-center justify-center bg-black overflow-hidden relative"
       :class="isFullscreen ? 'rounded-none' : 'rounded-lg'"
-      :style="{ aspectRatio: previewAspectRatio.replace(':', '/'), width: 'auto', height: 'auto' }"
+      :style="{ aspectRatio: previewAspectRatio.replace(':', '/'), height: '100%', width: 'auto', maxWidth: '100%' }"
     >
       <!-- Framed container for non-16:9 aspect ratios - always rendered but hidden when not needed -->
       <div
@@ -177,6 +177,7 @@
     <div
       class="bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04]"
       :class="isFullscreen ? 'absolute bottom-4 left-4 right-4 mt-0 z-50' : 'mt-2'"
+      :style="!isFullscreen && containerSize.width > 0 ? { width: containerSize.width + 'px' } : undefined"
     >
       <div class="flex items-center justify-between px-1 py-1">
         <!-- Left Controls -->

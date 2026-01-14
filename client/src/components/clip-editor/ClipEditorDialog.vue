@@ -1,147 +1,133 @@
 <template>
   <Teleport to="body">
-    <div v-if="modelValue" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div
-        ref="dialogRef"
-        class="bg-card rounded-md w-full h-full border border-border shadow-2xl flex flex-col overflow-hidden"
-        style="margin: 30px; margin-top: 60px; max-height: calc(100vh - 80px); max-width: calc(100vw - 60px)"
-      >
+    <div v-if="modelValue" class="clip-editor__overlay">
+      <div ref="dialogRef" class="clip-editor" role="dialog" aria-modal="true">
         <!-- Header -->
-        <div
-          class="flex items-center justify-between px-3 py-2 border-b border-border/60 bg-gradient-to-r from-[#0a0a0a] via-[#0d0d0d] to-[#0a0a0a] rounded-t-lg"
-        >
-          <div class="flex items-center gap-3 min-w-0">
-            <div
-              class="w-6 h-6 rounded-sm bg-gradient-to-br from-violet-500/20 to-purple-600/20 border border-violet-500/30 flex items-center justify-center"
-            >
-              <Film class="h-3 w-3 text-violet-400" />
+        <div class="clip-editor__header">
+          <div class="clip-editor__header-left">
+            <div class="clip-editor__header-icon">
+              <Film :size="14" />
             </div>
-            <div class="flex gap-3">
-              <h2 class="text-sm font-semibold text-foreground tracking-tight">
-                {{ editorMode ? 'Video Editor' : 'Edit Clip' }}
-              </h2>
-              <Separator class="h-4 w-px bg-foreground/10" orientation="vertical" />
-              <p class="text-xs text-foreground/50 truncate max-w-[300px] mt-0.5">
-                {{ editorMode ? editorProjectName : clipTitle }}
-              </p>
-            </div>
+            <h2 class="clip-editor__title" :title="editorMode ? editorProjectName : clipTitle">
+              {{ editorMode ? 'Video Editor' : 'Edit Clip' }}
+            </h2>
+            <div class="clip-editor__separator"></div>
+            <p class="clip-editor__subtitle">
+              {{ editorMode ? editorProjectName : clipTitle }}
+            </p>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="clip-editor__header-right">
             <!-- Auto-save indicator -->
-            <div v-if="isSaving" class="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div v-if="isSaving" class="clip-editor__save-indicator clip-editor__save-indicator--saving">
               <Loader2 :size="12" class="animate-spin" />
               <span>Saving...</span>
             </div>
-            <div v-else-if="lastSaved" class="flex items-center gap-1.5 text-xs text-green-500/70">
+            <div v-else-if="lastSaved" class="clip-editor__save-indicator clip-editor__save-indicator--saved">
               <Check :size="12" />
               <span>Saved</span>
             </div>
-            <button
-              @click="close"
-              class="p-2 hover:bg-white/5 rounded-lg transition-all duration-200 group"
-              title="Close (Esc)"
-            >
-              <X class="h-4 w-4 text-foreground/50 group-hover:text-foreground/90 transition-colors" />
+            <button @click="close" class="clip-editor__close" title="Close (Esc)">
+              <X :size="16" />
             </button>
           </div>
         </div>
 
         <!-- Main Content Area -->
-        <div class="flex flex-col flex-1 min-h-0">
+        <div class="clip-editor__content">
           <!-- Top Row: Preview and Controls -->
-          <div class="flex min-h-0 border-b border-border flex-[0.55] min-h-[340px]" style="overflow: hidden">
+          <div class="clip-editor__top-row">
             <!-- Left: Video Preview Section -->
-            <div
-              class="w-1/2 min-w-0 border-r border-border flex flex-col bg-gradient-to-br from-black/20 to-transparent"
-            >
-              <!-- Aspect Ratio Selector (above video) -->
-              <AspectRatioSelector
-                :preview-aspect-ratio="previewAspectRatio"
-                :selected-aspect-ratios="selectedAspectRatios"
-                :framing-configs="framingConfigs"
-                :framing-mode="framingMode"
-                @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
-                @open-manual-editor="openManualPOIEditor"
-                @toggle-ratio-selection="toggleAspectRatio"
-              />
-
-              <div class="flex-1 min-h-0 flex flex-col items-center justify-center overflow-hidden relative">
-                <ClipEditorPreview
-                  ref="previewRef"
-                  :video-src="effectiveVideoSrc"
-                  :preload-video-src="preloadVideoSrc"
-                  :current-time="previewTime"
-                  :effective-time="effectivePreviewTime"
-                  :is-playing="isPlaying"
-                  :clip-start="clipStartTime"
-                  :clip-end="clipEndTime"
-                  :text-overlays="textOverlays"
-                  :stickers="stickers"
-                  :watermarks="watermarks"
-                  :creator-profile-watermark-settings="computedCreatorProfileWatermarkSettings"
-                  :filter-settings="activeFilterSettings"
-                  :segments="playbackSegments"
+            <div class="clip-editor__preview-column">
+              <div class="clip-editor__video-wrapper">
+                <!-- Aspect Ratio Selector (left side of video) -->
+                <AspectRatioSelector
                   :preview-aspect-ratio="previewAspectRatio"
                   :selected-aspect-ratios="selectedAspectRatios"
-                  :framing-configs="effectiveFramingConfigs"
-                  :subtitle-settings="subtitleSettings"
-                  :transcript-words="transcriptWords"
-                  :transcript-segments="transcriptSegments"
-                  :subtitle-source-time="subtitleSourceTime"
-                  :editor-mode="editorMode"
-                  :editor-total-duration="editorContentDuration"
-                  :active-transition="activeTransition"
-                  :video-sources="videoSources"
-                  :tracks="timelineTracks"
-                  :is-video-muted="isVideoMuted"
-                  :audio-tracks="audioTracks"
-                  :audio-effects="audioEffects"
-                  :selected-item-ids="selectedItemIds"
-                  @time-update="onPreviewTimeUpdate"
-                  @toggle-play="togglePlay"
-                  @video-element-ready="onVideoElementReady"
-                  @video-swapped="onVideoSwapped"
-                  @crossfade-completed="onCrossfadeCompleted"
-                  @update-overlay-position="onUpdateOverlayPosition"
-                  @update-overlay-width="onUpdateOverlayWidth"
-                  @update-overlay-rotation="onUpdateOverlayRotation"
-                  @update-overlay-scale="onUpdateOverlayScale"
-                  @update-sticker-scale="onUpdateStickerScale"
-                  @update-sticker-rotation="onUpdateStickerRotation"
-                  @update-watermark-scale="onUpdateWatermarkScale"
-                  @update-subtitle-position="onUpdateSubtitlePosition"
-                  @update-subtitle-max-width="onUpdateSubtitleMaxWidth"
-                  @overlay-drag-end="onOverlayPositionChangeComplete"
-                  @overlay-resize-end="onOverlayWidthChangeComplete"
-                  @overlay-rotate-end="onOverlayRotationChangeComplete"
-                  @overlay-scale-end="onOverlayScaleChangeComplete"
-                  @sticker-resize-end="onStickerScaleChangeComplete"
-                  @sticker-rotate-end="onStickerRotationChangeComplete"
-                  @watermark-resize-end="onWatermarkScaleChangeComplete"
-                  @video-ended="onVideoEnded"
-                  @track-item-select="onTrackItemSelect"
+                  :framing-configs="framingConfigs"
+                  :framing-mode="framingMode"
+                  @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
+                  @open-manual-editor="openManualPOIEditor"
+                  @toggle-ratio-selection="toggleAspectRatio"
                 />
 
-                <!-- Transition frame overlay - shows last frame during source switch to avoid black flash (fallback) -->
-                <canvas
-                  v-if="editorMode"
-                  ref="transitionCanvasRef"
-                  class="absolute inset-0 z-50 pointer-events-none transition-opacity duration-75"
-                  :class="showTransitionFrame ? 'opacity-100' : 'opacity-0'"
-                  :style="transitionCanvasStyle"
-                />
+                <div class="clip-editor__video-container">
+                  <ClipEditorPreview
+                    ref="previewRef"
+                    :video-src="effectiveVideoSrc"
+                    :preload-video-src="preloadVideoSrc"
+                    :current-time="previewTime"
+                    :effective-time="effectivePreviewTime"
+                    :is-playing="isPlaying"
+                    :clip-start="clipStartTime"
+                    :clip-end="clipEndTime"
+                    :text-overlays="textOverlays"
+                    :stickers="stickers"
+                    :watermarks="watermarks"
+                    :creator-profile-watermark-settings="computedCreatorProfileWatermarkSettings"
+                    :filter-settings="activeFilterSettings"
+                    :segments="playbackSegments"
+                    :preview-aspect-ratio="previewAspectRatio"
+                    :selected-aspect-ratios="selectedAspectRatios"
+                    :framing-configs="effectiveFramingConfigs"
+                    :subtitle-settings="subtitleSettings"
+                    :transcript-words="transcriptWords"
+                    :transcript-segments="transcriptSegments"
+                    :subtitle-source-time="subtitleSourceTime"
+                    :editor-mode="editorMode"
+                    :editor-total-duration="editorContentDuration"
+                    :active-transition="activeTransition"
+                    :video-sources="videoSources"
+                    :tracks="timelineTracks"
+                    :is-video-muted="isVideoMuted"
+                    :audio-tracks="audioTracks"
+                    :audio-effects="audioEffects"
+                    :selected-item-ids="selectedItemIds"
+                    @time-update="onPreviewTimeUpdate"
+                    @toggle-play="togglePlay"
+                    @video-element-ready="onVideoElementReady"
+                    @video-swapped="onVideoSwapped"
+                    @crossfade-completed="onCrossfadeCompleted"
+                    @update-overlay-position="onUpdateOverlayPosition"
+                    @update-overlay-width="onUpdateOverlayWidth"
+                    @update-overlay-rotation="onUpdateOverlayRotation"
+                    @update-overlay-scale="onUpdateOverlayScale"
+                    @update-sticker-scale="onUpdateStickerScale"
+                    @update-sticker-rotation="onUpdateStickerRotation"
+                    @update-watermark-scale="onUpdateWatermarkScale"
+                    @update-subtitle-position="onUpdateSubtitlePosition"
+                    @update-subtitle-max-width="onUpdateSubtitleMaxWidth"
+                    @overlay-drag-end="onOverlayPositionChangeComplete"
+                    @overlay-resize-end="onOverlayWidthChangeComplete"
+                    @overlay-rotate-end="onOverlayRotationChangeComplete"
+                    @overlay-scale-end="onOverlayScaleChangeComplete"
+                    @sticker-resize-end="onStickerScaleChangeComplete"
+                    @sticker-rotate-end="onStickerRotationChangeComplete"
+                    @watermark-resize-end="onWatermarkScaleChangeComplete"
+                    @video-ended="onVideoEnded"
+                    @track-item-select="onTrackItemSelect"
+                  />
+
+                  <!-- Transition frame overlay - shows last frame during source switch to avoid black flash (fallback) -->
+                  <canvas
+                    v-if="editorMode"
+                    ref="transitionCanvasRef"
+                    class="absolute inset-0 z-50 pointer-events-none transition-opacity duration-75"
+                    :class="showTransitionFrame ? 'opacity-100' : 'opacity-0'"
+                    :style="transitionCanvasStyle"
+                  />
+                </div>
               </div>
             </div>
 
             <!-- Right: Controls Section -->
-            <div class="w-1/2 min-w-0 flex flex-col flex-1 bg-gradient-to-b from-transparent to-black/10">
+            <div class="clip-editor__controls-column">
               <!-- Keyframe Inspector (Top of right panel when selected) -->
-              <div v-if="selectedKeyframe" class="p-4 border-b border-white/10 bg-[#121212]">
-                <div class="flex justify-between items-center mb-2">
-                  <h3 class="text-xs font-semibold text-white/70 uppercase tracking-wider">Keyframe Editor</h3>
+              <div v-if="selectedKeyframe" class="clip-editor__keyframe-inspector">
+                <div class="clip-editor__keyframe-inspector-header">
+                  <h3 class="clip-editor__keyframe-inspector-title">Keyframe Editor</h3>
                   <button
                     @click="selectedKeyframe = null"
-                    class="p-1 hover:bg-white/10 rounded text-white/50 hover:text-white transition-colors"
+                    class="clip-editor__keyframe-inspector-close"
                     title="Close Inspector"
                   >
                     <X :size="14" />
@@ -162,9 +148,7 @@
               />
 
               <!-- Tab Content -->
-              <div
-                class="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent"
-              >
+              <div class="clip-editor__tab-content">
                 <!-- Media Tab (Sources + Intro/Outro + Project Media) -->
                 <MediaTab
                   v-if="editorMode ? activeEditorTab === 'media' : activeTab === 'media'"
@@ -324,9 +308,7 @@
           </div>
 
           <!-- Bottom Row: Timeline (balanced real estate, keeps room for multiple tracks) -->
-          <div
-            class="flex-[0.45] min-h-[320px] sm:min-h-[340px] max-h-[60vh] border-t border-border bg-gradient-to-t from-black/25 to-transparent px-2 pb-3 pt-2 overflow-hidden"
-          >
+          <div class="clip-editor__timeline-section">
             <ClipEditorTimeline
               class="h-full"
               :duration="editorMode ? editorDuration : clipDuration"
@@ -430,12 +412,8 @@
       </div>
 
       <!-- Speed Curve Editor Dialog -->
-      <div
-        v-if="showSpeedCurveEditor"
-        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
-        @click.self="closeSpeedCurveEditor"
-      >
-        <div class="bg-[#1a1a1a] rounded-lg border border-white/10 shadow-2xl w-[600px] max-w-[90vw]">
+      <div v-if="showSpeedCurveEditor" class="clip-editor__speed-curve-overlay" @click.self="closeSpeedCurveEditor">
+        <div class="clip-editor__speed-curve-dialog">
           <SpeedCurveEditor
             v-if="speedCurveEditorSourceId"
             :source-id="speedCurveEditorSourceId"
@@ -7867,20 +7845,327 @@
 </script>
 
 <style scoped>
-  /* Backdrop blur effects */
-  .backdrop-blur-sm {
+  /* ========================================
+     CLIP EDITOR DIALOG STYLES
+     ======================================== */
+
+  /* ===== Overlay ===== */
+  .clip-editor__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  /* ===== Dialog Container ===== */
+  .clip-editor {
+    background-color: var(--sidebar-surface, #0c0c0c);
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    border-radius: 16px;
+    width: calc(100% - 60px);
+    height: calc(100% - 80px);
+    margin: 60px 30px 33px 30px;
+    max-width: 1800px;
+    max-height: 950px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow:
+      0 25px 80px rgba(0, 0, 0, 0.6),
+      0 0 1px rgba(255, 255, 255, 0.1);
+  }
+
+  /* ===== Header ===== */
+  .clip-editor__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    border-bottom: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    flex-shrink: 0;
+  }
+
+  .clip-editor__header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .clip-editor__header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: #a78bfa;
+    flex-shrink: 0;
+  }
+
+  .clip-editor__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text, #f4f4f5);
+    margin: 0;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+
+  .clip-editor__separator {
+    width: 1px;
+    height: 1rem;
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .clip-editor__subtitle {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+  }
+
+  .clip-editor__header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .clip-editor__save-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+  }
+
+  .clip-editor__save-indicator--saving {
+    color: var(--sidebar-text-muted, #71717a);
+  }
+
+  .clip-editor__save-indicator--saved {
+    color: #22c55e;
+  }
+
+  .clip-editor__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted, #71717a);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .clip-editor__close:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text, #f4f4f5);
+  }
+
+  /* ===== Content Area ===== */
+  .clip-editor__content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .clip-editor__top-row {
+    display: flex;
+    min-height: 0;
+    border-bottom: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    flex: 0.55;
+    min-height: 340px;
+    overflow: hidden;
+  }
+
+  .clip-editor__preview-column {
+    width: 50%;
+    min-width: 0;
+    border-right: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, transparent 100%);
+  }
+
+  .clip-editor__video-wrapper {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .clip-editor__video-container {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .clip-editor__controls-column {
+    width: 50%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
+  }
+
+  .clip-editor__keyframe-inspector {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+
+  .clip-editor__keyframe-inspector-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .clip-editor__keyframe-inspector-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0;
+  }
+
+  .clip-editor__keyframe-inspector-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clip-editor__keyframe-inspector-close:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 1);
+  }
+
+  .clip-editor__tab-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  /* Custom scrollbar for tab content */
+  .clip-editor__tab-content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .clip-editor__tab-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .clip-editor__tab-content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+  }
+
+  .clip-editor__tab-content::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* ===== Timeline Section ===== */
+  .clip-editor__timeline-section {
+    flex: 0.45;
+    min-height: 320px;
+    max-height: 60vh;
+    border-top: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.25) 100%);
+    padding: 0.5rem 0.5rem 0.75rem;
+    overflow: hidden;
+  }
+
+  @media (min-width: 640px) {
+    .clip-editor__timeline-section {
+      min-height: 340px;
+    }
+  }
+
+  /* ===== Speed Curve Editor Overlay ===== */
+  .clip-editor__speed-curve-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(4px);
   }
 
-  /* Smooth transitions */
-  .transition-colors {
-    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 150ms;
+  .clip-editor__speed-curve-dialog {
+    background-color: var(--sidebar-surface, #0c0c0c);
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    width: 600px;
+    max-width: 90vw;
   }
 
-  /* Ensure proper z-index layering */
+  /* ===== Utility Classes for Tailwind Compatibility ===== */
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Maintain z-index layering */
   .z-50 {
     z-index: 50;
+  }
+
+  /* ===== Responsive Adjustments ===== */
+  @media (max-width: 1200px) {
+    .clip-editor {
+      margin: 20px;
+      width: calc(100% - 40px);
+      height: calc(100% - 40px);
+      border-radius: 12px;
+    }
+
+    .clip-editor__preview-column,
+    .clip-editor__controls-column {
+      width: 50%;
+    }
   }
 </style>

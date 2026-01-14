@@ -1,8 +1,6 @@
 <template>
   <div v-if="modelValue" class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div
-      class="bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl w-[900px] max-w-[95vw] max-h-[95vh] flex flex-col overflow-hidden"
-    >
+    <div class="manual-poi-editor">
       <!-- Header -->
       <div class="flex items-center justify-between p-4 border-b border-white/10">
         <div>
@@ -37,7 +35,7 @@
 
         <!-- Media (Video or Image) - shown after loaded -->
         <div
-          class="relative bg-[#0a0a0a]"
+          class="manual-poi-editor__preview"
           :style="{ width: mediaWidth + 'px', height: mediaHeight + 'px' }"
           v-show="mediaLoaded"
         >
@@ -132,7 +130,7 @@
       </div>
 
       <!-- Controls -->
-      <div class="p-4 border-t border-white/10 bg-[#1a1a1a]">
+      <div class="manual-poi-editor__controls">
         <!-- Playback controls if video -->
         <div v-if="videoUrl" class="flex items-center gap-4 mb-4">
           <button
@@ -511,3 +509,29 @@
     }
   );
 </script>
+
+<style scoped>
+  .manual-poi-editor {
+    background-color: var(--sidebar-surface, #0c0c0c);
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    border-radius: 12px;
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6);
+    width: 900px;
+    max-width: 95vw;
+    max-height: 95vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .manual-poi-editor__preview {
+    position: relative;
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .manual-poi-editor__controls {
+    padding: 1rem;
+    border-top: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    background-color: var(--sidebar-surface, #0c0c0c);
+  }
+</style>

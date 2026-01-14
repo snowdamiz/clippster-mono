@@ -1,35 +1,21 @@
 <template>
-  <div class="flex items-center gap-0.5 p-1.5 border-b border-white/10 bg-[#0d0d0d]">
+  <div class="clip-editor-toolbar">
     <button
       v-for="tab in activeTabs"
       :key="tab.id"
       @click="handleTabChange(tab.id)"
       :title="tab.label"
-      :class="[
-        'flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-all',
-        activeTab === tab.id
-          ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30 px-2.5'
-          : 'text-white/50 hover:text-white hover:bg-white/5 px-2',
-      ]"
+      :class="['clip-editor-toolbar__tab', activeTab === tab.id ? 'clip-editor-toolbar__tab--active' : '']"
     >
       <component :is="tab.icon" :size="14" />
-      <span class="whitespace-nowrap">{{ tab.label }}</span>
+      <span class="clip-editor-toolbar__tab-label">{{ tab.label }}</span>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
   import { computed } from 'vue';
-  import {
-    Music,
-    Layers,
-    Droplet,
-    MessageSquare,
-    Sparkles,
-    Wand2,
-    Download,
-    FolderOpen,
-  } from 'lucide-vue-next';
+  import { Music, Layers, Droplet, MessageSquare, Sparkles, Wand2, Download, FolderOpen } from 'lucide-vue-next';
   import type { ClipEditorTab, VideoEditorTab } from '@/types';
 
   const props = withDefaults(
@@ -74,3 +60,48 @@
     emit('tabChange', tabId as ClipEditorTab | VideoEditorTab);
   }
 </script>
+
+<style scoped>
+  .clip-editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.375rem;
+    border-bottom: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    background-color: rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+  }
+
+  .clip-editor-toolbar__tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: transparent;
+    border: 1px solid transparent;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .clip-editor-toolbar__tab:hover {
+    color: rgba(255, 255, 255, 0.9);
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .clip-editor-toolbar__tab--active {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: #a78bfa;
+    padding: 0.375rem 0.625rem;
+  }
+
+  .clip-editor-toolbar__tab-label {
+    white-space: nowrap;
+  }
+</style>
