@@ -375,53 +375,65 @@ defmodule ClippsterServerWeb.SchedulingController do
   def submit_external_post(conn, %{"organization_id" => org_id} = params) do
     user = conn.assigns.current_user
 
-    # Auto-fetch Twitter analytics if it's a Twitter post
-    twitter_analytics = fetch_twitter_analytics_if_applicable(params["platform"], params["post_url"])
+    # For Instagram, require connected account
+    with :ok <- validate_instagram_account_if_needed(params["platform"], user) do
+      # Auto-fetch analytics based on platform
+      platform_analytics = case params["platform"] do
+        "twitter" -> fetch_twitter_analytics_if_applicable(params["platform"], params["post_url"])
+        "instagram" -> fetch_instagram_analytics_if_applicable(params["post_url"], user)
+        _ -> %{}
+      end
 
-    attrs = %{
-      platform: params["platform"],
-      post_url: params["post_url"],
+      attrs = %{
+        platform: params["platform"],
+        post_url: params["post_url"],
       caption: params["caption"],
       media_type: params["media_type"],
       organization_creator_profile_id: params["creator_profile_id"],
       campaign_id: params["campaign_id"],
       clip_id: params["clip_id"],
-      view_count: twitter_analytics[:view_count] || params["view_count"],
-      like_count: twitter_analytics[:like_count] || params["like_count"],
-      comment_count: twitter_analytics[:comment_count] || params["comment_count"],
+      view_count: platform_analytics[:view_count] || params["view_count"],
+      like_count: platform_analytics[:like_count] || params["like_count"],
+      comment_count: platform_analytics[:comment_count] || params["comment_count"],
       share_count: params["share_count"],
-      save_count: params["save_count"],
+      save_count: platform_analytics[:save_count] || params["save_count"],
       notes: params["notes"],
-      # Author metadata from Twitter API
-      author_username: twitter_analytics[:author_username],
-      author_name: twitter_analytics[:author_name],
-      author_profile_image: twitter_analytics[:author_profile_image]
+      # Author metadata from platform API
+      author_username: platform_analytics[:author_username],
+      author_name: platform_analytics[:author_name],
+      author_profile_image: platform_analytics[:author_profile_image]
     }
 
-    case Social.create_external_post_submission(org_id, attrs, user) do
-      {:ok, submission} ->
-        conn
-        |> put_status(201)
-        |> json(%{
-          success: true,
-          submission: serialize_external_post(submission),
-          message: "Post submitted successfully"
-        })
+      case Social.create_external_post_submission(org_id, attrs, user) do
+        {:ok, submission} ->
+          conn
+          |> put_status(201)
+          |> json(%{
+            success: true,
+            submission: serialize_external_post(submission),
+            message: "Post submitted successfully"
+          })
 
-      {:error, :unauthorized} ->
-        conn
-        |> put_status(403)
-        |> json(%{success: false, error: "You must be a member of this organization"})
+        {:error, :unauthorized} ->
+          conn
+          |> put_status(403)
+          |> json(%{success: false, error: "You must be a member of this organization"})
 
-      {:error, %Ecto.Changeset{} = changeset} ->
-        conn
-        |> put_status(422)
-        |> json(%{success: false, error: format_errors(changeset)})
+        {:error, %Ecto.Changeset{} = changeset} ->
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: format_errors(changeset)})
 
-      {:error, reason} ->
+        {:error, reason} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: to_string(reason)})
+      end
+    else
+      {:error, :instagram_not_connected} ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: to_string(reason)})
+        |> json(%{success: false, error: "You must connect your Instagram account before submitting Instagram links. Go to Settings > Social Accounts to connect."})
     end
   end
 
@@ -518,6 +530,120 @@ defmodule ClippsterServerWeb.SchedulingController do
     end
   end
 
+  @doc """
+  Sync analytics for all posts in an organization (on-demand).
+  POST /organizations/:organization_id/sync-analytics
+  """
+  def sync_org_analytics(conn, %{"organization_id" => org_id}) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_member?(org_id, user.id) do
+      # Run sync in background task
+      Task.start(fn ->
+        sync_org_posts_analytics(org_id)
+        sync_org_external_posts_analytics(org_id)
+      end)
+
+      json(conn, %{success: true, message: "Analytics sync started"})
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not a member of this organization"})
+    end
+  end
+
+  defp sync_org_posts_analytics(org_id) do
+    alias ClippsterServer.Social.Platforms.Instagram
+
+    # Get all published posts for the org
+    case Social.list_post_submissions(org_id, status: "published", limit: 500) do
+      {:ok, %{posts: posts}} ->
+        for post <- posts do
+          if post.organization_social_account && post.organization_social_account.access_token do
+            # Only Instagram has get_insights - Twitter scheduled posts would use org's account
+            if post.platform == "instagram" do
+              case Instagram.get_insights(post.organization_social_account.access_token, post.post_id) do
+                {:ok, insights} ->
+                  Social.sync_post_analytics(post, insights)
+                _ -> :ok
+              end
+            end
+          end
+        end
+      _ -> :ok
+    end
+  end
+
+  defp sync_org_external_posts_analytics(org_id) do
+    alias ClippsterServer.Social.Platforms.{Twitter, Instagram}
+
+    # Get all external posts for the org
+    case Social.list_external_post_submissions(org_id, limit: 500) do
+      {:ok, %{posts: posts}} ->
+        for submission <- posts do
+          case submission.platform do
+            "twitter" ->
+              # Twitter uses public API
+              case Twitter.extract_tweet_id(submission.post_url) do
+                {:ok, tweet_id} ->
+                  case Twitter.get_tweet_analytics(tweet_id) do
+                    {:ok, analytics} ->
+                      Social.sync_external_post_analytics(submission, %{
+                        view_count: analytics.view_count,
+                        like_count: analytics.like_count,
+                        comment_count: analytics.comment_count,
+                        author_username: analytics.author_username,
+                        author_name: analytics.author_name,
+                        author_profile_image: analytics.author_profile_image
+                      })
+                    _ -> :ok
+                  end
+                _ -> :ok
+              end
+
+            "instagram" ->
+              # Instagram needs user's connected account
+              if submission.submitted_by_user_id do
+                case ClippsterServer.Campaigns.list_user_social_accounts(submission.submitted_by_user_id) do
+                  accounts when is_list(accounts) ->
+                    instagram_account = Enum.find(accounts, fn acc -> acc.platform == "instagram" end)
+                    if instagram_account && instagram_account.access_token do
+                      case extract_instagram_post_id(submission.post_url) do
+                        {:ok, post_id} ->
+                          case Instagram.get_insights(instagram_account.access_token, post_id) do
+                            {:ok, insights} ->
+                              # Also get profile for author metadata
+                              author_info = case Instagram.get_user_profile(instagram_account.access_token) do
+                                {:ok, profile} -> %{
+                                  author_username: profile.username,
+                                  author_name: profile.display_name,
+                                  author_profile_image: profile.profile_image_url
+                                }
+                                _ -> %{}
+                              end
+
+                              Social.sync_external_post_analytics(submission, Map.merge(%{
+                                view_count: insights.view_count,
+                                like_count: insights.like_count,
+                                comment_count: insights.comment_count,
+                                save_count: insights.save_count
+                              }, author_info))
+                            _ -> :ok
+                          end
+                        _ -> :ok
+                      end
+                    end
+                  _ -> :ok
+                end
+              end
+
+            _ -> :ok
+          end
+        end
+      _ -> :ok
+    end
+  end
+
   # ============================================================================
   # Private Functions
   # ============================================================================
@@ -551,6 +677,92 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp fetch_twitter_analytics_if_applicable(_platform, _post_url), do: %{}
+
+  defp validate_instagram_account_if_needed("instagram", user) do
+    case ClippsterServer.Campaigns.list_user_social_accounts(user.id) do
+      accounts when is_list(accounts) ->
+        instagram_account = Enum.find(accounts, fn acc -> acc.platform == "instagram" end)
+        if instagram_account && instagram_account.access_token do
+          :ok
+        else
+          {:error, :instagram_not_connected}
+        end
+      _ ->
+        {:error, :instagram_not_connected}
+    end
+  end
+
+  defp validate_instagram_account_if_needed(_platform, _user), do: :ok
+
+  defp fetch_instagram_analytics_if_applicable(post_url, user) when is_binary(post_url) do
+    alias ClippsterServer.Social.Platforms.Instagram
+    alias ClippsterServer.Campaigns
+
+    # Extract Instagram post ID from URL
+    case extract_instagram_post_id(post_url) do
+      {:ok, post_id} ->
+        # Look up user's connected Instagram account
+        case Campaigns.list_user_social_accounts(user.id) do
+          accounts when is_list(accounts) ->
+            instagram_account = Enum.find(accounts, fn acc -> acc.platform == "instagram" end)
+
+            if instagram_account && instagram_account.access_token do
+              # Fetch insights using user's access token
+              case Instagram.get_insights(instagram_account.access_token, post_id) do
+                {:ok, insights} ->
+                  # Also get user profile for author metadata
+                  author_info = case Instagram.get_user_profile(instagram_account.access_token) do
+                    {:ok, profile} ->
+                      %{
+                        author_username: profile.username,
+                        author_name: profile.display_name,
+                        author_profile_image: profile.profile_image_url
+                      }
+                    _ -> %{}
+                  end
+
+                  Logger.info("[SchedulingController] Fetched Instagram analytics for post #{post_id}: #{insights.view_count} views, #{insights.like_count} likes")
+
+                  Map.merge(%{
+                    view_count: insights.view_count,
+                    like_count: insights.like_count,
+                    comment_count: insights.comment_count,
+                    save_count: insights.save_count
+                  }, author_info)
+
+                {:error, reason} ->
+                  Logger.warning("[SchedulingController] Failed to fetch Instagram insights: #{inspect(reason)}")
+                  %{}
+              end
+            else
+              Logger.info("[SchedulingController] User has no connected Instagram account, skipping analytics fetch")
+              %{}
+            end
+
+          _ ->
+            %{}
+        end
+
+      {:error, _} ->
+        Logger.warning("[SchedulingController] Could not extract Instagram post ID from URL: #{post_url}")
+        %{}
+    end
+  end
+
+  defp fetch_instagram_analytics_if_applicable(_post_url, _user), do: %{}
+
+  # Extract Instagram post ID from various URL formats
+  # Examples:
+  # - https://www.instagram.com/p/ABC123/
+  # - https://www.instagram.com/reel/ABC123/
+  # - https://instagram.com/p/ABC123/?igshid=xxx
+  defp extract_instagram_post_id(url) do
+    # Match /p/ID or /reel/ID patterns
+    case Regex.run(~r{instagram\.com/(?:p|reel|tv)/([A-Za-z0-9_-]+)}, url) do
+      [_, post_id] -> {:ok, post_id}
+      _ -> {:error, :invalid_url}
+    end
+  end
 
   defp determine_owner_type(params) do
     cond do

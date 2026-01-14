@@ -230,12 +230,12 @@
 
         <div class="post-submissions__filters-spacer"></div>
 
-        <button class="post-submissions__refresh-btn" @click="loadPosts" :disabled="loading">
+        <button class="post-submissions__refresh-btn" @click="handleRefresh" :disabled="loading || syncing">
           <RefreshCw
             class="post-submissions__refresh-icon"
-            :class="{ 'post-submissions__refresh-icon--spin': loading }"
+            :class="{ 'post-submissions__refresh-icon--spin': loading || syncing }"
           />
-          Refresh
+          {{ syncing ? 'Syncing...' : 'Refresh' }}
         </button>
       </div>
     </section>
@@ -557,7 +557,7 @@
     type PostSubmission,
     type AnalyticsSummary,
   } from '@/services/socialAccountsApi';
-  import { listExternalPosts, type ExternalPostSubmission } from '@/services/schedulingApi';
+  import { listExternalPosts, syncOrgAnalytics, type ExternalPostSubmission } from '@/services/schedulingApi';
 
   interface CreatorProfile {
     id: number;
@@ -637,6 +637,7 @@
   const showEditDialog = ref(false);
   const editingPost = ref<PostSubmission | null>(null);
   const saving = ref(false);
+  const syncing = ref(false);
   const editForm = reactive({
     view_count: 0,
     like_count: 0,
@@ -645,11 +646,47 @@
     reach_count: 0,
   });
 
-  onMounted(() => {
+  onMounted(async () => {
+    // Sync analytics on page load (runs in background)
+    syncAnalyticsOnLoad();
     loadPosts();
     loadSummary();
     document.addEventListener('click', handlePostMenuClickOutside);
   });
+
+  // Sync analytics when page loads
+  async function syncAnalyticsOnLoad() {
+    if (!props.organizationId) return;
+    try {
+      await syncOrgAnalytics(props.organizationId);
+      // Reload posts after sync completes to get updated analytics
+      setTimeout(() => {
+        loadPosts();
+        loadSummary();
+      }, 2000); // Give backend time to fetch from APIs
+    } catch (error) {
+      console.warn('[PostSubmissionsList] Analytics sync failed:', error);
+    }
+  }
+
+  // Handle manual refresh button click
+  async function handleRefresh() {
+    if (!props.organizationId) return;
+    syncing.value = true;
+    try {
+      await syncOrgAnalytics(props.organizationId);
+      // Wait a bit for backend to fetch from APIs, then reload
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await loadPosts();
+      await loadSummary();
+      showToast('Analytics refreshed', 'success');
+    } catch (error) {
+      console.error('[PostSubmissionsList] Refresh failed:', error);
+      showToast('Failed to refresh analytics', 'error');
+    } finally {
+      syncing.value = false;
+    }
+  }
 
   onUnmounted(() => {
     document.removeEventListener('click', handlePostMenuClickOutside);
@@ -773,7 +810,8 @@
             id: post.id,
             type: 'external',
             platform: post.platform,
-            status: post.status,
+            // External links are already published on the platform
+            status: 'published',
             post_url: post.post_url,
             caption: post.caption,
             view_count: post.analytics?.view_count || 0,

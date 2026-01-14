@@ -299,6 +299,16 @@ export async function rejectExternalPost(
   return response.data;
 }
 
+/**
+ * Sync analytics for all posts in an organization (on-demand)
+ */
+export async function syncOrgAnalytics(
+  organizationId: number | string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const response = await api.post(`/organizations/${organizationId}/sync-analytics`);
+  return response.data;
+}
+
 // ============================================
 // Helper Functions
 // ============================================

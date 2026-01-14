@@ -745,6 +745,16 @@ defmodule ClippsterServer.Social do
     end
   end
 
+  @doc """
+  System-level analytics update for external posts (no user validation).
+  Used for background sync operations.
+  """
+  def sync_external_post_analytics(%ExternalPostSubmission{} = submission, attrs) do
+    submission
+    |> ExternalPostSubmission.update_analytics_changeset(attrs)
+    |> Repo.update()
+  end
+
   # ============================================================================
   # Helper Functions
   # ============================================================================

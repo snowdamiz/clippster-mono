@@ -59,10 +59,10 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
   def init(opts) do
     interval = Keyword.get(opts, :interval, @default_interval)
 
-    # Schedule first sync after a short delay to let the app start up
-    if Keyword.get(opts, :start_immediately, true) do
-      Process.send_after(self(), :sync, :timer.seconds(30))
-    end
+    # DISABLED: No longer auto-sync on timer - analytics are fetched on-demand when org views the page
+    # if Keyword.get(opts, :start_immediately, true) do
+    #   Process.send_after(self(), :sync, :timer.seconds(30))
+    # end
 
     state = %{
       interval: interval,
@@ -75,7 +75,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
       }
     }
 
-    Logger.info("[AnalyticsSyncWorker] Started with interval: #{div(interval, 60_000)} minutes")
+    Logger.info("[AnalyticsSyncWorker] Started (on-demand only, no automatic sync)")
 
     {:ok, state}
   end
@@ -117,7 +117,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
 
   @impl true
   def handle_info(:sync, state) do
-    Logger.info("[AnalyticsSyncWorker] Starting analytics sync")
+    Logger.info("[AnalyticsSyncWorker] Starting analytics sync (on-demand)")
 
     new_state = %{state | syncing: true, last_sync: DateTime.utc_now()}
 
@@ -127,8 +127,8 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
       send(__MODULE__, {:sync_complete, result})
     end)
 
-    # Schedule next sync
-    Process.send_after(self(), :sync, state.interval)
+    # DISABLED: No longer schedule next sync automatically
+    # Process.send_after(self(), :sync, state.interval)
 
     {:noreply, new_state}
   end

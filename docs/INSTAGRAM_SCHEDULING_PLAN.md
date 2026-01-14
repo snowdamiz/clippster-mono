@@ -92,8 +92,10 @@
 - ✅ Org-assigned creator + org IG present:
   - ✅ "Allow personal accounts" toggle on organizations
   - ✅ `scheduling_enabled` toggle on organizations
-- ⚠️ Multi-org/campaign creator:
-  - ⚠️ Context selection via campaign_id - full UI grouping not implemented
+- ✅ Multi-org/campaign creator:
+  - ✅ Campaign selector in PublishDialog when creator has campaigns
+  - ✅ Auto-fetches campaigns for selected creator profile
+  - ✅ Selected campaign_id passed to scheduling/publish API
 - ✅ Independent/self-created creator (or no org context):
   - ✅ Personal IG allowed by default (`UserPublishDialog.vue`)
 - ✅ Visibility to orgs:
@@ -140,9 +142,9 @@
 - PulseKit observability/logging
 - Hashtag validation (30 max) in frontend and backend
 - API service for scheduling operations (`schedulingApi.ts`)
+- **Campaign selection UI** - Campaign selector appears when creator has campaigns, passes campaign_id to API
 
 ### ⚠️ Partially Completed
-- Multi-org/campaign context selection UI (backend supports campaign_id, frontend grouping not complete)
 - Media constraint validation (duration/aspect ratio not pre-validated)
 
 ### ❌ Not Implemented

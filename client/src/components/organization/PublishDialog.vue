@@ -99,6 +99,32 @@
                   <p class="text-xs text-zinc-500">Associate this post with a creator profile for tracking</p>
                 </div>
 
+                <!-- Campaign Selection (shows when creator has campaigns) -->
+                <div v-if="creatorCampaigns.length > 0" class="space-y-1.5 sm:space-y-2">
+                  <label for="campaign" class="block text-xs sm:text-sm font-medium text-zinc-300">
+                    Campaign
+                    <span v-if="creatorCampaigns.length > 1" class="text-zinc-500 font-normal">({{ creatorCampaigns.length }} available)</span>
+                  </label>
+                  <div class="relative">
+                    <select
+                      id="campaign"
+                      v-model="selectedCampaignId"
+                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all pr-10"
+                      :disabled="publishing || loadingCampaigns"
+                    >
+                      <option value="">No campaign</option>
+                      <option v-for="campaign in creatorCampaigns" :key="campaign.id" :value="String(campaign.id)">
+                        {{ campaign.title }}
+                        <template v-if="campaign.organization?.name"> ({{ campaign.organization.name }})</template>
+                      </option>
+                    </select>
+                    <ChevronDown
+                      class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none"
+                    />
+                  </div>
+                  <p class="text-xs text-zinc-500">Associate this post with a campaign for tracking and analytics</p>
+                </div>
+
                 <!-- Caption -->
                 <div class="space-y-1.5 sm:space-y-2">
                   <label for="caption" class="block text-xs sm:text-sm font-medium text-zinc-300">Caption</label>
@@ -220,12 +246,13 @@
   import { Instagram, FileVideo, Loader2, ChevronDown, Calendar } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import {
-    getMyAssignedAccounts,
     listSocialAccounts,
+    getMyAssignedAccounts,
     publishPost,
     type SocialAccount,
   } from '@/services/socialAccountsApi';
   import { schedulePost } from '@/services/schedulingApi';
+  import { getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
 
   interface CreatorProfile {
     id: number;
@@ -265,6 +292,11 @@
   const publishing = ref(false);
   const loading = ref(true);
   const error = ref<string | null>(null);
+
+  // Campaign selection state
+  const creatorCampaigns = ref<Campaign[]>([]);
+  const selectedCampaignId = ref<string>('');
+  const loadingCampaigns = ref(false);
 
   // Scheduling state
   const isScheduled = ref(false);
@@ -353,6 +385,46 @@
     { immediate: true }
   );
 
+  // Watch for creator profile changes to load campaigns
+  watch(
+    () => selectedCreatorProfileId.value,
+    async (profileId) => {
+      if (profileId && profileId !== 'none' && profileId !== '') {
+        await loadCampaignsForCreator(parseInt(profileId));
+      } else {
+        // Reset campaigns when no creator selected
+        creatorCampaigns.value = [];
+        selectedCampaignId.value = '';
+      }
+    }
+  );
+
+  // Note: Campaign selection is used for tracking purposes
+  // Account filtering by campaign org would require multi-org account loading
+
+  async function loadCampaignsForCreator(creatorProfileId: number) {
+    loadingCampaigns.value = true;
+    try {
+      const response = await getCampaignsByCreatorProfile(creatorProfileId);
+      if (response.success && response.campaigns) {
+        creatorCampaigns.value = response.campaigns;
+        // Auto-select if only one campaign
+        if (creatorCampaigns.value.length === 1) {
+          selectedCampaignId.value = String(creatorCampaigns.value[0].id);
+        } else {
+          selectedCampaignId.value = '';
+        }
+      } else {
+        creatorCampaigns.value = [];
+      }
+    } catch (err) {
+      console.error('Failed to load campaigns:', err);
+      creatorCampaigns.value = [];
+    } finally {
+      loadingCampaigns.value = false;
+    }
+  }
+
   async function loadAccounts() {
     loading.value = true;
     try {
@@ -401,7 +473,7 @@
               ? parseInt(selectedCreatorProfileId.value)
               : undefined,
           clip_id: props.clipId,
-          campaign_id: props.campaignId,
+          campaign_id: selectedCampaignId.value ? parseInt(selectedCampaignId.value) : props.campaignId,
         });
 
         if (response.success) {
@@ -449,6 +521,8 @@
   function resetForm() {
     selectedAccountId.value = '';
     selectedCreatorProfileId.value = '';
+    selectedCampaignId.value = '';
+    creatorCampaigns.value = [];
     caption.value = '';
     postType.value = 'reel';
     isScheduled.value = false;

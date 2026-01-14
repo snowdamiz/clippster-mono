@@ -367,6 +367,9 @@ defmodule ClippsterServerWeb.Router do
     post "/organizations/:organization_id/external-posts/:id/approve", SchedulingController, :approve_external_post
     post "/organizations/:organization_id/external-posts/:id/reject", SchedulingController, :reject_external_post
 
+    # Analytics sync (on-demand)
+    post "/organizations/:organization_id/sync-analytics", SchedulingController, :sync_org_analytics
+
     # ============================================================================
     # Clipper Profiles - User's Own Profile
     # ============================================================================
