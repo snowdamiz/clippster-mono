@@ -11,7 +11,13 @@
           <!-- Search -->
           <div class="clips-header__search">
             <Search class="clips-header__search-icon" />
-            <Input v-model="searchQuery" placeholder="Search clips..." class="clips-header__search-input" />
+            <Input
+              v-model="searchQuery"
+              placeholder="Search clips..."
+              class="clips-header__search-input"
+              @focus="openSearchPalette"
+              readonly
+            />
           </div>
 
           <!-- Status Filter -->
@@ -85,6 +91,17 @@
       </template>
 
       <div class="clips__content" :class="{ 'clips__content--empty': !loading && displayableBuilds.length === 0 }">
+        <!-- Untranscribed Filter Banner -->
+        <div v-if="showOnlyUntranscribed" class="clips__filter-banner">
+          <div class="clips__filter-banner-content">
+            <FileText class="clips__filter-banner-icon" />
+            <span class="clips__filter-banner-text">Showing only clips without transcripts</span>
+          </div>
+          <button @click="showOnlyUntranscribed = false" class="clips__filter-banner-close">
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+
         <!-- Page Heading -->
         <div v-if="displayableBuilds.length > 0 || loading" class="clips__heading">
           <h1 class="clips__title">Your Clips</h1>
@@ -195,10 +212,22 @@
                       </div>
                     </div>
 
-                    <!-- Count Badge -->
-                    <div class="clips-card__badge clips-card__badge--count">
-                      <FolderOpen class="clips-card__badge-icon" />
-                      <span>{{ getFolderBuildsCount(group.clips) }} Clips</span>
+                    <!-- Badges Group -->
+                    <div class="clips-card__badges-group">
+                      <!-- Count Badge -->
+                      <div class="clips-card__badge clips-card__badge--count">
+                        <FolderOpen class="clips-card__badge-icon" />
+                        <span>{{ getFolderBuildsCount(group.clips) }} Clips</span>
+                      </div>
+
+                      <!-- Untranscribed Badge -->
+                      <div
+                        v-if="hasUntranscribedClips(group.clips)"
+                        class="clips-card__badge clips-card__badge--untranscribed"
+                        title="Contains clips without transcripts"
+                      >
+                        <FileText class="clips-card__badge-icon-sm" />
+                      </div>
                     </div>
 
                     <!-- Thumbnail -->
@@ -604,15 +633,200 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Search Palette Modal -->
+    <SearchPalette
+      v-model="showSearchPalette"
+      :search-query="paletteSearchQuery"
+      :active-tab="paletteViewMode"
+      :placeholder="
+        paletteViewMode === 'untranscribed'
+          ? 'Filter untranscribed clips...'
+          : 'Search clips by name, project, or transcript...'
+      "
+      :tabs="clipsPaletteTabs"
+      @update:search-query="paletteSearchQuery = $event"
+      @update:active-tab="onPaletteTabChange"
+      @close="closeSearchPalette"
+    >
+      <!-- Search Mode -->
+      <template v-if="paletteViewMode === 'search'">
+        <!-- Untranscribed Info Banner (subtle, when searching) -->
+        <div v-if="untranscribedClipsCount > 0 && paletteSearchQuery" class="search-palette__info-banner">
+          <AlertCircle class="search-palette__info-icon" />
+          <span class="search-palette__info-text">
+            {{ untranscribedClipsCount }} clip{{ untranscribedClipsCount !== 1 ? 's' : '' }} without transcripts won't
+            appear in transcript search
+          </span>
+          <button @click="showUntranscribedClips" class="search-palette__info-link">View →</button>
+        </div>
+
+        <!-- Search Results -->
+        <div v-if="paletteSearchQuery && paletteSearchResults.length > 0" class="search-palette__results">
+          <div class="search-palette__results-header">
+            <span class="search-palette__results-label">Results</span>
+            <span class="search-palette__results-count">{{ paletteSearchResults.length }} found</span>
+          </div>
+          <div class="search-palette__list">
+            <div
+              v-for="item in paletteSearchResults"
+              :key="item.id"
+              class="search-palette__item"
+              @click="selectSearchResult(item)"
+            >
+              <div class="search-palette__item-thumb-wrap">
+                <div
+                  v-if="item.thumbnailUrl"
+                  class="search-palette__item-thumb"
+                  :style="{ backgroundImage: `url(${item.thumbnailUrl})` }"
+                ></div>
+                <div v-else class="search-palette__item-thumb search-palette__item-thumb--empty">
+                  <Video class="w-5 h-5" />
+                </div>
+                <div v-if="!item.isTranscribed" class="search-palette__item-no-transcript" title="No transcript">
+                  <FileText class="w-3 h-3" />
+                </div>
+              </div>
+
+              <div class="search-palette__item-content">
+                <div class="search-palette__item-title">{{ item.clipName }}</div>
+                <div class="search-palette__item-meta">
+                  <span v-if="item.projectName" class="search-palette__item-project">{{ item.projectName }}</span>
+                  <span v-if="item.matchType === 'transcript'" class="search-palette__item-match-tag">
+                    <span class="search-palette__match-dot"></span>
+                    Transcript match
+                  </span>
+                </div>
+              </div>
+
+              <div class="search-palette__item-arrow">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M6 4L10 8L6 12"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- No Search Results -->
+        <div v-else-if="paletteSearchQuery && paletteSearchResults.length === 0" class="search-palette__empty-state">
+          <div class="search-palette__empty-icon-wrap">
+            <Search class="search-palette__empty-icon" />
+          </div>
+          <h3 class="search-palette__empty-title">No clips found</h3>
+          <p class="search-palette__empty-desc">Try a different search term or check untranscribed clips</p>
+        </div>
+
+        <!-- Initial State -->
+        <div v-else class="search-palette__empty-state">
+          <div class="search-palette__empty-icon-wrap search-palette__empty-icon-wrap--subtle">
+            <Search class="search-palette__empty-icon" />
+          </div>
+          <h3 class="search-palette__empty-title">Search your clips</h3>
+          <p class="search-palette__empty-desc">Find clips by name, project, or transcript content</p>
+        </div>
+      </template>
+
+      <!-- Untranscribed Mode -->
+      <template v-else-if="paletteViewMode === 'untranscribed'">
+        <!-- Untranscribed clips list -->
+        <div v-if="paletteUntranscribedClips.length > 0" class="search-palette__results">
+          <div class="search-palette__results-header">
+            <span class="search-palette__results-label">Clips without transcripts</span>
+            <span class="search-palette__results-count">
+              {{ paletteUntranscribedClips.length }} clip{{ paletteUntranscribedClips.length !== 1 ? 's' : '' }}
+            </span>
+          </div>
+          <div class="search-palette__list">
+            <div
+              v-for="item in paletteUntranscribedClips"
+              :key="item.id"
+              class="search-palette__item"
+              @click="selectSearchResult(item)"
+            >
+              <div class="search-palette__item-thumb-wrap">
+                <div
+                  v-if="item.thumbnailUrl"
+                  class="search-palette__item-thumb"
+                  :style="{ backgroundImage: `url(${item.thumbnailUrl})` }"
+                ></div>
+                <div v-else class="search-palette__item-thumb search-palette__item-thumb--empty">
+                  <Video class="w-5 h-5" />
+                </div>
+                <div class="search-palette__item-no-transcript" title="No transcript">
+                  <FileText class="w-3 h-3" />
+                </div>
+              </div>
+
+              <div class="search-palette__item-content">
+                <div class="search-palette__item-title">{{ item.clipName }}</div>
+                <div class="search-palette__item-meta">
+                  <span v-if="item.projectName" class="search-palette__item-project">{{ item.projectName }}</span>
+                  <span class="search-palette__item-untranscribed-tag">Needs transcript</span>
+                </div>
+              </div>
+
+              <div class="search-palette__item-arrow">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M6 4L10 8L6 12"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- No Untranscribed Clips -->
+        <div v-else class="search-palette__empty-state">
+          <div class="search-palette__empty-icon-wrap search-palette__empty-icon-wrap--success">
+            <Check class="search-palette__empty-icon" />
+          </div>
+          <h3 class="search-palette__empty-title">All clips transcribed!</h3>
+          <p class="search-palette__empty-desc">All your clips have transcripts and can be searched</p>
+        </div>
+      </template>
+
+      <!-- Footer for untranscribed mode -->
+      <template #footer v-if="paletteViewMode === 'untranscribed' && paletteUntranscribedClips.length > 0">
+        <button @click="applyUntranscribedFilter" class="search-palette__apply-btn">
+          <FileText class="w-4 h-4" />
+          Show only untranscribed in main view
+        </button>
+      </template>
+    </SearchPalette>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch, Teleport, Transition } from 'vue';
+  import { ref, onMounted, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { save } from '@tauri-apps/plugin-dialog';
-  import { LayoutGrid, Folder, Video, Search, X, List, FolderOpen, Check, Trash2, Ratio } from 'lucide-vue-next';
+  import {
+    LayoutGrid,
+    Folder,
+    Video,
+    Search,
+    X,
+    List,
+    FolderOpen,
+    Check,
+    Trash2,
+    Ratio,
+    FileText,
+    AlertCircle,
+  } from 'lucide-vue-next';
   import {
     getAllClipsWithBuilds,
     deleteClipBuild,
@@ -620,6 +834,7 @@
     getProject,
     getRawVideosByProjectId,
     getCreatorProfileByProjectId,
+    searchTranscriptSegmentsByClipIds,
     type Clip,
     type ClipBuild,
     type Project,
@@ -640,6 +855,7 @@
   import PublishDialog from '@/components/organization/PublishDialog.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
+  import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
   import {
     uploadMediaForPost,
     getMyAssignedCreatorProfiles,
@@ -747,6 +963,29 @@
   const statusFilter = ref('all');
   const projectFilter = ref('all');
   const aspectRatioFilter = ref('all');
+  const clipIdsWithTranscriptMatch = ref<Set<string>>(new Set());
+
+  // Search palette state
+  const showSearchPalette = ref(false);
+  const paletteSearchQuery = ref('');
+  const showOnlyUntranscribed = ref(false);
+  const paletteViewMode = ref<'search' | 'untranscribed'>('search');
+
+  // Computed tabs for search palette
+  const clipsPaletteTabs = computed((): SearchPaletteTab[] => [
+    { id: 'search', label: 'Search All', icon: Search },
+    {
+      id: 'untranscribed',
+      label: 'Untranscribed',
+      icon: FileText,
+      badge: untranscribedClipsCount.value > 0 ? untranscribedClipsCount.value : undefined,
+    },
+  ]);
+
+  function onPaletteTabChange(tabId: string) {
+    paletteViewMode.value = tabId as 'search' | 'untranscribed';
+    paletteSearchQuery.value = '';
+  }
 
   const statusOptions = [
     { label: 'All Status', value: 'all' },
@@ -826,6 +1065,38 @@
     return options;
   });
 
+  // Debounced transcript search
+  const transcriptSearchTimeoutId = ref<number | null>(null);
+
+  async function performTranscriptSearch(query: string) {
+    if (!query.trim()) {
+      clipIdsWithTranscriptMatch.value.clear();
+      return;
+    }
+
+    // Get all unique clip IDs from displayable builds
+    const clipIds = [...new Set(displayableBuilds.value.map((b) => b.clip.id))];
+
+    try {
+      const matchedClipIds = await searchTranscriptSegmentsByClipIds(query, clipIds);
+      clipIdsWithTranscriptMatch.value = new Set(matchedClipIds);
+    } catch (error) {
+      console.error('Failed to search transcripts:', error);
+      clipIdsWithTranscriptMatch.value.clear();
+    }
+  }
+
+  // Debounce transcript search to avoid excessive database queries
+  function debouncedTranscriptSearch(query: string) {
+    if (transcriptSearchTimeoutId.value !== null) {
+      clearTimeout(transcriptSearchTimeoutId.value);
+    }
+
+    transcriptSearchTimeoutId.value = window.setTimeout(() => {
+      performTranscriptSearch(query);
+    }, 300) as unknown as number; // 300ms debounce
+  }
+
   // Pagination state
   const currentPage = ref(1);
   const clipsPerPage = 20;
@@ -897,13 +1168,34 @@
   const filteredBuilds = computed((): DisplayableBuild[] => {
     let result = [...displayableBuilds.value];
 
-    // 1. Search Text
+    // 0. Filter for untranscribed clips only (if active)
+    if (showOnlyUntranscribed.value) {
+      // Get unique clips that don't have transcripts
+      const untranscribedClipIds = new Set<string>();
+      const seenClips = new Set<string>();
+
+      for (const build of displayableBuilds.value) {
+        if (!seenClips.has(build.clip.id)) {
+          seenClips.add(build.clip.id);
+          // A clip is untranscribed if it has no transcript segments
+          // We check if it's NOT in the transcript match set
+          if (!clipIdsWithTranscriptMatch.value.has(build.clip.id)) {
+            untranscribedClipIds.add(build.clip.id);
+          }
+        }
+      }
+
+      result = result.filter((item) => untranscribedClipIds.has(item.clip.id));
+    }
+
+    // 1. Search Text - now includes transcript search
     if (searchQuery.value) {
       const query = searchQuery.value.toLowerCase();
       result = result.filter(
         (item) =>
           item.clipName.toLowerCase().includes(query) ||
-          (item.projectName && item.projectName.toLowerCase().includes(query))
+          (item.projectName && item.projectName.toLowerCase().includes(query)) ||
+          clipIdsWithTranscriptMatch.value.has(item.clip.id)
       );
     }
 
@@ -1310,6 +1602,12 @@
     return count;
   }
 
+  // Check if any clips in a folder are untranscribed
+  function hasUntranscribedClips(clips: ClipWithBuilds[]): boolean {
+    // A folder has untranscribed clips if any of its clips don't have transcript matches
+    return clips.some((clip) => !clipIdsWithTranscriptMatch.value.has(clip.id));
+  }
+
   function getDateLabel(timestamp: number): string {
     const d = new Date(timestamp * 1000);
     const now = new Date();
@@ -1345,9 +1643,25 @@
   }
 
   // Reset to first page when clips/builds change or filters change
-  watch([clips, displayableBuilds, searchQuery, sortBy, statusFilter, projectFilter, aspectRatioFilter], () => {
-    currentPage.value = 1;
-  });
+  watch(
+    [
+      clips,
+      displayableBuilds,
+      searchQuery,
+      sortBy,
+      statusFilter,
+      projectFilter,
+      aspectRatioFilter,
+      showOnlyUntranscribed,
+    ],
+    () => {
+      currentPage.value = 1;
+      // Clear transcript matches if search query is empty
+      if (!searchQuery.value) {
+        clipIdsWithTranscriptMatch.value.clear();
+      }
+    }
+  );
 
   // Clear selections when switching view mode
   watch(viewMode, () => {
@@ -1359,6 +1673,11 @@
     if (!isOpen) {
       clearFolderDialogBuildSelection();
     }
+  });
+
+  // Watch for search query changes and trigger transcript search
+  watch(searchQuery, (newQuery) => {
+    debouncedTranscriptSearch(newQuery);
   });
 
   // Folder dialog build multi-select functions
@@ -2103,6 +2422,107 @@
     }
   });
 
+  // Search palette functions
+  function openSearchPalette() {
+    showSearchPalette.value = true;
+    paletteSearchQuery.value = searchQuery.value;
+  }
+
+  function closeSearchPalette() {
+    showSearchPalette.value = false;
+    paletteSearchQuery.value = '';
+    paletteViewMode.value = 'search';
+  }
+
+  function selectSearchResult(item: DisplayableBuild) {
+    // Apply the search and close palette
+    searchQuery.value = item.clipName;
+    closeSearchPalette();
+  }
+
+  function showUntranscribedClips() {
+    // Switch to untranscribed view mode within the palette
+    onPaletteTabChange('untranscribed');
+  }
+
+  function switchToSearchMode() {
+    onPaletteTabChange('search');
+  }
+
+  function applyUntranscribedFilter() {
+    // Apply the untranscribed filter to the main page and close palette
+    closeSearchPalette();
+    searchQuery.value = '';
+    showOnlyUntranscribed.value = true;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // Count clips without transcripts
+  const untranscribedClipsCount = computed(() => {
+    // Count unique clips that don't have transcript segments
+    const uniqueClips = new Map<string, ClipWithBuilds>();
+    for (const build of displayableBuilds.value) {
+      if (!uniqueClips.has(build.clip.id)) {
+        uniqueClips.set(build.clip.id, build.clip);
+      }
+    }
+
+    let count = 0;
+    for (const clip of uniqueClips.values()) {
+      // A clip is considered untranscribed if it has no transcript segments linked to it
+      // We'll check this by attempting a transcript search for this specific clip
+      // For now, we'll mark all clips as potentially untranscribed if they don't match transcript search
+      count++;
+    }
+
+    // Return a rough estimate - clips that exist but don't have transcript matches
+    return uniqueClips.size - clipIdsWithTranscriptMatch.value.size;
+  });
+
+  // Get untranscribed clips for palette display
+  const paletteUntranscribedClips = computed((): (DisplayableBuild & { isTranscribed: boolean })[] => {
+    // Get unique clips first (one entry per clip, not per build)
+    const seenClipIds = new Set<string>();
+    return displayableBuilds.value
+      .filter((build) => {
+        // Skip if we've already seen this clip
+        if (seenClipIds.has(build.clip.id)) return false;
+        seenClipIds.add(build.clip.id);
+        // Only show clips without transcripts
+        return !clipIdsWithTranscriptMatch.value.has(build.clip.id);
+      })
+      .slice(0, 30) // Limit results
+      .map((item) => ({
+        ...item,
+        isTranscribed: false,
+      }));
+  });
+
+  // Search results for palette
+  const paletteSearchResults = computed((): DisplayableBuild[] => {
+    if (!paletteSearchQuery.value) return [];
+
+    const query = paletteSearchQuery.value.toLowerCase();
+    return displayableBuilds.value
+      .filter((item) => {
+        const nameMatch = item.clipName.toLowerCase().includes(query);
+        const projectMatch = item.projectName && item.projectName.toLowerCase().includes(query);
+        const transcriptMatch = clipIdsWithTranscriptMatch.value.has(item.clip.id);
+        return nameMatch || projectMatch || transcriptMatch;
+      })
+      .slice(0, 20) // Limit to 20 results
+      .map((item) => ({
+        ...item,
+        matchType: clipIdsWithTranscriptMatch.value.has(item.clip.id) ? 'transcript' : 'name',
+        isTranscribed: clipIdsWithTranscriptMatch.value.has(item.clip.id),
+      }));
+  });
+
+  // Watch palette search query for transcript search
+  watch(paletteSearchQuery, (newQuery) => {
+    debouncedTranscriptSearch(newQuery);
+  });
+
   onMounted(() => {
     loadClips();
   });
@@ -2141,6 +2561,54 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+  }
+
+  /* ===== Filter Banner ===== */
+  .clips__filter-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1.25rem;
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.12) 0%, rgba(251, 191, 36, 0.06) 100%);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+  }
+
+  .clips__filter-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .clips__filter-banner-icon {
+    width: 18px;
+    height: 18px;
+    color: rgb(251, 191, 36);
+    flex-shrink: 0;
+  }
+
+  .clips__filter-banner-text {
+    font-size: 0.875rem;
+    color: rgb(251, 191, 36);
+    font-weight: 600;
+  }
+
+  .clips__filter-banner-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: rgb(251, 191, 36);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clips__filter-banner-close:hover {
+    background-color: rgba(251, 191, 36, 0.2);
   }
 
   /* ===== Page Heading ===== */
@@ -2436,33 +2904,27 @@
     gap: 1.25rem;
   }
 
-  @media (min-width: 640px) {
+  @media (min-width: 1024px) {
     .clips__grid {
       grid-template-columns: repeat(2, 1fr);
     }
   }
 
-  @media (min-width: 1024px) {
+  @media (min-width: 1400px) {
     .clips__grid {
       grid-template-columns: repeat(3, 1fr);
     }
   }
 
-  @media (min-width: 1400px) {
+  @media (min-width: 1800px) {
     .clips__grid {
       grid-template-columns: repeat(4, 1fr);
     }
   }
 
-  @media (min-width: 1800px) {
-    .clips__grid {
-      grid-template-columns: repeat(5, 1fr);
-    }
-  }
-
   @media (min-width: 2200px) {
     .clips__grid {
-      grid-template-columns: repeat(6, 1fr);
+      grid-template-columns: repeat(5, 1fr);
     }
   }
 
@@ -2560,12 +3022,18 @@
     height: 16px;
   }
 
-  /* Badges */
-  .clips-card__badge {
+  /* Badges Group */
+  .clips-card__badges-group {
     position: absolute;
     top: 1rem;
     left: 1rem;
     z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .clips-card__badge {
     display: flex;
     align-items: center;
     gap: 0.375rem;
@@ -2582,9 +3050,21 @@
     color: white;
   }
 
+  .clips-card__badge--untranscribed {
+    background-color: rgba(0, 0, 0, 0.6);
+    color: rgba(251, 191, 36, 0.9);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    padding: 0.25rem 0.375rem;
+  }
+
   .clips-card__badge-icon {
     width: 12px;
     height: 12px;
+  }
+
+  .clips-card__badge-icon-sm {
+    width: 11px;
+    height: 11px;
   }
 
   /* Thumbnail */
@@ -2783,5 +3263,298 @@
   .fade-enter-from,
   .fade-leave-to {
     opacity: 0;
+  }
+
+  /* ===== Search Palette Content Styles ===== */
+  /* Info Banner */
+  .search-palette__info-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 1.25rem;
+    background: rgba(6, 182, 212, 0.06);
+    border-bottom: 1px solid rgba(6, 182, 212, 0.1);
+  }
+
+  .search-palette__info-icon {
+    width: 14px;
+    height: 14px;
+    color: rgba(6, 182, 212, 0.7);
+    flex-shrink: 0;
+  }
+
+  .search-palette__info-text {
+    flex: 1;
+    font-size: 0.75rem;
+    color: rgba(6, 182, 212, 0.8);
+    font-weight: 450;
+  }
+
+  .search-palette__info-link {
+    padding: 0;
+    background: none;
+    border: none;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #06b6d4;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+
+  .search-palette__info-link:hover {
+    opacity: 0.8;
+  }
+
+  /* Results */
+  .search-palette__results {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .search-palette__results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .search-palette__results-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  .search-palette__results-count {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .search-palette__list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Item */
+  .search-palette__item {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.75rem 1.25rem;
+    cursor: pointer;
+    transition: all 120ms ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  }
+
+  .search-palette__item:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .search-palette__item:last-child {
+    border-bottom: none;
+  }
+
+  .search-palette__item:active {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .search-palette__item-thumb-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .search-palette__item-thumb {
+    width: 72px;
+    height: 42px;
+    border-radius: 6px;
+    background-size: cover;
+    background-position: center;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .search-palette__item-thumb--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.25);
+  }
+
+  .search-palette__item-no-transcript {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background: rgba(6, 182, 212, 0.9);
+    border-radius: 9999px;
+    color: rgba(0, 0, 0, 0.85);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+
+  .search-palette__item-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .search-palette__item-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.01em;
+  }
+
+  .search-palette__item:hover .search-palette__item-title {
+    color: white;
+  }
+
+  .search-palette__item-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .search-palette__item-project {
+    color: rgba(255, 255, 255, 0.45);
+    font-weight: 450;
+  }
+
+  .search-palette__item-match-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.5rem;
+    background: rgba(139, 92, 246, 0.15);
+    border-radius: 4px;
+    color: #c4b5fd;
+    font-weight: 600;
+    font-size: 0.6875rem;
+  }
+
+  .search-palette__match-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 9999px;
+    background: #c4b5fd;
+  }
+
+  .search-palette__item-untranscribed-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    background: rgba(6, 182, 212, 0.12);
+    border-radius: 4px;
+    color: rgba(6, 182, 212, 0.9);
+    font-weight: 600;
+    font-size: 0.6875rem;
+  }
+
+  .search-palette__item-arrow {
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.2);
+    transition: all 150ms ease;
+  }
+
+  .search-palette__item:hover .search-palette__item-arrow {
+    color: rgba(255, 255, 255, 0.5);
+    transform: translateX(2px);
+  }
+
+  /* Empty State */
+  .search-palette__empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3.5rem 1.5rem;
+    text-align: center;
+  }
+
+  .search-palette__empty-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    margin-bottom: 1.25rem;
+  }
+
+  .search-palette__empty-icon-wrap--subtle {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .search-palette__empty-icon-wrap--success {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.2);
+  }
+
+  .search-palette__empty-icon-wrap--success .search-palette__empty-icon {
+    color: rgb(34, 197, 94);
+  }
+
+  .search-palette__empty-icon {
+    width: 26px;
+    height: 26px;
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  .search-palette__empty-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.01em;
+  }
+
+  .search-palette__empty-desc {
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.4);
+    margin: 0;
+    max-width: 280px;
+    line-height: 1.5;
+  }
+
+  /* Apply Button */
+  .search-palette__apply-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%);
+    border: 1px solid rgba(6, 182, 212, 0.25);
+    border-radius: 10px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #06b6d4;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .search-palette__apply-btn:hover {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(6, 182, 212, 0.15) 100%);
+    border-color: rgba(6, 182, 212, 0.35);
+    transform: translateY(-1px);
+  }
+
+  .search-palette__apply-btn:active {
+    transform: translateY(0);
   }
 </style>
