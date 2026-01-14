@@ -420,6 +420,7 @@
               @delete-region="handleDeleteRegion"
               @detect-beat-markers="handleDetectBeatMarkers"
               @clear-beat-markers="handleClearBeatMarkers"
+              @configure-segment-framing="handleConfigureSegmentFraming"
               :regions="regions"
               :beat-markers="beatMarkers"
               :in-point="inPoint"
@@ -4676,6 +4677,14 @@
   function openManualPOIEditor(ratio: string) {
     editingAspectRatio.value = ratio;
     showManualPOIEditor.value = true;
+  }
+
+  // Handle configure segment framing from timeline context menu
+  function handleConfigureSegmentFraming(segmentId: string, aspectRatio: string) {
+    // Select the segment so the framing will be applied to it
+    selectedSegmentIds.value = new Set([segmentId]);
+    // Open the manual POI editor for the specified aspect ratio
+    openManualPOIEditor(aspectRatio);
   }
 
   // Get config for a specific aspect ratio
