@@ -115,4 +115,3 @@ Each search result will display:
 - Thumbnail (from first source or project thumbnail)
 - Project name
 - Source count badge (e.g., "3 Sources")
-- Edit type indicators (audio/text/sticker icons when present)

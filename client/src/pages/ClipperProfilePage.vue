@@ -36,7 +36,12 @@
         <header class="profile-header">
           <div class="profile-header__main">
             <div class="profile-avatar">
-              <img v-if="clipperProfile?.avatar_url" :src="clipperProfile.avatar_url" class="profile-avatar__img" />
+              <img
+                v-if="clipperProfile?.avatar_url && !avatarLoadError"
+                :src="clipperProfile.avatar_url"
+                class="profile-avatar__img"
+                @error="avatarLoadError = true"
+              />
               <UserCircle v-else class="profile-avatar__fallback" />
               <div v-if="clipperProfile?.is_verified" class="profile-avatar__verified">
                 <CheckCircle />
@@ -720,7 +725,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted, onUnmounted, markRaw, computed } from 'vue';
+  import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch } from 'vue';
   import {
     UserCircle,
     Share2,
@@ -828,6 +833,7 @@
   const totalViews = ref(0);
   const currentUserId = ref<number | null>(null);
   const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
+  const avatarLoadError = ref(false);
 
   interface LeaderboardEntry {
     id: number;
@@ -836,6 +842,14 @@
     total_views: number;
     clipper_profile?: { id: number; user_id: number; display_name: string | null; avatar_url: string | null };
   }
+
+  // Reset avatar load error when clipperProfile changes
+  watch(
+    () => clipperProfile.value?.avatar_url,
+    () => {
+      avatarLoadError.value = false;
+    }
+  );
 
   const formatViews = (views: number): string => {
     if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M';

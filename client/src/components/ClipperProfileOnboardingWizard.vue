@@ -77,10 +77,10 @@
                   <div class="onboarding-wizard__avatar-section">
                     <div class="onboarding-wizard__avatar-preview">
                       <img
-                        v-if="profile.avatar_url"
+                        v-if="profile.avatar_url && !avatarLoadError"
                         :src="profile.avatar_url"
                         class="onboarding-wizard__avatar-img"
-                        @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
+                        @error="avatarLoadError = true"
                       />
                       <UserCircle v-else class="onboarding-wizard__avatar-placeholder" />
                       <div v-if="uploadingAvatar" class="onboarding-wizard__avatar-loading">
@@ -298,9 +298,10 @@
                     <div class="onboarding-wizard__summary-header">
                       <div class="onboarding-wizard__summary-avatar">
                         <img
-                          v-if="profile.avatar_url"
+                          v-if="profile.avatar_url && !avatarLoadError"
                           :src="profile.avatar_url"
                           class="onboarding-wizard__summary-avatar-img"
+                          @error="avatarLoadError = true"
                         />
                         <UserCircle v-else class="onboarding-wizard__summary-avatar-placeholder" />
                       </div>
@@ -486,6 +487,7 @@
   const uploadingAvatar = ref(false);
   const error = ref<string | null>(null);
   const avatarInputRef = ref<HTMLInputElement | null>(null);
+  const avatarLoadError = ref(false);
 
   const profile = reactive<Partial<ClipperProfile>>({
     display_name: '',
@@ -501,6 +503,14 @@
     languages: [],
     timezone: '',
   });
+
+  // Reset avatar load error when avatar_url changes
+  watch(
+    () => profile.avatar_url,
+    () => {
+      avatarLoadError.value = false;
+    }
+  );
 
   // Validation for each step
   const canProceed = computed(() => {
