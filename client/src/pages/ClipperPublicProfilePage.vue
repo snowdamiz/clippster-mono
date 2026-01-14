@@ -211,33 +211,6 @@
       </div>
     </PageLayout>
 
-    <!-- Message Dialog -->
-    <Dialog v-model:open="showMessageDialog">
-      <DialogContent class="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Message {{ profile?.display_name }}</DialogTitle>
-          <DialogDescription>Start a conversation with this clipper</DialogDescription>
-        </DialogHeader>
-        <div class="space-y-4">
-          <div class="space-y-2">
-            <Label>Message</Label>
-            <Textarea
-              v-model="messageContent"
-              placeholder="Hi! I'd like to discuss a potential collaboration..."
-              rows="4"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" @click="showMessageDialog = false">Cancel</Button>
-          <Button @click="sendMessage" :disabled="sendingMessage || !messageContent.trim()">
-            <Loader2 v-if="sendingMessage" class="w-4 h-4 mr-2 animate-spin" />
-            Send Message
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
     <!-- Endorsement Dialog -->
     <Dialog v-model:open="showEndorsementDialog">
       <DialogContent class="max-w-md">
@@ -340,11 +313,6 @@
   const loading = ref(true);
   const profile = ref<ClipperProfile | null>(null);
 
-  // Message dialog state
-  const showMessageDialog = ref(false);
-  const messageContent = ref('');
-  const sendingMessage = ref(false);
-
   // Endorsement dialog state
   const showEndorsementDialog = ref(false);
   const endorsementContent = ref('');
@@ -352,34 +320,15 @@
   const submittingEndorsement = ref(false);
 
   const openMessageDialog = () => {
-    messageContent.value = '';
-    showMessageDialog.value = true;
+    if (!profile.value) return;
+    // Navigate directly to messages page with clipper user_id
+    router.push(`/messages?to=${profile.value.user_id}`);
   };
 
   const openEndorsementDialog = () => {
     endorsementContent.value = '';
     endorsementRating.value = 0;
     showEndorsementDialog.value = true;
-  };
-
-  const sendMessage = async () => {
-    if (!profile.value || !messageContent.value.trim()) return;
-
-    sendingMessage.value = true;
-    try {
-      // For now, redirect to messages page with the clipper's user ID
-      // The messaging system will handle creating the conversation
-      router.push(`/messages?to=${profile.value.user_id}&message=${encodeURIComponent(messageContent.value)}`);
-      showMessageDialog.value = false;
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to send message. Please try again.',
-      });
-    } finally {
-      sendingMessage.value = false;
-    }
   };
 
   const submitEndorsement = async () => {

@@ -27,7 +27,7 @@ defmodule ClippsterServer.Messaging.Conversation do
   def changeset(conversation, attrs) do
     conversation
     |> cast(attrs, [:type, :name, :last_message_at, :last_message_preview, :organization_id, :created_by_user_id])
-    |> validate_required([:type, :organization_id])
+    |> validate_required([:type])
     |> validate_inclusion(:type, @conversation_types)
     |> validate_name_for_group()
     |> foreign_key_constraint(:organization_id)

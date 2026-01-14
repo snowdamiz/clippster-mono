@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+  import { useRoute, useRouter } from 'vue-router';
   import { useMessagingStore } from '@/stores/messaging';
   import { useAuthStore } from '@/stores/auth';
   import api from '@/services/api';
@@ -28,6 +29,8 @@
 
   const messagingStore = useMessagingStore();
   const authStore = useAuthStore();
+  const route = useRoute();
+  const router = useRouter();
 
   const messageInput = ref('');
   const messagesContainer = ref<HTMLElement | null>(null);
@@ -171,7 +174,34 @@
   }
 
   onMounted(async () => {
-    if (authStore.isAuthenticated) {
+    if (!authStore.isAuthenticated) return;
+
+    // Handle deep link parameters (e.g., /messages?to=123&message=hello)
+    const toUserId = route.query.to ? parseInt(route.query.to as string) : null;
+    const prefilledMessage = (route.query.message as string) || '';
+
+    if (toUserId) {
+      try {
+        // Create or find global conversation
+        const conversation = await messagingStore.startGlobalDirectConversation(toUserId);
+
+        // Select the conversation
+        await messagingStore.setActiveConversation(conversation.id);
+
+        // Pre-fill the message input
+        if (prefilledMessage) {
+          messageInput.value = prefilledMessage;
+        }
+
+        // Clear URL params (clean history)
+        router.replace({ path: '/messages' });
+      } catch (error) {
+        console.error('Failed to create global conversation:', error);
+        // Fall back to normal initialization
+        await loadOrganizationsAndMembers();
+      }
+    } else {
+      // Normal initialization
       await loadOrganizationsAndMembers();
     }
   });

@@ -19,16 +19,48 @@ defmodule ClippsterServer.Messaging do
   Returns existing conversation if one already exists.
   """
   def create_direct_conversation(organization_id, user1_id, user2_id) do
-    # Verify both users are members of the organization
-    with :ok <- verify_org_membership(organization_id, user1_id),
-         :ok <- verify_org_membership(organization_id, user2_id) do
-      # Check if direct conversation already exists between these users
-      case find_existing_direct_conversation(organization_id, user1_id, user2_id) do
+    # Prevent creating a conversation with yourself
+    if user1_id == user2_id do
+      {:error, :cannot_message_self}
+    else
+      # Verify both users are members of the organization
+      with :ok <- verify_org_membership(organization_id, user1_id),
+           :ok <- verify_org_membership(organization_id, user2_id) do
+        # Check if direct conversation already exists between these users
+        case find_existing_direct_conversation(organization_id, user1_id, user2_id) do
+          nil ->
+            create_conversation_with_participants(
+              %{
+                type: "direct",
+                organization_id: organization_id,
+                created_by_user_id: user1_id
+              },
+              [user1_id, user2_id]
+            )
+
+          conversation ->
+            {:ok, conversation}
+        end
+      end
+    end
+  end
+
+  @doc """
+  Creates a global direct conversation between two users (not scoped to an organization).
+  Returns existing conversation if one already exists.
+  """
+  def create_global_direct_conversation(user1_id, user2_id) do
+    # Prevent creating a conversation with yourself
+    if user1_id == user2_id do
+      {:error, :cannot_message_self}
+    else
+      # Check if global direct conversation already exists between these users
+      case find_existing_global_direct_conversation(user1_id, user2_id) do
         nil ->
           create_conversation_with_participants(
             %{
               type: "direct",
-              organization_id: organization_id,
+              organization_id: nil,
               created_by_user_id: user1_id
             },
             [user1_id, user2_id]
@@ -594,6 +626,20 @@ defmodule ClippsterServer.Messaging do
     # Find a direct conversation where both users are participants
     Conversation
     |> where([c], c.organization_id == ^organization_id and c.type == "direct")
+    |> join(:inner, [c], p1 in ConversationParticipant,
+      on: p1.conversation_id == c.id and p1.user_id == ^user1_id and is_nil(p1.left_at)
+    )
+    |> join(:inner, [c, p1], p2 in ConversationParticipant,
+      on: p2.conversation_id == c.id and p2.user_id == ^user2_id and is_nil(p2.left_at)
+    )
+    |> preload([:participants, participants: :user])
+    |> Repo.one()
+  end
+
+  defp find_existing_global_direct_conversation(user1_id, user2_id) do
+    # Find a global direct conversation (organization_id is nil) where both users are participants
+    Conversation
+    |> where([c], is_nil(c.organization_id) and c.type == "direct")
     |> join(:inner, [c], p1 in ConversationParticipant,
       on: p1.conversation_id == c.id and p1.user_id == ^user1_id and is_nil(p1.left_at)
     )

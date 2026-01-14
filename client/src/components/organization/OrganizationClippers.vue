@@ -357,7 +357,7 @@
 
           <!-- Main Content (clickable link) -->
           <router-link :to="`/clippers/${clipper.slug}`" class="org-clippers__card-main">
-            <!-- Header: Avatar + Info -->
+            <!-- Header: Avatar + Info + Platform Icons -->
             <div class="org-clippers__card-header">
               <div class="org-clippers__avatar">
                 <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="org-clippers__avatar-img" />
@@ -375,6 +375,54 @@
                 </div>
                 <p v-if="clipper.bio" class="org-clippers__bio">{{ clipper.bio }}</p>
                 <p v-else class="org-clippers__bio org-clippers__bio--empty">No bio provided</p>
+              </div>
+
+              <!-- Platform Icons -->
+              <div v-if="clipper.preferred_platforms?.length" class="org-clippers__platforms">
+                <span
+                  v-for="platform in clipper.preferred_platforms.slice(0, 5)"
+                  :key="platform"
+                  class="org-clippers__platform-icon"
+                  :class="`org-clippers__platform-icon--${getPlatformIcon(platform)}`"
+                  :title="platform"
+                >
+                  <Instagram v-if="platform === 'instagram'" class="org-clippers__platform-svg" />
+                  <Youtube v-else-if="platform === 'youtube'" class="org-clippers__platform-svg" />
+                  <Facebook v-else-if="platform === 'facebook'" class="org-clippers__platform-svg" />
+                  <svg v-else-if="platform === 'tiktok'" viewBox="0 0 24 24" class="org-clippers__platform-svg">
+                    <defs>
+                      <linearGradient id="tiktok-gradient-clipper" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color: #25f4ee" />
+                        <stop offset="100%" style="stop-color: #fe2c55" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      fill="url(#tiktok-gradient-clipper)"
+                      d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"
+                    />
+                  </svg>
+                  <svg
+                    v-else-if="platform === 'x'"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    class="org-clippers__platform-svg"
+                  >
+                    <path
+                      d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                    />
+                  </svg>
+                  <svg
+                    v-else-if="platform === 'snapchat'"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    class="org-clippers__platform-svg"
+                  >
+                    <path
+                      d="M12.206 2c-1.536 0-2.968.534-4.031 1.505-.933.852-1.473 1.983-1.658 3.465-.043.345-.08.695-.114 1.038-.137 1.4-.278 2.848-1.254 3.808-.232.228-.481.407-.738.531-.395.19-.688.421-.825.65-.138.228-.169.454-.093.674.152.439.664.81 1.316 1.012.18.056.375.105.578.152.053.012.108.025.162.037 1.12.255 1.87.65 2.04 1.078.041.103.048.194.022.276-.117.365-.743.672-1.537.905-1.007.294-2.289.6-3.566 1.092-.264.101-.388.35-.342.616.047.268.274.465.553.465h.004c.116 0 .231-.021.343-.063 1.398-.522 2.768-.863 3.952-1.196.39-.11.765-.216 1.124-.325-.178.337-.393.688-.645 1.085-.524.825-.918 1.48-1.133 2.101-.107.308-.058.63.129.857.187.227.475.336.765.336.048 0 .097-.003.146-.01.693-.104 1.37-.318 2.012-.636.575-.284 1.12-.639 1.62-1.056.498-.414.964-.888 1.386-1.41.422.522.888.996 1.386 1.41.5.417 1.045.772 1.62 1.056.642.318 1.319.532 2.012.636.049.007.098.01.146.01.29 0 .578-.109.765-.336.187-.227.236-.549.129-.857-.215-.621-.609-1.276-1.133-2.101-.252-.397-.467-.748-.645-1.085.359.109.734.215 1.124.325 1.184.333 2.554.674 3.952 1.196.112.042.227.063.343.063h.004c.279 0 .506-.197.553-.465.046-.266-.078-.515-.342-.616-1.277-.492-2.559-.798-3.566-1.092-.794-.233-1.42-.54-1.537-.905-.026-.082-.019-.173.022-.276.17-.428.92-.823 2.04-1.078.054-.012.109-.025.162-.037.203-.047.398-.096.578-.152.652-.202 1.164-.573 1.316-1.012.076-.22.045-.446-.093-.674-.137-.229-.43-.46-.825-.65-.257-.124-.506-.303-.738-.531-.976-.96-1.117-2.408-1.254-3.808-.034-.343-.071-.693-.114-1.038-.185-1.482-.725-2.613-1.658-3.465C15.174 2.534 13.742 2 12.206 2z"
+                    />
+                  </svg>
+                  <span v-else class="org-clippers__platform-text">{{ platform.charAt(0).toUpperCase() }}</span>
+                </span>
               </div>
             </div>
 
@@ -395,19 +443,6 @@
                 <span class="org-clippers__stat-value">{{ clipper.total_campaigns_completed || 0 }}</span>
                 <span class="org-clippers__stat-label">campaigns</span>
               </div>
-            </div>
-
-            <!-- Platform Icons -->
-            <div v-if="clipper.preferred_platforms?.length" class="org-clippers__platforms">
-              <span
-                v-for="platform in clipper.preferred_platforms.slice(0, 5)"
-                :key="platform"
-                class="org-clippers__platform-icon"
-                :class="`org-clippers__platform-icon--${getPlatformIcon(platform)}`"
-                :title="platform"
-              >
-                {{ platform === 'x' ? '𝕏' : platform.charAt(0).toUpperCase() }}
-              </span>
             </div>
 
             <!-- Portfolio Preview -->
@@ -463,6 +498,7 @@
           <!-- Action Buttons -->
           <div class="org-clippers__actions">
             <button
+              v-if="!isOwnProfile(clipper)"
               class="org-clippers__action-btn org-clippers__action-btn--message"
               @click="openMessageDialog(clipper, $event)"
             >
@@ -470,41 +506,18 @@
               Message
             </button>
             <button
+              v-if="!isOwnProfile(clipper)"
               class="org-clippers__action-btn org-clippers__action-btn--invite"
               @click="openInviteDialog(clipper, $event)"
             >
               <Send class="org-clippers__action-icon" />
               Invite
             </button>
+            <span v-if="isOwnProfile(clipper)" class="org-clippers__own-profile-badge">Your Profile</span>
           </div>
         </div>
       </div>
     </template>
-
-    <!-- Message Dialog -->
-    <Dialog v-model:open="showMessageDialog">
-      <DialogContent class="org-clippers__dialog">
-        <DialogHeader>
-          <DialogTitle>Message {{ selectedClipper?.display_name }}</DialogTitle>
-          <DialogDescription>Start a conversation with this clipper</DialogDescription>
-        </DialogHeader>
-        <div class="org-clippers__dialog-body">
-          <Textarea
-            v-model="messageContent"
-            placeholder="Hi! I'd like to discuss a potential collaboration..."
-            class="org-clippers__message-input"
-            rows="4"
-          />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" @click="showMessageDialog = false">Cancel</Button>
-          <Button @click="sendMessage" :disabled="!messageContent.trim()">
-            <Send class="org-clippers__btn-icon" />
-            Send Message
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
 
     <!-- Campaign Invite Dialog -->
     <Dialog v-model:open="showInviteDialog">
@@ -569,6 +582,9 @@
     Send,
     Briefcase,
     Play,
+    Instagram,
+    Youtube,
+    Facebook,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
@@ -587,7 +603,6 @@
     DialogFooter,
   } from '@/components/ui/dialog';
   import { Button } from '@/components/ui/button';
-  import { Textarea } from '@/components/ui/textarea';
   import {
     listClippers,
     getLeaderboard,
@@ -602,6 +617,7 @@
     getLanguageName,
   } from '@/services/clipperProfilesApi';
   import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
+  import { useAuthStore } from '@/stores/auth';
 
   // Props
   const props = defineProps<{
@@ -612,15 +628,19 @@
   const activeView = computed(() => props.activeView);
 
   const router = useRouter();
+  const authStore = useAuthStore();
+
+  // Get current user ID for checking if viewing own profile
+  const currentUserId = computed(() => authStore.user?.id);
+
+  // Check if a clipper is the current user
+  const isOwnProfile = (clipper: ClipperProfile) => {
+    return clipper.user_id === currentUserId.value;
+  };
 
   // Directory state
   const loading = ref(true);
   const clippers = ref<ClipperProfile[]>([]);
-
-  // Message dialog state
-  const showMessageDialog = ref(false);
-  const messageContent = ref('');
-  const selectedClipper = ref<ClipperProfile | null>(null);
 
   // Campaign invite dialog state
   const showInviteDialog = ref(false);
@@ -845,15 +865,8 @@
   const openMessageDialog = (clipper: ClipperProfile, event: Event) => {
     event.preventDefault();
     event.stopPropagation();
-    selectedClipper.value = clipper;
-    messageContent.value = '';
-    showMessageDialog.value = true;
-  };
-
-  const sendMessage = () => {
-    if (!selectedClipper.value || !messageContent.value.trim()) return;
-    router.push(`/messages?to=${selectedClipper.value.user_id}&message=${encodeURIComponent(messageContent.value)}`);
-    showMessageDialog.value = false;
+    // Navigate directly to messages page with clipper user_id
+    router.push(`/messages?to=${clipper.user_id}`);
   };
 
   // Campaign invite handlers
@@ -1180,6 +1193,7 @@
 
   /* ===== Card Header ===== */
   .org-clippers__card-header {
+    position: relative;
     display: flex;
     gap: 0.875rem;
   }
@@ -1221,6 +1235,18 @@
   .org-clippers__info {
     flex: 1;
     min-width: 0;
+    padding-right: 5.5rem;
+  }
+
+  @media (max-width: 480px) {
+    .org-clippers__info {
+      padding-right: 4rem;
+    }
+
+    .org-clippers__platforms {
+      flex-wrap: wrap;
+      max-width: 3.5rem;
+    }
   }
 
   .org-clippers__name {
@@ -1313,19 +1339,22 @@
 
   /* ===== Platform Icons ===== */
   .org-clippers__platforms {
+    position: absolute;
+    top: 0;
+    right: 0;
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0.25rem;
   }
 
   .org-clippers__platform-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    font-size: 0.6875rem;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    font-size: 0.625rem;
     font-weight: 700;
     background-color: rgba(255, 255, 255, 0.06);
     color: var(--sidebar-text-muted);
@@ -1334,37 +1363,47 @@
 
   .org-clippers__platform-icon:hover {
     background-color: rgba(255, 255, 255, 0.12);
-    color: var(--sidebar-text);
+    transform: scale(1.08);
+  }
+
+  .org-clippers__platform-svg {
+    width: 13px;
+    height: 13px;
+    color: white;
+  }
+
+  .org-clippers__platform-text {
+    font-size: 0.625rem;
+    font-weight: 700;
   }
 
   .org-clippers__platform-icon--tiktok {
-    background-color: rgba(0, 0, 0, 0.3);
-    color: #fff;
+    background-color: #000000;
   }
 
   .org-clippers__platform-icon--youtube {
-    background-color: rgba(255, 0, 0, 0.15);
-    color: #ff0000;
+    background: linear-gradient(135deg, #ff0000, #cc0000);
   }
 
   .org-clippers__platform-icon--instagram {
-    background: linear-gradient(135deg, rgba(233, 89, 80, 0.2) 0%, rgba(131, 58, 180, 0.2) 100%);
-    color: #e4405f;
+    background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
   }
 
   .org-clippers__platform-icon--x {
-    background-color: rgba(255, 255, 255, 0.08);
-    color: var(--sidebar-text);
+    background-color: #000000;
   }
 
   .org-clippers__platform-icon--facebook {
-    background-color: rgba(24, 119, 242, 0.15);
-    color: #1877f2;
+    background-color: #1877f2;
   }
 
   .org-clippers__platform-icon--snapchat {
-    background-color: rgba(255, 252, 0, 0.15);
-    color: #fffc00;
+    background-color: #fffc00;
+    color: #000000;
+  }
+
+  .org-clippers__platform-icon--snapchat .org-clippers__platform-svg {
+    color: #000000;
   }
 
   /* ===== Portfolio Preview ===== */
@@ -1512,6 +1551,21 @@
   .org-clippers__action-icon {
     width: 14px;
     height: 14px;
+  }
+
+  .org-clippers__own-profile-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    font-style: italic;
   }
 
   /* ===== Dialog Styles ===== */

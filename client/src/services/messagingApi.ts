@@ -81,6 +81,17 @@ export async function createDirectConversation(
 }
 
 /**
+ * Create a global direct conversation with another user (not scoped to an organization).
+ */
+export async function createGlobalDirectConversation(userId: number): Promise<Conversation> {
+  const response = await api.post<{ data: Conversation }>(
+    '/messaging/conversations/global-direct',
+    { user_id: userId }
+  );
+  return response.data.data;
+}
+
+/**
  * Create a group conversation.
  */
 export async function createGroupConversation(

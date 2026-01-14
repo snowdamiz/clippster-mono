@@ -297,6 +297,7 @@ defmodule ClippsterServerWeb.Router do
     # User-level messaging endpoints
     get "/me/conversations", MessagingController, :list_all_conversations
     get "/me/unread-count", MessagingController, :get_total_unread
+    post "/messaging/conversations/global-direct", MessagingController, :create_global_direct
     # Analytics tracking (requires authentication)
     post "/analytics/track", AnalyticsController, :track
 
