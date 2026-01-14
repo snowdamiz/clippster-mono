@@ -769,6 +769,9 @@
                         <div class="campaigns-detail__submission-meta">
                           by {{ submission.user?.display_name || submission.user?.email }} ·
                           {{ submission.view_count.toLocaleString() }} views
+                          <span v-if="submission.views_last_updated_at" class="campaigns-detail__submission-synced">
+                            (synced {{ formatRelativeTime(submission.views_last_updated_at) }})
+                          </span>
                         </div>
                       </div>
                       <div class="campaigns-detail__submission-actions">
@@ -792,6 +795,14 @@
                             <X :size="14" />
                           </button>
                         </template>
+                        <button
+                          v-if="isAdmin && (submission.status === 'verified' || submission.status === 'paid')"
+                          class="campaigns-detail__action-btn campaigns-detail__action-btn--secondary"
+                          @click="openUpdateViewsDialog(submission)"
+                          title="Update view count"
+                        >
+                          <Eye :size="14" />
+                        </button>
                         <button
                           v-if="isAdmin && submission.status === 'verified'"
                           class="campaigns-detail__pay-btn"
@@ -953,6 +964,84 @@
       </Transition>
     </Teleport>
 
+    <!-- Update Views Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showUpdateViewsDialog"
+          class="campaigns-dialog__overlay"
+          @click.self="showUpdateViewsDialog = false"
+          @keydown.esc="showUpdateViewsDialog = false"
+        >
+          <Transition name="dialog" appear>
+            <div
+              v-if="showUpdateViewsDialog"
+              class="campaigns-dialog campaigns-dialog--small"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div class="campaigns-dialog__accent campaigns-dialog__accent--blue"></div>
+
+              <!-- Header -->
+              <div class="campaigns-dialog__header">
+                <button
+                  class="campaigns-dialog__close"
+                  @click="showUpdateViewsDialog = false"
+                  :disabled="updatingViews"
+                >
+                  <X :size="18" />
+                </button>
+                <div class="campaigns-dialog__icon campaigns-dialog__icon--blue">
+                  <Eye :size="24" />
+                </div>
+                <h2 class="campaigns-dialog__title">Update View Count</h2>
+                <p class="campaigns-dialog__subtitle">Manually update views for this submission</p>
+              </div>
+
+              <!-- Content -->
+              <div class="campaigns-dialog__content">
+                <div class="campaigns-dialog__field">
+                  <label class="campaigns-dialog__label">View Count</label>
+                  <input
+                    v-model.number="updateViewsCount"
+                    type="number"
+                    min="0"
+                    class="campaigns-dialog__input"
+                    placeholder="Enter view count"
+                  />
+                  <p v-if="viewsSubmission?.views_last_updated_at" class="campaigns-dialog__hint">
+                    Last synced: {{ formatDate(viewsSubmission.views_last_updated_at) }}
+                  </p>
+                  <p v-else class="campaigns-dialog__hint">
+                    Current: {{ viewsSubmission?.view_count.toLocaleString() }} views
+                  </p>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="campaigns-dialog__footer">
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--secondary"
+                  @click="showUpdateViewsDialog = false"
+                  :disabled="updatingViews"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--primary"
+                  @click="updateViewsAction"
+                  :disabled="updatingViews || updateViewsCount < 0"
+                >
+                  <Loader2 v-if="updatingViews" class="campaigns-dialog__btn-spinner" />
+                  {{ updatingViews ? 'Updating...' : 'Update Views' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Watermark Position Picker -->
     <WatermarkPositionPicker
       :show="showWatermarkPositionPicker"
@@ -1027,6 +1116,7 @@
     verifySubmission,
     rejectSubmission,
     createPayment,
+    updateSubmissionViews,
     uploadCampaignCoverImage,
     setCampaignCreatorProfiles,
     type Campaign,
@@ -1060,6 +1150,7 @@
   const showDetailDialog = ref(false);
   const showDeleteDialog = ref(false);
   const showPaymentDialog = ref(false);
+  const showUpdateViewsDialog = ref(false);
   const showWatermarkPositionPicker = ref(false);
 
   const editingCampaign = ref<Campaign | null>(null);
@@ -1075,6 +1166,11 @@
   const paymentSubmission = ref<CampaignSubmission | null>(null);
   const paymentAmount = ref(0);
   const creatingPayment = ref(false);
+
+  // Update views
+  const viewsSubmission = ref<CampaignSubmission | null>(null);
+  const updateViewsCount = ref(0);
+  const updatingViews = ref(false);
 
   // Cover image upload
   const coverImageInput = ref<HTMLInputElement | null>(null);
@@ -1142,6 +1238,21 @@
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const formatRelativeTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return formatDate(dateStr);
   };
 
   const truncateUrl = (url: string) => {
@@ -1644,6 +1755,37 @@
       toast({ title: 'Error', description: 'Failed to create payment' });
     } finally {
       creatingPayment.value = false;
+    }
+  };
+
+  const openUpdateViewsDialog = (submission: CampaignSubmission) => {
+    viewsSubmission.value = submission;
+    updateViewsCount.value = submission.view_count;
+    showUpdateViewsDialog.value = true;
+  };
+
+  const updateViewsAction = async () => {
+    if (!viewsSubmission.value) return;
+
+    updatingViews.value = true;
+    try {
+      const response = await updateSubmissionViews(
+        Number(props.organizationId),
+        viewsSubmission.value.id,
+        updateViewsCount.value
+      );
+      if (response.success) {
+        toast({ title: 'Success', description: 'View count updated' });
+        showUpdateViewsDialog.value = false;
+        await loadSubmissions();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to update views' });
+      }
+    } catch (error) {
+      console.error('Failed to update views:', error);
+      toast({ title: 'Error', description: 'Failed to update views' });
+    } finally {
+      updatingViews.value = false;
     }
   };
 
@@ -2167,6 +2309,10 @@
     background: linear-gradient(90deg, #10b981, rgba(16, 185, 129, 0.5));
   }
 
+  .campaigns-dialog__accent--blue {
+    background: linear-gradient(90deg, #3b82f6, rgba(59, 130, 246, 0.5));
+  }
+
   /* ===== Header ===== */
   .campaigns-dialog__header {
     position: relative;
@@ -2232,6 +2378,11 @@
   .campaigns-dialog__icon--green {
     background-color: rgba(16, 185, 129, 0.15);
     color: #34d399;
+  }
+
+  .campaigns-dialog__icon--blue {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
   }
 
   .campaigns-dialog__title {
@@ -3199,6 +3350,14 @@
 
   .campaigns-detail__action-btn--reject:hover {
     background-color: rgba(239, 68, 68, 0.15);
+  }
+
+  .campaigns-detail__action-btn--secondary {
+    color: #60a5fa;
+  }
+
+  .campaigns-detail__action-btn--secondary:hover {
+    background-color: rgba(59, 130, 246, 0.15);
     border-color: rgba(239, 68, 68, 0.3);
   }
 
@@ -3248,6 +3407,12 @@
     font-size: 0.75rem;
     color: var(--sidebar-text-muted);
     margin-top: 0.25rem;
+  }
+
+  .campaigns-detail__submission-synced {
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+    font-size: 0.7rem;
   }
 
   .campaigns-detail__submission-actions {

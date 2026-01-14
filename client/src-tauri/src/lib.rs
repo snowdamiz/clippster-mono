@@ -533,6 +533,12 @@ pub fn run() {
                             sql: include_str!("../migrations/078_add_keyframes_to_video_editor_overlays.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 79,
+                            description: "add_creator_profile_to_projects",
+                            sql: include_str!("../migrations/079_add_creator_profile_to_projects.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -547,11 +553,6 @@ pub fn run() {
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
-
-            // Initialize storage directories
-            if let Err(e) = storage::init_storage_dirs() {
-                eprintln!("[Rust] Warning: Failed to initialize storage directories: {}", e);
-            }
 
             // Start video streaming server in Tauri's async runtime
             let _app_handle = app.handle().clone();
@@ -635,6 +636,7 @@ pub fn run() {
             auth::poll_email_verification_result,
             auth::open_instagram_auth_window,
             auth::poll_instagram_auth_result,
+            auth::start_user_instagram_oauth,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,

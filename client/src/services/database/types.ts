@@ -9,6 +9,7 @@ export interface Project {
   platform: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null;
   audio_settings: string | null; // JSON string of AudioSettings
   default_watermark_settings: string | null; // JSON string with watermark_id and watermark_settings from creator profile
+  creator_profile_id: string | null; // Direct link to creator profile (for local video imports)
   created_at: number;
   updated_at: number;
 }

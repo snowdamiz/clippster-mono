@@ -73,6 +73,8 @@ defmodule ClippsterServer.Application do
       ClippsterServer.ClipperProfiles.LeaderboardWorker,
       ClippsterServer.ClipperProfiles.BadgeWorker,
       ClippsterServer.ClipperProfiles.ResponseTimeWorker,
+      # Campaign submission view sync worker
+      ClippsterServer.Campaigns.SubmissionViewSyncWorker,
       # Start to serve requests, typically the last entry
       ClippsterServerWeb.Endpoint
     ]

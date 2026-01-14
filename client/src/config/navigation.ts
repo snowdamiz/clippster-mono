@@ -57,6 +57,12 @@ export const navigationItems: NavigationItem[] = [
 
   // Create group - content creation tools
   {
+    name: 'Projects',
+    path: '/projects',
+    icon: Folder,
+    group: 'create',
+  },
+  {
     name: 'My Clips',
     path: '/clips',
     icon: LayoutGrid,
@@ -80,14 +86,15 @@ export const navigationItems: NavigationItem[] = [
     icon: Video,
     group: 'create',
   },
-  {
-    name: 'Projects',
-    path: '/projects',
-    icon: Folder,
-    group: 'create',
-  },
 
   // Manage group - organization/settings
+  {
+    name: 'Organizations',
+    path: '/organizations',
+    icon: Building2,
+    group: 'manage',
+    orgMember: true, // Show for any user who is a member of at least one organization
+  },
   {
     name: 'Assets',
     path: '/assets',
@@ -104,13 +111,6 @@ export const navigationItems: NavigationItem[] = [
     name: 'Messages',
     path: '/messages',
     icon: MessageCircle,
-    group: 'manage',
-    orgMember: true, // Show for any user who is a member of at least one organization
-  },
-  {
-    name: 'Organizations',
-    path: '/organizations',
-    icon: Building2,
     group: 'manage',
     orgMember: true, // Show for any user who is a member of at least one organization
   },

@@ -28,12 +28,20 @@ defmodule ClippsterServerWeb.MessagingController do
   """
   def create_direct(conn, %{"organization_id" => org_id, "user_id" => other_user_id}) do
     user_id = conn.assigns.current_user.id
+    # Ensure IDs are integers (may come as strings from JSON/URL params)
+    org_id = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
+    other_user_id = if is_binary(other_user_id), do: String.to_integer(other_user_id), else: other_user_id
 
     case Messaging.create_direct_conversation(org_id, user_id, other_user_id) do
       {:ok, conversation} ->
         conn
         |> put_status(:created)
         |> json(%{data: MessagingJSON.conversation(conversation)})
+
+      {:error, :cannot_message_self} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "You cannot start a conversation with yourself"})
 
       {:error, reason} ->
         conn
@@ -268,6 +276,9 @@ defmodule ClippsterServerWeb.MessagingController do
   """
   def add_participant(conn, %{"id" => conversation_id, "user_id" => new_user_id}) do
     user_id = conn.assigns.current_user.id
+    # Ensure IDs are integers (may come as strings from JSON/URL params)
+    conversation_id = if is_binary(conversation_id), do: String.to_integer(conversation_id), else: conversation_id
+    new_user_id = if is_binary(new_user_id), do: String.to_integer(new_user_id), else: new_user_id
 
     case Messaging.add_participant(conversation_id, new_user_id, user_id) do
       {:ok, participant} ->
@@ -292,6 +303,9 @@ defmodule ClippsterServerWeb.MessagingController do
   """
   def remove_participant(conn, %{"id" => conversation_id, "user_id" => target_user_id}) do
     user_id = conn.assigns.current_user.id
+    # Ensure IDs are integers (may come as strings from URL params)
+    conversation_id = if is_binary(conversation_id), do: String.to_integer(conversation_id), else: conversation_id
+    target_user_id = if is_binary(target_user_id), do: String.to_integer(target_user_id), else: target_user_id
 
     case Messaging.remove_participant(conversation_id, target_user_id, user_id) do
       :ok ->
@@ -392,6 +406,32 @@ defmodule ClippsterServerWeb.MessagingController do
     count = Messaging.get_total_unread_count(user_id)
 
     json(conn, %{data: %{unread_count: count}})
+  end
+
+  @doc """
+  Create a global direct conversation with another user (not scoped to an organization).
+  """
+  def create_global_direct(conn, %{"user_id" => other_user_id}) do
+    user_id = conn.assigns.current_user.id
+    # Ensure other_user_id is an integer (may come as string from JSON)
+    other_user_id = if is_binary(other_user_id), do: String.to_integer(other_user_id), else: other_user_id
+
+    case Messaging.create_global_direct_conversation(user_id, other_user_id) do
+      {:ok, conversation} ->
+        conn
+        |> put_status(:created)
+        |> json(%{data: MessagingJSON.conversation(conversation)})
+
+      {:error, :cannot_message_self} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "You cannot start a conversation with yourself"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: to_string(reason)})
+    end
   end
 
   # ============================================================================

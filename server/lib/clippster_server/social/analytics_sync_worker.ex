@@ -14,6 +14,8 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
 
   alias ClippsterServer.Social
   alias ClippsterServer.Social.{SocialAccount, PostSubmission, Platform}
+  alias ClippsterServer.Campaigns
+  alias ClippsterServer.Campaigns.{UserPost, ClipperSocialAccount}
 
   @default_interval :timer.hours(1)
   @batch_size 50
@@ -154,23 +156,36 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
   # ============================================================================
 
   defp run_sync do
-    posts = Social.get_posts_needing_sync(limit: @batch_size)
+    # Sync organization posts
+    org_posts = Social.get_posts_needing_sync(limit: div(@batch_size, 2))
+    Logger.info("[AnalyticsSyncWorker] Found #{length(org_posts)} organization posts to sync")
 
-    Logger.info("[AnalyticsSyncWorker] Found #{length(posts)} posts to sync")
+    # Sync user posts
+    user_posts = Campaigns.get_user_posts_needing_sync(limit: div(@batch_size, 2))
+    Logger.info("[AnalyticsSyncWorker] Found #{length(user_posts)} user posts to sync")
 
-    results = Enum.reduce(posts, %{synced: 0, errors: 0}, fn post, acc ->
-      # Rate limiting between requests
+    # Sync org posts
+    org_results = Enum.reduce(org_posts, %{synced: 0, errors: 0}, fn post, acc ->
       Process.sleep(@rate_limit_delay)
-
       case sync_single_post(post) do
-        :ok ->
-          %{acc | synced: acc.synced + 1}
-        {:error, _reason} ->
-          %{acc | errors: acc.errors + 1}
+        :ok -> %{acc | synced: acc.synced + 1}
+        {:error, _reason} -> %{acc | errors: acc.errors + 1}
       end
     end)
 
-    results
+    # Sync user posts
+    user_results = Enum.reduce(user_posts, %{synced: 0, errors: 0}, fn post, acc ->
+      Process.sleep(@rate_limit_delay)
+      case sync_user_post(post) do
+        :ok -> %{acc | synced: acc.synced + 1}
+        {:error, _reason} -> %{acc | errors: acc.errors + 1}
+      end
+    end)
+
+    %{
+      synced: org_results.synced + user_results.synced,
+      errors: org_results.errors + user_results.errors
+    }
   end
 
   defp sync_single_post(%PostSubmission{} = post) do
@@ -210,6 +225,44 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
     end
   end
   defp get_account_with_token(%PostSubmission{organization_social_account: account}), do: {:ok, account}
+
+  defp sync_user_post(%UserPost{} = post) do
+    with {:ok, account} <- get_user_account_with_token(post),
+         {:ok, platform_module} <- Platform.get_platform_module(post.platform),
+         access_token <- ClipperSocialAccount.get_access_token(account),
+         {:ok, insights} <- fetch_insights_with_retry(platform_module, access_token, post.post_id) do
+
+      case Campaigns.update_user_post_analytics(post, insights) do
+        {:ok, _updated} ->
+          Logger.debug("[AnalyticsSyncWorker] Synced user post #{post.id}")
+          :ok
+        {:error, reason} ->
+          Logger.warning("[AnalyticsSyncWorker] Failed to update user post #{post.id}: #{inspect(reason)}")
+          {:error, reason}
+      end
+    else
+      {:error, :no_account} ->
+        Logger.warning("[AnalyticsSyncWorker] No account found for user post #{post.id}")
+        {:error, :no_account}
+
+      {:error, :not_implemented} ->
+        Logger.debug("[AnalyticsSyncWorker] Platform not implemented for user post #{post.id}")
+        {:error, :not_implemented}
+
+      {:error, reason} ->
+        Logger.warning("[AnalyticsSyncWorker] Failed to sync user post #{post.id}: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  defp get_user_account_with_token(%UserPost{clipper_social_account: nil}), do: {:error, :no_account}
+  defp get_user_account_with_token(%UserPost{clipper_social_account: %Ecto.Association.NotLoaded{}} = post) do
+    case Campaigns.get_user_post(post.id) do
+      nil -> {:error, :no_account}
+      loaded_post -> get_user_account_with_token(loaded_post)
+    end
+  end
+  defp get_user_account_with_token(%UserPost{clipper_social_account: account}), do: {:ok, account}
 
   defp fetch_insights_with_retry(platform_module, access_token, post_id, attempt \\ 1) do
     case platform_module.get_insights(access_token, post_id) do

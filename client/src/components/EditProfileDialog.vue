@@ -46,7 +46,7 @@
                     </div>
                   </div>
                 </div>
-                <Switch v-model:checked="profile.is_public" />
+                <Switch v-model="isPublicModel" />
               </div>
 
               <!-- Basic Info Section -->
@@ -94,10 +94,10 @@
                     <div class="profile-dialog__avatar-row">
                       <div class="profile-dialog__avatar-preview">
                         <img
-                          v-if="profile.avatar_url"
+                          v-if="profile.avatar_url && !avatarLoadError"
                           :src="profile.avatar_url"
                           class="profile-dialog__avatar-img"
-                          @error="(e: Event) => ((e.target as HTMLImageElement).style.display = 'none')"
+                          @error="avatarLoadError = true"
                         />
                         <UserCircle v-else class="profile-dialog__avatar-placeholder" />
                         <div v-if="uploadingAvatar" class="profile-dialog__avatar-loading">
@@ -157,7 +157,7 @@
                       <div class="profile-dialog__toggle-title">Looking for Work</div>
                       <div class="profile-dialog__toggle-desc">Show that you're available for new campaigns</div>
                     </div>
-                    <Switch v-model:checked="profile.looking_for_work" />
+                    <Switch v-model="lookingForWorkModel" />
                   </div>
                 </div>
               </div>
@@ -545,7 +545,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, watch } from 'vue';
+  import { ref, reactive, watch, computed } from 'vue';
   import {
     Loader2,
     UserCircle,
@@ -652,6 +652,7 @@
   const deleteType = ref<'channel' | 'clip'>('channel');
   const deleteTarget = ref<ChannelLink | PortfolioClip | null>(null);
   const deleting = ref(false);
+  const avatarLoadError = ref(false);
 
   const profile = reactive<Partial<ClipperProfile>>({
     display_name: '',
@@ -670,6 +671,29 @@
     total_clips_delivered: 0,
     total_endorsements: 0,
   });
+
+  // Computed properties for Switch components (better reactivity)
+  const isPublicModel = computed({
+    get: () => profile.is_public ?? false,
+    set: (val: boolean) => {
+      profile.is_public = val;
+    },
+  });
+
+  const lookingForWorkModel = computed({
+    get: () => profile.looking_for_work ?? false,
+    set: (val: boolean) => {
+      profile.looking_for_work = val;
+    },
+  });
+
+  // Reset avatar load error when avatar_url changes
+  watch(
+    () => profile.avatar_url,
+    () => {
+      avatarLoadError.value = false;
+    }
+  );
 
   const resetForm = () => {
     Object.assign(profile, {

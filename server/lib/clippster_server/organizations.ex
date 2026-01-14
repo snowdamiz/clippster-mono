@@ -19,7 +19,8 @@ defmodule ClippsterServer.Organizations do
     OrganizationCreatorPlatformLink,
     OrganizationProfileAssignment,
     OrganizationSharedClip,
-    SharedClipRecipient
+    SharedClipRecipient,
+    OrganizationApplication
   }
   alias ClippsterServer.{Emails, Mailer}
   alias ClippsterServer.Storage
@@ -171,13 +172,13 @@ defmodule ClippsterServer.Organizations do
     with {:ok, _} <- verify_admin(organization_id, requester.id),
          member when not is_nil(member) <- get_member(organization_id, user_id),
          false <- member.role == "owner" do
-      
+
       # Also delete their credit allocation
       Repo.delete_all(
         from(a in MemberCreditAllocation,
           where: a.organization_id == ^organization_id and a.user_id == ^user_id)
       )
-      
+
       Repo.delete(member)
     else
       nil -> {:error, :member_not_found}
@@ -192,7 +193,7 @@ defmodule ClippsterServer.Organizations do
   def update_member_role(organization_id, user_id, new_role, %User{} = requester) do
     with {:ok, _} <- verify_admin(organization_id, requester.id),
          member when not is_nil(member) <- get_member(organization_id, user_id) do
-      
+
       # Cannot change owner role unless transferring ownership
       if member.role == "owner" and new_role != "owner" do
         {:error, :cannot_demote_owner}
@@ -274,11 +275,11 @@ defmodule ClippsterServer.Organizations do
            if user && is_member?(organization_id, user.id), do: :already_member, else: nil
          end),
          nil <- get_pending_invitation(organization_id, email) do
-      
+
       # Generate plain token first
       plain_token = OrganizationInvitation.generate_token()
       hashed_token = OrganizationInvitation.hash_token(plain_token)
-      
+
       # Create the invitation with the hashed token
       invitation_attrs = %{
         organization_id: organization_id,
@@ -321,7 +322,7 @@ defmodule ClippsterServer.Organizations do
   """
   def get_pending_invitation(organization_id, email) do
     now = DateTime.utc_now()
-    
+
     OrganizationInvitation
     |> where([i], i.organization_id == ^organization_id)
     |> where([i], i.email == ^email)
@@ -335,7 +336,7 @@ defmodule ClippsterServer.Organizations do
   """
   def get_invitation_by_token(plain_token) do
     hashed_token = OrganizationInvitation.hash_token(plain_token)
-    
+
     OrganizationInvitation
     |> where([i], i.token == ^hashed_token)
     |> where([i], i.status == "pending")
@@ -416,7 +417,7 @@ defmodule ClippsterServer.Organizations do
   Generates a new token and updates the expiry date.
   """
   def resend_invitation(organization_id, invitation_id, %User{} = user) do
-    invitation = 
+    invitation =
       OrganizationInvitation
       |> where([i], i.id == ^invitation_id and i.organization_id == ^organization_id)
       |> preload(:organization)
@@ -484,7 +485,7 @@ defmodule ClippsterServer.Organizations do
   def create_member_account(organization_id, email, password, role, name, %User{} = creator) do
     with {:ok, _} <- verify_admin(organization_id, creator.id),
          nil <- Accounts.get_user_by_email(email) do
-      
+
       Repo.transaction(fn ->
         # Create the user account (already verified since admin is creating it)
         case create_verified_user(email, password, organization_id, name) do
@@ -712,9 +713,9 @@ defmodule ClippsterServer.Organizations do
     with {:ok, _} <- verify_admin(organization_id, allocator.id),
          true <- is_member?(organization_id, user_id),
          org_credit when not is_nil(org_credit) <- Repo.get(OrganizationCredit, organization_id) do
-      
+
       hours_decimal = Decimal.new(to_string(hours))
-      
+
       # Check if org has enough credits
       if Decimal.compare(org_credit.hours_remaining, hours_decimal) == :lt do
         {:error, :insufficient_org_credits}
@@ -927,7 +928,7 @@ defmodule ClippsterServer.Organizations do
 
     with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
          {:ok, thumbnail_url} <- maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
-      
+
       # Create database record
       attrs = %{
         organization_id: organization_id,
@@ -1010,7 +1011,7 @@ defmodule ClippsterServer.Organizations do
   def get_assets_for_user_organizations(user_id) do
     # Get all organizations the user is a member of
     org_memberships = list_user_organizations(user_id)
-    
+
     org_memberships
     |> Enum.map(fn %{organization: org} ->
       assets = list_organization_assets(org.id)
@@ -1162,7 +1163,7 @@ defmodule ClippsterServer.Organizations do
   def add_creator_platform_link(organization_id, profile_id, attrs, %User{} = user) do
     with true <- is_admin?(organization_id, user.id),
          profile when not is_nil(profile) <- get_creator_profile(organization_id, profile_id) do
-      
+
       %OrganizationCreatorPlatformLink{}
       |> OrganizationCreatorPlatformLink.create_changeset(
         Map.put(attrs, :organization_creator_profile_id, profile.id)
@@ -1233,7 +1234,7 @@ defmodule ClippsterServer.Organizations do
   def assign_creator_profile(organization_id, profile_id, user_ids, %User{} = admin) when is_list(user_ids) do
     with true <- is_admin?(organization_id, admin.id),
          profile when not is_nil(profile) <- get_creator_profile(organization_id, profile_id) do
-      
+
       # Filter to only users who are members
       valid_user_ids = user_ids
       |> Enum.filter(fn uid -> is_member?(organization_id, uid) end)
@@ -1267,7 +1268,7 @@ defmodule ClippsterServer.Organizations do
   def unassign_creator_profile(organization_id, profile_id, user_id, %User{} = admin) do
     with true <- is_admin?(organization_id, admin.id),
          profile when not is_nil(profile) <- get_creator_profile(organization_id, profile_id) do
-      
+
       assignment = Repo.get_by(OrganizationProfileAssignment,
         organization_creator_profile_id: profile.id,
         user_id: user_id
@@ -1641,5 +1642,202 @@ defmodule ClippsterServer.Organizations do
         recipient != nil
     end
   end
-end
 
+  # ============================================================================
+  # Organization Applications
+  # ============================================================================
+
+  @doc """
+  Creates a new organization application.
+  If user has a rejected application, creates a new one.
+  If user has a pending or approved application, returns error.
+  """
+  def create_organization_application(%User{} = user, attrs) do
+    # Check if user has an existing application
+    existing = get_user_organization_application(user.id)
+
+    case existing do
+      nil ->
+        # No existing application, create new one
+        %OrganizationApplication{}
+        |> OrganizationApplication.create_changeset(Map.put(attrs, :user_id, user.id))
+        |> Repo.insert()
+
+      %{status: "rejected"} ->
+        # Previous application was rejected, allow creating a new one
+        %OrganizationApplication{}
+        |> OrganizationApplication.create_changeset(Map.put(attrs, :user_id, user.id))
+        |> Repo.insert()
+
+      %{status: "pending"} ->
+        {:error, :application_pending}
+
+      %{status: "approved"} ->
+        {:error, :application_already_approved}
+    end
+  end
+
+  @doc """
+  Lists all organization applications.
+  Admin only. Optionally filter by status.
+  """
+  def list_organization_applications(opts \\ []) do
+    status = Keyword.get(opts, :status)
+
+    query = from a in OrganizationApplication,
+      order_by: [desc: a.inserted_at],
+      preload: [:user, :reviewed_by]
+
+    query = if status do
+      where(query, [a], a.status == ^status)
+    else
+      query
+    end
+
+    Repo.all(query)
+  end
+
+  @doc """
+  Gets a user's organization application (most recent).
+  """
+  def get_user_organization_application(user_id) do
+    OrganizationApplication
+    |> where([a], a.user_id == ^user_id)
+    |> order_by([a], desc: a.inserted_at)
+    |> limit(1)
+    |> preload([:reviewed_by])
+    |> Repo.one()
+  end
+
+  @doc """
+  Gets an organization application by ID.
+  """
+  def get_organization_application(id) do
+    OrganizationApplication
+    |> preload([:user, :reviewed_by])
+    |> Repo.get(id)
+  end
+
+  @doc """
+  Approves an organization application and creates the organization.
+  Admin only.
+  """
+  def approve_organization_application(application_id, admin_notes, %User{} = admin) do
+    application = get_organization_application(application_id)
+
+    cond do
+      is_nil(application) ->
+        {:error, :not_found}
+
+      application.status != "pending" ->
+        {:error, :already_processed}
+
+      true ->
+        Repo.transaction(fn ->
+          # Create the organization
+          org_attrs = %{
+            name: application.name,
+            description: application.description,
+            logo_url: application.logo_url
+          }
+
+          case create_organization(application.user, org_attrs) do
+            {:ok, organization} ->
+              # Update application status
+              {:ok, updated_application} = application
+                |> OrganizationApplication.review_changeset(%{
+                  status: "approved",
+                  admin_notes: admin_notes,
+                  reviewed_by_id: admin.id,
+                  reviewed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+                })
+                |> Repo.update()
+
+              %{application: updated_application, organization: organization}
+
+            {:error, reason} ->
+              Repo.rollback(reason)
+          end
+        end)
+    end
+  end
+
+  @doc """
+  Rejects an organization application.
+  Admin only.
+  """
+  def reject_organization_application(application_id, admin_notes, %User{} = admin) do
+    application = get_organization_application(application_id)
+
+    cond do
+      is_nil(application) ->
+        {:error, :not_found}
+
+      application.status != "pending" ->
+        {:error, :already_processed}
+
+      true ->
+        application
+        |> OrganizationApplication.review_changeset(%{
+          status: "rejected",
+          admin_notes: admin_notes,
+          reviewed_by_id: admin.id,
+          reviewed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Updates a user's pending organization application.
+  Users can only update their own pending applications.
+  """
+  def update_organization_application(application_id, attrs, %User{} = user) do
+    application = get_organization_application(application_id)
+
+    cond do
+      is_nil(application) ->
+        {:error, :not_found}
+
+      application.user_id != user.id ->
+        {:error, :unauthorized}
+
+      application.status != "pending" ->
+        {:error, :cannot_update_processed_application}
+
+      true ->
+        application
+        |> OrganizationApplication.create_changeset(attrs)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Deletes an organization application.
+  Users can delete their own applications, or admin can delete any.
+  """
+  def delete_organization_application(application_id, %User{} = user) do
+    application = get_organization_application(application_id)
+
+    cond do
+      is_nil(application) ->
+        {:error, :not_found}
+
+      application.user_id != user.id and not user.is_admin ->
+        {:error, :unauthorized}
+
+      true ->
+        Repo.delete(application)
+    end
+  end
+
+  @doc """
+  Deletes an organization application (admin only - for admin page).
+  """
+  def delete_organization_application(application_id) do
+    case get_organization_application(application_id) do
+      nil -> {:error, :not_found}
+      application -> Repo.delete(application)
+    end
+  end
+end

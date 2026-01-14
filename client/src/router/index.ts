@@ -283,6 +283,11 @@ const router = createRouter({
           name: 'admin-settings',
           component: () => import('@/pages/admin/AdminSettings.vue'),
         },
+        {
+          path: 'org-applications',
+          name: 'admin-org-applications',
+          component: () => import('@/pages/admin/AdminOrgApplications.vue'),
+        },
       ],
     },
     // Legacy login route - redirect to home (auth is handled via AuthModal)
@@ -298,16 +303,9 @@ const router = createRouter({
     },
     // Organization routes
     {
-      path: '/organization/setup',
-      name: 'organization-setup',
-      component: () => import('@/components/OrganizationSetupWizard.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
       path: '/organizations',
       name: 'organizations',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',
@@ -433,12 +431,6 @@ router.beforeEach((to, _from, next) => {
 
   // Check if route requires admin
   if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
-    next('/projects');
-    return;
-  }
-
-  // Prevent org-created accounts from accessing organization setup
-  if (to.name === 'organization-setup' && authStore.user?.created_by_organization_id) {
     next('/projects');
     return;
   }

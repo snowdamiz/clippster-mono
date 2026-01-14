@@ -1,0 +1,243 @@
+defmodule ClippsterServerWeb.UserPostsController do
+  @moduledoc """
+  Controller for managing user Instagram posts and analytics.
+  """
+
+  use ClippsterServerWeb, :controller
+
+  alias ClippsterServer.Campaigns
+  alias ClippsterServer.Campaigns.{ClipperSocialAccount, UserPost}
+  alias ClippsterServer.Social.Platforms.Instagram
+
+  @doc """
+  Publish a post to user's Instagram account.
+
+  POST /api/user/instagram/publish
+  """
+  def publish(conn, params) do
+    user = conn.assigns.current_user
+
+    with {:ok, account_id} <- get_required_param(params, "account_id"),
+         {:ok, media_url} <- get_required_param(params, "media_url"),
+         {:ok, account} <- get_user_account(user.id, account_id),
+         {:ok, post_data} <- publish_to_instagram(account, media_url, params) do
+
+      # Create post record
+      post_attrs = %{
+        user_id: user.id,
+        clipper_social_account_id: account.id,
+        platform: "instagram",
+        post_id: post_data.post_id,
+        post_url: post_data.post_url,
+        caption: params["caption"],
+        media_url: media_url,
+        thumbnail_url: params["thumbnail_url"],
+        media_type: params["media_type"] || "reel",
+        status: "published"
+      }
+
+      case Campaigns.create_user_post(user, post_attrs) do
+        {:ok, post} ->
+          conn
+          |> put_status(201)
+          |> json(%{
+            success: true,
+            post: serialize_post(post),
+            message: "Published successfully"
+          })
+
+        {:error, changeset} ->
+          conn
+          |> put_status(422)
+          |> json(%{
+            success: false,
+            error: extract_changeset_error(changeset)
+          })
+      end
+    else
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Account not found"})
+
+      {:error, :missing_param, param} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Missing required parameter: #{param}"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(500)
+        |> json(%{success: false, error: inspect(reason)})
+    end
+  end
+
+  @doc """
+  List user's posts with analytics.
+
+  GET /api/user/posts
+  """
+  def index(conn, params) do
+    user = conn.assigns.current_user
+
+    posts = case params["account_id"] do
+      nil -> Campaigns.list_user_posts(user.id)
+      account_id -> Campaigns.list_user_posts_by_account(user.id, account_id)
+    end
+
+    conn
+    |> json(%{
+      success: true,
+      posts: Enum.map(posts, &serialize_post/1)
+    })
+  end
+
+  @doc """
+  Get a single post with details.
+
+  GET /api/user/posts/:id
+  """
+  def show(conn, %{"id" => id}) do
+    user = conn.assigns.current_user
+
+    case Campaigns.get_user_post(id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Post not found"})
+
+      post ->
+        if post.user_id == user.id do
+          conn
+          |> json(%{
+            success: true,
+            post: serialize_post(post)
+          })
+        else
+          conn
+          |> put_status(403)
+          |> json(%{success: false, error: "Unauthorized"})
+        end
+    end
+  end
+
+  @doc """
+  Manually sync analytics for a post.
+
+  POST /api/user/posts/:id/sync
+  """
+  def sync_analytics(conn, %{"id" => id}) do
+    user = conn.assigns.current_user
+
+    with {:ok, post} <- get_user_post(user.id, id),
+         {:ok, account} <- get_user_account(user.id, post.clipper_social_account_id),
+         {:ok, insights} <- fetch_insights(account, post) do
+
+      case Campaigns.update_user_post_analytics(post, insights) do
+        {:ok, updated_post} ->
+          conn
+          |> json(%{
+            success: true,
+            post: serialize_post(updated_post),
+            message: "Analytics synced successfully"
+          })
+
+        {:error, changeset} ->
+          conn
+          |> put_status(422)
+          |> json(%{
+            success: false,
+            error: extract_changeset_error(changeset)
+          })
+      end
+    else
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Post or account not found"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(500)
+        |> json(%{success: false, error: inspect(reason)})
+    end
+  end
+
+  # Private functions
+
+  defp get_required_param(params, key) do
+    case Map.get(params, key) do
+      nil -> {:error, :missing_param, key}
+      value -> {:ok, value}
+    end
+  end
+
+  defp get_user_account(user_id, account_id) do
+    account = Campaigns.get_social_account(account_id)
+
+    cond do
+      is_nil(account) -> {:error, :not_found}
+      account.user_id != user_id -> {:error, :not_found}
+      !account.is_active -> {:error, :account_inactive}
+      true -> {:ok, account}
+    end
+  end
+
+  defp get_user_post(user_id, post_id) do
+    case Campaigns.get_user_post(post_id) do
+      nil -> {:error, :not_found}
+      post ->
+        if post.user_id == user_id do
+          {:ok, post}
+        else
+          {:error, :not_found}
+        end
+    end
+  end
+
+  defp publish_to_instagram(account, media_url, params) do
+    access_token = ClipperSocialAccount.get_access_token(account)
+
+    opts = %{
+      caption: params["caption"] || "",
+      media_type: params["media_type"] || "reel",
+      ig_user_id: account.platform_user_id
+    }
+
+    Instagram.publish_media(access_token, media_url, opts)
+  end
+
+  defp fetch_insights(account, post) do
+    access_token = ClipperSocialAccount.get_access_token(account)
+    Instagram.get_insights(access_token, post.post_id)
+  end
+
+  defp serialize_post(%UserPost{} = post) do
+    %{
+      id: post.id,
+      platform: post.platform,
+      post_id: post.post_id,
+      post_url: post.post_url,
+      caption: post.caption,
+      media_url: post.media_url,
+      thumbnail_url: post.thumbnail_url,
+      media_type: post.media_type,
+      status: post.status,
+      view_count: post.view_count,
+      like_count: post.like_count,
+      comment_count: post.comment_count,
+      save_count: post.save_count,
+      reach_count: post.reach_count,
+      impressions_count: post.impressions_count,
+      synced_at: post.synced_at,
+      published_at: post.inserted_at
+    }
+  end
+
+  defp extract_changeset_error(changeset) do
+    errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
+    errors
+    |> Enum.map(fn {field, msgs} -> "#{field}: #{Enum.join(msgs, ", ")}" end)
+    |> Enum.join("; ")
+  end
+end

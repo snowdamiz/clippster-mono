@@ -5,7 +5,13 @@
         <!-- Search -->
         <div class="projects-header__search">
           <Search class="projects-header__search-icon" />
-          <Input v-model="searchQuery" placeholder="Search projects..." class="projects-header__search-input" />
+          <Input
+            v-model="searchQuery"
+            placeholder="Search projects..."
+            class="projects-header__search-input"
+            @focus="openSearchPalette"
+            readonly
+          />
         </div>
 
         <!-- Status Filter -->
@@ -982,6 +988,138 @@
         </div>
       </div>
     </div>
+
+    <!-- Search Palette Modal -->
+    <SearchPalette
+      v-model="showSearchPalette"
+      :search-query="paletteSearchQuery"
+      :active-tab="paletteActiveTab"
+      :placeholder="
+        paletteActiveTab === 'search'
+          ? 'Search projects by name or description...'
+          : paletteActiveTab === 'live'
+            ? 'Filter live projects...'
+            : 'Filter projects with clips...'
+      "
+      :tabs="projectsPaletteTabs"
+      @update:search-query="paletteSearchQuery = $event"
+      @update:active-tab="onPaletteTabChange"
+      @close="closeSearchPalette"
+    >
+      <!-- Search Results -->
+      <template v-if="paletteSearchResults.length > 0">
+        <div class="search-palette__results">
+          <div class="search-palette__results-header">
+            <span class="search-palette__results-label">
+              {{
+                paletteActiveTab === 'live'
+                  ? 'Live Projects'
+                  : paletteActiveTab === 'with_clips'
+                    ? 'Projects with Clips'
+                    : 'Results'
+              }}
+            </span>
+            <span class="search-palette__results-count">{{ paletteSearchResults.length }} found</span>
+          </div>
+          <div class="search-palette__list">
+            <div
+              v-for="item in paletteSearchResults"
+              :key="item.id"
+              class="search-palette__item"
+              @click="selectPaletteResult(item)"
+            >
+              <div class="search-palette__item-thumb-wrap">
+                <div
+                  v-if="item.thumbnailUrl"
+                  class="search-palette__item-thumb"
+                  :style="{ backgroundImage: `url(${item.thumbnailUrl})` }"
+                ></div>
+                <div v-else class="search-palette__item-thumb search-palette__item-thumb--empty">
+                  <Folder class="w-5 h-5" />
+                </div>
+                <div v-if="item.isLive" class="search-palette__item-live-badge" title="Live">
+                  <Radio class="w-3 h-3" />
+                </div>
+              </div>
+
+              <div class="search-palette__item-content">
+                <div class="search-palette__item-title">{{ item.project.name }}</div>
+                <div class="search-palette__item-meta">
+                  <!-- Platform -->
+                  <span v-if="item.platform" class="search-palette__item-platform">
+                    {{ item.platform }}
+                  </span>
+                  <!-- Live Badge -->
+                  <span v-if="item.isLive" class="search-palette__item-live-tag">
+                    <span class="search-palette__live-dot"></span>
+                    Live
+                  </span>
+                  <!-- Clip Count -->
+                  <span v-if="item.clipCount > 0" class="search-palette__item-clips">
+                    {{ item.clipCount }} clip{{ item.clipCount !== 1 ? 's' : '' }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="search-palette__item-arrow">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M6 4L10 8L6 12"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- No Results -->
+      <template v-else-if="paletteSearchQuery || paletteActiveTab !== 'search'">
+        <div class="search-palette__empty-state">
+          <div class="search-palette__empty-icon-wrap">
+            <Search v-if="paletteActiveTab === 'search'" class="search-palette__empty-icon" />
+            <Radio v-else-if="paletteActiveTab === 'live'" class="search-palette__empty-icon" />
+            <Video v-else class="search-palette__empty-icon" />
+          </div>
+          <h3 class="search-palette__empty-title">
+            {{
+              paletteActiveTab === 'live'
+                ? 'No live projects'
+                : paletteActiveTab === 'with_clips'
+                  ? 'No projects with clips'
+                  : 'No projects found'
+            }}
+          </h3>
+          <p class="search-palette__empty-desc">
+            {{
+              paletteActiveTab === 'live'
+                ? 'Start monitoring a livestream to see it here'
+                : paletteActiveTab === 'with_clips'
+                  ? 'Detect clips in your projects to see them here'
+                  : 'Try a different search term'
+            }}
+          </p>
+        </div>
+      </template>
+
+      <!-- Initial State -->
+      <template v-else>
+        <div class="search-palette__empty-state">
+          <div class="search-palette__empty-icon-wrap search-palette__empty-icon-wrap--subtle">
+            <Search class="search-palette__empty-icon" />
+          </div>
+          <h3 class="search-palette__empty-title">Search your projects</h3>
+          <p class="search-palette__empty-desc">Find projects by name or description</p>
+        </div>
+      </template>
+    </SearchPalette>
+
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
   </PageLayout>
 </template>
 
@@ -1056,12 +1194,14 @@
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
+  import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
   import ClipBuildSettingsDialog, {
     type BuildSettings,
     type IntroOutroItem,
   } from '@/components/ClipBuildSettingsDialog.vue';
   import ClipsTab from '@/components/ClipsTab.vue';
+  import AuthModal from '@/components/AuthModal.vue';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
@@ -1115,6 +1255,7 @@
   const showBulkDeleteDialog = ref(false);
   const selectedFolderChildren = ref<Set<string>>(new Set());
   const showBulkDeleteFolderChildrenDialog = ref(false);
+  const showAuthModal = ref(false);
 
   // Project-level clip detection state
   const showProjectDetectDialog = ref(false);
@@ -1130,6 +1271,11 @@
   const sortBy = ref('updated-desc');
   const statusFilter = ref('all');
 
+  // Search palette state
+  const showSearchPalette = ref(false);
+  const paletteSearchQuery = ref('');
+  const paletteActiveTab = ref<'search' | 'live' | 'with_clips'>('search');
+
   const statusOptions = [
     { label: 'All Status', value: 'all' },
     { label: 'Live Now', value: 'live' },
@@ -1144,6 +1290,97 @@
     { label: 'Name: A-Z', value: 'name-asc' },
     { label: 'Name: Z-A', value: 'name-desc' },
   ];
+
+  // Count live projects and projects with clips for palette tabs
+  const liveProjectsCount = computed(() => {
+    return projects.value.filter((p) => isProjectLive(p.id)).length;
+  });
+
+  const projectsWithClipsCount = computed(() => {
+    return projects.value.filter((p) => getClipCount(p.id) > 0).length;
+  });
+
+  // Computed tabs for search palette
+  const projectsPaletteTabs = computed((): SearchPaletteTab[] => [
+    { id: 'search', label: 'Search All', icon: Search },
+    {
+      id: 'live',
+      label: 'Live Projects',
+      icon: Radio,
+      badge: liveProjectsCount.value > 0 ? liveProjectsCount.value : undefined,
+    },
+    {
+      id: 'with_clips',
+      label: 'With Clips',
+      icon: Video,
+      badge: projectsWithClipsCount.value > 0 ? projectsWithClipsCount.value : undefined,
+    },
+  ]);
+
+  // Search results for the palette
+  interface PaletteProjectResult {
+    id: string;
+    project: Project;
+    thumbnailUrl: string | null;
+    isLive: boolean;
+    clipCount: number;
+    platform: string | null;
+  }
+
+  const paletteSearchResults = computed((): PaletteProjectResult[] => {
+    if (!paletteSearchQuery.value && paletteActiveTab.value === 'search') return [];
+
+    let result = [...projects.value];
+
+    // Apply search query filter
+    if (paletteSearchQuery.value) {
+      const query = paletteSearchQuery.value.toLowerCase();
+      result = result.filter(
+        (p) => p.name.toLowerCase().includes(query) || (p.description && p.description.toLowerCase().includes(query))
+      );
+    }
+
+    // Apply tab-specific filters
+    if (paletteActiveTab.value === 'live') {
+      result = result.filter((p) => isProjectLive(p.id));
+    } else if (paletteActiveTab.value === 'with_clips') {
+      result = result.filter((p) => getClipCount(p.id) > 0);
+    }
+
+    // Sort by updated_at descending
+    result.sort((a, b) => b.updated_at - a.updated_at);
+
+    // Limit results
+    return result.slice(0, 20).map((project) => ({
+      id: project.id,
+      project,
+      thumbnailUrl: getThumbnailUrl(project.id),
+      isLive: isProjectLive(project.id),
+      clipCount: getClipCount(project.id),
+      platform: getProjectPlatform(project),
+    }));
+  });
+
+  function openSearchPalette() {
+    showSearchPalette.value = true;
+    paletteSearchQuery.value = searchQuery.value;
+  }
+
+  function closeSearchPalette() {
+    showSearchPalette.value = false;
+    paletteSearchQuery.value = '';
+    paletteActiveTab.value = 'search';
+  }
+
+  function onPaletteTabChange(tabId: string) {
+    paletteActiveTab.value = tabId as 'search' | 'live' | 'with_clips';
+    paletteSearchQuery.value = '';
+  }
+
+  function selectPaletteResult(result: PaletteProjectResult) {
+    closeSearchPalette();
+    handleProjectClick(result.project);
+  }
 
   // Pagination state
   const currentPage = ref(1);
@@ -3268,6 +3505,12 @@
   });
 
   async function openCreateDialog() {
+    // Check if user is authenticated first
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
+
     // Check subscription access before allowing project creation
     if (!(await gates.createProject())) {
       return; // Gate was shown, user doesn't have access
@@ -3309,7 +3552,14 @@
         // Check if we have multiple videos - if so, create a parent project with child projects
         if (data.selectedVideoPaths && data.selectedVideoPaths.length > 1) {
           // Create parent project
-          const parentId = await createProject(data.name, data.description || undefined, undefined, 'Manual');
+          const parentId = await createProject(
+            data.name,
+            data.description || undefined,
+            undefined,
+            'Manual',
+            undefined,
+            data.creatorProfileId || undefined
+          );
 
           // Create child projects for each video
           for (const path of data.selectedVideoPaths) {
@@ -3318,8 +3568,15 @@
             // Remove extension
             const childName = filename.replace(/\.[^/.]+$/, '');
 
-            // Create child project
-            const childId = await createProject(childName, data.description || undefined, parentId, 'Manual');
+            // Create child project (inherits creator profile from parent)
+            const childId = await createProject(
+              childName,
+              data.description || undefined,
+              parentId,
+              'Manual',
+              undefined,
+              data.creatorProfileId || undefined
+            );
 
             // Process video and associate with child project
             await processVideoFile(path, childId);
@@ -3328,7 +3585,14 @@
           success('Project created', `"${data.name}" has been created with ${data.selectedVideoPaths.length} parts`);
         } else {
           // Standard creation for single video or no video
-          const projectId = await createProject(data.name, data.description || undefined, undefined, 'Manual');
+          const projectId = await createProject(
+            data.name,
+            data.description || undefined,
+            undefined,
+            'Manual',
+            undefined,
+            data.creatorProfileId || undefined
+          );
 
           // Import and associate selected video (if any)
           if (data.selectedVideoPaths && data.selectedVideoPaths.length > 0) {
@@ -6186,6 +6450,228 @@
   .dialog-leave-to {
     opacity: 0;
     transform: scale(0.98);
+  }
+
+  /* ===== Search Palette Content Styles ===== */
+  /* Results */
+  .search-palette__results {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .search-palette__results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .search-palette__results-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  .search-palette__results-count {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .search-palette__list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Item */
+  .search-palette__item {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.75rem 1.25rem;
+    cursor: pointer;
+    transition: all 120ms ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  }
+
+  .search-palette__item:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .search-palette__item:last-child {
+    border-bottom: none;
+  }
+
+  .search-palette__item:active {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .search-palette__item-thumb-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .search-palette__item-thumb {
+    width: 72px;
+    height: 42px;
+    border-radius: 6px;
+    background-size: cover;
+    background-position: center;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .search-palette__item-thumb--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.25);
+  }
+
+  .search-palette__item-live-badge {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background: rgba(239, 68, 68, 0.9);
+    border-radius: 9999px;
+    color: white;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+
+  .search-palette__item-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .search-palette__item-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.01em;
+  }
+
+  .search-palette__item:hover .search-palette__item-title {
+    color: white;
+  }
+
+  .search-palette__item-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .search-palette__item-platform {
+    color: rgba(255, 255, 255, 0.45);
+    font-weight: 450;
+  }
+
+  .search-palette__item-live-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.5rem;
+    background: rgba(239, 68, 68, 0.15);
+    border-radius: 4px;
+    color: #f87171;
+    font-weight: 600;
+    font-size: 0.6875rem;
+  }
+
+  .search-palette__live-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 9999px;
+    background: #f87171;
+    animation: pulse-live 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-live {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  .search-palette__item-clips {
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 450;
+  }
+
+  .search-palette__item-arrow {
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.2);
+    transition: all 150ms ease;
+  }
+
+  .search-palette__item:hover .search-palette__item-arrow {
+    color: rgba(255, 255, 255, 0.5);
+    transform: translateX(2px);
+  }
+
+  /* Empty State */
+  .search-palette__empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3.5rem 1.5rem;
+    text-align: center;
+  }
+
+  .search-palette__empty-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    margin-bottom: 1.25rem;
+  }
+
+  .search-palette__empty-icon-wrap--subtle {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .search-palette__empty-icon {
+    width: 26px;
+    height: 26px;
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  .search-palette__empty-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.01em;
+  }
+
+  .search-palette__empty-desc {
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.4);
+    margin: 0;
+    max-width: 280px;
+    line-height: 1.5;
   }
 </style>
 

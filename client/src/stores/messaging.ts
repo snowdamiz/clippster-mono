@@ -9,6 +9,7 @@ import {
   markAsRead as apiMarkAsRead,
   toggleMute as apiToggleMute,
   createDirectConversation,
+  createGlobalDirectConversation,
   createGroupConversation,
   createAnnouncement,
   getUnreadCounts,
@@ -317,6 +318,35 @@ export const useMessagingStore = defineStore('messaging', () => {
   }
 
   /**
+   * Create a global direct conversation (not scoped to an organization).
+   */
+  async function startGlobalDirectConversation(userId: number) {
+    const authStore = useAuthStore();
+    if (!authStore.user?.id || !authStore.token) {
+      throw new Error('Not authenticated');
+    }
+
+    // Initialize WebSocket connection if not connected
+    if (!isSocketConnected.value) {
+      await messagingSocket.connect(authStore.token, authStore.user.id);
+      isSocketConnected.value = true;
+
+      // Set up global handlers
+      messagingSocket.setOnNewMessageNotification((notification) => {
+        handleNewMessageNotification(notification.conversationId, notification.message);
+      });
+
+      messagingSocket.setOnConversationCreated((conversation) => {
+        conversations.value.set(conversation.id, conversation);
+      });
+    }
+
+    const conversation = await createGlobalDirectConversation(userId);
+    conversations.value.set(conversation.id, conversation);
+    return conversation;
+  }
+
+  /**
    * Create a group conversation.
    */
   async function startGroupConversation(name: string, memberIds: number[]) {
@@ -557,6 +587,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     toggleMute,
     sendTyping,
     startDirectConversation,
+    startGlobalDirectConversation,
     startGroupConversation,
     sendAnnouncement,
     leaveConversation,

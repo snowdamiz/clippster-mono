@@ -82,7 +82,7 @@ defmodule ClippsterServer.ClipperProfiles do
     |> apply_filters(filters)
     |> order_by([p], [desc: p.is_verified, desc: p.total_campaigns_completed])
     |> Repo.all()
-    |> Repo.preload([:user, :channel_links, :badges])
+    |> Repo.preload([:user, :channel_links, :portfolio_clips, :badges, endorsements: [:organization]])
   end
 
   defp apply_filters(query, filters) do
@@ -205,7 +205,7 @@ defmodule ClippsterServer.ClipperProfiles do
   Adds a portfolio clip to a profile (max 3).
   """
   def add_portfolio_clip(profile_id, attrs) do
-    current_count = 
+    current_count =
       ClipperPortfolioClip
       |> where([c], c.clipper_profile_id == ^profile_id)
       |> Repo.aggregate(:count)
@@ -376,7 +376,7 @@ defmodule ClippsterServer.ClipperProfiles do
   """
   def get_leaderboard(period_type, opts \\ []) do
     limit = Keyword.get(opts, :limit, 50)
-    
+
     # Get the most recent period
     case get_latest_period(period_type) do
       nil -> []
@@ -491,6 +491,23 @@ defmodule ClippsterServer.ClipperProfiles do
     |> where([e], e.clipper_profile_id == ^profile_id)
     |> where([e], e.inserted_at >= ^start_dt and e.inserted_at <= ^end_dt)
     |> Repo.aggregate(:count)
+  end
+
+  @doc """
+  Counts total views from verified campaign submissions in a period.
+  """
+  def count_views_in_period(user_id, period_start, period_end) do
+    import Ecto.Query
+
+    start_dt = DateTime.new!(period_start, ~T[00:00:00], "Etc/UTC")
+    end_dt = DateTime.new!(period_end, ~T[23:59:59], "Etc/UTC")
+
+    ClippsterServer.Campaigns.CampaignSubmission
+    |> where([s], s.user_id == ^user_id)
+    |> where([s], s.status in ["verified", "paid"])
+    |> where([s], s.inserted_at >= ^start_dt and s.inserted_at <= ^end_dt)
+    |> select([s], coalesce(sum(s.view_count), 0))
+    |> Repo.one()
   end
 
   @doc """

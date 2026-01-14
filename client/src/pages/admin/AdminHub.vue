@@ -185,6 +185,13 @@
       icon: Building2,
       route: '/admin/organizations',
     },
+    {
+      id: 'org-applications',
+      title: 'Org Applications',
+      description: 'Review organization account applications',
+      icon: FileText,
+      route: '/admin/org-applications',
+    },
   ]);
 
   const contentTools = computed<Tool[]>(() => [

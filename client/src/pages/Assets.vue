@@ -309,6 +309,9 @@
     <!-- Asset Upload Dialog -->
     <AssetUploadDialog :show="showUploadDialog" @close="showUploadDialog = false" @uploaded="handleUploadComplete" />
 
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
+
     <!-- Image Preview Dialog -->
     <Teleport to="body">
       <Transition name="modal">
@@ -475,6 +478,7 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import AssetUploadDialog from '@/components/AssetUploadDialog.vue';
+  import AuthModal from '@/components/AuthModal.vue';
 
   // Combined asset type for display
   type DisplayAsset =
@@ -507,6 +511,7 @@
   const { progress: syncProgress, isDownloading, downloadingAssetIds } = useSyncProgress();
   const authStore = useAuthStore();
   const isSyncing = ref(false);
+  const showAuthModal = ref(false);
 
   // Audio player state
   const currentlyPlayingAudio = ref<string | null>(null);
@@ -966,6 +971,10 @@
   }
 
   function handleUpload() {
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
     showUploadDialog.value = true;
   }
 

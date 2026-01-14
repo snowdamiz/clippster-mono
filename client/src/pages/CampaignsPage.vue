@@ -52,7 +52,6 @@
           <p class="campaigns__empty-description">
             Create an account or sign in to discover clipping campaigns and start earning
           </p>
-          <button class="campaigns__signin-btn" @click="showAuthModal = true">Sign In</button>
         </div>
 
         <!-- Empty State -->

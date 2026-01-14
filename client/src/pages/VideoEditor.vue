@@ -10,7 +10,13 @@
         <!-- Search -->
         <div class="videoeditor-header__search">
           <Search class="videoeditor-header__search-icon" />
-          <Input v-model="searchQuery" placeholder="Search projects..." class="videoeditor-header__search-input" />
+          <Input
+            v-model="searchQuery"
+            placeholder="Search projects..."
+            class="videoeditor-header__search-input"
+            @focus="openSearchPalette"
+            readonly
+          />
         </div>
 
         <!-- Sort Filter -->
@@ -206,6 +212,134 @@
       @close="showDeleteDialog = false"
       @confirm="handleDeleteConfirm"
     />
+
+    <!-- Search Palette Modal -->
+    <SearchPalette
+      v-model="showSearchPalette"
+      :search-query="paletteSearchQuery"
+      :active-tab="paletteActiveTab"
+      :placeholder="
+        paletteActiveTab === 'search'
+          ? 'Search projects by name or description...'
+          : paletteActiveTab === 'with_sources'
+            ? 'Filter projects with sources...'
+            : 'Filter projects with edits...'
+      "
+      :tabs="videoEditorPaletteTabs"
+      @update:search-query="paletteSearchQuery = $event"
+      @update:active-tab="onPaletteTabChange"
+      @close="closeSearchPalette"
+    >
+      <!-- Search Results -->
+      <template v-if="paletteSearchResults.length > 0">
+        <div class="search-palette__results">
+          <div class="search-palette__results-header">
+            <span class="search-palette__results-label">
+              {{
+                paletteActiveTab === 'with_sources'
+                  ? 'Projects with Sources'
+                  : paletteActiveTab === 'has_edits'
+                    ? 'Projects with Edits'
+                    : 'Results'
+              }}
+            </span>
+            <span class="search-palette__results-count">{{ paletteSearchResults.length }} found</span>
+          </div>
+          <div class="search-palette__list">
+            <div
+              v-for="item in paletteSearchResults"
+              :key="item.id"
+              class="search-palette__item"
+              @click="selectPaletteResult(item)"
+            >
+              <div class="search-palette__item-thumb-wrap">
+                <div
+                  v-if="item.thumbnailUrl"
+                  class="search-palette__item-thumb"
+                  :style="{ backgroundImage: `url(${item.thumbnailUrl})` }"
+                ></div>
+                <div v-else class="search-palette__item-thumb search-palette__item-thumb--empty">
+                  <Clapperboard class="w-5 h-5" />
+                </div>
+              </div>
+
+              <div class="search-palette__item-content">
+                <div class="search-palette__item-title">{{ item.project.name }}</div>
+                <div class="search-palette__item-meta">
+                  <!-- Source count -->
+                  <span v-if="item.sourceCount > 0" class="search-palette__item-sources">
+                    {{ item.sourceCount }} source{{ item.sourceCount !== 1 ? 's' : '' }}
+                  </span>
+                  <!-- Edit types -->
+                  <span v-if="item.hasEdits" class="search-palette__item-edits-tag">
+                    {{ item.editTypes.join(', ') }}
+                  </span>
+                  <!-- Duration -->
+                  <span v-if="item.project.total_duration > 0" class="search-palette__item-duration">
+                    {{ formatDuration(item.project.total_duration) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="search-palette__item-arrow">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M6 4L10 8L6 12"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- No Results -->
+      <template v-else-if="paletteSearchQuery || paletteActiveTab !== 'search'">
+        <div class="search-palette__empty-state">
+          <div class="search-palette__empty-icon-wrap">
+            <Search v-if="paletteActiveTab === 'search'" class="search-palette__empty-icon" />
+            <Film v-else-if="paletteActiveTab === 'with_sources'" class="search-palette__empty-icon" />
+            <Edit v-else class="search-palette__empty-icon" />
+          </div>
+          <h3 class="search-palette__empty-title">
+            {{
+              paletteActiveTab === 'with_sources'
+                ? 'No projects with sources'
+                : paletteActiveTab === 'has_edits'
+                  ? 'No projects with edits'
+                  : 'No projects found'
+            }}
+          </h3>
+          <p class="search-palette__empty-desc">
+            {{
+              paletteActiveTab === 'with_sources'
+                ? 'Add video sources to your projects to see them here'
+                : paletteActiveTab === 'has_edits'
+                  ? 'Add text, audio, or effects to your projects'
+                  : 'Try a different search term'
+            }}
+          </p>
+        </div>
+      </template>
+
+      <!-- Initial State -->
+      <template v-else>
+        <div class="search-palette__empty-state">
+          <div class="search-palette__empty-icon-wrap search-palette__empty-icon-wrap--subtle">
+            <Search class="search-palette__empty-icon" />
+          </div>
+          <h3 class="search-palette__empty-title">Search your editor projects</h3>
+          <p class="search-palette__empty-desc">Find projects by name or description</p>
+        </div>
+      </template>
+    </SearchPalette>
+
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
   </PageLayout>
 </template>
 
@@ -218,6 +352,9 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import VideoEditorProjectDialog from '@/components/video-editor/VideoEditorProjectDialog.vue';
   import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
+  import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
+  import AuthModal from '@/components/AuthModal.vue';
+  import { useAuthStore } from '@/stores/auth';
   import type { VideoEditorProject, VideoEditorSource } from '@/types';
   import {
     getAllVideoEditorProjects,
@@ -255,12 +392,20 @@
   const sortBy = ref('updated');
   const selectedProjects = ref<Set<string>>(new Set());
 
+  // Search palette state
+  const showSearchPalette = ref(false);
+  const paletteSearchQuery = ref('');
+  const paletteActiveTab = ref<'search' | 'with_sources' | 'has_edits'>('search');
+
   // Dialog state
   const showDialog = ref(false);
   const selectedProject = ref<VideoEditorProject | null>(null);
   const showEditorDialog = ref(false);
   const editorProjectId = ref<string | null>(null);
   const editorProjectName = ref('Video Project');
+  const showAuthModal = ref(false);
+
+  const authStore = useAuthStore();
   const showDeleteDialog = ref(false);
   const projectToDelete = ref<VideoEditorProject | null>(null);
 
@@ -341,6 +486,105 @@
       return `Are you sure you want to delete ${selectedProjects.value.size} project${selectedProjects.value.size > 1 ? 's' : ''}?`;
     }
     return `Are you sure you want to delete "${projectToDelete.value?.name}"?`;
+  });
+
+  // Count projects with sources
+  const projectsWithSourcesCount = computed(() => {
+    return projects.value.filter((p) => getSourceCount(p.id) > 0).length;
+  });
+
+  // Count projects with edits
+  const projectsWithEditsCount = computed(() => {
+    return projects.value.filter((p) => {
+      const editInfo = projectEdits.value.get(p.id);
+      return (
+        editInfo &&
+        (editInfo.hasAudio || editInfo.hasText || editInfo.hasStickers || editInfo.hasWatermarks || editInfo.hasEffects)
+      );
+    }).length;
+  });
+
+  // Computed tabs for search palette
+  const videoEditorPaletteTabs = computed((): SearchPaletteTab[] => [
+    { id: 'search', label: 'Search All', icon: Search },
+    {
+      id: 'with_sources',
+      label: 'With Sources',
+      icon: Film,
+      badge: projectsWithSourcesCount.value > 0 ? projectsWithSourcesCount.value : undefined,
+    },
+    {
+      id: 'has_edits',
+      label: 'Has Edits',
+      icon: Edit,
+      badge: projectsWithEditsCount.value > 0 ? projectsWithEditsCount.value : undefined,
+    },
+  ]);
+
+  // Search results for the palette
+  interface PaletteProjectResult {
+    id: string;
+    project: VideoEditorProject;
+    thumbnailUrl: string | null;
+    sourceCount: number;
+    hasEdits: boolean;
+    editTypes: string[];
+  }
+
+  const paletteSearchResults = computed((): PaletteProjectResult[] => {
+    if (!paletteSearchQuery.value && paletteActiveTab.value === 'search') return [];
+
+    let result = [...projects.value];
+
+    // Apply search query filter
+    if (paletteSearchQuery.value) {
+      const query = paletteSearchQuery.value.toLowerCase();
+      result = result.filter(
+        (p) => p.name.toLowerCase().includes(query) || (p.description && p.description.toLowerCase().includes(query))
+      );
+    }
+
+    // Apply tab-specific filters
+    if (paletteActiveTab.value === 'with_sources') {
+      result = result.filter((p) => getSourceCount(p.id) > 0);
+    } else if (paletteActiveTab.value === 'has_edits') {
+      result = result.filter((p) => {
+        const editInfo = projectEdits.value.get(p.id);
+        return (
+          editInfo &&
+          (editInfo.hasAudio ||
+            editInfo.hasText ||
+            editInfo.hasStickers ||
+            editInfo.hasWatermarks ||
+            editInfo.hasEffects)
+        );
+      });
+    }
+
+    // Sort by updated_at descending
+    result.sort((a, b) => b.updated_at - a.updated_at);
+
+    // Limit results
+    return result.slice(0, 20).map((project) => {
+      const editInfo = projectEdits.value.get(project.id);
+      const editTypes: string[] = [];
+      if (editInfo) {
+        if (editInfo.hasAudio) editTypes.push('Audio');
+        if (editInfo.hasText) editTypes.push('Text');
+        if (editInfo.hasStickers) editTypes.push('Stickers');
+        if (editInfo.hasWatermarks) editTypes.push('Watermarks');
+        if (editInfo.hasEffects) editTypes.push('Effects');
+      }
+
+      return {
+        id: project.id,
+        project,
+        thumbnailUrl: getSourceThumbnails(project.id)[0] || null,
+        sourceCount: getSourceCount(project.id),
+        hasEdits: editTypes.length > 0,
+        editTypes,
+      };
+    });
   });
 
   // Methods
@@ -489,6 +733,10 @@
   }
 
   function openCreateDialog() {
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
     selectedProject.value = null;
     showDialog.value = true;
   }
@@ -578,6 +826,28 @@
   function clearSelection() {
     selectedProjects.value.clear();
     selectedProjects.value = new Set();
+  }
+
+  // Search palette functions
+  function openSearchPalette() {
+    showSearchPalette.value = true;
+    paletteSearchQuery.value = searchQuery.value;
+  }
+
+  function closeSearchPalette() {
+    showSearchPalette.value = false;
+    paletteSearchQuery.value = '';
+    paletteActiveTab.value = 'search';
+  }
+
+  function onPaletteTabChange(tabId: string) {
+    paletteActiveTab.value = tabId as 'search' | 'with_sources' | 'has_edits';
+    paletteSearchQuery.value = '';
+  }
+
+  function selectPaletteResult(result: PaletteProjectResult) {
+    closeSearchPalette();
+    openProject(result.project);
   }
 
   // Lifecycle
@@ -1262,6 +1532,194 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     max-width: 320px;
+    line-height: 1.5;
+  }
+
+  /* ===== Search Palette Content Styles ===== */
+  /* Results */
+  .search-palette__results {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .search-palette__results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .search-palette__results-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  .search-palette__results-count {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .search-palette__list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Item */
+  .search-palette__item {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.75rem 1.25rem;
+    cursor: pointer;
+    transition: all 120ms ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  }
+
+  .search-palette__item:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .search-palette__item:last-child {
+    border-bottom: none;
+  }
+
+  .search-palette__item:active {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .search-palette__item-thumb-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .search-palette__item-thumb {
+    width: 72px;
+    height: 42px;
+    border-radius: 6px;
+    background-size: cover;
+    background-position: center;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .search-palette__item-thumb--empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.25);
+  }
+
+  .search-palette__item-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .search-palette__item-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.01em;
+  }
+
+  .search-palette__item:hover .search-palette__item-title {
+    color: white;
+  }
+
+  .search-palette__item-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .search-palette__item-sources {
+    color: rgba(255, 255, 255, 0.45);
+    font-weight: 450;
+  }
+
+  .search-palette__item-edits-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    background: rgba(139, 92, 246, 0.15);
+    border-radius: 4px;
+    color: #c4b5fd;
+    font-weight: 600;
+    font-size: 0.6875rem;
+  }
+
+  .search-palette__item-duration {
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 450;
+  }
+
+  .search-palette__item-arrow {
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.2);
+    transition: all 150ms ease;
+  }
+
+  .search-palette__item:hover .search-palette__item-arrow {
+    color: rgba(255, 255, 255, 0.5);
+    transform: translateX(2px);
+  }
+
+  /* Empty State */
+  .search-palette__empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3.5rem 1.5rem;
+    text-align: center;
+  }
+
+  .search-palette__empty-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    margin-bottom: 1.25rem;
+  }
+
+  .search-palette__empty-icon-wrap--subtle {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .search-palette__empty-icon {
+    width: 26px;
+    height: 26px;
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  .search-palette__empty-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    margin: 0 0 0.375rem;
+    letter-spacing: -0.01em;
+  }
+
+  .search-palette__empty-desc {
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.4);
+    margin: 0;
+    max-width: 280px;
     line-height: 1.5;
   }
 </style>

@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
 
   alias ClippsterServer.ClipperProfiles
   alias ClippsterServer.ClipperProfiles.{ClipperProfile, ClipperChannelLink, ClipperPortfolioClip}
+  alias ClippsterServer.Storage
 
   # ============================================================================
   # Own Profile Endpoints
@@ -34,8 +35,13 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   def update_own(conn, params) do
     user = conn.assigns.current_user
 
+    # Debug: log incoming is_public value
+    require Logger
+    Logger.debug("update_own params is_public: #{inspect(params["is_public"])}")
+
     with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
          {:ok, updated_profile} <- ClipperProfiles.update_profile(profile, params) do
+      Logger.debug("update_own result is_public: #{inspect(updated_profile.is_public)}")
       updated_profile = ClippsterServer.Repo.preload(updated_profile, [:channel_links, :portfolio_clips, :badges])
       json(conn, %{success: true, profile: serialize_profile(updated_profile)})
     else
@@ -53,7 +59,6 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   @max_avatar_size 5 * 1024 * 1024  # 5MB
   def upload_avatar(conn, %{"file" => %Plug.Upload{} = upload}) do
     user = conn.assigns.current_user
-    alias ClippsterServer.Storage
 
     # Validate file type
     allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
@@ -76,12 +81,12 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
                {:ok, file_binary} <- File.read(upload.path),
                key <- generate_avatar_key(user.id, upload.filename),
                {:ok, avatar_url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
-            
+
             # Update the profile with the new avatar URL
             case ClipperProfiles.update_profile(profile, %{"avatar_url" => avatar_url}) do
               {:ok, updated_profile} ->
                 updated_profile = ClippsterServer.Repo.preload(updated_profile, [:channel_links, :portfolio_clips, :badges])
-                json(conn, %{success: true, profile: serialize_profile(updated_profile), avatar_url: avatar_url})
+                json(conn, %{success: true, profile: serialize_profile(updated_profile), avatar_url: maybe_presign_avatar(avatar_url)})
 
               {:error, changeset} ->
                 # Clean up uploaded file on failure
@@ -116,6 +121,11 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     ext = Path.extname(filename) |> String.downcase()
     ext = if ext == "", do: ".jpg", else: ext
     "avatars/clipper/#{user_id}/#{timestamp}#{ext}"
+  end
+
+  defp maybe_presign_avatar(nil), do: nil
+  defp maybe_presign_avatar(url) when is_binary(url) do
+    Storage.presigned_url!(url)
   end
 
   # ============================================================================
@@ -304,7 +314,6 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   @max_file_size 100 * 1024 * 1024  # 100MB
   def upload_portfolio_clip(conn, %{"file" => %Plug.Upload{} = upload} = params) do
     user = conn.assigns.current_user
-    alias ClippsterServer.Storage
 
     # Check file size
     case File.stat(upload.path) do
@@ -319,7 +328,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
              key <- generate_portfolio_clip_key(user.id, upload.filename),
              content_type <- upload.content_type || "video/mp4",
              {:ok, video_url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
-          
+
           # Create the portfolio clip record
           clip_params = %{
             "title" => params["title"] || Path.basename(upload.filename, Path.extname(upload.filename)),
@@ -477,7 +486,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       user_id: profile.user_id,
       display_name: profile.display_name,
       bio: profile.bio,
-      avatar_url: profile.avatar_url,
+      avatar_url: maybe_presign_avatar(profile.avatar_url),
       slug: profile.slug,
       is_public: profile.is_public,
       looking_for_work: profile.looking_for_work,
@@ -502,7 +511,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
 
   defp serialize_public_profile(profile) do
     base = serialize_profile(profile)
-    
+
     Map.merge(base, %{
       user: if(profile.user, do: %{
         id: profile.user.id,
@@ -574,7 +583,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
         id: entry.clipper_profile.id,
         user_id: entry.clipper_profile.user_id,
         display_name: entry.clipper_profile.display_name,
-        avatar_url: entry.clipper_profile.avatar_url,
+        avatar_url: maybe_presign_avatar(entry.clipper_profile.avatar_url),
         slug: entry.clipper_profile.slug,
         is_verified: entry.clipper_profile.is_verified,
         badges: Enum.map(entry.clipper_profile.badges || [], &serialize_badge/1)

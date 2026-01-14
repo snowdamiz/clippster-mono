@@ -445,6 +445,9 @@
         @select="handleCampaignSelect"
         @cancel="handleCampaignCancel"
       />
+
+      <!-- Auth Modal -->
+      <AuthModal v-model="showAuthModal" />
     </PageLayout>
   </div>
 </template>
@@ -474,7 +477,9 @@
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CampaignSelectionDialog from '@/components/campaigns/CampaignSelectionDialog.vue';
+  import AuthModal from '@/components/AuthModal.vue';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
+  import { useAuthStore } from '@/stores/auth';
   import { getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
   import { useLivestreamStore } from '@/stores/livestream';
   import {
@@ -558,8 +563,10 @@
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
+  const authStore = useAuthStore();
 
   const isDetectingAny = computed(() => monitoredStreamers.value.size > 0 || activeSessions.value.size > 0);
+  const showAuthModal = ref(false);
 
   const sortedStreamers = computed(() => {
     return [...streamers.value].sort((a, b) => {
@@ -962,6 +969,12 @@
 
   async function addStreamer() {
     if (!inputValue.value) return;
+
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
 
     if (detectedPlatform.value === 'Kick') {
       const channelSlug = extractChannelSlug(inputValue.value);

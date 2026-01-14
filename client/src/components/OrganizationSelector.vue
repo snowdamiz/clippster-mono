@@ -74,18 +74,6 @@
 
         <!-- Empty State -->
         <div v-else class="px-3 py-4 text-center text-sm text-zinc-500">You're not a member of any organizations</div>
-
-        <!-- Footer Actions -->
-        <div v-if="canCreateOrg" class="border-t border-zinc-700 p-2">
-          <router-link
-            to="/organization/setup"
-            @click="isOpen = false"
-            class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-          >
-            <Plus class="h-4 w-4" />
-            Create Organization
-          </router-link>
-        </div>
       </div>
     </Transition>
   </div>

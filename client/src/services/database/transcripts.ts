@@ -135,3 +135,29 @@ export async function searchSegments(query: string): Promise<TranscriptSegment[]
     [query, userId]
   );
 }
+
+export async function searchTranscriptSegmentsByClipIds(
+  query: string,
+  clipIds: string[]
+): Promise<string[]> {
+  const db = await getDatabase();
+
+  if (clipIds.length === 0) return [];
+
+  // Use FTS5 to search transcript segments
+  // Return unique clip IDs that have matching transcript segments
+  const placeholders = clipIds.map(() => '?').join(',');
+
+  const result = await db.select<{ clip_id: string }[]>(
+    `SELECT DISTINCT ts.clip_id
+     FROM transcript_segments ts
+     JOIN transcript_segments_fts fts ON fts.rowid = ts.rowid
+     WHERE transcript_segments_fts MATCH ? 
+       AND ts.clip_id IN (${placeholders})
+       AND ts.clip_id IS NOT NULL
+     ORDER BY ts.clip_id`,
+    [query, ...clipIds]
+  );
+
+  return result.map((r) => r.clip_id);
+}

@@ -51,6 +51,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
       :looking_for_work, :experience_level, :specialty_tags, :content_style_tags,
       :preferred_platforms, :languages, :timezone
     ])
+    |> strip_avatar_url_query_params()
     |> validate_required([:user_id])
     |> validate_length(:display_name, max: 100)
     |> validate_length(:bio, max: 500)
@@ -74,6 +75,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
       :looking_for_work, :experience_level, :specialty_tags, :content_style_tags,
       :preferred_platforms, :languages, :timezone
     ])
+    |> strip_avatar_url_query_params()
     |> validate_length(:display_name, max: 100)
     |> validate_length(:bio, max: 500)
     |> validate_inclusion(:experience_level, @experience_levels)
@@ -106,6 +108,19 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
           nil -> changeset
           name -> put_change(changeset, :slug, slugify(name))
         end
+      _ -> changeset
+    end
+  end
+
+  # Strip query parameters from avatar_url to avoid storing presigned URL params
+  # which can make the URL exceed the 255 character limit
+  defp strip_avatar_url_query_params(changeset) do
+    case get_change(changeset, :avatar_url) do
+      nil -> changeset
+      url when is_binary(url) ->
+        # Parse the URL and strip query parameters
+        stripped_url = url |> URI.parse() |> Map.put(:query, nil) |> URI.to_string()
+        put_change(changeset, :avatar_url, stripped_url)
       _ -> changeset
     end
   end

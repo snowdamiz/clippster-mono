@@ -130,13 +130,13 @@
       <div class="org-clippers__toolbar">
         <!-- Available for Work -->
         <div class="org-clippers__filter-toggle">
-          <Switch v-model:checked="filters.looking_for_work" @update:checked="loadClippers" />
+          <Switch v-model="filters.looking_for_work" @update:modelValue="loadClippers" />
           <span class="org-clippers__filter-toggle-label">Available for work</span>
         </div>
 
         <!-- Verified Only -->
         <div class="org-clippers__filter-toggle">
-          <Switch v-model:checked="filters.verified_only" @update:checked="loadClippers" />
+          <Switch v-model="filters.verified_only" @update:modelValue="loadClippers" />
           <span class="org-clippers__filter-toggle-label">Verified only</span>
         </div>
 
@@ -292,25 +292,34 @@
           <X class="org-clippers__clear-icon" />
           Clear
         </button>
-
-        <span class="org-clippers__results-count">{{ clippers.length }} clippers</span>
       </div>
 
       <!-- Loading State -->
       <div v-if="loading" class="org-clippers__grid">
         <div v-for="i in 6" :key="i" class="org-clippers__card org-clippers__card--skeleton">
-          <div class="org-clippers__card-indicator"></div>
-          <div class="org-clippers__card-content">
-            <div class="org-clippers__skeleton-card-avatar"></div>
-            <div class="org-clippers__skeleton-card-info">
-              <div class="org-clippers__skeleton-card-name"></div>
-              <div class="org-clippers__skeleton-card-level"></div>
-              <div class="org-clippers__skeleton-card-bio"></div>
+          <div class="org-clippers__status-bar">
+            <div class="org-clippers__skeleton-status"></div>
+            <div class="org-clippers__skeleton-response"></div>
+          </div>
+          <div class="org-clippers__card-main">
+            <div class="org-clippers__card-header">
+              <div class="org-clippers__skeleton-card-avatar"></div>
+              <div class="org-clippers__skeleton-card-info">
+                <div class="org-clippers__skeleton-card-name"></div>
+                <div class="org-clippers__skeleton-card-level"></div>
+                <div class="org-clippers__skeleton-card-bio"></div>
+              </div>
+            </div>
+            <div class="org-clippers__skeleton-stats-row"></div>
+            <div class="org-clippers__skeleton-platforms"></div>
+            <div class="org-clippers__skeleton-tags-row">
+              <div class="org-clippers__skeleton-tags"></div>
+              <div class="org-clippers__skeleton-langs"></div>
             </div>
           </div>
-          <div class="org-clippers__card-footer">
-            <div class="org-clippers__skeleton-tags"></div>
-            <div class="org-clippers__skeleton-badge"></div>
+          <div class="org-clippers__actions">
+            <div class="org-clippers__skeleton-btn"></div>
+            <div class="org-clippers__skeleton-btn"></div>
           </div>
         </div>
       </div>
@@ -326,70 +335,257 @@
 
       <!-- Clippers Grid -->
       <div v-else class="org-clippers__grid">
-        <router-link
-          v-for="clipper in clippers"
-          :key="clipper.id"
-          :to="`/clippers/${clipper.slug}`"
-          class="org-clippers__card"
-          :class="{ 'org-clippers__card--available': clipper.looking_for_work }"
-        >
-          <div
-            class="org-clippers__card-indicator"
-            :class="{ 'org-clippers__card-indicator--available': clipper.looking_for_work }"
-          ></div>
-          <div class="org-clippers__card-content">
-            <!-- Avatar -->
-            <div class="org-clippers__avatar">
-              <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="org-clippers__avatar-img" />
-              <div v-else class="org-clippers__avatar-fallback">
-                <UserCircle class="org-clippers__avatar-icon" />
-              </div>
-              <div v-if="clipper.looking_for_work" class="org-clippers__available-dot" title="Available for work">
-                <CheckCircle class="org-clippers__available-dot-icon" />
-              </div>
+        <div v-for="clipper in clippers" :key="clipper.id" class="org-clippers__card">
+          <!-- Status Bar -->
+          <div class="org-clippers__status-bar">
+            <div
+              v-if="clipper.looking_for_work"
+              class="org-clippers__availability-badge org-clippers__availability-badge--available"
+            >
+              <CheckCircle class="org-clippers__availability-icon" />
+              Available
             </div>
-
-            <!-- Info -->
-            <div class="org-clippers__info">
-              <div class="org-clippers__name">
-                {{ clipper.display_name || 'Unnamed' }}
-                <CheckCircle v-if="clipper.is_verified" class="org-clippers__verified-badge" />
-              </div>
-              <div class="org-clippers__level">
-                {{ getExperienceLevelLabel(clipper.experience_level || '') }}
-              </div>
-              <p v-if="clipper.bio" class="org-clippers__bio">{{ clipper.bio }}</p>
-              <p v-else class="org-clippers__bio org-clippers__bio--empty">No bio provided</p>
+            <div v-else class="org-clippers__availability-badge">
+              <Briefcase class="org-clippers__availability-icon" />
+              Busy
+            </div>
+            <div v-if="clipper.response_time_hours" class="org-clippers__response-time">
+              <Clock class="org-clippers__response-icon" />
+              {{ formatResponseTime(clipper.response_time_hours) }}
             </div>
           </div>
 
-          <!-- Footer -->
-          <div class="org-clippers__card-footer">
-            <div class="org-clippers__tags">
-              <template v-if="clipper.specialty_tags?.length">
-                <span v-for="tag in clipper.specialty_tags.slice(0, 3)" :key="tag" class="org-clippers__tag">
-                  {{ getSpecialtyTagLabel(tag) }}
+          <!-- Main Content (clickable link) -->
+          <router-link :to="`/clippers/${clipper.slug}`" class="org-clippers__card-main">
+            <!-- Header: Avatar + Info + Platform Icons -->
+            <div class="org-clippers__card-header">
+              <div class="org-clippers__avatar">
+                <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="org-clippers__avatar-img" />
+                <div v-else class="org-clippers__avatar-fallback">
+                  <UserCircle class="org-clippers__avatar-icon" />
+                </div>
+              </div>
+              <div class="org-clippers__info">
+                <div class="org-clippers__name">
+                  {{ clipper.display_name || 'Unnamed' }}
+                  <CheckCircle v-if="clipper.is_verified" class="org-clippers__verified-badge" />
+                </div>
+                <div class="org-clippers__level">
+                  {{ getExperienceLevelLabel(clipper.experience_level || '') }}
+                </div>
+                <p v-if="clipper.bio" class="org-clippers__bio">{{ clipper.bio }}</p>
+                <p v-else class="org-clippers__bio org-clippers__bio--empty">No bio provided</p>
+              </div>
+
+              <!-- Platform Icons -->
+              <div v-if="clipper.preferred_platforms?.length" class="org-clippers__platforms">
+                <span
+                  v-for="platform in clipper.preferred_platforms.slice(0, 5)"
+                  :key="platform"
+                  class="org-clippers__platform-icon"
+                  :class="`org-clippers__platform-icon--${getPlatformIcon(platform)}`"
+                  :title="platform"
+                >
+                  <Instagram v-if="platform === 'instagram'" class="org-clippers__platform-svg" />
+                  <Youtube v-else-if="platform === 'youtube'" class="org-clippers__platform-svg" />
+                  <Facebook v-else-if="platform === 'facebook'" class="org-clippers__platform-svg" />
+                  <svg v-else-if="platform === 'tiktok'" viewBox="0 0 24 24" class="org-clippers__platform-svg">
+                    <defs>
+                      <linearGradient id="tiktok-gradient-clipper" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color: #25f4ee" />
+                        <stop offset="100%" style="stop-color: #fe2c55" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      fill="url(#tiktok-gradient-clipper)"
+                      d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"
+                    />
+                  </svg>
+                  <svg
+                    v-else-if="platform === 'x'"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    class="org-clippers__platform-svg"
+                  >
+                    <path
+                      d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                    />
+                  </svg>
+                  <svg
+                    v-else-if="platform === 'snapchat'"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    class="org-clippers__platform-svg"
+                  >
+                    <path
+                      d="M12.206 2c-1.536 0-2.968.534-4.031 1.505-.933.852-1.473 1.983-1.658 3.465-.043.345-.08.695-.114 1.038-.137 1.4-.278 2.848-1.254 3.808-.232.228-.481.407-.738.531-.395.19-.688.421-.825.65-.138.228-.169.454-.093.674.152.439.664.81 1.316 1.012.18.056.375.105.578.152.053.012.108.025.162.037 1.12.255 1.87.65 2.04 1.078.041.103.048.194.022.276-.117.365-.743.672-1.537.905-1.007.294-2.289.6-3.566 1.092-.264.101-.388.35-.342.616.047.268.274.465.553.465h.004c.116 0 .231-.021.343-.063 1.398-.522 2.768-.863 3.952-1.196.39-.11.765-.216 1.124-.325-.178.337-.393.688-.645 1.085-.524.825-.918 1.48-1.133 2.101-.107.308-.058.63.129.857.187.227.475.336.765.336.048 0 .097-.003.146-.01.693-.104 1.37-.318 2.012-.636.575-.284 1.12-.639 1.62-1.056.498-.414.964-.888 1.386-1.41.422.522.888.996 1.386 1.41.5.417 1.045.772 1.62 1.056.642.318 1.319.532 2.012.636.049.007.098.01.146.01.29 0 .578-.109.765-.336.187-.227.236-.549.129-.857-.215-.621-.609-1.276-1.133-2.101-.252-.397-.467-.748-.645-1.085.359.109.734.215 1.124.325 1.184.333 2.554.674 3.952 1.196.112.042.227.063.343.063h.004c.279 0 .506-.197.553-.465.046-.266-.078-.515-.342-.616-1.277-.492-2.559-.798-3.566-1.092-.794-.233-1.42-.54-1.537-.905-.026-.082-.019-.173.022-.276.17-.428.92-.823 2.04-1.078.054-.012.109-.025.162-.037.203-.047.398-.096.578-.152.652-.202 1.164-.573 1.316-1.012.076-.22.045-.446-.093-.674-.137-.229-.43-.46-.825-.65-.257-.124-.506-.303-.738-.531-.976-.96-1.117-2.408-1.254-3.808-.034-.343-.071-.693-.114-1.038-.185-1.482-.725-2.613-1.658-3.465C15.174 2.534 13.742 2 12.206 2z"
+                    />
+                  </svg>
+                  <span v-else class="org-clippers__platform-text">{{ platform.charAt(0).toUpperCase() }}</span>
                 </span>
-                <span v-if="clipper.specialty_tags.length > 3" class="org-clippers__tag-more">
-                  +{{ clipper.specialty_tags.length - 3 }}
+              </div>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="org-clippers__stats-row">
+              <div class="org-clippers__stat">
+                <Video class="org-clippers__stat-icon" />
+                <span class="org-clippers__stat-value">{{ clipper.total_clips_delivered || 0 }}</span>
+                <span class="org-clippers__stat-label">clips</span>
+              </div>
+              <div class="org-clippers__stat">
+                <Star class="org-clippers__stat-icon org-clippers__stat-icon--star" />
+                <span class="org-clippers__stat-value">{{ clipper.total_endorsements || 0 }}</span>
+                <span class="org-clippers__stat-label">reviews</span>
+              </div>
+              <div class="org-clippers__stat">
+                <Trophy class="org-clippers__stat-icon org-clippers__stat-icon--trophy" />
+                <span class="org-clippers__stat-value">{{ clipper.total_campaigns_completed || 0 }}</span>
+                <span class="org-clippers__stat-label">campaigns</span>
+              </div>
+            </div>
+
+            <!-- Portfolio Preview -->
+            <div v-if="clipper.portfolio_clips?.length" class="org-clippers__portfolio-preview">
+              <div
+                v-for="clip in clipper.portfolio_clips.slice(0, 2)"
+                :key="clip.id"
+                class="org-clippers__portfolio-thumb"
+              >
+                <img
+                  v-if="clip.thumbnail_url"
+                  :src="clip.thumbnail_url"
+                  class="org-clippers__portfolio-img"
+                  alt="Portfolio clip"
+                />
+                <div v-else class="org-clippers__portfolio-placeholder">
+                  <Play class="org-clippers__portfolio-play-icon" />
+                </div>
+              </div>
+              <div v-if="clipper.portfolio_clips.length > 2" class="org-clippers__portfolio-more">
+                +{{ clipper.portfolio_clips.length - 2 }} more
+              </div>
+            </div>
+
+            <!-- Tags + Languages -->
+            <div class="org-clippers__tags-row">
+              <div class="org-clippers__tags">
+                <template v-if="clipper.specialty_tags?.length">
+                  <span v-for="tag in clipper.specialty_tags.slice(0, 2)" :key="tag" class="org-clippers__tag">
+                    {{ getSpecialtyTagLabel(tag) }}
+                  </span>
+                  <span v-if="clipper.specialty_tags.length > 2" class="org-clippers__tag-more">
+                    +{{ clipper.specialty_tags.length - 2 }}
+                  </span>
+                </template>
+              </div>
+              <div v-if="clipper.languages?.length" class="org-clippers__languages">
+                <span
+                  v-for="lang in clipper.languages.slice(0, 3)"
+                  :key="lang"
+                  class="org-clippers__lang-badge"
+                  :title="getLanguageName(lang)"
+                >
+                  {{ getLanguageFlag(lang) }}
                 </span>
-              </template>
-              <span v-else class="org-clippers__no-tags">No specialties</span>
+                <span v-if="clipper.languages.length > 3" class="org-clippers__lang-more">
+                  +{{ clipper.languages.length - 3 }}
+                </span>
+              </div>
             </div>
-            <div class="org-clippers__campaigns-badge">
-              <Trophy class="org-clippers__campaigns-icon" />
-              <span>{{ clipper.total_campaigns_completed }} campaigns</span>
-            </div>
+          </router-link>
+
+          <!-- Action Buttons -->
+          <div class="org-clippers__actions">
+            <button
+              v-if="!isOwnProfile(clipper)"
+              class="org-clippers__action-btn org-clippers__action-btn--message"
+              @click="openMessageDialog(clipper, $event)"
+            >
+              <MessageCircle class="org-clippers__action-icon" />
+              Message
+            </button>
+            <button
+              v-if="!isOwnProfile(clipper)"
+              class="org-clippers__action-btn org-clippers__action-btn--invite"
+              @click="openInviteDialog(clipper, $event)"
+            >
+              <Send class="org-clippers__action-icon" />
+              Invite
+            </button>
+            <span v-if="isOwnProfile(clipper)" class="org-clippers__own-profile-badge">Your Profile</span>
           </div>
-        </router-link>
+        </div>
       </div>
     </template>
+
+    <!-- Campaign Invite Dialog -->
+    <Dialog v-model:open="showInviteDialog">
+      <DialogContent class="org-clippers__dialog">
+        <DialogHeader>
+          <DialogTitle>Invite to Campaign</DialogTitle>
+          <DialogDescription>
+            Select a campaign to invite {{ selectedClipperForInvite?.display_name }} to
+          </DialogDescription>
+        </DialogHeader>
+        <div class="org-clippers__dialog-body">
+          <div v-if="loadingCampaigns" class="org-clippers__loading-campaigns">Loading campaigns...</div>
+          <div v-else-if="organizationCampaigns.length === 0" class="org-clippers__no-campaigns">
+            <p>No active campaigns available.</p>
+            <p class="org-clippers__no-campaigns-hint">Create a campaign first to invite clippers.</p>
+          </div>
+          <div v-else class="org-clippers__campaign-list">
+            <button
+              v-for="campaign in organizationCampaigns"
+              :key="campaign.id"
+              class="org-clippers__campaign-option"
+              :class="{ 'org-clippers__campaign-option--selected': selectedCampaignId === campaign.id }"
+              @click="selectedCampaignId = campaign.id"
+            >
+              <div class="org-clippers__campaign-option-info">
+                <span class="org-clippers__campaign-option-title">{{ campaign.title }}</span>
+                <span class="org-clippers__campaign-option-meta">
+                  {{ campaign.participants_count || 0 }} participants
+                </span>
+              </div>
+              <CheckCircle v-if="selectedCampaignId === campaign.id" class="org-clippers__campaign-check" />
+            </button>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showInviteDialog = false">Cancel</Button>
+          <Button @click="sendCampaignInvite" :disabled="!selectedCampaignId || organizationCampaigns.length === 0">
+            <Send class="org-clippers__btn-icon" />
+            Send Invite
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted } from 'vue';
-  import { Users, Trophy, UserCircle, CheckCircle, ChevronDown, X, Check } from 'lucide-vue-next';
+  import { useRouter } from 'vue-router';
+  import {
+    Users,
+    Trophy,
+    UserCircle,
+    CheckCircle,
+    ChevronDown,
+    X,
+    Check,
+    Clock,
+    Star,
+    Video,
+    MessageCircle,
+    Send,
+    Briefcase,
+    Play,
+    Instagram,
+    Youtube,
+    Facebook,
+  } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
     DropdownMenu,
@@ -398,6 +594,15 @@
     DropdownMenuSeparator,
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
+  import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+  } from '@/components/ui/dialog';
+  import { Button } from '@/components/ui/button';
   import {
     listClippers,
     getLeaderboard,
@@ -409,7 +614,10 @@
     LANGUAGES,
     getExperienceLevelLabel,
     getSpecialtyTagLabel,
+    getLanguageName,
   } from '@/services/clipperProfilesApi';
+  import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
+  import { useAuthStore } from '@/stores/auth';
 
   // Props
   const props = defineProps<{
@@ -419,9 +627,27 @@
   // Computed to use prop
   const activeView = computed(() => props.activeView);
 
+  const router = useRouter();
+  const authStore = useAuthStore();
+
+  // Get current user ID for checking if viewing own profile
+  const currentUserId = computed(() => authStore.user?.id);
+
+  // Check if a clipper is the current user
+  const isOwnProfile = (clipper: ClipperProfile) => {
+    return clipper.user_id === currentUserId.value;
+  };
+
   // Directory state
   const loading = ref(true);
   const clippers = ref<ClipperProfile[]>([]);
+
+  // Campaign invite dialog state
+  const showInviteDialog = ref(false);
+  const selectedClipperForInvite = ref<ClipperProfile | null>(null);
+  const organizationCampaigns = ref<Campaign[]>([]);
+  const selectedCampaignId = ref<number | null>(null);
+  const loadingCampaigns = ref(false);
 
   // Leaderboard state
   const loadingLeaderboard = ref(true);
@@ -587,6 +813,91 @@
       return lang?.name || 'Languages';
     }
     return `${filters.languages.length} Languages`;
+  };
+
+  // Format response time for display
+  const formatResponseTime = (hours: number | null): string => {
+    if (hours === null || hours === undefined) return '';
+    if (hours < 1) return '< 1h';
+    if (hours < 24) return `~${hours}h`;
+    const days = Math.round(hours / 24);
+    return days === 1 ? '~1 day' : `~${days} days`;
+  };
+
+  // Get language flag emoji
+  const getLanguageFlag = (code: string): string => {
+    const flags: Record<string, string> = {
+      en: '🇺🇸',
+      es: '🇪🇸',
+      pt: '🇧🇷',
+      fr: '🇫🇷',
+      de: '🇩🇪',
+      ja: '🇯🇵',
+      ko: '🇰🇷',
+      zh: '🇨🇳',
+      ru: '🇷🇺',
+      ar: '🇸🇦',
+      hi: '🇮🇳',
+      it: '🇮🇹',
+      pl: '🇵🇱',
+      tr: '🇹🇷',
+      vi: '🇻🇳',
+      th: '🇹🇭',
+      id: '🇮🇩',
+    };
+    return flags[code] || code.toUpperCase();
+  };
+
+  // Get platform icon class
+  const getPlatformIcon = (platform: string): string => {
+    const icons: Record<string, string> = {
+      tiktok: 'tiktok',
+      instagram: 'instagram',
+      youtube: 'youtube',
+      x: 'x',
+      facebook: 'facebook',
+      snapchat: 'snapchat',
+    };
+    return icons[platform] || 'default';
+  };
+
+  // Message dialog handlers
+  const openMessageDialog = (clipper: ClipperProfile, event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    // Navigate directly to messages page with clipper user_id
+    router.push(`/messages?to=${clipper.user_id}`);
+  };
+
+  // Campaign invite handlers
+  const openInviteDialog = async (clipper: ClipperProfile, event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    selectedClipperForInvite.value = clipper;
+    selectedCampaignId.value = null;
+    showInviteDialog.value = true;
+
+    // Load organization's campaigns
+    loadingCampaigns.value = true;
+    try {
+      const response = await listMyCampaigns();
+      if (response.success) {
+        // Filter to only active campaigns
+        organizationCampaigns.value = response.campaigns.filter((c) => c.status === 'active');
+      }
+    } catch (error) {
+      console.error('Failed to load campaigns:', error);
+    } finally {
+      loadingCampaigns.value = false;
+    }
+  };
+
+  const sendCampaignInvite = () => {
+    if (!selectedClipperForInvite.value || !selectedCampaignId.value) return;
+    const campaign = organizationCampaigns.value.find((c) => c.id === selectedCampaignId.value);
+    const inviteMessage = `Hi! I'd like to invite you to join our campaign "${campaign?.title}". Would you be interested in participating?`;
+    router.push(`/messages?to=${selectedClipperForInvite.value.user_id}&message=${encodeURIComponent(inviteMessage)}`);
+    showInviteDialog.value = false;
   };
 
   onMounted(() => {
@@ -785,7 +1096,7 @@
   .org-clippers__grid {
     display: grid;
     grid-template-columns: repeat(1, 1fr);
-    gap: 0.625rem;
+    gap: 1rem;
   }
 
   @media (min-width: 768px) {
@@ -806,41 +1117,93 @@
     flex-direction: column;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
-    text-decoration: none;
     transition: all 200ms ease;
   }
 
   .org-clippers__card:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   }
 
-  .org-clippers__card-indicator {
-    height: 3px;
-    flex-shrink: 0;
-    background-color: var(--sidebar-border);
-  }
-
-  .org-clippers__card-indicator--available {
-    background: linear-gradient(90deg, #10b981 0%, #059669 100%);
-  }
-
-  .org-clippers__card-content {
+  /* ===== Status Bar ===== */
+  .org-clippers__status-bar {
     display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1rem 1.25rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.1) 100%);
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .org-clippers__availability-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 100px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .org-clippers__availability-badge--available {
+    color: #10b981;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.15) 100%);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
+  }
+
+  .org-clippers__availability-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .org-clippers__response-time {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-clippers__response-icon {
+    width: 11px;
+    height: 11px;
+    opacity: 0.7;
+  }
+
+  /* ===== Card Main (Clickable Area) ===== */
+  .org-clippers__card-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    padding: 1rem;
+    text-decoration: none;
+    color: inherit;
+    transition: background-color 150ms ease;
+  }
+
+  .org-clippers__card-main:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+  }
+
+  /* ===== Card Header ===== */
+  .org-clippers__card-header {
+    position: relative;
+    display: flex;
+    gap: 0.875rem;
   }
 
   /* ===== Avatar ===== */
   .org-clippers__avatar {
     position: relative;
-    width: 56px;
-    height: 56px;
-    border-radius: 12px;
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
     overflow: hidden;
     flex-shrink: 0;
     background-color: var(--sidebar-hover);
@@ -862,36 +1225,28 @@
   }
 
   .org-clippers__avatar-icon {
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     color: var(--sidebar-text-muted);
     opacity: 0.6;
-  }
-
-  .org-clippers__available-dot {
-    position: absolute;
-    bottom: -2px;
-    right: -2px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background-color: rgba(16, 185, 129, 0.2);
-    border: 2px solid var(--sidebar-surface);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .org-clippers__available-dot-icon {
-    width: 10px;
-    height: 10px;
-    color: #10b981;
   }
 
   /* ===== Info ===== */
   .org-clippers__info {
     flex: 1;
     min-width: 0;
+    padding-right: 5.5rem;
+  }
+
+  @media (max-width: 480px) {
+    .org-clippers__info {
+      padding-right: 4rem;
+    }
+
+    .org-clippers__platforms {
+      flex-wrap: wrap;
+      max-width: 3.5rem;
+    }
   }
 
   .org-clippers__name {
@@ -912,9 +1267,12 @@
   }
 
   .org-clippers__level {
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
     color: var(--sidebar-accent);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.375rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
   }
 
   .org-clippers__bio {
@@ -931,18 +1289,173 @@
 
   .org-clippers__bio--empty {
     font-style: italic;
-    opacity: 0.6;
+    opacity: 0.5;
   }
 
-  /* ===== Card Footer ===== */
-  .org-clippers__card-footer {
+  /* ===== Stats Row ===== */
+  .org-clippers__stats-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.625rem 0.75rem;
+    background-color: rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
+  }
+
+  .org-clippers__stat {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .org-clippers__stat-icon {
+    width: 13px;
+    height: 13px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  .org-clippers__stat-icon--star {
+    color: #f59e0b;
+    opacity: 1;
+  }
+
+  .org-clippers__stat-icon--trophy {
+    color: var(--sidebar-accent);
+    opacity: 1;
+  }
+
+  .org-clippers__stat-value {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .org-clippers__stat-label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Platform Icons ===== */
+  .org-clippers__platforms {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .org-clippers__platform-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    background-color: rgba(255, 255, 255, 0.06);
+    color: var(--sidebar-text-muted);
+    transition: all 150ms ease;
+  }
+
+  .org-clippers__platform-icon:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    transform: scale(1.08);
+  }
+
+  .org-clippers__platform-svg {
+    width: 13px;
+    height: 13px;
+    color: white;
+  }
+
+  .org-clippers__platform-text {
+    font-size: 0.625rem;
+    font-weight: 700;
+  }
+
+  .org-clippers__platform-icon--tiktok {
+    background-color: #000000;
+  }
+
+  .org-clippers__platform-icon--youtube {
+    background: linear-gradient(135deg, #ff0000, #cc0000);
+  }
+
+  .org-clippers__platform-icon--instagram {
+    background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  }
+
+  .org-clippers__platform-icon--x {
+    background-color: #000000;
+  }
+
+  .org-clippers__platform-icon--facebook {
+    background-color: #1877f2;
+  }
+
+  .org-clippers__platform-icon--snapchat {
+    background-color: #fffc00;
+    color: #000000;
+  }
+
+  .org-clippers__platform-icon--snapchat .org-clippers__platform-svg {
+    color: #000000;
+  }
+
+  /* ===== Portfolio Preview ===== */
+  .org-clippers__portfolio-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .org-clippers__portfolio-thumb {
+    position: relative;
+    width: 56px;
+    height: 72px;
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+  }
+
+  .org-clippers__portfolio-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .org-clippers__portfolio-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, var(--sidebar-hover) 100%);
+  }
+
+  .org-clippers__portfolio-play-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
+  }
+
+  .org-clippers__portfolio-more {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    padding-left: 0.25rem;
+  }
+
+  /* ===== Tags Row ===== */
+  .org-clippers__tags-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.75rem 1.25rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.1);
+    gap: 0.5rem;
   }
 
   .org-clippers__tags {
@@ -955,12 +1468,12 @@
   }
 
   .org-clippers__tag {
-    padding: 0.25rem 0.5rem;
+    padding: 0.1875rem 0.5rem;
     font-size: 0.6875rem;
     font-weight: 500;
     color: var(--sidebar-text-muted);
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 4px;
   }
 
@@ -970,29 +1483,188 @@
     padding: 0 0.25rem;
   }
 
-  .org-clippers__no-tags {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .org-clippers__campaigns-badge {
+  /* ===== Languages ===== */
+  .org-clippers__languages {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-accent);
-    background-color: rgba(6, 182, 212, 0.1);
-    border: 1px solid rgba(6, 182, 212, 0.2);
-    border-radius: 6px;
+    gap: 0.25rem;
     flex-shrink: 0;
   }
 
-  .org-clippers__campaigns-icon {
-    width: 12px;
-    height: 12px;
+  .org-clippers__lang-badge {
+    font-size: 0.875rem;
+    line-height: 1;
+    padding: 0.125rem;
+    cursor: default;
+  }
+
+  .org-clippers__lang-more {
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+    padding-left: 0.125rem;
+  }
+
+  /* ===== Action Buttons ===== */
+  .org-clippers__actions {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .org-clippers__action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-clippers__action-btn--message {
+    background-color: transparent;
+    color: var(--sidebar-text);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .org-clippers__action-btn--message:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .org-clippers__action-btn--invite {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+    border: none;
+  }
+
+  .org-clippers__action-btn--invite:hover {
+    filter: brightness(1.1);
+  }
+
+  .org-clippers__action-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .org-clippers__own-profile-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    font-style: italic;
+  }
+
+  /* ===== Dialog Styles ===== */
+  .org-clippers__dialog {
+    max-width: 420px;
+  }
+
+  .org-clippers__dialog-body {
+    padding: 1rem 0;
+  }
+
+  .org-clippers__message-input {
+    width: 100%;
+    min-height: 100px;
+    resize: vertical;
+  }
+
+  .org-clippers__btn-icon {
+    width: 14px;
+    height: 14px;
+    margin-right: 0.25rem;
+  }
+
+  .org-clippers__loading-campaigns {
+    padding: 2rem;
+    text-align: center;
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
+  }
+
+  .org-clippers__no-campaigns {
+    padding: 2rem;
+    text-align: center;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-clippers__no-campaigns p {
+    margin: 0;
+  }
+
+  .org-clippers__no-campaigns-hint {
+    font-size: 0.8125rem;
+    opacity: 0.7;
+    margin-top: 0.5rem !important;
+  }
+
+  .org-clippers__campaign-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .org-clippers__campaign-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+    width: 100%;
+  }
+
+  .org-clippers__campaign-option:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .org-clippers__campaign-option--selected {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: var(--sidebar-accent);
+  }
+
+  .org-clippers__campaign-option-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .org-clippers__campaign-option-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .org-clippers__campaign-option-meta {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-clippers__campaign-check {
+    width: 18px;
+    height: 18px;
+    color: var(--sidebar-accent);
   }
 
   /* ===== Leaderboard List ===== */
@@ -1210,10 +1882,40 @@
     pointer-events: none;
   }
 
+  .org-clippers__skeleton-status {
+    height: 22px;
+    width: 80px;
+    border-radius: 100px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .org-clippers__skeleton-response {
+    height: 14px;
+    width: 50px;
+    border-radius: 4px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.05s;
+  }
+
   .org-clippers__skeleton-card-avatar {
-    width: 56px;
-    height: 56px;
-    border-radius: 12px;
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    flex-shrink: 0;
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0.1) 25%,
@@ -1276,9 +1978,9 @@
     border-radius: 4px;
   }
 
-  .org-clippers__skeleton-tags {
-    height: 24px;
-    width: 120px;
+  .org-clippers__skeleton-stats-row {
+    height: 44px;
+    width: 100%;
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0.1) 25%,
@@ -1288,12 +1990,12 @@
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     animation-delay: 0.25s;
-    border-radius: 4px;
+    border-radius: 8px;
   }
 
-  .org-clippers__skeleton-badge {
+  .org-clippers__skeleton-platforms {
     height: 24px;
-    width: 80px;
+    width: 130px;
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0.1) 25%,
@@ -1303,6 +2005,57 @@
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     animation-delay: 0.3s;
+    border-radius: 4px;
+  }
+
+  .org-clippers__skeleton-tags-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .org-clippers__skeleton-tags {
+    height: 22px;
+    width: 100px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.35s;
+    border-radius: 4px;
+  }
+
+  .org-clippers__skeleton-langs {
+    height: 22px;
+    width: 60px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.4s;
+    border-radius: 4px;
+  }
+
+  .org-clippers__skeleton-btn {
+    flex: 1;
+    height: 34px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.1) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.45s;
     border-radius: 6px;
   }
 
