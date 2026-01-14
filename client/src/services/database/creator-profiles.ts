@@ -442,7 +442,21 @@ export async function getCreatorProfileByProjectId(
 ): Promise<CreatorProfileWithLinks | null> {
   const db = await getDatabase();
 
-  // Method 1: Find via livestream session (for live monitoring projects)
+  // Method 1: Check for direct creator_profile_id association (for local video imports)
+  const projects = await db.select<{ creator_profile_id: string | null }[]>(
+    'SELECT creator_profile_id FROM projects WHERE id = ?',
+    [projectId]
+  );
+
+  if (projects.length > 0 && projects[0].creator_profile_id) {
+    const profile = await getCreatorProfile(projects[0].creator_profile_id);
+    if (profile) {
+      console.log('[CreatorProfiles] Found profile via direct association');
+      return profile;
+    }
+  }
+
+  // Method 2: Find via livestream session (for live monitoring projects)
   const sessions = await db.select<{ monitored_streamer_id: string }[]>(
     'SELECT monitored_streamer_id FROM livestream_sessions WHERE project_id = ? ORDER BY created_at DESC LIMIT 1',
     [projectId]
@@ -456,19 +470,19 @@ export async function getCreatorProfileByProjectId(
     }
   }
 
-  // Method 2: Find via project platform + raw video source_mint_id (for VOD downloads)
+  // Method 3: Find via project platform + raw video source_mint_id (for VOD downloads)
   // Get the project's platform
-  const projects = await db.select<{ platform: string | null }[]>(
+  const projectData = await db.select<{ platform: string | null }[]>(
     'SELECT platform FROM projects WHERE id = ?',
     [projectId]
   );
 
-  if (projects.length === 0 || !projects[0].platform) {
+  if (projectData.length === 0 || !projectData[0].platform) {
     console.log('[CreatorProfiles] No project or platform found for:', projectId);
     return null;
   }
 
-  const projectPlatform = projects[0].platform;
+  const projectPlatform = projectData[0].platform;
   console.log('[CreatorProfiles] Project platform:', projectPlatform);
 
   // Map project platform names to creator_platform_links platform values

@@ -3541,7 +3541,14 @@
         // Check if we have multiple videos - if so, create a parent project with child projects
         if (data.selectedVideoPaths && data.selectedVideoPaths.length > 1) {
           // Create parent project
-          const parentId = await createProject(data.name, data.description || undefined, undefined, 'Manual');
+          const parentId = await createProject(
+            data.name,
+            data.description || undefined,
+            undefined,
+            'Manual',
+            undefined,
+            data.creatorProfileId || undefined
+          );
 
           // Create child projects for each video
           for (const path of data.selectedVideoPaths) {
@@ -3550,8 +3557,15 @@
             // Remove extension
             const childName = filename.replace(/\.[^/.]+$/, '');
 
-            // Create child project
-            const childId = await createProject(childName, data.description || undefined, parentId, 'Manual');
+            // Create child project (inherits creator profile from parent)
+            const childId = await createProject(
+              childName,
+              data.description || undefined,
+              parentId,
+              'Manual',
+              undefined,
+              data.creatorProfileId || undefined
+            );
 
             // Process video and associate with child project
             await processVideoFile(path, childId);
@@ -3560,7 +3574,14 @@
           success('Project created', `"${data.name}" has been created with ${data.selectedVideoPaths.length} parts`);
         } else {
           // Standard creation for single video or no video
-          const projectId = await createProject(data.name, data.description || undefined, undefined, 'Manual');
+          const projectId = await createProject(
+            data.name,
+            data.description || undefined,
+            undefined,
+            'Manual',
+            undefined,
+            data.creatorProfileId || undefined
+          );
 
           // Import and associate selected video (if any)
           if (data.selectedVideoPaths && data.selectedVideoPaths.length > 0) {

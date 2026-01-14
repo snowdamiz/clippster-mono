@@ -751,11 +751,8 @@
 
   const isValid = computed(() => {
     if (!formData.value.name.trim()) return false;
-    // Local mode requires at least one platform link
-    if (props.mode === 'local') {
-      const validLinks = formData.value.platformLinks.filter((l) => l.platform_id.trim());
-      if (validLinks.length === 0) return false;
-    }
+    // Platform links are now optional for local mode
+    // Users can create profiles with just assets (intro/outro/watermark) for local video projects
     return true;
   });
 

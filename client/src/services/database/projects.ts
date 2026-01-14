@@ -7,7 +7,8 @@ export async function createProject(
   description?: string,
   parentId?: string,
   platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual',
-  defaultWatermarkSettings?: string // JSON string with watermark_id and watermark_settings from creator profile
+  defaultWatermarkSettings?: string, // JSON string with watermark_id and watermark_settings from creator profile
+  creatorProfileId?: string // Direct link to creator profile (for local video imports)
 ): Promise<string> {
   const db = await getDatabase();
   const id = generateId();
@@ -15,7 +16,7 @@ export async function createProject(
   const userId = getCurrentUserId();
 
   await db.execute(
-    'INSERT INTO projects (id, name, description, thumbnail_path, parent_id, platform, default_watermark_settings, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO projects (id, name, description, thumbnail_path, parent_id, platform, default_watermark_settings, creator_profile_id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       name,
@@ -24,6 +25,7 @@ export async function createProject(
       parentId || null,
       platform || null,
       defaultWatermarkSettings || null,
+      creatorProfileId || null,
       userId,
       now,
       now,

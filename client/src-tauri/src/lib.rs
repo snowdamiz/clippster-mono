@@ -533,6 +533,12 @@ pub fn run() {
                             sql: include_str!("../migrations/078_add_keyframes_to_video_editor_overlays.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 79,
+                            description: "add_creator_profile_to_projects",
+                            sql: include_str!("../migrations/079_add_creator_profile_to_projects.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

@@ -63,6 +63,28 @@
                 </div>
               </div>
 
+              <!-- Creator Profile Selection (optional) -->
+              <div class="project-section">
+                <h3 class="project-section__title">Creator Profile</h3>
+                <div class="project-field">
+                  <label class="project-field__label">
+                    Link to Creator
+                    <span class="project-field__optional">(optional)</span>
+                  </label>
+                  <CustomDropdown
+                    v-model="formData.creatorProfileId"
+                    :options="creatorProfileOptions"
+                    placeholder="No creator profile"
+                    class="project-field__dropdown"
+                    trigger-class="project-field__dropdown-trigger"
+                  />
+                  <p class="project-section__hint">
+                    Associate this project with a creator to apply their watermark, intro, and outro settings
+                    automatically.
+                  </p>
+                </div>
+              </div>
+
               <!-- Video Selection (only for new projects) -->
               <div v-if="!isEdit" class="project-section">
                 <div class="project-section__header">
@@ -123,15 +145,17 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, reactive } from 'vue';
+  import { ref, watch, reactive, onMounted, computed } from 'vue';
   import { open } from '@tauri-apps/plugin-dialog';
-  import { type Project } from '@/services/database';
+  import { type Project, getAllCreatorProfiles, type CreatorProfileWithLinks } from '@/services/database';
   import { Video, X, Upload, FolderPlus, Pencil, Loader2 } from 'lucide-vue-next';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
 
   export interface ProjectFormData {
     name: string;
     description: string;
     selectedVideoPaths: string[];
+    creatorProfileId: string | null;
   }
 
   const props = defineProps<{
@@ -149,13 +173,27 @@
   const formData = reactive<{
     name: string;
     description: string;
+    creatorProfileId: string | null;
   }>({
     name: '',
     description: '',
+    creatorProfileId: null,
   });
 
   const selectedVideoPaths = ref<string[]>([]);
   const errors = reactive<Partial<Record<keyof ProjectFormData, string>>>({});
+  const creatorProfiles = ref<CreatorProfileWithLinks[]>([]);
+
+  // Convert creator profiles to dropdown options format
+  const creatorProfileOptions = computed(() => {
+    return [
+      { label: 'No creator profile', value: null },
+      ...creatorProfiles.value.map((profile) => ({
+        label: profile.name,
+        value: profile.id,
+      })),
+    ];
+  });
 
   // Watch for project prop changes to populate form for editing
   watch(
@@ -189,9 +227,20 @@
   function resetForm() {
     formData.name = '';
     formData.description = '';
+    formData.creatorProfileId = null;
     selectedVideoPaths.value = [];
     Object.keys(errors).forEach((key) => delete errors[key as keyof ProjectFormData]);
   }
+
+  // Load creator profiles when component mounts
+  onMounted(async () => {
+    try {
+      creatorProfiles.value = await getAllCreatorProfiles();
+    } catch (err) {
+      console.error('[ProjectDialog] Failed to load creator profiles:', err);
+      creatorProfiles.value = [];
+    }
+  });
 
   function validateForm(): boolean {
     Object.keys(errors).forEach((key) => delete errors[key as keyof ProjectFormData]);
@@ -224,6 +273,7 @@
         name: formData.name.trim(),
         description: formData.description.trim(),
         selectedVideoPaths: [...selectedVideoPaths.value],
+        creatorProfileId: formData.creatorProfileId,
       });
     } finally {
       loading.value = false;
@@ -494,6 +544,42 @@
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
   }
 
+  .project-field__dropdown {
+    width: 100%;
+  }
+
+  /* Dropdown trigger button styling */
+  :deep(.project-field__dropdown-trigger) {
+    width: 100% !important;
+    padding: 0.625rem 0.875rem !important;
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+    justify-content: space-between !important;
+  }
+
+  :deep(.project-field__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  :deep(.project-field__dropdown-trigger:focus-within) {
+    border-color: transparent !important;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3) !important;
+  }
+
+  :deep(.project-field__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.project-field__dropdown-trigger svg) {
+    width: 14px !important;
+    height: 14px !important;
+    color: var(--sidebar-text-muted) !important;
+  }
+
   .project-field__input--error {
     border-color: rgba(239, 68, 68, 0.5);
   }
@@ -720,5 +806,48 @@
     to {
       transform: rotate(360deg);
     }
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Project Dialog dropdown menu styling */
+  .project-field__dropdown + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: projectDialogDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes projectDialogDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  .project-field__dropdown + div[class*='fixed'] button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  .project-field__dropdown + div[class*='fixed'] button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  .project-field__dropdown + div[class*='fixed'] button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
   }
 </style>
