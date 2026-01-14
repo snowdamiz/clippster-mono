@@ -1,7 +1,7 @@
 <template>
   <div
     ref="fullscreenContainerRef"
-    class="flex-1 flex flex-col min-h-0 relative items-center justify-center"
+    class="flex-1 flex flex-col min-h-0 min-w-0 relative items-center justify-center"
     :class="isFullscreen ? 'p-0 bg-black' : 'p-0'"
   >
     <!-- Video Container - constrained to aspect ratio -->
@@ -9,7 +9,13 @@
       ref="videoContainerRef"
       class="flex items-center justify-center bg-black overflow-hidden relative"
       :class="isFullscreen ? 'rounded-none' : 'rounded-lg'"
-      :style="{ aspectRatio: previewAspectRatio.replace(':', '/'), height: '100%', width: 'auto', maxWidth: '100%' }"
+      :style="{
+        aspectRatio: previewAspectRatio.replace(':', '/'),
+        maxHeight: '100%',
+        maxWidth: '100%',
+        width: 'auto',
+        height: 'auto',
+      }"
     >
       <!-- Framed container for non-16:9 aspect ratios - always rendered but hidden when not needed -->
       <div
