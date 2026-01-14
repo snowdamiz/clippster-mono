@@ -25,12 +25,17 @@ defmodule ClippsterServer.Social.ExternalPostSubmission do
     field :media_type, :string
     field :clip_id, :string
 
-    # Analytics (manually entered)
+    # Analytics (manually entered or auto-fetched)
     field :view_count, :integer, default: 0
     field :like_count, :integer, default: 0
     field :comment_count, :integer, default: 0
     field :share_count, :integer, default: 0
     field :save_count, :integer, default: 0
+
+    # Author metadata from platform API
+    field :author_username, :string
+    field :author_name, :string
+    field :author_profile_image, :string
 
     # Status and review
     field :status, :string, default: "pending"
@@ -67,7 +72,10 @@ defmodule ClippsterServer.Social.ExternalPostSubmission do
       :comment_count,
       :share_count,
       :save_count,
-      :notes
+      :notes,
+      :author_username,
+      :author_name,
+      :author_profile_image
     ])
     |> validate_required([:organization_id, :submitted_by_user_id, :platform, :post_url])
     |> validate_inclusion(:platform, @platforms)
@@ -95,7 +103,10 @@ defmodule ClippsterServer.Social.ExternalPostSubmission do
       :like_count,
       :comment_count,
       :share_count,
-      :save_count
+      :save_count,
+      :author_username,
+      :author_name,
+      :author_profile_image
     ])
     |> validate_number(:view_count, greater_than_or_equal_to: 0)
     |> validate_number(:like_count, greater_than_or_equal_to: 0)

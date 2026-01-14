@@ -375,6 +375,9 @@ defmodule ClippsterServerWeb.SchedulingController do
   def submit_external_post(conn, %{"organization_id" => org_id} = params) do
     user = conn.assigns.current_user
 
+    # Auto-fetch Twitter analytics if it's a Twitter post
+    twitter_analytics = fetch_twitter_analytics_if_applicable(params["platform"], params["post_url"])
+
     attrs = %{
       platform: params["platform"],
       post_url: params["post_url"],
@@ -383,12 +386,16 @@ defmodule ClippsterServerWeb.SchedulingController do
       organization_creator_profile_id: params["creator_profile_id"],
       campaign_id: params["campaign_id"],
       clip_id: params["clip_id"],
-      view_count: params["view_count"],
-      like_count: params["like_count"],
-      comment_count: params["comment_count"],
+      view_count: twitter_analytics[:view_count] || params["view_count"],
+      like_count: twitter_analytics[:like_count] || params["like_count"],
+      comment_count: twitter_analytics[:comment_count] || params["comment_count"],
       share_count: params["share_count"],
       save_count: params["save_count"],
-      notes: params["notes"]
+      notes: params["notes"],
+      # Author metadata from Twitter API
+      author_username: twitter_analytics[:author_username],
+      author_name: twitter_analytics[:author_name],
+      author_profile_image: twitter_analytics[:author_profile_image]
     }
 
     case Social.create_external_post_submission(org_id, attrs, user) do
@@ -514,6 +521,36 @@ defmodule ClippsterServerWeb.SchedulingController do
   # ============================================================================
   # Private Functions
   # ============================================================================
+
+  defp fetch_twitter_analytics_if_applicable("twitter", post_url) when is_binary(post_url) do
+    alias ClippsterServer.Social.Platforms.Twitter
+
+    case Twitter.extract_tweet_id(post_url) do
+      {:ok, tweet_id} ->
+        case Twitter.get_tweet_analytics(tweet_id) do
+          {:ok, analytics} ->
+            Logger.info("[SchedulingController] Fetched Twitter analytics for tweet #{tweet_id}: #{analytics.view_count} views, author: @#{analytics.author_username}")
+            %{
+              view_count: analytics.view_count,
+              like_count: analytics.like_count,
+              comment_count: analytics.comment_count,
+              author_username: analytics.author_username,
+              author_name: analytics.author_name,
+              author_profile_image: analytics.author_profile_image
+            }
+
+          {:error, reason} ->
+            Logger.warning("[SchedulingController] Failed to fetch Twitter analytics: #{inspect(reason)}")
+            %{}
+        end
+
+      {:error, _} ->
+        Logger.warning("[SchedulingController] Could not extract tweet ID from URL: #{post_url}")
+        %{}
+    end
+  end
+
+  defp fetch_twitter_analytics_if_applicable(_platform, _post_url), do: %{}
 
   defp determine_owner_type(params) do
     cond do
@@ -663,6 +700,10 @@ defmodule ClippsterServerWeb.SchedulingController do
         share_count: submission.share_count,
         save_count: submission.save_count
       },
+      # Author metadata from platform API
+      author_username: submission.author_username,
+      author_name: submission.author_name,
+      author_profile_image: submission.author_profile_image,
       submitted_by: serialize_user(submission.submitted_by_user),
       reviewed_by: serialize_user(submission.reviewed_by_user),
       creator_profile: serialize_creator_profile(submission.organization_creator_profile),

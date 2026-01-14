@@ -28,39 +28,28 @@
               </div>
 
               <form @submit.prevent="submit" class="space-y-4">
-                <!-- Platform -->
-                <div class="space-y-1.5">
-                  <label class="block text-sm font-medium text-zinc-300">Platform *</label>
-                  <div class="relative">
-                    <select
-                      v-model="platform"
-                      :disabled="submitting"
-                      class="w-full px-4 py-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500/50 pr-10"
-                    >
-                      <option value="instagram">Instagram</option>
-                      <option value="tiktok">TikTok</option>
-                      <option value="youtube">YouTube</option>
-                      <option value="twitter">Twitter / X</option>
-                    </select>
-                    <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
-                  </div>
-                </div>
-
-                <!-- Post URL -->
+                <!-- Post URL (platform auto-detected) -->
                 <div class="space-y-1.5">
                   <label class="block text-sm font-medium text-zinc-300">Post URL *</label>
                   <input
                     v-model="postUrl"
                     type="url"
                     :disabled="submitting"
-                    placeholder="https://www.instagram.com/reel/..."
+                    placeholder="Paste Instagram, TikTok, YouTube, or X post URL..."
                     class="w-full px-4 py-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                   />
+                  <!-- Detected platform badge -->
+                  <div v-if="detectedPlatform" class="flex items-center gap-2 mt-1">
+                    <span class="text-xs px-2 py-0.5 rounded-full" :class="platformBadgeClass">
+                      {{ platformDisplayName }}
+                    </span>
+                    <span class="text-xs text-zinc-500">detected</span>
+                  </div>
                   <p v-if="urlError" class="text-xs text-red-400">{{ urlError }}</p>
                 </div>
 
-                <!-- Creator Profile (optional) -->
-                <div v-if="creatorProfiles.length > 0" class="space-y-1.5">
+                <!-- Creator Profile -->
+                <div v-if="creatorProfiles.length > 0 && !preselectedCreatorProfileId" class="space-y-1.5">
                   <label class="block text-sm font-medium text-zinc-300">Creator Profile (Optional)</label>
                   <div class="relative">
                     <select
@@ -93,60 +82,6 @@
                     </select>
                     <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
                   </div>
-                </div>
-
-                <!-- Caption (optional) -->
-                <div class="space-y-1.5">
-                  <label class="block text-sm font-medium text-zinc-300">Caption (Optional)</label>
-                  <textarea
-                    v-model="caption"
-                    :disabled="submitting"
-                    rows="3"
-                    maxlength="2200"
-                    placeholder="Copy your post caption here..."
-                    class="w-full px-4 py-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none"
-                  />
-                </div>
-
-                <!-- Analytics (optional) -->
-                <div class="space-y-2">
-                  <label class="block text-sm font-medium text-zinc-300">Analytics (Optional)</label>
-                  <div class="grid grid-cols-2 gap-3">
-                    <div>
-                      <label class="block text-xs text-zinc-500 mb-1">Views</label>
-                      <input
-                        v-model.number="viewCount"
-                        type="number"
-                        min="0"
-                        :disabled="submitting"
-                        placeholder="0"
-                        class="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-                      />
-                    </div>
-                    <div>
-                      <label class="block text-xs text-zinc-500 mb-1">Likes</label>
-                      <input
-                        v-model.number="likeCount"
-                        type="number"
-                        min="0"
-                        :disabled="submitting"
-                        placeholder="0"
-                        class="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Notes (optional) -->
-                <div class="space-y-1.5">
-                  <label class="block text-sm font-medium text-zinc-300">Notes (Optional)</label>
-                  <textarea
-                    v-model="notes"
-                    :disabled="submitting"
-                    rows="2"
-                    placeholder="Any additional notes for the admin..."
-                    class="w-full px-4 py-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none"
-                  />
                 </div>
 
                 <!-- Error Display -->
@@ -211,6 +146,7 @@ const props = defineProps<{
   creatorProfiles: CreatorProfile[];
   campaigns: Campaign[];
   clipId?: string;
+  preselectedCreatorProfileId?: number | string;
 }>();
 
 const emit = defineEmits<{
@@ -220,48 +156,65 @@ const emit = defineEmits<{
 
 const { showToast } = useToast();
 
-const platform = ref('instagram');
 const postUrl = ref('');
 const creatorProfileId = ref('');
+const detectedPlatform = ref<string | null>(null);
 const campaignId = ref('');
-const caption = ref('');
-const viewCount = ref<number | undefined>(undefined);
-const likeCount = ref<number | undefined>(undefined);
-const notes = ref('');
 const submitting = ref(false);
 const error = ref<string | null>(null);
 const urlError = ref<string | null>(null);
 
-// Validate URL matches platform
-watch([postUrl, platform], () => {
+// Auto-detect platform from URL
+watch(postUrl, () => {
   if (!postUrl.value) {
+    detectedPlatform.value = null;
     urlError.value = null;
     return;
   }
 
   const url = postUrl.value.toLowerCase();
-  let valid = true;
-
-  switch (platform.value) {
-    case 'instagram':
-      valid = url.includes('instagram.com') || url.includes('instagr.am');
-      break;
-    case 'tiktok':
-      valid = url.includes('tiktok.com') || url.includes('vm.tiktok.com');
-      break;
-    case 'youtube':
-      valid = url.includes('youtube.com') || url.includes('youtu.be');
-      break;
-    case 'twitter':
-      valid = url.includes('twitter.com') || url.includes('x.com');
-      break;
+  
+  if (url.includes('instagram.com') || url.includes('instagr.am')) {
+    detectedPlatform.value = 'instagram';
+    urlError.value = null;
+  } else if (url.includes('tiktok.com') || url.includes('vm.tiktok.com')) {
+    detectedPlatform.value = 'tiktok';
+    urlError.value = null;
+  } else if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    detectedPlatform.value = 'youtube';
+    urlError.value = null;
+  } else if (url.includes('twitter.com') || url.includes('x.com')) {
+    detectedPlatform.value = 'twitter';
+    urlError.value = null;
+  } else {
+    detectedPlatform.value = null;
+    urlError.value = 'URL must be from Instagram, TikTok, YouTube, or X';
   }
+});
 
-  urlError.value = valid ? null : `URL doesn't match ${platform.value}`;
+// Platform display helpers
+const platformDisplayName = computed(() => {
+  switch (detectedPlatform.value) {
+    case 'instagram': return 'Instagram';
+    case 'tiktok': return 'TikTok';
+    case 'youtube': return 'YouTube';
+    case 'twitter': return 'X (Twitter)';
+    default: return '';
+  }
+});
+
+const platformBadgeClass = computed(() => {
+  switch (detectedPlatform.value) {
+    case 'instagram': return 'bg-pink-500/20 text-pink-400 border border-pink-500/30';
+    case 'tiktok': return 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30';
+    case 'youtube': return 'bg-red-500/20 text-red-400 border border-red-500/30';
+    case 'twitter': return 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
+    default: return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30';
+  }
 });
 
 const canSubmit = computed(() => {
-  return postUrl.value && !urlError.value;
+  return postUrl.value && detectedPlatform.value && !urlError.value;
 });
 
 // Reset form when dialog opens
@@ -272,14 +225,11 @@ watch(() => props.open, (isOpen) => {
 });
 
 function resetForm() {
-  platform.value = 'instagram';
   postUrl.value = '';
-  creatorProfileId.value = '';
+  detectedPlatform.value = null;
+  // Use preselected creator profile if provided
+  creatorProfileId.value = props.preselectedCreatorProfileId ? String(props.preselectedCreatorProfileId) : '';
   campaignId.value = '';
-  caption.value = '';
-  viewCount.value = undefined;
-  likeCount.value = undefined;
-  notes.value = '';
   error.value = null;
   urlError.value = null;
 }
@@ -292,15 +242,11 @@ async function submit() {
 
   try {
     const response = await submitExternalPost(props.organizationId, {
-      platform: platform.value,
+      platform: detectedPlatform.value!,
       post_url: postUrl.value,
-      caption: caption.value || undefined,
       creator_profile_id: creatorProfileId.value ? parseInt(creatorProfileId.value) : undefined,
       campaign_id: campaignId.value ? parseInt(campaignId.value) : undefined,
       clip_id: props.clipId,
-      view_count: viewCount.value,
-      like_count: likeCount.value,
-      notes: notes.value || undefined,
     });
 
     if (response.success) {

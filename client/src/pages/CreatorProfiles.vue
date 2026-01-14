@@ -333,6 +333,14 @@
                               <Edit class="creator-dropdown__item-icon" />
                               Edit Profile
                             </DropdownMenuItem>
+                            <DropdownMenuItem
+                              v-if="creator.isOrgProfile && creator.organization_id"
+                              class="creator-dropdown__item"
+                              @click="openPostSubmitDialog(creator)"
+                            >
+                              <Link class="creator-dropdown__item-icon" />
+                              Submit Post Link
+                            </DropdownMenuItem>
                             <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
                               <DropdownMenuSeparator class="creator-dropdown__separator" />
                               <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
@@ -417,6 +425,17 @@
 
     <!-- Auth Modal -->
     <AuthModal v-model="showAuthModal" />
+
+    <!-- External Post Submit Dialog -->
+    <ExternalPostSubmitDialog
+      :open="showPostSubmitDialog"
+      :organization-id="creatorForPostSubmit?.organization_id || 0"
+      :creator-profiles="creatorForPostSubmit ? [{ id: creatorForPostSubmit.server_id!, name: creatorForPostSubmit.name }] : []"
+      :campaigns="[]"
+      :preselected-creator-profile-id="creatorForPostSubmit?.server_id"
+      @close="showPostSubmitDialog = false"
+      @submitted="handlePostSubmitted"
+    />
   </div>
 </template>
 
@@ -437,6 +456,7 @@
   import ProfileDialog from '@/components/ProfileDialog.vue';
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import ExternalPostSubmitDialog from '@/components/organization/ExternalPostSubmitDialog.vue';
   import {
     getAllCreatorProfiles,
     deleteCreatorProfile,
@@ -477,6 +497,7 @@
     Radio,
     Activity,
     HardDrive,
+    Link,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -650,6 +671,8 @@
   const showDownloadDialog = ref(false);
   const creatorToDownload = ref<DisplayCreatorProfile | null>(null);
   const showAuthModal = ref(false);
+  const showPostSubmitDialog = ref(false);
+  const creatorForPostSubmit = ref<DisplayCreatorProfile | null>(null);
 
   // Live status tracking
   const liveStatusMap = ref<
@@ -1113,6 +1136,17 @@
   function openDownloadDialog(creator: DisplayCreatorProfile) {
     creatorToDownload.value = creator;
     showDownloadDialog.value = true;
+  }
+
+  function openPostSubmitDialog(creator: DisplayCreatorProfile) {
+    creatorForPostSubmit.value = creator;
+    showPostSubmitDialog.value = true;
+  }
+
+  function handlePostSubmitted() {
+    showPostSubmitDialog.value = false;
+    creatorForPostSubmit.value = null;
+    success('Post Submitted', 'Your post link has been submitted for review.');
   }
 
   async function startCreatorMonitoring(creator: DisplayCreatorProfile, detectClips: boolean) {

@@ -65,6 +65,10 @@ export interface ExternalPostSubmission {
     share_count: number;
     save_count: number;
   };
+  // Author metadata from platform API
+  author_username: string | null;
+  author_name: string | null;
+  author_profile_image: string | null;
   submitted_by: {
     id: number;
     email: string;

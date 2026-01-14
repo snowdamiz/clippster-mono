@@ -92,8 +92,8 @@ defmodule ClippsterServer.Social.Platform do
   Gets the platform module for a given platform identifier.
   """
   def get_platform_module("instagram"), do: {:ok, ClippsterServer.Social.Platforms.Instagram}
+  def get_platform_module("twitter"), do: {:ok, ClippsterServer.Social.Platforms.Twitter}
   def get_platform_module("tiktok"), do: {:error, :not_implemented}
-  def get_platform_module("twitter"), do: {:error, :not_implemented}
   def get_platform_module("youtube"), do: {:error, :not_implemented}
   def get_platform_module(_), do: {:error, :unknown_platform}
 
