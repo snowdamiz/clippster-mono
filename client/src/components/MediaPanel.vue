@@ -12,8 +12,11 @@
 
       <!-- Actions -->
       <div class="flex items-center gap-2">
-        <!-- Progress Bar (when detecting) -->
-        <div v-if="props.isGenerating && clips.length > 0" class="flex items-center gap-2 min-w-[140px]">
+        <!-- Progress Bar (when detecting) - Hide during finalizing to show centered progress -->
+        <div
+          v-if="props.isGenerating && clips.length > 0 && props.generationStage !== 'finalizing'"
+          class="flex items-center gap-2 min-w-[140px]"
+        >
           <div class="flex-1 space-y-0.5">
             <div class="h-1 w-full bg-white/5 rounded-full overflow-hidden">
               <div
@@ -607,6 +610,7 @@
   // Expose methods for external access
   defineExpose({
     refreshClips,
+    refreshThumbnails: () => clipsTabRef.value?.refreshThumbnails?.(),
     scrollClipIntoView: (clipId: string) => {
       clipsTabRef.value?.scrollClipIntoView(clipId);
     },

@@ -1,84 +1,74 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
+      <div v-if="modelValue" class="detect-clips-dialog__overlay" @click.self="close">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-sm sm:max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] overflow-y-auto"
-          >
-            <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
+          <div v-if="modelValue" class="detect-clips-dialog" role="dialog" aria-modal="true">
+            <!-- Accent bar -->
+            <div class="detect-clips-dialog__accent"></div>
 
-            <div class="p-5 sm:p-6 lg:p-8">
-              <!-- Header -->
-              <div class="mb-4 sm:mb-6 text-center">
-                <div
-                  class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-3 sm:mb-4"
-                >
-                  <Sparkles class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-violet-400" />
-                </div>
-                <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">Detect Clips</h2>
-                <p class="text-zinc-400 text-xs sm:text-sm mt-1">AI-powered clip detection</p>
+            <!-- Header -->
+            <div class="detect-clips-dialog__header">
+              <button class="detect-clips-dialog__close" @click="close" :disabled="isProcessing" title="Close">
+                <X :size="18" />
+              </button>
+              <div class="detect-clips-dialog__icon">
+                <Sparkles :size="24" />
               </div>
+              <h2 class="detect-clips-dialog__title">Detect Clips</h2>
+              <p class="detect-clips-dialog__subtitle">AI-powered clip detection</p>
+            </div>
 
+            <!-- Content -->
+            <div class="detect-clips-dialog__content">
               <!-- Multi-Segment Info (project-level detection) -->
               <div
                 v-if="segmentCount && segmentCount > 0"
-                class="mb-4 sm:mb-5 p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800 space-y-1.5 sm:space-y-2"
+                class="detect-clips-dialog__field detect-clips-dialog__info-box"
               >
                 <div class="flex items-center justify-between text-xs sm:text-sm">
-                  <span class="text-zinc-400">Segments to Process:</span>
-                  <span class="font-medium text-white">
-                    {{ segmentCount }} segment{{ segmentCount !== 1 ? 's' : '' }}
-                  </span>
+                  <span>Segments to Process:</span>
+                  <span class="font-medium">{{ segmentCount }} segment{{ segmentCount !== 1 ? 's' : '' }}</span>
                 </div>
                 <div class="flex items-center justify-between text-xs sm:text-sm">
-                  <span class="text-zinc-400">Total Duration:</span>
-                  <span class="font-medium text-white">{{ formatDuration(effectiveDuration) }}</span>
+                  <span>Total Duration:</span>
+                  <span class="font-medium">{{ formatDuration(effectiveDuration) }}</span>
                 </div>
               </div>
 
               <!-- Single Video Duration Info -->
-              <div
-                v-else-if="videoDuration > 0"
-                class="mb-4 sm:mb-5 p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800"
-              >
+              <div v-else-if="videoDuration > 0" class="detect-clips-dialog__field detect-clips-dialog__info-box">
                 <div class="flex items-center justify-between text-xs sm:text-sm">
-                  <span class="text-zinc-400">Video Duration:</span>
-                  <span class="font-medium text-white">{{ formatDuration(videoDuration) }}</span>
+                  <span>Video Duration:</span>
+                  <span class="font-medium">{{ formatDuration(videoDuration) }}</span>
                 </div>
               </div>
 
               <!-- Prompt Selection -->
-              <div class="mb-4 sm:mb-5">
-                <label class="block text-xs sm:text-sm font-medium text-zinc-300 mb-1.5 sm:mb-2">
-                  Detection Prompt
-                </label>
+              <div class="detect-clips-dialog__field">
+                <label class="detect-clips-dialog__label">Detection Prompt</label>
                 <div class="relative">
                   <button
                     @click="showPromptDropdown = !showPromptDropdown"
-                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-left flex items-center justify-between hover:border-zinc-700 transition-colors text-sm"
+                    class="detect-clips-dialog__input detect-clips-dialog__select"
                   >
-                    <span class="truncate text-white">
+                    <span class="truncate">
                       {{ selectedPromptName || 'Select a prompt...' }}
                     </span>
                     <ChevronDown
-                      class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-400 transition-transform"
+                      class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform"
                       :class="{ 'rotate-180': showPromptDropdown }"
                     />
                   </button>
 
                   <!-- Dropdown -->
-                  <div
-                    v-if="showPromptDropdown"
-                    class="absolute top-full left-0 right-0 mt-1.5 sm:mt-2 bg-zinc-900 border border-zinc-800 rounded-lg sm:rounded-xl overflow-hidden z-10 max-h-40 sm:max-h-48 overflow-y-auto custom-scrollbar"
-                  >
+                  <div v-if="showPromptDropdown" class="detect-clips-dialog__dropdown">
                     <button
                       v-for="prompt in prompts"
                       :key="prompt.id"
                       @click="selectPrompt(prompt)"
-                      class="block w-full text-left px-3 sm:px-4 py-2.5 sm:py-3 hover:bg-zinc-800/80 transition-colors text-xs sm:text-sm whitespace-nowrap"
-                      :class="{ 'bg-violet-500/10 text-violet-400': selectedPromptId === prompt.id }"
+                      class="detect-clips-dialog__dropdown-item"
+                      :class="{ 'detect-clips-dialog__dropdown-item--selected': selectedPromptId === prompt.id }"
                     >
                       {{ prompt.name }}
                     </button>
@@ -87,60 +77,60 @@
               </div>
 
               <!-- Enhanced Multimodal Detection Toggle -->
-              <div class="mb-4 sm:mb-5 p-3 sm:p-4 bg-zinc-900/80 rounded-lg sm:rounded-xl border border-zinc-800">
+              <div class="detect-clips-dialog__field detect-clips-dialog__toggle-box">
                 <div class="flex items-center justify-between">
                   <div class="flex-1 min-w-0 pr-3">
                     <div class="flex items-center gap-2">
-                      <span class="text-sm font-medium text-white">Enhanced Detection</span>
-                      <span class="px-1.5 py-0.5 text-[10px] font-semibold bg-violet-500/20 text-violet-400 rounded">
-                        2x Credits
-                      </span>
+                      <span class="text-sm font-medium">Enhanced Detection</span>
+                      <span class="detect-clips-dialog__badge">2x Credits</span>
                     </div>
-                    <p class="text-xs text-zinc-400 mt-1">
+                    <p class="text-xs mt-1 opacity-70">
                       Uses 3 AI models in parallel for higher quality clip detection
                     </p>
                   </div>
                   <button
                     @click="multimodalEnabled = !multimodalEnabled"
-                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
-                    :class="multimodalEnabled ? 'bg-violet-600' : 'bg-zinc-700'"
+                    class="detect-clips-dialog__toggle"
+                    :class="{ 'detect-clips-dialog__toggle--active': multimodalEnabled }"
                     role="switch"
                     :aria-checked="multimodalEnabled"
                   >
                     <span
-                      class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                      :class="multimodalEnabled ? 'translate-x-5' : 'translate-x-0'"
+                      class="detect-clips-dialog__toggle-thumb"
+                      :class="{ 'detect-clips-dialog__toggle-thumb--active': multimodalEnabled }"
                     />
                   </button>
                 </div>
               </div>
 
               <!-- Credit Source Selector (shown when user has org credits) -->
-              <div v-if="showCreditSourceSelector" class="mb-4 sm:mb-5">
-                <label class="block text-xs sm:text-sm font-medium text-zinc-300 mb-1.5 sm:mb-2">Pay with</label>
+              <div v-if="showCreditSourceSelector" class="detect-clips-dialog__field">
+                <label class="detect-clips-dialog__label">Pay with</label>
                 <div class="space-y-2">
                   <button
                     v-for="option in creditSourceOptions"
                     :key="option.type + (option.organizationId || '')"
                     @click="option.type === 'personal' ? selectPersonal() : selectOrganization(option.organizationId!)"
-                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-left flex items-center gap-3 transition-all text-sm border"
-                    :class="[
-                      selectedSource === option.type &&
-                      (option.type === 'personal' || selectedOrganizationId === option.organizationId)
-                        ? 'bg-violet-500/20 border-violet-500/50 text-white'
-                        : 'bg-zinc-900/80 border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:text-white',
-                    ]"
+                    class="detect-clips-dialog__credit-option"
+                    :class="{
+                      'detect-clips-dialog__credit-option--selected':
+                        selectedSource === option.type &&
+                        (option.type === 'personal' || selectedOrganizationId === option.organizationId),
+                    }"
                   >
                     <div
                       class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                      :class="option.type === 'personal' ? 'bg-zinc-800' : 'bg-violet-500/20'"
+                      :style="{
+                        backgroundColor:
+                          option.type === 'personal' ? 'var(--sidebar-hover)' : 'rgba(6, 182, 212, 0.15)',
+                      }"
                     >
-                      <User v-if="option.type === 'personal'" class="h-4 w-4 text-zinc-400" />
-                      <Building2 v-else class="h-4 w-4 text-violet-400" />
+                      <User v-if="option.type === 'personal'" class="h-4 w-4" />
+                      <Building2 v-else class="h-4 w-4" style="color: var(--sidebar-accent)" />
                     </div>
                     <div class="flex-1 min-w-0">
                       <div class="font-medium truncate">{{ option.label }}</div>
-                      <div class="text-xs text-zinc-500">
+                      <div class="text-xs opacity-60">
                         {{
                           option.hoursRemaining === -1
                             ? 'Unlimited'
@@ -153,9 +143,9 @@
                         selectedSource === option.type &&
                         (option.type === 'personal' || selectedOrganizationId === option.organizationId)
                       "
-                      class="w-5 h-5 rounded-full bg-violet-500 flex items-center justify-center flex-shrink-0"
+                      class="detect-clips-dialog__checkmark"
                     >
-                      <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
                       </svg>
                     </div>
@@ -164,53 +154,39 @@
               </div>
 
               <!-- Credit Information -->
-              <div class="mb-4 sm:mb-5 p-3 sm:p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg sm:rounded-xl">
-                <div class="flex items-start gap-2 sm:gap-3">
-                  <div
-                    class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0"
-                  >
-                    <Info class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-400" />
-                  </div>
-                  <div class="flex-1">
-                    <p class="font-medium text-blue-300 text-xs sm:text-sm mb-0.5 sm:mb-1">Credit Cost</p>
-                    <p class="text-blue-400/80 text-[10px] sm:text-xs">
-                      {{ creditInfo }}
-                    </p>
-                  </div>
+              <div class="detect-clips-dialog__alert detect-clips-dialog__alert--info">
+                <Info :size="16" />
+                <div class="flex-1">
+                  <p class="font-medium text-xs sm:text-sm mb-0.5 sm:mb-1">Credit Cost</p>
+                  <p class="text-[10px] sm:text-xs opacity-80">
+                    {{ creditInfo }}
+                  </p>
                 </div>
               </div>
 
               <!-- Error Message -->
-              <div
-                v-if="error"
-                class="mb-4 sm:mb-5 p-3 sm:p-4 bg-red-500/10 border border-red-500/30 rounded-lg sm:rounded-xl"
-              >
-                <p class="text-red-400 text-xs sm:text-sm">{{ error }}</p>
+              <div v-if="error" class="detect-clips-dialog__alert detect-clips-dialog__alert--error">
+                <p class="text-xs sm:text-sm">{{ error }}</p>
               </div>
+            </div>
 
-              <!-- Actions -->
-              <div class="flex gap-2 sm:gap-3">
-                <button
-                  @click="close"
-                  :disabled="isProcessing"
-                  class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50 text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  @click="confirm"
-                  :disabled="!selectedPromptId || isProcessing"
-                  class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  <div
-                    class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                  />
-                  <span class="relative flex items-center justify-center gap-1.5 sm:gap-2">
-                    <Loader2 v-if="isProcessing" class="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
-                    {{ isProcessing ? 'Detecting...' : 'Detect Clips' }}
-                  </span>
-                </button>
-              </div>
+            <!-- Footer -->
+            <div class="detect-clips-dialog__footer">
+              <button
+                @click="close"
+                :disabled="isProcessing"
+                class="detect-clips-dialog__btn detect-clips-dialog__btn--secondary"
+              >
+                Cancel
+              </button>
+              <button
+                @click="confirm"
+                :disabled="!selectedPromptId || isProcessing"
+                class="detect-clips-dialog__btn detect-clips-dialog__btn--primary"
+              >
+                <Loader2 v-if="isProcessing" :size="16" class="detect-clips-dialog__spinner" />
+                {{ isProcessing ? 'Detecting...' : 'Detect Clips' }}
+              </button>
             </div>
           </div>
         </Transition>
@@ -221,7 +197,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { ChevronDown, Info, Loader2, Sparkles, Building2, User } from 'lucide-vue-next';
+  import { ChevronDown, Info, Loader2, Sparkles, Building2, User, X } from 'lucide-vue-next';
   import { useCreditSource } from '@/composables/useCreditSource';
   import { useAuthStore } from '@/stores/auth';
   import { getAllPrompts } from '@/services/database';
@@ -465,10 +441,405 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Overlay ===== */
+  .detect-clips-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  /* ===== Dialog Container ===== */
+  .detect-clips-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 480px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ===== Accent Bar ===== */
+  .detect-clips-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .detect-clips-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .detect-clips-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .detect-clips-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .detect-clips-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .detect-clips-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .detect-clips-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .detect-clips-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content Area ===== */
+  .detect-clips-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .detect-clips-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .detect-clips-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .detect-clips-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Form Field ===== */
+  .detect-clips-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .detect-clips-dialog__label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .detect-clips-dialog__input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .detect-clips-dialog__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .detect-clips-dialog__input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .detect-clips-dialog__select {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+  }
+
+  .detect-clips-dialog__select:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  /* ===== Dropdown ===== */
+  .detect-clips-dialog__dropdown {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: 0;
+    right: 0;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    overflow: hidden;
+    z-index: 10;
+    max-height: 12rem;
+    overflow-y: auto;
+  }
+
+  .detect-clips-dialog__dropdown::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .detect-clips-dialog__dropdown::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .detect-clips-dialog__dropdown::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .detect-clips-dialog__dropdown-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.625rem 0.75rem;
+    border-radius: 5px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    transition: background-color 150ms ease;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .detect-clips-dialog__dropdown-item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .detect-clips-dialog__dropdown-item--selected {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Info Box ===== */
+  .detect-clips-dialog__info-box {
+    padding: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    gap: 0.5rem;
+  }
+
+  /* ===== Toggle Box ===== */
+  .detect-clips-dialog__toggle-box {
+    padding: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+  }
+
+  .detect-clips-dialog__badge {
+    padding: 0.125rem 0.375rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    background-color: rgba(6, 182, 212, 0.2);
+    color: var(--sidebar-accent);
+    border-radius: 4px;
+  }
+
+  .detect-clips-dialog__toggle {
+    position: relative;
+    display: inline-flex;
+    height: 24px;
+    width: 44px;
+    flex-shrink: 0;
+    cursor: pointer;
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-color: var(--sidebar-hover);
+    transition: background-color 200ms ease-in-out;
+  }
+
+  .detect-clips-dialog__toggle:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--sidebar-accent);
+  }
+
+  .detect-clips-dialog__toggle--active {
+    background-color: var(--sidebar-accent);
+  }
+
+  .detect-clips-dialog__toggle-thumb {
+    pointer-events: none;
+    display: inline-block;
+    height: 20px;
+    width: 20px;
+    transform: translateX(0);
+    border-radius: 9999px;
+    background-color: white;
+    transition: transform 200ms ease-in-out;
+  }
+
+  .detect-clips-dialog__toggle-thumb--active {
+    transform: translateX(20px);
+  }
+
+  /* ===== Credit Option ===== */
+  .detect-clips-dialog__credit-option {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: all 150ms ease;
+    font-size: 0.875rem;
+    border: 1px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    cursor: pointer;
+  }
+
+  .detect-clips-dialog__credit-option:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .detect-clips-dialog__credit-option--selected {
+    background-color: rgba(6, 182, 212, 0.15);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .detect-clips-dialog__checkmark {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: var(--sidebar-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: white;
+  }
+
+  /* ===== Alert Box ===== */
+  .detect-clips-dialog__alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .detect-clips-dialog__alert--info {
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .detect-clips-dialog__alert--error {
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #f87171;
+  }
+
+  /* ===== Footer ===== */
+  .detect-clips-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
+  .detect-clips-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .detect-clips-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .detect-clips-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .detect-clips-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .detect-clips-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .detect-clips-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .detect-clips-dialog__spinner {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -476,18 +847,17 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {
@@ -495,21 +865,9 @@
     transform: scale(0.98);
   }
 
-  /* Custom scrollbar */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgb(63 63 70);
-    border-radius: 3px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgb(82 82 91);
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>
