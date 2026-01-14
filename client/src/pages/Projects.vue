@@ -602,7 +602,7 @@
                       <ClipsTab
                         :clips="folderClips"
                         :project-id="folderProject?.id || null"
-                        :hide-header="false"
+                        :hide-header="true"
                         :is-generating="false"
                         :generation-progress="0"
                         :generation-stage="''"

@@ -71,7 +71,7 @@
       </button>
     </div>
 
-    <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+    <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar clips-tab-scroll-container">
       <!-- Progress State (show when generating OR during finalizing stage) -->
       <div
         v-if="isGenerating && (clips.length === 0 || generationStage === 'finalizing')"
@@ -161,7 +161,7 @@
               </span>
             </div>
 
-            <div class="space-y-3 mt-2" v-if="section.clips.length > 0">
+            <div class="space-y-3 -mt-2" v-if="section.clips.length > 0">
               <div
                 v-for="clip in section.clips"
                 :key="clip.id"
@@ -505,12 +505,12 @@
                         </span>
 
                         <span
-                          v-if="clip.session_prompt"
+                          v-if="getPromptDisplayName(clip.session_prompt)"
                           class="text-[10px] truncate max-w-[90px]"
                           style="color: var(--sidebar-text-muted); opacity: 0.7"
-                          :title="clip.session_prompt"
+                          :title="getPromptDisplayName(clip.session_prompt)"
                         >
-                          {{ clip.session_prompt }}
+                          {{ getPromptDisplayName(clip.session_prompt) }}
                         </span>
                       </div>
                     </div>
@@ -854,6 +854,9 @@
   // Track if thumbnails are being loaded
   const isLoadingThumbnails = ref(false);
 
+  // Track which clips are already part of a video editor project
+  const clipProjectMembership = ref<Map<string, boolean>>(new Map());
+
   // Computed: check if all clips have thumbnails loaded (or don't need them)
   const allThumbnailsReady = computed(() => {
     if (props.clips.length === 0) return true;
@@ -903,6 +906,19 @@
     { deep: true, immediate: true }
   );
 
+  // Load video editor project membership when clips change
+  watch(
+    () => props.clips,
+    (newClips) => {
+      if (newClips.length === 0) {
+        clipProjectMembership.value = new Map();
+        return;
+      }
+      loadClipProjectMembership(newClips);
+    },
+    { deep: true, immediate: true }
+  );
+
   // Load clip thumbnails into cache
   async function loadClipThumbnails() {
     const clipsWithThumbnails = props.clips.filter(
@@ -944,6 +960,53 @@
     // Always generate thumbnails for clips that don't have built_thumbnail_path
     // This is critical for newly detected clips
     await generateMissingThumbnails();
+  }
+
+  // Load which clips are already part of a video editor project
+  async function loadClipProjectMembership(clips: ClipWithVersion[]) {
+    try {
+      const { getVideoEditorProjectsForClip } = await import('@/services/database/video-editor-projects');
+      const currentMap = new Map(clipProjectMembership.value);
+      const clipIds = new Set(clips.map((clip) => clip.id));
+
+      // Remove entries for clips no longer in the list
+      for (const existingId of currentMap.keys()) {
+        if (!clipIds.has(existingId)) {
+          currentMap.delete(existingId);
+        }
+      }
+
+      // Check only clips we haven't resolved yet
+      const pendingClips = clips.filter((clip) => !currentMap.has(clip.id));
+      if (pendingClips.length === 0) {
+        clipProjectMembership.value = new Map(currentMap);
+        return;
+      }
+
+      const batchSize = 6;
+      for (let i = 0; i < pendingClips.length; i += batchSize) {
+        const batch = pendingClips.slice(i, i + batchSize);
+        const results = await Promise.all(
+          batch.map(async (clip) => {
+            try {
+              const projects = await getVideoEditorProjectsForClip(clip.id);
+              return { id: clip.id, inProject: projects.length > 0 };
+            } catch (error) {
+              console.warn('[ClipsTab] Failed to check video editor projects for clip:', clip.id, error);
+              return { id: clip.id, inProject: false };
+            }
+          })
+        );
+
+        for (const result of results) {
+          currentMap.set(result.id, result.inProject);
+        }
+      }
+
+      clipProjectMembership.value = new Map(currentMap);
+    } catch (error) {
+      console.warn('[ClipsTab] Failed to load video editor project membership:', error);
+    }
   }
 
   // Generate thumbnails for clips that don't have built_thumbnail_path set
@@ -1045,6 +1108,22 @@
     });
   });
 
+  const promptNameByContent = computed(() => {
+    const map = new Map<string, string>();
+    for (const prompt of props.prompts) {
+      if (prompt.content && prompt.name) {
+        map.set(prompt.content, prompt.name);
+      }
+    }
+    return map;
+  });
+
+  function getPromptDisplayName(promptContent?: string | null): string | undefined {
+    if (!promptContent) return undefined;
+    if (promptContent === 'Manual clip creation') return 'Manual';
+    return promptNameByContent.value.get(promptContent) || promptContent;
+  }
+
   // Determine if a clip is completed/built
   const isCompletedClip = (clip: ClipWithVersion) =>
     hasCompletedBuilds(clip) ||
@@ -1061,13 +1140,24 @@
         return bBuilt - aBuilt;
       });
 
-    const found = sortedClips.value.filter((clip) => !isCompletedClip(clip));
+    const inProjects = sortedClips.value.filter(
+      (clip) => !isCompletedClip(clip) && clipProjectMembership.value.get(clip.id)
+    );
+
+    const found = sortedClips.value.filter(
+      (clip) => !isCompletedClip(clip) && !clipProjectMembership.value.get(clip.id)
+    );
 
     return [
       {
         title: 'Completed',
         accentClass: 'bg-emerald-400',
         clips: completed,
+      },
+      {
+        title: 'In Projects',
+        accentClass: 'bg-violet-400',
+        clips: inProjects,
       },
       {
         title: 'Found Clips',
@@ -2790,6 +2880,10 @@
   .custom-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+
+  .clips-tab-scroll-container {
+    padding-right: 10px;
   }
 </style>
 
