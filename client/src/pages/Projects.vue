@@ -1117,6 +1117,9 @@
         </div>
       </template>
     </SearchPalette>
+
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
   </PageLayout>
 </template>
 
@@ -1198,6 +1201,7 @@
     type IntroOutroItem,
   } from '@/components/ClipBuildSettingsDialog.vue';
   import ClipsTab from '@/components/ClipsTab.vue';
+  import AuthModal from '@/components/AuthModal.vue';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
@@ -1251,6 +1255,7 @@
   const showBulkDeleteDialog = ref(false);
   const selectedFolderChildren = ref<Set<string>>(new Set());
   const showBulkDeleteFolderChildrenDialog = ref(false);
+  const showAuthModal = ref(false);
 
   // Project-level clip detection state
   const showProjectDetectDialog = ref(false);
@@ -3500,6 +3505,12 @@
   });
 
   async function openCreateDialog() {
+    // Check if user is authenticated first
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
+
     // Check subscription access before allowing project creation
     if (!(await gates.createProject())) {
       return; // Gate was shown, user doesn't have access

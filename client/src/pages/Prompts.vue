@@ -16,11 +16,14 @@
   } from 'lucide-vue-next';
   import { useFormatters } from '@/composables/useFormatters';
   import { useToast } from '@/composables/useToast';
+  import { useAuthStore } from '@/stores/auth';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import PromptDialog from '@/components/PromptDialog.vue';
+  import AuthModal from '@/components/AuthModal.vue';
 
   const { success, error } = useToast();
+  const authStore = useAuthStore();
   const prompts = ref<Prompt[]>([]);
   const loading = ref(true);
   const { getRelativeTime } = useFormatters();
@@ -31,8 +34,13 @@
   // Prompt dialog state
   const showPromptDialog = ref(false);
   const editingPrompt = ref<Prompt | null>(null);
+  const showAuthModal = ref(false);
 
   function openNewPromptDialog() {
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
     editingPrompt.value = null;
     showPromptDialog.value = true;
   }
@@ -332,6 +340,9 @@
       @close="closePromptDialog"
       @saved="handlePromptSaved"
     />
+
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
   </div>
 </template>
 

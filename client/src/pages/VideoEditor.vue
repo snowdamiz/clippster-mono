@@ -337,6 +337,9 @@
         </div>
       </template>
     </SearchPalette>
+
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
   </PageLayout>
 </template>
 
@@ -350,6 +353,8 @@
   import VideoEditorProjectDialog from '@/components/video-editor/VideoEditorProjectDialog.vue';
   import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
+  import AuthModal from '@/components/AuthModal.vue';
+  import { useAuthStore } from '@/stores/auth';
   import type { VideoEditorProject, VideoEditorSource } from '@/types';
   import {
     getAllVideoEditorProjects,
@@ -398,6 +403,9 @@
   const showEditorDialog = ref(false);
   const editorProjectId = ref<string | null>(null);
   const editorProjectName = ref('Video Project');
+  const showAuthModal = ref(false);
+
+  const authStore = useAuthStore();
   const showDeleteDialog = ref(false);
   const projectToDelete = ref<VideoEditorProject | null>(null);
 
@@ -725,6 +733,10 @@
   }
 
   function openCreateDialog() {
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
     selectedProject.value = null;
     showDialog.value = true;
   }

@@ -554,11 +554,6 @@ pub fn run() {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
 
-            // Initialize storage directories
-            if let Err(e) = storage::init_storage_dirs() {
-                eprintln!("[Rust] Warning: Failed to initialize storage directories: {}", e);
-            }
-
             // Start video streaming server in Tauri's async runtime
             let _app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

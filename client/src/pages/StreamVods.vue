@@ -387,6 +387,9 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
   </div>
 </template>
 
@@ -397,6 +400,7 @@
   import EmptyState from '@/components/EmptyState.vue';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
+  import AuthModal from '@/components/AuthModal.vue';
   import { usePlatformStore, type PlatformClip } from '@/stores/platform';
   import { platformConfigs, type PlatformId } from '@/config/platforms';
   import { extractMintId } from '@/services/pumpfun';
@@ -430,6 +434,7 @@
   const autoSegmentDuration = ref(30);
   const currentPage = ref(1);
   const clipsPerPage = 20;
+  const showAuthModal = ref(false);
 
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(null);
@@ -662,6 +667,12 @@
     const input = searchInput.value.trim();
     if (!input) {
       showError('Invalid Input', 'Please enter a stream link, mint ID, or username');
+      return;
+    }
+
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
       return;
     }
 

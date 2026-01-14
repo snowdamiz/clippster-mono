@@ -306,7 +306,6 @@ const router = createRouter({
       path: '/organizations',
       name: 'organizations',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: '',

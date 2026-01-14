@@ -414,6 +414,9 @@
       :creator="creatorToDownload"
       @close="showDownloadDialog = false"
     />
+
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
   </div>
 </template>
 
@@ -433,6 +436,7 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import ProfileDialog from '@/components/ProfileDialog.vue';
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
+  import AuthModal from '@/components/AuthModal.vue';
   import {
     getAllCreatorProfiles,
     deleteCreatorProfile,
@@ -645,6 +649,7 @@
   const creatorToDelete = ref<DisplayCreatorProfile | null>(null);
   const showDownloadDialog = ref(false);
   const creatorToDownload = ref<DisplayCreatorProfile | null>(null);
+  const showAuthModal = ref(false);
 
   // Live status tracking
   const liveStatusMap = ref<
@@ -1045,6 +1050,10 @@
   }
 
   function openCreateDialog() {
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
     creatorToEdit.value = null;
     showProfileDialog.value = true;
   }

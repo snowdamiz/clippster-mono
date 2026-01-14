@@ -8,8 +8,10 @@
     >
       <template #actions>
         <button
-          v-if="canCreateOrg && (!userApplication || userApplication.status === 'rejected')"
-          @click="showApplicationDialog = true"
+          v-if="
+            !authStore.isAuthenticated || (canCreateOrg && (!userApplication || userApplication.status === 'rejected'))
+          "
+          @click="handleApplyClick"
           class="org__create-btn"
         >
           <Plus class="org__create-btn-icon" />
@@ -19,58 +21,153 @@
 
       <div
         class="org__content"
-        :class="{ 'org__content--empty': !loading && organizations.length === 0 && !userApplication }"
+        :class="{
+          'org__content--empty':
+            !loading &&
+            ((authStore.isAuthenticated && organizations.length === 0 && !userApplication) ||
+              !authStore.isAuthenticated),
+        }"
       >
-        <!-- Page Heading -->
-        <div v-if="organizations.length > 0 || loading || userApplication" class="org__heading">
-          <h1 class="org__title">Your Organizations</h1>
-          <p class="org__subtitle">View and manage organizations you belong to</p>
+        <!-- Not Authenticated Empty State -->
+        <div v-if="!authStore.isAuthenticated && !loading" class="org__empty">
+          <div class="org__empty-icon-wrapper">
+            <Building2 class="org__empty-icon" />
+          </div>
+          <h3 class="org__empty-title">Sign in to manage organizations</h3>
+          <p class="org__empty-description">Access your organizations and apply to create new ones</p>
         </div>
 
-        <!-- Loading State -->
-        <div v-if="loading" class="org__loading">
-          <div class="org__grid">
-            <div v-for="i in 3" :key="i" class="org-card org-card--skeleton">
-              <div class="org-card__indicator org-card__indicator--skeleton"></div>
-              <div class="org-card__inner">
-                <div class="org-card__content">
-                  <div class="org-skeleton__logo"></div>
-                  <div class="org-skeleton__info">
-                    <div class="org-skeleton__line org-skeleton__line--title"></div>
-                    <div class="org-skeleton__line org-skeleton__line--subtitle"></div>
+        <!-- Authenticated Content -->
+        <template v-else>
+          <!-- Page Heading -->
+          <div v-if="organizations.length > 0 || loading || userApplication" class="org__heading">
+            <h1 class="org__title">Your Organizations</h1>
+            <p class="org__subtitle">View and manage organizations you belong to</p>
+          </div>
+
+          <!-- Loading State -->
+          <div v-if="loading" class="org__loading">
+            <div class="org__grid">
+              <div v-for="i in 3" :key="i" class="org-card org-card--skeleton">
+                <div class="org-card__indicator org-card__indicator--skeleton"></div>
+                <div class="org-card__inner">
+                  <div class="org-card__content">
+                    <div class="org-skeleton__logo"></div>
+                    <div class="org-skeleton__info">
+                      <div class="org-skeleton__line org-skeleton__line--title"></div>
+                      <div class="org-skeleton__line org-skeleton__line--subtitle"></div>
+                    </div>
                   </div>
-                </div>
-                <div class="org-skeleton__credits">
-                  <div class="org-skeleton__line org-skeleton__line--sm"></div>
-                  <div class="org-skeleton__line org-skeleton__line--xs"></div>
+                  <div class="org-skeleton__credits">
+                    <div class="org-skeleton__line org-skeleton__line--sm"></div>
+                    <div class="org-skeleton__line org-skeleton__line--xs"></div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Organizations Content -->
-        <div v-else-if="organizations.length > 0" class="org__main">
-          <div class="org__list-header">
-            <span class="org__list-label">Organizations</span>
-            <span class="org__list-count">{{ organizations.length }} total</span>
+          <!-- Organizations Content -->
+          <div v-else-if="organizations.length > 0" class="org__main">
+            <div class="org__list-header">
+              <span class="org__list-label">Organizations</span>
+              <span class="org__list-count">{{ organizations.length }} total</span>
+            </div>
+
+            <div class="org__grid">
+              <transition-group name="org-list" tag="div" class="org__grid-inner">
+                <div
+                  v-for="org in organizations"
+                  :key="org.id"
+                  class="org-card"
+                  :class="{ 'org-card--owner': org.role === 'owner', 'org-card--admin': org.role === 'admin' }"
+                  @click="navigateToOrg(org)"
+                >
+                  <!-- Left Accent Indicator -->
+                  <div
+                    class="org-card__indicator"
+                    :class="{
+                      'org-card__indicator--owner': org.role === 'owner',
+                      'org-card__indicator--admin': org.role === 'admin',
+                    }"
+                  ></div>
+
+                  <div class="org-card__inner">
+                    <div class="org-card__content">
+                      <!-- Logo -->
+                      <div class="org-card__logo">
+                        <img
+                          v-if="org.logo_url && !failedImages.has(org.id)"
+                          :src="org.logo_url"
+                          :alt="org.name"
+                          class="org-card__logo-img"
+                          referrerpolicy="no-referrer"
+                          @error="handleImageError($event, org.id)"
+                        />
+                        <div v-else class="org-card__logo-fallback">
+                          <Building2 class="org-card__logo-icon" />
+                        </div>
+                      </div>
+
+                      <!-- Organization Info -->
+                      <div class="org-card__info">
+                        <div class="org-card__name-row">
+                          <h3 class="org-card__name">{{ org.name }}</h3>
+                          <span
+                            class="org-card__role"
+                            :class="{
+                              'org-card__role--owner': org.role === 'owner',
+                              'org-card__role--admin': org.role === 'admin',
+                            }"
+                          >
+                            {{ org.role }}
+                          </span>
+                        </div>
+                        <p v-if="org.description" class="org-card__description">
+                          {{ org.description }}
+                        </p>
+                        <p v-else class="org-card__description org-card__description--empty">No description</p>
+                      </div>
+                    </div>
+
+                    <!-- Credit Balance -->
+                    <div class="org-card__credits">
+                      <div class="org-card__credits-row">
+                        <Clock class="org-card__credits-icon" />
+                        <span class="org-card__credits-value">
+                          {{ formatCredits(orgCredits[org.id]?.hours_remaining) }}
+                        </span>
+                        <span class="org-card__credits-unit">min</span>
+                      </div>
+                      <div class="org-card__credits-used">{{ formatCredits(orgCredits[org.id]?.hours_used) }} used</div>
+                    </div>
+
+                    <!-- Hover Arrow -->
+                    <div class="org-card__arrow">
+                      <ChevronRight class="org-card__arrow-icon" />
+                    </div>
+                  </div>
+                </div>
+              </transition-group>
+            </div>
           </div>
 
-          <div class="org__grid">
-            <transition-group name="org-list" tag="div" class="org__grid-inner">
-              <div
-                v-for="org in organizations"
-                :key="org.id"
-                class="org-card"
-                :class="{ 'org-card--owner': org.role === 'owner', 'org-card--admin': org.role === 'admin' }"
-                @click="navigateToOrg(org)"
-              >
+          <!-- Organization Application Section -->
+          <div v-else-if="userApplication" class="org__main">
+            <div class="org__list-header">
+              <span class="org__list-label">Your Application</span>
+              <span class="org__list-count">1 application</span>
+            </div>
+
+            <div class="org__grid">
+              <div class="org-card org-card--application">
                 <!-- Left Accent Indicator -->
                 <div
                   class="org-card__indicator"
                   :class="{
-                    'org-card__indicator--owner': org.role === 'owner',
-                    'org-card__indicator--admin': org.role === 'admin',
+                    'org-card__indicator--pending': userApplication.status === 'pending',
+                    'org-card__indicator--approved': userApplication.status === 'approved',
+                    'org-card__indicator--rejected': userApplication.status === 'rejected',
                   }"
                 ></div>
 
@@ -79,206 +176,128 @@
                     <!-- Logo -->
                     <div class="org-card__logo">
                       <img
-                        v-if="org.logo_url && !failedImages.has(org.id)"
-                        :src="org.logo_url"
-                        :alt="org.name"
+                        v-if="userApplication.logo_url && !applicationLogoFailed"
+                        :src="userApplication.logo_url"
+                        :alt="userApplication.name"
                         class="org-card__logo-img"
                         referrerpolicy="no-referrer"
-                        @error="handleImageError($event, org.id)"
+                        @error="handleApplicationLogoError"
                       />
                       <div v-else class="org-card__logo-fallback">
-                        <Building2 class="org-card__logo-icon" />
+                        <FileText class="org-card__logo-icon" />
                       </div>
                     </div>
 
-                    <!-- Organization Info -->
+                    <!-- Application Info -->
                     <div class="org-card__info">
                       <div class="org-card__name-row">
-                        <h3 class="org-card__name">{{ org.name }}</h3>
+                        <h3 class="org-card__name">{{ userApplication.name }}</h3>
                         <span
                           class="org-card__role"
                           :class="{
-                            'org-card__role--owner': org.role === 'owner',
-                            'org-card__role--admin': org.role === 'admin',
+                            'org-card__role--pending': userApplication.status === 'pending',
+                            'org-card__role--approved': userApplication.status === 'approved',
+                            'org-card__role--rejected': userApplication.status === 'rejected',
                           }"
                         >
-                          {{ org.role }}
+                          {{ userApplication.status }}
                         </span>
                       </div>
-                      <p v-if="org.description" class="org-card__description">
-                        {{ org.description }}
+                      <p class="org-card__description">
+                        {{ userApplication.description }}
                       </p>
-                      <p v-else class="org-card__description org-card__description--empty">No description</p>
                     </div>
                   </div>
 
-                  <!-- Credit Balance -->
-                  <div class="org-card__credits">
-                    <div class="org-card__credits-row">
-                      <Clock class="org-card__credits-icon" />
-                      <span class="org-card__credits-value">
-                        {{ formatCredits(orgCredits[org.id]?.hours_remaining) }}
-                      </span>
-                      <span class="org-card__credits-unit">min</span>
+                  <!-- Application Details -->
+                  <div class="org-card__details">
+                    <div class="org-card__detail-row">
+                      <Clock class="org-card__detail-icon" />
+                      <span class="org-card__detail-value">{{ formatDate(userApplication.inserted_at) }}</span>
                     </div>
-                    <div class="org-card__credits-used">{{ formatCredits(orgCredits[org.id]?.hours_used) }} used</div>
-                  </div>
-
-                  <!-- Hover Arrow -->
-                  <div class="org-card__arrow">
-                    <ChevronRight class="org-card__arrow-icon" />
-                  </div>
-                </div>
-              </div>
-            </transition-group>
-          </div>
-        </div>
-
-        <!-- Organization Application Section -->
-        <div v-else-if="userApplication" class="org__main">
-          <div class="org__list-header">
-            <span class="org__list-label">Your Application</span>
-            <span class="org__list-count">1 application</span>
-          </div>
-
-          <div class="org__grid">
-            <div class="org-card org-card--application">
-              <!-- Left Accent Indicator -->
-              <div
-                class="org-card__indicator"
-                :class="{
-                  'org-card__indicator--pending': userApplication.status === 'pending',
-                  'org-card__indicator--approved': userApplication.status === 'approved',
-                  'org-card__indicator--rejected': userApplication.status === 'rejected',
-                }"
-              ></div>
-
-              <div class="org-card__inner">
-                <div class="org-card__content">
-                  <!-- Logo -->
-                  <div class="org-card__logo">
-                    <img
-                      v-if="userApplication.logo_url && !applicationLogoFailed"
-                      :src="userApplication.logo_url"
-                      :alt="userApplication.name"
-                      class="org-card__logo-img"
-                      referrerpolicy="no-referrer"
-                      @error="handleApplicationLogoError"
-                    />
-                    <div v-else class="org-card__logo-fallback">
-                      <FileText class="org-card__logo-icon" />
+                    <div class="org-card__detail-row">
+                      <Building2 class="org-card__detail-icon" />
+                      <span class="org-card__detail-value">{{ userApplication.team_size }}</span>
                     </div>
                   </div>
 
-                  <!-- Application Info -->
-                  <div class="org-card__info">
-                    <div class="org-card__name-row">
-                      <h3 class="org-card__name">{{ userApplication.name }}</h3>
-                      <span
-                        class="org-card__role"
-                        :class="{
-                          'org-card__role--pending': userApplication.status === 'pending',
-                          'org-card__role--approved': userApplication.status === 'approved',
-                          'org-card__role--rejected': userApplication.status === 'rejected',
-                        }"
-                      >
-                        {{ userApplication.status }}
-                      </span>
-                    </div>
-                    <p class="org-card__description">
-                      {{ userApplication.description }}
-                    </p>
-                  </div>
-                </div>
-
-                <!-- Application Details -->
-                <div class="org-card__details">
-                  <div class="org-card__detail-row">
-                    <Clock class="org-card__detail-icon" />
-                    <span class="org-card__detail-value">{{ formatDate(userApplication.inserted_at) }}</span>
-                  </div>
-                  <div class="org-card__detail-row">
-                    <Building2 class="org-card__detail-icon" />
-                    <span class="org-card__detail-value">{{ userApplication.team_size }}</span>
-                  </div>
-                </div>
-
-                <!-- Menu Button -->
-                <div
-                  v-if="userApplication.status === 'pending' || userApplication.status === 'rejected'"
-                  class="org-card__menu"
-                  data-app-menu
-                >
-                  <button
-                    ref="applicationMenuButtonRef"
-                    class="org-card__menu-btn"
-                    :class="{ 'org-card__menu-btn--active': showApplicationMenu }"
-                    @click.stop="toggleApplicationMenu"
+                  <!-- Menu Button -->
+                  <div
+                    v-if="userApplication.status === 'pending' || userApplication.status === 'rejected'"
+                    class="org-card__menu"
+                    data-app-menu
                   >
-                    <MoreVertical class="org-card__menu-icon" />
-                  </button>
-
-                  <!-- Menu Dropdown -->
-                  <Teleport to="body">
-                    <div
-                      v-if="showApplicationMenu"
-                      class="org-card__menu-dropdown"
-                      :style="applicationMenuPosition"
-                      data-app-menu
-                      @click.stop
+                    <button
+                      ref="applicationMenuButtonRef"
+                      class="org-card__menu-btn"
+                      :class="{ 'org-card__menu-btn--active': showApplicationMenu }"
+                      @click.stop="toggleApplicationMenu"
                     >
-                      <button
-                        v-if="userApplication.status === 'pending'"
-                        class="org-card__menu-item org-card__menu-item--blue"
-                        @click.stop="
-                          editApplication();
-                          closeApplicationMenu();
-                        "
-                      >
-                        <Edit class="org-card__menu-item-icon" />
-                        <span>Edit Application</span>
-                      </button>
-                      <div v-if="userApplication.status === 'pending'" class="org-card__menu-divider"></div>
-                      <button
-                        class="org-card__menu-item org-card__menu-item--red"
-                        :disabled="deletingApplication"
-                        @click.stop="
-                          confirmDeleteApplication();
-                          closeApplicationMenu();
-                        "
-                      >
-                        <Loader2
-                          v-if="deletingApplication"
-                          class="org-card__menu-item-icon org-card__menu-item-icon--spin"
-                        />
-                        <Trash2 v-else class="org-card__menu-item-icon" />
-                        <span>Delete</span>
-                      </button>
-                    </div>
-                  </Teleport>
-                </div>
-              </div>
+                      <MoreVertical class="org-card__menu-icon" />
+                    </button>
 
-              <!-- Admin Notes (if present) -->
-              <div v-if="userApplication.admin_notes" class="org-card__notes">
-                <AlertCircle class="org-card__notes-icon" />
-                <div class="org-card__notes-content">
-                  <span class="org-card__notes-label">Admin Notes:</span>
-                  <p class="org-card__notes-text">{{ userApplication.admin_notes }}</p>
+                    <!-- Menu Dropdown -->
+                    <Teleport to="body">
+                      <div
+                        v-if="showApplicationMenu"
+                        class="org-card__menu-dropdown"
+                        :style="applicationMenuPosition"
+                        data-app-menu
+                        @click.stop
+                      >
+                        <button
+                          v-if="userApplication.status === 'pending'"
+                          class="org-card__menu-item org-card__menu-item--blue"
+                          @click.stop="
+                            editApplication();
+                            closeApplicationMenu();
+                          "
+                        >
+                          <Edit class="org-card__menu-item-icon" />
+                          <span>Edit Application</span>
+                        </button>
+                        <div v-if="userApplication.status === 'pending'" class="org-card__menu-divider"></div>
+                        <button
+                          class="org-card__menu-item org-card__menu-item--red"
+                          :disabled="deletingApplication"
+                          @click.stop="
+                            confirmDeleteApplication();
+                            closeApplicationMenu();
+                          "
+                        >
+                          <Loader2
+                            v-if="deletingApplication"
+                            class="org-card__menu-item-icon org-card__menu-item-icon--spin"
+                          />
+                          <Trash2 v-else class="org-card__menu-item-icon" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </Teleport>
+                  </div>
+                </div>
+
+                <!-- Admin Notes (if present) -->
+                <div v-if="userApplication.admin_notes" class="org-card__notes">
+                  <AlertCircle class="org-card__notes-icon" />
+                  <div class="org-card__notes-content">
+                    <span class="org-card__notes-label">Admin Notes:</span>
+                    <p class="org-card__notes-text">{{ userApplication.admin_notes }}</p>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Empty State -->
-        <div v-else class="org__empty">
-          <div class="org__empty-icon-wrapper">
-            <Building2 class="org__empty-icon" />
+          <!-- Empty State (Authenticated) -->
+          <div v-else class="org__empty">
+            <div class="org__empty-icon-wrapper">
+              <Building2 class="org__empty-icon" />
+            </div>
+            <h3 class="org__empty-title">No Organizations</h3>
+            <p class="org__empty-description">You're not a member of any organizations yet</p>
           </div>
-          <h3 class="org__empty-title">No Organizations</h3>
-          <p class="org__empty-description">You're not a member of any organizations yet</p>
-        </div>
+        </template>
       </div>
     </PageLayout>
 
@@ -304,6 +323,9 @@
       @close="handleDeleteApplicationDialogClose"
       @confirm="deleteApplicationConfirmed"
     />
+
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" />
   </div>
 </template>
 
@@ -327,6 +349,7 @@
   import PageLayout from '@/components/PageLayout.vue';
   import OrganizationApplicationDialog from '@/components/OrganizationApplicationDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import AuthModal from '@/components/AuthModal.vue';
   import api from '@/services/api';
 
   const router = useRouter();
@@ -344,6 +367,7 @@
   const showApplicationMenu = ref(false);
   const applicationMenuButtonRef = ref<HTMLElement | null>(null);
   const applicationLogoFailed = ref(false);
+  const showAuthModal = ref(false);
 
   const { success: showSuccessToast } = useToast();
 
@@ -355,6 +379,12 @@
   });
 
   onMounted(async () => {
+    // Skip data loading if not authenticated
+    if (!authStore.isAuthenticated) {
+      loading.value = false;
+      return;
+    }
+
     // If user owns an organization, redirect directly to it
     if (authStore.user?.owned_organization_id) {
       router.replace(`/organization/${authStore.user.owned_organization_id}`);
@@ -438,6 +468,14 @@
       month: 'short',
       day: 'numeric',
     });
+  }
+
+  function handleApplyClick() {
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
+    showApplicationDialog.value = true;
   }
 
   async function loadUserApplication() {
