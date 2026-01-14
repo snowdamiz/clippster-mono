@@ -362,14 +362,14 @@
             >
               <!-- Track label spacer - matches track header width -->
               <div
-                class="w-[120px] h-full flex items-center justify-start pl-3 gap-2 flex-shrink-0 sticky left-0 z-[90] bg-gradient-to-b from-[#141416] to-[#0d0d0d] border-r border-white/[0.06]"
+                class="w-[120px] h-full flex items-center justify-start pl-3 gap-2 flex-shrink-0 sticky left-0 z-[90] bg-[#09090A] border-r border-white/[0.06] rounded-tl-lg"
               >
                 <span class="text-[10px] font-medium text-white/50 uppercase tracking-wider">Timeline</span>
               </div>
               <!-- Continuous ruler ticks across full duration -->
               <div
                 ref="rulerContentRef"
-                class="flex-1 relative h-full flex items-center cursor-pointer"
+                class="flex-1 relative h-full flex items-center cursor-pointer timeline-ruler-content"
                 @click="onRulerClick"
               >
                 <div class="absolute inset-0">
@@ -964,7 +964,7 @@
                   <!-- Extended timeline area indicator (beyond source videos) -->
                   <div
                     v-if="sourcesEndTime > 0 && totalDuration > sourcesEndTime"
-                    class="absolute top-0 bottom-0 bg-gradient-to-r from-transparent via-white/[0.02] to-white/[0.04] pointer-events-none"
+                    class="absolute top-0 bottom-0 pointer-events-none"
                     :style="{
                       left: `${(sourcesEndTime / totalDuration) * 100}%`,
                       right: '0',
@@ -2361,7 +2361,10 @@
     originalEndTime: number;
     originalTrackIndex: number;
     targetTrackIndex: number;
-    currentDeltaX?: number; // Current snap-adjusted delta for final position calculation
+    trackWidth: number; // Track content width at drag start for consistent calculations
+    currentDeltaX?: number; // Current snap-adjusted delta for visual ghost transform
+    computedStartTime?: number; // Final computed start time (avoids pixel-to-time conversion errors)
+    computedEndTime?: number; // Final computed end time (avoids pixel-to-time conversion errors)
   } | null>(null);
 
   // Source context menu state
@@ -3197,6 +3200,7 @@
 
   // Snap configuration
   const SNAP_THRESHOLD_PX = 5; // Pixels distance to trigger snapping
+  const SNAP_MAX_TIME_THRESHOLD = 0.15; // Maximum time threshold (seconds) to prevent snap from triggering too far at low zoom
   const snapEnabled = ref(true);
   const snapMenuOpen = ref(false);
   const snapPreferences = ref({
@@ -3209,6 +3213,7 @@
 
   // Magnetic timeline threshold (larger than regular snap for attraction effect)
   const MAGNETIC_THRESHOLD_PX = 12; // Pixels distance for magnetic attraction
+  const MAGNETIC_MAX_TIME_THRESHOLD = 0.3; // Maximum time threshold for magnetic snap (seconds)
 
   // Snap state for visual indicator
   const activeSnapTime = ref<number | null>(null); // Time position where snap is occurring
@@ -3998,7 +4003,7 @@
       return { display: 'none' };
     }
 
-    const duration = props.editorMode ? props.duration : totalDuration.value;
+    const duration = totalDuration.value || props.duration || 300;
     if (duration <= 0) return { display: 'none' };
 
     const left = (originalStartTime / duration) * 100;
@@ -4366,11 +4371,13 @@
   }
 
   function getTrackContentWidth(): number {
-    if (rulerContentRef.value) {
-      return rulerContentRef.value.clientWidth;
-    }
+    // Prefer videoTrackContentRef for consistency with drag calculations
+    // This ensures snap threshold calculations use the same width as drag position calculations
     if (videoTrackContentRef.value) {
       return videoTrackContentRef.value.getBoundingClientRect().width;
+    }
+    if (rulerContentRef.value) {
+      return rulerContentRef.value.clientWidth;
     }
     if (contentWrapperRef.value) {
       return contentWrapperRef.value.getBoundingClientRect().width - 64 - 16;
@@ -4542,17 +4549,20 @@
 
   /**
    * Convert time to pixel position for snap distance calculation
+   * IMPORTANT: Must use same duration formula as getVideoSourceStyle for consistent snap behavior
    */
   function timeToPixelPosition(time: number): number {
     const trackWidth = getTrackContentWidth();
-    const duration = props.editorMode ? props.duration : totalDuration.value;
+    // Use same duration formula as visual positioning (getVideoSourceStyle line 5711)
+    const duration = totalDuration.value || props.duration || 300;
     if (duration <= 0) return 0;
     return (time / duration) * trackWidth;
   }
 
   /**
    * Check if a time should snap to any target and return the snapped time
-   * Uses magnetic threshold (larger) when magnetic mode is enabled for attraction effect
+   * Uses both pixel-based threshold (for visual consistency) and time-based threshold (to prevent
+   * snap from triggering too far away at low zoom levels)
    */
   function applySnapToTime(targetTime: number, excludeId?: string): SnapResult {
     if (!snapEnabled.value) {
@@ -4560,21 +4570,31 @@
     }
 
     const targets = getSnapTargets(excludeId);
-    const targetPixel = timeToPixelPosition(targetTime);
 
     // Use magnetic threshold if enabled, otherwise use regular snap threshold
-    const threshold = snapPreferences.value.magnetic ? MAGNETIC_THRESHOLD_PX : SNAP_THRESHOLD_PX;
+    const pixelThreshold = snapPreferences.value.magnetic ? MAGNETIC_THRESHOLD_PX : SNAP_THRESHOLD_PX;
+    // Also enforce a maximum time threshold to prevent snap from triggering too far at low zoom
+    const maxTimeThreshold = snapPreferences.value.magnetic ? MAGNETIC_MAX_TIME_THRESHOLD : SNAP_MAX_TIME_THRESHOLD;
 
     let closestTarget: SnapTarget | null = null;
-    let closestDistance = Infinity;
+    let closestTimeDistance = Infinity;
 
     for (const target of targets) {
-      const targetTimePixel = timeToPixelPosition(target.time);
-      const distance = Math.abs(targetPixel - targetTimePixel);
+      // Calculate time-based distance directly (more reliable than pixel conversion)
+      const timeDistance = Math.abs(targetTime - target.time);
 
-      if (distance <= threshold && distance < closestDistance) {
+      // Also check pixel distance for visual consistency at high zoom
+      const targetPixel = timeToPixelPosition(targetTime);
+      const targetTimePixel = timeToPixelPosition(target.time);
+      const pixelDistance = Math.abs(targetPixel - targetTimePixel);
+
+      // Snap only if within BOTH thresholds (pixel threshold for visual, time threshold for max range)
+      const withinPixelThreshold = pixelDistance <= pixelThreshold;
+      const withinTimeThreshold = timeDistance <= maxTimeThreshold;
+
+      if (withinPixelThreshold && withinTimeThreshold && timeDistance < closestTimeDistance) {
         closestTarget = target;
-        closestDistance = distance;
+        closestTimeDistance = timeDistance;
       }
     }
 
@@ -5792,6 +5812,10 @@
     }
 
     isDraggingSource.value = true;
+
+    // Get track content width at drag start for consistent calculations throughout drag
+    const trackWidth = videoTrackContentRef.value?.getBoundingClientRect().width ?? 0;
+
     dragSourceInfo.value = {
       sourceId: source.id,
       startX: e.clientX,
@@ -5800,6 +5824,7 @@
       originalEndTime: source.end_time,
       originalTrackIndex: source.track_index ?? 0,
       targetTrackIndex: source.track_index ?? 0,
+      trackWidth, // Store width at drag start for consistent calculations
     };
 
     document.addEventListener('mousemove', onSourceDragMove);
@@ -5809,10 +5834,19 @@
   function onSourceDragMove(e: MouseEvent) {
     if (!isDraggingSource.value || !dragSourceInfo.value || !videoTrackContentRef.value) return;
 
+    // Use stored trackWidth for consistent calculations throughout drag
+    const trackWidth = dragSourceInfo.value.trackWidth;
+    if (trackWidth <= 0) return;
+
+    // Use same duration formula as visual positioning (getVideoSourceStyle) for accurate snap calculations
+    const timelineDuration = totalDuration.value || props.duration || 300;
+    if (timelineDuration <= 0) return;
+
+    // Get rect only for layer detection (Y position), not for width calculations
     const rect = videoTrackContentRef.value.getBoundingClientRect();
     const deltaX = e.clientX - dragSourceInfo.value.startX;
     const deltaY = e.clientY - dragSourceInfo.value.startY;
-    const deltaTime = (deltaX / rect.width) * props.duration;
+    const deltaTime = (deltaX / trackWidth) * timelineDuration;
 
     // Detect which layer the mouse is currently over by checking all layer elements
     let targetTrackIndex = dragSourceInfo.value.originalTrackIndex;
@@ -5854,18 +5888,18 @@
       targetTrackIndex,
     };
 
-    const duration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
+    const clipDuration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
     let newStartTime = dragSourceInfo.value.originalStartTime + deltaTime;
-    let newEndTime = newStartTime + duration;
+    let newEndTime = newStartTime + clipDuration;
 
     // Clamp to timeline bounds
     if (newStartTime < 0) {
       newStartTime = 0;
-      newEndTime = duration;
+      newEndTime = clipDuration;
     }
-    if (newEndTime > props.duration) {
-      newEndTime = props.duration;
-      newStartTime = props.duration - duration;
+    if (newEndTime > timelineDuration) {
+      newEndTime = timelineDuration;
+      newStartTime = timelineDuration - clipDuration;
     }
 
     // Apply snapping for video sources - optional snap within threshold for all tracks
@@ -5881,12 +5915,14 @@
       activeSnapTrackType.value = null;
     }
 
-    // Calculate snap-adjusted deltaX for visual transform
+    // Calculate snap-adjusted deltaX for visual transform using stored trackWidth and timelineDuration
     const snapDelta = newStartTime - dragSourceInfo.value.originalStartTime;
-    const snapAdjustedDeltaX = (snapDelta / props.duration) * rect.width;
+    const snapAdjustedDeltaX = (snapDelta / timelineDuration) * trackWidth;
 
-    // Store the snap-adjusted delta for onSourceDragEnd
+    // Store the snap-adjusted delta for visual ghost AND the computed times for accurate final position
     dragSourceInfo.value.currentDeltaX = snapAdjustedDeltaX;
+    dragSourceInfo.value.computedStartTime = newStartTime;
+    dragSourceInfo.value.computedEndTime = newEndTime;
 
     // DIRECT DOM MANIPULATION - bypasses Vue reactivity completely for zero-lag dragging
     // Only horizontal movement - segments stay within their track
@@ -5902,23 +5938,10 @@
 
     // Commit the final position to database only on drag end
     if (dragSourceInfo.value && videoTrackContentRef.value) {
-      const rect = videoTrackContentRef.value.getBoundingClientRect();
-      const deltaX = dragSourceInfo.value.currentDeltaX ?? 0;
-      const deltaTime = (deltaX / rect.width) * props.duration;
-      const duration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
-
-      let finalStartTime = dragSourceInfo.value.originalStartTime + deltaTime;
-      let finalEndTime = finalStartTime + duration;
-
-      // Clamp to timeline bounds
-      if (finalStartTime < 0) {
-        finalStartTime = 0;
-        finalEndTime = duration;
-      }
-      if (finalEndTime > props.duration) {
-        finalEndTime = props.duration;
-        finalStartTime = props.duration - duration;
-      }
+      // Use the computed times stored during drag - avoids pixel-to-time conversion errors
+      // Falls back to original position if no drag movement occurred
+      const finalStartTime = dragSourceInfo.value.computedStartTime ?? dragSourceInfo.value.originalStartTime;
+      const finalEndTime = dragSourceInfo.value.computedEndTime ?? dragSourceInfo.value.originalEndTime;
 
       // Set dragPreview to final position BEFORE emitting and clearing isDraggingSource
       // This ensures the segment renders at the new position immediately while props update
@@ -8553,7 +8576,7 @@
     display: flex;
     align-items: center;
     gap: 0.125rem;
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: #161618;
     border: 1px solid rgba(255, 255, 255, 0.04);
     border-radius: 8px;
     padding: 0.25rem 0.375rem;
@@ -8671,7 +8694,7 @@
 
   .timeline-badge--duration {
     color: rgba(255, 255, 255, 0.6);
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: #161618;
     border-color: rgba(255, 255, 255, 0.04);
     font-family: ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
@@ -8690,7 +8713,7 @@
     padding: 0.375rem 0.625rem;
     border-radius: 8px;
     border: 1px solid;
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: #161618;
     border-color: rgba(255, 255, 255, 0.04);
     color: rgba(255, 255, 255, 0.5);
     font-weight: 500;
@@ -8721,6 +8744,10 @@
     padding: 0.375rem 0;
     min-width: 190px;
     z-index: 100;
+  }
+
+  .timeline-ruler-content {
+    border-top-right-radius: 8px;
   }
 
   .timeline-snap-dropdown__header {
@@ -8922,6 +8949,16 @@
     overflow: hidden;
   }
 
+  /* Bottom corners for last track */
+  .timeline-content-wrapper > div:last-child .timeline-track-label-bg {
+    border-bottom-left-radius: 8px;
+  }
+
+  .timeline-content-wrapper > div:last-child .flex-1 > .timeline-track-label-bg,
+  .timeline-content-wrapper > div:last-child .flex-1 > .timeline-track-content-bg {
+    border-bottom-right-radius: 8px;
+  }
+
   /* ===== Marquee Selection ===== */
   .timeline-marquee {
     position: absolute;
@@ -8968,9 +9005,11 @@
   /* ===== Legacy Timeline Styles ===== */
   /* Timeline ruler styling */
   .timeline-ruler {
-    background: rgba(10, 10, 10, 0.6);
+    background: #09090a;
     backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
     user-select: none;
     /* Performance: contain layout to prevent reflows from affecting parent */
     contain: layout style;
