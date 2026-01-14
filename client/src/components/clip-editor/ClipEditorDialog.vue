@@ -8007,7 +8007,9 @@
   .clip-editor__video-wrapper {
     flex: 1;
     min-height: 0;
+    min-width: 0;
     max-width: 100%;
+    width: 100%;
     display: flex;
     flex-direction: row;
     align-items: stretch;
