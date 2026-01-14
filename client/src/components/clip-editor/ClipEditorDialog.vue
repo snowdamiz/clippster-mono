@@ -121,188 +121,191 @@
 
             <!-- Right: Controls Section -->
             <div class="clip-editor__controls-column">
-              <!-- Keyframe Inspector (Top of right panel when selected) -->
-              <div v-if="selectedKeyframe" class="clip-editor__keyframe-inspector">
-                <div class="clip-editor__keyframe-inspector-header">
-                  <h3 class="clip-editor__keyframe-inspector-title">Keyframe Editor</h3>
-                  <button
-                    @click="selectedKeyframe = null"
-                    class="clip-editor__keyframe-inspector-close"
-                    title="Close Inspector"
-                  >
-                    <X :size="14" />
-                  </button>
-                </div>
-                <KeyframeInspector
-                  :keyframe="selectedKeyframe.keyframe"
-                  @update="updateKeyframe"
-                  @delete="deleteKeyframe"
-                />
-              </div>
-
-              <!-- Toolbar -->
+              <!-- Vertical Toolbar (Left side) -->
               <ClipEditorToolbar
                 :active-tab="editorMode ? activeEditorTab : activeTab"
                 :editor-mode="editorMode"
                 @tab-change="(tab) => (editorMode ? setEditorTab(tab) : setActiveTab(tab))"
               />
 
-              <!-- Tab Content -->
-              <div class="clip-editor__tab-content">
-                <!-- Media Tab (Sources + Intro/Outro + Project Media) -->
-                <MediaTab
-                  v-if="editorMode ? activeEditorTab === 'media' : activeTab === 'media'"
-                  :project-id="editorProjectId"
-                  :current-intro="currentIntro"
-                  :current-outro="currentOutro"
-                  @add-source="onAddSource"
-                  @import-file="onImportFile"
-                  @add-project-media="onAddProjectMedia"
-                  @add-intro="onAddIntro"
-                  @add-outro="onAddOutro"
-                  @remove-intro="onRemoveIntro"
-                  @remove-outro="onRemoveOutro"
-                />
+              <!-- Main Controls Area (Right side) -->
+              <div class="clip-editor__controls-main">
+                <!-- Keyframe Inspector (Top of panel when selected) -->
+                <div v-if="selectedKeyframe" class="clip-editor__keyframe-inspector">
+                  <div class="clip-editor__keyframe-inspector-header">
+                    <h3 class="clip-editor__keyframe-inspector-title">Keyframe Editor</h3>
+                    <button
+                      @click="selectedKeyframe = null"
+                      class="clip-editor__keyframe-inspector-close"
+                      title="Close Inspector"
+                    >
+                      <X :size="14" />
+                    </button>
+                  </div>
+                  <KeyframeInspector
+                    :keyframe="selectedKeyframe.keyframe"
+                    @update="updateKeyframe"
+                    @delete="deleteKeyframe"
+                  />
+                </div>
 
-                <!-- Audio Tab -->
-                <AudioMixerTab
-                  v-if="editorMode ? activeEditorTab === 'audio' : activeTab === 'audio'"
-                  :audio-tracks="audioTracks"
-                  :original-db="originalDb"
-                  :track-db-values="trackDbValues"
-                  :current-time="effectivePreviewTime"
-                  @add-track="(filePath, name, duration) => addAudioTrack(filePath, name, duration)"
-                  @update-track="updateAudioTrackLocal"
-                  @delete-track="deleteAudioTrackLocal"
-                  @update-original-db="updateOriginalDb"
-                  @update-track-db="updateTrackDb"
-                  @update-track-pan="updateTrackPan"
-                  @add-keyframe="addKeyframe"
-                  @update-audio-effects="(effects) => (audioEffects = effects)"
-                />
+                <!-- Tab Content -->
+                <div class="clip-editor__tab-content">
+                  <!-- Media Tab (Sources + Intro/Outro + Project Media) -->
+                  <MediaTab
+                    v-if="editorMode ? activeEditorTab === 'media' : activeTab === 'media'"
+                    :project-id="editorProjectId"
+                    :current-intro="currentIntro"
+                    :current-outro="currentOutro"
+                    @add-source="onAddSource"
+                    @import-file="onImportFile"
+                    @add-project-media="onAddProjectMedia"
+                    @add-intro="onAddIntro"
+                    @add-outro="onAddOutro"
+                    @remove-intro="onRemoveIntro"
+                    @remove-outro="onRemoveOutro"
+                  />
 
-                <!-- Overlays Tab (Text + Stickers) -->
-                <OverlaysTab
-                  v-if="editorMode ? activeEditorTab === 'overlays' : activeTab === 'overlays'"
-                  :text-overlays="textOverlays"
-                  :stickers="stickers"
-                  :current-time="effectivePreviewTime"
-                  :duration="totalSegmentDuration"
-                  :preview-aspect-ratio="previewAspectRatio"
-                  :selected-aspect-ratios="selectedAspectRatios"
-                  :framing-configs="framingConfigs"
-                  :video-dimensions="videoDimensions"
-                  @add-text="addTextOverlay"
-                  @update-text="updateTextOverlayLocal"
-                  @delete-text="deleteTextOverlayLocal"
-                  @add-sticker="addStickerLocal"
-                  @update-sticker="updateStickerLocal"
-                  @delete-sticker="deleteStickerLocal"
-                  @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
-                />
+                  <!-- Audio Tab -->
+                  <AudioMixerTab
+                    v-if="editorMode ? activeEditorTab === 'audio' : activeTab === 'audio'"
+                    :audio-tracks="audioTracks"
+                    :original-db="originalDb"
+                    :track-db-values="trackDbValues"
+                    :current-time="effectivePreviewTime"
+                    @add-track="(filePath, name, duration) => addAudioTrack(filePath, name, duration)"
+                    @update-track="updateAudioTrackLocal"
+                    @delete-track="deleteAudioTrackLocal"
+                    @update-original-db="updateOriginalDb"
+                    @update-track-db="updateTrackDb"
+                    @update-track-pan="updateTrackPan"
+                    @add-keyframe="addKeyframe"
+                    @update-audio-effects="(effects) => (audioEffects = effects)"
+                  />
 
-                <!-- Watermark Tab (kept separate) -->
-                <WatermarkTab
-                  v-if="editorMode ? activeEditorTab === 'watermark' : activeTab === 'watermark'"
-                  :watermarks="watermarks"
-                  :current-time="effectivePreviewTime"
-                  :duration="totalSegmentDuration"
-                  :preview-aspect-ratio="previewAspectRatio"
-                  :selected-aspect-ratios="selectedAspectRatios"
-                  :framing-configs="framingConfigs"
-                  @add-watermark="addWatermarkLocal"
-                  @update-watermark="updateWatermarkLocal"
-                  @delete-watermark="deleteWatermarkLocal"
-                  @update:preview-aspect-ratio="previewAspectRatio = $event"
-                />
+                  <!-- Overlays Tab (Text + Stickers) -->
+                  <OverlaysTab
+                    v-if="editorMode ? activeEditorTab === 'overlays' : activeTab === 'overlays'"
+                    :text-overlays="textOverlays"
+                    :stickers="stickers"
+                    :current-time="effectivePreviewTime"
+                    :duration="totalSegmentDuration"
+                    :preview-aspect-ratio="previewAspectRatio"
+                    :selected-aspect-ratios="selectedAspectRatios"
+                    :framing-configs="framingConfigs"
+                    :video-dimensions="videoDimensions"
+                    @add-text="addTextOverlay"
+                    @update-text="updateTextOverlayLocal"
+                    @delete-text="deleteTextOverlayLocal"
+                    @add-sticker="addStickerLocal"
+                    @update-sticker="updateStickerLocal"
+                    @delete-sticker="deleteStickerLocal"
+                    @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
+                  />
 
-                <!-- Captions Tab (Subtitles + Transcript) -->
-                <CaptionsTab
-                  v-if="editorMode ? activeEditorTab === 'captions' : activeTab === 'captions'"
-                  :settings="subtitleSettings"
-                  :project-id="projectId"
-                  :current-time="editorMode ? subtitleSourceTime : effectivePreviewTime"
-                  :clip-start-time="editorMode ? sourceVideoMinTime : props.clipStartTime"
-                  :clip-end-time="editorMode ? sourceVideoMaxTime : props.clipEndTime"
-                  :duration="totalSegmentDuration"
-                  :preview-aspect-ratio="previewAspectRatio"
-                  :selected-aspect-ratios="selectedAspectRatios"
-                  :framing-configs="framingConfigs"
-                  :source-time-ranges="editorMode ? sourceVideoTimeRanges : []"
-                  @settings-changed="updateSubtitleSettings"
-                  @update:preview-aspect-ratio="previewAspectRatio = $event"
-                  @seek-video="seekToAbsoluteTime"
-                />
+                  <!-- Watermark Tab (kept separate) -->
+                  <WatermarkTab
+                    v-if="editorMode ? activeEditorTab === 'watermark' : activeTab === 'watermark'"
+                    :watermarks="watermarks"
+                    :current-time="effectivePreviewTime"
+                    :duration="totalSegmentDuration"
+                    :preview-aspect-ratio="previewAspectRatio"
+                    :selected-aspect-ratios="selectedAspectRatios"
+                    :framing-configs="framingConfigs"
+                    @add-watermark="addWatermarkLocal"
+                    @update-watermark="updateWatermarkLocal"
+                    @delete-watermark="deleteWatermarkLocal"
+                    @update:preview-aspect-ratio="previewAspectRatio = $event"
+                  />
 
-                <!-- Aspect Ratios Tab -->
-                <StyleTab
-                  v-if="editorMode ? activeEditorTab === 'aspect' : activeTab === 'aspect'"
-                  :framing-configs="framingConfigs"
-                  :selected-aspect-ratios="selectedAspectRatios"
-                  :framing-mode="framingMode"
-                  :thumbnail-url="effectiveThumbnailUrl"
-                  :video-path="effectiveVideoPath"
-                  :clip-start-time="editorMode ? sourceVideoMinTime : props.clipStartTime"
-                  :clip-end-time="editorMode ? sourceVideoMaxTime : props.clipEndTime"
-                  :preview-aspect-ratio="previewAspectRatio"
-                  @update:framing-configs="updateFramingConfigs"
-                  @update:selected-aspect-ratios="updateSelectedAspectRatios"
-                  @update:framing-mode="updateFramingMode"
-                  @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
-                />
+                  <!-- Captions Tab (Subtitles + Transcript) -->
+                  <CaptionsTab
+                    v-if="editorMode ? activeEditorTab === 'captions' : activeTab === 'captions'"
+                    :settings="subtitleSettings"
+                    :project-id="projectId"
+                    :current-time="editorMode ? subtitleSourceTime : effectivePreviewTime"
+                    :clip-start-time="editorMode ? sourceVideoMinTime : props.clipStartTime"
+                    :clip-end-time="editorMode ? sourceVideoMaxTime : props.clipEndTime"
+                    :duration="totalSegmentDuration"
+                    :preview-aspect-ratio="previewAspectRatio"
+                    :selected-aspect-ratios="selectedAspectRatios"
+                    :framing-configs="framingConfigs"
+                    :source-time-ranges="editorMode ? sourceVideoTimeRanges : []"
+                    @settings-changed="updateSubtitleSettings"
+                    @update:preview-aspect-ratio="previewAspectRatio = $event"
+                    @seek-video="seekToAbsoluteTime"
+                  />
 
-                <!-- Effects Tab (Transitions + Effects) -->
-                <EffectsTab
-                  v-if="editorMode ? activeEditorTab === 'effects' : activeTab === 'effects'"
-                  :applied-transitions="clipTransitions"
-                  :applied-effects="clipEffects"
-                  :current-time="effectivePreviewTime"
-                  :duration="totalSegmentDuration"
-                  :selected-segment-index="selectedSegmentIndex"
-                  @add-transition="onAddTransition"
-                  @update-transition="onUpdateTransition"
-                  @delete-transition="onDeleteTransition"
-                  @add-effect="onAddEffect"
-                  @update-effect="onUpdateEffect"
-                  @delete-effect="onDeleteEffect"
-                />
+                  <!-- Aspect Ratios Tab -->
+                  <StyleTab
+                    v-if="editorMode ? activeEditorTab === 'aspect' : activeTab === 'aspect'"
+                    :framing-configs="framingConfigs"
+                    :selected-aspect-ratios="selectedAspectRatios"
+                    :framing-mode="framingMode"
+                    :thumbnail-url="effectiveThumbnailUrl"
+                    :video-path="effectiveVideoPath"
+                    :clip-start-time="editorMode ? sourceVideoMinTime : props.clipStartTime"
+                    :clip-end-time="editorMode ? sourceVideoMaxTime : props.clipEndTime"
+                    :preview-aspect-ratio="previewAspectRatio"
+                    @update:framing-configs="updateFramingConfigs"
+                    @update:selected-aspect-ratios="updateSelectedAspectRatios"
+                    @update:framing-mode="updateFramingMode"
+                    @update:preview-aspect-ratio="(ratio: string) => (previewAspectRatio = ratio)"
+                  />
 
-                <ExportTab
-                  v-if="editorMode ? activeEditorTab === 'export' : activeTab === 'export'"
-                  :clip-id="props.clipId"
-                  :project-id="projectId"
-                  :selected-aspect-ratios="selectedAspectRatios"
-                  :subtitle-settings="subtitleSettings"
-                  :framing-mode="framingMode"
-                  :framing-configs="framingConfigs"
-                  :segment-framing-configs="segmentFramingConfigs"
-                  :filter-segments="filterSegments"
-                  :text-overlays="textOverlays"
-                  :stickers="stickers"
-                  :watermarks="watermarks"
-                  :audio-tracks="audioTracks"
-                  :clip-effects="clipEffects"
-                  :audio-effects="audioEffects"
-                  :original-db="originalDb"
-                  :track-db-values="trackDbValues"
-                  :clip-start-time="props.clipStartTime"
-                  :clip-end-time="props.clipEndTime"
-                  :clip-name="props.clipTitle"
-                  :clip-segments="playbackSegments"
-                  :editor-mode="editorMode"
-                  :video-sources="videoSources"
-                  :editor-project-id="editorProjectId"
-                  :editor-project-name="editorProjectName"
-                  :current-intro="currentIntro"
-                  :current-outro="currentOutro"
-                  :creator-profile-watermark-settings="computedCreatorProfileWatermarkSettings"
-                  :creator-default-intro="props.creatorDefaultIntro"
-                  :creator-default-outro="props.creatorDefaultOutro"
-                  @go-to-aspect-tab="editorMode ? setEditorTab('aspect') : setActiveTab('aspect')"
-                  @build-started="onBuildStarted"
-                  @build-completed="onBuildCompleted"
-                  @build-failed="onBuildFailed"
-                />
+                  <!-- Effects Tab (Transitions + Effects) -->
+                  <EffectsTab
+                    v-if="editorMode ? activeEditorTab === 'effects' : activeTab === 'effects'"
+                    :applied-transitions="clipTransitions"
+                    :applied-effects="clipEffects"
+                    :current-time="effectivePreviewTime"
+                    :duration="totalSegmentDuration"
+                    :selected-segment-index="selectedSegmentIndex"
+                    @add-transition="onAddTransition"
+                    @update-transition="onUpdateTransition"
+                    @delete-transition="onDeleteTransition"
+                    @add-effect="onAddEffect"
+                    @update-effect="onUpdateEffect"
+                    @delete-effect="onDeleteEffect"
+                  />
+
+                  <ExportTab
+                    v-if="editorMode ? activeEditorTab === 'export' : activeTab === 'export'"
+                    :clip-id="props.clipId"
+                    :project-id="projectId"
+                    :selected-aspect-ratios="selectedAspectRatios"
+                    :subtitle-settings="subtitleSettings"
+                    :framing-mode="framingMode"
+                    :framing-configs="framingConfigs"
+                    :segment-framing-configs="segmentFramingConfigs"
+                    :filter-segments="filterSegments"
+                    :text-overlays="textOverlays"
+                    :stickers="stickers"
+                    :watermarks="watermarks"
+                    :audio-tracks="audioTracks"
+                    :clip-effects="clipEffects"
+                    :audio-effects="audioEffects"
+                    :original-db="originalDb"
+                    :track-db-values="trackDbValues"
+                    :clip-start-time="props.clipStartTime"
+                    :clip-end-time="props.clipEndTime"
+                    :clip-name="props.clipTitle"
+                    :clip-segments="playbackSegments"
+                    :editor-mode="editorMode"
+                    :video-sources="videoSources"
+                    :editor-project-id="editorProjectId"
+                    :editor-project-name="editorProjectName"
+                    :current-intro="currentIntro"
+                    :current-outro="currentOutro"
+                    :creator-profile-watermark-settings="computedCreatorProfileWatermarkSettings"
+                    :creator-default-intro="props.creatorDefaultIntro"
+                    :creator-default-outro="props.creatorDefaultOutro"
+                    @go-to-aspect-tab="editorMode ? setEditorTab('aspect') : setActiveTab('aspect')"
+                    @build-started="onBuildStarted"
+                    @build-completed="onBuildCompleted"
+                    @build-failed="onBuildFailed"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -7904,9 +7907,9 @@
     width: 26px;
     height: 26px;
     border-radius: 6px;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    color: #a78bfa;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.2) 0%, rgba(56, 189, 248, 0.15) 100%);
+    border: 1px solid rgba(14, 165, 233, 0.3);
+    color: #38bdf8;
     flex-shrink: 0;
   }
 
@@ -8032,9 +8035,17 @@
     width: 50%;
     min-width: 0;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     flex: 1;
     background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
+  }
+
+  .clip-editor__controls-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .clip-editor__keyframe-inspector {

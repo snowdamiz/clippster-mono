@@ -236,7 +236,7 @@
                 :key="rate"
                 @click="setPlaybackRate(rate)"
                 class="px-3 py-1.5 text-[11px] hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-2"
-                :class="playbackRate === rate ? 'text-violet-400 font-bold bg-violet-500/10' : 'text-white/70'"
+                :class="playbackRate === rate ? 'text-sky-400 font-bold bg-sky-500/10' : 'text-white/70'"
               >
                 <span>{{ rate }}x</span>
                 <Check v-if="playbackRate === rate" :size="10" />

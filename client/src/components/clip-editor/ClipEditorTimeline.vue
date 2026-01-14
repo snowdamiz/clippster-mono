@@ -3027,7 +3027,7 @@
 
   // Track colors state (local UI state)
   const trackColors = ref<Map<string, string>>(new Map()); // Map of "trackType_trackId" -> color hex
-  const DEFAULT_TRACK_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#f43f5e'];
+  const DEFAULT_TRACK_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#f43f5e'];
 
   /**
    * Get the height for a specific track
@@ -3282,41 +3282,34 @@
   }
 
   // Color mappings - Enhanced gradients for CapCut style
-  const colorMap: Record<string, { bg: string; border: string; glow: string }> = {
+  const colorMap: Record<string, { bg: string; border: string }> = {
     violet: {
-      bg: 'rgba(139, 92, 246, 0.35), rgba(99, 102, 241, 0.45)',
-      border: 'rgba(139, 92, 246, 0.7)',
-      glow: 'rgba(139, 92, 246, 0.3)',
+      bg: 'rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.45)',
+      border: 'rgba(14, 165, 233, 0.7)',
     },
     emerald: {
       bg: 'rgba(16, 185, 129, 0.35), rgba(20, 184, 166, 0.45)',
       border: 'rgba(16, 185, 129, 0.7)',
-      glow: 'rgba(16, 185, 129, 0.3)',
     },
     amber: {
       bg: 'rgba(245, 158, 11, 0.35), rgba(251, 146, 60, 0.45)',
       border: 'rgba(245, 158, 11, 0.7)',
-      glow: 'rgba(245, 158, 11, 0.3)',
     },
     pink: {
       bg: 'rgba(236, 72, 153, 0.35), rgba(244, 114, 182, 0.45)',
       border: 'rgba(236, 72, 153, 0.7)',
-      glow: 'rgba(236, 72, 153, 0.3)',
     },
     cyan: {
       bg: 'rgba(6, 182, 212, 0.35), rgba(34, 211, 238, 0.45)',
       border: 'rgba(6, 182, 212, 0.7)',
-      glow: 'rgba(6, 182, 212, 0.3)',
     },
     rose: {
       bg: 'rgba(244, 63, 94, 0.35), rgba(251, 113, 133, 0.45)',
       border: 'rgba(244, 63, 94, 0.7)',
-      glow: 'rgba(244, 63, 94, 0.3)',
     },
     sky: {
       bg: 'rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.45)',
       border: 'rgba(14, 165, 233, 0.7)',
-      glow: 'rgba(14, 165, 233, 0.3)',
     },
   };
 
@@ -4178,7 +4171,6 @@
       borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
       borderRadius: '6px',
-      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
       opacity: isDraggingThis ? '0' : '1',
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
@@ -4313,7 +4305,6 @@
       borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
       borderRadius: '6px',
-      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
       opacity: isDraggingThis ? '0' : '1',
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
@@ -4346,7 +4337,6 @@
       borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
       borderRadius: '6px',
-      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
       opacity: isDraggingThis ? '0' : '1',
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
@@ -8609,9 +8599,8 @@
   }
 
   .timeline-tool-button--active {
-    color: #a78bfa;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(168, 85, 247, 0.15) 100%);
-    box-shadow: 0 0 8px rgba(139, 92, 246, 0.2);
+    color: #38bdf8;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.25) 0%, rgba(56, 189, 248, 0.15) 100%);
   }
 
   /* ===== Action Buttons ===== */
@@ -8687,9 +8676,9 @@
   }
 
   .timeline-badge--segments {
-    color: #a78bfa;
-    background-color: rgba(139, 92, 246, 0.15);
-    border-color: rgba(139, 92, 246, 0.2);
+    color: #38bdf8;
+    background-color: rgba(14, 165, 233, 0.15);
+    border-color: rgba(14, 165, 233, 0.2);
   }
 
   .timeline-badge--duration {
@@ -8726,10 +8715,9 @@
   }
 
   .timeline-snap-button--enabled {
-    color: #a78bfa;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%);
-    border-color: rgba(139, 92, 246, 0.3);
-    box-shadow: 0 0 8px rgba(139, 92, 246, 0.15);
+    color: #38bdf8;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.15) 0%, rgba(56, 189, 248, 0.1) 100%);
+    border-color: rgba(14, 165, 233, 0.3);
   }
 
   .timeline-snap-dropdown {
@@ -8785,7 +8773,7 @@
     width: 14px;
     height: 14px;
     border-radius: 3px;
-    accent-color: #8b5cf6;
+    accent-color: #0ea5e9;
   }
 
   .timeline-snap-dropdown__divider {
@@ -8919,7 +8907,7 @@
     flex-direction: column;
     justify-content: center;
     font-size: 0.6875rem;
-    border-left: 2px solid #8b5cf6;
+    border-left: 2px solid #0ea5e9;
   }
 
   .timeline-track-label--watermark {
@@ -8962,8 +8950,8 @@
   /* ===== Marquee Selection ===== */
   .timeline-marquee {
     position: absolute;
-    border: 2px solid #a78bfa;
-    background-color: rgba(139, 92, 246, 0.15);
+    border: 2px solid #38bdf8;
+    background-color: rgba(14, 165, 233, 0.15);
     pointer-events: none;
     z-index: 100;
     border-radius: 4px;

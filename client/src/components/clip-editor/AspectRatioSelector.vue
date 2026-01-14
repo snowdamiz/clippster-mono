@@ -148,11 +148,11 @@
   }
 
   .ratio-btn.selected {
-    color: rgba(139, 92, 246, 0.7);
+    color: rgba(14, 165, 233, 0.7);
   }
 
   .ratio-btn.selected:hover {
-    color: #a78bfa;
+    color: #38bdf8;
   }
 
   .ratio-icon {

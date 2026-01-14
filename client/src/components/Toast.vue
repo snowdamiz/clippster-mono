@@ -235,34 +235,4 @@
       transform: translateX(calc(100% + 1.5rem));
     }
   }
-
-  /* ===== Type-specific glow effects on hover ===== */
-  .toast-root--success:hover {
-    box-shadow:
-      0 10px 40px rgba(0, 0, 0, 0.5),
-      0 0 0 1px rgba(16, 185, 129, 0.1) inset,
-      0 0 30px rgba(16, 185, 129, 0.1);
-  }
-
-  .toast-root--error:hover {
-    box-shadow:
-      0 10px 40px rgba(0, 0, 0, 0.5),
-      0 0 0 1px rgba(239, 68, 68, 0.1) inset,
-      0 0 30px rgba(239, 68, 68, 0.1);
-  }
-
-  .toast-root--warning:hover {
-    box-shadow:
-      0 10px 40px rgba(0, 0, 0, 0.5),
-      0 0 0 1px rgba(245, 158, 11, 0.1) inset,
-      0 0 30px rgba(245, 158, 11, 0.1);
-  }
-
-  .toast-root--loading:hover,
-  .toast-root--info:hover {
-    box-shadow:
-      0 10px 40px rgba(0, 0, 0, 0.5),
-      0 0 0 1px rgba(6, 182, 212, 0.1) inset,
-      0 0 30px rgba(6, 182, 212, 0.1);
-  }
 </style>
