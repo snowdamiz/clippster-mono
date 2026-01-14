@@ -1,80 +1,55 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[10000]">
+      <div v-if="modelValue" class="build-dialog__overlay">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-xl sm:rounded-2xl w-full max-w-md sm:max-w-xl mx-2 sm:mx-4 border border-white/10 max-h-[92vh] sm:max-h-[90vh] flex flex-col overflow-hidden"
-          >
+          <div class="build-dialog">
             <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 flex-shrink-0" />
+            <div class="build-dialog__accent" />
 
             <!-- Header -->
-            <div
-              class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 bg-zinc-900/50"
-            >
-              <div class="flex items-center gap-2 sm:gap-3">
-                <div
-                  class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 flex items-center justify-center border border-emerald-500/30"
-                >
-                  <WrenchIcon class="h-4 w-4 sm:h-5 sm:w-5 text-emerald-400" />
-                </div>
-                <div>
-                  <h2 class="text-base sm:text-lg font-semibold text-white">Export Configuration</h2>
-                  <p class="text-[10px] sm:text-xs text-zinc-400 truncate max-w-[150px] sm:max-w-none">
-                    {{ clip?.current_version_name || clip?.name || 'Untitled Clip' }} •
-                    {{ formatDuration(clipDuration) }}
-                  </p>
-                </div>
-              </div>
-              <button
-                @click="close"
-                class="p-1.5 sm:p-2 hover:bg-zinc-800 rounded-lg sm:rounded-xl transition-colors border border-zinc-800"
-                title="Close"
-              >
-                <X class="h-4 w-4 sm:h-5 sm:w-5 text-zinc-400 hover:text-white" />
+            <div class="build-dialog__header">
+              <button class="build-dialog__close" @click="close" title="Close">
+                <X :size="18" />
               </button>
+              <div class="build-dialog__icon">
+                <WrenchIcon :size="24" />
+              </div>
+              <h2 class="build-dialog__title">Export Configuration</h2>
+              <p class="build-dialog__subtitle">
+                {{ clip?.current_version_name || clip?.name || 'Untitled Clip' }} •
+                {{ formatDuration(clipDuration) }}
+              </p>
             </div>
 
             <!-- Step Indicator -->
-            <div class="px-4 sm:px-6 py-3 border-b border-zinc-800/50 bg-zinc-900/30">
-              <div class="flex items-center justify-between">
+            <div class="build-dialog__steps-wrapper">
+              <div class="build-dialog__steps">
                 <div
                   v-for="(step, index) in visibleSteps"
                   :key="step.id"
-                  class="flex items-center"
-                  :class="{ 'flex-1': index < visibleSteps.length - 1 }"
+                  class="build-dialog__step-container"
+                  :class="{ 'build-dialog__step-container--with-line': index < visibleSteps.length - 1 }"
                 >
                   <!-- Step Circle -->
                   <button
                     @click="goToStep(step.id)"
                     :disabled="!canNavigateToStep(step.id)"
-                    class="flex items-center gap-2 group"
-                    :class="{ 'cursor-not-allowed opacity-50': !canNavigateToStep(step.id) }"
+                    class="build-dialog__step"
+                    :class="{
+                      'build-dialog__step--active': currentStep === step.id,
+                      'build-dialog__step--completed': isStepCompleted(step.id) && currentStep !== step.id,
+                      'build-dialog__step--disabled': !canNavigateToStep(step.id),
+                    }"
                   >
-                    <div
-                      :class="[
-                        'w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-all',
-                        currentStep === step.id
-                          ? 'bg-primary text-primary-foreground ring-2 ring-primary/30 ring-offset-2 ring-offset-zinc-900'
-                          : isStepCompleted(step.id)
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                            : 'bg-zinc-800 text-zinc-500 border border-zinc-700',
-                      ]"
-                    >
-                      <CheckIcon v-if="isStepCompleted(step.id) && currentStep !== step.id" class="w-4 h-4" />
-                      <component v-else :is="step.icon" class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <div class="build-dialog__step-circle">
+                      <CheckIcon
+                        v-if="isStepCompleted(step.id) && currentStep !== step.id"
+                        class="build-dialog__step-icon"
+                      />
+                      <component v-else :is="step.icon" class="build-dialog__step-icon" />
                     </div>
-                    <span
-                      :class="[
-                        'hidden sm:block text-xs font-medium transition-colors',
-                        currentStep === step.id
-                          ? 'text-white'
-                          : isStepCompleted(step.id)
-                            ? 'text-emerald-400'
-                            : 'text-zinc-500',
-                      ]"
-                    >
+                    <span class="build-dialog__step-label">
                       {{ step.label }}
                     </span>
                   </button>
@@ -82,280 +57,195 @@
                   <!-- Connector Line -->
                   <div
                     v-if="index < visibleSteps.length - 1"
-                    class="flex-1 h-px mx-2 sm:mx-3 transition-colors"
-                    :class="isStepCompleted(step.id) ? 'bg-emerald-500/40' : 'bg-zinc-700'"
+                    class="build-dialog__step-connector"
+                    :class="{ 'build-dialog__step-connector--completed': isStepCompleted(step.id) }"
                   />
                 </div>
               </div>
             </div>
 
             <!-- Step Content -->
-            <div class="flex-1 overflow-y-auto custom-scrollbar">
-              <div class="p-4 sm:p-6">
+            <div class="build-dialog__content">
+              <div class="build-dialog__content-inner">
                 <!-- Step 1: Platforms -->
                 <Transition name="step-slide" mode="out-in">
-                  <div v-if="currentStep === 'platforms'" key="platforms" class="space-y-4">
-                    <div class="text-center mb-4">
-                      <h3 class="text-sm sm:text-base font-semibold text-foreground mb-1">Choose Your Platforms</h3>
-                      <p class="text-xs sm:text-sm text-muted-foreground">
-                        Select aspect ratios for your target platforms
-                      </p>
+                  <div v-if="currentStep === 'platforms'" key="platforms" class="build-dialog__step-content">
+                    <div class="build-dialog__step-header">
+                      <h3 class="build-dialog__step-title">Choose Your Platforms</h3>
+                      <p class="build-dialog__step-subtitle">Select aspect ratios for your target platforms</p>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-2 sm:gap-3">
+                    <div class="build-dialog__platform-grid">
                       <!-- 16:9 Landscape (Original - Always Selected) -->
-                      <div
-                        class="group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all border-emerald-500 bg-emerald-500/10 shadow-lg shadow-emerald-500/20"
-                      >
-                        <div class="p-3 sm:p-4 space-y-2 sm:space-y-3">
-                          <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-1.5">
-                              <span class="text-xs sm:text-sm font-bold text-foreground">16:9</span>
-                              <span
-                                class="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full"
-                              >
-                                Original
-                              </span>
-                            </div>
-                            <div
-                              class="w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all border-emerald-500 bg-emerald-500 scale-110"
-                            >
-                              <CheckIcon class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-white" />
-                            </div>
+                      <div class="build-dialog__platform-card build-dialog__platform-card--original">
+                        <div class="build-dialog__platform-card-header">
+                          <div class="build-dialog__platform-label-group">
+                            <span class="build-dialog__platform-ratio">16:9</span>
+                            <span class="build-dialog__platform-badge build-dialog__platform-badge--original">
+                              Original
+                            </span>
                           </div>
-                          <div class="flex items-center justify-center py-3 sm:py-4">
-                            <div
-                              class="w-14 h-8 sm:w-20 sm:h-11 border-2 border-emerald-500 rounded transition-all"
-                            ></div>
+                          <div class="build-dialog__platform-check build-dialog__platform-check--active">
+                            <CheckIcon class="build-dialog__platform-check-icon" />
                           </div>
-                          <div class="text-center">
-                            <p class="text-[10px] sm:text-xs font-medium text-muted-foreground">YouTube • Twitch</p>
-                          </div>
+                        </div>
+                        <div class="build-dialog__platform-preview">
+                          <div class="build-dialog__platform-box build-dialog__platform-box--16-9"></div>
+                        </div>
+                        <div class="build-dialog__platform-platforms">
+                          <p class="build-dialog__platform-text">YouTube • Twitch</p>
                         </div>
                       </div>
 
                       <!-- 9:16 Portrait -->
                       <button
                         @click="toggleRatio('9:16')"
-                        :class="[
-                          'group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all',
-                          selectedRatios.includes('9:16')
-                            ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                            : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
-                        ]"
+                        class="build-dialog__platform-card"
+                        :class="{ 'build-dialog__platform-card--selected': selectedRatios.includes('9:16') }"
                       >
-                        <div class="p-3 sm:p-4 space-y-2 sm:space-y-3">
-                          <div class="flex items-center justify-between">
-                            <span class="text-xs sm:text-sm font-bold text-foreground">9:16</span>
-                            <div
-                              :class="[
-                                'w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all',
-                                selectedRatios.includes('9:16')
-                                  ? 'border-primary bg-primary scale-110'
-                                  : 'border-muted-foreground/30',
-                              ]"
-                            >
-                              <CheckIcon
-                                v-if="selectedRatios.includes('9:16')"
-                                class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary-foreground"
-                              />
-                            </div>
+                        <div class="build-dialog__platform-card-header">
+                          <span class="build-dialog__platform-ratio">9:16</span>
+                          <div
+                            class="build-dialog__platform-check"
+                            :class="{ 'build-dialog__platform-check--active': selectedRatios.includes('9:16') }"
+                          >
+                            <CheckIcon
+                              v-if="selectedRatios.includes('9:16')"
+                              class="build-dialog__platform-check-icon"
+                            />
                           </div>
-                          <div class="flex items-center justify-center py-3 sm:py-4">
-                            <div
-                              class="w-5 h-9 sm:w-6 sm:h-11 border-2 border-current rounded transition-all"
-                              :class="selectedRatios.includes('9:16') ? 'text-primary' : 'text-muted-foreground/40'"
-                            ></div>
-                          </div>
-                          <div class="text-center">
-                            <p class="text-[10px] sm:text-xs font-medium text-muted-foreground">TikTok • Reels</p>
-                          </div>
+                        </div>
+                        <div class="build-dialog__platform-preview">
+                          <div
+                            class="build-dialog__platform-box build-dialog__platform-box--9-16"
+                            :class="{ 'build-dialog__platform-box--selected': selectedRatios.includes('9:16') }"
+                          ></div>
+                        </div>
+                        <div class="build-dialog__platform-platforms">
+                          <p class="build-dialog__platform-text">TikTok • Reels</p>
                         </div>
                       </button>
 
                       <!-- 1:1 Square -->
                       <button
                         @click="toggleRatio('1:1')"
-                        :class="[
-                          'group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all',
-                          selectedRatios.includes('1:1')
-                            ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                            : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
-                        ]"
+                        class="build-dialog__platform-card"
+                        :class="{ 'build-dialog__platform-card--selected': selectedRatios.includes('1:1') }"
                       >
-                        <div class="p-3 sm:p-4 space-y-2 sm:space-y-3">
-                          <div class="flex items-center justify-between">
-                            <span class="text-xs sm:text-sm font-bold text-foreground">1:1</span>
-                            <div
-                              :class="[
-                                'w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all',
-                                selectedRatios.includes('1:1')
-                                  ? 'border-primary bg-primary scale-110'
-                                  : 'border-muted-foreground/30',
-                              ]"
-                            >
-                              <CheckIcon
-                                v-if="selectedRatios.includes('1:1')"
-                                class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary-foreground"
-                              />
-                            </div>
+                        <div class="build-dialog__platform-card-header">
+                          <span class="build-dialog__platform-ratio">1:1</span>
+                          <div
+                            class="build-dialog__platform-check"
+                            :class="{ 'build-dialog__platform-check--active': selectedRatios.includes('1:1') }"
+                          >
+                            <CheckIcon
+                              v-if="selectedRatios.includes('1:1')"
+                              class="build-dialog__platform-check-icon"
+                            />
                           </div>
-                          <div class="flex items-center justify-center py-3 sm:py-4">
-                            <div
-                              class="w-9 h-9 sm:w-11 sm:h-11 border-2 border-current rounded transition-all"
-                              :class="selectedRatios.includes('1:1') ? 'text-primary' : 'text-muted-foreground/40'"
-                            ></div>
-                          </div>
-                          <div class="text-center">
-                            <p class="text-[10px] sm:text-xs font-medium text-muted-foreground">Instagram Feed</p>
-                          </div>
+                        </div>
+                        <div class="build-dialog__platform-preview">
+                          <div
+                            class="build-dialog__platform-box build-dialog__platform-box--1-1"
+                            :class="{ 'build-dialog__platform-box--selected': selectedRatios.includes('1:1') }"
+                          ></div>
+                        </div>
+                        <div class="build-dialog__platform-platforms">
+                          <p class="build-dialog__platform-text">Instagram Feed</p>
                         </div>
                       </button>
 
                       <!-- 4:5 Portrait -->
                       <button
                         @click="toggleRatio('4:5')"
-                        :class="[
-                          'group relative overflow-hidden rounded-lg sm:rounded-xl border-2 transition-all',
-                          selectedRatios.includes('4:5')
-                            ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
-                            : 'border-border/50 bg-muted/20 hover:border-primary/30 hover:bg-muted/30',
-                        ]"
+                        class="build-dialog__platform-card"
+                        :class="{ 'build-dialog__platform-card--selected': selectedRatios.includes('4:5') }"
                       >
-                        <div class="p-3 sm:p-4 space-y-2 sm:space-y-3">
-                          <div class="flex items-center justify-between">
-                            <span class="text-xs sm:text-sm font-bold text-foreground">4:5</span>
-                            <div
-                              :class="[
-                                'w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-all',
-                                selectedRatios.includes('4:5')
-                                  ? 'border-primary bg-primary scale-110'
-                                  : 'border-muted-foreground/30',
-                              ]"
-                            >
-                              <CheckIcon
-                                v-if="selectedRatios.includes('4:5')"
-                                class="h-2.5 w-2.5 sm:h-3 sm:w-3 text-primary-foreground"
-                              />
-                            </div>
+                        <div class="build-dialog__platform-card-header">
+                          <span class="build-dialog__platform-ratio">4:5</span>
+                          <div
+                            class="build-dialog__platform-check"
+                            :class="{ 'build-dialog__platform-check--active': selectedRatios.includes('4:5') }"
+                          >
+                            <CheckIcon
+                              v-if="selectedRatios.includes('4:5')"
+                              class="build-dialog__platform-check-icon"
+                            />
                           </div>
-                          <div class="flex items-center justify-center py-3 sm:py-4">
-                            <div
-                              class="w-7 h-9 sm:w-9 sm:h-11 border-2 border-current rounded transition-all"
-                              :class="selectedRatios.includes('4:5') ? 'text-primary' : 'text-muted-foreground/40'"
-                            ></div>
-                          </div>
-                          <div class="text-center">
-                            <p class="text-[10px] sm:text-xs font-medium text-muted-foreground">Instagram Post</p>
-                          </div>
+                        </div>
+                        <div class="build-dialog__platform-preview">
+                          <div
+                            class="build-dialog__platform-box build-dialog__platform-box--4-5"
+                            :class="{ 'build-dialog__platform-box--selected': selectedRatios.includes('4:5') }"
+                          ></div>
+                        </div>
+                        <div class="build-dialog__platform-platforms">
+                          <p class="build-dialog__platform-text">Instagram Post</p>
                         </div>
                       </button>
                     </div>
 
                     <!-- Selection summary -->
-                    <div
-                      v-if="selectedRatios.length > 0"
-                      class="mt-4 p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/20"
-                    >
-                      <div class="flex items-center gap-2 text-sm text-emerald-400">
-                        <CheckIcon class="w-4 h-4" />
-                        <span>
-                          {{ selectedRatios.length }} format{{ selectedRatios.length > 1 ? 's' : '' }} selected
-                        </span>
-                      </div>
+                    <div v-if="selectedRatios.length > 0" class="build-dialog__selection-summary">
+                      <CheckIcon class="build-dialog__selection-icon" />
+                      <span class="build-dialog__selection-text">
+                        {{ selectedRatios.length }} format{{ selectedRatios.length > 1 ? 's' : '' }} selected
+                      </span>
                     </div>
                   </div>
                 </Transition>
 
                 <!-- Step 2: Framing (conditional) -->
                 <Transition name="step-slide" mode="out-in">
-                  <div v-if="currentStep === 'framing'" key="framing" class="space-y-4">
-                    <div class="text-center mb-4">
-                      <h3 class="text-sm sm:text-base font-semibold text-foreground mb-1">Framing & Layout</h3>
-                      <p class="text-xs sm:text-sm text-muted-foreground">
-                        Configure cropping and subtitle positioning
-                      </p>
+                  <div v-if="currentStep === 'framing'" key="framing" class="build-dialog__step-content">
+                    <div class="build-dialog__step-header">
+                      <h3 class="build-dialog__step-title">Framing & Layout</h3>
+                      <p class="build-dialog__step-subtitle">Configure cropping and subtitle positioning</p>
                     </div>
 
                     <!-- Portrait Framing Mode (only when portrait ratios selected) -->
-                    <div v-if="hasPortraitRatio" class="space-y-3">
-                      <div class="flex items-center gap-2 mb-2">
-                        <CropIcon class="w-4 h-4 text-violet-400" />
-                        <h4 class="text-sm font-semibold text-foreground">Portrait Cropping</h4>
+                    <div v-if="hasPortraitRatio" class="build-dialog__framing-section">
+                      <div class="build-dialog__section-header">
+                        <CropIcon class="build-dialog__section-icon" />
+                        <h4 class="build-dialog__section-title">Portrait Cropping</h4>
                       </div>
 
                       <!-- Mode Toggle -->
-                      <div class="grid grid-cols-2 gap-3">
+                      <div class="build-dialog__framing-grid">
                         <button
                           @click="framingMode = 'auto'"
-                          :class="[
-                            'relative p-4 rounded-xl border-2 transition-all text-left',
-                            framingMode === 'auto'
-                              ? 'border-violet-500 bg-violet-500/10'
-                              : 'border-border/50 bg-muted/20 hover:border-violet-500/30',
-                          ]"
+                          class="build-dialog__framing-mode"
+                          :class="{ 'build-dialog__framing-mode--active': framingMode === 'auto' }"
                         >
-                          <div class="flex items-center gap-2 mb-2">
+                          <div class="build-dialog__framing-mode-header">
                             <div
-                              :class="[
-                                'w-8 h-8 rounded-lg flex items-center justify-center',
-                                framingMode === 'auto' ? 'bg-violet-500/20' : 'bg-muted/50',
-                              ]"
+                              class="build-dialog__framing-mode-icon"
+                              :class="{ 'build-dialog__framing-mode-icon--active': framingMode === 'auto' }"
                             >
-                              <SparklesIcon
-                                :class="[
-                                  'w-4 h-4',
-                                  framingMode === 'auto' ? 'text-violet-400' : 'text-muted-foreground',
-                                ]"
-                              />
+                              <SparklesIcon class="build-dialog__framing-icon" />
                             </div>
-                            <span
-                              :class="[
-                                'font-semibold text-sm',
-                                framingMode === 'auto' ? 'text-violet-300' : 'text-foreground',
-                              ]"
-                            >
-                              Auto
-                            </span>
+                            <span class="build-dialog__framing-mode-label">Auto</span>
                           </div>
-                          <p class="text-[11px] text-muted-foreground leading-relaxed">
+                          <p class="build-dialog__framing-mode-desc">
                             AI automatically detects speakers and content regions
                           </p>
                         </button>
 
                         <button
                           @click="framingMode = 'manual'"
-                          :class="[
-                            'relative p-4 rounded-xl border-2 transition-all text-left',
-                            framingMode === 'manual'
-                              ? 'border-violet-500 bg-violet-500/10'
-                              : 'border-border/50 bg-muted/20 hover:border-violet-500/30',
-                          ]"
+                          class="build-dialog__framing-mode"
+                          :class="{ 'build-dialog__framing-mode--active': framingMode === 'manual' }"
                         >
-                          <div class="flex items-center gap-2 mb-2">
+                          <div class="build-dialog__framing-mode-header">
                             <div
-                              :class="[
-                                'w-8 h-8 rounded-lg flex items-center justify-center',
-                                framingMode === 'manual' ? 'bg-violet-500/20' : 'bg-muted/50',
-                              ]"
+                              class="build-dialog__framing-mode-icon"
+                              :class="{ 'build-dialog__framing-mode-icon--active': framingMode === 'manual' }"
                             >
-                              <PencilRulerIcon
-                                :class="[
-                                  'w-4 h-4',
-                                  framingMode === 'manual' ? 'text-violet-400' : 'text-muted-foreground',
-                                ]"
-                              />
+                              <PencilRulerIcon class="build-dialog__framing-icon" />
                             </div>
-                            <span
-                              :class="[
-                                'font-semibold text-sm',
-                                framingMode === 'manual' ? 'text-violet-300' : 'text-foreground',
-                              ]"
-                            >
-                              Manual
-                            </span>
+                            <span class="build-dialog__framing-mode-label">Manual</span>
                           </div>
-                          <p class="text-[11px] text-muted-foreground leading-relaxed">
+                          <p class="build-dialog__framing-mode-desc">
                             Manually configure regions for each aspect ratio
                           </p>
                         </button>
@@ -363,48 +253,45 @@
 
                       <!-- Manual mode configuration -->
                       <Transition name="slide-fade">
-                        <div v-if="framingMode === 'manual'" class="space-y-3 pt-2">
-                          <p class="text-xs text-muted-foreground">Configure each aspect ratio:</p>
+                        <div v-if="framingMode === 'manual'" class="build-dialog__manual-config">
+                          <p class="build-dialog__manual-hint">Configure each aspect ratio:</p>
 
-                          <div class="space-y-2">
+                          <div class="build-dialog__manual-list">
                             <button
                               v-for="ratio in selectedPortraitRatios"
                               :key="ratio"
                               @click="openPOIEditorForRatio(ratio)"
-                              class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all border"
-                              :class="
-                                isRatioConfigured(ratio)
-                                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
-                                  : 'bg-muted/30 text-muted-foreground border-border/40 hover:bg-muted/50 hover:border-violet-500/40'
-                              "
+                              class="build-dialog__ratio-config"
+                              :class="{ 'build-dialog__ratio-config--configured': isRatioConfigured(ratio) }"
                             >
-                              <div class="flex items-center gap-3">
+                              <div class="build-dialog__ratio-config-left">
                                 <div
-                                  class="w-6 h-8 border-2 rounded flex-shrink-0"
-                                  :class="
-                                    isRatioConfigured(ratio) ? 'border-emerald-400' : 'border-muted-foreground/40'
-                                  "
+                                  class="build-dialog__ratio-preview"
+                                  :class="{ 'build-dialog__ratio-preview--configured': isRatioConfigured(ratio) }"
                                   :style="{
                                     aspectRatio: ratio.replace(':', '/'),
                                     height: ratio === '1:1' ? '1.5rem' : '2rem',
                                     width: ratio === '1:1' ? '1.5rem' : 'auto',
                                   }"
                                 ></div>
-                                <span class="font-medium">{{ ratio }}</span>
+                                <span class="build-dialog__ratio-label">{{ ratio }}</span>
                               </div>
-                              <div class="flex items-center gap-2">
-                                <span v-if="isRatioConfigured(ratio)" class="text-xs text-emerald-400/80">
+                              <div class="build-dialog__ratio-config-right">
+                                <span
+                                  v-if="isRatioConfigured(ratio)"
+                                  class="build-dialog__ratio-status build-dialog__ratio-status--configured"
+                                >
                                   ✓ {{ getConfigForRatio(ratio)?.regions.length }} region{{
                                     getConfigForRatio(ratio)?.regions.length !== 1 ? 's' : ''
                                   }}
                                 </span>
-                                <span v-else class="text-xs text-muted-foreground/60">Click to configure</span>
-                                <ChevronRightIcon class="w-4 h-4" />
+                                <span v-else class="build-dialog__ratio-status">Click to configure</span>
+                                <ChevronRightIcon class="build-dialog__ratio-chevron" />
                               </div>
                             </button>
                           </div>
 
-                          <div v-if="loadingVideoFrame" class="text-xs text-muted-foreground/60 text-center py-2">
+                          <div v-if="loadingVideoFrame" class="build-dialog__loading-hint">
                             Loading video preview...
                           </div>
                         </div>
@@ -414,49 +301,48 @@
                     <!-- Subtitle Adjustments -->
                     <div
                       v-if="subtitleSettings?.enabled && selectedRatios.length > 0"
-                      class="space-y-3"
-                      :class="{ 'pt-4 border-t border-border/30': hasPortraitRatio }"
+                      class="build-dialog__subtitle-section"
+                      :class="{ 'build-dialog__subtitle-section--with-border': hasPortraitRatio }"
                     >
-                      <div class="flex items-center gap-2">
-                        <Type class="w-4 h-4 text-violet-400" />
-                        <h4 class="text-sm font-semibold text-foreground">Subtitle Positioning</h4>
+                      <div class="build-dialog__section-header">
+                        <Type class="build-dialog__section-icon" />
+                        <h4 class="build-dialog__section-title">Subtitle Positioning</h4>
                       </div>
 
-                      <p class="text-[11px] text-muted-foreground/80 leading-relaxed">
+                      <p class="build-dialog__subtitle-hint">
                         Fine-tune subtitle size and position for each aspect ratio
                       </p>
 
-                      <div class="space-y-2">
+                      <div class="build-dialog__subtitle-list">
                         <button
                           v-for="ratio in selectedRatios"
                           :key="ratio"
                           @click="openSubtitleEditorForRatio(ratio)"
-                          class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all border"
-                          :class="
-                            hasSubtitleOverride(ratio)
-                              ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
-                              : 'bg-muted/30 text-muted-foreground border-border/40 hover:bg-muted/50 hover:border-violet-500/40'
-                          "
+                          class="build-dialog__ratio-config"
+                          :class="{ 'build-dialog__ratio-config--configured': hasSubtitleOverride(ratio) }"
                         >
-                          <div class="flex items-center gap-3">
+                          <div class="build-dialog__ratio-config-left">
                             <div
-                              class="w-6 h-8 border-2 rounded flex-shrink-0"
-                              :class="hasSubtitleOverride(ratio) ? 'border-emerald-400' : 'border-muted-foreground/40'"
+                              class="build-dialog__ratio-preview"
+                              :class="{ 'build-dialog__ratio-preview--configured': hasSubtitleOverride(ratio) }"
                               :style="{
                                 aspectRatio: ratio.replace(':', '/'),
                                 height: ratio === '1:1' ? '1.5rem' : '2rem',
                                 width: ratio === '1:1' ? '1.5rem' : 'auto',
                               }"
                             ></div>
-                            <span class="font-medium">{{ ratio }}</span>
+                            <span class="build-dialog__ratio-label">{{ ratio }}</span>
                           </div>
-                          <div class="flex items-center gap-2">
-                            <span v-if="hasSubtitleOverride(ratio)" class="text-xs text-emerald-400/80">
+                          <div class="build-dialog__ratio-config-right">
+                            <span
+                              v-if="hasSubtitleOverride(ratio)"
+                              class="build-dialog__ratio-status build-dialog__ratio-status--configured"
+                            >
                               ✓ {{ getSubtitleOverrideForRatio(ratio).fontSize }}px @
                               {{ getSubtitleOverrideForRatio(ratio).positionPercentage }}%
                             </span>
-                            <span v-else class="text-xs text-muted-foreground/60">Click to adjust</span>
-                            <ChevronRightIcon class="w-4 h-4" />
+                            <span v-else class="build-dialog__ratio-status">Click to adjust</span>
+                            <ChevronRightIcon class="build-dialog__ratio-chevron" />
                           </div>
                         </button>
                       </div>
@@ -465,66 +351,52 @@
                     <!-- Empty state when no content to show -->
                     <div
                       v-if="!hasPortraitRatio && !(subtitleSettings?.enabled && selectedRatios.length > 0)"
-                      class="text-center py-8 text-muted-foreground"
+                      class="build-dialog__empty-state"
                     >
-                      <p class="text-sm">No framing options needed for your selected formats.</p>
+                      <p class="build-dialog__empty-text">No framing options needed for your selected formats.</p>
                     </div>
                   </div>
                 </Transition>
 
                 <!-- Step 3: Export Settings -->
                 <Transition name="step-slide" mode="out-in">
-                  <div v-if="currentStep === 'export'" key="export" class="space-y-4">
-                    <div class="text-center mb-4">
-                      <h3 class="text-sm sm:text-base font-semibold text-foreground mb-1">Export Settings</h3>
-                      <p class="text-xs sm:text-sm text-muted-foreground">Configure quality and format options</p>
+                  <div v-if="currentStep === 'export'" key="export" class="build-dialog__step-content">
+                    <div class="build-dialog__step-header">
+                      <h3 class="build-dialog__step-title">Export Settings</h3>
+                      <p class="build-dialog__step-subtitle">Configure quality and format options</p>
                     </div>
 
-                    <div class="space-y-3">
+                    <div class="build-dialog__export-settings">
                       <!-- Quality -->
-                      <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-3">
-                        <div class="flex items-center justify-between">
-                          <label class="text-sm font-semibold text-foreground">Quality</label>
-                          <span class="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded capitalize">
-                            {{ quality }}
-                          </span>
+                      <div class="build-dialog__setting-group">
+                        <div class="build-dialog__setting-header">
+                          <label class="build-dialog__setting-label">Quality</label>
+                          <span class="build-dialog__setting-badge">{{ quality }}</span>
                         </div>
-                        <div class="flex gap-2">
+                        <div class="build-dialog__setting-buttons">
                           <button
                             @click="quality = 'low'"
-                            :class="[
-                              'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                              quality === 'low'
-                                ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                            ]"
+                            class="build-dialog__setting-btn"
+                            :class="{ 'build-dialog__setting-btn--active': quality === 'low' }"
                           >
                             Low
                           </button>
                           <button
                             @click="quality = 'medium'"
-                            :class="[
-                              'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                              quality === 'medium'
-                                ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                            ]"
+                            class="build-dialog__setting-btn"
+                            :class="{ 'build-dialog__setting-btn--active': quality === 'medium' }"
                           >
                             Medium
                           </button>
                           <button
                             @click="quality = 'high'"
-                            :class="[
-                              'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                              quality === 'high'
-                                ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                            ]"
+                            class="build-dialog__setting-btn"
+                            :class="{ 'build-dialog__setting-btn--active': quality === 'high' }"
                           >
                             High
                           </button>
                         </div>
-                        <p class="text-[11px] text-muted-foreground/70">
+                        <p class="build-dialog__setting-hint">
                           {{
                             quality === 'low'
                               ? 'Fast export, smaller file size'
@@ -536,38 +408,28 @@
                       </div>
 
                       <!-- Frame Rate -->
-                      <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-3">
-                        <div class="flex items-center justify-between">
-                          <label class="text-sm font-semibold text-foreground">Frame Rate</label>
-                          <span class="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded">
-                            {{ frameRate }} FPS
-                          </span>
+                      <div class="build-dialog__setting-group">
+                        <div class="build-dialog__setting-header">
+                          <label class="build-dialog__setting-label">Frame Rate</label>
+                          <span class="build-dialog__setting-badge">{{ frameRate }} FPS</span>
                         </div>
-                        <div class="flex gap-2">
+                        <div class="build-dialog__setting-buttons">
                           <button
                             @click="frameRate = 30"
-                            :class="[
-                              'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                              frameRate === 30
-                                ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                            ]"
+                            class="build-dialog__setting-btn"
+                            :class="{ 'build-dialog__setting-btn--active': frameRate === 30 }"
                           >
                             30 FPS
                           </button>
                           <button
                             @click="frameRate = 60"
-                            :class="[
-                              'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                              frameRate === 60
-                                ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                            ]"
+                            class="build-dialog__setting-btn"
+                            :class="{ 'build-dialog__setting-btn--active': frameRate === 60 }"
                           >
                             60 FPS
                           </button>
                         </div>
-                        <p class="text-[11px] text-muted-foreground/70">
+                        <p class="build-dialog__setting-hint">
                           {{
                             frameRate === 30 ? 'Standard for most platforms' : 'Smoother motion for fast-paced content'
                           }}
@@ -575,33 +437,25 @@
                       </div>
 
                       <!-- Format -->
-                      <div class="bg-muted/20 rounded-xl p-4 border border-border/50 space-y-3">
-                        <label class="text-sm font-semibold text-foreground">Output Format</label>
-                        <div class="flex gap-2">
+                      <div class="build-dialog__setting-group">
+                        <label class="build-dialog__setting-label">Output Format</label>
+                        <div class="build-dialog__setting-buttons">
                           <button
                             @click="outputFormat = 'mp4'"
-                            :class="[
-                              'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                              outputFormat === 'mp4'
-                                ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                            ]"
+                            class="build-dialog__setting-btn"
+                            :class="{ 'build-dialog__setting-btn--active': outputFormat === 'mp4' }"
                           >
                             MP4
                           </button>
                           <button
                             @click="outputFormat = 'mov'"
-                            :class="[
-                              'flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all',
-                              outputFormat === 'mov'
-                                ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
-                            ]"
+                            class="build-dialog__setting-btn"
+                            :class="{ 'build-dialog__setting-btn--active': outputFormat === 'mov' }"
                           >
                             MOV
                           </button>
                         </div>
-                        <p class="text-[11px] text-muted-foreground/70">
+                        <p class="build-dialog__setting-hint">
                           {{
                             outputFormat === 'mp4'
                               ? 'Best compatibility across all platforms'
@@ -615,42 +469,37 @@
 
                 <!-- Step 4: Add-ons -->
                 <Transition name="step-slide" mode="out-in">
-                  <div v-if="currentStep === 'addons'" key="addons" class="space-y-4">
-                    <div class="text-center mb-4">
-                      <h3 class="text-sm sm:text-base font-semibold text-foreground mb-1">Add-ons</h3>
-                      <p class="text-xs sm:text-sm text-muted-foreground">
-                        Add intro/outro clips and customize subtitles
-                      </p>
+                  <div v-if="currentStep === 'addons'" key="addons" class="build-dialog__step-content">
+                    <div class="build-dialog__step-header">
+                      <h3 class="build-dialog__step-title">Add-ons</h3>
+                      <p class="build-dialog__step-subtitle">Add intro/outro clips and customize subtitles</p>
                     </div>
 
-                    <div class="space-y-3">
+                    <div class="build-dialog__addons-section">
                       <!-- Intro Compact Selector -->
-                      <div class="space-y-1.5 sm:space-y-2">
-                        <div class="flex items-center justify-between">
-                          <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Intro</label>
-                          <div class="flex items-center gap-1">
-                            <span
-                              v-if="selectedIntro?.isOrgAsset"
-                              class="text-[9px] px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30 flex items-center gap-1"
-                            >
-                              <Building2 class="h-2.5 w-2.5" />
+                      <div class="build-dialog__field">
+                        <div class="build-dialog__field-header">
+                          <label class="build-dialog__field-label">Intro</label>
+                          <div class="build-dialog__field-badges">
+                            <span v-if="selectedIntro?.isOrgAsset" class="build-dialog__badge build-dialog__badge--org">
+                              <Building2 class="build-dialog__badge-icon" />
                               Org
                             </span>
                             <span
                               v-if="defaultIntro && selectedIntro?.id === defaultIntro.id"
-                              class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
+                              class="build-dialog__badge build-dialog__badge--default"
                             >
                               Creator Default
                             </span>
                           </div>
                         </div>
-                        <div class="relative">
+                        <div class="build-dialog__dropdown-wrapper">
                           <button
                             ref="introButtonRef"
                             @click="toggleIntroDropdown"
-                            class="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-xs sm:text-sm text-foreground"
+                            class="build-dialog__dropdown-trigger"
                           >
-                            <span class="truncate">
+                            <span class="build-dialog__dropdown-text">
                               {{
                                 selectedIntro
                                   ? `${selectedIntro.name} (${formatDuration(selectedIntro.duration || 0)})`
@@ -658,8 +507,8 @@
                               }}
                             </span>
                             <ChevronDown
-                              class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
-                              :class="{ 'rotate-180': showIntroDropdown }"
+                              class="build-dialog__dropdown-icon"
+                              :class="{ 'build-dialog__dropdown-icon--open': showIntroDropdown }"
                             />
                           </button>
 
@@ -668,7 +517,7 @@
                             <div
                               v-if="showIntroDropdown"
                               ref="introDropdownRef"
-                              class="fixed bg-card border border-border rounded-lg shadow-xl z-[9999] overflow-y-auto custom-scrollbar"
+                              class="build-dialog__dropdown-menu"
                               :style="{
                                 top: introDropdownPosition.top,
                                 left: introDropdownPosition.left,
@@ -679,8 +528,8 @@
                             >
                               <button
                                 @click="selectIntro(null)"
-                                class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm border-b border-border/30"
-                                :class="{ 'bg-primary/10 text-primary': !selectedIntro }"
+                                class="build-dialog__dropdown-item build-dialog__dropdown-item--first"
+                                :class="{ 'build-dialog__dropdown-item--selected': !selectedIntro }"
                               >
                                 None
                               </button>
@@ -688,32 +537,27 @@
                                 v-for="intro in intros"
                                 :key="intro.id"
                                 @click="selectIntro(intro)"
-                                class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm"
-                                :class="{ 'bg-primary/10 text-primary': selectedIntro?.id === intro.id }"
+                                class="build-dialog__dropdown-item"
+                                :class="{ 'build-dialog__dropdown-item--selected': selectedIntro?.id === intro.id }"
                               >
-                                <div class="flex items-center justify-between">
-                                  <div class="flex items-center gap-2 truncate">
-                                    <span class="truncate">{{ intro.name }}</span>
+                                <div class="build-dialog__dropdown-item-content">
+                                  <div class="build-dialog__dropdown-item-left">
+                                    <span class="build-dialog__dropdown-item-name">{{ intro.name }}</span>
                                     <span
                                       v-if="intro.isOrgAsset"
-                                      class="text-[9px] px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30 flex items-center gap-1 flex-shrink-0"
+                                      class="build-dialog__badge build-dialog__badge--org-small"
                                     >
-                                      <Building2 class="h-2.5 w-2.5" />
+                                      <Building2 class="build-dialog__badge-icon" />
                                       {{ intro.organization_name || 'Org' }}
                                     </span>
                                   </div>
-                                  <span class="text-xs text-muted-foreground ml-2 flex-shrink-0">
+                                  <span class="build-dialog__dropdown-item-duration">
                                     {{ formatDuration(intro.duration || 0) }}
                                   </span>
                                 </div>
                               </button>
-                              <div v-if="loadingAssets" class="px-3 py-2.5 text-sm text-center text-muted-foreground">
-                                Loading...
-                              </div>
-                              <div
-                                v-if="!loadingAssets && intros.length === 0"
-                                class="px-3 py-2.5 text-sm text-center text-muted-foreground"
-                              >
+                              <div v-if="loadingAssets" class="build-dialog__dropdown-loading">Loading...</div>
+                              <div v-if="!loadingAssets && intros.length === 0" class="build-dialog__dropdown-empty">
                                 No intros available
                               </div>
                             </div>
@@ -722,32 +566,29 @@
                       </div>
 
                       <!-- Outro Compact Selector -->
-                      <div class="space-y-1.5 sm:space-y-2">
-                        <div class="flex items-center justify-between">
-                          <label class="text-[10px] sm:text-xs font-medium text-muted-foreground">Outro</label>
-                          <div class="flex items-center gap-1">
-                            <span
-                              v-if="selectedOutro?.isOrgAsset"
-                              class="text-[9px] px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30 flex items-center gap-1"
-                            >
-                              <Building2 class="h-2.5 w-2.5" />
+                      <div class="build-dialog__field">
+                        <div class="build-dialog__field-header">
+                          <label class="build-dialog__field-label">Outro</label>
+                          <div class="build-dialog__field-badges">
+                            <span v-if="selectedOutro?.isOrgAsset" class="build-dialog__badge build-dialog__badge--org">
+                              <Building2 class="build-dialog__badge-icon" />
                               Org
                             </span>
                             <span
                               v-if="defaultOutro && selectedOutro?.id === defaultOutro.id"
-                              class="text-[9px] px-1.5 py-0.5 bg-violet-500/20 text-violet-400 rounded-full border border-violet-500/30"
+                              class="build-dialog__badge build-dialog__badge--default"
                             >
                               Creator Default
                             </span>
                           </div>
                         </div>
-                        <div class="relative">
+                        <div class="build-dialog__dropdown-wrapper">
                           <button
                             ref="outroButtonRef"
                             @click="toggleOutroDropdown"
-                            class="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 bg-muted/50 border border-border/40 rounded-lg text-left flex items-center justify-between hover:border-border hover:bg-muted/60 transition-all text-xs sm:text-sm text-foreground"
+                            class="build-dialog__dropdown-trigger"
                           >
-                            <span class="truncate">
+                            <span class="build-dialog__dropdown-text">
                               {{
                                 selectedOutro
                                   ? `${selectedOutro.name} (${formatDuration(selectedOutro.duration || 0)})`
@@ -755,8 +596,8 @@
                               }}
                             </span>
                             <ChevronDown
-                              class="h-4 w-4 text-muted-foreground transition-transform flex-shrink-0 ml-2"
-                              :class="{ 'rotate-180': showOutroDropdown }"
+                              class="build-dialog__dropdown-icon"
+                              :class="{ 'build-dialog__dropdown-icon--open': showOutroDropdown }"
                             />
                           </button>
 
@@ -765,7 +606,7 @@
                             <div
                               v-if="showOutroDropdown"
                               ref="outroDropdownRef"
-                              class="fixed bg-card border border-border rounded-lg shadow-xl z-[9999] overflow-y-auto custom-scrollbar"
+                              class="build-dialog__dropdown-menu"
                               :style="{
                                 top: outroDropdownPosition.top,
                                 left: outroDropdownPosition.left,
@@ -776,8 +617,8 @@
                             >
                               <button
                                 @click="selectOutro(null)"
-                                class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm border-b border-border/30"
-                                :class="{ 'bg-primary/10 text-primary': !selectedOutro }"
+                                class="build-dialog__dropdown-item build-dialog__dropdown-item--first"
+                                :class="{ 'build-dialog__dropdown-item--selected': !selectedOutro }"
                               >
                                 None
                               </button>
@@ -785,32 +626,27 @@
                                 v-for="outro in outros"
                                 :key="outro.id"
                                 @click="selectOutro(outro)"
-                                class="block w-full text-left px-3 py-2.5 hover:bg-muted/80 transition-colors text-sm"
-                                :class="{ 'bg-primary/10 text-primary': selectedOutro?.id === outro.id }"
+                                class="build-dialog__dropdown-item"
+                                :class="{ 'build-dialog__dropdown-item--selected': selectedOutro?.id === outro.id }"
                               >
-                                <div class="flex items-center justify-between">
-                                  <div class="flex items-center gap-2 truncate">
-                                    <span class="truncate">{{ outro.name }}</span>
+                                <div class="build-dialog__dropdown-item-content">
+                                  <div class="build-dialog__dropdown-item-left">
+                                    <span class="build-dialog__dropdown-item-name">{{ outro.name }}</span>
                                     <span
                                       v-if="outro.isOrgAsset"
-                                      class="text-[9px] px-1.5 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30 flex items-center gap-1 flex-shrink-0"
+                                      class="build-dialog__badge build-dialog__badge--org-small"
                                     >
-                                      <Building2 class="h-2.5 w-2.5" />
+                                      <Building2 class="build-dialog__badge-icon" />
                                       {{ outro.organization_name || 'Org' }}
                                     </span>
                                   </div>
-                                  <span class="text-xs text-muted-foreground ml-2 flex-shrink-0">
+                                  <span class="build-dialog__dropdown-item-duration">
                                     {{ formatDuration(outro.duration || 0) }}
                                   </span>
                                 </div>
                               </button>
-                              <div v-if="loadingAssets" class="px-3 py-2.5 text-sm text-center text-muted-foreground">
-                                Loading...
-                              </div>
-                              <div
-                                v-if="!loadingAssets && outros.length === 0"
-                                class="px-3 py-2.5 text-sm text-center text-muted-foreground"
-                              >
+                              <div v-if="loadingAssets" class="build-dialog__dropdown-loading">Loading...</div>
+                              <div v-if="!loadingAssets && outros.length === 0" class="build-dialog__dropdown-empty">
                                 No outros available
                               </div>
                             </div>
@@ -819,14 +655,9 @@
                       </div>
 
                       <!-- Duration Summary -->
-                      <div
-                        v-if="selectedIntro || selectedOutro"
-                        class="p-3 bg-primary/5 rounded-lg border border-primary/20"
-                      >
-                        <div class="flex items-center justify-between text-sm">
-                          <span class="text-muted-foreground">Total Duration</span>
-                          <span class="font-semibold text-primary">{{ formatDuration(totalDuration) }}</span>
-                        </div>
+                      <div v-if="selectedIntro || selectedOutro" class="build-dialog__duration-summary">
+                        <span class="build-dialog__duration-label">Total Duration</span>
+                        <span class="build-dialog__duration-value">{{ formatDuration(totalDuration) }}</span>
                       </div>
                     </div>
                   </div>
@@ -835,59 +666,39 @@
             </div>
 
             <!-- Footer with Navigation -->
-            <div
-              class="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-zinc-800 bg-zinc-900/50"
-            >
+            <div class="build-dialog__footer">
               <!-- Back button or spacer -->
-              <div class="flex-1">
-                <button
-                  v-if="!isFirstStep"
-                  @click="previousStep"
-                  class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors"
-                >
-                  <ArrowLeftIcon class="w-4 h-4" />
+              <div class="build-dialog__footer-left">
+                <button v-if="!isFirstStep" @click="previousStep" class="build-dialog__btn build-dialog__btn--back">
+                  <ArrowLeftIcon class="build-dialog__btn-icon" />
                   Back
                 </button>
               </div>
 
               <!-- Step info -->
-              <div class="text-xs text-zinc-500">Step {{ currentStepIndex + 1 }} of {{ visibleSteps.length }}</div>
+              <div class="build-dialog__step-info">Step {{ currentStepIndex + 1 }} of {{ visibleSteps.length }}</div>
 
               <!-- Next/Build button -->
-              <div class="flex-1 flex justify-end">
+              <div class="build-dialog__footer-right">
                 <button
                   v-if="!isLastStep"
                   @click="nextStep"
                   :disabled="!canProceed"
-                  :class="[
-                    'flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg transition-all',
-                    canProceed
-                      ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                      : 'bg-zinc-800 text-zinc-500 cursor-not-allowed',
-                  ]"
+                  class="build-dialog__btn build-dialog__btn--next"
+                  :class="{ 'build-dialog__btn--disabled': !canProceed }"
                 >
                   Next
-                  <ArrowRightIcon class="w-4 h-4" />
+                  <ArrowRightIcon class="build-dialog__btn-icon" />
                 </button>
                 <button
                   v-else
                   @click="confirmBuild"
                   :disabled="!canProceed"
-                  :class="[
-                    'flex items-center justify-center gap-2 px-6 py-2 text-sm font-semibold rounded-lg transition-all relative overflow-hidden group',
-                    canProceed
-                      ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white'
-                      : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50',
-                  ]"
+                  class="build-dialog__btn build-dialog__btn--primary"
+                  :class="{ 'build-dialog__btn--disabled': !canProceed }"
                 >
-                  <div
-                    v-if="canProceed"
-                    class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                  />
-                  <WrenchIcon class="h-4 w-4 relative" />
-                  <span class="relative">
-                    Build {{ selectedRatios.length > 1 ? `${selectedRatios.length} Videos` : 'Video' }}
-                  </span>
+                  <WrenchIcon class="build-dialog__btn-icon" />
+                  <span>Build {{ selectedRatios.length > 1 ? `${selectedRatios.length} Videos` : 'Video' }}</span>
                 </button>
               </div>
             </div>
@@ -1676,10 +1487,1035 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Overlay ===== */
+  .build-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  /* ===== Dialog Container ===== */
+  .build-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 600px;
+    margin: 1rem;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ===== Accent Bar ===== */
+  .build-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .build-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .build-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .build-dialog__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .build-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .build-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Step Indicator ===== */
+  .build-dialog__steps-wrapper {
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.2);
+  }
+
+  .build-dialog__steps {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .build-dialog__step-container {
+    display: flex;
+    align-items: center;
+  }
+
+  .build-dialog__step-container--with-line {
+    flex: 1;
+  }
+
+  .build-dialog__step {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .build-dialog__step--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .build-dialog__step-circle {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all 150ms ease;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .build-dialog__step--active .build-dialog__step-circle {
+    background-color: var(--sidebar-accent);
+    color: white;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .build-dialog__step--completed .build-dialog__step-circle {
+    background-color: rgba(6, 182, 212, 0.2);
+    color: var(--sidebar-accent);
+    border-color: rgba(6, 182, 212, 0.4);
+  }
+
+  .build-dialog__step-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .build-dialog__step-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: color 150ms ease;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__step--active .build-dialog__step-label {
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__step--completed .build-dialog__step-label {
+    color: var(--sidebar-accent);
+  }
+
+  .build-dialog__step-connector {
+    flex: 1;
+    height: 1px;
+    margin: 0 0.75rem;
+    background-color: var(--sidebar-border);
+    transition: background-color 150ms ease;
+  }
+
+  .build-dialog__step-connector--completed {
+    background-color: rgba(6, 182, 212, 0.4);
+  }
+
+  /* Hide labels on small screens */
+  @media (max-width: 640px) {
+    .build-dialog__step-label {
+      display: none;
+    }
+  }
+
+  /* ===== Content Area ===== */
+  .build-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  .build-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .build-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .build-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .build-dialog__content-inner {
+    padding: 1.5rem;
+  }
+
+  /* ===== Step Content ===== */
+  .build-dialog__step-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.5rem;
+  }
+
+  .build-dialog__step-header {
+    text-align: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .build-dialog__step-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+  }
+
+  .build-dialog__step-subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  /* ===== Platform Cards Grid ===== */
+  .build-dialog__platform-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .build-dialog__platform-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 10px;
+    border: 2px solid var(--sidebar-border);
+    background-color: rgba(255, 255, 255, 0.03);
+    transition: all 150ms ease;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .build-dialog__platform-card:hover {
+    border-color: rgba(6, 182, 212, 0.3);
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .build-dialog__platform-card--selected {
+    border-color: var(--sidebar-accent);
+    background-color: rgba(6, 182, 212, 0.1);
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.2);
+  }
+
+  .build-dialog__platform-card--original {
+    border-color: var(--sidebar-accent);
+    background-color: rgba(6, 182, 212, 0.1);
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.2);
+    cursor: default;
+  }
+
+  .build-dialog__platform-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem 0.5rem;
+  }
+
+  .build-dialog__platform-label-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__platform-ratio {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__platform-badge {
+    font-size: 0.625rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+  }
+
+  .build-dialog__platform-badge--original {
+    background-color: rgba(6, 182, 212, 0.2);
+    color: var(--sidebar-accent);
+  }
+
+  .build-dialog__platform-check {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--sidebar-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 150ms ease;
+  }
+
+  .build-dialog__platform-check--active {
+    border-color: var(--sidebar-accent);
+    background-color: var(--sidebar-accent);
+    transform: scale(1.1);
+  }
+
+  .build-dialog__platform-check-icon {
+    width: 12px;
+    height: 12px;
+    color: white;
+  }
+
+  .build-dialog__platform-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 0;
+  }
+
+  .build-dialog__platform-box {
+    border: 2px solid var(--sidebar-text-muted);
+    border-radius: 4px;
+    transition: all 150ms ease;
+  }
+
+  .build-dialog__platform-box--16-9 {
+    width: 80px;
+    height: 45px;
+  }
+
+  .build-dialog__platform-box--9-16 {
+    width: 24px;
+    height: 44px;
+  }
+
+  .build-dialog__platform-box--1-1 {
+    width: 44px;
+    height: 44px;
+  }
+
+  .build-dialog__platform-box--4-5 {
+    width: 35px;
+    height: 44px;
+  }
+
+  .build-dialog__platform-card--original .build-dialog__platform-box {
+    border-color: var(--sidebar-accent);
+  }
+
+  .build-dialog__platform-box--selected {
+    border-color: var(--sidebar-accent);
+  }
+
+  .build-dialog__platform-platforms {
+    text-align: center;
+    padding: 0 1rem 0.875rem;
+  }
+
+  .build-dialog__platform-text {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  /* ===== Selection Summary ===== */
+  .build-dialog__selection-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: 8px;
+    margin-top: 0.5rem;
+  }
+
+  .build-dialog__selection-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .build-dialog__selection-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Framing Section ===== */
+  .build-dialog__framing-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .build-dialog__section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .build-dialog__section-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  .build-dialog__section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .build-dialog__framing-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .build-dialog__framing-mode {
+    position: relative;
+    padding: 1rem;
+    border-radius: 10px;
+    border: 2px solid var(--sidebar-border);
+    background-color: rgba(255, 255, 255, 0.03);
+    transition: all 150ms ease;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .build-dialog__framing-mode:hover {
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .build-dialog__framing-mode--active {
+    border-color: var(--sidebar-accent);
+    background-color: rgba(6, 182, 212, 0.1);
+  }
+
+  .build-dialog__framing-mode-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .build-dialog__framing-mode-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .build-dialog__framing-mode-icon--active {
+    background-color: rgba(6, 182, 212, 0.2);
+  }
+
+  .build-dialog__framing-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__framing-mode--active .build-dialog__framing-icon {
+    color: var(--sidebar-accent);
+  }
+
+  .build-dialog__framing-mode-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__framing-mode-desc {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  /* ===== Manual Config ===== */
+  .build-dialog__manual-config {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-top: 0.5rem;
+  }
+
+  .build-dialog__manual-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  .build-dialog__manual-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__ratio-config {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--sidebar-border);
+    background-color: rgba(255, 255, 255, 0.03);
+    transition: all 150ms ease;
+    cursor: pointer;
+  }
+
+  .build-dialog__ratio-config:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: rgba(6, 182, 212, 0.4);
+  }
+
+  .build-dialog__ratio-config--configured {
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .build-dialog__ratio-config--configured:hover {
+    background-color: rgba(6, 182, 212, 0.15);
+  }
+
+  .build-dialog__ratio-config-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .build-dialog__ratio-preview {
+    border: 2px solid var(--sidebar-text-muted);
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .build-dialog__ratio-preview--configured {
+    border-color: var(--sidebar-accent);
+  }
+
+  .build-dialog__ratio-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__ratio-config-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__ratio-status {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__ratio-status--configured {
+    color: var(--sidebar-accent);
+  }
+
+  .build-dialog__ratio-chevron {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__loading-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    text-align: center;
+    padding: 0.5rem 0;
+  }
+
+  /* ===== Subtitle Section ===== */
+  .build-dialog__subtitle-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .build-dialog__subtitle-section--with-border {
+    padding-top: 1rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .build-dialog__subtitle-hint {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .build-dialog__subtitle-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  /* ===== Empty State ===== */
+  .build-dialog__empty-state {
+    text-align: center;
+    padding: 2rem 0;
+  }
+
+  .build-dialog__empty-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  /* ===== Export Settings ===== */
+  .build-dialog__export-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .build-dialog__setting-group {
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .build-dialog__setting-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .build-dialog__setting-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__setting-badge {
+    font-size: 0.75rem;
+    font-family: monospace;
+    color: var(--sidebar-accent);
+    background-color: rgba(6, 182, 212, 0.1);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    text-transform: capitalize;
+  }
+
+  .build-dialog__setting-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__setting-btn {
+    flex: 1;
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid var(--sidebar-border);
+    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .build-dialog__setting-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__setting-btn--active {
+    background-color: var(--sidebar-accent);
+    color: white;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 2px 8px rgba(6, 182, 212, 0.2);
+  }
+
+  .build-dialog__setting-hint {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  /* ===== Add-ons Section ===== */
+  .build-dialog__addons-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .build-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__field-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .build-dialog__field-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__field-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .build-dialog__badge {
+    font-size: 0.5625rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .build-dialog__badge--org {
+    background-color: rgba(99, 102, 241, 0.2);
+    color: rgb(165, 180, 252);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+  }
+
+  .build-dialog__badge--org-small {
+    font-size: 0.5625rem;
+    padding: 0.125rem 0.375rem;
+    background-color: rgba(99, 102, 241, 0.2);
+    color: rgb(165, 180, 252);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+
+  .build-dialog__badge--default {
+    background-color: rgba(139, 92, 246, 0.2);
+    color: rgb(196, 181, 253);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+  }
+
+  .build-dialog__badge-icon {
+    width: 10px;
+    height: 10px;
+  }
+
+  .build-dialog__dropdown-wrapper {
+    position: relative;
+  }
+
+  .build-dialog__dropdown-trigger {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+  }
+
+  .build-dialog__dropdown-trigger:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .build-dialog__dropdown-trigger:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .build-dialog__dropdown-text {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .build-dialog__dropdown-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+    transition: transform 150ms ease;
+    flex-shrink: 0;
+    margin-left: 0.5rem;
+  }
+
+  .build-dialog__dropdown-icon--open {
+    transform: rotate(180deg);
+  }
+
+  .build-dialog__dropdown-menu {
+    position: fixed;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    padding: 0.25rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    overflow-y: auto;
+  }
+
+  .build-dialog__dropdown-menu::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .build-dialog__dropdown-menu::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .build-dialog__dropdown-menu::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .build-dialog__dropdown-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.625rem 0.75rem;
+    border-radius: 5px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .build-dialog__dropdown-item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .build-dialog__dropdown-item--first {
+    border-bottom: 1px solid var(--sidebar-border);
+    border-radius: 5px 5px 0 0;
+    margin-bottom: 0.25rem;
+  }
+
+  .build-dialog__dropdown-item--selected {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .build-dialog__dropdown-item-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .build-dialog__dropdown-item-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .build-dialog__dropdown-item-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .build-dialog__dropdown-item-duration {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-left: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .build-dialog__dropdown-loading,
+  .build-dialog__dropdown-empty {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    text-align: center;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__duration-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem;
+    background-color: rgba(6, 182, 212, 0.05);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 8px;
+  }
+
+  .build-dialog__duration-label {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__duration-value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Footer ===== */
+  .build-dialog__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .build-dialog__footer-left,
+  .build-dialog__footer-right {
+    flex: 1;
+  }
+
+  .build-dialog__footer-right {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .build-dialog__step-info {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .build-dialog__btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .build-dialog__btn--back {
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    padding: 0.5rem 1rem;
+  }
+
+  .build-dialog__btn--back:hover {
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__btn--next {
+    background-color: var(--sidebar-accent);
+    color: white;
+  }
+
+  .build-dialog__btn--next:hover:not(.build-dialog__btn--disabled) {
+    opacity: 0.9;
+  }
+
+  .build-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .build-dialog__btn--primary:hover:not(.build-dialog__btn--disabled) {
+    opacity: 0.9;
+  }
+
+  .build-dialog__btn--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -1687,18 +2523,17 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {
@@ -1706,35 +2541,6 @@
     transform: scale(0.98);
   }
 
-  /* Custom scrollbar styling */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-    margin: 4px 0;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgb(63 63 70 / 0.5);
-    border-radius: 4px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgb(82 82 91 / 0.7);
-    background-clip: padding-box;
-  }
-
-  /* Firefox scrollbar */
-  .custom-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: rgb(63 63 70 / 0.5) transparent;
-  }
-
-  /* Slide-fade transition for framing mode section */
   .slide-fade-enter-active {
     transition: all 0.3s ease-out;
   }
@@ -1749,7 +2555,6 @@
     transform: translateY(-10px);
   }
 
-  /* Step slide transition */
   .step-slide-enter-active {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
@@ -1766,5 +2571,29 @@
   .step-slide-leave-to {
     opacity: 0;
     transform: translateX(-20px);
+  }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 640px) {
+    .build-dialog {
+      max-width: calc(100% - 1rem);
+      margin: 0.5rem;
+    }
+
+    .build-dialog__header {
+      padding: 1.25rem 1.25rem 0.875rem;
+    }
+
+    .build-dialog__steps-wrapper {
+      padding: 0.625rem 1.25rem;
+    }
+
+    .build-dialog__step-content {
+      padding: 1.25rem;
+    }
+
+    .build-dialog__footer {
+      padding: 0.875rem 1.25rem;
+    }
   }
 </style>
