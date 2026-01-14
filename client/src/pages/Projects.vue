@@ -603,6 +603,7 @@
                         :clips="folderClips"
                         :project-id="folderProject?.id || null"
                         :hide-header="true"
+                        :play-on-card-click="true"
                         :is-generating="false"
                         :generation-progress="0"
                         :generation-stage="''"
@@ -612,7 +613,7 @@
                         :is-playing-segments="false"
                         :hovered-timeline-clip-id="null"
                         :video-duration="0"
-                        :prompts="[]"
+                        :prompts="folderPrompts"
                         :transcript-data="null"
                         @play-clip="onClipsTabPlayClip"
                         @delete-clip="deleteFolderClip"
@@ -644,9 +645,6 @@
                           </h3>
                           <p class="folder-dialog__player-segment">{{ clipToPreview.segment_name }}</p>
                         </div>
-                        <button @click="closeClipPreview" class="folder-dialog__player-close" title="Close preview">
-                          <X :size="16" />
-                        </button>
                       </div>
 
                       <!-- Video Container -->
@@ -1118,13 +1116,36 @@
       </template>
     </SearchPalette>
 
+    <!-- Clip Editor Dialog (video editor mode) -->
+    <ClipEditorDialog
+      v-model="showClipEditorDialog"
+      :clip-id="clipEditorClipId"
+      :clip-start-time="clipEditorStartTime"
+      :clip-end-time="clipEditorEndTime"
+      :clip-title="clipEditorTitle"
+      :clip-segments="clipEditorSegments"
+      :editor-mode="true"
+      :editor-project-id="clipEditorProjectId"
+      :editor-project-name="clipEditorProjectName"
+      @save="onClipEditorSave"
+      @editor-save="onClipEditorSave"
+    />
+
+    <!-- Existing Project Dialog -->
+    <ExistingProjectDialog
+      :show="showExistingProjectDialog"
+      :existing-project="existingProjectForClip"
+      @open-existing="onOpenExistingProject"
+      @create-new="onCreateNewProject"
+    />
+
     <!-- Auth Modal -->
     <AuthModal v-model="showAuthModal" />
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+  import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import Hls from 'hls.js';
@@ -1169,15 +1190,19 @@
     hasRawVideosForProject,
     hasClipsForProject,
     deleteClip,
+    getAllPrompts,
     getCreatorProfileByProjectId,
     getIntroOutroById,
     getWatermarkByServerId,
+    getVideoEditorProjectsForClip,
     type Project,
     type RawVideo,
     type ClipWithVersion,
     type ClipWithVersionAndSegment,
     type IntroOutro,
+    type Prompt,
     type WatermarkSettings,
+    type VideoEditorProject,
   } from '@/services/database';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { extractMintId } from '@/services/pumpfun';
@@ -1201,7 +1226,10 @@
     type IntroOutroItem,
   } from '@/components/ClipBuildSettingsDialog.vue';
   import ClipsTab from '@/components/ClipsTab.vue';
+  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
+  import ExistingProjectDialog from '@/components/clip-editor/ExistingProjectDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
@@ -1649,6 +1677,26 @@
   const folderClipToBuild = ref<ClipWithVersionAndSegment | null>(null);
   const showFolderBuildDialog = ref(false);
   const folderDownloadDropdownId = ref<string | null>(null);
+  const folderPrompts = ref<Prompt[]>([]);
+
+  // Clip editor dialog state (folder clips)
+  const showClipEditorDialog = ref(false);
+  const clipEditorClipId = ref('');
+  const clipEditorStartTime = ref(0);
+  const clipEditorEndTime = ref(0);
+  const clipEditorTitle = ref('');
+  const clipEditorSegments = ref<{ start_time: number; end_time: number }[]>([]);
+  const clipEditorProjectId = ref<string | null>(null);
+  const clipEditorProjectName = ref('Video Project');
+  const showExistingProjectDialog = ref(false);
+  const existingProjectForClip = ref<VideoEditorProject | null>(null);
+  const pendingClipToEdit = ref<{
+    clipId: string;
+    startTime: number;
+    endTime: number;
+    title: string;
+    segments: { start_time: number; end_time: number }[];
+  } | null>(null);
 
   // Folder clips grouping: Completed vs Found Clips
   const folderClipSections = computed(() => {
@@ -2103,15 +2151,6 @@
     // Clear clip preview when switching away from clips tab
     if (tab === 'segments') {
       closeClipPreview();
-    }
-  }
-
-  // Open segment workspace and navigate to specific clip
-  function openSegmentWithClip(clip: ClipWithVersionAndSegment) {
-    const segmentProject = projects.value.find((p) => p.id === clip.segment_id);
-    if (segmentProject) {
-      showFolderDialog.value = false;
-      openWorkspace(segmentProject, clip.id);
     }
   }
 
@@ -2741,11 +2780,52 @@
     }
   }
 
-  function onClipsTabEditClip(clipId: string) {
+  async function onClipsTabEditClip(clipId: string) {
     const clip = folderClips.value.find((c) => c.id === clipId);
-    if (clip) {
-      openSegmentWithClip(clip);
+    if (!clip) {
+      return;
     }
+
+    const clipTitle = clip.current_version?.name || clip.current_version_name || clip.name || 'Untitled Clip';
+
+    let segments: { start_time: number; end_time: number }[] = [];
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      segments = clip.current_version_segments.map((segment) => ({
+        start_time: segment.start_time,
+        end_time: segment.end_time,
+      }));
+    } else {
+      const startTime = clip.current_version?.start_time ?? clip.current_version_start_time ?? clip.start_time ?? 0;
+      const endTime =
+        clip.current_version?.end_time ??
+        clip.current_version_end_time ??
+        clip.end_time ??
+        startTime + (clip.duration ?? 10);
+      segments = [{ start_time: startTime, end_time: endTime }];
+    }
+
+    const startTime = Math.min(...segments.map((s) => s.start_time));
+    const endTime = Math.max(...segments.map((s) => s.end_time));
+
+    try {
+      const existingProjects = await getVideoEditorProjectsForClip(clipId);
+      if (existingProjects.length > 0) {
+        existingProjectForClip.value = existingProjects[0];
+        pendingClipToEdit.value = {
+          clipId,
+          startTime,
+          endTime,
+          title: clipTitle,
+          segments,
+        };
+        showExistingProjectDialog.value = true;
+        return;
+      }
+    } catch (error) {
+      console.warn('[Projects] Failed to check for existing projects:', error);
+    }
+
+    await openClipInNewProject(clipId, clipTitle, startTime, endTime, segments);
   }
 
   async function onClipsTabRefreshClips() {
@@ -2756,6 +2836,92 @@
     if (folderProject) {
       startProjectDetection(folderProject);
     }
+  }
+
+  async function loadFolderPrompts() {
+    try {
+      folderPrompts.value = await getAllPrompts();
+    } catch (err) {
+      console.warn('[Projects] Failed to load prompts:', err);
+      folderPrompts.value = [];
+    }
+  }
+
+  async function openClipInNewProject(
+    clipId: string,
+    clipTitle: string,
+    startTime: number,
+    endTime: number,
+    segments: { start_time: number; end_time: number }[]
+  ) {
+    try {
+      const result = await createVideoEditorProjectFromClip({
+        clipId,
+        clipTitle,
+        clipStartTime: startTime,
+        clipEndTime: endTime,
+        clipSegments: segments,
+      });
+
+      clipEditorClipId.value = clipId;
+      clipEditorStartTime.value = startTime;
+      clipEditorEndTime.value = endTime;
+      clipEditorTitle.value = clipTitle;
+      clipEditorSegments.value = segments;
+      clipEditorProjectId.value = result.projectId;
+      clipEditorProjectName.value = result.projectName;
+
+      showFolderDialog.value = false;
+      nextTick(() => {
+        showClipEditorDialog.value = true;
+      });
+    } catch (err) {
+      console.error('[Projects] Failed to create video editor project:', err);
+      error('Failed to Open Editor', 'Could not create video editor project. Please try again.');
+    }
+  }
+
+  function openClipInExistingProject(project: VideoEditorProject) {
+    const pending = pendingClipToEdit.value;
+    if (!pending) return;
+
+    clipEditorClipId.value = pending.clipId;
+    clipEditorStartTime.value = pending.startTime;
+    clipEditorEndTime.value = pending.endTime;
+    clipEditorTitle.value = pending.title;
+    clipEditorSegments.value = pending.segments;
+    clipEditorProjectId.value = project.id;
+    clipEditorProjectName.value = project.name;
+
+    pendingClipToEdit.value = null;
+    showExistingProjectDialog.value = false;
+    existingProjectForClip.value = null;
+
+    showFolderDialog.value = false;
+    nextTick(() => {
+      showClipEditorDialog.value = true;
+    });
+  }
+
+  function onOpenExistingProject() {
+    if (existingProjectForClip.value) {
+      openClipInExistingProject(existingProjectForClip.value);
+    }
+  }
+
+  async function onCreateNewProject() {
+    const pending = pendingClipToEdit.value;
+    if (!pending) return;
+
+    showExistingProjectDialog.value = false;
+    existingProjectForClip.value = null;
+
+    await openClipInNewProject(pending.clipId, pending.title, pending.startTime, pending.endTime, pending.segments);
+  }
+
+  async function onClipEditorSave() {
+    if (!folderProject.value) return;
+    await loadFolderClips(folderProject.value.id);
   }
 
   // Build clip from folder view
@@ -4139,6 +4305,7 @@
     await initializeDownloads();
 
     await loadProjects();
+    await loadFolderPrompts();
 
     // Add event listener for clip refresh events
     document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);

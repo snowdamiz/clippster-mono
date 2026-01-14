@@ -357,6 +357,7 @@
 
                               <!-- Play Clip -->
                               <button
+                                v-if="!props.playOnCardClick"
                                 class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
                                 @click.stop="
                                   onPlayClip(clip);
@@ -789,6 +790,7 @@
     creatorDefaultOutro?: IntroOutroRef | null;
     videoThumbnailUrl?: string | null;
     hideHeader?: boolean;
+    playOnCardClick?: boolean;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -811,6 +813,7 @@
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
     videoThumbnailUrl: null,
+    playOnCardClick: false,
   });
 
   // Emits
@@ -1726,6 +1729,10 @@
 
   function onClipClick(clipId: string) {
     const clip = props.clips.find((c) => c.id === clipId);
+
+    if (clip && props.playOnCardClick) {
+      onPlayClip(clip);
+    }
 
     if (clip?.current_version_segments && clip.current_version_segments.length > 0) {
       const sortedSegments = [...clip.current_version_segments].sort((a, b) => a.start_time - b.start_time);
