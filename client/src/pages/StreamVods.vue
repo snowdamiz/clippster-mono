@@ -1379,9 +1379,7 @@
     position: absolute;
     inset: 0;
     z-index: 1;
-    background:
-      linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.7) 35%, rgba(0, 0, 0, 0.3) 60%, transparent 100%),
-      linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 0%, transparent 40%);
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.3) 40%, transparent 70%);
     pointer-events: none;
   }
 
@@ -1501,13 +1499,7 @@
     z-index: 5;
     padding: 1rem;
     padding-top: 7rem;
-    background: linear-gradient(
-      to top,
-      rgba(0, 0, 0, 0.95) 0%,
-      rgba(0, 0, 0, 0.8) 40%,
-      rgba(0, 0, 0, 0.4) 70%,
-      transparent 100%
-    );
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
