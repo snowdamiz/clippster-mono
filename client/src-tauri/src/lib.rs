@@ -12,6 +12,7 @@ mod assets;
 mod ui_utils;
 mod pumpfun;
 mod kick;
+mod twitch;
 mod waveform;
 mod focal_detection;
 mod commands;
@@ -657,11 +658,21 @@ pub fn run() {
             kick::stop_all_kick_recordings,
             kick::get_kick_session_output_dir,
 
+            // Twitch commands
+            twitch::check_twitch_livestream,
+            twitch::get_twitch_vods,
+            twitch::start_twitch_recording,
+            twitch::stop_twitch_recording,
+            twitch::stop_all_twitch_recordings,
+            twitch::get_twitch_session_output_dir,
+
             // Download commands
             downloads::download_pumpfun_vod,
             downloads::download_pumpfun_vod_segment,
             downloads::download_kick_vod,
             downloads::download_kick_vod_segment,
+            twitch::download_twitch_vod,
+            twitch::download_twitch_vod_segment,
 
             // Audio commands
             audio::extract_audio_from_video,

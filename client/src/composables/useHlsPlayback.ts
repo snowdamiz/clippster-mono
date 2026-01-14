@@ -774,8 +774,11 @@ export function useHlsPlayback() {
     // NOT what's currently buffered. HLS.js will load necessary segments when seeking.
     const minAvailableOffset = Math.max(0, availableStartTime - offset);
     const safeFloor = minAvailableOffset > 0 ? minAvailableOffset + SAFE_SEEK_PADDING : 0;
-    const liveEdge = state.value.liveEdgeTime || state.value.duration || 0;
-    const clampedTime = Math.max(safeFloor, Math.min(time, liveEdge));
+    // Use duration as the upper bound for seeking, NOT liveEdgeTime.
+    // liveEdgeTime represents the "safe" live sync position (a few segments behind),
+    // but users should be able to seek anywhere within the available duration.
+    const maxSeekable = state.value.duration || 0;
+    const clampedTime = Math.max(safeFloor, Math.min(time, maxSeekable));
 
     // Map back to absolute player time
     const targetAbsolute = clampedTime + offset;

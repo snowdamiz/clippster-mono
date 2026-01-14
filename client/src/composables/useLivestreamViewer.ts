@@ -33,6 +33,12 @@ import {
   stopKickRecording,
   extractChannelSlug,
 } from '@/services/kick';
+import {
+  checkTwitchLivestream,
+  startTwitchRecording,
+  stopTwitchRecording,
+  extractChannelName,
+} from '@/services/twitch';
 
 // PumpFun LiveKit API endpoints
 const PUMPFUN_LIVESTREAM_API = 'https://livestream-api.pump.fun';
@@ -131,6 +137,7 @@ export function useLivestreamViewer() {
     stopMonitoring,
     dvrSessions,
     getKickDvrSession,
+    getTwitchDvrSession,
   } = useLivestreamMonitoring();
 
   // HLS Playback composable for reliable live streaming with DVR
@@ -652,6 +659,128 @@ export function useLivestreamViewer() {
     }
   }
 
+  // Connect to Twitch livestream using yt-dlp recording (same approach as Kick)
+  async function connectToTwitch(
+    channelInput: string,
+    streamerId: string,
+    displayName: string,
+    profileImageUrl?: string
+  ) {
+    try {
+      // Extract channel name from URL if needed (e.g., "https://twitch.tv/xqc" -> "xqc")
+      const channelName = extractChannelName(channelInput) || channelInput;
+      console.log('[LiveViewer] Connecting to Twitch channel:', channelName);
+
+      // Check if stream is live and get stream info
+      const twitchStatus = await checkTwitchLivestream(channelName);
+
+      if (!twitchStatus.isLive) {
+        state.value.connectionState = 'failed';
+        state.value.connectionError = 'Stream is not live';
+        return;
+      }
+
+      state.value.viewerCount = twitchStatus.viewerCount || 0;
+      state.value.recordingStartTime = twitchStatus.startedAt
+        ? new Date(twitchStatus.startedAt).getTime()
+        : Date.now();
+
+      // Check if there's an existing DVR session for this streamer (Auto DVR)
+      const existingDvrSession = getTwitchDvrSession(streamerId);
+      let outputDir: string;
+      let sessionId: string;
+
+      if (existingDvrSession) {
+        // Use existing DVR session - allows seeking back to beginning of stream
+        console.log('[LiveViewer] Found existing Twitch DVR session:', existingDvrSession.sessionId);
+        outputDir = existingDvrSession.outputDir;
+        sessionId = existingDvrSession.sessionId;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = false; // Not a temp recording - it's a DVR session
+      } else {
+        // No existing DVR session - start a new temp recording
+        sessionId = `twitch-view-${channelName}-${Date.now()}`;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = true;
+
+        console.log('[LiveViewer] Starting new Twitch recording:', channelName);
+
+        // Start yt-dlp recording - this creates local HLS files we can play
+        try {
+          await startTwitchRecording(channelName, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Twitch recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+
+        // Get the output directory for HLS playback
+        outputDir = await invoke<string>('get_twitch_session_output_dir', { sessionId });
+      }
+
+      console.log('[LiveViewer] Twitch HLS output dir:', outputDir);
+
+      // Initialize HLS playback with the local recording output
+      if (hlsVideoElement.value) {
+        state.value.dvrStartTime = Date.now();
+        state.value.kickEmbedUrl = null;
+
+        // Store the output dir for HLS playback
+        hlsOutputDir.value = outputDir;
+
+        // Use the HLS playback composable for local Twitch stream
+        // This will poll for the playlist to become available
+        await hlsPlayback.initialize(hlsVideoElement.value, outputDir);
+
+        state.value.connectionState = 'connected';
+        state.value.isBuffering = false;
+        state.value.playbackMode = 'hls';
+        isHlsReady.value = true;
+        reconnectAttempts = 0;
+
+        // Reset segment stall detection
+        lastSegmentCount = 0;
+        lastSegmentTime = Date.now();
+        isRestartingRecorder = false;
+
+        // Start live edge updates for Twitch
+        startLiveEdgeUpdates();
+
+        // Start segment polling for clipping functionality
+        startSegmentPolling();
+
+        // Start playback sync to keep UI in sync with HLS state
+        startPlaybackSync();
+
+        // Auto-play
+        hlsPlayback.play();
+        state.value.isPlaying = true;
+
+        console.log(
+          '[LiveViewer] Connected to Twitch stream via yt-dlp',
+          existingDvrSession ? '(using existing DVR)' : '(new recording)'
+        );
+      } else {
+        throw new Error('HLS video element not available');
+      }
+    } catch (error) {
+      console.error('[LiveViewer] Failed to connect to Twitch:', error);
+      state.value.connectionState = 'failed';
+      state.value.connectionError = error instanceof Error ? error.message : 'Connection failed';
+
+      // Clean up recording if it was started (only for temp recordings)
+      if (state.value.tempSessionId && state.value.isTempRecording) {
+        try {
+          const cleanupName = extractChannelName(channelInput) || channelInput;
+          await stopTwitchRecording(cleanupName);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    }
+  }
+
   // Connect to livestream
   async function connect(
     mintId: string,
@@ -687,6 +816,11 @@ export function useLivestreamViewer() {
     // Route to platform-specific connection
     if (platform === 'Kick') {
       await connectToKick(mintId, streamerId, displayName, profileImageUrl);
+      return;
+    }
+
+    if (platform === 'Twitch') {
+      await connectToTwitch(mintId, streamerId, displayName, profileImageUrl);
       return;
     }
 

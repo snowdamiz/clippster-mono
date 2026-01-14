@@ -54,7 +54,7 @@ export interface ActiveDownload {
   // Project grouping
   projectId?: string;
   parentProjectId?: string;
-  provider?: 'pumpfun' | 'kick';
+  provider?: 'pumpfun' | 'kick' | 'twitch';
   groupId?: string;
   totalSegments?: number;
   currentSegmentIndex?: number;
@@ -390,7 +390,7 @@ export function useDownloads() {
     options: {
       autoSegment?: boolean;
       segmentDuration?: number;
-      provider?: 'pumpfun' | 'kick';
+      provider?: 'pumpfun' | 'kick' | 'twitch';
       // Watermark settings from creator profile (stored with project for automatic application)
       creatorWatermarkSettings?: {
         watermarkId: string;
@@ -574,6 +574,29 @@ export function useDownloads() {
             activeDownloads.delete(downloadId);
           });
         }
+      } else if (provider === 'twitch') {
+        // Twitch VODs use the same download logic as Kick (yt-dlp based)
+        if (isSegmentDownload) {
+          invoke('download_kick_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            videoUrl,
+            channelSlug: mintId, // channel name for Twitch
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_kick_vod', {
+            downloadId,
+            title: finalTitle,
+            videoUrl,
+            channelSlug: mintId, // channel name for Twitch
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
       } else {
         // PumpFun (default)
         if (isSegmentDownload) {
@@ -615,7 +638,7 @@ export function useDownloads() {
     sourceClipId: string,
     totalDuration: number,
     maxSegmentDuration: number = 3600,
-    provider: 'pumpfun' | 'kick' = 'pumpfun',
+    provider: 'pumpfun' | 'kick' | 'twitch' = 'pumpfun',
     creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string }
   ): Promise<string> {
     await initialize();
@@ -654,9 +677,9 @@ export function useDownloads() {
 
       parentProjectId = await createProject(
         title,
-        `Auto-segmented download from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${provider === 'kick' ? 'Channel' : 'Mint'}: ${mintId}). ${numberOfSegments} parts.`,
+        `Auto-segmented download from ${provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun'} (${provider === 'kick' || provider === 'twitch' ? 'Channel' : 'Mint'}: ${mintId}). ${numberOfSegments} parts.`,
         undefined,
-        provider === 'kick' ? 'Kick' : 'PumpFun',
+        provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun',
         watermarkSettingsJson
       );
     } catch (error) {

@@ -495,6 +495,7 @@
     type TokenSearchResult,
   } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
+  import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
@@ -670,7 +671,8 @@
     const needsUpdate = streamers.value.filter(
       (s) =>
         (s.platform === 'PumpFun' && (s.displayName === s.mintId || !s.profileImageUrl)) ||
-        (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId))
+        (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId)) ||
+        (s.platform === 'Twitch' && (!s.profileImageUrl || s.displayName === s.mintId))
     );
 
     if (needsUpdate.length === 0) return;
@@ -683,6 +685,22 @@
 
           if (streamer.displayName === streamer.mintId && status.username) {
             updates.display_name = status.username;
+          }
+          if (!streamer.profileImageUrl && status.profileImageUrl) {
+            updates.profile_image_url = status.profileImageUrl;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await updateMonitoredStreamer(streamer.id, updates);
+            if (updates.display_name) streamer.displayName = updates.display_name;
+            if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+          }
+        } else if (streamer.platform === 'Twitch') {
+          const status = await checkTwitchLivestream(streamer.mintId);
+          const updates: any = {};
+
+          if (streamer.displayName === streamer.mintId && status.displayName) {
+            updates.display_name = status.displayName;
           }
           if (!streamer.profileImageUrl && status.profileImageUrl) {
             updates.profile_image_url = status.profileImageUrl;
@@ -1009,6 +1027,39 @@
       }
     }
 
+    if (detectedPlatform.value === 'Twitch') {
+      const channelName = extractChannelName(inputValue.value);
+      if (channelName) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Twitch',
+          message: `Checking Twitch channel "${channelName}"...`,
+          status: 'loading',
+        });
+
+        try {
+          const twitchStatus = await checkTwitchLivestream(channelName);
+          const displayName = twitchStatus.displayName || channelName;
+          const profileImage = twitchStatus.profileImageUrl;
+
+          addActivityLog({
+            streamerId: 'system',
+            streamerName: 'System',
+            platform: 'Twitch',
+            message: twitchStatus.isLive ? `Found ${displayName} - Currently LIVE!` : `Found ${displayName}`,
+            status: 'success',
+          });
+
+          await confirmAddStreamer(channelName, displayName, profileImage, 'twitch');
+        } catch (error) {
+          console.error('[LiveClip] Failed to fetch Twitch channel info', error);
+          await confirmAddStreamer(channelName, channelName, undefined, 'twitch');
+        }
+        return;
+      }
+    }
+
     const mintId = extractMintId(inputValue.value);
 
     if (mintId) {
@@ -1118,7 +1169,7 @@
     profileImageUrl?: string,
     platform: string = 'pumpfun'
   ) {
-    const platformDisplay = platform === 'kick' ? 'Kick' : 'PumpFun';
+    const platformDisplay = platform === 'kick' ? 'Kick' : platform === 'twitch' ? 'Twitch' : 'PumpFun';
     try {
       await createMonitoredStreamer(platformId, displayName, profileImageUrl, 5, false, platform);
       await loadStreamers();
