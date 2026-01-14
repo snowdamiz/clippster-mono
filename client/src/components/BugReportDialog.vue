@@ -51,12 +51,13 @@
                 <!-- Severity -->
                 <div class="bug-dialog__field">
                   <label for="severity" class="bug-dialog__label">Severity</label>
-                  <select id="severity" v-model="form.severity" class="bug-dialog__select">
-                    <option value="low">Low - Minor inconvenience</option>
-                    <option value="medium">Medium - Feature not working correctly</option>
-                    <option value="high">High - Major functionality broken</option>
-                    <option value="critical">Critical - App unusable or data loss</option>
-                  </select>
+                  <CustomDropdown
+                    v-model="form.severity"
+                    :options="severityOptions"
+                    placeholder="Select severity"
+                    class="bug-dialog__dropdown"
+                    trigger-class="bug-dialog__dropdown-trigger"
+                  />
                 </div>
 
                 <!-- Expected vs Actual -->
@@ -127,6 +128,7 @@
   import { ref, computed, watch } from 'vue';
   import { X, Loader2, Bug, AlertCircle, CheckCircle } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
   import api from '@/services/api';
 
   interface Props {
@@ -153,6 +155,13 @@
     expected_behavior: '',
     actual_behavior: '',
   });
+
+  const severityOptions = [
+    { label: 'Low - Minor inconvenience', value: 'low' },
+    { label: 'Medium - Feature not working correctly', value: 'medium' },
+    { label: 'High - Major functionality broken', value: 'high' },
+    { label: 'Critical - App unusable or data loss', value: 'critical' },
+  ];
 
   const formIsValid = computed(() => {
     return form.value.title.trim() !== '' && form.value.description.trim() !== '';
@@ -369,8 +378,7 @@
     font-size: 0.8125rem;
   }
 
-  .bug-dialog__input,
-  .bug-dialog__select {
+  .bug-dialog__input {
     width: 100%;
     padding: 0.75rem 1rem;
     font-size: 0.875rem;
@@ -386,20 +394,46 @@
     opacity: 0.6;
   }
 
-  .bug-dialog__input:focus,
-  .bug-dialog__select:focus {
+  .bug-dialog__input:focus {
     outline: none;
     border-color: var(--sidebar-accent);
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
   }
 
-  .bug-dialog__select {
-    cursor: pointer;
+  .bug-dialog__dropdown {
+    width: 100%;
   }
 
-  .bug-dialog__select option {
-    background-color: var(--sidebar-surface);
-    color: var(--sidebar-text);
+  /* Dropdown trigger button styling */
+  :deep(.bug-dialog__dropdown-trigger) {
+    width: 100% !important;
+    padding: 0.75rem 1rem !important;
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+    justify-content: space-between !important;
+  }
+
+  :deep(.bug-dialog__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  :deep(.bug-dialog__dropdown-trigger:focus-within) {
+    border-color: var(--sidebar-accent) !important;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15) !important;
+  }
+
+  :deep(.bug-dialog__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.bug-dialog__dropdown-trigger svg) {
+    width: 14px !important;
+    height: 14px !important;
+    color: var(--sidebar-text-muted) !important;
   }
 
   .bug-dialog__textarea {
@@ -524,5 +558,51 @@
     to {
       transform: rotate(360deg);
     }
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Bug Dialog dropdown menu styling */
+  .bug-dialog__dropdown + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: bugDialogDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes bugDialogDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  .bug-dialog__dropdown + div[class*='fixed'] button,
+  div.fixed.bg-popover button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  .bug-dialog__dropdown + div[class*='fixed'] button:hover,
+  div.fixed.bg-popover button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  .bug-dialog__dropdown + div[class*='fixed'] button.bg-primary\/10,
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
   }
 </style>

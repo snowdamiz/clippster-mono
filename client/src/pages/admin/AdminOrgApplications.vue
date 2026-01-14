@@ -7,10 +7,14 @@
     :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Organization Applications' }]"
   >
     <template #actions>
-      <button class="admin-apps__action-btn" @click="fetchApplications">
-        <RefreshCw class="admin-apps__action-icon" />
-        Refresh
-      </button>
+      <CustomDropdown
+        v-model="filters.status"
+        :options="statusOptions"
+        placeholder="All Status"
+        class="admin-apps__filter-dropdown"
+        trigger-class="admin-apps__dropdown-trigger"
+        @update:model-value="fetchApplications"
+      />
     </template>
 
     <div class="admin-apps">
@@ -18,30 +22,6 @@
       <div class="admin-apps__heading">
         <h1 class="admin-apps__title">Organization Applications</h1>
         <p class="admin-apps__subtitle">Review and approve organization account requests</p>
-      </div>
-
-      <!-- Stats Header with Filters -->
-      <div class="admin-apps__stats-header">
-        <div class="admin-apps__stats-info">
-          <div class="admin-apps__stats-icon">
-            <FileText class="admin-apps__stats-icon-svg" />
-          </div>
-          <div>
-            <h2 class="admin-apps__stats-title">Applications</h2>
-            <p class="admin-apps__stats-desc">Manage organization account requests</p>
-          </div>
-        </div>
-        <div class="admin-apps__filters">
-          <select v-model="filters.status" class="admin-apps__filter-select" @change="fetchApplications">
-            <option value="">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-          </select>
-          <span class="admin-apps__stats-count">
-            {{ applications.length }} application{{ applications.length !== 1 ? 's' : '' }}
-          </span>
-        </div>
       </div>
 
       <!-- Applications Table -->
@@ -125,7 +105,6 @@
           <FileText class="admin-apps__empty-icon-svg" />
         </div>
         <p class="admin-apps__empty-text">No applications found</p>
-        <button class="admin-apps__empty-btn" @click="fetchApplications">Refresh Applications</button>
       </div>
     </div>
 
@@ -303,6 +282,7 @@
   import { FileText, RefreshCw, Eye, Trash2, Loader2, X, Building2, AlertCircle, Check } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
   import api from '@/services/api';
 
   interface Application {
@@ -342,6 +322,13 @@
   const processing = ref(false);
   const actionType = ref<'approve' | 'reject' | null>(null);
   const actionError = ref<string | null>(null);
+
+  const statusOptions = [
+    { label: 'All Status', value: '' },
+    { label: 'Pending', value: 'pending' },
+    { label: 'Approved', value: 'approved' },
+    { label: 'Rejected', value: 'rejected' },
+  ];
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -605,20 +592,35 @@
     gap: 0.75rem;
   }
 
-  .admin-apps__filter-select {
-    padding: 0.5rem 0.75rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    color: var(--sidebar-text);
-    font-size: 0.8125rem;
-    cursor: pointer;
-    transition: all 150ms ease;
+  .admin-apps__filter-dropdown {
+    width: 140px;
+    flex-shrink: 0;
   }
 
-  .admin-apps__filter-select:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
+  /* Dropdown trigger button styling */
+  :deep(.admin-apps__dropdown-trigger) {
+    height: 32px !important;
+    padding: 0 0.625rem !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 6px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+  }
+
+  :deep(.admin-apps__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  :deep(.admin-apps__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.admin-apps__dropdown-trigger svg) {
+    width: 12px !important;
+    height: 12px !important;
+    color: var(--sidebar-text-muted) !important;
   }
 
   .admin-apps__stats-count {
@@ -891,7 +893,7 @@
   .admin-apps__modal-header {
     position: relative;
     padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--sidebar-border);
+    margin-bottom: 1rem;
   }
 
   .admin-apps__modal-close {
@@ -1241,5 +1243,51 @@
     to {
       transform: rotate(360deg);
     }
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Admin Org Applications dropdown menu styling */
+  .admin-apps__filter-dropdown + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: adminAppsDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes adminAppsDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  .admin-apps__filter-dropdown + div[class*='fixed'] button,
+  div.fixed.bg-popover button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  .admin-apps__filter-dropdown + div[class*='fixed'] button:hover,
+  div.fixed.bg-popover button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  .admin-apps__filter-dropdown + div[class*='fixed'] button.bg-primary\/10,
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
   }
 </style>
