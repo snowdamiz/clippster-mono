@@ -119,10 +119,6 @@
 
           <!-- Time Estimate & Cancel Button -->
           <div class="flex flex-col items-center gap-2.5">
-            <div class="clips-tab-time-estimate inline-flex items-center gap-1.5 text-[9px] px-2 py-0.5 rounded-full">
-              <ClockIcon class="w-2.5 h-2.5" />
-              {{ getTimeEstimate() }}
-            </div>
             <button
               @click="handleCancelDetection"
               class="clips-tab-cancel-progress-btn flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium rounded-md transition-all"
@@ -131,14 +127,6 @@
               <StopCircle class="h-3 w-3" />
               Cancel
             </button>
-          </div>
-
-          <!-- Status Message (if extra details) -->
-          <div
-            v-if="generationMessage && generationMessage !== getLoadingMessage()"
-            class="clips-tab-status-msg text-[10px] text-center rounded px-2.5 py-1.5"
-          >
-            {{ generationMessage }}
           </div>
 
           <!-- Error State -->
@@ -1130,30 +1118,7 @@
   });
 
   const stageIconClass = computed(() => {
-    switch (props.generationStage) {
-      case 'starting':
-      case 'initializing':
-      case 'checking_cache':
-        return 'text-blue-500';
-      case 'extracting_chunks':
-        return 'text-cyan-500';
-      case 'transcribing':
-      case 'transcribing_chunks':
-        return 'text-yellow-500';
-      case 'analyzing':
-      case 'detecting_clips':
-        return 'text-purple-500';
-      case 'validating':
-        return 'text-orange-500';
-      case 'finalizing':
-        return 'text-emerald-500';
-      case 'completed':
-        return 'text-green-500';
-      case 'error':
-        return 'text-red-500';
-      default:
-        return 'text-blue-500';
-    }
+    return 'text-blue-500';
   });
 
   const stageTitle = computed(() => {
