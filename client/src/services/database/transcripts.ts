@@ -144,19 +144,43 @@ export async function searchTranscriptSegmentsByClipIds(
 
   if (clipIds.length === 0) return [];
 
-  // Use FTS5 to search transcript segments
-  // Return unique clip IDs that have matching transcript segments
+  // Search clip_segments.transcript for matching text
+  // Clips store their transcript data in clip_segments, linked via clip_versions
+  const placeholders = clipIds.map(() => '?').join(',');
+  const searchPattern = `%${query}%`;
+
+  const result = await db.select<{ clip_id: string }[]>(
+    `SELECT DISTINCT cv.clip_id
+     FROM clip_versions cv
+     JOIN clip_segments cs ON cs.clip_version_id = cv.id
+     WHERE cv.clip_id IN (${placeholders})
+       AND cs.transcript IS NOT NULL
+       AND LOWER(cs.transcript) LIKE LOWER(?)
+     ORDER BY cv.clip_id`,
+    [...clipIds, searchPattern]
+  );
+
+  return result.map((r) => r.clip_id);
+}
+
+export async function getClipIdsWithTranscripts(clipIds: string[]): Promise<string[]> {
+  const db = await getDatabase();
+
+  if (clipIds.length === 0) return [];
+
+  // Return clip IDs that have clip_segments with non-null transcript data
+  // Clips store their transcript in clip_segments.transcript, linked via clip_versions
   const placeholders = clipIds.map(() => '?').join(',');
 
   const result = await db.select<{ clip_id: string }[]>(
-    `SELECT DISTINCT ts.clip_id
-     FROM transcript_segments ts
-     JOIN transcript_segments_fts fts ON fts.rowid = ts.rowid
-     WHERE transcript_segments_fts MATCH ? 
-       AND ts.clip_id IN (${placeholders})
-       AND ts.clip_id IS NOT NULL
-     ORDER BY ts.clip_id`,
-    [query, ...clipIds]
+    `SELECT DISTINCT cv.clip_id
+     FROM clip_versions cv
+     JOIN clip_segments cs ON cs.clip_version_id = cv.id
+     WHERE cv.clip_id IN (${placeholders})
+       AND cs.transcript IS NOT NULL
+       AND cs.transcript != ''
+     ORDER BY cv.clip_id`,
+    [...clipIds]
   );
 
   return result.map((r) => r.clip_id);

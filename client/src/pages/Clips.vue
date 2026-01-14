@@ -835,6 +835,7 @@
     getRawVideosByProjectId,
     getCreatorProfileByProjectId,
     searchTranscriptSegmentsByClipIds,
+    getClipIdsWithTranscripts,
     type Clip,
     type ClipBuild,
     type Project,
@@ -964,6 +965,7 @@
   const projectFilter = ref('all');
   const aspectRatioFilter = ref('all');
   const clipIdsWithTranscriptMatch = ref<Set<string>>(new Set());
+  const clipIdsWithTranscripts = ref<Set<string>>(new Set());
 
   // Search palette state
   const showSearchPalette = ref(false);
@@ -1170,22 +1172,8 @@
 
     // 0. Filter for untranscribed clips only (if active)
     if (showOnlyUntranscribed.value) {
-      // Get unique clips that don't have transcripts
-      const untranscribedClipIds = new Set<string>();
-      const seenClips = new Set<string>();
-
-      for (const build of displayableBuilds.value) {
-        if (!seenClips.has(build.clip.id)) {
-          seenClips.add(build.clip.id);
-          // A clip is untranscribed if it has no transcript segments
-          // We check if it's NOT in the transcript match set
-          if (!clipIdsWithTranscriptMatch.value.has(build.clip.id)) {
-            untranscribedClipIds.add(build.clip.id);
-          }
-        }
-      }
-
-      result = result.filter((item) => untranscribedClipIds.has(item.clip.id));
+      // Filter to clips that don't have transcripts (using clipIdsWithTranscripts loaded on mount)
+      result = result.filter((item) => !clipIdsWithTranscripts.value.has(item.clip.id));
     }
 
     // 1. Search Text - now includes transcript search
@@ -1604,8 +1592,8 @@
 
   // Check if any clips in a folder are untranscribed
   function hasUntranscribedClips(clips: ClipWithBuilds[]): boolean {
-    // A folder has untranscribed clips if any of its clips don't have transcript matches
-    return clips.some((clip) => !clipIdsWithTranscriptMatch.value.has(clip.id));
+    // A folder has untranscribed clips if any of its clips don't have transcripts
+    return clips.some((clip) => !clipIdsWithTranscripts.value.has(clip.id));
   }
 
   function getDateLabel(timestamp: number): string {
@@ -1753,6 +1741,9 @@
       // Load all clips with their builds
       clips.value = await getAllClipsWithBuilds();
 
+      // Load which clips have transcripts (for untranscribed detection)
+      await loadTranscribedClipIds();
+
       // Load thumbnails, project info, and raw videos for all clips
       for (const clip of clips.value) {
         await loadClipThumbnail(clip);
@@ -1786,6 +1777,21 @@
       console.error('Failed to load clips:', error);
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function loadTranscribedClipIds() {
+    try {
+      const clipIds = clips.value.map((clip) => clip.id);
+      if (clipIds.length === 0) {
+        clipIdsWithTranscripts.value = new Set();
+        return;
+      }
+      const transcribedIds = await getClipIdsWithTranscripts(clipIds);
+      clipIdsWithTranscripts.value = new Set(transcribedIds);
+    } catch (error) {
+      console.error('Failed to load transcribed clip IDs:', error);
+      clipIdsWithTranscripts.value = new Set();
     }
   }
 
@@ -2460,23 +2466,19 @@
   // Count clips without transcripts
   const untranscribedClipsCount = computed(() => {
     // Count unique clips that don't have transcript segments
-    const uniqueClips = new Map<string, ClipWithBuilds>();
+    const uniqueClipIds = new Set<string>();
     for (const build of displayableBuilds.value) {
-      if (!uniqueClips.has(build.clip.id)) {
-        uniqueClips.set(build.clip.id, build.clip);
+      uniqueClipIds.add(build.clip.id);
+    }
+
+    // Count clips that don't have transcripts
+    let count = 0;
+    for (const clipId of uniqueClipIds) {
+      if (!clipIdsWithTranscripts.value.has(clipId)) {
+        count++;
       }
     }
-
-    let count = 0;
-    for (const clip of uniqueClips.values()) {
-      // A clip is considered untranscribed if it has no transcript segments linked to it
-      // We'll check this by attempting a transcript search for this specific clip
-      // For now, we'll mark all clips as potentially untranscribed if they don't match transcript search
-      count++;
-    }
-
-    // Return a rough estimate - clips that exist but don't have transcript matches
-    return uniqueClips.size - clipIdsWithTranscriptMatch.value.size;
+    return count;
   });
 
   // Get untranscribed clips for palette display
@@ -2489,7 +2491,7 @@
         if (seenClipIds.has(build.clip.id)) return false;
         seenClipIds.add(build.clip.id);
         // Only show clips without transcripts
-        return !clipIdsWithTranscriptMatch.value.has(build.clip.id);
+        return !clipIdsWithTranscripts.value.has(build.clip.id);
       })
       .slice(0, 30) // Limit results
       .map((item) => ({
@@ -2507,6 +2509,7 @@
       .filter((item) => {
         const nameMatch = item.clipName.toLowerCase().includes(query);
         const projectMatch = item.projectName && item.projectName.toLowerCase().includes(query);
+        // clipIdsWithTranscriptMatch contains clips that matched the search query in their transcript
         const transcriptMatch = clipIdsWithTranscriptMatch.value.has(item.clip.id);
         return nameMatch || projectMatch || transcriptMatch;
       })
@@ -2514,7 +2517,8 @@
       .map((item) => ({
         ...item,
         matchType: clipIdsWithTranscriptMatch.value.has(item.clip.id) ? 'transcript' : 'name',
-        isTranscribed: clipIdsWithTranscriptMatch.value.has(item.clip.id),
+        // isTranscribed uses clipIdsWithTranscripts (which clips have any transcripts at all)
+        isTranscribed: clipIdsWithTranscripts.value.has(item.clip.id),
       }));
   });
 
