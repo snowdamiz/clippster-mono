@@ -107,7 +107,6 @@
     background: rgba(0, 0, 0, 0.4);
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.06);
-    margin-right: -10px;
   }
 
   .ratio-btn {

@@ -7999,6 +7999,7 @@
     border-right: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
     display: flex;
     flex-direction: column;
+    align-items: center;
     padding: 1rem;
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, transparent 100%);
   }
@@ -8006,10 +8007,11 @@
   .clip-editor__video-wrapper {
     flex: 1;
     min-height: 0;
+    max-width: 100%;
     display: flex;
     flex-direction: row;
     align-items: stretch;
-    gap: 6px;
+    gap: 12px;
   }
 
   .clip-editor__video-container {
