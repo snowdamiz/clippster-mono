@@ -607,6 +607,7 @@
   import { useAutoSave } from '@/composables/useAutoSave';
   import { useAudioTrackPlayback } from '@/composables/useAudioTrackPlayback';
   import { useOverlayOperations } from '@/composables/useOverlayOperations';
+  import { useTimelineMarkers } from '@/composables/useTimelineMarkers';
   import { invoke } from '@tauri-apps/api/core';
 
   // Helper function to load watermark preview URL
@@ -1155,6 +1156,23 @@
       }
       return 0;
     },
+  });
+
+  // Timeline markers composable - manages in/out points and regions
+  const {
+    inPoint,
+    outPoint,
+    regions,
+    handleSetInPoint,
+    handleSetOutPoint,
+    handleClearInOutPoints,
+    handleGoToInPoint,
+    handleGoToOutPoint,
+    handleAddRegion,
+    handleUpdateRegion,
+    handleDeleteRegion,
+  } = useTimelineMarkers({
+    seekTo: (time: number) => seekTo(time),
   });
 
   // Computed
@@ -6947,79 +6965,9 @@
   }
 
   // ============================================================================
-  // PHASE 3 FEATURE HANDLERS (Track Mgmt, Regions, In/Out Points)
+  // PHASE 3 FEATURE HANDLERS (Track Mgmt)
+  // In/Out Points and Regions are managed by useTimelineMarkers composable
   // ============================================================================
-
-  // In/Out Points
-  const inPoint = ref<number | null>(null);
-  const outPoint = ref<number | null>(null);
-
-  function handleSetInPoint(time: number) {
-    inPoint.value = time;
-    console.log('[ClipEditorDialog] Set In Point:', time);
-    // If out point exists and is before in point, clear it or move it?
-    if (outPoint.value !== null && outPoint.value <= time) {
-      outPoint.value = null;
-    }
-  }
-
-  function handleSetOutPoint(time: number) {
-    if (inPoint.value !== null && time <= inPoint.value) {
-      console.warn('[ClipEditorDialog] Out point must be after In point');
-      return;
-    }
-    outPoint.value = time;
-    console.log('[ClipEditorDialog] Set Out Point:', time);
-  }
-
-  function handleClearInOutPoints() {
-    inPoint.value = null;
-    outPoint.value = null;
-    console.log('[ClipEditorDialog] Cleared In/Out Points');
-  }
-
-  function handleGoToInPoint() {
-    if (inPoint.value !== null) {
-      seekTo(inPoint.value);
-    }
-  }
-
-  function handleGoToOutPoint() {
-    if (outPoint.value !== null) {
-      seekTo(outPoint.value);
-    }
-  }
-
-  // Regions
-  const regions = ref<Array<{ id: string; startTime: number; endTime: number; label?: string; color?: string }>>([]);
-
-  function handleAddRegion(startTime: number, endTime: number, label?: string, color?: string) {
-    const newRegion = {
-      id: `region-${Date.now()}`,
-      startTime,
-      endTime,
-      label: label || 'Region',
-      color: color || '#4F9DFF', // Default blue
-    };
-    regions.value.push(newRegion);
-    console.log('[ClipEditorDialog] Added region:', newRegion);
-  }
-
-  function handleUpdateRegion(regionId: string, updates: any) {
-    const index = regions.value.findIndex((r) => r.id === regionId);
-    if (index !== -1) {
-      regions.value[index] = { ...regions.value[index], ...updates };
-      console.log('[ClipEditorDialog] Updated region:', regions.value[index]);
-    }
-  }
-
-  function handleDeleteRegion(regionId: string) {
-    const index = regions.value.findIndex((r) => r.id === regionId);
-    if (index !== -1) {
-      regions.value.splice(index, 1);
-      console.log('[ClipEditorDialog] Deleted region:', regionId);
-    }
-  }
 
   // Track Management
   function handleReorderTrack(trackType: 'audio' | 'overlay', trackId: string, newOrder: number) {
