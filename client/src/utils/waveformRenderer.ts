@@ -1,6 +1,6 @@
 /**
  * Waveform Renderer - Single unified canvas rendering function
- * 
+ *
  * Renders audio waveforms with:
  * - Min/max peak display (accurate audio envelope)
  * - 1px bar width for maximum detail
@@ -29,9 +29,9 @@ export const WAVEFORM_COLORS = {
 
 // Amplitude thresholds for color transitions
 export const AMPLITUDE_THRESHOLDS = {
-  YELLOW: 0.5,   // 50% amplitude - start showing yellow at top
-  ORANGE: 0.75,  // 75% amplitude - start showing orange at top  
-  RED: 0.9,      // 90% amplitude - start showing red at top
+  YELLOW: 0.5, // 50% amplitude - start showing yellow at top
+  ORANGE: 0.75, // 75% amplitude - start showing orange at top
+  RED: 0.9, // 90% amplitude - start showing red at top
 } as const;
 
 // ============================================================================
@@ -42,32 +42,35 @@ export interface WaveformRenderOptions {
   // Canvas dimensions
   width: number;
   height: number;
-  
+
   // Waveform data
   peaks: WaveformPeak[];
-  
+
   // Bar styling (default: 1px bars, 1px gap for maximum detail)
   barWidth?: number;
   barGap?: number;
-  
+
   // Amplitude scaling (0-1)
   amplitude?: number;
-  
+
   // Playhead position for dual-color rendering (0-1 ratio, optional)
   playheadRatio?: number;
-  
+
   // Color configuration
   baseColor?: string;
   playedColor?: string;
-  
+
   // Render style
   style?: 'bars' | 'mirror' | 'line';
-  
+
   // Whether to use gradient coloring for loud sections
   useGradientColors?: boolean;
-  
+
   // Baseline position (0 = top, 0.5 = center, 1 = bottom)
   baseline?: number;
+
+  // Opacity for dimming (0-1, default 1)
+  opacity?: number;
 }
 
 // ============================================================================
@@ -78,10 +81,7 @@ export interface WaveformRenderOptions {
  * Render waveform peaks to a canvas
  * This is the single unified rendering function for all waveform displays
  */
-export function renderWaveform(
-  canvas: HTMLCanvasElement,
-  options: WaveformRenderOptions
-): void {
+export function renderWaveform(canvas: HTMLCanvasElement, options: WaveformRenderOptions): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     console.error('[WaveformRenderer] Failed to get 2D context');
@@ -101,6 +101,7 @@ export function renderWaveform(
     style = 'bars',
     useGradientColors = true,
     baseline = 1, // Default: bars grow upward from bottom
+    opacity = 1,
   } = options;
 
   // Handle device pixel ratio for sharp rendering
@@ -111,6 +112,9 @@ export function renderWaveform(
 
   // Clear canvas
   ctx.clearRect(0, 0, width, height);
+
+  // Apply opacity if specified
+  ctx.globalAlpha = opacity;
 
   if (peaks.length === 0) {
     return;
@@ -165,6 +169,9 @@ export function renderWaveform(
       });
       break;
   }
+
+  // Reset globalAlpha
+  ctx.globalAlpha = 1;
 }
 
 // ============================================================================
@@ -331,15 +338,7 @@ interface LineRenderParams {
 }
 
 function renderLineStyle(ctx: CanvasRenderingContext2D, params: LineRenderParams): void {
-  const {
-    peaks,
-    width,
-    height,
-    maxBarHeight,
-    playheadPixel,
-    baseColor,
-    playedColor,
-  } = params;
+  const { peaks, width, height, maxBarHeight, playheadPixel, baseColor, playedColor } = params;
 
   const centerY = height / 2;
   const halfMaxHeight = maxBarHeight / 2;
@@ -446,10 +445,7 @@ export function renderSimpleBar(
 /**
  * Create a throttled render function for performance
  */
-export function createThrottledRenderer(
-  renderFn: () => void,
-  _delay: number = 16
-): () => void {
+export function createThrottledRenderer(renderFn: () => void, _delay: number = 16): () => void {
   let isScheduled = false;
 
   return () => {

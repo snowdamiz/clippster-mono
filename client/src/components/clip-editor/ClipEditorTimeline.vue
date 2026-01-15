@@ -861,15 +861,6 @@
                       <Unlock v-else :size="12" />
                     </button>
                     <button
-                      @click.stop="toggleVideoTrackState('isHidden')"
-                      class="p-1 rounded hover:bg-white/10 transition-colors"
-                      :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
-                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isHidden }"
-                    >
-                      <EyeOff v-if="videoTrackState.isHidden" :size="12" />
-                      <Eye v-else :size="12" />
-                    </button>
-                    <button
                       @click.stop="toggleVideoTrackState('isMuted')"
                       class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'"
@@ -1028,15 +1019,6 @@
                       <Unlock v-else :size="12" />
                     </button>
                     <button
-                      @click.stop="toggleVideoTrackState('isHidden')"
-                      class="p-1 rounded hover:bg-white/10 transition-colors"
-                      :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
-                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isHidden }"
-                    >
-                      <EyeOff v-if="videoTrackState.isHidden" :size="12" />
-                      <Eye v-else :size="12" />
-                    </button>
-                    <button
                       @click.stop="toggleVideoTrackState('isMuted')"
                       class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'"
@@ -1083,11 +1065,6 @@
                         <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
                         <div class="timeline-track-content-bg"></div>
                       </div>
-                      <canvas
-                        :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
-                        class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
-                        style="mix-blend-mode: screen; z-index: 5"
-                      ></canvas>
                     </div>
                   </template>
                 </div>
@@ -1738,13 +1715,8 @@
   import { useTimelineTools, type TimelineTool } from '@/composables/useTimelineTools';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
   import { useToast } from '@/composables/useToast';
-  import { waveformService, useWaveform, type WaveformPeak, type AudioData } from '@/services/waveformService';
-  import {
-    renderWaveform,
-    renderAudioTrackWaveform,
-    WAVEFORM_COLORS,
-    createThrottledRenderer,
-  } from '@/utils/waveformRenderer';
+  import { waveformService, type WaveformPeak, type AudioData } from '@/services/waveformService';
+  import { renderAudioTrackWaveform } from '@/utils/waveformRenderer';
   import type { Track, Keyframe, ItemType } from '@/types/timeline-model';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
   import KeyframeMarker from './KeyframeMarker.vue';
@@ -1865,6 +1837,8 @@
       }>;
       // Video track mute state from parent
       isVideoMuted?: boolean;
+      // Video track lock state from parent
+      isVideoLocked?: boolean;
     }>(),
     {
       audioGainDb: 0,
@@ -1886,6 +1860,7 @@
       clipTransitions: () => [],
       clipEffects: () => [],
       isVideoMuted: false,
+      isVideoLocked: false,
     }
   );
 
@@ -1943,7 +1918,6 @@
     ): void;
     (e: 'toggleVideoMute', id: string): void;
     (e: 'toggleVideoLock', id: string): void;
-    (e: 'toggleVideoHidden', id: string): void;
     (e: 'toggleAudioMute', id: string): void;
     (e: 'toggleAudioSolo', id: string): void;
     (e: 'toggleAudioLock', id: string): void;
@@ -2109,7 +2083,6 @@
   const rulerContentRef = ref<HTMLElement | null>(null);
   const videoTrackContentRef = ref<HTMLElement | null>(null);
   const segmentRefs = ref<Map<string, HTMLElement>>(new Map());
-  const waveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
   const audioWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
   const audioSegmentCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map()); // key: `${trackId}-${segmentIndex}`
   // Video source waveform canvas refs for editor mode
@@ -2121,7 +2094,6 @@
   const videoTrackState = reactive({
     isMuted: false,
     isLocked: false,
-    isHidden: false,
   });
 
   // Sync videoTrackState.isMuted with prop from parent
@@ -2133,14 +2105,25 @@
     { immediate: true }
   );
 
+  // Sync videoTrackState.isLocked with prop from parent
+  watch(
+    () => props.isVideoLocked,
+    (newValue) => {
+      videoTrackState.isLocked = newValue;
+    },
+    { immediate: true }
+  );
+
   function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     // Emit event to parent for actual functionality (parent will update prop)
     if (prop === 'isMuted') {
       emit('toggleVideoMute', 'main');
-      return; // Don't toggle locally - parent will update via prop
+      return;
     }
-    // For non-mute properties, toggle locally
-    videoTrackState[prop] = !videoTrackState[prop];
+    if (prop === 'isLocked') {
+      emit('toggleVideoLock', 'main');
+      return;
+    }
   }
 
   // Zoom system: 0% = fit-to-width (full video visible), positive % = zoomed in
@@ -2820,10 +2803,17 @@
   const debouncedRenderAllWaveforms = debounce(() => {
     // Don't render if still in an active interaction
     if (isZooming.value || isDragging.value || isResizing.value) return;
-    renderAllWaveforms();
     renderAllAudioWaveforms();
     renderAllSourceWaveforms();
   }, 100);
+
+  // Re-render waveforms when video track mute state changes (to update dimming)
+  watch(
+    () => videoTrackState.isMuted,
+    () => {
+      renderAllSourceWaveforms();
+    }
+  );
 
   // Virtual scrolling state - only render visible track portions
   const virtualScrollState = ref({
@@ -3188,16 +3178,6 @@
   let lastSyncTime = 0; // performance.now() when we last synced with actual video time
   let lastSyncPosition = 0; // playhead position (0-1) at sync time
   let lastKnownPosition = 0; // For seek detection
-
-  // Audio waveform - use new waveform service
-  const mainWaveform = useWaveform();
-  const waveformData = computed(() => mainWaveform.audioData.value);
-  const isWaveformLoaded = computed(() => mainWaveform.isLoaded.value);
-
-  // Load waveform from video using new service
-  async function loadWaveformFromVideo(videoSrc: string): Promise<void> {
-    await mainWaveform.load(videoSrc);
-  }
 
   // Resize observer for waveform canvases
   let resizeObserver: ResizeObserver | null = null;
@@ -3906,12 +3886,6 @@
   function setSegmentRef(el: any, type: ItemType, id: string) {
     if (el) {
       segmentRefs.value.set(`${type}_${id}`, el);
-    }
-  }
-
-  function setWaveformCanvasRef(el: any, segmentId: string) {
-    if (el) {
-      waveformCanvasRefs.value.set(segmentId, el as HTMLCanvasElement);
     }
   }
 
@@ -7429,68 +7403,6 @@
     }
   }
 
-  // Waveform rendering - uses new waveformService for on-demand peak calculation
-  function renderWaveformForSegment(segmentId: string, segment: TrimSegment) {
-    const canvas = waveformCanvasRefs.value.get(segmentId);
-    if (!canvas || !props.videoSrc) return;
-
-    // Check if waveform data is loaded
-    if (!waveformService.isLoaded(props.videoSrc)) return;
-
-    try {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-
-      // Segment times are relative to the clip (0 to duration)
-      // Convert to absolute source video times for waveform extraction
-      const absoluteStartTime = props.clipStart + segment.startTime;
-      const absoluteEndTime = props.clipStart + segment.endTime;
-      const segmentDuration = segment.endTime - segment.startTime;
-
-      // Calculate playhead position within segment
-      const isWithinSegment = props.currentTime >= segment.startTime && props.currentTime <= segment.endTime;
-      const playheadRatio = isWithinSegment
-        ? (props.currentTime - segment.startTime) / segmentDuration
-        : props.currentTime < segment.startTime
-          ? 0
-          : 1;
-
-      // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
-      const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
-      const peaks = waveformService.getPeaksForRange(props.videoSrc, {
-        startTime: absoluteStartTime,
-        endTime: absoluteEndTime,
-        pixelWidth: Math.floor(rect.width),
-        gainMultiplier,
-      });
-
-      if (peaks.length === 0) return;
-
-      // Normalize peaks for display (makes quiet audio visible)
-      const normalizedPeaks = normalizePeaks(peaks);
-
-      // Use the unified renderer
-      renderWaveform(canvas, {
-        width: rect.width,
-        height: rect.height,
-        peaks: normalizedPeaks,
-        playheadRatio,
-        style: 'bars',
-        useGradientColors: true,
-      });
-    } catch (error) {
-      console.error('[ClipEditorTimeline] Error rendering waveform:', error);
-    }
-  }
-
-  function renderAllWaveforms() {
-    if (!props.videoSrc || !waveformService.isLoaded(props.videoSrc)) return;
-
-    sortedTrimSegments.value.forEach((segment) => {
-      renderWaveformForSegment(segment.id, segment);
-    });
-  }
-
   // Video source waveform functions (editor mode) - uses new waveformService
 
   async function loadSourceWaveform(sourceId: string, sourcePath: string): Promise<void> {
@@ -7550,10 +7462,11 @@
       // Normalize peaks for display (makes quiet audio visible)
       const normalizedPeaks = normalizePeaks(peaks);
 
-      // Use the unified renderer
+      // Use the unified renderer (dim waveform when muted)
       renderAudioTrackWaveform(canvas, normalizedPeaks, rect.width, rect.height, {
         style: 'bars',
         useGradientColors: true,
+        opacity: videoTrackState.isMuted ? 0.3 : 1,
       });
     } catch (err) {
       console.error('[ClipEditorTimeline] Error rendering source waveform:', sourceId, err);
@@ -7684,15 +7597,8 @@
   // Setup resize observer for waveform canvases
   function setupResizeObserver() {
     resizeObserver = new ResizeObserver(() => {
-      renderAllWaveforms();
       renderAllAudioWaveforms();
       renderAllSourceWaveforms();
-    });
-
-    waveformCanvasRefs.value.forEach((canvas) => {
-      if (canvas && resizeObserver) {
-        resizeObserver.observe(canvas);
-      }
     });
 
     audioWaveformCanvasRefs.value.forEach((canvas) => {
@@ -7721,46 +7627,15 @@
     }
   }
 
-  // Watch for video source changes
-  watch(
-    () => props.videoSrc,
-    async (newVideoSrc) => {
-      if (newVideoSrc) {
-        console.log('[ClipEditorTimeline] Loading waveform for video:', newVideoSrc);
-        // Load waveform using the new waveformService
-        await loadWaveformFromVideo(newVideoSrc);
-      }
-    },
-    { immediate: true }
-  );
-
-  // Watch for waveform and segment changes
-  // Uses debounced rendering and skips during active interactions
-  watch(
-    [waveformData, isWaveformLoaded, () => props.currentTime, zoomLevel, sortedTrimSegments],
-    () => {
-      if (isWaveformLoaded.value && waveformData.value) {
-        // Skip render during active interactions - will render when interaction ends
-        if (isZooming.value || isDragging.value || isResizing.value) return;
-        nextTick(() => {
-          debouncedRenderAllWaveforms();
-        });
-      }
-    },
-    { immediate: true }
-  );
-
   // Watch specifically for audio gain changes to ensure waveform updates
   watch(
     () => props.audioGainDb,
     () => {
-      if (isWaveformLoaded.value && waveformData.value) {
-        // Skip during interactions - render when idle
-        if (isZooming.value || isDragging.value || isResizing.value) return;
-        nextTick(() => {
-          debouncedRenderAllWaveforms();
-        });
-      }
+      // Skip during interactions - render when idle
+      if (isZooming.value || isDragging.value || isResizing.value) return;
+      nextTick(() => {
+        debouncedRenderAllWaveforms();
+      });
     }
   );
 
@@ -8441,9 +8316,6 @@
       initializeZoom();
       // Initialize visible time range for virtualized rendering
       updateVisibleTimeRange();
-      if (props.videoSrc) {
-        loadWaveformFromVideo(props.videoSrc);
-      }
       // Load audio waveforms for existing tracks
       await loadAllAudioWaveforms();
       // Load source waveforms for editor mode

@@ -351,6 +351,7 @@
               :clip-transitions="clipTransitions"
               :clip-effects="clipEffects"
               :is-video-muted="isVideoMuted"
+              :is-video-locked="isVideoLocked"
               @seek="seekTo"
               @undo="performUndo"
               @redo="performRedo"
@@ -401,6 +402,7 @@
               @reorder-track="handleReorderTrack"
               @toggle-track-collapse="handleToggleTrackCollapse"
               @toggle-video-mute="handleToggleVideoMute"
+              @toggle-video-lock="handleToggleVideoLock"
               @toggle-audio-lock="handleToggleAudioLock"
               @toggle-audio-mute="handleToggleAudioMute"
               @toggle-audio-solo="handleToggleAudioSolo"
@@ -793,6 +795,7 @@
   const activeEditorTab = ref<VideoEditorTab>('media'); // For editor mode
   const isPlaying = ref(false);
   const isVideoMuted = ref(false);
+  const isVideoLocked = ref(false);
   const previewTime = ref(0);
 
   // Video editor mode state
@@ -7474,6 +7477,10 @@
     isVideoMuted.value = !isVideoMuted.value;
     // The mute state is passed to ClipEditorPreview via isVideoMuted prop
     // The preview component will handle muting both main and preload video elements
+  }
+
+  function handleToggleVideoLock() {
+    isVideoLocked.value = !isVideoLocked.value;
   }
 
   function handleToggleAudioLock(trackId: string) {
