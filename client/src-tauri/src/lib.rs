@@ -746,19 +746,20 @@ pub fn run() {
             dvr::list_dvr_chunks,
             dvr::get_dvr_directory,
             dvr::has_dvr_chunks,
-            dvr::read_dvr_chunk,
             dvr::read_all_dvr_chunks,
+            dvr::read_dvr_chunk,
             dvr::read_dvr_init_segment,
             dvr::read_dvr_cluster,
             dvr::build_vod_from_dvr,
             dvr::build_segment_from_dvr_chunks,
+            dvr::convert_dvr_chunk_to_hls,
             
             // HLS commands
             hls::start_hls_recording,
             hls::stop_hls_recording,
             hls::cleanup_hls_recordings,
             hls::get_recording_output_dir,
-            hls::get_hls_segments
+            hls::get_hls_segments,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

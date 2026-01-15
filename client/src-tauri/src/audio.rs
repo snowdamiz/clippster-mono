@@ -119,7 +119,7 @@ pub async fn extract_audio_from_video(
 
     // Read the file and return as base64 encoded data
     println!("[Rust] Reading audio file for base64 encoding...");
-    let audio_bytes = std::fs::read(&target_path)
+    let mut audio_bytes = std::fs::read(&target_path)
         .map_err(|e| {
             println!("[Rust] Failed to read audio file: {}", e);
             format!("Failed to read audio file: {}", e)
@@ -127,9 +127,81 @@ pub async fn extract_audio_from_video(
 
     println!("[Rust] Read {} bytes from audio file", audio_bytes.len());
 
+    // Guard: if the extracted file is empty, retry with WAV (16k mono) to avoid Whisper 400
+    if audio_bytes.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        println!(
+            "[Rust] Empty audio after MP3 extraction. stdout: {}; stderr: {}. Retrying as WAV...",
+            stdout.trim(),
+            stderr.trim()
+        );
+
+        let wav_path = paths.videos.join(format!(
+            "temp_audio_{}_fallback.wav",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| format!("Failed to get timestamp: {}", e))?
+                .as_secs()
+        ));
+
+        let shell = app.shell();
+        let wav_output = shell
+            .sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args([
+                "-i",
+                &video_path,
+                "-ac",
+                "2",
+                "-ar",
+                "48000",
+                "-vn",
+                "-y",
+                wav_path.to_str().ok_or("Invalid wav path")?,
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run ffmpeg (wav fallback): {}", e))?;
+
+        if !wav_output.status.success() {
+            let stderr = String::from_utf8_lossy(&wav_output.stderr);
+            let stdout = String::from_utf8_lossy(&wav_output.stdout);
+            let msg = format!(
+                "FFmpeg WAV fallback failed for {}. stdout: {}; stderr: {}",
+                video_path,
+                stdout.trim(),
+                stderr.trim()
+            );
+            println!("[Rust] {}", msg);
+            let _ = std::fs::remove_file(&target_path);
+            return Err(msg);
+        }
+
+        audio_bytes = std::fs::read(&wav_path)
+            .map_err(|e| format!("Failed to read wav fallback: {}", e))?;
+
+        println!(
+            "[Rust] WAV fallback bytes: {} (path: {})",
+            audio_bytes.len(),
+            wav_path.display()
+        );
+
+        // Clean up the wav temp file
+        let _ = std::fs::remove_file(&wav_path);
+
+        if audio_bytes.is_empty() {
+            let msg = "WAV fallback also produced empty audio; aborting.".to_string();
+            println!("[Rust] {}", msg);
+            let _ = std::fs::remove_file(&target_path);
+            return Err(msg);
+        }
+    }
+
     // Encode to base64
     use base64::{Engine as _, engine::general_purpose};
     let base64_data = general_purpose::STANDARD.encode(&audio_bytes);
+
     println!("[Rust] Encoded {} bytes to {} chars of base64", audio_bytes.len(), base64_data.len());
 
     // Get filename for return

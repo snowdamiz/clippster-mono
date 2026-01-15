@@ -1025,10 +1025,8 @@
         }
         return;
       }
-    }
-
-    if (detectedPlatform.value === 'Twitch') {
-      const channelName = extractChannelName(inputValue.value);
+    } else if (detectedPlatform.value === 'Twitch') {
+      const channelName = extractChannelName(inputValue.value) || inputValue.value.trim();
       if (channelName) {
         addActivityLog({
           streamerId: 'system',
@@ -1040,7 +1038,7 @@
 
         try {
           const twitchStatus = await checkTwitchLivestream(channelName);
-          const displayName = twitchStatus.displayName || channelName;
+          const displayName = twitchStatus.displayName || twitchStatus.channelName || channelName;
           const profileImage = twitchStatus.profileImageUrl;
 
           addActivityLog({

@@ -27,6 +27,7 @@ import type {
 } from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
 import { useHlsPlayback } from './useHlsPlayback';
+import { useToast } from '@/composables/useToast';
 import {
   checkKickLivestream,
   startKickRecording,
@@ -183,6 +184,9 @@ export function useLivestreamViewer() {
 
   // Track if HLS is ready for playback (has at least one segment)
   const isHlsReady = ref(false);
+  const isSeekingActive = ref(false);
+  const { error: showToastError } = useToast();
+  let offlineToastShown = false;
   let lastDurationUpdate = 0;
   let lastDurationValue = 0;
   let displayDuration = 0; // Smoothed duration to avoid UI jumps when new segments arrive
@@ -1194,6 +1198,7 @@ export function useLivestreamViewer() {
   }
 
   // Ensure HLS recording is available for playback and clipping
+  // Uses Node.js HLS recorder for reliable multi-participant recording
   async function ensureHlsRecordingAvailable(
     streamerId: string,
     mintId: string,
@@ -1208,7 +1213,6 @@ export function useLivestreamViewer() {
       state.value.isTempRecording = false;
 
       // Try to get the output directory for HLS playback
-      // Note: Auto-detect for PumpFun now uses DVR recording, so HLS output dir may not exist
       try {
         const outputDir = await invoke<string>('get_recording_output_dir', {
           sessionId: session.sessionId,
@@ -1217,35 +1221,34 @@ export function useLivestreamViewer() {
         return; // HLS recording exists, we're done
       } catch (e) {
         console.warn(
-          '[LiveViewer] Could not get recording output dir, starting HLS recording for playback:',
+          '[LiveViewer] Could not get recording output dir, starting HLS recording:',
           e
         );
-        // Fall through to start HLS recording for playback
+        // Fall through to start HLS recording
       }
     }
 
-    // Start HLS recording via Tauri (Node.js recorder) for video playback
-    // This is needed even if auto-detect is using DVR, because the video player needs HLS
+    // Start HLS recording via Tauri (Node.js recorder)
     try {
       const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
         mintId,
         streamerId,
         displayName,
-        resumeDir: null, // New session, not resuming
+        resumeDir: null,
       });
 
-      // Only update sessionId if we don't already have one from auto-detect
       if (!state.value.sessionId) {
         state.value.sessionId = result.sessionId;
       }
-      state.value.isTempRecording = !session; // Temp if no auto-detect session
+      state.value.isTempRecording = !session;
       if (!session) {
         state.value.projectId = null;
       }
       hlsOutputDir.value = result.outputDir;
       state.value.dvrStartTime = Date.now();
+      console.log('[LiveViewer] HLS recording started:', result.outputDir);
     } catch (error) {
-      console.warn('[LiveViewer] Failed to start HLS recording:', error);
+      console.error('[LiveViewer] Failed to start HLS recording:', error);
       state.value.connectionError = 'Failed to start recording';
     }
   }
@@ -1508,6 +1511,10 @@ export function useLivestreamViewer() {
         console.log('[LiveViewer] Stream is no longer live');
         state.value.connectionState = 'disconnected';
         state.value.connectionError = 'Stream ended';
+        if (!offlineToastShown) {
+          showToastError('Stream ended');
+          offlineToastShown = true;
+        }
       }
     } catch (checkError) {
       console.error('[LiveViewer] Failed to check stream status:', checkError);
@@ -1544,7 +1551,7 @@ export function useLivestreamViewer() {
       const safeDuration = Math.max(displayDuration, 0.001);
 
       // Don't overwrite playback position while actively seeking - let the seek target stick
-      if (!isSeekingActive) {
+      if (!isSeekingActive.value) {
         const clampedPosition = Math.min(ps.currentTime, Math.max(0, safeDuration - 0.25));
         state.value.playbackPosition = clampedPosition;
       }
@@ -1595,7 +1602,7 @@ export function useLivestreamViewer() {
         }
 
         // Don't override isAtLiveEdge while actively seeking
-        if (!isSeekingActive) {
+        if (!isSeekingActive.value) {
           // Check if at live edge (within 2 seconds of end)
           state.value.isAtLiveEdge = ps.isAtLiveEdge || ps.currentTime >= ps.duration - 2;
         }
@@ -1904,7 +1911,7 @@ export function useLivestreamViewer() {
 
     // Reset HLS ready state and seeking flag
     isHlsReady.value = false;
-    isSeekingActive = false;
+    isSeekingActive.value = false;
   }
 
   // Set video element reference (legacy - not used in HLS-only mode)
@@ -1972,9 +1979,6 @@ export function useLivestreamViewer() {
     }
   }
 
-  // Track when we're actively seeking to prevent sync interval from overwriting position
-  let isSeekingActive = false;
-
   // Seek to a specific time (always uses HLS)
   async function seek(time: number) {
     const hlsDuration = hlsPlayback.state.value.duration;
@@ -1991,7 +1995,7 @@ export function useLivestreamViewer() {
       const clampedTime = Math.max(0, Math.min(time, hlsDuration > 0 ? hlsDuration - 0.5 : time));
 
       // Set seeking flag to prevent sync interval from overwriting position
-      isSeekingActive = true;
+      isSeekingActive.value = true;
 
       // Immediately update UI state to reflect seek target
       state.value.playbackPosition = clampedTime;
@@ -2002,7 +2006,7 @@ export function useLivestreamViewer() {
 
       // Keep the seek flag active briefly to let the video element catch up
       setTimeout(() => {
-        isSeekingActive = false;
+        isSeekingActive.value = false;
       }, 500);
     }
   }
@@ -2016,7 +2020,7 @@ export function useLivestreamViewer() {
     const livePosition = Math.max(0, duration - 8);
 
     // Set seeking flag to prevent sync interval from overwriting position
-    isSeekingActive = true;
+    isSeekingActive.value = true;
 
     // Immediately update UI state
     state.value.playbackPosition = livePosition;
@@ -2026,7 +2030,7 @@ export function useLivestreamViewer() {
 
     // Keep the seek flag active briefly to let the video element catch up
     setTimeout(() => {
-      isSeekingActive = false;
+      isSeekingActive.value = false;
     }, 500);
   }
 
