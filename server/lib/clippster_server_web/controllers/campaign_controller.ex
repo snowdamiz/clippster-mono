@@ -552,12 +552,21 @@ defmodule ClippsterServerWeb.CampaignController do
     status = Map.get(params, "status")
 
     if Organizations.is_member?(org_id, user.id) do
-      participants = Campaigns.list_campaign_participants(campaign_id, status: status)
+      try do
+        participants = Campaigns.list_campaign_participants(campaign_id, status: status)
 
-      json(conn, %{
-        success: true,
-        participants: Enum.map(participants, &serialize_participant/1)
-      })
+        json(conn, %{
+          success: true,
+          participants: Enum.map(participants, &serialize_participant/1)
+        })
+      rescue
+        e ->
+          require Logger
+          Logger.error("Failed to list participants: #{inspect(e)}")
+          conn
+          |> put_status(500)
+          |> json(%{success: false, error: "Failed to load participants: #{inspect(e)}"})
+      end
     else
       conn
       |> put_status(403)
@@ -643,6 +652,36 @@ defmodule ClippsterServerWeb.CampaignController do
   # ============================================================================
   # Submission Management
   # ============================================================================
+
+  @doc """
+  List all submissions for an organization (across all campaigns).
+  GET /organizations/:organization_id/campaign-submissions
+  """
+  def list_organization_submissions(conn, %{"organization_id" => org_id} = params) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_member?(org_id, user.id) do
+      opts = [
+        status: Map.get(params, "status"),
+        platform: Map.get(params, "platform"),
+        campaign_id: Map.get(params, "campaign_id"),
+        limit: (Map.get(params, "limit") || "100") |> String.to_integer(),
+        offset: (Map.get(params, "offset") || "0") |> String.to_integer()
+      ] |> Enum.reject(fn {_, v} -> is_nil(v) end)
+
+      {:ok, %{submissions: submissions, total: total}} = Campaigns.list_organization_submissions(org_id, opts)
+
+      json(conn, %{
+        success: true,
+        submissions: Enum.map(submissions, &serialize_submission/1),
+        total: total
+      })
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not a member of this organization"})
+    end
+  end
 
   @doc """
   List submissions for a campaign.
@@ -906,7 +945,7 @@ defmodule ClippsterServerWeb.CampaignController do
       user: if(Ecto.assoc_loaded?(participant.user), do: %{
         id: participant.user.id,
         email: participant.user.email,
-        display_name: participant.user.display_name
+        display_name: participant.user.name
       }, else: nil),
       clipper_profile: serialize_clipper_profile_summary(clipper_profile)
     }
@@ -914,6 +953,14 @@ defmodule ClippsterServerWeb.CampaignController do
 
   defp serialize_clipper_profile_summary(nil), do: nil
   defp serialize_clipper_profile_summary(profile) do
+    badges = if Ecto.assoc_loaded?(profile.badges) do
+      Enum.map(profile.badges || [], fn badge ->
+        %{badge_type: badge.badge_type, earned_at: badge.earned_at}
+      end)
+    else
+      []
+    end
+
     %{
       id: profile.id,
       display_name: profile.display_name,
@@ -928,9 +975,7 @@ defmodule ClippsterServerWeb.CampaignController do
       total_campaigns_completed: profile.total_campaigns_completed,
       total_clips_delivered: profile.total_clips_delivered,
       total_endorsements: profile.total_endorsements,
-      badges: Enum.map(profile.badges || [], fn badge ->
-        %{badge_type: badge.badge_type, earned_at: badge.earned_at}
-      end)
+      badges: badges
     }
   end
 
@@ -944,6 +989,22 @@ defmodule ClippsterServerWeb.CampaignController do
   end
 
   defp serialize_submission(submission) do
+    # Get creator profile from campaign (single or first from many)
+    creator_profile = if Ecto.assoc_loaded?(submission.campaign) do
+      cond do
+        # Single creator profile on campaign
+        Ecto.assoc_loaded?(submission.campaign.creator_profile) and submission.campaign.creator_profile ->
+          submission.campaign.creator_profile
+        # Multiple creator profiles - use first one
+        Ecto.assoc_loaded?(submission.campaign.creator_profiles) and length(submission.campaign.creator_profiles) > 0 ->
+          hd(submission.campaign.creator_profiles)
+        true ->
+          nil
+      end
+    else
+      nil
+    end
+
     %{
       id: submission.id,
       campaign_id: submission.campaign_id,
@@ -957,14 +1018,30 @@ defmodule ClippsterServerWeb.CampaignController do
       rejection_reason: submission.rejection_reason,
       verified_at: submission.verified_at,
       inserted_at: submission.inserted_at,
+      # Analytics fields
+      like_count: submission.like_count,
+      comment_count: submission.comment_count,
+      share_count: submission.share_count,
+      save_count: submission.save_count,
+      # Author metadata from platform
+      author_username: submission.author_username,
+      author_name: submission.author_name,
+      author_profile_image: submission.author_profile_image,
+      caption: submission.caption,
+      media_type: submission.media_type,
       user: if(Ecto.assoc_loaded?(submission.user), do: %{
         id: submission.user.id,
         email: submission.user.email,
-        display_name: submission.user.display_name
+        display_name: submission.user.name
       }, else: nil),
       campaign: if(Ecto.assoc_loaded?(submission.campaign), do: %{
         id: submission.campaign.id,
         title: submission.campaign.title
+      }, else: nil),
+      creator_profile: if(creator_profile, do: %{
+        id: creator_profile.id,
+        name: creator_profile.name,
+        profile_image_url: creator_profile.profile_image_url
       }, else: nil)
     }
   end

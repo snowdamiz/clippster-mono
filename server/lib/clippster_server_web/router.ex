@@ -424,6 +424,7 @@ defmodule ClippsterServerWeb.Router do
     delete "/organizations/:organization_id/campaigns/:id/participants/:participant_id", CampaignController, :remove_participant
 
     # Campaign submissions (org view)
+    get "/organizations/:organization_id/campaign-submissions", CampaignController, :list_organization_submissions
     get "/organizations/:organization_id/campaigns/:id/submissions", CampaignController, :list_submissions
     post "/organizations/:organization_id/submissions/:submission_id/verify", CampaignController, :verify_submission
     post "/organizations/:organization_id/submissions/:submission_id/reject", CampaignController, :reject_submission
