@@ -55,6 +55,9 @@
                     ref="previewRef"
                     :video-src="effectiveVideoSrc"
                     :preload-video-src="preloadVideoSrc"
+                    :segment-preview-src="segmentPreviewStreamingUrl"
+                    :segment-time-map="segmentTimeMap"
+                    :is-generating-preview="isGeneratingPreview"
                     :current-time="previewTime"
                     :effective-time="effectivePreviewTime"
                     :is-playing="isPlaying"
@@ -790,6 +793,21 @@
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
   let isInitialLoad = ref(true); // Prevent auto-save during initial data load
 
+  // Segment preview state - for seamless playback across segment cuts
+  const segmentPreviewPath = ref<string | null>(null);
+  const isGeneratingPreview = ref(false);
+  const previewGenerationError = ref<string | null>(null);
+  let previewGenerationTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Computed: Segment preview streaming URL (converts file path to HTTP streaming URL)
+  const segmentPreviewStreamingUrl = computed(() => {
+    if (!segmentPreviewPath.value || !videoServerPort.value) {
+      return null;
+    }
+    const encodedPath = btoa(unescape(encodeURIComponent(segmentPreviewPath.value)));
+    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+  });
+
   // Editor state
   const activeTab = ref<ClipEditorTab>('media');
   const activeEditorTab = ref<VideoEditorTab>('media'); // For editor mode
@@ -812,6 +830,38 @@
   const sourceTransitions = ref<VideoEditorTransition[]>([]); // All detected transitions
   const crossfadeStarted = ref(false); // Whether we've started crossfade for current transition
   const lastCrossfadeTransitionId = ref<string | null>(null); // Track which transition we've started
+
+  /**
+   * Centralized computed property that returns the currently active video element.
+   * This handles all the different modes and states:
+   * - Editor mode: considers crossfade state and active video index
+   * - Clip mode: considers framed mode, segment playback, etc.
+   * Falls back to the stored videoElement ref if preview component isn't available.
+   */
+  const activeVideoElement = computed<HTMLVideoElement | null>(() => {
+    // First, try to get the active element from the preview component
+    // which knows about all the internal video state
+    if (previewRef.value?.getActiveVideoElement) {
+      const activeEl = previewRef.value.getActiveVideoElement();
+      if (activeEl) {
+        return activeEl;
+      }
+    }
+
+    // In editor mode, check if preload video is active (after crossfade)
+    if (editorMode.value && previewRef.value) {
+      const activePreloadIndex = previewRef.value.activeVideoIndex;
+      if (activePreloadIndex === 1) {
+        const preloadEl = previewRef.value.getPreloadVideoElement?.();
+        if (preloadEl) {
+          return preloadEl;
+        }
+      }
+    }
+
+    // Fall back to the stored video element
+    return videoElement.value;
+  });
 
   // Intro/Outro state - track currently applied intro and outro
   interface AppliedIntroOutro {
@@ -1518,6 +1568,142 @@
       })
       .sort((a, b) => a.start_time - b.start_time);
   });
+
+  // Segment preview time mapping - maps preview video time to source video time
+  // This is needed for subtitle display, transcript highlighting, and waveform sync
+  interface SegmentTimeMap {
+    previewStart: number; // Start time in preview video
+    previewEnd: number; // End time in preview video
+    sourceStart: number; // Start time in source video
+    sourceEnd: number; // End time in source video
+  }
+
+  const segmentTimeMap = computed<SegmentTimeMap[]>(() => {
+    const segments = playbackSegments.value;
+    const timeMap: SegmentTimeMap[] = [];
+    let previewTime = 0;
+
+    for (const seg of segments) {
+      const segDuration = seg.end_time - seg.start_time;
+      timeMap.push({
+        previewStart: previewTime,
+        previewEnd: previewTime + segDuration,
+        sourceStart: seg.start_time,
+        sourceEnd: seg.end_time,
+      });
+      previewTime += segDuration;
+    }
+
+    return timeMap;
+  });
+
+  // Generate a pre-rendered preview video for seamless segment playback
+  // This eliminates runtime seeking by creating a single continuous video file
+  async function generateSegmentPreview() {
+    const segments = playbackSegments.value;
+
+    // Single segment or no segments - use original source directly
+    if (segments.length <= 1) {
+      // Clean up any existing preview
+      if (segmentPreviewPath.value) {
+        try {
+          await invoke('delete_segment_preview', { previewPath: segmentPreviewPath.value });
+        } catch (e) {
+          console.warn('[ClipEditorDialog] Failed to delete old preview:', e);
+        }
+        segmentPreviewPath.value = null;
+      }
+      return;
+    }
+
+    // Get source video path (works for both editor mode and clip mode)
+    const sourcePath = effectiveVideoPath.value;
+    if (!sourcePath) {
+      console.warn('[ClipEditorDialog] Cannot generate preview: no source video path');
+      return;
+    }
+
+    // Ensure video server port is available for streaming the preview
+    if (!videoServerPort.value) {
+      try {
+        videoServerPort.value = await invoke<number>('get_video_server_port');
+      } catch (e) {
+        console.error('[ClipEditorDialog] Failed to get video server port:', e);
+        return;
+      }
+    }
+
+    isGeneratingPreview.value = true;
+    previewGenerationError.value = null;
+
+    try {
+      // Delete previous preview file before generating new one
+      if (segmentPreviewPath.value) {
+        try {
+          await invoke('delete_segment_preview', { previewPath: segmentPreviewPath.value });
+        } catch (e) {
+          console.warn('[ClipEditorDialog] Failed to delete old preview:', e);
+        }
+      }
+
+      // Convert segments to the format expected by the Rust command
+      const previewSegments = segments.map((seg) => ({
+        start_time: seg.start_time,
+        end_time: seg.end_time,
+      }));
+
+      const outputFilename = `preview_${props.clipId}_${Date.now()}`;
+
+      console.log('[ClipEditorDialog] Generating segment preview:', {
+        sourcePath,
+        segmentCount: previewSegments.length,
+        outputFilename,
+      });
+
+      const previewPath = await invoke<string>('generate_segment_preview', {
+        videoPath: sourcePath,
+        segments: previewSegments,
+        outputFilename,
+      });
+
+      segmentPreviewPath.value = previewPath;
+      console.log('[ClipEditorDialog] Preview generated:', previewPath);
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to generate preview:', error);
+      previewGenerationError.value = String(error);
+      // Fallback to original behavior (direct seeking)
+      segmentPreviewPath.value = null;
+    } finally {
+      isGeneratingPreview.value = false;
+    }
+  }
+
+  // Debounced preview generation to avoid rapid regeneration during quick edits
+  function triggerPreviewGeneration() {
+    if (previewGenerationTimeout) {
+      clearTimeout(previewGenerationTimeout);
+    }
+    // Wait 500ms after last edit before generating preview
+    previewGenerationTimeout = setTimeout(() => {
+      generateSegmentPreview();
+    }, 500);
+  }
+
+  // Clean up preview files when component unmounts or clip closes
+  async function cleanupSegmentPreview() {
+    if (previewGenerationTimeout) {
+      clearTimeout(previewGenerationTimeout);
+      previewGenerationTimeout = null;
+    }
+    if (segmentPreviewPath.value) {
+      try {
+        await invoke('delete_segment_preview', { previewPath: segmentPreviewPath.value });
+      } catch (e) {
+        console.warn('[ClipEditorDialog] Failed to cleanup preview:', e);
+      }
+      segmentPreviewPath.value = null;
+    }
+  }
 
   // Get current segment ID based on playback time
   const currentSegmentId = computed(() => {
@@ -3730,87 +3916,56 @@
     }
   }
 
-  function togglePlay() {
-    // Get the currently active video element - prefer preload if active after crossfade
-    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
-    const activePreloadIndex = previewRef.value?.activeVideoIndex;
+  async function togglePlay() {
+    console.log('[togglePlay] Called. isPlaying:', isPlaying.value);
 
-    // Determine which video is actually active
-    let activeVideo = videoElement.value;
-    if (editorMode.value && activePreloadIndex === 1 && preloadEl) {
-      // Preload is the active video after crossfade
-      activeVideo = preloadEl;
-      // Also update videoElement if it's out of sync
-      if (videoElement.value !== preloadEl) {
-        console.log('[togglePlay] Updating videoElement to match active preload');
-        videoElement.value = preloadEl;
-      }
+    // Use the preview component's unified play/pause methods
+    // This ensures all video elements (framed, region, audio, preload) are properly controlled
+    if (!previewRef.value) {
+      console.log('[togglePlay] No previewRef available');
+      return;
     }
 
-    console.log(
-      '[togglePlay] Called.',
-      'activeVideo:',
-      !!activeVideo,
-      'isPlaying:',
-      isPlaying.value,
-      'activeVideo.paused:',
-      activeVideo?.paused,
-      'activeVideo.src:',
-      activeVideo?.src?.slice(-30),
-      'activePreloadIndex:',
-      activePreloadIndex,
-      'readyState:',
-      activeVideo?.readyState
-    );
+    if (isPlaying.value) {
+      console.log('[togglePlay] Pausing video');
+      previewRef.value.pause();
+      // Pause all audio tracks
+      audioElements.value.forEach((audio) => audio.pause());
+      isPlaying.value = false;
+    } else {
+      console.log('[togglePlay] Playing video');
 
-    if (activeVideo) {
-      // Check if video is ready to play before attempting playback
-      // This prevents errors when video source is invalid or not yet loaded
-      const hasValidSource = activeVideo.src && activeVideo.src !== '' && !activeVideo.src.endsWith('/video-editor');
-      const isReady = activeVideo.readyState >= 1; // HAVE_METADATA or better
+      // Check if active video is ready before playing
+      const activeVideo = activeVideoElement.value;
+      if (activeVideo) {
+        const hasValidSource = activeVideo.src && activeVideo.src !== '' && !activeVideo.src.endsWith('/video-editor');
+        const isReady = activeVideo.readyState >= 1; // HAVE_METADATA or better
 
-      if (!hasValidSource || !isReady) {
-        console.log(
-          '[togglePlay] Video not ready - src:',
-          activeVideo.src?.slice(-30),
-          'readyState:',
-          activeVideo.readyState
-        );
-        // Ensure isPlaying reflects actual state (video is not playing)
-        isPlaying.value = false;
-        return;
+        if (!hasValidSource || !isReady) {
+          console.log(
+            '[togglePlay] Video not ready - src:',
+            activeVideo.src?.slice(-30),
+            'readyState:',
+            activeVideo.readyState
+          );
+          return;
+        }
       }
 
-      // Sync isPlaying state with actual video state first
-      // This handles cases where the video state got out of sync (e.g., after crossfade)
-      const actuallyPlaying = !activeVideo.paused;
-      if (isPlaying.value !== actuallyPlaying) {
-        console.log('[togglePlay] Syncing isPlaying state from', isPlaying.value, 'to', actuallyPlaying);
-        isPlaying.value = actuallyPlaying;
-      }
-
-      if (isPlaying.value) {
-        console.log('[togglePlay] Pausing video');
-        activeVideo.pause();
-        // Pause all audio tracks
-        audioElements.value.forEach((audio) => audio.pause());
-      } else {
-        console.log('[togglePlay] Playing video');
-        activeVideo.play().catch((err) => {
-          console.error('[togglePlay] Play failed:', err);
-        });
+      const playStarted = await previewRef.value.play();
+      if (playStarted) {
+        isPlaying.value = true;
         // Resume audio context if suspended
         if (audioContext.value?.state === 'suspended') {
           audioContext.value.resume();
         }
         // Start audio tracks playback
         syncAudioWithVideo();
+      } else {
+        console.error('[togglePlay] Play failed to start');
       }
-      isPlaying.value = !isPlaying.value;
-      console.log('[togglePlay] isPlaying is now:', isPlaying.value);
-    } else {
-      console.log('[togglePlay] No activeVideo!');
     }
+    console.log('[togglePlay] isPlaying is now:', isPlaying.value);
   }
 
   function seekTo(time: number) {
@@ -4086,6 +4241,9 @@
       console.log(
         `[ClipEditorDialog] Split complete (with undo support), mode: ${editorMode.value ? 'editor' : 'clip'}`
       );
+
+      // Trigger preview regeneration for seamless playback
+      triggerPreviewGeneration();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to split segment:', error);
       alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -4173,6 +4331,9 @@
         console.log(
           `[ClipEditorDialog] Delete complete (with undo support), now have ${trimSegments.value.length} segments`
         );
+
+        // Trigger preview regeneration for seamless playback
+        triggerPreviewGeneration();
       } catch (error) {
         console.error('[ClipEditorDialog] Failed to delete segment:', error);
         alert(`Failed to delete segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -7827,6 +7988,13 @@
 
           // Auto-apply creator watermark if available (from props or video sources)
           await applyCreatorWatermark();
+
+          // Generate segment preview if there are multiple segments
+          // This enables seamless playback across segment cuts
+          if (trimSegments.value.length > 1) {
+            console.log('[ClipEditorDialog] Multiple segments detected in editor mode, generating preview...');
+            triggerPreviewGeneration();
+          }
         } else if (props.clipId) {
           // Clip mode - existing behavior
           await loadEditData();
@@ -7853,6 +8021,13 @@
 
           // Load video info for aspect tab
           await loadVideoInfo();
+
+          // Generate segment preview if there are multiple segments
+          // This enables seamless playback across segment cuts
+          if (trimSegments.value.length > 1) {
+            console.log('[ClipEditorDialog] Multiple segments detected, generating preview...');
+            triggerPreviewGeneration();
+          }
         }
 
         // Allow auto-save after initial load is complete
@@ -7879,6 +8054,8 @@
         // Clear command history when closing
         commandHistory.clear();
         console.log('[ClipEditorDialog] Command history cleared on close');
+        // Clean up segment preview file
+        await cleanupSegmentPreview();
         // Reset aspect tab state
         videoPath.value = null;
         thumbnailUrl.value = null;
@@ -7912,6 +8089,8 @@
     }
     // Clear command history when closing editor
     commandHistory.clear();
+    // Clean up segment preview file
+    cleanupSegmentPreview();
   });
 </script>
 

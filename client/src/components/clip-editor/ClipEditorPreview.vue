@@ -62,11 +62,12 @@
         </template>
       </div>
 
-      <!-- Default 16:9 mode: Normal video display - always rendered, invisible when framed -->
+      <!-- Main video display - always rendered, invisible when framed preview is active -->
       <!-- Use visibility:hidden instead of v-show to maintain container dimensions -->
+      <!-- When segment preview is available, uses the pre-rendered preview video for seamless playback -->
       <video
         ref="videoRef"
-        :src="videoSrc || ''"
+        :src="effectiveVideoSrcWithPreview || ''"
         class="max-w-full max-h-full object-contain relative"
         :style="getMainVideoComputedStyle()"
         @loadedmetadata="onLoadedMetadata"
@@ -107,9 +108,12 @@
       />
 
       <!-- Clip mode preload video for seamless segment transitions (same source, pre-seeked to next segment) -->
-      <!-- Only used in clip mode when there are multiple segments and not in framed mode -->
+      <!-- DISABLED: This dual-video approach causes visual glitches where both videos can be seen -->
+      <!-- Instead, we now use pre-rendered segment preview for seamless playback -->
+      <!-- Fallback: simple seeking with slight latency but no visual issues -->
+      <!-- 
       <video
-        v-if="!editorMode && segments && segments.length > 1 && !showFramedPreview"
+        v-if="!editorMode && segments && segments.length > 1 && !showFramedPreview && !useSegmentPreview && !isGeneratingPreview"
         ref="clipPreloadVideoRef"
         :src="videoSrc || ''"
         class="max-w-full max-h-full object-contain absolute inset-0 m-auto pointer-events-none"
@@ -123,9 +127,21 @@
         @play="onPlay"
         @pause="onPause"
       />
+      -->
 
       <!-- Black screen overlay when playhead is in a gap with no video source (editor mode) -->
       <div v-if="showBlackScreen" class="absolute inset-0 bg-black z-[5]" />
+
+      <!-- Preview generation loading indicator -->
+      <div
+        v-if="isGeneratingPreview"
+        class="absolute inset-0 flex items-center justify-center bg-black/40 z-[6] pointer-events-none"
+      >
+        <div class="flex flex-col items-center gap-2 px-4 py-3 bg-black/80 rounded-lg">
+          <div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          <span class="text-xs text-white/90">Generating preview...</span>
+        </div>
+      </div>
 
       <!-- Overlay Container - matches video dimensions -->
       <div
@@ -215,9 +231,11 @@
           </button>
           <!-- Play/Pause Button -->
           <button
-            @click="emit('togglePlay')"
+            @click="!isGeneratingPreview && emit('togglePlay')"
             class="p-2 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group text-[12px]"
-            title="Play/Pause (Space)"
+            :class="{ 'opacity-50 cursor-not-allowed': isGeneratingPreview }"
+            :disabled="isGeneratingPreview"
+            :title="isGeneratingPreview ? 'Generating preview...' : 'Play/Pause (Space)'"
           >
             <Play v-if="!isPlaying" class="h-3.5 w-3.5 text-white/60 group-hover:text-white transition-colors" />
             <Pause v-else class="h-3.5 w-3.5 text-white/60 group-hover:text-white transition-colors" />
@@ -393,10 +411,21 @@
     startWidth: number; // Width as percentage (maxWidth)
   }
 
+  // Segment time map interface for preview-to-source time mapping
+  interface SegmentTimeMap {
+    previewStart: number; // Start time in preview video
+    previewEnd: number; // End time in preview video
+    sourceStart: number; // Start time in source video
+    sourceEnd: number; // End time in source video
+  }
+
   const props = withDefaults(
     defineProps<{
       videoSrc: string | null;
       preloadVideoSrc?: string | null; // Next video source for seamless transitions (editor mode)
+      segmentPreviewSrc?: string | null; // Pre-rendered preview video for seamless segment playback
+      segmentTimeMap?: SegmentTimeMap[]; // Maps preview time to source time for subtitles/waveform
+      isGeneratingPreview?: boolean; // Whether preview is being generated
       currentTime: number;
       effectiveTime: number; // Time position accounting for segment cuts
       isPlaying: boolean;
@@ -440,6 +469,9 @@
       watermarks: () => [],
       creatorProfileWatermarkSettings: null,
       preloadVideoSrc: null,
+      segmentPreviewSrc: null,
+      segmentTimeMap: () => [],
+      isGeneratingPreview: false,
       subtitleSettings: null,
       transcriptWords: () => [],
       transcriptSegments: () => [],
@@ -592,10 +624,16 @@
   const lastPreloadSrc = ref<string | null>(null); // Track last loaded preload src to keep it alive
 
   // Double-buffer state for seamless segment transitions (clip mode)
+  // Note: The dual-video approach is currently disabled (video element commented out)
   const clipActiveVideoIndex = ref<0 | 1>(0); // 0 = main video, 1 = clip preload video
   const clipPreloadReady = ref(false); // Whether clip preload video is seeked and ready
   const clipPreloadTargetSegmentIndex = ref<number>(-1); // Which segment the preload is seeked to
   const lastClipPreloadSeekTime = ref<number>(-1); // Last time we seeked the clip preload to
+
+  // Segment transition state (for direct seeking fallback)
+  const isSegmentSeeking = ref(false); // Whether we're currently seeking to a new segment
+  const segmentSeekTargetTime = ref<number | null>(null); // Target time for segment seek
+  const wasPlayingBeforeSegmentSeek = ref(false); // Whether video was playing before segment seek
 
   // Crossfade animation state - uses requestAnimationFrame for smooth 60fps opacity transitions
   const crossfadeAnimationId = ref<number | null>(null);
@@ -745,15 +783,27 @@
     if (el) el.playbackRate = playbackRate.value;
   });
 
-  // Watch for segments changes to reset clip video state and re-initialize preload
+  // Watch for segments changes to reset video state
   watch(
     () => props.segments,
     () => {
-      if (!props.editorMode && props.segments && props.segments.length > 1) {
+      if (props.segments && props.segments.length > 1) {
         resetClipVideoState();
       }
     },
     { deep: true }
+  );
+
+  // Watch for segment preview availability - reset video state when preview is ready
+  // This ensures clean transition to single preview video
+  watch(
+    () => props.segmentPreviewSrc,
+    (newSrc, oldSrc) => {
+      if (newSrc && !oldSrc) {
+        console.log('[ClipEditorPreview] Segment preview now available, resetting video state');
+        resetClipVideoState();
+      }
+    }
   );
 
   // Watch for video mute state changes from parent (timeline mute button)
@@ -1083,10 +1133,14 @@
   // Sync region videos with main video - only called on seek/play/pause, not continuously
   // Continuous syncing causes lag due to multiple video decoding
   function syncRegionVideos(forceTimeSync: boolean = false) {
-    if (!videoRef.value) return;
-    const mainVideo = videoRef.value;
-    const currentTime = mainVideo.currentTime;
-    const isPaused = mainVideo.paused;
+    // In multi-region mode, audioVideoRef is the source of truth for time and play state
+    // The main videoRef is hidden, and audioVideoRef handles audio while region videos handle visuals
+    const sourceVideo = showFramedPreview.value && !isSingleRegion.value ? audioVideoRef.value : videoRef.value;
+
+    if (!sourceVideo) return;
+
+    const currentTime = sourceVideo.currentTime;
+    const isPaused = sourceVideo.paused;
 
     regionVideoRefs.value.forEach((regionVideo) => {
       if (regionVideo && regionVideo.readyState >= 1) {
@@ -1351,6 +1405,83 @@
       return [{ start_time: props.clipStart, end_time: props.clipEnd }];
     }
     return [...props.segments].sort((a, b) => a.start_time - b.start_time);
+  });
+
+  // Whether to use the pre-rendered segment preview video
+  // This is true when:
+  // - We have a segment preview source
+  // - We have multiple segments
+  // - NOT in framed preview mode (framed mode requires source resolution for cropping)
+  // Note: showFramedPreview is defined later in this file, but Vue computed properties
+  // are evaluated lazily so the reference order doesn't matter
+  const useSegmentPreview = computed(() => {
+    return !!props.segmentPreviewSrc && sortedSegments.value.length > 1 && !showFramedPreview.value;
+  });
+
+  // The effective video source - use segment preview if available for seamless playback
+  const effectiveVideoSrcWithPreview = computed(() => {
+    if (useSegmentPreview.value && props.segmentPreviewSrc) {
+      return props.segmentPreviewSrc;
+    }
+    return props.videoSrc;
+  });
+
+  // Map a preview video time to the corresponding source video time
+  // This is needed for subtitle display and transcript highlighting
+  function mapPreviewTimeToSource(previewTime: number): number {
+    if (!useSegmentPreview.value || !props.segmentTimeMap || props.segmentTimeMap.length === 0) {
+      // No mapping needed, time is already in source format
+      return previewTime;
+    }
+
+    const timeMap = props.segmentTimeMap;
+    for (const segment of timeMap) {
+      if (previewTime >= segment.previewStart && previewTime <= segment.previewEnd) {
+        // Found the segment - calculate the offset within the segment
+        const offsetInSegment = previewTime - segment.previewStart;
+        return segment.sourceStart + offsetInSegment;
+      }
+    }
+
+    // If not found in any segment, return the last segment's end time
+    const lastSegment = timeMap[timeMap.length - 1];
+    return lastSegment ? lastSegment.sourceEnd : previewTime;
+  }
+
+  // Map source video time to preview video time
+  // This is needed when seeking from external controls (timeline scrubbing)
+  function mapSourceTimeToPreview(sourceTime: number): number {
+    if (!useSegmentPreview.value || !props.segmentTimeMap || props.segmentTimeMap.length === 0) {
+      // No mapping needed
+      return sourceTime;
+    }
+
+    const timeMap = props.segmentTimeMap;
+    for (const segment of timeMap) {
+      if (sourceTime >= segment.sourceStart && sourceTime <= segment.sourceEnd) {
+        // Found the segment - calculate the offset within the segment
+        const offsetInSegment = sourceTime - segment.sourceStart;
+        return segment.previewStart + offsetInSegment;
+      }
+    }
+
+    // If source time is before first segment, return 0
+    if (timeMap.length > 0 && sourceTime < timeMap[0].sourceStart) {
+      return 0;
+    }
+
+    // If source time is after last segment, return preview duration
+    const lastSegment = timeMap[timeMap.length - 1];
+    return lastSegment ? lastSegment.previewEnd : sourceTime;
+  }
+
+  // Total duration of the preview video
+  const previewTotalDuration = computed(() => {
+    if (!useSegmentPreview.value || !props.segmentTimeMap || props.segmentTimeMap.length === 0) {
+      return 0;
+    }
+    const lastSegment = props.segmentTimeMap[props.segmentTimeMap.length - 1];
+    return lastSegment ? lastSegment.previewEnd : 0;
   });
 
   // Get the current segment index based on current time (for clip mode)
@@ -1623,27 +1754,21 @@
   /**
    * Reset clip mode video state to main video.
    * Called when user seeks manually or other state resets are needed.
+   * Note: The clip preload video element is currently disabled, so this mainly resets state flags.
    */
   function resetClipVideoState() {
     if (props.editorMode) return;
 
-    console.log('[ClipEditorPreview.resetClipVideoState] Resetting clip video state');
-
-    // Reset to main video
+    // Reset state flags to main video mode
     clipActiveVideoIndex.value = 0;
     clipPreloadReady.value = false;
     clipPreloadTargetSegmentIndex.value = -1;
     lastClipPreloadSeekTime.value = -1;
 
-    // Pause preload if playing
+    // Pause preload if it exists and is playing (safety check)
     if (clipPreloadVideoRef.value && !clipPreloadVideoRef.value.paused) {
       clipPreloadVideoRef.value.pause();
     }
-
-    // Queue pre-seek for next segment
-    nextTick(() => {
-      preSeekNextSegment();
-    });
   }
 
   // Creator profile watermark support
@@ -3314,9 +3439,18 @@
 
   function goToBeginning() {
     if (videoRef.value) {
-      const firstSegment = sortedSegments.value[0];
-      videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
-      emit('timeUpdate', videoRef.value.currentTime);
+      if (useSegmentPreview.value) {
+        // Segment preview video: seek to beginning of preview (0)
+        videoRef.value.currentTime = 0;
+        // Emit the first segment's source start time
+        const firstSourceTime = props.segmentTimeMap?.[0]?.sourceStart ?? props.clipStart;
+        emit('timeUpdate', firstSourceTime);
+      } else {
+        // Original behavior: seek to first segment's start in source
+        const firstSegment = sortedSegments.value[0];
+        videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
+        emit('timeUpdate', videoRef.value.currentTime);
+      }
       syncAllPreviewVideos(true);
 
       // Reset clip video state when going to beginning
@@ -3332,9 +3466,18 @@
 
       // Check if we have a pending seek time from aspect ratio switch
       if (pendingSeekTime.value !== null) {
-        videoRef.value.currentTime = pendingSeekTime.value;
+        if (useSegmentPreview.value) {
+          // Convert source time to preview time when using segment preview
+          videoRef.value.currentTime = mapSourceTimeToPreview(pendingSeekTime.value);
+        } else {
+          videoRef.value.currentTime = pendingSeekTime.value;
+        }
         pendingSeekTime.value = null;
+      } else if (useSegmentPreview.value) {
+        // Segment preview: start at preview time 0
+        videoRef.value.currentTime = 0;
       } else {
+        // Original behavior: start at first segment's source time
         const firstSegment = sortedSegments.value[0];
         videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
       }
@@ -3345,12 +3488,9 @@
 
       emit('videoElementReady', videoRef.value);
 
-      // Initialize clip mode preload after video is ready
-      if (!props.editorMode && sortedSegments.value.length > 1) {
-        nextTick(() => {
-          preSeekNextSegment();
-        });
-      }
+      // Initialize preload after video is ready (dual-video approach is now disabled)
+      // When segment preview is ready, it handles seamless playback
+      // No need to pre-seek since we're using direct seeking fallback or segment preview
     }
   }
 
@@ -3382,15 +3522,32 @@
         return;
       }
 
-      // Clip mode: only handle time updates when main video is active
-      // When clipActiveVideoIndex === 1, the clip preload handles time updates
-      if (clipActiveVideoIndex.value === 1) {
+      // When using segment preview video, time handling is simplified
+      // The preview is a single continuous video - no segment jumping needed
+      if (useSegmentPreview.value) {
+        // Map the preview video time to source video time for subtitle/transcript sync
+        const sourceTime = mapPreviewTimeToSource(currentVideoTime);
+
+        // Check if video should be muted based on mapped source time
+        updateVideoMuteState(sourceTime);
+
+        // Emit the mapped source time so parent components can sync subtitles/transcript
+        emit('timeUpdate', sourceTime);
         return;
       }
 
       // Clip mode: segment-based time management
+      // Note: The dual-video clip preload approach is disabled (video element commented out)
+      // We use direct seeking with pause/resume to minimize stutter at segment boundaries
       const segments = sortedSegments.value;
 
+      // If we're currently in the middle of a segment seek, ignore time updates
+      // until the seek completes (handled by onSegmentSeekComplete)
+      if (isSegmentSeeking.value) {
+        return;
+      }
+
+      // Find which segment contains the current time
       let foundSegmentIndex = -1;
       for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
@@ -3401,19 +3558,8 @@
       }
 
       if (foundSegmentIndex >= 0) {
+        // We're within a valid segment - emit the time update
         emit('timeUpdate', currentVideoTime);
-
-        // Ensure pre-seek is initiated for the next segment (if not already done)
-        // This ensures the preload is ready before we hit the segment boundary
-        if (
-          segments.length > 1 &&
-          foundSegmentIndex < segments.length - 1 &&
-          clipPreloadTargetSegmentIndex.value !== foundSegmentIndex + 1
-        ) {
-          preSeekNextSegment();
-        }
-
-        // Note: sync is handled by the animation frame loop during playback
         return;
       }
 
@@ -3426,49 +3572,96 @@
 
           if (nextSegment) {
             if (currentVideoTime < nextSegment.start_time) {
-              // We're in the gap between segments - try seamless swap
-              if (clipPreloadReady.value && swapToClipPreload()) {
-                // Seamless swap succeeded - preload is now playing
-                console.log('[ClipEditorPreview.onTimeUpdate] Seamless swap to clip preload succeeded');
-                return;
-              }
-
-              // Fallback: direct seek if swap not available
-              console.log('[ClipEditorPreview.onTimeUpdate] Fallback: direct seek to next segment');
-              videoRef.value.currentTime = nextSegment.start_time;
-              emit('timeUpdate', nextSegment.start_time);
-              // Sync after segment jump
-              syncAllPreviewVideos(true);
-              // Re-trigger preload for next segment
-              nextTick(() => preSeekNextSegment());
+              // We're in the gap between segments - perform controlled seek
+              performSegmentSeek(nextSegment.start_time, true);
               return;
             }
           } else {
-            // No more segments - loop back to start
-            videoRef.value.currentTime = segments[0].start_time;
-            videoRef.value.pause();
-            emit('timeUpdate', segments[0].start_time);
-            // Sync after segment jump
-            syncAllPreviewVideos(true);
-            // Reset preload state
-            resetClipVideoState();
+            // No more segments - stop playback and reset to start
+            performSegmentSeek(segments[0].start_time, false);
             return;
           }
         }
       }
 
+      // If time is before first segment, jump to first segment start
       if (currentVideoTime < segments[0].start_time) {
-        videoRef.value.currentTime = segments[0].start_time;
-        emit('timeUpdate', segments[0].start_time);
-        // Sync after segment jump
-        syncAllPreviewVideos(true);
-        // Trigger preload for next segment
-        nextTick(() => preSeekNextSegment());
+        performSegmentSeek(segments[0].start_time, true);
         return;
       }
 
       emit('timeUpdate', currentVideoTime);
     }
+  }
+
+  /**
+   * Perform a controlled seek to a new segment position.
+   * This pauses the video before seeking and resumes after, to prevent stutter.
+   * @param targetTime - The time to seek to
+   * @param shouldResume - Whether to resume playback after the seek completes
+   */
+  function performSegmentSeek(targetTime: number, shouldResume: boolean) {
+    if (!videoRef.value || isSegmentSeeking.value) return;
+
+    // Mark that we're seeking
+    isSegmentSeeking.value = true;
+    segmentSeekTargetTime.value = targetTime;
+    wasPlayingBeforeSegmentSeek.value = shouldResume && (props.isPlaying || !videoRef.value.paused);
+
+    // Pause video before seeking to prevent visual stutter
+    if (!videoRef.value.paused) {
+      videoRef.value.pause();
+    }
+
+    // Add one-time seeked event listener
+    const onSeeked = () => {
+      videoRef.value?.removeEventListener('seeked', onSeeked);
+      onSegmentSeekComplete();
+    };
+    videoRef.value.addEventListener('seeked', onSeeked);
+
+    // Perform the seek
+    videoRef.value.currentTime = targetTime;
+
+    // Fallback timeout in case seeked event doesn't fire
+    setTimeout(() => {
+      if (isSegmentSeeking.value && segmentSeekTargetTime.value === targetTime) {
+        videoRef.value?.removeEventListener('seeked', onSeeked);
+        onSegmentSeekComplete();
+      }
+    }, 200);
+  }
+
+  /**
+   * Called when a segment seek completes.
+   * Resumes playback if needed and emits the time update.
+   */
+  function onSegmentSeekComplete() {
+    if (!videoRef.value) {
+      isSegmentSeeking.value = false;
+      segmentSeekTargetTime.value = null;
+      return;
+    }
+
+    const targetTime = segmentSeekTargetTime.value ?? videoRef.value.currentTime;
+
+    // Sync framed/region videos after segment jump
+    syncAllPreviewVideos(true);
+
+    // Emit the time update for the new position
+    emit('timeUpdate', targetTime);
+
+    // Resume playback if we were playing before
+    if (wasPlayingBeforeSegmentSeek.value) {
+      videoRef.value.play().catch((err) => {
+        console.warn('[ClipEditorPreview] Failed to resume after segment seek:', err);
+      });
+    }
+
+    // Clear seeking state
+    isSegmentSeeking.value = false;
+    segmentSeekTargetTime.value = null;
+    wasPlayingBeforeSegmentSeek.value = false;
   }
 
   // Event handlers for framed video (single-region mode)
@@ -3599,9 +3792,16 @@
       return;
     }
 
+    // Handle video end - loop back to beginning
     if (videoRef.value) {
-      const firstSegment = sortedSegments.value[0];
-      videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
+      if (useSegmentPreview.value) {
+        // Segment preview: loop to preview time 0
+        videoRef.value.currentTime = 0;
+      } else {
+        // Original behavior: loop to first segment's source time
+        const firstSegment = sortedSegments.value[0];
+        videoRef.value.currentTime = firstSegment?.start_time || props.clipStart;
+      }
     }
     // Sync after loop back
     syncAllPreviewVideos(true);
@@ -4045,8 +4245,8 @@
   }
 
   function onVideoClick() {
-    // Only toggle play if we're not dragging an overlay
-    if (!dragState.isDragging) {
+    // Only toggle play if we're not dragging an overlay and not generating preview
+    if (!dragState.isDragging && !props.isGeneratingPreview) {
       emit('togglePlay');
     }
   }
@@ -4055,6 +4255,77 @@
     // Clicking on empty space in overlay container clears selection
     if (!dragState.isDragging) {
       emit('trackItemSelect', '', '');
+    }
+  }
+
+  /**
+   * Start playback on all relevant video elements.
+   * This ensures proper sync across main video, audio video (multi-region), and region videos.
+   */
+  async function play(): Promise<boolean> {
+    try {
+      if (showFramedPreview.value) {
+        if (isSingleRegion.value) {
+          // Single region mode: play the framed video
+          if (framedVideoRef.value) {
+            await framedVideoRef.value.play();
+            return true;
+          }
+        } else {
+          // Multi-region mode: play audio video and explicitly sync region videos
+          if (audioVideoRef.value) {
+            await audioVideoRef.value.play();
+            // Explicitly sync region videos after play starts
+            // The onPlay event also does this, but we do it here for robustness
+            await nextTick();
+            syncRegionVideos(true);
+            return true;
+          }
+        }
+      } else {
+        // Normal mode: play main video (or preload if it's active in editor mode)
+        if (props.editorMode && activeVideoIndex.value === 1 && preloadVideoRef.value) {
+          await preloadVideoRef.value.play();
+          return true;
+        } else if (videoRef.value) {
+          await videoRef.value.play();
+          return true;
+        }
+      }
+      return false;
+    } catch (err) {
+      console.warn('[ClipEditorPreview.play] Playback failed:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Pause playback on all relevant video elements.
+   * This ensures all video elements are stopped properly.
+   */
+  function pause(): void {
+    // Pause all possible video sources
+    if (framedVideoRef.value && !framedVideoRef.value.paused) {
+      framedVideoRef.value.pause();
+    }
+    if (audioVideoRef.value && !audioVideoRef.value.paused) {
+      audioVideoRef.value.pause();
+    }
+    if (videoRef.value && !videoRef.value.paused) {
+      videoRef.value.pause();
+    }
+    if (preloadVideoRef.value && !preloadVideoRef.value.paused) {
+      preloadVideoRef.value.pause();
+    }
+    // Explicitly pause all region videos (multi-region mode)
+    regionVideoRefs.value.forEach((regionVideo) => {
+      if (regionVideo && !regionVideo.paused) {
+        regionVideo.pause();
+      }
+    });
+    // Also sync region videos to ensure they're at the correct time
+    if (showFramedPreview.value && !isSingleRegion.value) {
+      syncRegionVideos(true);
     }
   }
 
@@ -4408,31 +4679,48 @@
 
   function getPreloadVideoStyle(): Record<string, string> {
     const filterStyle = getVideoFilterStyle();
-    const opacity = activeVideoIndex.value === 1 ? 1 : 0;
 
-    return {
-      ...filterStyle,
-      opacity: opacity.toString(),
-      transition: crossfadeActive.value ? 'opacity 0.3s ease-in-out' : 'none',
-    };
+    // During active crossfade animation, let the animation loop control opacity
+    if (crossfadeActive.value) {
+      return {
+        ...filterStyle,
+        pointerEvents: 'none',
+        // Don't set opacity here - animation loop handles it
+      };
+    }
+
+    // When not animating, show preload if it's the active video, hide otherwise
+    if (activeVideoIndex.value === 1) {
+      return {
+        ...filterStyle,
+        opacity: '1',
+        visibility: 'visible',
+        pointerEvents: 'none',
+      };
+    } else {
+      return {
+        ...filterStyle,
+        opacity: '0',
+        visibility: 'hidden',
+        pointerEvents: 'none',
+      };
+    }
   }
 
-  // Style for clip mode preload video
+  // Style for clip mode preload video (DISABLED - dual-video approach removed)
+  // Kept for reference in case we want to re-enable it in the future
   function getClipPreloadVideoStyle(): Record<string, string> {
     const filterStyle = getVideoFilterStyle();
-    const isActive = clipActiveVideoIndex.value === 1;
-
     return {
       ...filterStyle,
-      // Use visibility for reliable show/hide - only one video visible at a time
-      visibility: isActive ? 'visible' : 'hidden',
+      visibility: 'hidden', // Always hidden since dual-video is disabled
       pointerEvents: 'none',
     };
   }
 
-  // Combined style for main video - handles editor mode, clip mode, and framed preview mode
+  // Combined style for main video - handles framed preview mode and normal display
   function getMainVideoComputedStyle(): Record<string, string> {
-    // In framed preview mode, main video is always hidden
+    // In framed preview mode, main video is always hidden (framed video is shown instead)
     if (showFramedPreview.value) {
       return {
         visibility: 'hidden',
@@ -4440,22 +4728,36 @@
       };
     }
 
-    // Editor mode - use the editor mode style function
-    if (props.editorMode) {
-      return {
-        ...getMainVideoStyle(),
-        pointerEvents: 'none',
-      };
-    }
-
-    // Clip mode - visibility based on clipActiveVideoIndex
+    // Normal mode - use the main video style with filter effects
     const filterStyle = getVideoFilterStyle();
-    const isActive = clipActiveVideoIndex.value === 0;
+
+    // Check if we're in a transition (editor mode crossfade)
+    if (props.editorMode && activeVideoIndex.value === 1) {
+      // Main video is not active - either during crossfade or after crossfade completed
+      // During active crossfade animation, the animation loop sets opacity directly
+      // After crossfade, main video should be hidden (preload is now active)
+      if (crossfadeActive.value) {
+        // During crossfade animation, let the animation loop control opacity
+        return {
+          ...filterStyle,
+          pointerEvents: 'none',
+          // Don't set opacity here - animation loop handles it
+        };
+      } else {
+        // Crossfade completed - main video should be fully hidden
+        return {
+          ...filterStyle,
+          opacity: '0',
+          visibility: 'hidden',
+          pointerEvents: 'none',
+        };
+      }
+    }
 
     return {
       ...filterStyle,
-      // Use visibility for reliable show/hide
-      visibility: isActive ? 'visible' : 'hidden',
+      visibility: 'visible',
+      opacity: '1',
       pointerEvents: 'none',
     };
   }
@@ -4799,6 +5101,9 @@
     getClipPreloadVideoElement: () => clipPreloadVideoRef.value,
     // Manually trigger pre-seek for next segment (e.g., after external seek)
     preSeekNextSegment,
+    // Unified play/pause methods that handle all video element modes
+    play,
+    pause,
   });
 </script>
 

@@ -3208,3 +3208,233 @@ pub async fn apply_rendered_text_overlays_to_video(
     println!("[Rust] Rendered text overlays applied successfully");
     Ok(())
 }
+
+/// Segment definition for preview generation
+#[derive(Debug, serde::Deserialize)]
+pub struct PreviewSegment {
+    pub start_time: f64,  // Start time in source video (seconds)
+    pub end_time: f64,    // End time in source video (seconds)
+}
+
+/// Generate a low-quality preview video with all segment cuts pre-applied.
+/// This eliminates runtime seeking by creating a single continuous video file.
+/// 
+/// Returns the path to the generated preview video file.
+#[tauri::command]
+pub async fn generate_segment_preview(
+    app: tauri::AppHandle,
+    video_path: String,
+    segments: Vec<PreviewSegment>,
+    output_filename: String,
+) -> Result<String, String> {
+    use tauri_plugin_shell::ShellExt;
+    
+    println!("[Rust] generate_segment_preview called:");
+    println!("[Rust]   video_path: {}", video_path);
+    println!("[Rust]   segments count: {}", segments.len());
+    println!("[Rust]   output_filename: {}", output_filename);
+    
+    if segments.is_empty() {
+        return Err("No segments provided for preview generation".to_string());
+    }
+    
+    // Get storage paths for temporary files
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    
+    // Create temp directory for this preview generation
+    let preview_id = uuid::Uuid::new_v4();
+    let temp_dir = paths.temp.join(format!("preview_{}", preview_id));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    
+    // Preview output directory (persistent for caching)
+    let preview_output_dir = paths.temp.join("segment_previews");
+    std::fs::create_dir_all(&preview_output_dir)
+        .map_err(|e| format!("Failed to create preview output directory: {}", e))?;
+    
+    let shell = app.shell();
+    
+    // For single segment, just extract directly without concat overhead
+    if segments.len() == 1 {
+        let seg = &segments[0];
+        let duration = seg.end_time - seg.start_time;
+        let output_path = preview_output_dir.join(format!("{}.mp4", output_filename));
+        
+        println!("[Rust] Single segment preview: {}s to {}s (duration: {}s)", 
+                 seg.start_time, seg.end_time, duration);
+        
+        // Build FFmpeg args for fast preview generation
+        // Use input seeking (-ss before -i) for faster seeking
+        let args = vec![
+            "-ss".to_string(), seg.start_time.to_string(),
+            "-i".to_string(), video_path.clone(),
+            "-t".to_string(), duration.to_string(),
+            // Scale to 480p (height) while maintaining aspect ratio
+            "-vf".to_string(), "scale=-2:480".to_string(),
+            "-c:v".to_string(), "libx264".to_string(),
+            "-preset".to_string(), "ultrafast".to_string(),
+            "-crf".to_string(), "28".to_string(),
+            "-c:a".to_string(), "aac".to_string(),
+            "-b:a".to_string(), "128k".to_string(),
+            "-movflags".to_string(), "+faststart".to_string(),
+            "-y".to_string(),
+            output_path.to_string_lossy().to_string(),
+        ];
+        
+        let output = shell.sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args(args)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+        
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            return Err(format!("FFmpeg preview generation failed: {}", stderr));
+        }
+        
+        // Cleanup temp dir
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        
+        println!("[Rust] Single segment preview generated: {}", output_path.display());
+        return Ok(output_path.to_string_lossy().to_string());
+    }
+    
+    // Multi-segment: Extract each segment, then concatenate
+    println!("[Rust] Multi-segment preview: {} segments", segments.len());
+    
+    let mut segment_files: Vec<std::path::PathBuf> = Vec::new();
+    
+    // Extract each segment in parallel for better performance
+    let mut extract_tasks = Vec::new();
+    
+    for (i, seg) in segments.iter().enumerate() {
+        let shell_clone = app.shell();
+        let video_path_clone = video_path.clone();
+        let temp_dir_clone = temp_dir.clone();
+        let start_time = seg.start_time;
+        let end_time = seg.end_time;
+        let duration = end_time - start_time;
+        
+        let task = async move {
+            let segment_file = temp_dir_clone.join(format!("seg_{:03}.mp4", i));
+            
+            println!("[Rust] Extracting segment {}: {}s to {}s (duration: {}s)", 
+                     i, start_time, end_time, duration);
+            
+            let args = vec![
+                "-ss".to_string(), start_time.to_string(),
+                "-i".to_string(), video_path_clone,
+                "-t".to_string(), duration.to_string(),
+                // Scale to 480p for preview quality
+                "-vf".to_string(), "scale=-2:480".to_string(),
+                "-c:v".to_string(), "libx264".to_string(),
+                "-preset".to_string(), "ultrafast".to_string(),
+                "-crf".to_string(), "28".to_string(),
+                "-c:a".to_string(), "aac".to_string(),
+                "-b:a".to_string(), "128k".to_string(),
+                // Ensure consistent format for concat
+                "-pix_fmt".to_string(), "yuv420p".to_string(),
+                "-y".to_string(),
+                segment_file.to_string_lossy().to_string(),
+            ];
+            
+            let output = shell_clone.sidecar("ffmpeg")
+                .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+                .args(args)
+                .output()
+                .await
+                .map_err(|e| format!("Failed to run ffmpeg for segment {}: {}", i, e))?;
+            
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("FFmpeg segment {} extraction failed: {}", i, stderr));
+            }
+            
+            Ok::<std::path::PathBuf, String>(segment_file)
+        };
+        
+        extract_tasks.push(task);
+    }
+    
+    // Wait for all segment extractions to complete
+    let results = join_all(extract_tasks).await;
+    
+    for (i, result) in results.into_iter().enumerate() {
+        match result {
+            Ok(path) => segment_files.push(path),
+            Err(e) => {
+                // Cleanup on error
+                let _ = std::fs::remove_dir_all(&temp_dir);
+                return Err(format!("Failed to extract segment {}: {}", i, e));
+            }
+        }
+    }
+    
+    println!("[Rust] All {} segments extracted, concatenating...", segment_files.len());
+    
+    // Create concat list file
+    let concat_file = temp_dir.join("concat_list.txt");
+    let mut concat_content = String::new();
+    
+    for segment_file in &segment_files {
+        // FFmpeg concat demuxer requires forward slashes
+        let escaped_path = segment_file.to_string_lossy().replace('\\', "/");
+        concat_content.push_str(&format!("file '{}'\n", escaped_path));
+    }
+    
+    std::fs::write(&concat_file, &concat_content)
+        .map_err(|e| format!("Failed to write concat list: {}", e))?;
+    
+    // Concatenate all segments
+    let output_path = preview_output_dir.join(format!("{}.mp4", output_filename));
+    
+    let concat_args = vec![
+        "-f".to_string(), "concat".to_string(),
+        "-safe".to_string(), "0".to_string(),
+        "-i".to_string(), concat_file.to_string_lossy().to_string(),
+        "-c".to_string(), "copy".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        "-y".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ];
+    
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(concat_args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg concat: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        return Err(format!("FFmpeg concat failed: {}", stderr));
+    }
+    
+    // Cleanup temp directory
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    
+    println!("[Rust] Preview generated successfully: {}", output_path.display());
+    Ok(output_path.to_string_lossy().to_string())
+}
+
+/// Delete a preview file by path
+/// Used for cleanup when generating new previews or closing the editor
+#[tauri::command]
+pub async fn delete_segment_preview(preview_path: String) -> Result<(), String> {
+    println!("[Rust] Deleting segment preview: {}", preview_path);
+    
+    let path = std::path::Path::new(&preview_path);
+    if path.exists() {
+        std::fs::remove_file(path)
+            .map_err(|e| format!("Failed to delete preview file: {}", e))?;
+        println!("[Rust] Preview file deleted successfully");
+    } else {
+        println!("[Rust] Preview file does not exist, skipping deletion");
+    }
+    
+    Ok(())
+}
