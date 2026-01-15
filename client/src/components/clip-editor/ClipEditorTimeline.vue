@@ -496,7 +496,7 @@
                 'bg-purple-500/10 ring-2 ring-purple-500/40 ring-inset':
                   (isDragging &&
                     dragInfo?.type &&
-                    ['text', 'sticker', 'watermark'].includes(dragInfo.type) &&
+                    ['text', 'sticker'].includes(dragInfo.type) &&
                     dragInfo?.targetLayer === layerGroup.layer) ||
                   (isDraggingSource && dragSourceInfo?.targetTrackIndex === layerGroup.layer),
               }"
@@ -705,65 +705,7 @@
                     </div>
                   </div>
 
-                  <!-- Watermark -->
-                  <div
-                    v-if="overlayItem.type === 'watermark'"
-                    :ref="(el) => setSegmentRef(el, 'watermark', overlayItem.item.id)"
-                    class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                    :class="getSegmentClasses('watermark', overlayItem.item.id)"
-                    :style="
-                      getSegmentStyle(
-                        overlayItem.item.startTime,
-                        overlayItem.item.endTime,
-                        'cyan',
-                        'watermark',
-                        overlayItem.item.id
-                      )
-                    "
-                    @mousedown="(e) => onSegmentMouseDown(e, 'watermark', overlayItem.item.id, overlayItem.item)"
-                    @click.stop="selectItem('watermark', overlayItem.item.id)"
-                  >
-                    <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
-                      Watermark
-                    </span>
-                    <!-- Keyframes -->
-                    <KeyframeMarker
-                      v-for="kf in overlayItem.item.keyframes"
-                      :key="kf.id"
-                      :property="kf.property"
-                      :value="kf.value"
-                      :is-selected="selectedKeyframeId === kf.id"
-                      :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="
-                        (e) =>
-                          startKeyframeDrag(
-                            e,
-                            kf,
-                            overlayItem.item.id,
-                            'watermark',
-                            overlayItem.item.endTime - overlayItem.item.startTime
-                          )
-                      "
-                    />
-                    <!-- Left resize handle -->
-                    <div
-                      class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                      @mousedown.stop="
-                        (e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'left', overlayItem.item)
-                      "
-                    >
-                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                    </div>
-                    <!-- Right resize handle -->
-                    <div
-                      class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                      @mousedown.stop="
-                        (e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'right', overlayItem.item)
-                      "
-                    >
-                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                    </div>
-                  </div>
+                  <!-- Note: Watermarks are rendered in their own dedicated track below audio -->
                 </template>
               </div>
             </div>
@@ -1394,6 +1336,34 @@
                     </div>
                   </div>
                 </template>
+              </div>
+            </div>
+
+            <!-- Watermark Track (dedicated, non-interactive, below audio) -->
+            <div v-if="watermarks.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
+              <div class="track-label timeline-track-label">
+                <div class="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+                  <Droplet :size="11" class="text-cyan-400" />
+                </div>
+                <span class="font-medium text-white/60">Watermark</span>
+              </div>
+              <div class="flex-1 h-full relative z-[10]">
+                <div class="timeline-track-label-bg"></div>
+                <!-- Watermark segments (non-interactive) -->
+                <div
+                  v-for="wm in watermarks"
+                  :key="wm.id"
+                  class="absolute top-1 bottom-1 rounded-md flex items-center px-2 pointer-events-none"
+                  :style="{
+                    left: `${(wm.startTime / totalDuration) * 100}%`,
+                    width: `${((wm.endTime - wm.startTime) / totalDuration) * 100}%`,
+                    backgroundColor: 'rgba(6, 182, 212, 0.3)',
+                    border: '1px solid rgba(6, 182, 212, 0.5)',
+                  }"
+                >
+                  <Droplet :size="12" class="text-cyan-400 mr-1.5 flex-shrink-0" />
+                  <span class="text-xs text-cyan-300 font-medium truncate">Watermark</span>
+                </div>
               </div>
             </div>
 
@@ -3427,9 +3397,10 @@
   });
 
   // Group ALL visual content by layer for unified layer display above Source
-  // Layers can contain: video sources (track_index > 0), text, stickers, watermarks
+  // Layers can contain: video sources (track_index > 0), text, stickers
+  // Note: Watermarks have their own dedicated non-interactive track below audio
   interface LayerItem {
-    type: 'source' | 'text' | 'sticker' | 'watermark';
+    type: 'source' | 'text' | 'sticker';
     item: any;
   }
 
@@ -3446,21 +3417,21 @@
         .sort((a, b) => b.orderIndex - a.orderIndex) // Highest layer first (render on top)
         .map((track) => ({
           layer: track.orderIndex - 1, // Map Track 1 to Layer 0
-          items: track.items.map((tItem) => {
-            const baseItem = tItem.originalData || {};
-            // Map unified TimelineItem back to component-specific item structure
-            // This handles the bridge between snake_case DB records and camelCase props used in template
-            let type: LayerItem['type'] = 'source';
-            const item: any = { ...baseItem };
-            item.keyframes = tItem.keyframes;
+          items: track.items
+            .map((tItem) => {
+              const baseItem = tItem.originalData || {};
+              // Map unified TimelineItem back to component-specific item structure
+              // This handles the bridge between snake_case DB records and camelCase props used in template
+              let type: LayerItem['type'] = 'source';
+              const item: any = { ...baseItem };
+              item.keyframes = tItem.keyframes;
 
-            if (tItem.type === 'video') {
-              // Could be source or watermark
-              if ('watermark_id' in baseItem) {
-                type = 'watermark';
-                item.startTime = tItem.startTime;
-                item.endTime = tItem.startTime + tItem.duration;
-              } else {
+              if (tItem.type === 'video') {
+                // Video sources only (watermarks have their own dedicated track)
+                if ('watermark_id' in baseItem) {
+                  // Skip watermarks - they're handled in their own track
+                  return null;
+                }
                 type = 'source';
                 // Sources use snake_case start_time which is already in baseItem
                 // Also map to camelCase for generic handler compatibility
@@ -3468,23 +3439,27 @@
                 item.endTime = tItem.startTime + tItem.duration;
                 item.trimStart = tItem.trimStart;
                 item.trimEnd = tItem.trimEnd;
+              } else if (tItem.type === 'text') {
+                type = 'text';
+                item.startTime = tItem.startTime;
+                item.endTime = tItem.startTime + tItem.duration;
+                item.text = baseItem.text;
+              } else if (tItem.type === 'sticker') {
+                type = 'sticker';
+                item.startTime = tItem.startTime;
+                item.endTime = tItem.startTime + tItem.duration;
+                item.stickerPath = baseItem.sticker_path;
+                item.stickerType = baseItem.sticker_type;
+              } else if (tItem.type === 'watermark') {
+                // Skip watermarks - they have their own dedicated track
+                return null;
               }
-            } else if (tItem.type === 'text') {
-              type = 'text';
-              item.startTime = tItem.startTime;
-              item.endTime = tItem.startTime + tItem.duration;
-              item.text = baseItem.text;
-            } else if (tItem.type === 'sticker') {
-              type = 'sticker';
-              item.startTime = tItem.startTime;
-              item.endTime = tItem.startTime + tItem.duration;
-              item.stickerPath = baseItem.sticker_path;
-              item.stickerType = baseItem.sticker_type;
-            }
 
-            return { type, item };
-          }),
-        }));
+              return { type, item };
+            })
+            .filter((item): item is LayerItem => item !== null),
+        }))
+        .filter((layerGroup) => layerGroup.items.length > 0); // Remove empty layers
     }
 
     // Fallback: Legacy / Manual Layer construction
@@ -3518,12 +3493,7 @@
       layerMap.get(layer)!.push({ type: 'sticker', item });
     });
 
-    // Add watermarks
-    props.watermarks.forEach((item) => {
-      const layer = item.layer ?? 0;
-      if (!layerMap.has(layer)) layerMap.set(layer, []);
-      layerMap.get(layer)!.push({ type: 'watermark', item });
-    });
+    // Note: Watermarks are NOT added to visualLayers - they have their own dedicated track below audio
 
     // Also ensure target layer exists during drag (for visual feedback)
     // Access the full dragSourceInfo to ensure Vue tracks it reactively
@@ -6561,7 +6531,7 @@
     e.stopPropagation();
 
     const trackContentWidth = getTrackContentWidth();
-    const originalLayer = ['text', 'sticker', 'watermark'].includes(type) ? (item.layer ?? 0) : undefined;
+    const originalLayer = ['text', 'sticker'].includes(type) ? (item.layer ?? 0) : undefined;
     const originalTrackIndex = type === 'source' ? (item.track_index ?? 0) : undefined;
 
     // Capture the clicked element's position for ghost
@@ -6729,7 +6699,7 @@
     }
 
     // For visual overlays, detect which layer the mouse is over
-    if (['text', 'sticker', 'watermark'].includes(dragInfo.value.type) && dragInfo.value.originalLayer !== undefined) {
+    if (['text', 'sticker'].includes(dragInfo.value.type) && dragInfo.value.originalLayer !== undefined) {
       const TRACK_HEIGHT = 40; // 10 * 4px (h-10 in Tailwind)
       const trackOffset = Math.round(deltaY / TRACK_HEIGHT);
       const targetLayer = dragInfo.value.originalLayer - trackOffset; // Negative because layers are rendered top-to-bottom
@@ -6996,7 +6966,7 @@
             endTime: newEndTime,
             trackOrder: dragInfo.value.targetTrackOrder,
           });
-        } else if (['text', 'sticker', 'watermark'].includes(type)) {
+        } else if (['text', 'sticker'].includes(type)) {
           // Visual overlays always use direct update to preserve layer property
           const currentLayer = dragInfo.value.targetLayer ?? dragInfo.value.originalLayer ?? 0;
           const updateData: any = {

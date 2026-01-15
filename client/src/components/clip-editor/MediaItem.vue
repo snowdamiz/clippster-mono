@@ -3,8 +3,8 @@
     class="group relative aspect-video rounded-lg overflow-hidden border cursor-pointer transition-all"
     style="background-color: var(--sidebar-hover); border-color: var(--sidebar-border)"
     @click="$emit('click')"
-    @mouseenter="(e) => (e.currentTarget.style.borderColor = 'var(--sidebar-accent)')"
-    @mouseleave="(e) => (e.currentTarget.style.borderColor = 'var(--sidebar-border)')"
+    @mouseenter="(e) => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--sidebar-accent)')"
+    @mouseleave="(e) => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--sidebar-border)')"
   >
     <!-- Thumbnail -->
     <div class="absolute inset-0">

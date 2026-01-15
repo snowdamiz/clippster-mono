@@ -222,25 +222,36 @@ export class TimelineAdapter {
       getLayer(layerIndex).push(item);
     });
 
-    // Process Watermarks
-    data.watermarks.forEach((wm) => {
-      const layerIndex = wm.layer || 100; // Watermarks usually very top
-      const item: TimelineItem = {
+    // Process Watermarks - create a dedicated watermark track for preview rendering
+    // This track is rendered by ClipEditorPreview but NOT shown in timeline layers (handled separately)
+    if (data.watermarks.length > 0) {
+      const watermarkItems: TimelineItem[] = data.watermarks.map((wm) => ({
         id: wm.id,
-        type: 'watermark', // Explicitly use watermark type
+        type: 'watermark',
         startTime: wm.start_time,
         duration: wm.end_time - wm.start_time,
         name: 'Watermark',
-        sourcePath: wm.preview_url || wm.watermark_path, // Use preview URL for rendering
+        sourcePath: wm.preview_url || wm.watermark_path,
         positionX: wm.position_x / 100,
         positionY: wm.position_y / 100,
-        scale: wm.scale / 100, // Assuming scale is percentage 0-100
-        opacity: wm.opacity / 100, // Assuming opacity is 0-100
+        scale: wm.scale / 100,
+        opacity: wm.opacity / 100,
         originalData: wm,
         keyframes: wm.keyframes_data ? JSON.parse(wm.keyframes_data) : undefined,
-      };
-      getLayer(layerIndex).push(item);
-    });
+      }));
+
+      // Add watermark track with orderIndex -1 (below main video, special handling)
+      tracks.push({
+        id: 'track-watermark',
+        type: 'video',
+        name: 'Watermark',
+        orderIndex: -1, // Special index indicating watermark track (below main video)
+        isMuted: false,
+        isLocked: true, // Non-interactive
+        isVisible: true,
+        items: watermarkItems,
+      });
+    }
 
     // Create tracks for overlays
     // We sort layers to ensure correct z-index

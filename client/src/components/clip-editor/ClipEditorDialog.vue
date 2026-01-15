@@ -157,6 +157,12 @@
                     :project-id="editorProjectId"
                     :current-intro="currentIntro"
                     :current-outro="currentOutro"
+                    :watermarks="watermarks"
+                    :preview-aspect-ratio="previewAspectRatio"
+                    :selected-aspect-ratios="selectedAspectRatios"
+                    :framing-configs="framingConfigs"
+                    :duration="totalSegmentDuration"
+                    :current-time="effectivePreviewTime"
                     @add-source="onAddSource"
                     @import-file="onImportFile"
                     @add-project-media="onAddProjectMedia"
@@ -164,6 +170,10 @@
                     @add-outro="onAddOutro"
                     @remove-intro="onRemoveIntro"
                     @remove-outro="onRemoveOutro"
+                    @add-watermark="addWatermarkLocal"
+                    @update-watermark="updateWatermarkLocal"
+                    @delete-watermark="deleteWatermarkLocal"
+                    @update:preview-aspect-ratio="previewAspectRatio = $event"
                   />
 
                   <!-- Audio Tab -->

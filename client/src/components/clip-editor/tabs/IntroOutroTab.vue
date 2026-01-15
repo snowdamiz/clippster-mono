@@ -40,14 +40,14 @@
             style="background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)"
             @mouseenter="
               (e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
-                e.currentTarget.style.color = '#f87171';
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+                (e.currentTarget as HTMLElement).style.color = '#f87171';
               }
             "
             @mouseleave="
               (e) => {
-                e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)';
-                e.currentTarget.style.color = 'var(--sidebar-text-muted)';
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+                (e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text-muted)';
               }
             "
             title="Remove intro"
@@ -85,14 +85,14 @@
             style="background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)"
             @mouseenter="
               (e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
-                e.currentTarget.style.color = '#f87171';
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+                (e.currentTarget as HTMLElement).style.color = '#f87171';
               }
             "
             @mouseleave="
               (e) => {
-                e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)';
-                e.currentTarget.style.color = 'var(--sidebar-text-muted)';
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+                (e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text-muted)';
               }
             "
             title="Remove outro"
@@ -109,8 +109,8 @@
         @click="openUploadDialog"
         class="p-1.5 rounded-md transition-all"
         style="color: var(--sidebar-text-muted)"
-        @mouseenter="(e) => (e.currentTarget.style.color = 'var(--sidebar-accent)')"
-        @mouseleave="(e) => (e.currentTarget.style.color = 'var(--sidebar-text-muted)')"
+        @mouseenter="(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--sidebar-accent)')"
+        @mouseleave="(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text-muted)')"
         title="Upload intro or outro"
       >
         <Plus :size="14" />
@@ -148,16 +148,16 @@
           @mouseenter="
             (e) => {
               if (!isAssetApplied(asset)) {
-                e.currentTarget.style.backgroundColor = 'var(--sidebar-active)';
-                e.currentTarget.style.borderColor = 'var(--sidebar-accent)';
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-active)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'var(--sidebar-accent)';
               }
             }
           "
           @mouseleave="
             (e) => {
               if (!isAssetApplied(asset)) {
-                e.currentTarget.style.backgroundColor = 'var(--sidebar-hover)';
-                e.currentTarget.style.borderColor = 'var(--sidebar-border)';
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'var(--sidebar-border)';
               }
             }
           "

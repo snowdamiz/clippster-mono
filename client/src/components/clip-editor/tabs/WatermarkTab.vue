@@ -199,11 +199,11 @@
       </div>
     </div>
 
-    <!-- Divider -->
-    <div class="h-px bg-white/10"></div>
+    <!-- Divider (hidden when watermark is active - only one allowed) -->
+    <div v-if="watermarks.length === 0" class="h-px bg-white/10"></div>
 
-    <!-- Watermark Library Section -->
-    <div class="space-y-3">
+    <!-- Watermark Library Section (hidden when watermark is active - only one allowed) -->
+    <div v-if="watermarks.length === 0" class="space-y-3">
       <div class="flex items-center justify-between">
         <h4 class="text-sm font-medium text-white">Watermark Library</h4>
       </div>

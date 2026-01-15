@@ -2829,12 +2829,14 @@
   }
 
   async function onClipsTabRefreshClips() {
-    await loadFolderClips();
+    if (folderProject.value?.id) {
+      await loadFolderClips(folderProject.value.id);
+    }
   }
 
   function onClipsTabDetectClips() {
-    if (folderProject) {
-      startProjectDetection(folderProject);
+    if (folderProject.value) {
+      startProjectDetection(folderProject.value);
     }
   }
 
