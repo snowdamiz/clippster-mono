@@ -319,18 +319,11 @@
         <!-- Marquee Selection Rectangle -->
         <div v-if="marqueeStyle" class="timeline-marquee" :style="marqueeStyle"></div>
 
-        <!-- Drag Ghost Element - positioned via direct DOM manipulation for zero-lag dragging -->
+        <!-- Drag Ghost Element - shows cloned content with 1px blue border -->
         <div
           ref="dragGhostRef"
           v-show="dragGhostState?.visible"
-          class="fixed pointer-events-none z-[1000] rounded-md shadow-2xl opacity-90"
-          :class="{
-            'bg-violet-600/80 border-2 border-violet-400': dragGhostState?.color === 'violet',
-            'bg-cyan-600/80 border-2 border-cyan-400': dragGhostState?.color === 'cyan',
-            'bg-emerald-600/80 border-2 border-emerald-400': dragGhostState?.color === 'emerald',
-            'bg-amber-600/80 border-2 border-amber-400': dragGhostState?.color === 'amber',
-            'bg-rose-600/80 border-2 border-rose-400': dragGhostState?.color === 'rose',
-          }"
+          class="fixed pointer-events-none z-[1000] rounded-md border border-blue-500 overflow-hidden opacity-80"
           :style="{
             left: `${dragGhostState?.initialLeft ?? 0}px`,
             top: `${dragGhostState?.initialTop ?? 0}px`,
@@ -338,13 +331,8 @@
             height: `${dragGhostState?.height ?? 36}px`,
             willChange: 'transform',
           }"
-        >
-          <div class="flex items-center justify-center h-full px-2">
-            <span class="text-xs text-white font-medium truncate drop-shadow-md">
-              {{ dragGhostState?.label || '' }}
-            </span>
-          </div>
-        </div>
+          v-html="dragGhostState?.htmlContent || ''"
+        ></div>
         <!-- Horizontal scroller for ruler + tracks -->
         <div class="pb-1 flex-1">
           <!-- Timeline Content Wrapper - handles zoom width -->
@@ -925,12 +913,12 @@
                     <span class="text-xs text-white/30">Drop sources here</span>
                   </div>
 
-                  <!-- Ghost preview showing original position during drag -->
-                  <div
+                  <!-- Ghost preview showing original position during drag (hidden - original clip stays visible) -->
+                  <!-- <div
                     v-if="dragGhostState?.visible && dragGhostState?.type === 'source' && isDraggingSource"
-                    class="absolute top-0 bottom-0 rounded-md border-2 border-dashed border-cyan-500/40 bg-cyan-500/10 pointer-events-none z-10"
+                    class="absolute top-0 bottom-0 rounded-md border border-blue-500 bg-transparent pointer-events-none z-10"
                     :style="getGhostPreviewStyle('source')"
-                  ></div>
+                  ></div> -->
 
                   <!-- Primary video source segments -->
                   <div
@@ -2530,6 +2518,7 @@
     height: number;
     label: string;
     color: string;
+    htmlContent?: string;
   } | null>(null);
 
   // Ripple Edit State
@@ -5695,8 +5684,8 @@
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
-      borderColor: isSelected ? '#06b6d4' : 'transparent', // Cyan-500
-      opacity: isDraggingThis ? '0' : '1',
+      borderColor: isDraggingThis ? '#3b82f6' : isSelected ? '#06b6d4' : 'transparent', // Blue when dragging, Cyan when selected
+      borderWidth: isDraggingThis ? '1px' : undefined, // 1px border when dragging
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
@@ -5753,6 +5742,9 @@
     const targetEl = e.currentTarget as HTMLElement;
     const rect = targetEl.getBoundingClientRect();
 
+    // Clone the original element's content for the ghost
+    const clonedHtml = targetEl.innerHTML;
+
     // Initialize ghost state and position
     dragGhostState.value = {
       visible: true,
@@ -5764,6 +5756,7 @@
       height: rect.height,
       label: source.source_name || 'Video',
       color: 'cyan',
+      htmlContent: clonedHtml,
     };
 
     // Reset ghost transform
