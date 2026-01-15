@@ -822,16 +822,24 @@
         <div class="space-y-4">
           <p class="text-muted-foreground">
             <span v-if="projectHasVideos && projectHasClips">
-              This project contains both videos and detected clips. Deleting this project will remove the project
-              structure, but all videos and clips will remain in your library.
+              This project contains both videos and detected clips. Deleting will:
+              <ul class="list-disc ml-4 mt-1 text-sm">
+                <li><strong>Delete</strong> raw video files from disk</li>
+                <li><strong>Delete</strong> unbuilt clips that aren't being edited</li>
+                <li><strong>Keep</strong> built clips (available in My Clips)</li>
+                <li><strong>Keep</strong> clips currently in the editor</li>
+              </ul>
             </span>
             <span v-else-if="projectHasVideos">
-              This project contains videos. Deleting this project will remove the project structure, but all videos will
-              remain in your library.
+              This project contains videos. Deleting will remove raw video files from disk and the project structure.
             </span>
             <span v-else-if="projectHasClips">
-              This project contains detected clips. Deleting this project will remove the project structure, but all
-              clips will remain in your library.
+              This project contains detected clips. Deleting will:
+              <ul class="list-disc ml-4 mt-1 text-sm">
+                <li><strong>Delete</strong> unbuilt clips that aren't being edited</li>
+                <li><strong>Keep</strong> built clips (available in My Clips)</li>
+                <li><strong>Keep</strong> clips currently in the editor</li>
+              </ul>
             </span>
             <span v-else>Are you sure you want to delete</span>
             "
@@ -1184,6 +1192,7 @@
     getClipsWithVersionsByProjectId,
     getClipsWithVersionsForProjectAndChildren,
     deleteProject,
+    deleteProjectWithRetention,
     createProject,
     updateProject,
     getRawVideosByProjectId,
@@ -1204,6 +1213,7 @@
     type WatermarkSettings,
     type VideoEditorProject,
   } from '@/services/database';
+  import { useInEditorClips } from '@/stores/useInEditorClips';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { extractMintId } from '@/services/pumpfun';
   import { useFormatters } from '@/composables/useFormatters';
@@ -1262,6 +1272,8 @@
   const { getRelativeTime, formatDuration } = useFormatters();
   const { success, error } = useToast();
   const { activeSessions } = useLivestreamMonitoring();
+  const inEditorStore = useInEditorClips();
+  inEditorStore.hydrate();
   const { processVideoFile } = useVideoOperations();
   const {
     getActiveDownloads,
@@ -3839,6 +3851,7 @@
   }
 
   // Helper function to delete a project and its associated video files from the filesystem
+  // Uses enhanced deletion that respects in-editor and built clip retention
   async function deleteProjectWithFiles(projectId: string): Promise<void> {
     // Get all raw videos for this project
     const videos = await getRawVideosByProjectId(projectId);
@@ -3856,8 +3869,15 @@
       }
     }
 
-    // Now delete the project from the database
-    await deleteProject(projectId);
+    // Get in-editor clip IDs to preserve them during deletion
+    const inEditorClipIds = new Set(inEditorStore.entries.map((e) => e.clipId));
+
+    // Delete the project using enhanced deletion that retains built and in-editor clips
+    const { deletedClipIds, retainedClipIds } = await deleteProjectWithRetention(projectId, inEditorClipIds);
+
+    console.log(
+      `[Projects] Project ${projectId} deleted. Clips deleted: ${deletedClipIds.length}, retained: ${retainedClipIds.length}`
+    );
   }
 
   async function deleteProjectConfirmed() {

@@ -5686,7 +5686,7 @@
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
       borderColor: isDraggingThis ? '#3b82f6' : isSelected ? '#06b6d4' : 'transparent', // Blue when dragging, Cyan when selected
-      borderWidth: isDraggingThis ? '1px' : undefined, // 1px border when dragging
+      borderWidth: isDraggingThis ? '1px' : '0px', // 1px border when dragging
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }

@@ -384,6 +384,19 @@
                                 <span>Build Clip</span>
                               </button>
 
+                              <!-- Clear from In Editor (only if in editor) -->
+                              <button
+                                v-if="inEditorStore.isInEditor(clip.id)"
+                                class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  onClearFromInEditor(clip.id);
+                                  closeActionMenu();
+                                "
+                              >
+                                <XIcon class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
+                                <span>Clear from In Editor</span>
+                              </button>
+
                               <!-- Delete (only if not built) -->
                               <template v-if="!hasCompletedBuilds(clip)">
                                 <div class="clips-tab-dropdown-divider h-px my-1 mx-2"></div>
@@ -432,6 +445,16 @@
                             )
                           }}
                         </span>
+                      </div>
+
+                      <!-- In Editor Badge -->
+                      <div
+                        v-if="inEditorStore.isInEditor(clip.id)"
+                        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-blue-500/20 text-blue-400"
+                        title="This clip is currently open in the video editor"
+                      >
+                        <Edit3 class="h-2.5 w-2.5" />
+                        <span>In Editor</span>
                       </div>
 
                       <!-- Confidence (Subtle) -->
@@ -617,6 +640,7 @@
     Plus,
   } from 'lucide-vue-next';
   import { useAIPermission } from '@/composables/useAIPermission';
+  import { useInEditorClips } from '@/stores/useInEditorClips';
   import ClipBuildSettingsDialog, { type BuildSettings, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
@@ -832,6 +856,10 @@
 
   // AI Permission check
   const { isAIAllowed } = useAIPermission();
+
+  // In-editor clips store
+  const inEditorStore = useInEditorClips();
+  inEditorStore.hydrate();
 
   // State
   const hoveredClipId = ref<string | null>(null);
@@ -1727,6 +1755,11 @@
     emit('editClip', clipId);
   }
 
+  function onClearFromInEditor(clipId: string) {
+    inEditorStore.clearClip(clipId);
+    console.log('[ClipsTab] Cleared clip from in-editor tracking:', clipId);
+  }
+
   function onClipClick(clipId: string) {
     const clip = props.clips.find((c) => c.id === clipId);
 
@@ -1968,7 +2001,7 @@
       // Call the Tauri clip building command
       const { invoke } = await import('@tauri-apps/api/core');
 
-      // Get transcript data
+      // Get transcript data from props (already computed in parent)
       const transcriptWords = props.transcriptData?.words || [];
       const transcriptSegments = props.transcriptData?.whisperSegments || [];
 

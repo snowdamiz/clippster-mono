@@ -1,5 +1,5 @@
 import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
-import type { Project } from './types';
+import type { Project, Clip } from './types';
 
 // Project queries
 export async function createProject(
@@ -193,4 +193,97 @@ export async function getChildProjects(parentId: string): Promise<Project[]> {
     'SELECT * FROM projects WHERE parent_id = ? ORDER BY created_at ASC',
     [parentId]
   );
+}
+
+/**
+ * Get clips for a project that should be deleted (unbuilt and not in-editor).
+ * Built clips (built_file_path not null) and in-editor clips are retained.
+ * @param projectId - The project ID
+ * @param inEditorClipIds - Set of clip IDs currently in the in-editor store
+ */
+export async function getClipsToDeleteForProject(
+  projectId: string,
+  inEditorClipIds: Set<string>
+): Promise<Clip[]> {
+  const db = await getDatabase();
+  // Get all clips for this project that are NOT built
+  const unbuiltClips = await db.select<Clip[]>(
+    `SELECT * FROM clips WHERE project_id = ? AND (built_file_path IS NULL OR built_file_path = '')`,
+    [projectId]
+  );
+  // Filter out clips that are in-editor
+  return unbuiltClips.filter((clip) => !inEditorClipIds.has(clip.id));
+}
+
+/**
+ * Enhanced project deletion that respects in-editor and built clip retention.
+ * - Deletes raw videos from disk and DB
+ * - Deletes unbuilt/unopened clips (not built, not in-editor)
+ * - Retains built clips (sets project_id = NULL, preserves project_name)
+ * - Retains in-editor clips (sets project_id = NULL, preserves project_name)
+ * @param projectId - The project ID to delete
+ * @param inEditorClipIds - Set of clip IDs currently in the in-editor store
+ */
+export async function deleteProjectWithRetention(
+  projectId: string,
+  inEditorClipIds: Set<string>
+): Promise<{ deletedClipIds: string[]; retainedClipIds: string[] }> {
+  const db = await getDatabase();
+
+  // Get the project name before deleting so we can preserve it on clips
+  const project = await getProject(projectId);
+  const projectName = project?.name || null;
+
+  // Get clips to delete (unbuilt and not in-editor)
+  const clipsToDelete = await getClipsToDeleteForProject(projectId, inEditorClipIds);
+  const deletedClipIds = clipsToDelete.map((c) => c.id);
+
+  // Get clips to retain (built OR in-editor)
+  const allClips = await db.select<Clip[]>('SELECT * FROM clips WHERE project_id = ?', [projectId]);
+  const retainedClipIds = allClips.filter((c) => !deletedClipIds.includes(c.id)).map((c) => c.id);
+
+  // Delete unbuilt/unopened clips
+  for (const clip of clipsToDelete) {
+    // Delete clip segments first (foreign key constraint)
+    await db.execute('DELETE FROM clip_segments WHERE clip_id = ?', [clip.id]);
+    // Delete clip edits
+    await db.execute('DELETE FROM clip_edits WHERE clip_id = ?', [clip.id]);
+    // Delete the clip record
+    await db.execute('DELETE FROM clips WHERE id = ?', [clip.id]);
+  }
+
+  // Preserve project name and disassociate retained clips
+  if (retainedClipIds.length > 0 && projectName) {
+    await db.execute(
+      `UPDATE clips SET project_name = ?, project_id = NULL WHERE project_id = ? AND (project_name IS NULL OR project_name = '')`,
+      [projectName, projectId]
+    );
+    await db.execute('UPDATE clips SET project_id = NULL WHERE project_id = ?', [projectId]);
+  }
+
+  // Disassociate raw videos (they will be deleted separately by the caller)
+  try {
+    await db.execute('UPDATE raw_videos SET project_id = NULL WHERE project_id = ?', [projectId]);
+  } catch (error) {
+    console.warn('[Database] raw_videos project_id column update failed:', error);
+  }
+
+  // Disassociate child projects
+  try {
+    await db.execute('UPDATE projects SET parent_id = NULL WHERE parent_id = ?', [projectId]);
+  } catch (error) {
+    console.warn('[Database] projects parent_id column update failed:', error);
+  }
+
+  // Disassociate clip detection sessions
+  try {
+    await db.execute('UPDATE clip_detection_sessions SET project_id = NULL WHERE project_id = ?', [projectId]);
+  } catch (error) {
+    console.warn('[Database] clip_detection_sessions project_id column update failed:', error);
+  }
+
+  // Delete the project record
+  await db.execute('DELETE FROM projects WHERE id = ?', [projectId]);
+
+  return { deletedClipIds, retainedClipIds };
 }

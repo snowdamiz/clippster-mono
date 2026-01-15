@@ -117,6 +117,8 @@ export {
   getAllProjects,
   updateProject,
   deleteProject,
+  deleteProjectWithRetention,
+  getClipsToDeleteForProject,
   hasRawVideosForProject,
   hasClipsForProject,
   hasDetectedOrGeneratedClips,

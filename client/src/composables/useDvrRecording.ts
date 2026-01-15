@@ -328,8 +328,46 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
       // Create AudioContext for mixing
       const audioContext = new AudioContext({ sampleRate: 48000 });
       
+      // CRITICAL: Resume the AudioContext - it starts in 'suspended' state by default
+      // Without this, no audio samples flow through the mixer!
+      if (audioContext.state === 'suspended') {
+        console.log('[DvrRecording] AudioContext is suspended, resuming...');
+        await audioContext.resume();
+        console.log('[DvrRecording] AudioContext resumed, state:', audioContext.state);
+      }
+      
       // Create a destination node that outputs to a MediaStream
       const mixerDestination = audioContext.createMediaStreamDestination();
+      
+      // CRITICAL: Create hidden audio elements to "consume" each audio track
+      // WebRTC audio tracks don't produce samples until they're attached to an element
+      const hiddenAudioElements: HTMLAudioElement[] = [];
+      for (const { track, identity } of allAudioTracks) {
+        try {
+          const audioEl = document.createElement('audio');
+          audioEl.id = 'dvr-audio-' + Math.random().toString(36).substr(2, 9);
+          audioEl.muted = true; // Muted so we don't hear double audio
+          audioEl.autoplay = true;
+          audioEl.srcObject = new MediaStream([track]);
+          audioEl.style.position = 'fixed';
+          audioEl.style.opacity = '0';
+          audioEl.style.pointerEvents = 'none';
+          document.body.appendChild(audioEl);
+          
+          // Start playback to activate the track
+          audioEl.play().catch((e) => {
+            console.warn(`[DvrRecording] Audio element play failed for ${identity}:`, e);
+          });
+          
+          hiddenAudioElements.push(audioEl);
+          console.log(`[DvrRecording] Created audio consumer element for: ${identity}`);
+        } catch (e) {
+          console.warn(`[DvrRecording] Failed to create audio element for ${identity}:`, e);
+        }
+      }
+      
+      // Small delay to let audio elements activate the tracks
+      await new Promise((r) => setTimeout(r, 100));
       
       // Connect all audio tracks to the mixer
       const audioSources: MediaStreamAudioSourceNode[] = [];
@@ -403,8 +441,9 @@ function waitForTracks(room: Room): Promise<CaptureSetup> {
       }, 5000);
       (videoElement as any).__qualityInterval = qualityInterval;
       
-      // Store audio sources for cleanup
+      // Store audio sources and hidden elements for cleanup
       (videoElement as any).__audioSources = audioSources;
+      (videoElement as any).__hiddenAudioElements = hiddenAudioElements;
 
       resolveOnce({
         mediaStream: recordingStream,
@@ -752,6 +791,12 @@ export function useDvrRecording() {
             sampleRate: 48000,
           });
         session.audioContext = audioContext;
+        
+        // Ensure AudioContext is running for metering
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
+        
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
         analyser.smoothingTimeConstant = 0.8;
@@ -1117,12 +1162,27 @@ export function useDvrRecording() {
         if (qualityInterval) {
           clearInterval(qualityInterval);
         }
+        
+        // Clean up hidden audio consumer elements (for multi-participant audio mixing)
+        const hiddenAudioElements = (session.hiddenVideoElement as any).__hiddenAudioElements as HTMLAudioElement[] | undefined;
+        if (hiddenAudioElements) {
+          for (const audioEl of hiddenAudioElements) {
+            try {
+              audioEl.pause();
+              audioEl.srcObject = null;
+              audioEl.remove();
+            } catch (e) {
+              // Ignore cleanup errors
+            }
+          }
+        }
+        
         session.hiddenVideoElement.pause();
         session.hiddenVideoElement.srcObject = null;
         session.hiddenVideoElement.remove();
       }
 
-      // Clean up hidden audio element
+      // Clean up hidden audio element (legacy single element)
       if (session.hiddenAudioElement) {
         session.hiddenAudioElement.pause();
         session.hiddenAudioElement.srcObject = null;

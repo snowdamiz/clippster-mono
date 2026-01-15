@@ -97,13 +97,33 @@
                   </div>
                 </div>
 
-                <!-- Source Count Badge -->
+                <!-- Clip Project Badge -->
                 <div
-                  v-if="getSourceCount(project.id) > 0"
+                  v-if="isClipBasedProject(project.id)"
+                  class="videoeditor-card__badge videoeditor-card__badge--clip"
+                  style="background: rgba(139, 92, 246, 0.9);"
+                >
+                  <Film class="videoeditor-card__badge-icon" />
+                  <span>Clip Project</span>
+                </div>
+
+                <!-- Source Count Badge (only show if not a clip project or has multiple sources) -->
+                <div
+                  v-else-if="getSourceCount(project.id) > 0"
                   class="videoeditor-card__badge videoeditor-card__badge--sources"
                 >
                   <Film class="videoeditor-card__badge-icon" />
                   <span>{{ getSourceCount(project.id) }} Sources</span>
+                </div>
+
+                <!-- In Editor Badge -->
+                <div
+                  v-if="hasInEditorClips(project.id)"
+                  class="videoeditor-card__badge videoeditor-card__badge--in-editor"
+                  style="top: auto; bottom: 52px; background: rgba(59, 130, 246, 0.9);"
+                >
+                  <Edit class="videoeditor-card__badge-icon" />
+                  <span>{{ getInEditorClipCount(project.id) }} In Editor</span>
                 </div>
 
                 <!-- Thumbnail background with vignette -->
@@ -367,9 +387,14 @@
   import { getRawVideo } from '@/services/database/raw-videos';
   import { getClipWithBuildStatus } from '@/services/database/clip-build';
   import { useFormatters } from '@/composables/useFormatters';
+  import { useInEditorClips } from '@/stores/useInEditorClips';
   import { invoke } from '@tauri-apps/api/core';
 
   const { getRelativeTime: formatRelativeTime } = useFormatters();
+
+  // In-editor clips store
+  const inEditorStore = useInEditorClips();
+  inEditorStore.hydrate();
 
   // Types for project metadata
   interface ProjectEditInfo {
@@ -717,6 +742,35 @@
     return sourceThumbnails.value.get(projectId) || [];
   }
 
+  // Check if a project has any in-editor clips as sources
+  function hasInEditorClips(projectId: string): boolean {
+    const sources = projectSources.value.get(projectId) || [];
+    return sources.some(
+      (source) => source.source_type === 'clip' && source.source_id && inEditorStore.isInEditor(source.source_id)
+    );
+  }
+
+  // Get count of in-editor clips in a project
+  function getInEditorClipCount(projectId: string): number {
+    const sources = projectSources.value.get(projectId) || [];
+    return sources.filter(
+      (source) => source.source_type === 'clip' && source.source_id && inEditorStore.isInEditor(source.source_id)
+    ).length;
+  }
+
+  // Check if a project is a clip-based project (has clip sources)
+  function isClipBasedProject(projectId: string): boolean {
+    const sources = projectSources.value.get(projectId) || [];
+    return sources.some((source) => source.source_type === 'clip' && source.source_id);
+  }
+
+  // Get the primary clip ID for a clip-based project
+  function getPrimaryClipId(projectId: string): string | null {
+    const sources = projectSources.value.get(projectId) || [];
+    const clipSource = sources.find((source) => source.source_type === 'clip' && source.source_id);
+    return clipSource?.source_id || null;
+  }
+
   function formatDuration(seconds: number): string {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -793,10 +847,14 @@
       if (selectedProjects.value.size > 0) {
         // Bulk delete
         for (const id of selectedProjects.value) {
+          // Clear in-editor clips for this project before deleting
+          clearInEditorClipsForProject(id);
           await deleteVideoEditorProject(id);
         }
         selectedProjects.value.clear();
       } else if (projectToDelete.value) {
+        // Clear in-editor clips for this project before deleting
+        clearInEditorClipsForProject(projectToDelete.value.id);
         // Single delete
         await deleteVideoEditorProject(projectToDelete.value.id);
       }
@@ -806,6 +864,19 @@
     } finally {
       showDeleteDialog.value = false;
       projectToDelete.value = null;
+    }
+  }
+
+  // Clear in-editor clips that belong to a video editor project
+  function clearInEditorClipsForProject(projectId: string) {
+    const sources = projectSources.value.get(projectId) || [];
+    const clipIdsToRemove = sources
+      .filter((source) => source.source_type === 'clip' && source.source_id && inEditorStore.isInEditor(source.source_id))
+      .map((source) => source.source_id!);
+
+    if (clipIdsToRemove.length > 0) {
+      inEditorStore.clearMany(clipIdsToRemove);
+      console.log('[VideoEditor] Cleared in-editor clips for deleted project:', projectId, clipIdsToRemove);
     }
   }
 
