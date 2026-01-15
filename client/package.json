@@ -17,9 +17,9 @@
     "analyze:all": "node ../scripts/analyze-codebase.mjs --all --html --graph",
     "knip": "knip",
     "knip:fix": "knip --fix",
-    "madge:orphans": "madge --orphans --extensions ts,vue src/",
-    "madge:circular": "madge --circular --extensions ts,vue src/",
-    "madge:graph": "madge --image ../analysis-output/dependency-graph.svg --extensions ts,vue src/"
+    "madge:orphans": "madge --orphans --extensions ts --exclude \"\\.vue$\" src/",
+    "madge:circular": "madge --circular --extensions ts --exclude \"\\.vue$\" src/",
+    "madge:graph": "madge --image ../analysis-output/ts-dependency-graph.svg --extensions ts --exclude \"\\.vue$\" src/"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
