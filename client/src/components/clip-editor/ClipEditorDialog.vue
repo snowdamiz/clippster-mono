@@ -599,7 +599,7 @@
   import ManualPOIEditor from '@/components/poi/ManualPOIEditor.vue';
   import SpeedCurveEditor from './SpeedCurveEditor.vue';
   import KeyframeInspector from './KeyframeInspector.vue';
-  import type { ItemType, Keyframe as TimelineKeyframe, EasingType } from '@/types/timeline-model';
+  // Note: ItemType, Keyframe, EasingType types moved to useKeyframeOperations composable
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { useUnifiedTracks } from '@/composables/useUnifiedTracks';
@@ -608,6 +608,7 @@
   import { useAudioTrackPlayback } from '@/composables/useAudioTrackPlayback';
   import { useOverlayOperations } from '@/composables/useOverlayOperations';
   import { useTimelineMarkers } from '@/composables/useTimelineMarkers';
+  import { useKeyframeOperations } from '@/composables/useKeyframeOperations';
   import {
     useIntroOutroOperations,
     type AppliedIntroOutro,
@@ -1984,6 +1985,21 @@
     activeEditorTab.value = tab;
   }
 
+  // Keyframe operations composable (select, update, delete, add keyframes on timeline items)
+  const { selectedKeyframe, handleKeyframeSelect, updateKeyframe, deleteKeyframe, addKeyframe, updateKeyframeTime } =
+    useKeyframeOperations({
+      textOverlays,
+      stickers,
+      watermarks,
+      audioTracks,
+      updateTextOverlayLocal,
+      updateStickerLocal,
+      updateWatermarkLocal,
+      updateAudioTrackLocal,
+      setActiveTab,
+      triggerAutoSave,
+    });
+
   // Video source operations for editor mode
   async function onAddSource(source: SourceItem) {
     // Always in editor mode now - add source directly
@@ -2661,175 +2677,6 @@
     }
   }
 
-  // Keyframe Selection
-  const selectedKeyframe = ref<{
-    id: string;
-    itemId: string;
-    type: 'source' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
-    keyframe: TimelineKeyframe;
-  } | null>(null);
-
-  function handleKeyframeSelect(data: { itemId: string; keyframeId: string; type: ItemType }) {
-    // Find the item and keyframe
-    let item: any;
-    if (data.type === 'text') item = textOverlays.value.find((i) => i.id === data.itemId);
-    else if (data.type === 'sticker') item = stickers.value.find((i) => i.id === data.itemId);
-    else if (data.type === 'watermark') item = watermarks.value.find((i) => i.id === data.itemId);
-    else if (data.type === 'audio') item = audioTracks.value.find((i) => i.id === data.itemId);
-
-    if (item && item.keyframes) {
-      const keyframe = item.keyframes.find((k: Keyframe) => k.id === data.keyframeId);
-      if (keyframe) {
-        selectedKeyframe.value = {
-          id: data.keyframeId,
-          itemId: data.itemId,
-          type: data.type as any,
-          keyframe: { ...keyframe }, // Copy to avoid direct mutation
-        };
-        // Switch to the appropriate tab so the inspector makes sense in context,
-        // or we can show it as an overlay/side panel.
-        // For now, let's keep the current tab but show the inspector in a dedicated area or replace the tab content?
-        // Better: Set a flag or use a computed property to show inspector INSTEAD of the tab content or alongside it.
-        // Given the layout, maybe we force the tab to the relevant one?
-        if (data.type === 'text') setActiveTab('overlays');
-        else if (data.type === 'sticker') setActiveTab('overlays');
-        else if (data.type === 'watermark') setActiveTab('watermark');
-        else if (data.type === 'audio') setActiveTab('audio');
-      }
-    }
-  }
-
-  async function updateKeyframe(updates: Partial<TimelineKeyframe>) {
-    if (!selectedKeyframe.value) return;
-
-    const { itemId, type, id } = selectedKeyframe.value;
-
-    // Update local state first
-    selectedKeyframe.value.keyframe = { ...selectedKeyframe.value.keyframe, ...updates };
-
-    // Update the item's keyframes
-    if (type === 'text') {
-      const item = textOverlays.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const index = item.keyframes.findIndex((k) => k.id === id);
-        if (index !== -1) {
-          const newKeyframes = [...item.keyframes];
-          newKeyframes[index] = { ...newKeyframes[index], ...updates } as TimelineKeyframe;
-          await updateTextOverlayLocal(itemId, { keyframes: newKeyframes });
-        }
-      }
-    } else if (type === 'sticker') {
-      const item = stickers.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const index = item.keyframes.findIndex((k) => k.id === id);
-        if (index !== -1) {
-          const newKeyframes = [...item.keyframes];
-          newKeyframes[index] = { ...newKeyframes[index], ...updates } as TimelineKeyframe;
-          await updateStickerLocal(itemId, { keyframes: newKeyframes });
-        }
-      }
-    } else if (type === 'watermark') {
-      const item = watermarks.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const index = item.keyframes.findIndex((k) => k.id === id);
-        if (index !== -1) {
-          const newKeyframes = [...item.keyframes];
-          newKeyframes[index] = { ...newKeyframes[index], ...updates } as TimelineKeyframe;
-          await updateWatermarkLocal(itemId, { keyframes: newKeyframes });
-        }
-      }
-    } else if (type === 'audio') {
-      const item = audioTracks.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const index = item.keyframes.findIndex((k) => k.id === id);
-        if (index !== -1) {
-          const newKeyframes = [...item.keyframes];
-          newKeyframes[index] = { ...newKeyframes[index], ...updates } as TimelineKeyframe;
-          await updateAudioTrackLocal(itemId, { keyframes: newKeyframes });
-        }
-      }
-    }
-  }
-
-  async function deleteKeyframe() {
-    if (!selectedKeyframe.value) return;
-
-    const { itemId, type, id } = selectedKeyframe.value;
-
-    if (type === 'text') {
-      const item = textOverlays.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const newKeyframes = item.keyframes.filter((k) => k.id !== id);
-        await updateTextOverlayLocal(itemId, { keyframes: newKeyframes });
-      }
-    } else if (type === 'sticker') {
-      const item = stickers.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const newKeyframes = item.keyframes.filter((k) => k.id !== id);
-        await updateStickerLocal(itemId, { keyframes: newKeyframes });
-      }
-    } else if (type === 'watermark') {
-      const item = watermarks.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const newKeyframes = item.keyframes.filter((k) => k.id !== id);
-        await updateWatermarkLocal(itemId, { keyframes: newKeyframes });
-      }
-    } else if (type === 'audio') {
-      const item = audioTracks.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const newKeyframes = item.keyframes.filter((k) => k.id !== id);
-        await updateAudioTrackLocal(itemId, { keyframes: newKeyframes });
-      }
-    }
-
-    selectedKeyframe.value = null;
-  }
-
-  // Add a new keyframe to an item
-  async function addKeyframe(data: {
-    itemId: string;
-    type: 'text' | 'sticker' | 'watermark' | 'audio' | 'source';
-    property: import('@/types/timeline-model').AnimationProperty;
-    time: number;
-    value: number;
-  }) {
-    const newKeyframe: import('@/types/timeline-model').Keyframe = {
-      id: `kf-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      property: data.property,
-      time: data.time,
-      value: data.value,
-      easing: 'linear',
-    };
-
-    if (data.type === 'text') {
-      const item = textOverlays.value.find((i) => i.id === data.itemId);
-      if (item) {
-        const newKeyframes = [...(item.keyframes || []), newKeyframe];
-        await updateTextOverlayLocal(data.itemId, { keyframes: newKeyframes });
-      }
-    } else if (data.type === 'sticker') {
-      const item = stickers.value.find((i) => i.id === data.itemId);
-      if (item) {
-        const newKeyframes = [...(item.keyframes || []), newKeyframe];
-        await updateStickerLocal(data.itemId, { keyframes: newKeyframes });
-      }
-    } else if (data.type === 'watermark') {
-      const item = watermarks.value.find((i) => i.id === data.itemId);
-      if (item) {
-        const newKeyframes = [...(item.keyframes || []), newKeyframe];
-        await updateWatermarkLocal(data.itemId, { keyframes: newKeyframes });
-      }
-    } else if (data.type === 'audio') {
-      const item = audioTracks.value.find((i) => i.id === data.itemId);
-      if (item) {
-        const newKeyframes = [...(item.keyframes || []), newKeyframe];
-        await updateAudioTrackLocal(data.itemId, { keyframes: newKeyframes });
-      }
-    }
-
-    triggerAutoSave();
-  }
-
   // Handle Slide Edit
   async function handleSlideEdit(data: {
     type: 'source' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
@@ -2914,50 +2761,6 @@
         triggerAutoSave();
       } catch (error) {
         console.error('[ClipEditorDialog] Failed to execute slide edit:', error);
-      }
-    }
-  }
-
-  async function updateKeyframeTime({
-    itemId,
-    keyframeId,
-    time,
-    type,
-  }: {
-    itemId: string;
-    keyframeId: string;
-    time: number;
-    type: 'source' | 'audio' | 'text' | 'sticker' | 'watermark' | 'effect' | 'filter';
-  }) {
-    if (type === 'text') {
-      const item = textOverlays.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const keyframeIndex = item.keyframes.findIndex((k) => k.id === keyframeId);
-        if (keyframeIndex !== -1) {
-          const updatedKeyframes = [...item.keyframes];
-          updatedKeyframes[keyframeIndex] = { ...updatedKeyframes[keyframeIndex], time };
-          await updateTextOverlayLocal(itemId, { keyframes: updatedKeyframes });
-        }
-      }
-    } else if (type === 'sticker') {
-      const item = stickers.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const keyframeIndex = item.keyframes.findIndex((k) => k.id === keyframeId);
-        if (keyframeIndex !== -1) {
-          const updatedKeyframes = [...item.keyframes];
-          updatedKeyframes[keyframeIndex] = { ...updatedKeyframes[keyframeIndex], time };
-          await updateStickerLocal(itemId, { keyframes: updatedKeyframes });
-        }
-      }
-    } else if (type === 'watermark') {
-      const item = watermarks.value.find((i) => i.id === itemId);
-      if (item && item.keyframes) {
-        const keyframeIndex = item.keyframes.findIndex((k) => k.id === keyframeId);
-        if (keyframeIndex !== -1) {
-          const updatedKeyframes = [...item.keyframes];
-          updatedKeyframes[keyframeIndex] = { ...updatedKeyframes[keyframeIndex], time };
-          await updateWatermarkLocal(itemId, { keyframes: updatedKeyframes });
-        }
       }
     }
   }
