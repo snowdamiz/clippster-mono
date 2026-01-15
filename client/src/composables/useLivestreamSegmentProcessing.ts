@@ -155,7 +155,7 @@ export function useLivestreamSegmentProcessing() {
         segmentProjectName,
         parentProject?.description || undefined,
         job.projectId,
-        'PumpFun'
+        parentProject?.platform || 'PumpFun'
       );
 
       // Generate thumbnail for the segment video

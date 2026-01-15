@@ -10,6 +10,8 @@ use tokio::sync::oneshot;
 use tauri::Emitter;
 
 use crate::storage;
+use crate::downloads::{DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS, DOWNLOAD_METADATA, DownloadMetadata};
+use crate::ffmpeg_utils::get_video_info;
 
 // Recording state management
 #[derive(Debug)]
@@ -700,35 +702,738 @@ async fn run_twitch_recorder(
 }
 
 /// Download a Twitch VOD using yt-dlp
-/// This is a placeholder that returns an error directing users to use yt-dlp directly
-/// Full VOD downloads for Twitch work via the frontend using the VOD URL
 #[tauri::command]
 pub async fn download_twitch_vod(
-    _app: tauri::AppHandle,
-    _download_id: String,
-    _title: String,
+    app: tauri::AppHandle,
+    download_id: String,
+    title: String,
     video_url: String,
-    _channel_name: String
+    channel_name: String
 ) -> Result<(), String> {
-    // Twitch VODs are downloaded via yt-dlp in the frontend
-    // The video_url is passed directly to yt-dlp
-    println!("[Twitch] VOD download requested for: {}", video_url);
-    Err("Twitch VOD downloads should use the frontend download system with yt-dlp".to_string())
+    println!("[Twitch] download_twitch_vod called with:");
+    println!("[Twitch]   download_id: {}", download_id);
+    println!("[Twitch]   title: {}", title);
+    println!("[Twitch]   video_url: {}", video_url);
+    println!("[Twitch]   channel_name: {}", channel_name);
+
+    // Check if download already exists
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        if downloads.contains_key(&download_id) {
+            println!("[Twitch] Download already in progress: {}", download_id);
+            return Err("Download already in progress".to_string());
+        }
+        downloads.insert(download_id.clone(), true);
+        println!("[Twitch] Download registered: {}", download_id);
+    }
+
+    // Clean up when done
+    let cleanup_download = {
+        let download_id = download_id.clone();
+        let downloads = ACTIVE_DOWNLOADS.clone();
+        move || {
+            println!("[Twitch] Cleaning up download: {}", download_id);
+            let mut downloads = downloads.lock().unwrap();
+            downloads.remove(&download_id);
+        }
+    };
+
+    // Get storage paths
+    println!("[Twitch] Getting storage paths...");
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| {
+            println!("[Twitch] Failed to get storage paths: {}", e);
+            format!("Failed to get storage paths: {}", e)
+        })?;
+
+    println!("[Twitch] Storage paths retrieved. Videos dir: {}", paths.videos.display());
+
+    // Generate filename
+    let safe_title = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    let filename = format!("twitch_{}_{}_{}.mp4", channel_name, safe_title, timestamp);
+    let video_path = paths.videos.join(&filename);
+
+    println!("[Twitch] Generated filename: {}", filename);
+    println!("[Twitch] Full video path: {}", video_path.display());
+
+    // Store download metadata
+    {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.insert(download_id.clone(), DownloadMetadata {
+            output_path: Some(video_path.to_string_lossy().to_string()),
+            thumbnail_path: None,
+            started_at: std::time::SystemTime::now(),
+            process_id: None,
+        });
+    }
+
+    // Send initial progress
+    let progress_result = app.emit("download-progress", DownloadProgress {
+        download_id: download_id.clone(),
+        progress: 0.0,
+        current_time: None,
+        total_time: None,
+        status: "Fetching video info...".to_string(),
+    });
+
+    if let Err(e) = progress_result {
+        println!("[Twitch] Failed to emit initial progress: {}", e);
+    }
+
+    // Clone for async block
+    let app_clone = app.clone();
+    let download_id_clone = download_id.clone();
+    println!("[Twitch] Starting async download task...");
+
+    let result = tokio::spawn(async move {
+        println!("[Twitch] Async task started for download: {}", download_id_clone);
+
+        let ytdlp_path = resolve_ytdlp_binary()?;
+        let ffmpeg_path = resolve_ffmpeg_binary()?;
+        let video_path_str = video_path.to_string_lossy().to_string();
+
+        println!("[Twitch] Using yt-dlp: {}", ytdlp_path);
+        println!("[Twitch] Using ffmpeg: {}", ffmpeg_path);
+
+        // Get video duration first for progress reporting
+        println!("[Twitch] Fetching video duration...");
+        let duration_output = tokio::process::Command::new(&ytdlp_path)
+            .arg("--print")
+            .arg("duration")
+            .arg(&video_url)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to fetch duration: {}", e))?;
+
+        let total_duration = if duration_output.status.success() {
+            let duration_str = String::from_utf8_lossy(&duration_output.stdout).trim().to_string();
+            duration_str.parse::<f64>().ok()
+        } else {
+            None
+        };
+        
+        println!("[Twitch] Total duration: {:?}", total_duration);
+
+        // Run yt-dlp to download the VOD
+        let mut cmd = tokio::process::Command::new(&ytdlp_path);
+        cmd.arg(&video_url)
+            .arg("-o").arg(&video_path_str)
+            .arg("--ffmpeg-location").arg(&ffmpeg_path)
+            .arg("--no-part")  // Don't use .part files
+            .arg("--newline")  // Output progress on new lines
+            .arg("--progress")  // Show progress
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        println!("[Twitch] Running yt-dlp command...");
+
+        let mut child = cmd.spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Read stdout for progress updates (yt-dlp outputs progress to stdout)
+        let app_for_progress = app_clone.clone();
+        let download_id_for_progress = download_id_clone.clone();
+        let duration_for_progress = total_duration;
+        
+        let stdout_task = if let Some(stdout) = stdout {
+            Some(tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+                let mut last_progress_time = std::time::Instant::now();
+                
+                while let Ok(Some(line)) = lines.next_line().await {
+                    // Parse yt-dlp progress output
+                    // Format: [download]  XX.X% of ~XXX.XXMIB at XXX.XXKIB/s ETA XX:XX
+                    if line.contains("% of") || line.contains("100% of") {
+                        if let Some(pct_str) = line.split('%').next() {
+                            let pct_str = pct_str.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                            if let Ok(pct) = pct_str.trim().parse::<f64>() {
+                                if last_progress_time.elapsed().as_millis() >= 500 {
+                                    let current_time = if let Some(dur) = duration_for_progress {
+                                        Some((pct / 100.0) * dur)
+                                    } else {
+                                        None
+                                    };
+
+                                    let _ = app_for_progress.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_for_progress.clone(),
+                                        progress: pct.min(99.0),
+                                        current_time,
+                                        total_time: duration_for_progress,
+                                        status: format!("Downloading: {:.1}%", pct),
+                                    });
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    } else if !line.is_empty() {
+                        println!("[Twitch] yt-dlp: {}", line);
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        // Drain stderr for warnings/errors
+        let stderr_task = if let Some(stderr) = stderr {
+            Some(tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.is_empty() {
+                        println!("[Twitch] yt-dlp stderr: {}", line);
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        // Wait for yt-dlp to complete
+        let status = child.wait().await
+            .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?;
+
+        // Wait for output tasks
+        if let Some(task) = stderr_task {
+            let _ = task.await;
+        }
+        if let Some(task) = stdout_task {
+            let _ = task.await;
+        }
+
+        if !status.success() {
+            return Err(format!("yt-dlp failed with exit code: {:?}", status.code()));
+        }
+
+        println!("[Twitch] yt-dlp download completed successfully");
+
+        // Verify the file exists
+        if !video_path.exists() {
+            return Err("Download completed but file not found".to_string());
+        }
+
+        // Get file metadata
+        let metadata = std::fs::metadata(&video_path)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+        let file_size = metadata.len();
+
+        // Generate thumbnail
+        println!("[Twitch] Generating thumbnail...");
+        let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+        let thumbnail_result = tokio::process::Command::new(&ffmpeg_path)
+            .args([
+                "-hwaccel", "auto",
+                "-ss", "00:00:01",
+                "-i", &video_path_str,
+                "-vframes", "1",
+                "-vf", "scale=320:-1",
+                "-y",
+                thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
+            ])
+            .output()
+            .await;
+
+        let thumbnail_path_str = match thumbnail_result {
+            Ok(output) if output.status.success() => {
+                println!("[Twitch] Thumbnail generated: {}", thumbnail_path.display());
+                Some(thumbnail_path.to_string_lossy().to_string())
+            }
+            _ => {
+                println!("[Twitch] Thumbnail generation failed");
+                None
+            }
+        };
+
+        // Get video info
+        println!("[Twitch] Getting video info...");
+        let video_info = get_video_info(&app_clone, &video_path).await.ok();
+        let (width, height, codec, duration) = if let Some(ref info) = video_info {
+            println!("[Twitch] Video info - width: {}, height: {}, codec: {}, duration: {:?}", 
+                info.width, info.height, info.codec, info.duration);
+            (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
+        } else {
+            (None, None, None, None)
+        };
+
+        println!("[Twitch] Download task completed successfully");
+        Ok(DownloadResult {
+            download_id: download_id_clone,
+            success: true,
+            file_path: Some(video_path_str),
+            thumbnail_path: thumbnail_path_str,
+            duration,
+            width,
+            height,
+            codec,
+            file_size: Some(file_size),
+            error: None,
+        })
+    }).await;
+
+    println!("[Twitch] Async task completed");
+
+    cleanup_download();
+
+    println!("[Twitch] Processing download result...");
+    match result {
+        Ok(Ok(download_result)) => {
+            println!("[Twitch] Download successful!");
+
+            let _ = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 100.0,
+                current_time: None,
+                total_time: None,
+                status: "Download completed!".to_string(),
+            });
+
+            let _ = app.emit("download-complete", download_result);
+
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            let error_msg = format!("Download failed: {}", e);
+            println!("[Twitch] Download failed: {}", error_msg);
+
+            let _ = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 0.0,
+                current_time: None,
+                total_time: None,
+                status: error_msg.clone(),
+            });
+
+            let _ = app.emit("download-complete", DownloadResult {
+                download_id,
+                success: false,
+                file_path: None,
+                thumbnail_path: None,
+                duration: None,
+                width: None,
+                height: None,
+                codec: None,
+                file_size: None,
+                error: Some(error_msg),
+            });
+
+            Err(e)
+        }
+        Err(e) => {
+            let error_msg = format!("Download task failed: {}", e);
+            println!("[Twitch] Download task failed: {}", error_msg);
+
+            let _ = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 0.0,
+                current_time: None,
+                total_time: None,
+                status: error_msg.clone(),
+            });
+
+            let _ = app.emit("download-complete", DownloadResult {
+                download_id,
+                success: false,
+                file_path: None,
+                thumbnail_path: None,
+                duration: None,
+                width: None,
+                height: None,
+                codec: None,
+                file_size: None,
+                error: Some(error_msg.clone()),
+            });
+
+            Err(error_msg)
+        }
+    }
 }
 
-/// Download a segment of a Twitch VOD
+/// Download a segment of a Twitch VOD using yt-dlp with time range
 #[tauri::command]
 pub async fn download_twitch_vod_segment(
-    _app: tauri::AppHandle,
-    _download_id: String,
-    _title: String,
+    app: tauri::AppHandle,
+    download_id: String,
+    title: String,
     video_url: String,
-    _channel_name: String,
-    _start_time: f64,
-    _end_time: f64
+    channel_name: String,
+    start_time: f64,
+    end_time: f64
 ) -> Result<(), String> {
-    println!("[Twitch] VOD segment download requested for: {}", video_url);
-    Err("Twitch VOD segment downloads should use the frontend download system with yt-dlp".to_string())
+    println!("[Twitch] download_twitch_vod_segment called with:");
+    println!("[Twitch]   download_id: {}", download_id);
+    println!("[Twitch]   title: {}", title);
+    println!("[Twitch]   video_url: {}", video_url);
+    println!("[Twitch]   channel_name: {}", channel_name);
+    println!("[Twitch]   start_time: {}", start_time);
+    println!("[Twitch]   end_time: {}", end_time);
+
+    // Validate time range
+    if start_time < 0.0 || end_time <= start_time {
+        return Err("Invalid time range specified".to_string());
+    }
+
+    let segment_duration = end_time - start_time;
+    if segment_duration < 10.0 {
+        return Err("Segment too short (minimum 10 seconds)".to_string());
+    }
+
+    // Check if download already exists
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        if downloads.contains_key(&download_id) {
+            println!("[Twitch] Download already in progress: {}", download_id);
+            return Err("Download already in progress".to_string());
+        }
+        downloads.insert(download_id.clone(), true);
+        println!("[Twitch] Download registered: {}", download_id);
+    }
+
+    // Clean up when done
+    let cleanup_download = {
+        let download_id = download_id.clone();
+        let downloads = ACTIVE_DOWNLOADS.clone();
+        move || {
+            println!("[Twitch] Cleaning up download: {}", download_id);
+            let mut downloads = downloads.lock().unwrap();
+            downloads.remove(&download_id);
+        }
+    };
+
+    // Get storage paths
+    println!("[Twitch] Getting storage paths...");
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| {
+            println!("[Twitch] Failed to get storage paths: {}", e);
+            format!("Failed to get storage paths: {}", e)
+        })?;
+
+    println!("[Twitch] Storage paths retrieved. Videos dir: {}", paths.videos.display());
+
+    // Generate filename with segment info
+    let safe_title = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    // Format times for filename
+    let start_formatted = format_time_for_filename(start_time);
+    let end_formatted = format_time_for_filename(end_time);
+
+    let filename = format!("twitch_{}_{}_{}_{}_{}.mp4",
+        channel_name, safe_title, start_formatted, end_formatted, timestamp);
+    let video_path = paths.videos.join(&filename);
+
+    println!("[Twitch] Generated filename: {}", filename);
+    println!("[Twitch] Full video path: {}", video_path.display());
+
+    // Store download metadata
+    {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.insert(download_id.clone(), DownloadMetadata {
+            output_path: Some(video_path.to_string_lossy().to_string()),
+            thumbnail_path: None,
+            started_at: std::time::SystemTime::now(),
+            process_id: None,
+        });
+    }
+
+    // Send initial progress
+    let progress_result = app.emit("download-progress", DownloadProgress {
+        download_id: download_id.clone(),
+        progress: 0.0,
+        current_time: Some(0.0),
+        total_time: Some(segment_duration),
+        status: "Starting Twitch segment download...".to_string(),
+    });
+
+    if let Err(e) = progress_result {
+        println!("[Twitch] Failed to emit initial progress: {}", e);
+    }
+
+    // Clone for async block
+    let app_clone = app.clone();
+    let download_id_clone = download_id.clone();
+    println!("[Twitch] Starting async segment download task...");
+
+    let result = tokio::spawn(async move {
+        println!("[Twitch] Async task started for segment download: {}", download_id_clone);
+
+        let ytdlp_path = resolve_ytdlp_binary()?;
+        let ffmpeg_path = resolve_ffmpeg_binary()?;
+        let video_path_str = video_path.to_string_lossy().to_string();
+
+        println!("[Twitch] Using yt-dlp: {}", ytdlp_path);
+        println!("[Twitch] Using ffmpeg: {}", ffmpeg_path);
+
+        // yt-dlp supports --download-sections for time-based downloads
+        // Format: "*start_time-end_time" where times are in seconds or HH:MM:SS
+        let section_arg = format!("*{:.0}-{:.0}", start_time, end_time);
+
+        // Run yt-dlp to download the segment
+        let mut cmd = tokio::process::Command::new(&ytdlp_path);
+        cmd.arg(&video_url)
+            .arg("-o").arg(&video_path_str)
+            .arg("--ffmpeg-location").arg(&ffmpeg_path)
+            .arg("--download-sections").arg(&section_arg)
+            .arg("--force-keyframes-at-cuts")  // Ensure clean cuts
+            .arg("--no-part")  // Don't use .part files
+            .arg("--newline")  // Output progress on new lines
+            .arg("--progress")  // Show progress
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        println!("[Twitch] Running yt-dlp command with section: {}", section_arg);
+
+        let mut child = cmd.spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Read stdout for progress updates (yt-dlp outputs progress to stdout)
+        let app_for_progress = app_clone.clone();
+        let download_id_for_progress = download_id_clone.clone();
+        let segment_dur = segment_duration;
+        
+        let stdout_task = if let Some(stdout) = stdout {
+            Some(tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+                let mut last_progress_time = std::time::Instant::now();
+                
+                while let Ok(Some(line)) = lines.next_line().await {
+                    // Parse yt-dlp progress output
+                    if line.contains("% of") || line.contains("100% of") {
+                        if let Some(pct_str) = line.split('%').next() {
+                            let pct_str = pct_str.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                            if let Ok(pct) = pct_str.trim().parse::<f64>() {
+                                if last_progress_time.elapsed().as_millis() >= 500 {
+                                    let current_time = (pct / 100.0) * segment_dur;
+                                    let _ = app_for_progress.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_for_progress.clone(),
+                                        progress: pct.min(99.0),
+                                        current_time: Some(current_time),
+                                        total_time: Some(segment_dur),
+                                        status: format!("Downloading segment: {:.1}%", pct),
+                                    });
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    } else if !line.is_empty() {
+                        println!("[Twitch] yt-dlp: {}", line);
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        // Drain stderr for warnings/errors
+        let stderr_task = if let Some(stderr) = stderr {
+            Some(tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.is_empty() {
+                        println!("[Twitch] yt-dlp stderr: {}", line);
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        // Wait for yt-dlp to complete
+        let status = child.wait().await
+            .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?;
+
+        // Wait for output tasks
+        if let Some(task) = stderr_task {
+            let _ = task.await;
+        }
+        if let Some(task) = stdout_task {
+            let _ = task.await;
+        }
+
+        if !status.success() {
+            return Err(format!("yt-dlp failed with exit code: {:?}", status.code()));
+        }
+
+        println!("[Twitch] yt-dlp segment download completed successfully");
+
+        // Verify the file exists
+        if !video_path.exists() {
+            return Err("Download completed but file not found".to_string());
+        }
+
+        // Get file metadata
+        let metadata = std::fs::metadata(&video_path)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+        let file_size = metadata.len();
+
+        // Generate thumbnail
+        println!("[Twitch] Generating thumbnail for segment...");
+        let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+        let thumbnail_result = tokio::process::Command::new(&ffmpeg_path)
+            .args([
+                "-hwaccel", "auto",
+                "-ss", "00:00:01",
+                "-i", &video_path_str,
+                "-vframes", "1",
+                "-vf", "scale=320:-1",
+                "-y",
+                thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
+            ])
+            .output()
+            .await;
+
+        let thumbnail_path_str = match thumbnail_result {
+            Ok(output) if output.status.success() => {
+                println!("[Twitch] Thumbnail generated: {}", thumbnail_path.display());
+                Some(thumbnail_path.to_string_lossy().to_string())
+            }
+            _ => {
+                println!("[Twitch] Thumbnail generation failed");
+                None
+            }
+        };
+
+        // Get video info
+        println!("[Twitch] Getting segment video info...");
+        let video_info = get_video_info(&app_clone, &video_path).await.ok();
+        let (width, height, codec, actual_duration) = if let Some(ref info) = video_info {
+            println!("[Twitch] Segment video info - width: {}, height: {}, codec: {}, duration: {:?}", 
+                info.width, info.height, info.codec, info.duration);
+            (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
+        } else {
+            (None, None, None, None)
+        };
+
+        // Use actual duration from file if available
+        let final_duration = actual_duration.unwrap_or(segment_duration);
+
+        println!("[Twitch] Segment download task completed successfully");
+        Ok(DownloadResult {
+            download_id: download_id_clone,
+            success: true,
+            file_path: Some(video_path_str),
+            thumbnail_path: thumbnail_path_str,
+            duration: Some(final_duration),
+            width,
+            height,
+            codec,
+            file_size: Some(file_size),
+            error: None,
+        })
+    }).await;
+
+    println!("[Twitch] Async segment download task completed");
+
+    cleanup_download();
+
+    println!("[Twitch] Processing segment download result...");
+    match result {
+        Ok(Ok(download_result)) => {
+            println!("[Twitch] Segment download successful!");
+
+            let _ = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 100.0,
+                current_time: None,
+                total_time: None,
+                status: "Segment download completed!".to_string(),
+            });
+
+            let _ = app.emit("download-complete", download_result);
+
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            let error_msg = format!("Segment download failed: {}", e);
+            println!("[Twitch] Segment download failed: {}", error_msg);
+
+            let _ = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 0.0,
+                current_time: None,
+                total_time: None,
+                status: error_msg.clone(),
+            });
+
+            let _ = app.emit("download-complete", DownloadResult {
+                download_id,
+                success: false,
+                file_path: None,
+                thumbnail_path: None,
+                duration: None,
+                width: None,
+                height: None,
+                codec: None,
+                file_size: None,
+                error: Some(error_msg),
+            });
+
+            Err(e)
+        }
+        Err(e) => {
+            let error_msg = format!("Segment download task failed: {}", e);
+            println!("[Twitch] Segment download task failed: {}", error_msg);
+
+            let _ = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 0.0,
+                current_time: None,
+                total_time: None,
+                status: error_msg.clone(),
+            });
+
+            let _ = app.emit("download-complete", DownloadResult {
+                download_id,
+                success: false,
+                file_path: None,
+                thumbnail_path: None,
+                duration: None,
+                width: None,
+                height: None,
+                codec: None,
+                file_size: None,
+                error: Some(error_msg.clone()),
+            });
+
+            Err(error_msg)
+        }
+    }
+}
+
+/// Helper function to format time for filename
+fn format_time_for_filename(seconds: f64) -> String {
+    let h = (seconds / 3600.0) as u32;
+    let m = ((seconds % 3600.0) / 60.0) as u32;
+    let s = (seconds % 60.0) as u32;
+    format!("{:02}{:02}{:02}", h, m, s)
 }
 
 #[cfg(test)]

@@ -684,7 +684,7 @@
     if (!detectedPlatform.value) {
       showError(
         'Unknown Platform',
-        'Could not detect the platform. Please enter a valid PumpFun link/mint ID or Kick link/username.'
+        'Could not detect the platform. Please enter a valid PumpFun link/mint ID, Kick link/username, or Twitch link/channel name.'
       );
       return;
     }
@@ -887,7 +887,7 @@
         {
           autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick',
+          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick' | 'twitch',
           creatorWatermarkSettings,
         }
       );

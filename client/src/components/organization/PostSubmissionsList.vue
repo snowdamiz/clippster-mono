@@ -132,6 +132,23 @@
               <span class="post-submissions__filter-dot post-submissions__filter-dot--failed"></span>
               Failed
             </DropdownMenuItem>
+            <DropdownMenuSeparator class="post-submissions__filter-sep" />
+            <DropdownMenuItem
+              class="post-submissions__filter-item"
+              :class="{ 'post-submissions__filter-item--active': filters.status === 'verified' }"
+              @click="filters.status = 'verified'"
+            >
+              <span class="post-submissions__filter-dot post-submissions__filter-dot--verified"></span>
+              Verified
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="post-submissions__filter-item"
+              :class="{ 'post-submissions__filter-item--active': filters.status === 'paid' }"
+              @click="filters.status = 'paid'"
+            >
+              <span class="post-submissions__filter-dot post-submissions__filter-dot--paid"></span>
+              Paid
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -161,11 +178,27 @@
             </DropdownMenuItem>
             <DropdownMenuItem
               class="post-submissions__filter-item"
-              :class="{ 'post-submissions__filter-item--active': filters.platform === 'twitter' }"
-              @click="filters.platform = 'twitter'"
+              :class="{ 'post-submissions__filter-item--active': filters.platform === 'x' }"
+              @click="filters.platform = 'x'"
             >
               <span class="post-submissions__filter-platform-icon post-submissions__x-filter-icon">𝕏</span>
               X (Twitter)
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="post-submissions__filter-item"
+              :class="{ 'post-submissions__filter-item--active': filters.platform === 'tiktok' }"
+              @click="filters.platform = 'tiktok'"
+            >
+              <FileVideo class="post-submissions__filter-platform-icon" />
+              TikTok
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="post-submissions__filter-item"
+              :class="{ 'post-submissions__filter-item--active': filters.platform === 'youtube' }"
+              @click="filters.platform = 'youtube'"
+            >
+              <FileVideo class="post-submissions__filter-platform-icon" />
+              YouTube
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -303,6 +336,8 @@
               'post-submissions__card-indicator--failed': post.status === 'failed',
               'post-submissions__card-indicator--approved': post.status === 'approved',
               'post-submissions__card-indicator--rejected': post.status === 'rejected',
+              'post-submissions__card-indicator--verified': post.status === 'verified',
+              'post-submissions__card-indicator--paid': post.status === 'paid',
             }"
           ></div>
 
@@ -313,13 +348,13 @@
                 class="post-submissions__platform-icon-wrapper"
                 :class="{
                   'post-submissions__platform-icon-wrapper--instagram': post.platform === 'instagram',
-                  'post-submissions__platform-icon-wrapper--twitter': post.platform === 'twitter',
+                  'post-submissions__platform-icon-wrapper--twitter': post.platform === 'twitter' || post.platform === 'x',
                   'post-submissions__platform-icon-wrapper--tiktok': post.platform === 'tiktok',
                   'post-submissions__platform-icon-wrapper--youtube': post.platform === 'youtube',
                 }"
               >
                 <Instagram v-if="post.platform === 'instagram'" class="post-submissions__platform-badge-icon" />
-                <span v-else-if="post.platform === 'twitter'" class="post-submissions__platform-badge-icon post-submissions__x-icon">𝕏</span>
+                <span v-else-if="post.platform === 'twitter' || post.platform === 'x'" class="post-submissions__platform-badge-icon post-submissions__x-icon">𝕏</span>
                 <FileVideo v-else class="post-submissions__platform-badge-icon" />
               </div>
             </div>
@@ -354,6 +389,11 @@
                 <!-- Campaign -->
                 <span v-if="post.campaign" class="post-submissions__campaign">
                   {{ post.campaign.name }}
+                </span>
+
+                <!-- Type Badge for campaign submissions -->
+                <span v-if="post.type === 'campaign'" class="post-submissions__type-badge post-submissions__type-badge--campaign">
+                  Campaign Submission
                 </span>
               </div>
 
@@ -558,6 +598,7 @@
     type AnalyticsSummary,
   } from '@/services/socialAccountsApi';
   import { listExternalPosts, syncOrgAnalytics, type ExternalPostSubmission } from '@/services/schedulingApi';
+  import { listOrganizationCampaignSubmissions, type CampaignSubmission } from '@/services/campaignApi';
 
   interface CreatorProfile {
     id: number;
@@ -584,10 +625,10 @@
 
   const { showToast } = useToast();
 
-  // Unified post type that can represent both post_submissions and external_post_submissions
+  // Unified post type that can represent post_submissions, external_post_submissions, and campaign_submissions
   interface UnifiedPost {
     id: number;
-    type: 'scheduled' | 'external';
+    type: 'scheduled' | 'external' | 'campaign';
     platform: string;
     status: string;
     post_url: string | null;
@@ -749,8 +790,8 @@
   async function loadPosts() {
     loading.value = true;
     try {
-      // Fetch both scheduled posts and external link submissions
-      const [scheduledResponse, externalResponse] = await Promise.all([
+      // Fetch scheduled posts, external link submissions, and campaign submissions
+      const [scheduledResponse, externalResponse, campaignResponse] = await Promise.all([
         listPostSubmissions(props.organizationId, {
           status: filters.status !== 'all' ? filters.status : undefined,
           platform: filters.platform !== 'all' ? filters.platform : undefined,
@@ -762,6 +803,12 @@
         listExternalPosts(props.organizationId, {
           status: filters.status !== 'all' ? filters.status : undefined,
           creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
+          limit: limit.value,
+          offset: offset.value,
+        }),
+        listOrganizationCampaignSubmissions(props.organizationId, {
+          status: filters.status !== 'all' ? filters.status : undefined,
+          platform: filters.platform !== 'all' ? filters.platform : undefined,
           limit: limit.value,
           offset: offset.value,
         }),
@@ -838,11 +885,54 @@
         }
       }
 
+      // Map campaign submissions to unified format
+      if (campaignResponse.success) {
+        for (const submission of campaignResponse.submissions) {
+          // Map campaign submission status to display status
+          // verified/paid = published (it's live on the platform)
+          const displayStatus = (submission.status === 'verified' || submission.status === 'paid') 
+            ? 'published' 
+            : submission.status;
+          
+          unifiedPosts.push({
+            id: submission.id,
+            type: 'campaign',
+            platform: submission.platform,
+            status: displayStatus,
+            post_url: submission.clip_url,
+            caption: submission.caption || null,
+            view_count: submission.view_count || 0,
+            like_count: submission.like_count || 0,
+            comment_count: submission.comment_count || 0,
+            creator_profile: submission.creator_profile ? {
+              id: submission.creator_profile.id,
+              name: submission.creator_profile.name,
+              profile_image_url: submission.creator_profile.profile_image_url || undefined,
+            } : null,
+            campaign: submission.campaign ? {
+              id: submission.campaign.id,
+              name: submission.campaign.title,
+            } : null,
+            social_account: null,
+            submitted_by: submission.user ? {
+              id: submission.user.id,
+              email: submission.user.email,
+              name: submission.user.display_name || undefined,
+            } : null,
+            author_username: submission.author_username || null,
+            author_name: submission.author_name || null,
+            author_profile_image: submission.author_profile_image || null,
+            posted_at: submission.verified_at,
+            inserted_at: submission.inserted_at,
+          });
+        }
+      }
+
       // Sort by inserted_at descending (newest first)
       unifiedPosts.sort((a, b) => new Date(b.inserted_at).getTime() - new Date(a.inserted_at).getTime());
 
       posts.value = unifiedPosts;
-      total.value = (scheduledResponse.total || 0) + (externalResponse.total || 0);
+      total.value = (scheduledResponse.total || 0) + (externalResponse.total || 0) + (campaignResponse.total || 0);
     } catch (error) {
       console.error('Failed to load posts:', error);
       showToast('Failed to load posts', 'error');
@@ -853,13 +943,16 @@
 
   async function loadSummary() {
     try {
-      // Get summary from scheduled posts API
-      const [scheduledResponse, externalResponse] = await Promise.all([
+      // Get summary from scheduled posts, external posts, and campaign submissions
+      const [scheduledResponse, externalResponse, campaignResponse] = await Promise.all([
         getAnalyticsSummary(props.organizationId, {
           creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
         }),
         listExternalPosts(props.organizationId, {
           creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
+          limit: 1000, // Get all for summary
+        }),
+        listOrganizationCampaignSubmissions(props.organizationId, {
           limit: 1000, // Get all for summary
         }),
       ]);
@@ -891,6 +984,14 @@
           totalLikes += post.analytics?.like_count || 0;
           totalComments += post.analytics?.comment_count || 0;
           totalSaves += post.analytics?.save_count || 0;
+        }
+      }
+
+      // Add campaign submissions to summary
+      if (campaignResponse.success && campaignResponse.submissions) {
+        totalPosts += campaignResponse.submissions.length;
+        for (const submission of campaignResponse.submissions) {
+          totalViews += submission.view_count || 0;
         }
       }
 
@@ -1023,6 +1124,8 @@
       pending: 'Pending',
       publishing: 'Publishing',
       failed: 'Failed',
+      verified: 'Verified',
+      paid: 'Paid',
     };
     return labels[status] || 'All Status';
   }
@@ -1032,6 +1135,9 @@
       all: 'All Platforms',
       instagram: 'Instagram',
       twitter: 'X (Twitter)',
+      x: 'X (Twitter)',
+      tiktok: 'TikTok',
+      youtube: 'YouTube',
     };
     return labels[platform] || 'All Platforms';
   }
@@ -1432,6 +1538,14 @@
     background: linear-gradient(to bottom, #ef4444 0%, #dc2626 100%);
   }
 
+  .post-submissions__card-indicator--verified {
+    background: linear-gradient(to bottom, #22d3ee 0%, #06b6d4 100%);
+  }
+
+  .post-submissions__card-indicator--paid {
+    background: linear-gradient(to bottom, #10b981 0%, #059669 100%);
+  }
+
   .post-submissions__card-content {
     flex: 1;
     display: flex;
@@ -1653,6 +1767,20 @@
     font-weight: 500;
     color: rgba(245, 158, 11, 0.7);
     text-transform: uppercase;
+  }
+
+  .post-submissions__type-badge {
+    font-size: 0.625rem;
+    font-weight: 600;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+
+  .post-submissions__type-badge--campaign {
+    color: #22d3ee;
+    background-color: rgba(34, 211, 238, 0.15);
   }
 
   .post-submissions__caption {
@@ -2396,6 +2524,14 @@
 
   .post-submissions__filter-dot--failed {
     background-color: #ef4444;
+  }
+
+  .post-submissions__filter-dot--verified {
+    background-color: #22d3ee;
+  }
+
+  .post-submissions__filter-dot--paid {
+    background-color: #10b981;
   }
 
   .post-submissions__filter-platform-icon {

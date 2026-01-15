@@ -585,11 +585,22 @@
           description: response.error || 'Failed to submit clip',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to submit clip:', error);
+      // Extract error message from axios error response
+      let errorMessage = 'Failed to submit clip';
+      if (error?.response?.data?.error) {
+        const apiError = error.response.data.error;
+        // Handle changeset errors (e.g., {clip_url: ["has already been submitted"]})
+        if (typeof apiError === 'object' && apiError.clip_url) {
+          errorMessage = `This clip ${apiError.clip_url[0] || 'has already been submitted'}`;
+        } else if (typeof apiError === 'string') {
+          errorMessage = apiError;
+        }
+      }
       toast({
         title: 'Error',
-        description: 'Failed to submit clip',
+        description: errorMessage,
       });
     } finally {
       submitting.value = false;

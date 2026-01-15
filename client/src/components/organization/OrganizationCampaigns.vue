@@ -758,12 +758,27 @@
                     <div v-for="submission in submissions" :key="submission.id" class="campaigns-detail__submission">
                       <div class="campaigns-detail__submission-info">
                         <div class="campaigns-detail__submission-header">
-                          <component
-                            :is="getPlatformIcon(submission.platform)"
-                            class="campaigns-detail__submission-platform"
-                          />
+                          <div
+                            class="campaigns-detail__submission-platform-badge"
+                            :class="{
+                              'campaigns-detail__submission-platform-badge--x': isXPlatform(submission.platform),
+                              'campaigns-detail__submission-platform-badge--instagram': submission.platform === 'instagram',
+                              'campaigns-detail__submission-platform-badge--tiktok': submission.platform === 'tiktok',
+                              'campaigns-detail__submission-platform-badge--youtube': submission.platform === 'youtube',
+                            }"
+                          >
+                            <span v-if="isXPlatform(submission.platform)" class="campaigns-detail__x-icon">𝕏</span>
+                            <component
+                              v-else
+                              :is="getPlatformIcon(submission.platform)"
+                              class="campaigns-detail__submission-platform-icon"
+                            />
+                          </div>
                           <a :href="submission.clip_url" target="_blank" class="campaigns-detail__submission-url">
-                            {{ truncateUrl(submission.clip_url) }}
+                            <span class="campaigns-detail__submission-username">
+                              @{{ extractUsername(submission.clip_url) }}
+                            </span>
+                            <ExternalLink :size="12" class="campaigns-detail__submission-external" />
                           </a>
                         </div>
                         <div class="campaigns-detail__submission-meta">
@@ -1078,6 +1093,7 @@
     Globe,
     Upload,
     Calendar,
+    ExternalLink,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
@@ -1210,13 +1226,51 @@
   });
 
   const getPlatformIcon = (platform: string) => {
+    // Return null for X platform - we'll use a special character instead
+    if (platform === 'x' || platform === 'twitter') return null;
     const icons: Record<string, typeof Music2> = {
       tiktok: Music2,
       instagram: Instagram,
-      x: Twitter,
       youtube: Youtube,
     };
     return icons[platform] || Globe;
+  };
+
+  const isXPlatform = (platform: string) => platform === 'x' || platform === 'twitter';
+
+  const extractUsername = (url: string) => {
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      // Extract username from various URL patterns
+      // x.com/username/status/123 -> username
+      // instagram.com/p/ABC123 -> extract from path
+      // tiktok.com/@username/video/123 -> username
+      const parts = pathname.split('/').filter(Boolean);
+      if (parts.length > 0) {
+        // For X/Twitter: /username/status/id
+        if (urlObj.hostname.includes('x.com') || urlObj.hostname.includes('twitter.com')) {
+          return parts[0];
+        }
+        // For TikTok: /@username/video/id
+        if (urlObj.hostname.includes('tiktok.com') && parts[0].startsWith('@')) {
+          return parts[0].substring(1);
+        }
+        // For Instagram: /p/id or /reel/id - use hostname
+        if (urlObj.hostname.includes('instagram.com')) {
+          return 'instagram';
+        }
+        // For YouTube: various patterns
+        if (urlObj.hostname.includes('youtube.com') || urlObj.hostname.includes('youtu.be')) {
+          return 'youtube';
+        }
+        return parts[0];
+      }
+      return urlObj.hostname;
+    } catch {
+      // Fallback: truncate the URL
+      return url.length > 20 ? url.substring(0, 20) + '...' : url;
+    }
   };
 
   const formatCpm = (cpm: string | number) => {
@@ -1570,9 +1624,9 @@
 
     loadingParticipants.value = true;
     try {
-      const response = await listCampaignParticipants(Number(props.organizationId), selectedCampaign.value.id);
+      const response = await listCampaignParticipants(Number(props.organizationId), Number(selectedCampaign.value.id));
       if (response.success) {
-        participants.value = response.participants;
+        participants.value = response.participants || [];
       }
     } catch (error) {
       console.error('Failed to load participants:', error);
@@ -1586,7 +1640,7 @@
 
     loadingSubmissions.value = true;
     try {
-      const response = await listCampaignSubmissions(Number(props.organizationId), selectedCampaign.value.id);
+      const response = await listCampaignSubmissions(Number(props.organizationId), Number(selectedCampaign.value.id));
       if (response.success) {
         submissions.value = response.submissions;
       }
@@ -1667,8 +1721,8 @@
     try {
       const response = await approveParticipant(
         Number(props.organizationId),
-        selectedCampaign.value.id,
-        participant.id
+        Number(selectedCampaign.value.id),
+        Number(participant.id)
       );
       if (response.success) {
         toast({ title: 'Success', description: 'Participant approved' });
@@ -1683,7 +1737,7 @@
   const rejectParticipantAction = async (participant: CampaignParticipant) => {
     if (!selectedCampaign.value) return;
     try {
-      const response = await rejectParticipant(Number(props.organizationId), selectedCampaign.value.id, participant.id);
+      const response = await rejectParticipant(Number(props.organizationId), Number(selectedCampaign.value.id), Number(participant.id));
       if (response.success) {
         toast({ title: 'Success', description: 'Participant rejected' });
         await loadParticipants();
@@ -1788,6 +1842,15 @@
       updatingViews.value = false;
     }
   };
+
+  // Reload participants when switching to the participants tab
+  watch(detailTab, async (newTab) => {
+    if (newTab === 'participants' && selectedCampaign.value) {
+      await loadParticipants();
+    } else if (newTab === 'submissions' && selectedCampaign.value) {
+      await loadSubmissions();
+    }
+  });
 
   watch(
     () => props.organizationId,
@@ -3390,17 +3453,71 @@
     flex-shrink: 0;
   }
 
+  .campaigns-detail__submission-platform-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background-color: var(--sidebar-hover);
+  }
+
+  .campaigns-detail__submission-platform-badge--x {
+    background-color: #000;
+  }
+
+  .campaigns-detail__submission-platform-badge--instagram {
+    background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  }
+
+  .campaigns-detail__submission-platform-badge--tiktok {
+    background-color: #000;
+  }
+
+  .campaigns-detail__submission-platform-badge--youtube {
+    background-color: #ff0000;
+  }
+
+  .campaigns-detail__submission-platform-icon {
+    width: 16px;
+    height: 16px;
+    color: white;
+  }
+
+  .campaigns-detail__x-icon {
+    font-size: 16px;
+    font-weight: 700;
+    color: white;
+    line-height: 1;
+  }
+
   .campaigns-detail__submission-url {
-    font-size: 0.8125rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.875rem;
     color: var(--sidebar-accent);
     text-decoration: none;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    transition: color 0.15s ease;
   }
 
   .campaigns-detail__submission-url:hover {
-    text-decoration: underline;
+    color: var(--sidebar-accent-hover);
+  }
+
+  .campaigns-detail__submission-url:hover .campaigns-detail__submission-external {
+    opacity: 1;
+  }
+
+  .campaigns-detail__submission-username {
+    font-weight: 500;
+  }
+
+  .campaigns-detail__submission-external {
+    opacity: 0.5;
+    transition: opacity 0.15s ease;
   }
 
   .campaigns-detail__submission-meta {

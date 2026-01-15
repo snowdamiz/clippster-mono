@@ -1232,8 +1232,19 @@
     selectedPromptName.value = '';
     selectedPromptContent.value = '';
 
-    if (detectClips && prompts.value.length === 0) {
-      await loadPrompts();
+    if (detectClips) {
+      if (prompts.value.length === 0) {
+        await loadPrompts();
+      }
+
+      // Ensure a prompt is selected if we have prompts (auto-select default)
+      if (prompts.value.length > 0 && !selectedPromptId.value) {
+        const defaultPrompt = prompts.value.find((p) => p.name === 'Default Clip Detector');
+        const promptToSelect = defaultPrompt || prompts.value[0];
+        if (promptToSelect) {
+          selectPrompt(promptToSelect);
+        }
+      }
     }
 
     showSegmentDialog.value = true;
