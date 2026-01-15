@@ -1260,7 +1260,11 @@
         livestreamStore.setSessionCampaign(streamer.id, campaign);
       }
 
-      executeStartStreamer(streamer, detectClips);
+      // Pass the selected duration and prompt from the segment dialog
+      executeStartStreamer(streamer, detectClips, selectedDuration.value, {
+        promptId: selectedPromptId.value || undefined,
+        promptContent: selectedPromptContent.value || undefined,
+      });
       return;
     }
 
@@ -1312,13 +1316,22 @@
     const segmentDurationMinutes =
       typeof durationOverride === 'number' ? durationOverride : streamer.segmentDurationMinutes;
 
+    console.log('[LiveClip] executeStartStreamer duration:', {
+      durationOverride,
+      'streamer.segmentDurationMinutes': streamer.segmentDurationMinutes,
+      segmentDurationMinutes,
+    });
+
     if (typeof segmentDurationMinutes === 'number' && segmentDurationMinutes > 0) {
       await updateSegmentDuration(streamer, segmentDurationMinutes);
     }
 
+    const finalDuration = segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5;
+    console.log('[LiveClip] Calling startMonitoring with segmentDurationMinutes:', finalDuration);
+
     await startMonitoring([streamer], {
       detectClips,
-      segmentDurationMinutes: segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5,
+      segmentDurationMinutes: finalDuration,
       promptId: prompt?.promptId,
       promptContent: prompt?.promptContent,
     });

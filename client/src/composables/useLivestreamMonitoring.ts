@@ -1203,6 +1203,14 @@ export function useLivestreamMonitoring() {
       const requestedDuration = options.segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5;
       const segmentDuration = requestedDuration > 0 ? requestedDuration : 5;
       const isInfiniteSegment = options.segmentDurationMinutes === 0;
+      
+      console.log(`[LiveMonitor] Segment duration calculation:`, {
+        'options.segmentDurationMinutes': options.segmentDurationMinutes,
+        'streamer.segmentDurationMinutes': streamer.segmentDurationMinutes,
+        requestedDuration,
+        segmentDuration,
+        isInfiniteSegment,
+      });
 
       // Start platform-specific recording
       if (streamer.platform === 'Kick') {
