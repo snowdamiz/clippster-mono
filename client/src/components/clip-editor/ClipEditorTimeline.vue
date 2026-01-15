@@ -1380,7 +1380,7 @@
             <!-- Playhead Line (CapCut style - triangular head with gradient line) -->
             <div
               v-if="totalDuration > 0"
-              class="absolute top-0 bottom-0 z-[75] cursor-ew-resize group playhead-line flex flex-col items-center"
+              class="absolute top-0 bottom-0 z-[85] cursor-ew-resize group playhead-line flex flex-col items-center"
               :class="{
                 'cursor-grabbing': isDraggingPlayhead,
                 'playhead-dragging': isDraggingPlayhead,
@@ -8012,7 +8012,8 @@
     // This shows the playhead exactly where the user is dragging, not where
     // the video has caught up to (which can lag behind during fast dragging)
     if (isDraggingPlayhead.value && optimisticDragTime.value !== null) {
-      const duration = props.editorMode ? props.duration : totalDuration.value;
+      // Use totalDuration.value consistently to match clickPositionToTime() and playheadPosition
+      const duration = totalDuration.value;
       if (duration > 0) {
         return Math.min(1, Math.max(0, optimisticDragTime.value / duration));
       }

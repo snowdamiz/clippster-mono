@@ -103,18 +103,90 @@
       </div>
     </div>
 
-    <!-- Actions -->
-    <div class="flex items-center gap-1 justify-end">
-      <button
-        @click="openUploadDialog"
-        class="p-1.5 rounded-md transition-all"
-        style="color: var(--sidebar-text-muted)"
-        @mouseenter="(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--sidebar-accent)')"
-        @mouseleave="(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text-muted)')"
-        title="Upload intro or outro"
-      >
-        <Plus :size="14" />
-      </button>
+    <!-- Type Filter Toggle -->
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
+        <button
+          @click="typeFilter = 'all'"
+          class="px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
+          :style="
+            typeFilter === 'all'
+              ? 'background-color: var(--sidebar-active); color: var(--sidebar-accent)'
+              : 'background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)'
+          "
+          @mouseenter="
+            (e) => {
+              if (typeFilter !== 'all') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-active)';
+            }
+          "
+          @mouseleave="
+            (e) => {
+              if (typeFilter !== 'all') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+            }
+          "
+        >
+          <Clapperboard :size="12" />
+          All ({{ allAssets.length }})
+        </button>
+        <button
+          @click="typeFilter = 'intro'"
+          class="px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
+          :style="
+            typeFilter === 'intro'
+              ? 'background-color: var(--sidebar-active); color: var(--sidebar-accent)'
+              : 'background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)'
+          "
+          @mouseenter="
+            (e) => {
+              if (typeFilter !== 'intro') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-active)';
+            }
+          "
+          @mouseleave="
+            (e) => {
+              if (typeFilter !== 'intro') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+            }
+          "
+        >
+          <Play :size="12" />
+          Intros ({{ personalIntros.length + orgIntros.length }})
+        </button>
+        <button
+          @click="typeFilter = 'outro'"
+          class="px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
+          :style="
+            typeFilter === 'outro'
+              ? 'background-color: var(--sidebar-active); color: var(--sidebar-accent)'
+              : 'background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)'
+          "
+          @mouseenter="
+            (e) => {
+              if (typeFilter !== 'outro') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-active)';
+            }
+          "
+          @mouseleave="
+            (e) => {
+              if (typeFilter !== 'outro') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+            }
+          "
+        >
+          <Play :size="12" />
+          Outros ({{ personalOutros.length + orgOutros.length }})
+        </button>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex items-center gap-1">
+        <button
+          @click="openUploadDialog"
+          class="p-1.5 rounded-md transition-all"
+          style="color: var(--sidebar-text-muted)"
+          @mouseenter="(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--sidebar-accent)')"
+          @mouseleave="(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text-muted)')"
+          title="Upload intro or outro"
+        >
+          <Plus :size="14" />
+        </button>
+      </div>
     </div>
 
     <!-- Asset List -->
@@ -287,6 +359,7 @@
   const introThumbnails = ref<Map<string, string>>(new Map());
   const outroThumbnails = ref<Map<string, string>>(new Map());
   const showUploadDialog = ref(false);
+  const typeFilter = ref<'all' | 'intro' | 'outro'>('all');
 
   // Computed
   const hasOrganizations = computed(() => {
@@ -304,6 +377,11 @@
 
   const allAssetsFiltered = computed(() => {
     let filtered = allAssets.value;
+
+    // Filter by type
+    if (typeFilter.value !== 'all') {
+      filtered = filtered.filter((a) => a.type === typeFilter.value);
+    }
 
     // Filter by search
     if (props.searchQuery) {

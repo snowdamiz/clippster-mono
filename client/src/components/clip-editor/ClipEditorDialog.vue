@@ -1265,15 +1265,17 @@
       return null;
     }
 
+    const time = previewTime.value;
+
     // If we have a tracked source ID (e.g., during/after crossfade), use it
+    // BUT only if the current time is within that source's range
     if (currentVideoSourceId.value) {
       const trackedSource = videoSources.value.find((s) => s.id === currentVideoSourceId.value);
-      if (trackedSource) {
+      if (trackedSource && time >= trackedSource.start_time && time < trackedSource.end_time) {
         return trackedSource;
       }
     }
 
-    const time = previewTime.value;
     // Sort sources by start_time to get consistent results during overlap
     const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
     // Find source that contains the current time (prefer earlier source during overlap)
@@ -3692,16 +3694,36 @@
       // Pause audio tracks
       audioElements.value.forEach((audio) => audio.pause());
 
+      // Set seeking flag to prevent time update interference during reset
+      isSeeking.value = true;
+
       // Reset to main video if preload was active
       if (!previewRef.value?.isMainVideoActive?.()) {
         previewRef.value?.resetActiveVideo?.();
       }
 
       if (sortedSources.length > 0) {
+        const firstSource = sortedSources[0];
         // Reset to the beginning of the first source
-        previewTime.value = sortedSources[0].start_time;
-        currentVideoSourceId.value = sortedSources[0].id;
+        // Set currentVideoSourceId FIRST to ensure activeVideoSource computed
+        // returns the correct source when previewTime changes
+        currentVideoSourceId.value = firstSource.id;
+        previewTime.value = firstSource.start_time;
+
+        // Actually seek the video element to the beginning position
+        // This is necessary because the video file hasn't changed, so onVideoLoaded won't fire
+        if (videoElement.value) {
+          videoElement.value.currentTime = firstSource.trim_start;
+          console.log('[onVideoEnded] Reset video to trim_start:', firstSource.trim_start);
+        }
+        // Clear pending seek time since we've already seeked
+        pendingSeekTime.value = null;
       }
+
+      // Clear seeking flag after state has settled
+      setTimeout(() => {
+        isSeeking.value = false;
+      }, 100);
     }
   }
 
@@ -3733,10 +3755,29 @@
       'activeVideo.src:',
       activeVideo?.src?.slice(-30),
       'activePreloadIndex:',
-      activePreloadIndex
+      activePreloadIndex,
+      'readyState:',
+      activeVideo?.readyState
     );
 
     if (activeVideo) {
+      // Check if video is ready to play before attempting playback
+      // This prevents errors when video source is invalid or not yet loaded
+      const hasValidSource = activeVideo.src && activeVideo.src !== '' && !activeVideo.src.endsWith('/video-editor');
+      const isReady = activeVideo.readyState >= 1; // HAVE_METADATA or better
+
+      if (!hasValidSource || !isReady) {
+        console.log(
+          '[togglePlay] Video not ready - src:',
+          activeVideo.src?.slice(-30),
+          'readyState:',
+          activeVideo.readyState
+        );
+        // Ensure isPlaying reflects actual state (video is not playing)
+        isPlaying.value = false;
+        return;
+      }
+
       // Sync isPlaying state with actual video state first
       // This handles cases where the video state got out of sync (e.g., after crossfade)
       const actuallyPlaying = !activeVideo.paused;
@@ -4987,9 +5028,9 @@
       preview_url: previewUrl, // Data URL for preview display
       start_time: startTime,
       end_time: endTime,
-      position_x: 8,
-      position_y: 92,
-      scale: 15,
+      position_x: 85, // Bottom right area
+      position_y: 85,
+      scale: 25, // ~167% CSS scale (25/15) - good visible default
       opacity: 80,
     };
 

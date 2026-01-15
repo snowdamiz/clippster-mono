@@ -110,6 +110,9 @@
         @pause="onPause"
       />
 
+      <!-- Black screen overlay when playhead is in a gap with no video source (editor mode) -->
+      <div v-if="showBlackScreen" class="absolute inset-0 bg-black z-[5]" />
+
       <!-- Overlay Container - matches video dimensions -->
       <div
         ref="overlayContainerRef"
@@ -331,10 +334,14 @@
   interface WatermarkResizeState {
     isResizing: boolean;
     id: string | null;
-    centerX: number;
-    centerY: number;
-    startDistance: number;
+    handle: 'tl' | 'tr' | 'bl' | 'br' | null;
+    anchorX: number; // Pixel coordinate of anchor corner (opposite to dragged handle)
+    anchorY: number;
+    startWidth: number; // Starting width in pixels
+    startHeight: number; // Starting height in pixels
     startScale: number;
+    startPosition: { x: number; y: number }; // Starting position as percentage
+    containerRect: DOMRect | null; // Container bounds for percentage calculations
   }
 
   interface ResizeState {
@@ -488,7 +495,7 @@
       if (sticker) startStickerResize(event, sticker);
     } else if (item.type === 'watermark') {
       const watermark = props.watermarks.find((w) => w.id === item.id);
-      if (watermark) startWatermarkResize(event, watermark);
+      if (watermark) startWatermarkResize(event, watermark, handle);
     } else if (item.type === 'text') {
       // Use scale-based resize for text (like stickers) for visual feedback
       const overlay = props.textOverlays.find((o) => o.id === item.id);
@@ -1156,10 +1163,14 @@
   const watermarkResizeState = reactive<WatermarkResizeState>({
     isResizing: false,
     id: null,
-    centerX: 0,
-    centerY: 0,
-    startDistance: 0,
+    handle: null,
+    anchorX: 0,
+    anchorY: 0,
+    startWidth: 0,
+    startHeight: 0,
     startScale: 1,
+    startPosition: { x: 0, y: 0 },
+    containerRect: null,
   });
 
   // Track actual image dimensions for watermarks (watermarkId -> {width, height})
@@ -1289,7 +1300,10 @@
       }
       // TODO: Handle generic video PiP drag
     } else if (item.type === 'watermark') {
-      if (item.originalData) startWatermarkDrag(e, item.originalData);
+      // Look up watermark from props by ID to get properly transformed ClipWatermark object
+      // (item.originalData is the raw DB record with different property structure)
+      const watermark = props.watermarks.find((w) => w.id === item.id);
+      if (watermark) startWatermarkDrag(e, watermark);
     }
   }
 
@@ -1952,72 +1966,173 @@
     startDrag(e, 'watermark', watermark.id, config.position);
   }
 
-  // Watermark resize handlers (for scale) - uses distance from center for intuitive resizing
-  function startWatermarkResize(e: MouseEvent, watermark: ClipWatermark) {
+  // Watermark resize handlers (for scale) - corner-anchored resizing
+  // When dragging a corner, the opposite corner stays fixed
+  function startWatermarkResize(e: MouseEvent, watermark: ClipWatermark, handle: 'tl' | 'tr' | 'bl' | 'br' = 'br') {
     e.preventDefault();
     e.stopPropagation();
 
-    // Get the watermark element to find its center
+    // Get the watermark element to find its bounds
     const watermarkEl = (e.target as HTMLElement).closest('[data-item-id]') as HTMLElement;
-    if (!watermarkEl) return;
+    if (!watermarkEl || !overlayContainerRef.value) return;
 
     const rect = watermarkEl.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-
-    // Calculate initial distance from center to mouse
-    const startDistance = Math.sqrt(Math.pow(e.clientX - centerX, 2) + Math.pow(e.clientY - centerY, 2));
-
+    const containerRect = overlayContainerRef.value.getBoundingClientRect();
     const config = getWatermarkConfigForRatio(watermark);
+
+    // Calculate anchor corner (opposite to the handle being dragged)
+    // The anchor is the corner that should stay fixed during resize
+    let anchorX: number, anchorY: number;
+    switch (handle) {
+      case 'tl': // Dragging top-left, anchor is bottom-right
+        anchorX = rect.right;
+        anchorY = rect.bottom;
+        break;
+      case 'tr': // Dragging top-right, anchor is bottom-left
+        anchorX = rect.left;
+        anchorY = rect.bottom;
+        break;
+      case 'bl': // Dragging bottom-left, anchor is top-right
+        anchorX = rect.right;
+        anchorY = rect.top;
+        break;
+      case 'br': // Dragging bottom-right, anchor is top-left
+      default:
+        anchorX = rect.left;
+        anchorY = rect.top;
+        break;
+    }
 
     watermarkResizeState.isResizing = true;
     watermarkResizeState.id = watermark.id;
-    watermarkResizeState.centerX = centerX;
-    watermarkResizeState.centerY = centerY;
-    watermarkResizeState.startDistance = startDistance;
+    watermarkResizeState.handle = handle;
+    watermarkResizeState.anchorX = anchorX;
+    watermarkResizeState.anchorY = anchorY;
+    watermarkResizeState.startWidth = rect.width;
+    watermarkResizeState.startHeight = rect.height;
     watermarkResizeState.startScale = config.scale / 15; // Convert from percentage to multiplier
+    watermarkResizeState.startPosition = { ...config.position };
+    watermarkResizeState.containerRect = containerRect;
 
     document.addEventListener('mousemove', onWatermarkResizeMove);
     document.addEventListener('mouseup', onWatermarkResizeEnd);
   }
 
   function onWatermarkResizeMove(e: MouseEvent) {
-    if (!watermarkResizeState.isResizing || !watermarkResizeState.id) return;
+    if (!watermarkResizeState.isResizing || !watermarkResizeState.id || !watermarkResizeState.containerRect) return;
 
-    // Calculate current distance from center to mouse
-    const currentDistance = Math.sqrt(
-      Math.pow(e.clientX - watermarkResizeState.centerX, 2) + Math.pow(e.clientY - watermarkResizeState.centerY, 2)
-    );
+    const { handle, anchorX, anchorY, startWidth, startHeight, startScale, containerRect } = watermarkResizeState;
 
-    // Scale is proportional to distance ratio
-    const distanceRatio =
-      watermarkResizeState.startDistance > 0 ? currentDistance / watermarkResizeState.startDistance : 1;
+    // Calculate new width based on distance from anchor to mouse
+    // The sign depends on which handle is being dragged
+    let newWidth: number, newHeight: number;
 
-    let newScaleMultiplier = watermarkResizeState.startScale * distanceRatio;
+    switch (handle) {
+      case 'tl':
+        newWidth = anchorX - e.clientX;
+        newHeight = anchorY - e.clientY;
+        break;
+      case 'tr':
+        newWidth = e.clientX - anchorX;
+        newHeight = anchorY - e.clientY;
+        break;
+      case 'bl':
+        newWidth = anchorX - e.clientX;
+        newHeight = e.clientY - anchorY;
+        break;
+      case 'br':
+      default:
+        newWidth = e.clientX - anchorX;
+        newHeight = e.clientY - anchorY;
+        break;
+    }
 
-    // Clamp scale multiplier to reasonable bounds (0.2x to 5x)
-    newScaleMultiplier = Math.max(0.2, Math.min(5, newScaleMultiplier));
+    // Maintain aspect ratio - use the larger dimension change
+    const widthRatio = Math.abs(newWidth) / startWidth;
+    const heightRatio = Math.abs(newHeight) / startHeight;
+    const scaleRatio = Math.max(widthRatio, heightRatio, 0.1); // Minimum scale ratio
+
+    let newScaleMultiplier = startScale * scaleRatio;
+
+    // Only enforce minimum scale (0.1x), no maximum limit
+    newScaleMultiplier = Math.max(0.1, newScaleMultiplier);
 
     // Convert back to percentage for storage (multiply by 15 to get back to percentage scale)
-    const newScalePercent = Math.round(newScaleMultiplier * 15);
+    // Keep two decimals to avoid rounding back to the previous size.
+    const newScalePercent = Math.round(newScaleMultiplier * 15 * 100) / 100;
+
+    // Calculate new position to keep anchor corner fixed
+    // The watermark position is the center point as a percentage
+    const actualNewWidth = startWidth * scaleRatio;
+    const actualNewHeight = startHeight * scaleRatio;
+
+    // Calculate where the center should be based on anchor position
+    let newCenterX: number, newCenterY: number;
+
+    switch (handle) {
+      case 'tl': // Anchor is bottom-right
+        newCenterX = anchorX - actualNewWidth / 2;
+        newCenterY = anchorY - actualNewHeight / 2;
+        break;
+      case 'tr': // Anchor is bottom-left
+        newCenterX = anchorX + actualNewWidth / 2;
+        newCenterY = anchorY - actualNewHeight / 2;
+        break;
+      case 'bl': // Anchor is top-right
+        newCenterX = anchorX - actualNewWidth / 2;
+        newCenterY = anchorY + actualNewHeight / 2;
+        break;
+      case 'br': // Anchor is top-left
+      default:
+        newCenterX = anchorX + actualNewWidth / 2;
+        newCenterY = anchorY + actualNewHeight / 2;
+        break;
+    }
+
+    // Convert center position to percentage relative to container
+    const newX = ((newCenterX - containerRect.left) / containerRect.width) * 100;
+    const newY = ((newCenterY - containerRect.top) / containerRect.height) * 100;
 
     // Set local scale immediately for instant feedback
     localWatermarkScales.value[watermarkResizeState.id] = newScaleMultiplier;
 
-    // Emit scale update
+    // Update local position for immediate feedback
+    localDragPositions.value[watermarkResizeState.id] = { x: newX / 100, y: newY / 100 };
+
+    // Emit scale and position updates
     emit('updateWatermarkScale', watermarkResizeState.id, newScalePercent);
+    emit('updateOverlayPosition', 'watermark', watermarkResizeState.id, { x: newX, y: newY });
   }
 
   function onWatermarkResizeEnd() {
-    if (watermarkResizeState.id) {
+    const resizedId = watermarkResizeState.id;
+
+    if (resizedId) {
+      const finalScaleMultiplier = localWatermarkScales.value[resizedId];
+      if (typeof finalScaleMultiplier === 'number') {
+        const finalScalePercent = Math.round(finalScaleMultiplier * 15 * 100) / 100;
+        emit('updateWatermarkScale', resizedId, finalScalePercent);
+      }
+
       // Emit completion event for undo/redo
-      emit('watermarkResizeEnd', watermarkResizeState.id);
-      // Clear local scale after emit completes
-      delete localWatermarkScales.value[watermarkResizeState.id];
+      emit('watermarkResizeEnd', resizedId);
+
+      // Delay clearing local overrides to avoid "jump back" effect
+      // This gives the parent time to update the actual watermark data
+      // Use setTimeout to ensure parent has processed the event
+      setTimeout(() => {
+        // Only clear if not currently resizing this same item
+        if (!watermarkResizeState.isResizing || watermarkResizeState.id !== resizedId) {
+          delete localWatermarkScales.value[resizedId];
+          delete localDragPositions.value[resizedId];
+        }
+      }, 50);
     }
 
     watermarkResizeState.isResizing = false;
     watermarkResizeState.id = null;
+    watermarkResizeState.handle = null;
+    watermarkResizeState.containerRect = null;
 
     document.removeEventListener('mousemove', onWatermarkResizeMove);
     document.removeEventListener('mouseup', onWatermarkResizeEnd);
@@ -2207,6 +2322,11 @@
       currentFramingConfig.value.regions &&
       currentFramingConfig.value.regions.length > 0
     );
+  });
+
+  // Check if we should show a black screen (no video source at current playhead position in editor mode)
+  const showBlackScreen = computed(() => {
+    return props.editorMode && !props.videoSrc;
   });
 
   // Check if this is a single region layout (can use optimized single video approach)

@@ -7,23 +7,59 @@
       @uploaded="handleAssetUploaded"
     />
 
-    <!-- Unified Search Bar -->
-    <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style="color: var(--sidebar-text-muted)" />
-      <input
-        v-model="searchQuery"
-        type="text"
-        placeholder="Search media..."
-        class="w-full pl-9 pr-3 py-2 rounded-lg text-sm border transition-colors focus:outline-none"
-        style="background-color: var(--sidebar-hover); border-color: var(--sidebar-border); color: var(--sidebar-text)"
-        @focus="(e) => ((e.target as HTMLInputElement).style.borderColor = 'var(--sidebar-accent)')"
-        @blur="(e) => ((e.target as HTMLInputElement).style.borderColor = 'var(--sidebar-border)')"
-      />
+    <!-- Header: Search + Tabs -->
+    <div class="flex items-center gap-3">
+      <!-- Search (left side) -->
+      <div class="relative flex-1">
+        <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style="color: var(--sidebar-text-muted)" />
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Search media..."
+          class="w-full pl-9 pr-3 py-2 rounded-lg text-sm border transition-colors focus:outline-none"
+          style="
+            background-color: var(--sidebar-hover);
+            border-color: var(--sidebar-border);
+            color: var(--sidebar-text);
+          "
+          @focus="(e) => ((e.target as HTMLInputElement).style.borderColor = 'var(--sidebar-accent)')"
+          @blur="(e) => ((e.target as HTMLInputElement).style.borderColor = 'var(--sidebar-border)')"
+        />
+      </div>
+
+      <!-- Tab buttons (right side) -->
+      <div class="tab-group flex items-center">
+        <button
+          @click="activeTab = 'project'"
+          class="tab-button tab-button--first px-3 py-2 text-xs font-medium transition-all whitespace-nowrap"
+          :class="activeTab === 'project' ? 'tab-button--active' : 'tab-button--inactive'"
+        >
+          Project media
+        </button>
+        <button
+          @click="activeTab = 'library'"
+          class="tab-button tab-button--middle px-3 py-2 text-xs font-medium transition-all whitespace-nowrap"
+          :class="activeTab === 'library' ? 'tab-button--active' : 'tab-button--inactive'"
+        >
+          Library
+        </button>
+        <button
+          @click="activeTab = 'introOutro'"
+          class="tab-button tab-button--last px-3 py-2 text-xs font-medium transition-all whitespace-nowrap"
+          :class="activeTab === 'introOutro' ? 'tab-button--active' : 'tab-button--inactive'"
+        >
+          Intro/Outro
+        </button>
+      </div>
     </div>
 
-    <!-- Project Media Section -->
-    <CollapsibleSection title="PROJECT MEDIA" :count="filteredProjectMedia.length" :default-open="true">
-      <div class="space-y-3">
+    <!-- Content Area -->
+    <div
+      class="content-area rounded-lg border"
+      style="background-color: var(--sidebar-surface); border-color: var(--sidebar-border)"
+    >
+      <!-- Project Media Tab -->
+      <div v-if="activeTab === 'project'" class="p-3 space-y-3">
         <!-- Media Type Filter Chips -->
         <div class="flex items-center gap-2 flex-wrap">
           <button
@@ -239,84 +275,45 @@
                   </div>
                 </div>
 
-                <!-- Scale & Opacity -->
-                <div class="grid grid-cols-2 gap-2">
-                  <div>
-                    <label class="block text-[10px] mb-1" style="color: var(--sidebar-text-muted)">Scale</label>
-                    <div class="flex items-center gap-1">
-                      <input
-                        type="range"
-                        min="5"
-                        max="100"
-                        step="1"
-                        :value="getWatermarkConfig(watermark).scale"
-                        @input="
-                          (e) =>
-                            updateWatermarkConfig(
-                              watermark.id,
-                              'scale',
-                              parseFloat((e.target as HTMLInputElement).value)
-                            )
-                        "
-                        class="watermark-range flex-1 h-1.5 rounded-lg appearance-none cursor-pointer"
-                      />
-                      <span class="text-[10px] w-8 text-right" style="color: var(--sidebar-text-muted)">
-                        {{ getWatermarkConfig(watermark).scale }}%
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-[10px] mb-1" style="color: var(--sidebar-text-muted)">Opacity</label>
-                    <div class="flex items-center gap-1">
-                      <input
-                        type="range"
-                        min="10"
-                        max="100"
-                        step="5"
-                        :value="getWatermarkConfig(watermark).opacity"
-                        @input="
-                          (e) =>
-                            updateWatermarkConfig(
-                              watermark.id,
-                              'opacity',
-                              parseFloat((e.target as HTMLInputElement).value)
-                            )
-                        "
-                        class="watermark-range flex-1 h-1.5 rounded-lg appearance-none cursor-pointer"
-                      />
-                      <span class="text-[10px] w-8 text-right" style="color: var(--sidebar-text-muted)">
-                        {{ getWatermarkConfig(watermark).opacity }}%
-                      </span>
-                    </div>
+                <!-- Opacity -->
+                <div>
+                  <label class="block text-[10px] mb-1" style="color: var(--sidebar-text-muted)">Opacity</label>
+                  <div class="flex items-center gap-1">
+                    <input
+                      type="range"
+                      min="10"
+                      max="100"
+                      step="5"
+                      :value="getWatermarkConfig(watermark).opacity"
+                      @input="
+                        (e) =>
+                          updateWatermarkConfig(
+                            watermark.id,
+                            'opacity',
+                            parseFloat((e.target as HTMLInputElement).value)
+                          )
+                      "
+                      class="watermark-range flex-1 h-1.5 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <span class="text-[10px] w-8 text-right" style="color: var(--sidebar-text-muted)">
+                      {{ getWatermarkConfig(watermark).opacity }}%
+                    </span>
                   </div>
                 </div>
 
-                <!-- Position Grid -->
-                <div>
-                  <label class="block text-[10px] mb-1" style="color: var(--sidebar-text-muted)">Position</label>
-                  <div class="grid grid-cols-3 gap-1 max-w-[120px]">
-                    <button
-                      v-for="pos in positionPresets"
-                      :key="pos.id"
-                      @click="setWatermarkPosition(watermark.id, pos.x, pos.y)"
-                      class="aspect-square rounded text-[8px] transition-all border"
-                      :style="{
-                        backgroundColor: isNearPosition(watermark, pos.x, pos.y)
-                          ? 'var(--sidebar-active)'
-                          : 'var(--sidebar-hover)',
-                        borderColor: isNearPosition(watermark, pos.x, pos.y)
-                          ? 'var(--sidebar-accent)'
-                          : 'var(--sidebar-border)',
-                        color: isNearPosition(watermark, pos.x, pos.y)
-                          ? 'var(--sidebar-accent)'
-                          : 'var(--sidebar-text-muted)',
-                      }"
-                      :title="pos.label"
-                    >
-                      <component :is="pos.icon" :size="10" class="mx-auto" />
-                    </button>
-                  </div>
-                  <p class="text-[9px] mt-1" style="color: var(--sidebar-text-muted)">Drag in preview to fine-tune</p>
+                <!-- Preview Instructions -->
+                <div
+                  class="p-2 rounded-md text-[10px]"
+                  style="background-color: var(--sidebar-active); color: var(--sidebar-text-muted)"
+                >
+                  <p>
+                    <strong style="color: var(--sidebar-text)">Drag</strong>
+                    to reposition in preview
+                  </p>
+                  <p>
+                    <strong style="color: var(--sidebar-text)">Drag corners</strong>
+                    to resize
+                  </p>
                 </div>
               </div>
             </div>
@@ -432,15 +429,9 @@
           </div>
         </template>
       </div>
-    </CollapsibleSection>
 
-    <!-- Library Section -->
-    <CollapsibleSection
-      title="LIBRARY"
-      :count="libraryFilter === 'clips' ? filteredClips.length : filteredRawVideos.length"
-      :default-open="false"
-    >
-      <div class="space-y-3">
+      <!-- Library Tab -->
+      <div v-else-if="activeTab === 'library'" class="p-3 space-y-3">
         <!-- Library Filter Toggle -->
         <div class="flex items-center gap-2 flex-wrap">
           <button
@@ -618,20 +609,20 @@
           </div>
         </div>
       </div>
-    </CollapsibleSection>
 
-    <!-- Intro/Outro Section -->
-    <CollapsibleSection title="INTRO / OUTRO" :default-open="false">
-      <IntroOutroTab
-        :current-intro="currentIntro"
-        :current-outro="currentOutro"
-        :search-query="searchQuery"
-        @add-intro="$emit('addIntro', $event)"
-        @add-outro="$emit('addOutro', $event)"
-        @remove-intro="$emit('removeIntro')"
-        @remove-outro="$emit('removeOutro')"
-      />
-    </CollapsibleSection>
+      <!-- Intro/Outro Tab -->
+      <div v-else-if="activeTab === 'introOutro'" class="p-3">
+        <IntroOutroTab
+          :current-intro="currentIntro"
+          :current-outro="currentOutro"
+          :search-query="searchQuery"
+          @add-intro="$emit('addIntro', $event)"
+          @add-outro="$emit('addOutro', $event)"
+          @remove-intro="$emit('removeIntro')"
+          @remove-outro="$emit('removeOutro')"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -650,15 +641,6 @@
     Pencil,
     Trash2,
     Building2,
-    ArrowUpLeft,
-    ArrowUp,
-    ArrowUpRight,
-    ArrowLeft,
-    Maximize2,
-    ArrowRight,
-    ArrowDownLeft,
-    ArrowDown,
-    ArrowDownRight,
   } from 'lucide-vue-next';
   import type { SourceItem, ClipWatermark, ManualFramingConfigs } from '@/types';
   import {
@@ -677,7 +659,6 @@
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import { useAuthStore } from '@/stores/auth';
   import { invoke } from '@tauri-apps/api/core';
-  import CollapsibleSection from '../CollapsibleSection.vue';
   import MediaItem from '../MediaItem.vue';
   import IntroOutroTab from './IntroOutroTab.vue';
   import AssetUploadDialog from '@/components/AssetUploadDialog.vue';
@@ -731,22 +712,10 @@
     thumbnail_path?: string | null;
   }
 
-  // Position presets for watermark placement
-  const positionPresets = [
-    { id: 'top-left', label: 'Top Left', x: 8, y: 8, icon: ArrowUpLeft },
-    { id: 'top-center', label: 'Top Center', x: 50, y: 8, icon: ArrowUp },
-    { id: 'top-right', label: 'Top Right', x: 92, y: 8, icon: ArrowUpRight },
-    { id: 'center-left', label: 'Center Left', x: 8, y: 50, icon: ArrowLeft },
-    { id: 'center', label: 'Center', x: 50, y: 50, icon: Maximize2 },
-    { id: 'center-right', label: 'Center Right', x: 92, y: 50, icon: ArrowRight },
-    { id: 'bottom-left', label: 'Bottom Left', x: 8, y: 92, icon: ArrowDownLeft },
-    { id: 'bottom-center', label: 'Bottom Center', x: 50, y: 92, icon: ArrowDown },
-    { id: 'bottom-right', label: 'Bottom Right', x: 92, y: 92, icon: ArrowDownRight },
-  ];
-
   const loading = ref(false);
   const libraryLoading = ref(false);
   const searchQuery = ref('');
+  const activeTab = ref<'project' | 'library' | 'introOutro'>('project');
   const libraryFilter = ref<'clips' | 'videos'>('clips');
   const mediaTypeFilter = ref<'all' | 'video' | 'audio' | 'image' | 'watermark'>('all');
   const showAssetUploadDialog = ref(false);
@@ -1015,12 +984,6 @@
     return ratioConfig || { position: watermark.position, scale: watermark.scale, opacity: watermark.opacity };
   }
 
-  function isNearPosition(watermark: ClipWatermark, x: number, y: number): boolean {
-    const config = getWatermarkConfig(watermark);
-    const threshold = 10;
-    return Math.abs(config.position.x - x) < threshold && Math.abs(config.position.y - y) < threshold;
-  }
-
   function selectWatermark(id: string) {
     selectedWatermarkId.value = selectedWatermarkId.value === id ? null : id;
   }
@@ -1053,10 +1016,6 @@
     perRatioConfigs[ratio] = currentConfig;
 
     emit('updateWatermark', watermarkId, { perRatioConfigs });
-  }
-
-  function setWatermarkPosition(watermarkId: string, x: number, y: number) {
-    updateWatermarkConfig(watermarkId, 'position', { x, y });
   }
 
   function isRatioConfigured(ratio: string): boolean {
@@ -1244,6 +1203,54 @@
 </script>
 
 <style scoped>
+  /* Tab group container */
+  .tab-group {
+    border: 1px solid var(--sidebar-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+
+  /* Tab buttons */
+  .tab-button {
+    border: none;
+    cursor: pointer;
+    border-right: 1px solid var(--sidebar-border);
+  }
+
+  .tab-button:last-child {
+    border-right: none;
+  }
+
+  .tab-button--first {
+    border-top-left-radius: 0.5rem;
+    border-bottom-left-radius: 0.5rem;
+  }
+
+  .tab-button--last {
+    border-top-right-radius: 0.5rem;
+    border-bottom-right-radius: 0.5rem;
+  }
+
+  .tab-button--active {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-accent);
+  }
+
+  .tab-button--inactive {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+  }
+
+  .tab-button--inactive:hover {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  /* Content area */
+  .content-area {
+    min-height: 200px;
+  }
+
   /* Custom scrollbar styling for library lists */
   .space-y-2::-webkit-scrollbar {
     width: 6px;

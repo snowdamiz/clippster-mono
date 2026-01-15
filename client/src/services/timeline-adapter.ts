@@ -234,7 +234,9 @@ export class TimelineAdapter {
         sourcePath: wm.preview_url || wm.watermark_path,
         positionX: wm.position_x / 100,
         positionY: wm.position_y / 100,
-        scale: wm.scale / 100,
+        // Scale is stored as percentage where 15 = 100% (1.0 CSS scale)
+        // Divide by 15 to convert to CSS scale multiplier
+        scale: wm.scale / 15,
         opacity: wm.opacity / 100,
         originalData: wm,
         keyframes: wm.keyframes_data ? JSON.parse(wm.keyframes_data) : undefined,
@@ -247,7 +249,7 @@ export class TimelineAdapter {
         name: 'Watermark',
         orderIndex: -1, // Special index indicating watermark track (below main video)
         isMuted: false,
-        isLocked: true, // Non-interactive
+        isLocked: false, // Allow drag and resize in preview
         isVisible: true,
         items: watermarkItems,
       });

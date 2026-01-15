@@ -132,68 +132,36 @@
             </div>
           </div>
 
-          <!-- Scale & Opacity -->
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block text-[10px] text-white/50 mb-1">Scale</label>
-              <div class="flex items-center gap-1">
-                <input
-                  type="range"
-                  min="5"
-                  max="100"
-                  step="1"
-                  :value="getWatermarkConfig(watermark).scale"
-                  @input="
-                    (e) =>
-                      updateWatermarkConfig(watermark.id, 'scale', parseFloat((e.target as HTMLInputElement).value))
-                  "
-                  class="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                />
-                <span class="text-[10px] text-white/50 w-8 text-right">{{ getWatermarkConfig(watermark).scale }}%</span>
-              </div>
-            </div>
-            <div>
-              <label class="block text-[10px] text-white/50 mb-1">Opacity</label>
-              <div class="flex items-center gap-1">
-                <input
-                  type="range"
-                  min="10"
-                  max="100"
-                  step="5"
-                  :value="getWatermarkConfig(watermark).opacity"
-                  @input="
-                    (e) =>
-                      updateWatermarkConfig(watermark.id, 'opacity', parseFloat((e.target as HTMLInputElement).value))
-                  "
-                  class="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                />
-                <span class="text-[10px] text-white/50 w-8 text-right">
-                  {{ getWatermarkConfig(watermark).opacity }}%
-                </span>
-              </div>
+          <!-- Opacity -->
+          <div>
+            <label class="block text-[10px] text-white/50 mb-1">Opacity</label>
+            <div class="flex items-center gap-1">
+              <input
+                type="range"
+                min="10"
+                max="100"
+                step="5"
+                :value="getWatermarkConfig(watermark).opacity"
+                @input="
+                  (e) =>
+                    updateWatermarkConfig(watermark.id, 'opacity', parseFloat((e.target as HTMLInputElement).value))
+                "
+                class="flex-1 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
+              />
+              <span class="text-[10px] text-white/50 w-8 text-right">{{ getWatermarkConfig(watermark).opacity }}%</span>
             </div>
           </div>
 
-          <!-- Position Grid -->
-          <div>
-            <label class="block text-[10px] text-white/50 mb-1">Position</label>
-            <div class="grid grid-cols-3 gap-1 max-w-[120px]">
-              <button
-                v-for="pos in positionPresets"
-                :key="pos.id"
-                @click="setPosition(watermark.id, pos.x, pos.y)"
-                :class="[
-                  'aspect-square rounded text-[8px] transition-all',
-                  isNearPosition(watermark, pos.x, pos.y)
-                    ? 'bg-amber-500/30 border border-amber-500/50 text-amber-300'
-                    : 'bg-white/5 border border-white/10 text-white/40 hover:bg-white/10',
-                ]"
-                :title="pos.label"
-              >
-                <component :is="pos.icon" :size="10" class="mx-auto" />
-              </button>
-            </div>
-            <p class="text-[9px] text-white/30 mt-1">Drag in preview to fine-tune</p>
+          <!-- Preview Instructions -->
+          <div class="p-2 bg-white/5 rounded-md text-[10px] text-white/40">
+            <p>
+              <strong class="text-white/60">Drag</strong>
+              to reposition in preview
+            </p>
+            <p>
+              <strong class="text-white/60">Drag corners</strong>
+              to resize
+            </p>
           </div>
         </div>
       </div>
@@ -370,25 +338,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
-  import {
-    Image as ImageIcon,
-    Plus,
-    Trash2,
-    Pencil,
-    Upload,
-    Search,
-    Loader2,
-    Building2,
-    ArrowUpLeft,
-    ArrowUp,
-    ArrowUpRight,
-    ArrowLeft,
-    Maximize2,
-    ArrowRight,
-    ArrowDownLeft,
-    ArrowDown,
-    ArrowDownRight,
-  } from 'lucide-vue-next';
+  import { Image as ImageIcon, Plus, Trash2, Pencil, Upload, Search, Loader2, Building2 } from 'lucide-vue-next';
   import type { ClipWatermark, ManualFramingConfigs } from '@/types';
   import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
@@ -409,18 +359,6 @@
 
   // Auth store for checking org memberships
   const authStore = useAuthStore();
-
-  const positionPresets = [
-    { id: 'top-left', label: 'Top Left', x: 8, y: 8, icon: ArrowUpLeft },
-    { id: 'top-center', label: 'Top Center', x: 50, y: 8, icon: ArrowUp },
-    { id: 'top-right', label: 'Top Right', x: 92, y: 8, icon: ArrowUpRight },
-    { id: 'center-left', label: 'Center Left', x: 8, y: 50, icon: ArrowLeft },
-    { id: 'center', label: 'Center', x: 50, y: 50, icon: Maximize2 },
-    { id: 'center-right', label: 'Center Right', x: 92, y: 50, icon: ArrowRight },
-    { id: 'bottom-left', label: 'Bottom Left', x: 8, y: 92, icon: ArrowDownLeft },
-    { id: 'bottom-center', label: 'Bottom Center', x: 50, y: 92, icon: ArrowDown },
-    { id: 'bottom-right', label: 'Bottom Right', x: 92, y: 92, icon: ArrowDownRight },
-  ];
 
   const props = defineProps<{
     watermarks: ClipWatermark[];
@@ -491,12 +429,6 @@
     return ratioConfig || { position: watermark.position, scale: watermark.scale, opacity: watermark.opacity };
   }
 
-  function isNearPosition(watermark: ClipWatermark, x: number, y: number): boolean {
-    const config = getWatermarkConfig(watermark);
-    const threshold = 10;
-    return Math.abs(config.position.x - x) < threshold && Math.abs(config.position.y - y) < threshold;
-  }
-
   function selectWatermark(id: string) {
     selectedWatermarkId.value = selectedWatermarkId.value === id ? null : id;
   }
@@ -529,10 +461,6 @@
     perRatioConfigs[ratio] = currentConfig;
 
     emit('updateWatermark', watermarkId, { perRatioConfigs });
-  }
-
-  function setPosition(watermarkId: string, x: number, y: number) {
-    updateWatermarkConfig(watermarkId, 'position', { x, y });
   }
 
   function getThumbnail(wm: WatermarkItem): string {
