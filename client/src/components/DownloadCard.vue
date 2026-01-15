@@ -1,60 +1,58 @@
 <template>
-  <div
-    class="group relative bg-card border border-border rounded-lg overflow-hidden hover:border-foreground/20 cursor-default"
-  >
-    <!-- Thumbnail background/placeholder -->
-    <div class="aspect-video bg-muted/20 relative">
-      <!-- Background for processing/queued states -->
-      <div class="absolute inset-0 bg-gradient-to-br from-black/40 via-black/20 to-black/40"></div>
+  <div class="download-card" :class="{ 'download-card--queued': download.isQueued }">
+    <!-- Thumbnail/Background -->
+    <div class="download-card__thumbnail">
+      <!-- Cancel Button -->
+      <button
+        @click.stop="handleCancel"
+        class="download-card__cancel"
+        title="Cancel Download (Shift+Click to cancel all segments)"
+      >
+        <X class="download-card__cancel-icon" />
+      </button>
 
-      <!-- Content overlay -->
-      <div class="relative z-10 h-full flex flex-col items-center justify-center p-4">
-        <!-- Cancel Button -->
-        <button
-          @click.stop="handleCancel"
-          class="absolute top-2 right-2 p-1.5 rounded-full bg-black/40 text-white/70 hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-sm z-50"
-          title="Cancel Download (Shift+Click to cancel all segments)"
-        >
-          <X class="h-4 w-4" />
-        </button>
-
-        <!-- Loading/Queued State -->
-        <div class="flex flex-col items-center gap-3 -mt-5">
-          <div v-if="download.isQueued" class="flex flex-col items-center gap-2">
-            <div class="h-8 w-8 rounded-full border-2 border-dashed border-muted-foreground/50"></div>
-            <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Queued</span>
-          </div>
-          <div v-else class="flex flex-col items-center gap-3">
-            <Loader2 class="animate-spin h-8 w-8 text-purple-500" />
-            <span
-              v-if="download.progress.current_time && download.progress.total_time"
-              class="text-xs text-white/70 font-mono"
-            >
-              {{ formatDuration(download.progress.current_time) }} / {{ formatDuration(download.progress.total_time) }}
-            </span>
-          </div>
-        </div>
+      <!-- Badge -->
+      <div
+        class="download-card__badge"
+        :class="download.isQueued ? 'download-card__badge--queued' : 'download-card__badge--downloading'"
+      >
+        <Clock v-if="download.isQueued" class="download-card__badge-icon" />
+        <Loader2 v-else class="download-card__badge-icon download-card__badge-icon--spin" />
+        <span>{{ download.isQueued ? 'Queued' : 'Downloading' }}</span>
       </div>
 
-      <!-- Progress bar at bottom -->
-      <div v-if="!download.isQueued" class="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-50">
-        <div
-          class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-300 ease-out"
-          :style="{ width: `${download.progress.progress}%` }"
-        ></div>
+      <!-- Center Content -->
+      <div class="download-card__center">
+        <div v-if="download.isQueued" class="download-card__queued-icon">
+          <div class="download-card__queued-ring"></div>
+        </div>
+        <div v-else class="download-card__progress-ring">
+          <Loader2 class="download-card__spinner" />
+        </div>
+        <span
+          v-if="!download.isQueued && download.progress.current_time && download.progress.total_time"
+          class="download-card__time"
+        >
+          {{ formatDuration(download.progress.current_time) }} / {{ formatDuration(download.progress.total_time) }}
+        </span>
       </div>
     </div>
 
-    <!-- Info Section (Matching Project/Vod Card Style) -->
-    <div class="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/60 to-transparent">
-      <h4 class="text-sm font-semibold text-white truncate mb-1" :title="download.title">{{ download.title }}</h4>
-      <div class="flex items-center justify-between text-xs">
-        <span class="text-white/70">
-          {{ download.isQueued ? 'Waiting...' : 'Downloading...' }}
-        </span>
-        <span class="font-medium" :class="download.isQueued ? 'text-muted-foreground' : 'text-purple-400'">
-          {{ Math.round(download.progress.progress) }}%
-        </span>
+    <!-- Vignette -->
+    <div class="download-card__vignette"></div>
+
+    <!-- Progress Bar -->
+    <div v-if="!download.isQueued" class="download-card__progress-bar">
+      <div class="download-card__progress-fill" :style="{ width: `${download.progress.progress}%` }"></div>
+    </div>
+
+    <!-- Bottom Info -->
+    <div class="download-card__bottom">
+      <h3 class="download-card__title" :title="download.title">{{ download.title }}</h3>
+      <div class="download-card__meta">
+        <span class="download-card__status">{{ download.isQueued ? 'Waiting...' : 'Downloading...' }}</span>
+        <span class="download-card__dot"></span>
+        <span class="download-card__percent">{{ Math.round(download.progress.progress) }}%</span>
       </div>
     </div>
 
@@ -74,7 +72,7 @@
 <script setup lang="ts">
   import { ref } from 'vue';
   import { useDownloads, type ActiveDownload } from '@/composables/useDownloads';
-  import { Loader2, X } from 'lucide-vue-next';
+  import { Loader2, X, Clock } from 'lucide-vue-next';
   import ConfirmationModal from './ConfirmationModal.vue';
 
   const { cancelDownload, cancelGroup } = useDownloads();
@@ -142,7 +140,236 @@
 </script>
 
 <style scoped>
-  /* Loading indicator animation */
+  /* ===== Download Card ===== */
+  .download-card {
+    position: relative;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: default;
+    transition: all 200ms ease;
+    aspect-ratio: 16 / 9;
+  }
+
+  .download-card:hover {
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .download-card--queued {
+    opacity: 0.8;
+  }
+
+  /* ===== Thumbnail/Background ===== */
+  .download-card__thumbnail {
+    position: absolute;
+    inset: 0;
+    background-color: var(--sidebar-hover);
+    z-index: 0;
+  }
+
+  /* ===== Vignette ===== */
+  .download-card__vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.2) 50%, transparent 100%);
+    pointer-events: none;
+  }
+
+  /* ===== Cancel Button ===== */
+  .download-card__cancel {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    border: none;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    opacity: 0;
+    transition: all 150ms ease;
+  }
+
+  .download-card:hover .download-card__cancel {
+    opacity: 1;
+  }
+
+  .download-card__cancel:hover {
+    background-color: rgba(239, 68, 68, 0.9);
+    color: white;
+  }
+
+  .download-card__cancel-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ===== Badge ===== */
+  .download-card__badge {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.3125rem 0.5rem;
+    backdrop-filter: blur(8px);
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .download-card__badge--downloading {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .download-card__badge--queued {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .download-card__badge-icon {
+    width: 10px;
+    height: 10px;
+  }
+
+  .download-card__badge-icon--spin {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Center Content ===== */
+  .download-card__center {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .download-card__queued-icon {
+    position: relative;
+    width: 44px;
+    height: 44px;
+  }
+
+  .download-card__queued-ring {
+    width: 100%;
+    height: 100%;
+    border: 2px dashed var(--sidebar-text-muted);
+    border-radius: 50%;
+    opacity: 0.3;
+  }
+
+  .download-card__progress-ring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+  }
+
+  .download-card__spinner {
+    width: 32px;
+    height: 32px;
+    color: var(--sidebar-accent);
+    animation: spin 0.8s linear infinite;
+  }
+
+  .download-card__time {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.6);
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, monospace;
+  }
+
+  /* ===== Progress Bar ===== */
+  .download-card__progress-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background-color: rgba(255, 255, 255, 0.1);
+    z-index: 30;
+  }
+
+  .download-card__progress-fill {
+    height: 100%;
+    background-color: var(--sidebar-accent);
+    transition: width 300ms ease-out;
+  }
+
+  /* ===== Bottom Info ===== */
+  .download-card__bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .download-card__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    line-height: 1.3;
+  }
+
+  .download-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .download-card__status {
+    white-space: nowrap;
+  }
+
+  .download-card__dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.3);
+    flex-shrink: 0;
+  }
+
+  .download-card__percent {
+    color: var(--sidebar-accent);
+    font-weight: 600;
+  }
+
+  .download-card--queued .download-card__percent {
+    color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Animations ===== */
   @keyframes spin {
     from {
       transform: rotate(0deg);
@@ -150,9 +377,5 @@
     to {
       transform: rotate(360deg);
     }
-  }
-
-  .animate-spin {
-    animation: spin 1s linear infinite;
   }
 </style>

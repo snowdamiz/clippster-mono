@@ -274,6 +274,11 @@
     if (item.type === 'sticker') {
       return item.originalData?.stickerPath || '';
     }
+    if (item.type === 'watermark') {
+      // Watermarks use preview_url (data URL) for display
+      // Check both camelCase and snake_case since data may come from different sources
+      return item.originalData?.previewUrl || item.originalData?.preview_url || item.sourcePath || '';
+    }
     if (item.type === 'video') {
       return item.sourcePath || '';
     }

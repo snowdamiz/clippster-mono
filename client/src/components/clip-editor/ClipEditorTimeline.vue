@@ -1,79 +1,49 @@
 <template>
-  <div class="transition-all duration-300 ease-in-out h-full">
-    <div class="pt-2 px-3 pb-1 flex flex-col h-full gap-2">
-      <!-- Timeline Header - Redesigned CapCut Style -->
-      <div class="flex items-center justify-between pr-2 flex-shrink-0 text-white/70 text-[12px]">
-        <div class="flex items-center gap-2">
+  <div class="timeline-container">
+    <div class="timeline-wrapper">
+      <!-- Timeline Header -->
+      <div class="timeline-header">
+        <div class="timeline-header__left">
           <!-- Selection & Edit Tools Group -->
-          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
+          <div class="timeline-toolbar-group">
             <button
               @click="setTool('move')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isMoveTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isMoveTool ? 'timeline-tool-button--active' : '']"
               title="Move Tool (V)"
             >
               <MousePointer2 :size="14" />
             </button>
             <button
               @click="setTool('razor')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isRazorTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isRazorTool ? 'timeline-tool-button--active' : '']"
               title="Razor Tool (C)"
             >
               <Scissors :size="14" />
             </button>
             <button
               @click="setTool('ripple')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isRippleTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isRippleTool ? 'timeline-tool-button--active' : '']"
               title="Ripple Edit (B)"
             >
               <MoveHorizontal :size="14" />
             </button>
             <button
               @click="setTool('roll')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isRollTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isRollTool ? 'timeline-tool-button--active' : '']"
               title="Roll Edit (N)"
             >
               <Columns :size="14" />
             </button>
             <button
               @click="setTool('slip')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isSlipTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isSlipTool ? 'timeline-tool-button--active' : '']"
               title="Slip Tool (Y)"
             >
               <ArrowLeftRight :size="14" />
             </button>
             <button
               @click="setTool('slide')"
-              :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isSlideTool
-                  ? 'text-cyan-300 bg-gradient-to-b from-cyan-500/25 to-cyan-600/15 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
-                  : 'text-white/50 hover:text-white hover:bg-white/8',
-              ]"
+              :class="['timeline-tool-button', isSlideTool ? 'timeline-tool-button--active' : '']"
               title="Slide Tool (U)"
             >
               <BoxSelect :size="14" />
@@ -81,20 +51,21 @@
           </div>
 
           <!-- Actions Group -->
-          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
+          <div class="timeline-toolbar-group">
             <button
               @click="performCutAtPlayhead"
-              class="p-1.5 rounded-md transition-all duration-150 text-orange-400/70 hover:text-orange-300 hover:bg-orange-500/15"
+              class="timeline-action-button timeline-action-button--split"
               title="Split at playhead (Ctrl+K)"
             >
               <Scissors :size="14" />
               <span class="sr-only">Split</span>
             </button>
-            <div class="w-px h-4 bg-white/8 mx-0.5"></div>
+            <div class="timeline-toolbar-separator"></div>
             <button
               @click="emit('undo')"
               :disabled="!canUndo"
-              class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-blue-300 hover:bg-blue-500/15 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="timeline-action-button"
+              :class="!canUndo ? 'timeline-action-button--disabled' : ''"
               title="Undo (Ctrl+Z)"
             >
               <Undo2 :size="14" />
@@ -102,7 +73,8 @@
             <button
               @click="emit('redo')"
               :disabled="!canRedo"
-              class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-blue-300 hover:bg-blue-500/15 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              class="timeline-action-button"
+              :class="!canRedo ? 'timeline-action-button--disabled' : ''"
               title="Redo (Ctrl+Y)"
             >
               <Redo2 :size="14" />
@@ -110,7 +82,7 @@
           </div>
 
           <!-- Playback Controls Group -->
-          <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
+          <div class="timeline-toolbar-group">
             <button
               @mousedown="startContinuousSeeking('reverse')"
               @mouseup="stopContinuousSeeking"
@@ -118,10 +90,8 @@
               @touchstart="startContinuousSeeking('reverse')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isSeeking && seekDirection === 'reverse'
-                  ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
-                  : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
+                'timeline-playback-button',
+                isSeeking && seekDirection === 'reverse' ? 'timeline-playback-button--active' : '',
               ]"
               title="Seek backward (← arrow key)"
             >
@@ -134,10 +104,8 @@
               @touchstart="startContinuousSeeking('forward')"
               @touchend="stopContinuousSeeking"
               :class="[
-                'p-1.5 rounded-md transition-all duration-150',
-                isSeeking && seekDirection === 'forward'
-                  ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
-                  : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
+                'timeline-playback-button',
+                isSeeking && seekDirection === 'forward' ? 'timeline-playback-button--active' : '',
               ]"
               title="Seek forward (→ arrow key)"
             >
@@ -147,150 +115,125 @@
         </div>
 
         <!-- Right Side Controls -->
-        <div class="flex items-center gap-2">
+        <div class="timeline-header__right">
           <!-- Snap Settings -->
-          <div class="relative group/snap">
+          <div class="timeline-snap-menu">
             <button
-              class="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg border transition-all duration-150"
-              :class="
-                snapEnabled
-                  ? 'text-violet-300 bg-violet-500/15 border-violet-500/30 shadow-[0_0_8px_rgba(139,92,246,0.15)]'
-                  : 'text-white/50 bg-[#161618] border-white/[0.04] hover:bg-white/8'
-              "
+              :class="['timeline-snap-button', snapEnabled ? 'timeline-snap-button--enabled' : '']"
               @click="snapMenuOpen = !snapMenuOpen"
             >
-              <Magnet :size="12" :class="snapEnabled ? 'text-violet-400' : 'text-white/40'" />
-              <span class="font-medium">Snap</span>
-              <ChevronDown :size="10" :class="snapEnabled ? 'text-violet-400/60' : 'text-white/30'" />
+              <Magnet :size="12" />
+              <span>Snap</span>
+              <ChevronDown :size="10" />
             </button>
             <!-- Snap options dropdown -->
-            <div
-              v-if="snapMenuOpen"
-              class="absolute right-0 top-full mt-1.5 bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 min-w-[190px] z-[100]"
-              @mouseleave="snapMenuOpen = false"
-            >
-              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">
-                Snap Settings
-              </div>
-              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
-                <input type="checkbox" v-model="snapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
-                <span class="text-sm text-white/80">Enable Snapping</span>
+            <div v-if="snapMenuOpen" class="timeline-snap-dropdown" @mouseleave="snapMenuOpen = false">
+              <div class="timeline-snap-dropdown__header">Snap Settings</div>
+              <label class="timeline-snap-dropdown__item">
+                <input type="checkbox" v-model="snapEnabled" class="timeline-snap-dropdown__checkbox" />
+                <span>Enable Snapping</span>
               </label>
-              <div class="h-px bg-white/8 my-1"></div>
-              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Snap To</div>
+              <div class="timeline-snap-dropdown__divider"></div>
+              <div class="timeline-snap-dropdown__header">Snap To</div>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.playhead"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Playhead</span>
+                <span>Playhead</span>
               </label>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.segmentEdges"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Segment Edges</span>
+                <span>Segment Edges</span>
               </label>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.markers"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Markers</span>
+                <span>Markers</span>
               </label>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.grid"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Grid (1s intervals)</span>
+                <span>Grid (1s intervals)</span>
               </label>
-              <div class="h-px bg-white/8 my-1"></div>
-              <div class="px-3 py-1 text-[10px] text-white/40 uppercase tracking-wider font-medium">Behavior</div>
+              <div class="timeline-snap-dropdown__divider"></div>
+              <div class="timeline-snap-dropdown__header">Behavior</div>
               <label
-                class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer"
-                :class="!snapEnabled && 'opacity-40'"
+                class="timeline-snap-dropdown__item"
+                :class="!snapEnabled && 'timeline-snap-dropdown__item--disabled'"
               >
                 <input
                   type="checkbox"
                   v-model="snapPreferences.magnetic"
                   :disabled="!snapEnabled"
-                  class="accent-violet-500 h-3.5 w-3.5 rounded"
+                  class="timeline-snap-dropdown__checkbox"
                 />
-                <span class="text-sm text-white/80">Magnetic Timeline</span>
+                <span>Magnetic Timeline</span>
               </label>
-              <label class="flex items-center gap-2.5 px-3 py-2 hover:bg-white/8 cursor-pointer">
-                <input type="checkbox" v-model="frameSnapEnabled" class="accent-violet-500 h-3.5 w-3.5 rounded" />
-                <span class="text-sm text-white/80">Snap to Frames</span>
+              <label class="timeline-snap-dropdown__item">
+                <input type="checkbox" v-model="frameSnapEnabled" class="timeline-snap-dropdown__checkbox" />
+                <span>Snap to Frames</span>
               </label>
             </div>
           </div>
 
           <!-- Segment Count Badge -->
-          <span
-            v-if="sortedTrimSegments.length > 1"
-            class="text-[11px] text-violet-300 bg-violet-500/15 px-2.5 py-1.5 rounded-lg font-medium border border-violet-500/20"
-          >
+          <span v-if="sortedTrimSegments.length > 1" class="timeline-badge timeline-badge--segments">
             {{ sortedTrimSegments.length }} segments
           </span>
 
           <!-- Duration Badge -->
-          <span
-            class="text-[11px] text-white/60 bg-[#161618] px-2.5 py-1.5 rounded-lg font-mono tabular-nums border border-white/[0.04]"
-          >
+          <span class="timeline-badge timeline-badge--duration">
             {{ formatTime(totalDuration) }}
           </span>
 
           <!-- Zoom Controls Group (far right) -->
-          <div
-            class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04] relative group/zoom"
-          >
+          <div class="timeline-toolbar-group timeline-zoom-group">
             <button
               @click="zoomOut"
               :disabled="zoomLevel <= MIN_ZOOM"
-              class="p-1 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/10 disabled:text-white/15 disabled:cursor-not-allowed"
+              class="timeline-zoom-button"
+              :class="zoomLevel <= MIN_ZOOM ? 'timeline-zoom-button--disabled' : ''"
               title="Zoom out"
             >
               <Minus :size="13" />
             </button>
-            <button
-              @click="zoomMenuOpen = !zoomMenuOpen"
-              class="text-[11px] text-white/70 font-mono tabular-nums min-w-[52px] text-center select-none px-1.5 py-0.5 rounded hover:bg-white/8 transition-colors cursor-pointer"
-              title="Select zoom level"
-            >
+            <button @click="zoomMenuOpen = !zoomMenuOpen" class="timeline-zoom-display" title="Select zoom level">
               {{ getZoomDisplayText() }}
             </button>
 
             <!-- Zoom Presets Dropdown -->
-            <div
-              v-if="zoomMenuOpen"
-              class="absolute top-full right-0 mt-1.5 bg-[#1c1c1e] border border-white/10 rounded-lg shadow-2xl py-1.5 min-w-[150px] z-[100]"
-              @mouseleave="zoomMenuOpen = false"
-            >
-              <div class="px-3 py-1.5 text-[10px] text-white/40 uppercase tracking-wider font-medium">Zoom Presets</div>
+            <div v-if="zoomMenuOpen" class="timeline-zoom-dropdown" @mouseleave="zoomMenuOpen = false">
+              <div class="timeline-zoom-dropdown__header">Zoom Presets</div>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomToFit();
@@ -299,10 +242,10 @@
                 "
               >
                 <span>Fit to Screen</span>
-                <span class="text-white/30 text-xs font-mono">Z</span>
+                <span class="timeline-zoom-dropdown__shortcut">Z</span>
               </button>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 flex items-center justify-between text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomToSelection();
@@ -311,11 +254,11 @@
                 "
               >
                 <span>Fit Selection</span>
-                <span class="text-white/30 text-xs font-mono">⇧Z</span>
+                <span class="timeline-zoom-dropdown__shortcut">⇧Z</span>
               </button>
-              <div class="h-px bg-white/8 my-1"></div>
+              <div class="timeline-zoom-dropdown__divider"></div>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomLevel = 1.0;
@@ -326,7 +269,7 @@
                 <span>100% (Baseline)</span>
               </button>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomLevel = 2.0;
@@ -337,7 +280,7 @@
                 <span>200%</span>
               </button>
               <button
-                class="w-full px-3 py-2 text-left text-sm hover:bg-white/8 text-white/80"
+                class="timeline-zoom-dropdown__item"
                 @click="
                   () => {
                     zoomLevel = 5.0;
@@ -351,7 +294,9 @@
 
             <button
               @click="zoomIn"
-              class="p-1 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/10"
+              :disabled="zoomLevel >= MAX_ZOOM"
+              class="timeline-zoom-button"
+              :class="zoomLevel >= MAX_ZOOM ? 'timeline-zoom-button--disabled' : ''"
               title="Zoom in"
             >
               <Plus :size="13" />
@@ -363,7 +308,7 @@
       <!-- Timeline Tracks Container -->
       <div
         ref="timelineScrollContainer"
-        class="bg-[#0d0d0d] rounded-lg relative overflow-y-auto overflow-x-auto flex-1 min-h-0 scrollbar-thin scrollbar-thumb-[#3a3a3a] scrollbar-track-[#0d0d0d] border border-white/[0.03] flex flex-col"
+        class="timeline-tracks-container"
         :style="{ cursor: getTimelineCursor() }"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeave"
@@ -372,24 +317,13 @@
         @scroll="onTimelineScroll"
       >
         <!-- Marquee Selection Rectangle -->
-        <div
-          v-if="marqueeStyle"
-          class="absolute border-2 border-cyan-500 bg-cyan-500/15 pointer-events-none z-[100] rounded"
-          :style="marqueeStyle"
-        ></div>
+        <div v-if="marqueeStyle" class="timeline-marquee" :style="marqueeStyle"></div>
 
-        <!-- Drag Ghost Element - positioned via direct DOM manipulation for zero-lag dragging -->
+        <!-- Drag Ghost Element - shows cloned content with 1px blue border -->
         <div
           ref="dragGhostRef"
           v-show="dragGhostState?.visible"
-          class="fixed pointer-events-none z-[1000] rounded-md shadow-2xl opacity-90"
-          :class="{
-            'bg-violet-600/80 border-2 border-violet-400': dragGhostState?.color === 'violet',
-            'bg-cyan-600/80 border-2 border-cyan-400': dragGhostState?.color === 'cyan',
-            'bg-emerald-600/80 border-2 border-emerald-400': dragGhostState?.color === 'emerald',
-            'bg-amber-600/80 border-2 border-amber-400': dragGhostState?.color === 'amber',
-            'bg-rose-600/80 border-2 border-rose-400': dragGhostState?.color === 'rose',
-          }"
+          class="fixed pointer-events-none z-[1000] rounded-md border border-blue-500 overflow-hidden opacity-80"
           :style="{
             left: `${dragGhostState?.initialLeft ?? 0}px`,
             top: `${dragGhostState?.initialTop ?? 0}px`,
@@ -397,13 +331,8 @@
             height: `${dragGhostState?.height ?? 36}px`,
             willChange: 'transform',
           }"
-        >
-          <div class="flex items-center justify-center h-full px-2">
-            <span class="text-xs text-white font-medium truncate drop-shadow-md">
-              {{ dragGhostState?.label || '' }}
-            </span>
-          </div>
-        </div>
+          v-html="dragGhostState?.htmlContent || ''"
+        ></div>
         <!-- Horizontal scroller for ruler + tracks -->
         <div class="pb-1 flex-1">
           <!-- Timeline Content Wrapper - handles zoom width -->
@@ -421,14 +350,14 @@
             >
               <!-- Track label spacer - matches track header width -->
               <div
-                class="w-[120px] h-full flex items-center justify-start pl-3 gap-2 flex-shrink-0 sticky left-0 z-[90] bg-gradient-to-b from-[#141416] to-[#0d0d0d] border-r border-white/[0.06]"
+                class="w-[120px] h-full flex items-center justify-start pl-3 gap-2 flex-shrink-0 sticky left-0 z-[90] bg-[#09090A] border-r border-white/[0.06] rounded-tl-lg"
               >
                 <span class="text-[10px] font-medium text-white/50 uppercase tracking-wider">Timeline</span>
               </div>
               <!-- Continuous ruler ticks across full duration -->
               <div
                 ref="rulerContentRef"
-                class="flex-1 relative h-full flex items-center cursor-pointer"
+                class="flex-1 relative h-full flex items-center cursor-pointer timeline-ruler-content"
                 @click="onRulerClick"
               >
                 <div class="absolute inset-0">
@@ -555,21 +484,19 @@
                 'bg-purple-500/10 ring-2 ring-purple-500/40 ring-inset':
                   (isDragging &&
                     dragInfo?.type &&
-                    ['text', 'sticker', 'watermark'].includes(dragInfo.type) &&
+                    ['text', 'sticker'].includes(dragInfo.type) &&
                     dragInfo?.targetLayer === layerGroup.layer) ||
                   (isDraggingSource && dragSourceInfo?.targetTrackIndex === layerGroup.layer),
               }"
             >
-              <div
-                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              >
+              <div class="track-label timeline-track-label">
                 <div class="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center">
                   <span class="text-[10px] font-bold text-purple-400">{{ layerGroup.layer }}</span>
                 </div>
                 <span class="font-medium text-white/60">Layer</span>
               </div>
               <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
 
                 <!-- Extended timeline area indicator (beyond source videos) -->
                 <div
@@ -595,7 +522,7 @@
                     @mousedown="(e) => onSourceMouseDown(e, overlayItem.item)"
                     @click.stop="selectItem('source', overlayItem.item.id)"
                   >
-                    <div class="absolute inset-0 bg-[#161618]"></div>
+                    <div class="timeline-track-content-bg"></div>
                     <span
                       class="relative z-10 text-xs text-cyan-400 font-medium truncate px-1 drop-shadow-sm pointer-events-none"
                     >
@@ -766,65 +693,7 @@
                     </div>
                   </div>
 
-                  <!-- Watermark -->
-                  <div
-                    v-if="overlayItem.type === 'watermark'"
-                    :ref="(el) => setSegmentRef(el, 'watermark', overlayItem.item.id)"
-                    class="clip-segment absolute top-1 bottom-1 rounded-md flex items-center px-2 group"
-                    :class="getSegmentClasses('watermark', overlayItem.item.id)"
-                    :style="
-                      getSegmentStyle(
-                        overlayItem.item.startTime,
-                        overlayItem.item.endTime,
-                        'cyan',
-                        'watermark',
-                        overlayItem.item.id
-                      )
-                    "
-                    @mousedown="(e) => onSegmentMouseDown(e, 'watermark', overlayItem.item.id, overlayItem.item)"
-                    @click.stop="selectItem('watermark', overlayItem.item.id)"
-                  >
-                    <span class="text-xs text-white/90 font-medium truncate drop-shadow-sm pointer-events-none">
-                      Watermark
-                    </span>
-                    <!-- Keyframes -->
-                    <KeyframeMarker
-                      v-for="kf in overlayItem.item.keyframes"
-                      :key="kf.id"
-                      :property="kf.property"
-                      :value="kf.value"
-                      :is-selected="selectedKeyframeId === kf.id"
-                      :style="{ left: `${(kf.time / (overlayItem.item.endTime - overlayItem.item.startTime)) * 100}%` }"
-                      @mousedown.stop="
-                        (e) =>
-                          startKeyframeDrag(
-                            e,
-                            kf,
-                            overlayItem.item.id,
-                            'watermark',
-                            overlayItem.item.endTime - overlayItem.item.startTime
-                          )
-                      "
-                    />
-                    <!-- Left resize handle -->
-                    <div
-                      class="resize-handle absolute -left-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                      @mousedown.stop="
-                        (e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'left', overlayItem.item)
-                      "
-                    >
-                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                    </div>
-                    <!-- Right resize handle -->
-                    <div
-                      class="resize-handle absolute -right-1 top-0 bottom-0 w-2 bg-white/40 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center rounded-full hover:bg-white/60 group-hover:opacity-100 group-hover:pointer-events-auto z-20"
-                      @mousedown.stop="
-                        (e) => onResizeMouseDown(e, 'watermark', overlayItem.item.id, 'right', overlayItem.item)
-                      "
-                    >
-                      <div class="w-1 h-4 bg-white rounded-full shadow-md"></div>
-                    </div>
-                  </div>
+                  <!-- Note: Watermarks are rendered in their own dedicated track below audio -->
                 </template>
               </div>
             </div>
@@ -834,16 +703,14 @@
               v-if="textOverlays.length > 0 && visualOverlayLayers.length === 0"
               class="flex items-center h-11 relative border-b border-white/[0.04]"
             >
-              <div
-                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              >
+              <div class="track-label timeline-track-label">
                 <div class="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
                   <Type :size="11" class="text-amber-400" />
                 </div>
                 <span class="font-medium text-white/60">Text</span>
               </div>
               <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
                 <div
                   v-for="overlay in textOverlays"
                   :key="overlay.id"
@@ -888,16 +755,14 @@
             </div>
 
             <div v-if="effects.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
-              <div
-                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              >
+              <div class="track-label timeline-track-label">
                 <div class="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
                   <Sparkles :size="11" class="text-cyan-400" />
                 </div>
                 <span class="font-medium text-white/60">Effects</span>
               </div>
               <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
                 <div
                   v-for="effect in effects"
                   :key="effect.id"
@@ -932,16 +797,14 @@
             </div>
 
             <div v-if="filterSegments.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
-              <div
-                class="track-label w-[120px] h-full pl-3 flex items-center gap-2 text-xs sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              >
+              <div class="track-label timeline-track-label">
                 <div class="w-5 h-5 rounded bg-sky-500/20 flex items-center justify-center">
                   <Palette :size="11" class="text-sky-400" />
                 </div>
                 <span class="font-medium text-white/60">Filters</span>
               </div>
               <div class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
                 <div
                   v-for="filterSeg in filterSegments"
                   :key="filterSeg.id"
@@ -978,9 +841,7 @@
             <!-- Source Track (Primary Video - Editor Mode) -->
             <template v-if="editorMode">
               <div class="flex items-center h-[72px] relative border-b border-white/[0.04]">
-                <div
-                  class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
-                >
+                <div class="track-label timeline-track-label timeline-track-label--overlay">
                   <!-- Track type icon and label -->
                   <div class="flex items-center gap-2 mb-1.5">
                     <div class="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
@@ -998,15 +859,6 @@
                     >
                       <Lock v-if="videoTrackState.isLocked" :size="12" />
                       <Unlock v-else :size="12" />
-                    </button>
-                    <button
-                      @click.stop="toggleVideoTrackState('isHidden')"
-                      class="p-1 rounded hover:bg-white/10 transition-colors"
-                      :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
-                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isHidden }"
-                    >
-                      <EyeOff v-if="videoTrackState.isHidden" :size="12" />
-                      <Eye v-else :size="12" />
                     </button>
                     <button
                       @click.stop="toggleVideoTrackState('isMuted')"
@@ -1028,12 +880,12 @@
                   @drop.prevent="onTimelineDrop"
                 >
                   <!-- Background - split into source area and extended area -->
-                  <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                  <div class="timeline-track-label-bg"></div>
 
                   <!-- Extended timeline area indicator (beyond source videos) -->
                   <div
                     v-if="sourcesEndTime > 0 && totalDuration > sourcesEndTime"
-                    class="absolute top-0 bottom-0 bg-gradient-to-r from-transparent via-white/[0.02] to-white/[0.04] pointer-events-none"
+                    class="absolute top-0 bottom-0 pointer-events-none"
                     :style="{
                       left: `${(sourcesEndTime / totalDuration) * 100}%`,
                       right: '0',
@@ -1052,12 +904,12 @@
                     <span class="text-xs text-white/30">Drop sources here</span>
                   </div>
 
-                  <!-- Ghost preview showing original position during drag -->
-                  <div
+                  <!-- Ghost preview showing original position during drag (hidden - original clip stays visible) -->
+                  <!-- <div
                     v-if="dragGhostState?.visible && dragGhostState?.type === 'source' && isDraggingSource"
-                    class="absolute top-0 bottom-0 rounded-md border-2 border-dashed border-cyan-500/40 bg-cyan-500/10 pointer-events-none z-10"
+                    class="absolute top-0 bottom-0 rounded-md border border-blue-500 bg-transparent pointer-events-none z-10"
                     :style="getGhostPreviewStyle('source')"
-                  ></div>
+                  ></div> -->
 
                   <!-- Primary video source segments -->
                   <div
@@ -1095,7 +947,7 @@
                     @contextmenu.prevent="onSourceContextMenu($event, source)"
                   >
                     <!-- Video thumbnails background (filmstrip style) -->
-                    <div class="absolute inset-0 bg-[#161618] flex overflow-hidden">
+                    <div class="timeline-track-content-bg timeline-track-content-bg--flex">
                       <!-- Loading placeholder skeleton -->
                       <div v-if="!source.source_thumbnail" class="absolute inset-0 flex items-center justify-center">
                         <div class="flex gap-1">
@@ -1147,9 +999,7 @@
             <!-- Single Video Track (Clip Mode) -->
             <template v-else>
               <div class="flex items-center h-[72px] relative border-b border-white/[0.04]">
-                <div
-                  class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-violet-500"
-                >
+                <div class="track-label timeline-track-label timeline-track-label--overlay">
                   <!-- Track type icon and label -->
                   <div class="flex items-center gap-2 mb-1.5">
                     <div class="w-5 h-5 rounded bg-violet-500/20 flex items-center justify-center">
@@ -1169,15 +1019,6 @@
                       <Unlock v-else :size="12" />
                     </button>
                     <button
-                      @click.stop="toggleVideoTrackState('isHidden')"
-                      class="p-1 rounded hover:bg-white/10 transition-colors"
-                      :title="videoTrackState.isHidden ? 'Show' : 'Hide'"
-                      :class="{ 'text-violet-400 bg-violet-500/15': videoTrackState.isHidden }"
-                    >
-                      <EyeOff v-if="videoTrackState.isHidden" :size="12" />
-                      <Eye v-else :size="12" />
-                    </button>
-                    <button
                       @click.stop="toggleVideoTrackState('isMuted')"
                       class="p-1 rounded hover:bg-white/10 transition-colors"
                       :title="videoTrackState.isMuted ? 'Unmute' : 'Mute'"
@@ -1190,7 +1031,7 @@
                 </div>
                 <div ref="videoTrackContentRef" class="flex-1 h-full relative z-[10]" @click="onTrackContentClick">
                   <!-- Background -->
-                  <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                  <div class="timeline-track-label-bg"></div>
 
                   <!-- Clip Mode: Trim Segments -->
                   <template v-for="(segmentLayout, _index) in segmentLayouts" :key="segmentLayout.segment.id">
@@ -1222,13 +1063,8 @@
                     >
                       <div class="absolute inset-0 bg-black flex overflow-hidden">
                         <div class="absolute inset-0 bg-gradient-to-r from-violet-900/20 to-indigo-900/10"></div>
-                        <div class="absolute inset-0 bg-[#161618]"></div>
+                        <div class="timeline-track-content-bg"></div>
                       </div>
-                      <canvas
-                        :ref="(el) => setWaveformCanvasRef(el, segmentLayout.segment.id)"
-                        class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
-                        style="mix-blend-mode: screen; z-index: 5"
-                      ></canvas>
                     </div>
                   </template>
                 </div>
@@ -1249,9 +1085,7 @@
                 'opacity-40': !track.isHidden && (track.isMuted || (hasAnySoloedAudioTrack && !track.isSolo)),
               }"
             >
-              <div
-                class="track-label w-[120px] h-full pl-3 pr-2 flex flex-col justify-center text-[11px] sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06] border-l-2 border-l-emerald-500"
-              >
+              <div class="track-label timeline-track-label timeline-track-label--watermark">
                 <!-- Hidden view: single row with icon, name, and show button -->
                 <div v-if="track.isHidden" class="flex items-center gap-1.5">
                   <div class="w-4 h-4 rounded bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
@@ -1333,7 +1167,7 @@
                 class="flex-1 h-full relative z-[10]"
                 @click="onTrackContentClick"
               >
-                <div class="absolute inset-0 bg-[#111111] cursor-pointer"></div>
+                <div class="timeline-track-label-bg"></div>
 
                 <!-- Hidden state: show simplified bar -->
                 <div v-if="track.isHidden" class="absolute inset-x-0 top-1 bottom-1 pointer-events-none">
@@ -1470,22 +1304,48 @@
               </div>
             </div>
 
+            <!-- Watermark Track (dedicated, non-interactive, below audio) -->
+            <div v-if="watermarks.length > 0" class="flex items-center h-11 relative border-b border-white/[0.04]">
+              <div class="track-label timeline-track-label">
+                <div class="w-5 h-5 rounded bg-cyan-500/20 flex items-center justify-center">
+                  <Droplet :size="11" class="text-cyan-400" />
+                </div>
+                <span class="font-medium text-white/60">Watermark</span>
+              </div>
+              <div class="flex-1 h-full relative z-[10]">
+                <div class="timeline-track-label-bg"></div>
+                <!-- Watermark segments (non-interactive) -->
+                <div
+                  v-for="wm in watermarks"
+                  :key="wm.id"
+                  class="absolute top-1 bottom-1 rounded-md flex items-center px-2 pointer-events-none"
+                  :style="{
+                    left: `${(wm.startTime / totalDuration) * 100}%`,
+                    width: `${((wm.endTime - wm.startTime) / totalDuration) * 100}%`,
+                    backgroundColor: 'rgba(6, 182, 212, 0.3)',
+                    border: '1px solid rgba(6, 182, 212, 0.5)',
+                  }"
+                >
+                  <Droplet :size="12" class="text-cyan-400 mr-1.5 flex-shrink-0" />
+                  <span class="text-xs text-cyan-300 font-medium truncate">Watermark</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Placeholder tracks below -->
             <div
               v-for="n in PLACEHOLDER_BOTTOM_COUNT"
               :key="'placeholder-bottom-' + n"
               class="flex items-center h-8 relative"
             >
-              <div
-                class="track-label w-[120px] h-full sticky left-0 z-[70] bg-[#0e0e10] flex-shrink-0 border-r border-white/[0.06]"
-              ></div>
+              <div class="track-label timeline-track-label"></div>
               <div class="flex-1 h-full relative z-[10] bg-[#111111]"></div>
             </div>
 
             <!-- Playhead Line (CapCut style - triangular head with gradient line) -->
             <div
               v-if="totalDuration > 0"
-              class="absolute top-0 bottom-0 z-[75] cursor-ew-resize group playhead-line flex flex-col items-center"
+              class="absolute top-0 bottom-0 z-[85] cursor-ew-resize group playhead-line flex flex-col items-center"
               :class="{
                 'cursor-grabbing': isDraggingPlayhead,
                 'playhead-dragging': isDraggingPlayhead,
@@ -1881,13 +1741,8 @@
   import { useTimelineTools, type TimelineTool } from '@/composables/useTimelineTools';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
   import { useToast } from '@/composables/useToast';
-  import { waveformService, useWaveform, type WaveformPeak, type AudioData } from '@/services/waveformService';
-  import {
-    renderWaveform,
-    renderAudioTrackWaveform,
-    WAVEFORM_COLORS,
-    createThrottledRenderer,
-  } from '@/utils/waveformRenderer';
+  import { waveformService, type WaveformPeak, type AudioData } from '@/services/waveformService';
+  import { renderAudioTrackWaveform } from '@/utils/waveformRenderer';
   import type { Track, Keyframe, ItemType } from '@/types/timeline-model';
   import TimelineHoverLine from '@/components/TimelineHoverLine.vue';
   import KeyframeMarker from './KeyframeMarker.vue';
@@ -2008,6 +1863,8 @@
       }>;
       // Video track mute state from parent
       isVideoMuted?: boolean;
+      // Video track lock state from parent
+      isVideoLocked?: boolean;
     }>(),
     {
       audioGainDb: 0,
@@ -2029,6 +1886,7 @@
       clipTransitions: () => [],
       clipEffects: () => [],
       isVideoMuted: false,
+      isVideoLocked: false,
     }
   );
 
@@ -2086,7 +1944,6 @@
     ): void;
     (e: 'toggleVideoMute', id: string): void;
     (e: 'toggleVideoLock', id: string): void;
-    (e: 'toggleVideoHidden', id: string): void;
     (e: 'toggleAudioMute', id: string): void;
     (e: 'toggleAudioSolo', id: string): void;
     (e: 'toggleAudioLock', id: string): void;
@@ -2253,7 +2110,6 @@
   const rulerContentRef = ref<HTMLElement | null>(null);
   const videoTrackContentRef = ref<HTMLElement | null>(null);
   const segmentRefs = ref<Map<string, HTMLElement>>(new Map());
-  const waveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
   const audioWaveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
   const audioSegmentCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map()); // key: `${trackId}-${segmentIndex}`
   // Video source waveform canvas refs for editor mode
@@ -2265,7 +2121,6 @@
   const videoTrackState = reactive({
     isMuted: false,
     isLocked: false,
-    isHidden: false,
   });
 
   // Sync videoTrackState.isMuted with prop from parent
@@ -2277,19 +2132,31 @@
     { immediate: true }
   );
 
+  // Sync videoTrackState.isLocked with prop from parent
+  watch(
+    () => props.isVideoLocked,
+    (newValue) => {
+      videoTrackState.isLocked = newValue;
+    },
+    { immediate: true }
+  );
+
   function toggleVideoTrackState(prop: keyof typeof videoTrackState) {
     // Emit event to parent for actual functionality (parent will update prop)
     if (prop === 'isMuted') {
       emit('toggleVideoMute', 'main');
-      return; // Don't toggle locally - parent will update via prop
+      return;
     }
-    // For non-mute properties, toggle locally
-    videoTrackState[prop] = !videoTrackState[prop];
+    if (prop === 'isLocked') {
+      emit('toggleVideoLock', 'main');
+      return;
+    }
   }
 
   // Zoom system: 0% = fit-to-width (full video visible), positive % = zoomed in
   // MIN_ZOOM represents the fit-to-width baseline (calculated dynamically)
   const MIN_ZOOM = ref(1.0); // Will be calculated based on viewport width
+  const MAX_ZOOM = 100; // Maximum zoom level (100x from baseline)
   const baselineZoom = ref(1.0); // The fit-to-width zoom level (1.0 = 100% of container)
   const zoomLevel = ref(1.0); // Start at baseline (fit-to-width)
   const zoomMenuOpen = ref(false);
@@ -2308,7 +2175,7 @@
 
   function zoomIn() {
     const step = getZoomStep();
-    zoomLevel.value = zoomLevel.value + step;
+    zoomLevel.value = Math.min(MAX_ZOOM, zoomLevel.value + step);
     ticksZoomLevel.value = zoomLevel.value; // Sync immediately for button clicks
     nextTick(updateVisibleTimeRange);
   }
@@ -2462,7 +2329,10 @@
     originalEndTime: number;
     originalTrackIndex: number;
     targetTrackIndex: number;
-    currentDeltaX?: number; // Current snap-adjusted delta for final position calculation
+    trackWidth: number; // Track content width at drag start for consistent calculations
+    currentDeltaX?: number; // Current snap-adjusted delta for visual ghost transform
+    computedStartTime?: number; // Final computed start time (avoids pixel-to-time conversion errors)
+    computedEndTime?: number; // Final computed end time (avoids pixel-to-time conversion errors)
   } | null>(null);
 
   // Source context menu state
@@ -2658,6 +2528,7 @@
     height: number;
     label: string;
     color: string;
+    htmlContent?: string;
   } | null>(null);
 
   // Ripple Edit State
@@ -2959,10 +2830,17 @@
   const debouncedRenderAllWaveforms = debounce(() => {
     // Don't render if still in an active interaction
     if (isZooming.value || isDragging.value || isResizing.value) return;
-    renderAllWaveforms();
     renderAllAudioWaveforms();
     renderAllSourceWaveforms();
   }, 100);
+
+  // Re-render waveforms when video track mute state changes (to update dimming)
+  watch(
+    () => videoTrackState.isMuted,
+    () => {
+      renderAllSourceWaveforms();
+    }
+  );
 
   // Virtual scrolling state - only render visible track portions
   const virtualScrollState = ref({
@@ -3125,7 +3003,7 @@
 
   // Track colors state (local UI state)
   const trackColors = ref<Map<string, string>>(new Map()); // Map of "trackType_trackId" -> color hex
-  const DEFAULT_TRACK_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#f43f5e'];
+  const DEFAULT_TRACK_COLORS = ['#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#f43f5e'];
 
   /**
    * Get the height for a specific track
@@ -3298,6 +3176,7 @@
 
   // Snap configuration
   const SNAP_THRESHOLD_PX = 5; // Pixels distance to trigger snapping
+  const SNAP_MAX_TIME_THRESHOLD = 0.15; // Maximum time threshold (seconds) to prevent snap from triggering too far at low zoom
   const snapEnabled = ref(true);
   const snapMenuOpen = ref(false);
   const snapPreferences = ref({
@@ -3310,6 +3189,7 @@
 
   // Magnetic timeline threshold (larger than regular snap for attraction effect)
   const MAGNETIC_THRESHOLD_PX = 12; // Pixels distance for magnetic attraction
+  const MAGNETIC_MAX_TIME_THRESHOLD = 0.3; // Maximum time threshold for magnetic snap (seconds)
 
   // Snap state for visual indicator
   const activeSnapTime = ref<number | null>(null); // Time position where snap is occurring
@@ -3325,16 +3205,6 @@
   let lastSyncTime = 0; // performance.now() when we last synced with actual video time
   let lastSyncPosition = 0; // playhead position (0-1) at sync time
   let lastKnownPosition = 0; // For seek detection
-
-  // Audio waveform - use new waveform service
-  const mainWaveform = useWaveform();
-  const waveformData = computed(() => mainWaveform.audioData.value);
-  const isWaveformLoaded = computed(() => mainWaveform.isLoaded.value);
-
-  // Load waveform from video using new service
-  async function loadWaveformFromVideo(videoSrc: string): Promise<void> {
-    await mainWaveform.load(videoSrc);
-  }
 
   // Resize observer for waveform canvases
   let resizeObserver: ResizeObserver | null = null;
@@ -3378,41 +3248,34 @@
   }
 
   // Color mappings - Enhanced gradients for CapCut style
-  const colorMap: Record<string, { bg: string; border: string; glow: string }> = {
+  const colorMap: Record<string, { bg: string; border: string }> = {
     violet: {
-      bg: 'rgba(139, 92, 246, 0.35), rgba(99, 102, 241, 0.45)',
-      border: 'rgba(139, 92, 246, 0.7)',
-      glow: 'rgba(139, 92, 246, 0.3)',
+      bg: 'rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.45)',
+      border: 'rgba(14, 165, 233, 0.7)',
     },
     emerald: {
       bg: 'rgba(16, 185, 129, 0.35), rgba(20, 184, 166, 0.45)',
       border: 'rgba(16, 185, 129, 0.7)',
-      glow: 'rgba(16, 185, 129, 0.3)',
     },
     amber: {
       bg: 'rgba(245, 158, 11, 0.35), rgba(251, 146, 60, 0.45)',
       border: 'rgba(245, 158, 11, 0.7)',
-      glow: 'rgba(245, 158, 11, 0.3)',
     },
     pink: {
       bg: 'rgba(236, 72, 153, 0.35), rgba(244, 114, 182, 0.45)',
       border: 'rgba(236, 72, 153, 0.7)',
-      glow: 'rgba(236, 72, 153, 0.3)',
     },
     cyan: {
       bg: 'rgba(6, 182, 212, 0.35), rgba(34, 211, 238, 0.45)',
       border: 'rgba(6, 182, 212, 0.7)',
-      glow: 'rgba(6, 182, 212, 0.3)',
     },
     rose: {
       bg: 'rgba(244, 63, 94, 0.35), rgba(251, 113, 133, 0.45)',
       border: 'rgba(244, 63, 94, 0.7)',
-      glow: 'rgba(244, 63, 94, 0.3)',
     },
     sky: {
       bg: 'rgba(14, 165, 233, 0.35), rgba(56, 189, 248, 0.45)',
       border: 'rgba(14, 165, 233, 0.7)',
-      glow: 'rgba(14, 165, 233, 0.3)',
     },
   };
 
@@ -3530,9 +3393,10 @@
   });
 
   // Group ALL visual content by layer for unified layer display above Source
-  // Layers can contain: video sources (track_index > 0), text, stickers, watermarks
+  // Layers can contain: video sources (track_index > 0), text, stickers
+  // Note: Watermarks have their own dedicated non-interactive track below audio
   interface LayerItem {
-    type: 'source' | 'text' | 'sticker' | 'watermark';
+    type: 'source' | 'text' | 'sticker';
     item: any;
   }
 
@@ -3549,21 +3413,21 @@
         .sort((a, b) => b.orderIndex - a.orderIndex) // Highest layer first (render on top)
         .map((track) => ({
           layer: track.orderIndex - 1, // Map Track 1 to Layer 0
-          items: track.items.map((tItem) => {
-            const baseItem = tItem.originalData || {};
-            // Map unified TimelineItem back to component-specific item structure
-            // This handles the bridge between snake_case DB records and camelCase props used in template
-            let type: LayerItem['type'] = 'source';
-            const item: any = { ...baseItem };
-            item.keyframes = tItem.keyframes;
+          items: track.items
+            .map((tItem) => {
+              const baseItem = tItem.originalData || {};
+              // Map unified TimelineItem back to component-specific item structure
+              // This handles the bridge between snake_case DB records and camelCase props used in template
+              let type: LayerItem['type'] = 'source';
+              const item: any = { ...baseItem };
+              item.keyframes = tItem.keyframes;
 
-            if (tItem.type === 'video') {
-              // Could be source or watermark
-              if ('watermark_id' in baseItem) {
-                type = 'watermark';
-                item.startTime = tItem.startTime;
-                item.endTime = tItem.startTime + tItem.duration;
-              } else {
+              if (tItem.type === 'video') {
+                // Video sources only (watermarks have their own dedicated track)
+                if ('watermark_id' in baseItem) {
+                  // Skip watermarks - they're handled in their own track
+                  return null;
+                }
                 type = 'source';
                 // Sources use snake_case start_time which is already in baseItem
                 // Also map to camelCase for generic handler compatibility
@@ -3571,23 +3435,27 @@
                 item.endTime = tItem.startTime + tItem.duration;
                 item.trimStart = tItem.trimStart;
                 item.trimEnd = tItem.trimEnd;
+              } else if (tItem.type === 'text') {
+                type = 'text';
+                item.startTime = tItem.startTime;
+                item.endTime = tItem.startTime + tItem.duration;
+                item.text = baseItem.text;
+              } else if (tItem.type === 'sticker') {
+                type = 'sticker';
+                item.startTime = tItem.startTime;
+                item.endTime = tItem.startTime + tItem.duration;
+                item.stickerPath = baseItem.sticker_path;
+                item.stickerType = baseItem.sticker_type;
+              } else if (tItem.type === 'watermark') {
+                // Skip watermarks - they have their own dedicated track
+                return null;
               }
-            } else if (tItem.type === 'text') {
-              type = 'text';
-              item.startTime = tItem.startTime;
-              item.endTime = tItem.startTime + tItem.duration;
-              item.text = baseItem.text;
-            } else if (tItem.type === 'sticker') {
-              type = 'sticker';
-              item.startTime = tItem.startTime;
-              item.endTime = tItem.startTime + tItem.duration;
-              item.stickerPath = baseItem.sticker_path;
-              item.stickerType = baseItem.sticker_type;
-            }
 
-            return { type, item };
-          }),
-        }));
+              return { type, item };
+            })
+            .filter((item): item is LayerItem => item !== null),
+        }))
+        .filter((layerGroup) => layerGroup.items.length > 0); // Remove empty layers
     }
 
     // Fallback: Legacy / Manual Layer construction
@@ -3621,12 +3489,7 @@
       layerMap.get(layer)!.push({ type: 'sticker', item });
     });
 
-    // Add watermarks
-    props.watermarks.forEach((item) => {
-      const layer = item.layer ?? 0;
-      if (!layerMap.has(layer)) layerMap.set(layer, []);
-      layerMap.get(layer)!.push({ type: 'watermark', item });
-    });
+    // Note: Watermarks are NOT added to visualLayers - they have their own dedicated track below audio
 
     // Also ensure target layer exists during drag (for visual feedback)
     // Access the full dragSourceInfo to ensure Vue tracks it reactively
@@ -4053,12 +3916,6 @@
     }
   }
 
-  function setWaveformCanvasRef(el: any, segmentId: string) {
-    if (el) {
-      waveformCanvasRefs.value.set(segmentId, el as HTMLCanvasElement);
-    }
-  }
-
   function _setAudioWaveformCanvasRef(el: any, trackId: string) {
     if (el) {
       audioWaveformCanvasRefs.value.set(trackId, el as HTMLCanvasElement);
@@ -4099,7 +3956,7 @@
       return { display: 'none' };
     }
 
-    const duration = props.editorMode ? props.duration : totalDuration.value;
+    const duration = totalDuration.value || props.duration || 300;
     if (duration <= 0) return { display: 'none' };
 
     const left = (originalStartTime / duration) * 100;
@@ -4274,7 +4131,6 @@
       borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
       borderRadius: '6px',
-      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
       opacity: isDraggingThis ? '0' : '1',
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
@@ -4409,7 +4265,6 @@
       borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
       borderRadius: '6px',
-      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
       opacity: isDraggingThis ? '0' : '1',
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
@@ -4442,7 +4297,6 @@
       borderWidth: isSelected ? '2px' : '1px',
       borderStyle: 'solid',
       borderRadius: '6px',
-      boxShadow: isSelected ? `0 0 12px ${colors.glow}` : 'none',
       opacity: isDraggingThis ? '0' : '1',
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
@@ -4467,11 +4321,13 @@
   }
 
   function getTrackContentWidth(): number {
-    if (rulerContentRef.value) {
-      return rulerContentRef.value.clientWidth;
-    }
+    // Prefer videoTrackContentRef for consistency with drag calculations
+    // This ensures snap threshold calculations use the same width as drag position calculations
     if (videoTrackContentRef.value) {
       return videoTrackContentRef.value.getBoundingClientRect().width;
+    }
+    if (rulerContentRef.value) {
+      return rulerContentRef.value.clientWidth;
     }
     if (contentWrapperRef.value) {
       return contentWrapperRef.value.getBoundingClientRect().width - 64 - 16;
@@ -4643,17 +4499,20 @@
 
   /**
    * Convert time to pixel position for snap distance calculation
+   * IMPORTANT: Must use same duration formula as getVideoSourceStyle for consistent snap behavior
    */
   function timeToPixelPosition(time: number): number {
     const trackWidth = getTrackContentWidth();
-    const duration = props.editorMode ? props.duration : totalDuration.value;
+    // Use same duration formula as visual positioning (getVideoSourceStyle line 5711)
+    const duration = totalDuration.value || props.duration || 300;
     if (duration <= 0) return 0;
     return (time / duration) * trackWidth;
   }
 
   /**
    * Check if a time should snap to any target and return the snapped time
-   * Uses magnetic threshold (larger) when magnetic mode is enabled for attraction effect
+   * Uses both pixel-based threshold (for visual consistency) and time-based threshold (to prevent
+   * snap from triggering too far away at low zoom levels)
    */
   function applySnapToTime(targetTime: number, excludeId?: string): SnapResult {
     if (!snapEnabled.value) {
@@ -4661,21 +4520,31 @@
     }
 
     const targets = getSnapTargets(excludeId);
-    const targetPixel = timeToPixelPosition(targetTime);
 
     // Use magnetic threshold if enabled, otherwise use regular snap threshold
-    const threshold = snapPreferences.value.magnetic ? MAGNETIC_THRESHOLD_PX : SNAP_THRESHOLD_PX;
+    const pixelThreshold = snapPreferences.value.magnetic ? MAGNETIC_THRESHOLD_PX : SNAP_THRESHOLD_PX;
+    // Also enforce a maximum time threshold to prevent snap from triggering too far at low zoom
+    const maxTimeThreshold = snapPreferences.value.magnetic ? MAGNETIC_MAX_TIME_THRESHOLD : SNAP_MAX_TIME_THRESHOLD;
 
     let closestTarget: SnapTarget | null = null;
-    let closestDistance = Infinity;
+    let closestTimeDistance = Infinity;
 
     for (const target of targets) {
-      const targetTimePixel = timeToPixelPosition(target.time);
-      const distance = Math.abs(targetPixel - targetTimePixel);
+      // Calculate time-based distance directly (more reliable than pixel conversion)
+      const timeDistance = Math.abs(targetTime - target.time);
 
-      if (distance <= threshold && distance < closestDistance) {
+      // Also check pixel distance for visual consistency at high zoom
+      const targetPixel = timeToPixelPosition(targetTime);
+      const targetTimePixel = timeToPixelPosition(target.time);
+      const pixelDistance = Math.abs(targetPixel - targetTimePixel);
+
+      // Snap only if within BOTH thresholds (pixel threshold for visual, time threshold for max range)
+      const withinPixelThreshold = pixelDistance <= pixelThreshold;
+      const withinTimeThreshold = timeDistance <= maxTimeThreshold;
+
+      if (withinPixelThreshold && withinTimeThreshold && timeDistance < closestTimeDistance) {
         closestTarget = target;
-        closestDistance = distance;
+        closestTimeDistance = timeDistance;
       }
     }
 
@@ -5816,8 +5685,8 @@
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
-      borderColor: isSelected ? '#06b6d4' : 'transparent', // Cyan-500
-      opacity: isDraggingThis ? '0' : '1',
+      borderColor: isDraggingThis ? '#3b82f6' : isSelected ? '#06b6d4' : 'transparent', // Blue when dragging, Cyan when selected
+      borderWidth: isDraggingThis ? '1px' : undefined, // 1px border when dragging
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
@@ -5874,6 +5743,9 @@
     const targetEl = e.currentTarget as HTMLElement;
     const rect = targetEl.getBoundingClientRect();
 
+    // Clone the original element's content for the ghost
+    const clonedHtml = targetEl.innerHTML;
+
     // Initialize ghost state and position
     dragGhostState.value = {
       visible: true,
@@ -5885,6 +5757,7 @@
       height: rect.height,
       label: source.source_name || 'Video',
       color: 'cyan',
+      htmlContent: clonedHtml,
     };
 
     // Reset ghost transform
@@ -5893,6 +5766,10 @@
     }
 
     isDraggingSource.value = true;
+
+    // Get track content width at drag start for consistent calculations throughout drag
+    const trackWidth = videoTrackContentRef.value?.getBoundingClientRect().width ?? 0;
+
     dragSourceInfo.value = {
       sourceId: source.id,
       startX: e.clientX,
@@ -5901,6 +5778,7 @@
       originalEndTime: source.end_time,
       originalTrackIndex: source.track_index ?? 0,
       targetTrackIndex: source.track_index ?? 0,
+      trackWidth, // Store width at drag start for consistent calculations
     };
 
     document.addEventListener('mousemove', onSourceDragMove);
@@ -5910,10 +5788,19 @@
   function onSourceDragMove(e: MouseEvent) {
     if (!isDraggingSource.value || !dragSourceInfo.value || !videoTrackContentRef.value) return;
 
+    // Use stored trackWidth for consistent calculations throughout drag
+    const trackWidth = dragSourceInfo.value.trackWidth;
+    if (trackWidth <= 0) return;
+
+    // Use same duration formula as visual positioning (getVideoSourceStyle) for accurate snap calculations
+    const timelineDuration = totalDuration.value || props.duration || 300;
+    if (timelineDuration <= 0) return;
+
+    // Get rect only for layer detection (Y position), not for width calculations
     const rect = videoTrackContentRef.value.getBoundingClientRect();
     const deltaX = e.clientX - dragSourceInfo.value.startX;
     const deltaY = e.clientY - dragSourceInfo.value.startY;
-    const deltaTime = (deltaX / rect.width) * props.duration;
+    const deltaTime = (deltaX / trackWidth) * timelineDuration;
 
     // Detect which layer the mouse is currently over by checking all layer elements
     let targetTrackIndex = dragSourceInfo.value.originalTrackIndex;
@@ -5955,18 +5842,18 @@
       targetTrackIndex,
     };
 
-    const duration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
+    const clipDuration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
     let newStartTime = dragSourceInfo.value.originalStartTime + deltaTime;
-    let newEndTime = newStartTime + duration;
+    let newEndTime = newStartTime + clipDuration;
 
     // Clamp to timeline bounds
     if (newStartTime < 0) {
       newStartTime = 0;
-      newEndTime = duration;
+      newEndTime = clipDuration;
     }
-    if (newEndTime > props.duration) {
-      newEndTime = props.duration;
-      newStartTime = props.duration - duration;
+    if (newEndTime > timelineDuration) {
+      newEndTime = timelineDuration;
+      newStartTime = timelineDuration - clipDuration;
     }
 
     // Apply snapping for video sources - optional snap within threshold for all tracks
@@ -5982,12 +5869,14 @@
       activeSnapTrackType.value = null;
     }
 
-    // Calculate snap-adjusted deltaX for visual transform
+    // Calculate snap-adjusted deltaX for visual transform using stored trackWidth and timelineDuration
     const snapDelta = newStartTime - dragSourceInfo.value.originalStartTime;
-    const snapAdjustedDeltaX = (snapDelta / props.duration) * rect.width;
+    const snapAdjustedDeltaX = (snapDelta / timelineDuration) * trackWidth;
 
-    // Store the snap-adjusted delta for onSourceDragEnd
+    // Store the snap-adjusted delta for visual ghost AND the computed times for accurate final position
     dragSourceInfo.value.currentDeltaX = snapAdjustedDeltaX;
+    dragSourceInfo.value.computedStartTime = newStartTime;
+    dragSourceInfo.value.computedEndTime = newEndTime;
 
     // DIRECT DOM MANIPULATION - bypasses Vue reactivity completely for zero-lag dragging
     // Only horizontal movement - segments stay within their track
@@ -6003,23 +5892,10 @@
 
     // Commit the final position to database only on drag end
     if (dragSourceInfo.value && videoTrackContentRef.value) {
-      const rect = videoTrackContentRef.value.getBoundingClientRect();
-      const deltaX = dragSourceInfo.value.currentDeltaX ?? 0;
-      const deltaTime = (deltaX / rect.width) * props.duration;
-      const duration = dragSourceInfo.value.originalEndTime - dragSourceInfo.value.originalStartTime;
-
-      let finalStartTime = dragSourceInfo.value.originalStartTime + deltaTime;
-      let finalEndTime = finalStartTime + duration;
-
-      // Clamp to timeline bounds
-      if (finalStartTime < 0) {
-        finalStartTime = 0;
-        finalEndTime = duration;
-      }
-      if (finalEndTime > props.duration) {
-        finalEndTime = props.duration;
-        finalStartTime = props.duration - duration;
-      }
+      // Use the computed times stored during drag - avoids pixel-to-time conversion errors
+      // Falls back to original position if no drag movement occurred
+      const finalStartTime = dragSourceInfo.value.computedStartTime ?? dragSourceInfo.value.originalStartTime;
+      const finalEndTime = dragSourceInfo.value.computedEndTime ?? dragSourceInfo.value.originalEndTime;
 
       // Set dragPreview to final position BEFORE emitting and clearing isDraggingSource
       // This ensures the segment renders at the new position immediately while props update
@@ -6658,7 +6534,7 @@
     e.stopPropagation();
 
     const trackContentWidth = getTrackContentWidth();
-    const originalLayer = ['text', 'sticker', 'watermark'].includes(type) ? (item.layer ?? 0) : undefined;
+    const originalLayer = ['text', 'sticker'].includes(type) ? (item.layer ?? 0) : undefined;
     const originalTrackIndex = type === 'source' ? (item.track_index ?? 0) : undefined;
 
     // Capture the clicked element's position for ghost
@@ -6826,7 +6702,7 @@
     }
 
     // For visual overlays, detect which layer the mouse is over
-    if (['text', 'sticker', 'watermark'].includes(dragInfo.value.type) && dragInfo.value.originalLayer !== undefined) {
+    if (['text', 'sticker'].includes(dragInfo.value.type) && dragInfo.value.originalLayer !== undefined) {
       const TRACK_HEIGHT = 40; // 10 * 4px (h-10 in Tailwind)
       const trackOffset = Math.round(deltaY / TRACK_HEIGHT);
       const targetLayer = dragInfo.value.originalLayer - trackOffset; // Negative because layers are rendered top-to-bottom
@@ -7093,7 +6969,7 @@
             endTime: newEndTime,
             trackOrder: dragInfo.value.targetTrackOrder,
           });
-        } else if (['text', 'sticker', 'watermark'].includes(type)) {
+        } else if (['text', 'sticker'].includes(type)) {
           // Visual overlays always use direct update to preserve layer property
           const currentLayer = dragInfo.value.targetLayer ?? dragInfo.value.originalLayer ?? 0;
           const updateData: any = {
@@ -7563,68 +7439,6 @@
     }
   }
 
-  // Waveform rendering - uses new waveformService for on-demand peak calculation
-  function renderWaveformForSegment(segmentId: string, segment: TrimSegment) {
-    const canvas = waveformCanvasRefs.value.get(segmentId);
-    if (!canvas || !props.videoSrc) return;
-
-    // Check if waveform data is loaded
-    if (!waveformService.isLoaded(props.videoSrc)) return;
-
-    try {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-
-      // Segment times are relative to the clip (0 to duration)
-      // Convert to absolute source video times for waveform extraction
-      const absoluteStartTime = props.clipStart + segment.startTime;
-      const absoluteEndTime = props.clipStart + segment.endTime;
-      const segmentDuration = segment.endTime - segment.startTime;
-
-      // Calculate playhead position within segment
-      const isWithinSegment = props.currentTime >= segment.startTime && props.currentTime <= segment.endTime;
-      const playheadRatio = isWithinSegment
-        ? (props.currentTime - segment.startTime) / segmentDuration
-        : props.currentTime < segment.startTime
-          ? 0
-          : 1;
-
-      // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
-      const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
-      const peaks = waveformService.getPeaksForRange(props.videoSrc, {
-        startTime: absoluteStartTime,
-        endTime: absoluteEndTime,
-        pixelWidth: Math.floor(rect.width),
-        gainMultiplier,
-      });
-
-      if (peaks.length === 0) return;
-
-      // Normalize peaks for display (makes quiet audio visible)
-      const normalizedPeaks = normalizePeaks(peaks);
-
-      // Use the unified renderer
-      renderWaveform(canvas, {
-        width: rect.width,
-        height: rect.height,
-        peaks: normalizedPeaks,
-        playheadRatio,
-        style: 'bars',
-        useGradientColors: true,
-      });
-    } catch (error) {
-      console.error('[ClipEditorTimeline] Error rendering waveform:', error);
-    }
-  }
-
-  function renderAllWaveforms() {
-    if (!props.videoSrc || !waveformService.isLoaded(props.videoSrc)) return;
-
-    sortedTrimSegments.value.forEach((segment) => {
-      renderWaveformForSegment(segment.id, segment);
-    });
-  }
-
   // Video source waveform functions (editor mode) - uses new waveformService
 
   async function loadSourceWaveform(sourceId: string, sourcePath: string): Promise<void> {
@@ -7684,10 +7498,11 @@
       // Normalize peaks for display (makes quiet audio visible)
       const normalizedPeaks = normalizePeaks(peaks);
 
-      // Use the unified renderer
+      // Use the unified renderer (dim waveform when muted)
       renderAudioTrackWaveform(canvas, normalizedPeaks, rect.width, rect.height, {
         style: 'bars',
         useGradientColors: true,
+        opacity: videoTrackState.isMuted ? 0.3 : 1,
       });
     } catch (err) {
       console.error('[ClipEditorTimeline] Error rendering source waveform:', sourceId, err);
@@ -7818,15 +7633,8 @@
   // Setup resize observer for waveform canvases
   function setupResizeObserver() {
     resizeObserver = new ResizeObserver(() => {
-      renderAllWaveforms();
       renderAllAudioWaveforms();
       renderAllSourceWaveforms();
-    });
-
-    waveformCanvasRefs.value.forEach((canvas) => {
-      if (canvas && resizeObserver) {
-        resizeObserver.observe(canvas);
-      }
     });
 
     audioWaveformCanvasRefs.value.forEach((canvas) => {
@@ -7855,46 +7663,15 @@
     }
   }
 
-  // Watch for video source changes
-  watch(
-    () => props.videoSrc,
-    async (newVideoSrc) => {
-      if (newVideoSrc) {
-        console.log('[ClipEditorTimeline] Loading waveform for video:', newVideoSrc);
-        // Load waveform using the new waveformService
-        await loadWaveformFromVideo(newVideoSrc);
-      }
-    },
-    { immediate: true }
-  );
-
-  // Watch for waveform and segment changes
-  // Uses debounced rendering and skips during active interactions
-  watch(
-    [waveformData, isWaveformLoaded, () => props.currentTime, zoomLevel, sortedTrimSegments],
-    () => {
-      if (isWaveformLoaded.value && waveformData.value) {
-        // Skip render during active interactions - will render when interaction ends
-        if (isZooming.value || isDragging.value || isResizing.value) return;
-        nextTick(() => {
-          debouncedRenderAllWaveforms();
-        });
-      }
-    },
-    { immediate: true }
-  );
-
   // Watch specifically for audio gain changes to ensure waveform updates
   watch(
     () => props.audioGainDb,
     () => {
-      if (isWaveformLoaded.value && waveformData.value) {
-        // Skip during interactions - render when idle
-        if (isZooming.value || isDragging.value || isResizing.value) return;
-        nextTick(() => {
-          debouncedRenderAllWaveforms();
-        });
-      }
+      // Skip during interactions - render when idle
+      if (isZooming.value || isDragging.value || isResizing.value) return;
+      nextTick(() => {
+        debouncedRenderAllWaveforms();
+      });
     }
   );
 
@@ -8139,7 +7916,8 @@
     // This shows the playhead exactly where the user is dragging, not where
     // the video has caught up to (which can lag behind during fast dragging)
     if (isDraggingPlayhead.value && optimisticDragTime.value !== null) {
-      const duration = props.editorMode ? props.duration : totalDuration.value;
+      // Use totalDuration.value consistently to match clickPositionToTime() and playheadPosition
+      const duration = totalDuration.value;
       if (duration > 0) {
         return Math.min(1, Math.max(0, optimisticDragTime.value / duration));
       }
@@ -8574,9 +8352,6 @@
       initializeZoom();
       // Initialize visible time range for virtualized rendering
       updateVisibleTimeRange();
-      if (props.videoSrc) {
-        loadWaveformFromVideo(props.videoSrc);
-      }
       // Load audio waveforms for existing tracks
       await loadAllAudioWaveforms();
       // Load source waveforms for editor mode
@@ -8617,11 +8392,484 @@
 </script>
 
 <style scoped>
+  /* ========================================
+     TIMELINE COMPONENT STYLES
+     ======================================== */
+
+  /* ===== Container ===== */
+  .timeline-container {
+    transition: all 300ms ease-in-out;
+    height: 100%;
+  }
+
+  .timeline-wrapper {
+    padding: 0.5rem 0.75rem 0.25rem;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 0.5rem;
+  }
+
+  /* ===== Header ===== */
+  .timeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-right: 0.5rem;
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.75rem;
+  }
+
+  .timeline-header__left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .timeline-header__right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* ===== Toolbar Groups ===== */
+  .timeline-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    background-color: #161618;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    padding: 0.25rem 0.375rem;
+  }
+
+  .timeline-toolbar-separator {
+    width: 1px;
+    height: 1rem;
+    background-color: rgba(255, 255, 255, 0.08);
+    margin: 0 0.125rem;
+  }
+
+  /* ===== Tool Buttons ===== */
+  .timeline-tool-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-tool-button:hover {
+    color: rgba(255, 255, 255, 1);
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-tool-button--active {
+    color: #38bdf8;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.25) 0%, rgba(56, 189, 248, 0.15) 100%);
+  }
+
+  /* ===== Action Buttons ===== */
+  .timeline-action-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-action-button:hover {
+    color: #60a5fa;
+    background-color: rgba(59, 130, 246, 0.15);
+  }
+
+  .timeline-action-button--split {
+    color: rgba(251, 146, 60, 0.7);
+  }
+
+  .timeline-action-button--split:hover {
+    color: #fb923c;
+    background-color: rgba(251, 146, 60, 0.15);
+  }
+
+  .timeline-action-button--disabled {
+    color: rgba(255, 255, 255, 0.15);
+    cursor: not-allowed;
+  }
+
+  .timeline-action-button--disabled:hover {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.15);
+  }
+
+  /* ===== Playback Buttons ===== */
+  .timeline-playback-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-playback-button:hover {
+    color: #fbbf24;
+    background-color: rgba(245, 158, 11, 0.15);
+  }
+
+  .timeline-playback-button--active {
+    color: #fbbf24;
+    background: linear-gradient(to bottom, rgba(245, 158, 11, 0.25), rgba(245, 158, 11, 0.15));
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+  }
+
+  /* ===== Badges ===== */
+  .timeline-badge {
+    font-size: 0.6875rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 8px;
+    font-weight: 500;
+    border: 1px solid;
+  }
+
+  .timeline-badge--segments {
+    color: #38bdf8;
+    background-color: rgba(14, 165, 233, 0.15);
+    border-color: rgba(14, 165, 233, 0.2);
+  }
+
+  .timeline-badge--duration {
+    color: rgba(255, 255, 255, 0.6);
+    background-color: #161618;
+    border-color: rgba(255, 255, 255, 0.04);
+    font-family: ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ===== Snap Menu ===== */
+  .timeline-snap-menu {
+    position: relative;
+  }
+
+  .timeline-snap-button {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 8px;
+    border: 1px solid;
+    background-color: #161618;
+    border-color: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.5);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-snap-button:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-snap-button--enabled {
+    color: #38bdf8;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.15) 0%, rgba(56, 189, 248, 0.1) 100%);
+    border-color: rgba(14, 165, 233, 0.3);
+  }
+
+  .timeline-snap-dropdown {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 0.375rem;
+    background-color: var(--sidebar-surface, #0c0c0c);
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    padding: 0.375rem 0;
+    min-width: 190px;
+    z-index: 100;
+  }
+
+  .timeline-ruler-content {
+    border-top-right-radius: 8px;
+  }
+
+  .timeline-snap-dropdown__header {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.625rem;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+
+  .timeline-snap-dropdown__item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .timeline-snap-dropdown__item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-snap-dropdown__item--disabled {
+    opacity: 0.4;
+  }
+
+  .timeline-snap-dropdown__item span {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .timeline-snap-dropdown__checkbox {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    accent-color: #0ea5e9;
+  }
+
+  .timeline-snap-dropdown__divider {
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.08);
+    margin: 0.25rem 0;
+  }
+
+  /* ===== Zoom Controls ===== */
+  .timeline-zoom-group {
+    position: relative;
+  }
+
+  .timeline-zoom-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .timeline-zoom-button:hover {
+    color: rgba(255, 255, 255, 1);
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .timeline-zoom-button--disabled {
+    color: rgba(255, 255, 255, 0.15);
+    cursor: not-allowed;
+  }
+
+  .timeline-zoom-display {
+    font-size: 0.6875rem;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    min-width: 52px;
+    text-align: center;
+    user-select: none;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .timeline-zoom-display:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-zoom-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.375rem;
+    background-color: var(--sidebar-surface, #0c0c0c);
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    padding: 0.375rem 0;
+    min-width: 150px;
+    z-index: 100;
+  }
+
+  .timeline-zoom-dropdown__header {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.625rem;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+
+  .timeline-zoom-dropdown__item {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-size: 0.875rem;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    transition: background-color 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .timeline-zoom-dropdown__item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .timeline-zoom-dropdown__shortcut {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 0.75rem;
+    font-family: ui-monospace, monospace;
+  }
+
+  .timeline-zoom-dropdown__divider {
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.08);
+    margin: 0.25rem 0;
+  }
+
+  /* ===== Track Labels ===== */
+  .timeline-track-label {
+    width: 120px;
+    height: 100%;
+    padding-left: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    position: sticky;
+    left: 0;
+    z-index: 70;
+    background-color: rgba(14, 14, 16, 1);
+    flex-shrink: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .timeline-track-label--overlay {
+    padding-left: 0.75rem;
+    padding-right: 0.5rem;
+    flex-direction: column;
+    justify-content: center;
+    font-size: 0.6875rem;
+    border-left: 2px solid #0ea5e9;
+  }
+
+  .timeline-track-label--watermark {
+    padding-left: 0.75rem;
+    padding-right: 0.5rem;
+    flex-direction: column;
+    justify-content: center;
+    font-size: 0.6875rem;
+    border-left: 2px solid #10b981;
+  }
+
+  .timeline-track-label-bg {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(17, 17, 17, 1);
+    cursor: pointer;
+  }
+
+  .timeline-track-content-bg {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(22, 22, 24, 1);
+  }
+
+  .timeline-track-content-bg--flex {
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* Bottom corners for last track */
+  .timeline-content-wrapper > div:last-child .timeline-track-label-bg {
+    border-bottom-left-radius: 8px;
+  }
+
+  .timeline-content-wrapper > div:last-child .flex-1 > .timeline-track-label-bg,
+  .timeline-content-wrapper > div:last-child .flex-1 > .timeline-track-content-bg {
+    border-bottom-right-radius: 8px;
+  }
+
+  /* ===== Marquee Selection ===== */
+  .timeline-marquee {
+    position: absolute;
+    border: 2px solid #38bdf8;
+    background-color: rgba(14, 165, 233, 0.15);
+    pointer-events: none;
+    z-index: 100;
+    border-radius: 4px;
+  }
+
+  /* ===== Timeline Tracks Container ===== */
+  .timeline-tracks-container {
+    background-color: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    position: relative;
+    overflow-y: auto;
+    overflow-x: auto;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Custom scrollbar for timeline */
+  .timeline-tracks-container::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .timeline-tracks-container::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  .timeline-tracks-container::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+  }
+
+  .timeline-tracks-container::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* ===== Legacy Timeline Styles ===== */
   /* Timeline ruler styling */
   .timeline-ruler {
-    background: rgba(10, 10, 10, 0.6);
+    background: #09090a;
     backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
     user-select: none;
     /* Performance: contain layout to prevent reflows from affecting parent */
     contain: layout style;

@@ -15,9 +15,9 @@
               <div class="asset-modal__icon">
                 <Upload :size="24" />
               </div>
-              <h2 class="asset-modal__title">Upload Asset</h2>
+              <h2 class="asset-modal__title">Upload Intro/Outro</h2>
               <p class="asset-modal__subtitle">
-                {{ selectedFile ? 'Configure your asset' : 'Select a file to upload' }}
+                {{ selectedFile ? 'Configure your intro or outro' : 'Select a video file to upload' }}
               </p>
             </div>
 
@@ -28,8 +28,8 @@
                 <button @click="selectFile" class="asset-dropzone">
                   <div class="asset-dropzone__inner">
                     <FolderOpen class="asset-dropzone__icon" />
-                    <p class="asset-dropzone__title">Click to browse files</p>
-                    <p class="asset-dropzone__hint">Video, image, or audio files</p>
+                    <p class="asset-dropzone__title">Click to browse video files</p>
+                    <p class="asset-dropzone__hint">MP4, MOV, AVI, MKV, WEBM, and more</p>
                   </div>
                 </button>
               </div>
@@ -38,8 +38,8 @@
               <template v-else>
                 <!-- File Card -->
                 <div class="asset-file-card">
-                  <div class="asset-file-card__icon" :class="getFileTypeIconClass(fileExtension)">
-                    <component :is="getFileTypeIcon(fileExtension)" class="asset-file-card__icon-svg" />
+                  <div class="asset-file-card__icon asset-file-card__icon--video">
+                    <Film class="asset-file-card__icon-svg" />
                   </div>
                   <div class="asset-file-card__info">
                     <p class="asset-file-card__name" :title="selectedFile.name">
@@ -54,21 +54,29 @@
 
                 <!-- Asset Type Selection -->
                 <div class="asset-field">
-                  <label class="asset-field__label">Asset Type</label>
+                  <label class="asset-field__label">Type</label>
                   <div class="asset-type-grid">
                     <button
-                      v-for="option in assetTypeOptions"
-                      :key="option.value"
-                      @click="selectedType = option.value"
+                      @click="selectedType = 'intro'"
                       class="asset-type-option"
                       :class="{
-                        'asset-type-option--selected': selectedType === option.value,
-                        [`asset-type-option--${option.color}`]: true,
+                        'asset-type-option--selected': selectedType === 'intro',
+                        'asset-type-option--cyan': true,
                       }"
                     >
-                      <component :is="option.icon" class="asset-type-option__icon" />
-                      <span class="asset-type-option__label">{{ option.label }}</span>
-                      <span v-if="option.recommended" class="asset-type-option__badge">likely</span>
+                      <Play class="asset-type-option__icon" />
+                      <span class="asset-type-option__label">Intro</span>
+                    </button>
+                    <button
+                      @click="selectedType = 'outro'"
+                      class="asset-type-option"
+                      :class="{
+                        'asset-type-option--selected': selectedType === 'outro',
+                        'asset-type-option--violet': true,
+                      }"
+                    >
+                      <Square class="asset-type-option__icon" />
+                      <span class="asset-type-option__label">Outro</span>
                     </button>
                   </div>
                 </div>
@@ -97,14 +105,11 @@
                 :class="{
                   'asset-btn--primary-cyan': selectedType === 'intro',
                   'asset-btn--primary-violet': selectedType === 'outro',
-                  'asset-btn--primary-amber': selectedType === 'watermark',
-                  'asset-btn--primary-emerald': selectedType === 'audio',
-                  'asset-btn--primary-blue': selectedType === 'image',
                 }"
               >
                 <Loader2 v-if="isUploading" :size="16" class="animate-spin" />
                 <Upload v-else :size="16" />
-                {{ isUploading ? 'Uploading...' : 'Upload Asset' }}
+                {{ isUploading ? 'Uploading...' : 'Upload' }}
               </button>
             </div>
           </div>
@@ -115,23 +120,11 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch } from 'vue';
-  import {
-    Upload,
-    Play,
-    Square,
-    Stamp,
-    Loader2,
-    Image as ImageIcon,
-    Music,
-    X,
-    FolderOpen,
-    Film,
-  } from 'lucide-vue-next';
+  import { ref, watch } from 'vue';
+  import { Upload, Play, Square, Loader2, X, FolderOpen, Film } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
-  import { createIntroOutro, createAudioAsset, createImageAsset } from '@/services/database';
-  import { createWatermarkImage } from '@/services/database/watermarks';
+  import { createIntroOutro } from '@/services/database';
   import { generateId } from '@/services/database';
   import { useToast } from '@/composables/useToast';
 
@@ -149,22 +142,9 @@
   // State
   const selectedFile = ref<{ name: string; path: string } | null>(null);
   const fileExtension = ref('');
-  const selectedType = ref<'intro' | 'outro' | 'watermark' | 'audio' | 'image' | null>(null);
+  const selectedType = ref<'intro' | 'outro'>('intro');
   const customName = ref('');
   const isUploading = ref(false);
-
-  // Asset type options based on file type
-  type AssetTypeOption = {
-    value: 'intro' | 'outro' | 'watermark' | 'audio' | 'image';
-    label: string;
-    icon: any;
-    color: string;
-    recommended?: boolean;
-  };
-
-  const assetTypeOptions = computed<AssetTypeOption[]>(() => {
-    return getAssetOptionsForFileType(fileExtension.value);
-  });
 
   // Reset state when dialog is closed
   watch(
@@ -175,55 +155,12 @@
         setTimeout(() => {
           selectedFile.value = null;
           fileExtension.value = '';
-          selectedType.value = null;
+          selectedType.value = 'intro';
           customName.value = '';
         }, 200); // Wait for animation to complete
       }
     }
   );
-
-  function getAssetOptionsForFileType(ext: string): AssetTypeOption[] {
-    const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'];
-    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif'];
-    const audioExtensions = ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac', 'wma'];
-
-    if (videoExtensions.includes(ext)) {
-      return [
-        { value: 'intro', label: 'Intro', icon: Play, color: 'cyan', recommended: true },
-        { value: 'outro', label: 'Outro', icon: Square, color: 'violet' },
-      ];
-    } else if (imageExtensions.includes(ext)) {
-      return [
-        { value: 'watermark', label: 'Watermark', icon: Stamp, color: 'amber', recommended: true },
-        { value: 'image', label: 'Sticker / Image', icon: ImageIcon, color: 'blue' },
-      ];
-    } else if (audioExtensions.includes(ext)) {
-      return [{ value: 'audio', label: 'Audio', icon: Music, color: 'emerald', recommended: true }];
-    }
-    return [];
-  }
-
-  function getFileTypeIcon(ext: string) {
-    const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'];
-    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif'];
-    const audioExtensions = ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac', 'wma'];
-
-    if (videoExtensions.includes(ext)) return Film;
-    if (imageExtensions.includes(ext)) return ImageIcon;
-    if (audioExtensions.includes(ext)) return Music;
-    return FolderOpen;
-  }
-
-  function getFileTypeIconClass(ext: string): string {
-    const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'];
-    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif'];
-    const audioExtensions = ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac', 'wma'];
-
-    if (videoExtensions.includes(ext)) return 'asset-file-card__icon--video';
-    if (imageExtensions.includes(ext)) return 'asset-file-card__icon--image';
-    if (audioExtensions.includes(ext)) return 'asset-file-card__icon--audio';
-    return '';
-  }
 
   async function selectFile() {
     try {
@@ -231,32 +168,8 @@
 
       const filters = [
         {
-          name: 'Media Files',
-          extensions: [
-            'mp4',
-            'mov',
-            'avi',
-            'mkv',
-            'webm',
-            'flv',
-            'wmv',
-            'm4v',
-            'png',
-            'jpg',
-            'jpeg',
-            'gif',
-            'webp',
-            'bmp',
-            'tiff',
-            'tif',
-            'mp3',
-            'wav',
-            'aac',
-            'm4a',
-            'ogg',
-            'flac',
-            'wma',
-          ],
+          name: 'Video Files',
+          extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'],
         },
       ];
 
@@ -268,15 +181,6 @@
 
       selectedFile.value = { name: fileName, path: selected };
       fileExtension.value = ext;
-
-      // Auto-select recommended type
-      const options = getAssetOptionsForFileType(ext);
-      const recommended = options.find((o) => o.recommended);
-      if (recommended) {
-        selectedType.value = recommended.value;
-      } else if (options.length > 0) {
-        selectedType.value = options[0].value;
-      }
     } catch (err: any) {
       console.error('File selection failed:', err);
       error('File selection failed', err.message || 'Failed to select file');
@@ -286,7 +190,7 @@
   function clearSelectedFile() {
     selectedFile.value = null;
     fileExtension.value = '';
-    selectedType.value = null;
+    selectedType.value = 'intro';
     customName.value = '';
   }
 
@@ -303,20 +207,7 @@
     const assetName = customName.value.trim() || selectedFile.value.name;
 
     try {
-      if (selectedType.value === 'intro' || selectedType.value === 'outro') {
-        // Upload intro/outro video (async)
-        await uploadVideoAsset(sourcePath, assetName, selectedType.value);
-      } else if (selectedType.value === 'watermark') {
-        // Upload watermark
-        await uploadWatermarkAsset(sourcePath, assetName);
-      } else if (selectedType.value === 'audio') {
-        // Upload audio
-        await uploadAudioAssetFile(sourcePath, assetName);
-      } else if (selectedType.value === 'image') {
-        // Upload image
-        await uploadImageAssetFile(sourcePath, assetName);
-      }
-
+      await uploadVideoAsset(sourcePath, assetName, selectedType.value);
       emit('close');
       emit('uploaded');
     } catch (err: any) {
@@ -385,70 +276,6 @@
     const typeLabel = type === 'intro' ? 'Intro' : 'Outro';
     success(`${typeLabel} upload started`, `"${assetName}" is being processed...`);
   }
-
-  async function uploadWatermarkAsset(sourcePath: string, assetName: string) {
-    const result = await invoke<{
-      destination_path: string;
-      original_filename: string;
-      width: number | null;
-      height: number | null;
-      file_size: number | null;
-    }>('copy_watermark_to_storage', { sourcePath });
-
-    await createWatermarkImage(
-      assetName,
-      result.destination_path,
-      result.width ?? undefined,
-      result.height ?? undefined,
-      result.file_size ?? undefined
-    );
-
-    success('Watermark uploaded', `"${assetName}" has been uploaded successfully`);
-  }
-
-  async function uploadAudioAssetFile(sourcePath: string, assetName: string) {
-    const result = await invoke<{
-      destination_path: string;
-      original_filename: string;
-      duration: number | null;
-      file_size: number | null;
-      sample_rate: number | null;
-      channels: number | null;
-    }>('copy_audio_to_storage', { sourcePath });
-
-    await createAudioAsset(
-      assetName,
-      result.destination_path,
-      result.duration ?? undefined,
-      result.file_size ?? undefined,
-      result.sample_rate ?? undefined,
-      result.channels ?? undefined
-    );
-
-    success('Audio uploaded', `"${assetName}" has been uploaded successfully`);
-  }
-
-  async function uploadImageAssetFile(sourcePath: string, assetName: string) {
-    const result = await invoke<{
-      destination_path: string;
-      original_filename: string;
-      width: number | null;
-      height: number | null;
-      file_size: number | null;
-      mime_type: string | null;
-    }>('copy_image_to_storage', { sourcePath });
-
-    await createImageAsset(
-      assetName,
-      result.destination_path,
-      result.width ?? undefined,
-      result.height ?? undefined,
-      result.file_size ?? undefined,
-      result.mime_type ?? undefined
-    );
-
-    success('Image uploaded', `"${assetName}" has been uploaded successfully`);
-  }
 </script>
 
 <style scoped>
@@ -485,7 +312,7 @@
   .asset-modal__accent {
     height: 3px;
     flex-shrink: 0;
-    background: linear-gradient(90deg, #06b6d4, #0ea5e9, #3b82f6);
+    background: linear-gradient(90deg, #06b6d4, #8b5cf6);
   }
 
   /* ===== Header ===== */
@@ -533,7 +360,7 @@
     height: 56px;
     border-radius: 14px;
     margin-bottom: 1rem;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(59, 130, 246, 0.2));
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(139, 92, 246, 0.2));
     color: #06b6d4;
     border: 1px solid rgba(6, 182, 212, 0.2);
   }
@@ -650,14 +477,6 @@
     background-color: rgba(6, 182, 212, 0.15);
   }
 
-  .asset-file-card__icon--image {
-    background-color: rgba(245, 158, 11, 0.15);
-  }
-
-  .asset-file-card__icon--audio {
-    background-color: rgba(16, 185, 129, 0.15);
-  }
-
   .asset-file-card__icon-svg {
     width: 20px;
     height: 20px;
@@ -666,14 +485,6 @@
 
   .asset-file-card__icon--video .asset-file-card__icon-svg {
     color: #22d3ee;
-  }
-
-  .asset-file-card__icon--image .asset-file-card__icon-svg {
-    color: #fbbf24;
-  }
-
-  .asset-file-card__icon--audio .asset-file-card__icon-svg {
-    color: #34d399;
   }
 
   .asset-file-card__info {
@@ -806,21 +617,6 @@
     border-color: rgba(139, 92, 246, 0.4);
   }
 
-  .asset-type-option--selected.asset-type-option--amber {
-    background-color: rgba(245, 158, 11, 0.12);
-    border-color: rgba(245, 158, 11, 0.4);
-  }
-
-  .asset-type-option--selected.asset-type-option--emerald {
-    background-color: rgba(16, 185, 129, 0.12);
-    border-color: rgba(16, 185, 129, 0.4);
-  }
-
-  .asset-type-option--selected.asset-type-option--blue {
-    background-color: rgba(59, 130, 246, 0.12);
-    border-color: rgba(59, 130, 246, 0.4);
-  }
-
   .asset-type-option__icon {
     width: 18px;
     height: 18px;
@@ -836,18 +632,6 @@
     color: #a78bfa;
   }
 
-  .asset-type-option--selected.asset-type-option--amber .asset-type-option__icon {
-    color: #fbbf24;
-  }
-
-  .asset-type-option--selected.asset-type-option--emerald .asset-type-option__icon {
-    color: #34d399;
-  }
-
-  .asset-type-option--selected.asset-type-option--blue .asset-type-option__icon {
-    color: #60a5fa;
-  }
-
   .asset-type-option__label {
     font-size: 0.875rem;
     font-weight: 500;
@@ -859,30 +643,6 @@
 
   .asset-type-option--selected.asset-type-option--violet .asset-type-option__label {
     color: #a78bfa;
-  }
-
-  .asset-type-option--selected.asset-type-option--amber .asset-type-option__label {
-    color: #fbbf24;
-  }
-
-  .asset-type-option--selected.asset-type-option--emerald .asset-type-option__label {
-    color: #34d399;
-  }
-
-  .asset-type-option--selected.asset-type-option--blue .asset-type-option__label {
-    color: #60a5fa;
-  }
-
-  .asset-type-option__badge {
-    margin-left: auto;
-    font-size: 0.625rem;
-    font-weight: 600;
-    padding: 0.125rem 0.375rem;
-    border-radius: 4px;
-    background-color: rgba(6, 182, 212, 0.2);
-    color: var(--sidebar-accent);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
   }
 
   /* ===== Footer ===== */
@@ -954,42 +714,6 @@
   .asset-btn--primary-violet:hover:not(:disabled) {
     background: linear-gradient(135deg, #a78bfa, #8b5cf6);
     box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
-    transform: translateY(-1px);
-  }
-
-  .asset-btn--primary-amber {
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    color: white;
-    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25);
-  }
-
-  .asset-btn--primary-amber:hover:not(:disabled) {
-    background: linear-gradient(135deg, #fbbf24, #f59e0b);
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
-    transform: translateY(-1px);
-  }
-
-  .asset-btn--primary-emerald {
-    background: linear-gradient(135deg, #10b981, #059669);
-    color: white;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
-  }
-
-  .asset-btn--primary-emerald:hover:not(:disabled) {
-    background: linear-gradient(135deg, #34d399, #10b981);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
-    transform: translateY(-1px);
-  }
-
-  .asset-btn--primary-blue {
-    background: linear-gradient(135deg, #3b82f6, #2563eb);
-    color: white;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .asset-btn--primary-blue:hover:not(:disabled) {
-    background: linear-gradient(135deg, #60a5fa, #3b82f6);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
     transform: translateY(-1px);
   }
 

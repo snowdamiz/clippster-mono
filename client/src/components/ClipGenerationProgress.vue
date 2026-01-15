@@ -50,10 +50,6 @@
             </div>
           </div>
         </div>
-        <!-- Status Message -->
-        <div v-if="message" class="text-sm text-foreground/60 bg-muted/30 rounded-md p-3">
-          {{ message }}
-        </div>
         <!-- Error State -->
         <div v-if="error" class="bg-destructive/10 border border-destructive/20 rounded-md p-3">
           <div class="flex items-start gap-2">
@@ -126,22 +122,7 @@
   });
 
   const stageIconClass = computed(() => {
-    switch (props.stage) {
-      case 'starting':
-        return 'text-blue-500';
-      case 'transcribing':
-        return 'text-yellow-500 animate-spin';
-      case 'analyzing':
-        return 'text-purple-500';
-      case 'validating':
-        return 'text-orange-500';
-      case 'completed':
-        return 'text-green-500';
-      case 'error':
-        return 'text-red-500';
-      default:
-        return 'text-gray-500';
-    }
+    return 'text-gray-500';
   });
 
   const stageTitle = computed(() => {
@@ -183,20 +164,7 @@
   });
 
   const progressBarClass = computed(() => {
-    switch (props.stage) {
-      case 'transcribing':
-        return 'bg-yellow-500';
-      case 'analyzing':
-        return 'bg-purple-500';
-      case 'validating':
-        return 'bg-orange-500';
-      case 'completed':
-        return 'bg-green-500';
-      case 'error':
-        return 'bg-red-500';
-      default:
-        return 'bg-blue-500';
-    }
+    return 'bg-blue-500';
   });
 
   function handleClose() {

@@ -882,6 +882,10 @@
     aspectRatio: string | null;
     /** Whether this clip has multiple builds (to show/hide build number badge) */
     hasMultipleBuilds: boolean;
+    /** Whether the clip has a transcript */
+    isTranscribed?: boolean;
+    /** Match type for search results */
+    matchType?: 'transcript' | 'name';
   }
 
   // Helper function to parse output paths from a build

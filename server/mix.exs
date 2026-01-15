@@ -80,7 +80,9 @@ defmodule ClippsterServer.MixProject do
       # CA certificates for HTTPS
       {:certifi, "~> 2.12"},
       # PulseKit error tracking and event monitoring
-      {:pulsekit, "~> 1.0"}
+      {:pulsekit, "~> 1.0"},
+      # Code quality analysis
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 

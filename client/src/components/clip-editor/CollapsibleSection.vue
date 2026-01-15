@@ -1,44 +1,99 @@
 <template>
-  <div class="border border-white/10 rounded-lg overflow-hidden">
-    <button
-      @click="isOpen = !isOpen"
-      class="w-full flex items-center justify-between px-3 py-2 bg-white/5 hover:bg-white/10 transition-colors"
-    >
+  <div class="collapsible-section">
+    <button @click="isOpen = !isOpen" class="collapsible-section__header">
       <div class="flex items-center gap-2">
         <ChevronRight
           :size="14"
-          class="text-white/60 transition-transform duration-200"
-          :class="isOpen ? 'rotate-90' : ''"
+          class="collapsible-section__chevron"
+          :class="{ 'collapsible-section__chevron--open': isOpen }"
         />
-        <span class="text-xs font-medium text-white">{{ title }}</span>
-        <span v-if="count !== undefined" class="text-[10px] text-white/40">({{ count }})</span>
+        <span class="collapsible-section__title">{{ title }}</span>
+        <span v-if="count !== undefined" class="collapsible-section__count">({{ count }})</span>
       </div>
-      <span class="text-[10px] text-white/40">{{ isOpen ? 'Hide' : 'Show' }}</span>
+      <span class="collapsible-section__toggle">{{ isOpen ? 'Hide' : 'Show' }}</span>
     </button>
-    <div v-if="isOpen" class="p-3 bg-black/20">
+    <div v-if="isOpen" class="collapsible-section__content">
       <slot />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { ChevronRight } from 'lucide-vue-next';
+  import { ref, watch } from 'vue';
+  import { ChevronRight } from 'lucide-vue-next';
 
-const props = withDefaults(
-  defineProps<{
-    title: string;
-    count?: number;
-    defaultOpen?: boolean;
-  }>(),
-  {
-    defaultOpen: false,
-  }
-);
+  const props = withDefaults(
+    defineProps<{
+      title: string;
+      count?: number;
+      defaultOpen?: boolean;
+    }>(),
+    {
+      defaultOpen: false,
+    }
+  );
 
-const isOpen = ref(props.defaultOpen);
+  const isOpen = ref(props.defaultOpen);
 
-watch(() => props.defaultOpen, (newVal) => {
-  isOpen.value = newVal;
-});
+  watch(
+    () => props.defaultOpen,
+    (newVal) => {
+      isOpen.value = newVal;
+    }
+  );
 </script>
+
+<style scoped>
+  .collapsible-section {
+    border: 1px solid var(--sidebar-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+  }
+
+  .collapsible-section__header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: none;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .collapsible-section__header:hover {
+    background-color: var(--sidebar-active);
+  }
+
+  .collapsible-section__chevron {
+    color: var(--sidebar-text-muted);
+    transition: transform 200ms ease;
+  }
+
+  .collapsible-section__chevron--open {
+    transform: rotate(90deg);
+  }
+
+  .collapsible-section__title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    letter-spacing: 0.025em;
+  }
+
+  .collapsible-section__count {
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .collapsible-section__toggle {
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .collapsible-section__content {
+    padding: 0.75rem;
+    background-color: var(--sidebar-surface);
+  }
+</style>

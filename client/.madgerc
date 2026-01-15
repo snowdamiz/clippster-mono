@@ -1,0 +1,14 @@
+{
+  "fileExtensions": ["ts", "vue", "js"],
+  "tsConfig": "./tsconfig.json",
+  "excludeRegExp": [
+    "node_modules",
+    "src-tauri",
+    "\\.d\\.ts$"
+  ],
+  "detectiveOptions": {
+    "ts": {
+      "skipTypeImports": true
+    }
+  }
+}

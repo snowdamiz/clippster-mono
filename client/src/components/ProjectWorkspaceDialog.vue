@@ -437,6 +437,11 @@
   });
 
   const clipStage = computed(() => {
+    // "finalizing" is a frontend-only stage that occurs AFTER backend completes
+    // It must take precedence over backend "completed" stage
+    if (frontendStage.value === 'finalizing') {
+      return 'finalizing';
+    }
     // Prefer backend stage if active
     if (backendStage.value && backendStage.value !== 'starting') {
       return backendStage.value;
@@ -722,37 +727,77 @@
         if (result.success) {
           console.log('[ProjectWorkspaceDialog] Enhanced clip detection successful');
 
-          // Mark detection as complete in global tracking
-          completeDetection(projectId);
+          // Show finalizing state while we prepare thumbnails
+          if (props.project?.id === projectId) {
+            frontendProgress.value = 100;
+            frontendStage.value = 'finalizing';
+            frontendMessage.value = 'Generating thumbnails...';
+            console.log('[ProjectWorkspaceDialog] Set stage to finalizing, clipStage is now:', clipStage.value);
+          }
 
-          // Trigger UI refresh for successful detection
-          setTimeout(() => {
-            const clipsPanel = document.querySelector('[data-clips-panel]') as any;
-            if (clipsPanel && clipsPanel.__vueParentComponent && clipsPanel.__vueParentComponent.exposed) {
-              clipsPanel.__vueParentComponent.exposed.refreshClips?.();
-            } else {
-              const refreshEvent = new CustomEvent('refresh-clips', {
-                detail: { projectId },
-              });
-              document.dispatchEvent(refreshEvent);
+          // Wait for Vue to process the stage update before loading clips
+          await nextTick();
+          console.log('[ProjectWorkspaceDialog] After nextTick, clipStage:', clipStage.value);
+
+          // Load clips with thumbnails BEFORE clearing the progress state
+          // This ensures thumbnails are ready when the clips UI appears
+          try {
+            // Refresh clips data in MediaPanel
+            if (mediaPanelRef.value) {
+              console.log('[ProjectWorkspaceDialog] Starting refreshClips...');
+              await mediaPanelRef.value.refreshClips();
+              console.log('[ProjectWorkspaceDialog] Clips refreshed, starting thumbnail generation...');
+              // Pre-load thumbnails (this now generates any missing ones too)
+              await mediaPanelRef.value.refreshThumbnails?.();
+              console.log('[ProjectWorkspaceDialog] Thumbnails loaded');
             }
+
+            // Also refresh timeline clips
+            await loadTimelineClips(projectId);
+
+            // Reload transcript data for timeline tooltips
+            if (timelineRef.value && timelineRef.value.loadTranscriptData) {
+              await timelineRef.value.loadTranscriptData(projectId);
+            }
+
+            // Emit refresh events for other components
+            const refreshEvent = new CustomEvent('refresh-clips', {
+              detail: { projectId },
+            });
+            document.dispatchEvent(refreshEvent);
 
             const projectsRefreshEvent = new CustomEvent('refresh-clips-projects', {
               detail: { projectId },
             });
             document.dispatchEvent(projectsRefreshEvent);
+          } catch (refreshError) {
+            console.error('[ProjectWorkspaceDialog] Error refreshing clips after detection:', refreshError);
+          }
 
-            if (timelineRef.value && timelineRef.value.loadTranscriptData) {
-              timelineRef.value.loadTranscriptData(projectId);
-            }
-          }, 1000);
+          // Wait for Vue to fully process all reactive updates
+          await nextTick();
 
-          // Show success completion state only if still viewing this project
+          // Mark detection as complete in global tracking
+          completeDetection(projectId);
+
+          // NOW clear the progress state - clips and thumbnails are ready
           if (props.project?.id === projectId) {
+            clipGenerationInProgress.value = false;
             frontendProgress.value = 100;
             frontendStage.value = 'completed';
-            frontendMessage.value = 'Clip detection completed successfully!';
+            frontendMessage.value = 'Clip detection completed!';
           }
+
+          // Update window close warning
+          setClipGenerationInProgress(hasAnyActiveDetection.value);
+
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('set_clip_generation_in_progress', { inProgress: hasAnyActiveDetection.value });
+          } catch (backendError) {
+            console.error('[ProjectWorkspaceDialog] Failed to update backend state:', backendError);
+          }
+
           return;
         }
 
@@ -799,24 +844,27 @@
 
       // Keep progress dialog open to show the error
     } finally {
-      // Don't immediately hide progress - let the user see the completion/error state
-      setTimeout(async () => {
-        // Only update local state if still viewing this project
-        if (props.project?.id === projectId) {
-          clipGenerationInProgress.value = false;
-        }
+      // Only clear progress state for error cases (success case handles its own cleanup)
+      // Check if we're in an error state before clearing
+      if (frontendError.value || frontendStage.value === 'error') {
+        setTimeout(async () => {
+          // Only update local state if still viewing this project
+          if (props.project?.id === projectId) {
+            clipGenerationInProgress.value = false;
+          }
 
-        // Update window close warning based on global tracking
-        setClipGenerationInProgress(hasAnyActiveDetection.value);
+          // Update window close warning based on global tracking
+          setClipGenerationInProgress(hasAnyActiveDetection.value);
 
-        // Also update backend state
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          await invoke('set_clip_generation_in_progress', { inProgress: hasAnyActiveDetection.value });
-        } catch (error) {
-          console.error('[ProjectWorkspaceDialog] Failed to update backend clip generation state:', error);
-        }
-      }, 1000);
+          // Also update backend state
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            await invoke('set_clip_generation_in_progress', { inProgress: hasAnyActiveDetection.value });
+          } catch (error) {
+            console.error('[ProjectWorkspaceDialog] Failed to update backend clip generation state:', error);
+          }
+        }, 2000); // Longer delay for errors so user can see the error message
+      }
     }
   }
 
@@ -2249,7 +2297,8 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    padding: 1.25rem;
+    padding: 0.5rem;
+    gap: 0.5rem;
     border-right: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, transparent 100%);
   }
@@ -2263,7 +2312,8 @@
     max-height: none !important;
     z-index: 99999 !important;
     background: #000 !important;
-    padding: 2rem !important;
+    padding: 1rem !important;
+    gap: 1rem !important;
     border: none !important;
     display: flex !important;
     flex-direction: column !important;
@@ -2271,14 +2321,19 @@
   }
 
   .workspace-dialog__video-wrapper {
-    flex: 1;
+    flex: 1 1 0;
     min-height: 0;
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    border-radius: 0.5rem;
+    overflow: hidden;
   }
 
   .workspace-dialog__player-column--fullscreen .workspace-dialog__video-wrapper {
-    max-height: calc(100vh - 8rem);
+    max-height: calc(100vh - 6rem);
+    border-radius: 0;
   }
 
   /* ===== Media Column ===== */

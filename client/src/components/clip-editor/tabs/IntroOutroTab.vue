@@ -1,21 +1,23 @@
 <template>
-  <div class="space-y-6">
-    <!-- Header -->
-    <div>
-      <h3 class="text-sm font-medium text-white mb-1">Intro & Outro</h3>
-      <p class="text-xs text-white/50">Add intro and outro videos to your timeline.</p>
-    </div>
+  <div class="space-y-3">
+    <!-- Intro/Outro Upload Dialog -->
+    <IntroOutroUploadDialog
+      :show="showUploadDialog"
+      @close="showUploadDialog = false"
+      @uploaded="handleUploadComplete"
+    />
 
     <!-- Current Status -->
     <div v-if="currentIntro || currentOutro" class="space-y-2">
-      <label class="text-xs font-medium text-white/70">Currently Applied</label>
+      <label class="text-xs font-medium" style="color: var(--sidebar-text-muted)">Currently Applied</label>
       <div class="space-y-2">
         <!-- Current Intro -->
         <div
           v-if="currentIntro"
-          class="flex items-center gap-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg"
+          class="flex items-center gap-3 p-3 rounded-lg border"
+          style="background-color: var(--sidebar-active); border-color: var(--sidebar-accent); opacity: 0.8"
         >
-          <div class="w-12 h-8 rounded overflow-hidden bg-black/50 flex-shrink-0">
+          <div class="w-12 h-8 rounded overflow-hidden flex-shrink-0" style="background-color: var(--sidebar-surface)">
             <img
               v-if="currentIntro.thumbnailUrl"
               :src="currentIntro.thumbnailUrl"
@@ -23,16 +25,31 @@
               @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
             />
             <div v-else class="w-full h-full flex items-center justify-center">
-              <Play :size="10" class="text-white/30" />
+              <Play :size="10" style="color: var(--sidebar-text-muted)" />
             </div>
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-xs font-medium text-emerald-300 truncate">{{ currentIntro.name }}</div>
-            <div class="text-[10px] text-white/40">Intro • {{ formatDuration(currentIntro.duration || 0) }}</div>
+            <div class="text-xs font-medium truncate" style="color: var(--sidebar-accent)">{{ currentIntro.name }}</div>
+            <div class="text-[10px]" style="color: var(--sidebar-text-muted)">
+              Intro • {{ formatDuration(currentIntro.duration || 0) }}
+            </div>
           </div>
           <button
             @click="removeIntro"
-            class="p-1.5 rounded bg-white/5 hover:bg-red-500/20 text-white/60 hover:text-red-400 transition-colors"
+            class="p-1.5 rounded transition-colors"
+            style="background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)"
+            @mouseenter="
+              (e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+                (e.currentTarget as HTMLElement).style.color = '#f87171';
+              }
+            "
+            @mouseleave="
+              (e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+                (e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text-muted)';
+              }
+            "
             title="Remove intro"
           >
             <X :size="12" />
@@ -42,9 +59,10 @@
         <!-- Current Outro -->
         <div
           v-if="currentOutro"
-          class="flex items-center gap-3 p-3 bg-violet-500/10 border border-violet-500/20 rounded-lg"
+          class="flex items-center gap-3 p-3 rounded-lg border"
+          style="background-color: var(--sidebar-active); border-color: var(--sidebar-accent); opacity: 0.8"
         >
-          <div class="w-12 h-8 rounded overflow-hidden bg-black/50 flex-shrink-0">
+          <div class="w-12 h-8 rounded overflow-hidden flex-shrink-0" style="background-color: var(--sidebar-surface)">
             <img
               v-if="currentOutro.thumbnailUrl"
               :src="currentOutro.thumbnailUrl"
@@ -52,16 +70,31 @@
               @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
             />
             <div v-else class="w-full h-full flex items-center justify-center">
-              <Play :size="10" class="text-white/30" />
+              <Play :size="10" style="color: var(--sidebar-text-muted)" />
             </div>
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-xs font-medium text-violet-300 truncate">{{ currentOutro.name }}</div>
-            <div class="text-[10px] text-white/40">Outro • {{ formatDuration(currentOutro.duration || 0) }}</div>
+            <div class="text-xs font-medium truncate" style="color: var(--sidebar-accent)">{{ currentOutro.name }}</div>
+            <div class="text-[10px]" style="color: var(--sidebar-text-muted)">
+              Outro • {{ formatDuration(currentOutro.duration || 0) }}
+            </div>
           </div>
           <button
             @click="removeOutro"
-            class="p-1.5 rounded bg-white/5 hover:bg-red-500/20 text-white/60 hover:text-red-400 transition-colors"
+            class="p-1.5 rounded transition-colors"
+            style="background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)"
+            @mouseenter="
+              (e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+                (e.currentTarget as HTMLElement).style.color = '#f87171';
+              }
+            "
+            @mouseleave="
+              (e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+                (e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text-muted)';
+              }
+            "
             title="Remove outro"
           >
             <X :size="12" />
@@ -70,179 +103,212 @@
       </div>
     </div>
 
-    <!-- Divider -->
-    <div class="h-px bg-white/10" />
-
-    <!-- Library Section -->
-    <div class="space-y-3">
-      <div class="flex items-center justify-between">
-        <h4 class="text-sm font-medium text-white">Asset Library</h4>
-      </div>
-
-      <!-- Upload Buttons -->
-      <div class="grid grid-cols-2 gap-2">
+    <!-- Type Filter Toggle -->
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
         <button
-          @click="uploadIntro"
-          :disabled="isUploadingIntro"
-          class="py-2.5 border-2 border-dashed border-white/20 hover:border-emerald-500/50 rounded-lg text-sm text-white/60 hover:text-emerald-400 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+          @click="typeFilter = 'all'"
+          class="px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
+          :style="
+            typeFilter === 'all'
+              ? 'background-color: var(--sidebar-active); color: var(--sidebar-accent)'
+              : 'background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)'
+          "
+          @mouseenter="
+            (e) => {
+              if (typeFilter !== 'all') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-active)';
+            }
+          "
+          @mouseleave="
+            (e) => {
+              if (typeFilter !== 'all') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+            }
+          "
         >
-          <Loader2 v-if="isUploadingIntro" :size="14" class="animate-spin" />
-          <Upload v-else :size="14" />
-          {{ isUploadingIntro ? 'Uploading...' : 'Upload Intro' }}
+          <Clapperboard :size="12" />
+          All ({{ allAssets.length }})
         </button>
         <button
-          @click="uploadOutro"
-          :disabled="isUploadingOutro"
-          class="py-2.5 border-2 border-dashed border-white/20 hover:border-violet-500/50 rounded-lg text-sm text-white/60 hover:text-violet-400 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+          @click="typeFilter = 'intro'"
+          class="px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
+          :style="
+            typeFilter === 'intro'
+              ? 'background-color: var(--sidebar-active); color: var(--sidebar-accent)'
+              : 'background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)'
+          "
+          @mouseenter="
+            (e) => {
+              if (typeFilter !== 'intro') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-active)';
+            }
+          "
+          @mouseleave="
+            (e) => {
+              if (typeFilter !== 'intro') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+            }
+          "
         >
-          <Loader2 v-if="isUploadingOutro" :size="14" class="animate-spin" />
-          <Upload v-else :size="14" />
-          {{ isUploadingOutro ? 'Uploading...' : 'Upload Outro' }}
-        </button>
-      </div>
-
-      <!-- Search -->
-      <div class="relative">
-        <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Search intros & outros..."
-          class="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-white/40 focus:outline-none focus:border-violet-500/50"
-        />
-      </div>
-
-      <!-- Source Tabs (Personal / Organization) -->
-      <div class="flex items-center gap-1 p-1 bg-white/5 rounded-lg">
-        <button
-          @click="activeSourceTab = 'personal'"
-          :class="[
-            'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-            activeSourceTab === 'personal' ? 'bg-violet-500/20 text-violet-300' : 'text-white/50 hover:text-white/70',
-          ]"
-        >
-          My Assets ({{ personalAssetsFiltered.length }})
+          <Play :size="12" />
+          Intros ({{ personalIntros.length + orgIntros.length }})
         </button>
         <button
-          v-if="hasOrganizations"
-          @click="activeSourceTab = 'organization'"
-          :class="[
-            'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-            activeSourceTab === 'organization' ? 'bg-cyan-500/20 text-cyan-300' : 'text-white/50 hover:text-white/70',
-          ]"
+          @click="typeFilter = 'outro'"
+          class="px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
+          :style="
+            typeFilter === 'outro'
+              ? 'background-color: var(--sidebar-active); color: var(--sidebar-accent)'
+              : 'background-color: var(--sidebar-hover); color: var(--sidebar-text-muted)'
+          "
+          @mouseenter="
+            (e) => {
+              if (typeFilter !== 'outro') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-active)';
+            }
+          "
+          @mouseleave="
+            (e) => {
+              if (typeFilter !== 'outro') (e.target as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+            }
+          "
         >
-          Organization ({{ orgAssetsFiltered.length }})
+          <Play :size="12" />
+          Outros ({{ personalOutros.length + orgOutros.length }})
         </button>
       </div>
 
-      <!-- Asset List -->
-      <div class="max-h-[350px] overflow-y-auto pr-1 space-y-1.5">
-        <!-- Loading State -->
-        <div v-if="loadingAssets" class="flex items-center justify-center py-6">
-          <Loader2 :size="20" class="animate-spin text-white/40" />
-        </div>
+      <!-- Actions -->
+      <div class="flex items-center gap-1">
+        <button
+          @click="openUploadDialog"
+          class="p-1.5 rounded-md transition-all"
+          style="color: var(--sidebar-text-muted)"
+          @mouseenter="(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--sidebar-accent)')"
+          @mouseleave="(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text-muted)')"
+          title="Upload intro or outro"
+        >
+          <Plus :size="14" />
+        </button>
+      </div>
+    </div>
 
-        <!-- Empty State -->
-        <div v-else-if="currentAssetsFiltered.length === 0" class="py-6 text-center">
-          <Play :size="24" class="mx-auto text-white/20 mb-2" />
-          <p class="text-xs text-white/40">No intros or outros available</p>
-          <p class="text-[10px] text-white/30 mt-1">Upload videos above to get started</p>
-        </div>
+    <!-- Asset List -->
+    <div class="max-h-[350px] overflow-y-auto pr-1 space-y-1.5 intro-outro-list">
+      <!-- Loading State -->
+      <div v-if="loadingAssets" class="flex items-center justify-center py-6">
+        <Loader2 :size="20" class="animate-spin" style="color: var(--sidebar-text-muted)" />
+      </div>
 
-        <!-- Combined Assets List -->
-        <template v-else>
-          <div
-            v-for="asset in currentAssetsFiltered"
-            :key="asset.id"
-            @click="handleAssetClick(asset)"
-            :class="[
-              'group p-3 rounded-lg border transition-all',
-              isAssetApplied(asset)
-                ? asset.type === 'intro'
-                  ? 'bg-emerald-500/20 border-emerald-500/40 cursor-default'
-                  : 'bg-violet-500/20 border-violet-500/40 cursor-default'
-                : asset.type === 'intro'
-                  ? 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-emerald-500/30 cursor-pointer'
-                  : 'bg-white/5 hover:bg-white/10 border-white/10 hover:border-violet-500/30 cursor-pointer',
-            ]"
-          >
-            <div class="flex items-center gap-3">
-              <!-- Thumbnail -->
-              <div class="w-16 h-10 rounded overflow-hidden bg-black/50 flex-shrink-0 relative">
-                <img
-                  v-if="getThumbnail(asset)"
-                  :src="getThumbnail(asset)!"
-                  class="w-full h-full object-cover"
-                  @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
-                />
-                <div v-else class="w-full h-full flex items-center justify-center">
-                  <Play :size="14" class="text-white/30" />
-                </div>
-                <!-- Type Badge -->
-                <div
-                  :class="[
-                    'absolute bottom-0.5 left-0.5 px-1 py-0.5 text-[8px] font-medium rounded',
-                    asset.type === 'intro' ? 'bg-emerald-500/90 text-white' : 'bg-violet-500/90 text-white',
-                  ]"
-                >
-                  {{ asset.type === 'intro' ? 'INTRO' : 'OUTRO' }}
-                </div>
+      <!-- Empty State -->
+      <div v-else-if="allAssetsFiltered.length === 0" class="py-6 text-center">
+        <Clapperboard :size="24" class="mx-auto mb-2" style="color: var(--sidebar-text-muted); opacity: 0.5" />
+        <p class="text-xs" style="color: var(--sidebar-text-muted)">
+          {{ props.searchQuery ? 'No matching intros or outros found' : 'No intros or outros available' }}
+        </p>
+      </div>
+
+      <!-- Combined Assets List -->
+      <template v-else>
+        <div
+          v-for="asset in allAssetsFiltered"
+          :key="asset.id"
+          @click="handleAssetClick(asset)"
+          class="intro-outro-asset group p-3 rounded-lg border transition-all"
+          :class="isAssetApplied(asset) ? 'cursor-default' : 'cursor-pointer'"
+          :style="
+            isAssetApplied(asset)
+              ? 'background-color: var(--sidebar-active); border-color: var(--sidebar-accent)'
+              : 'background-color: var(--sidebar-hover); border-color: var(--sidebar-border)'
+          "
+          @mouseenter="
+            (e) => {
+              if (!isAssetApplied(asset)) {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-active)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'var(--sidebar-accent)';
+              }
+            }
+          "
+          @mouseleave="
+            (e) => {
+              if (!isAssetApplied(asset)) {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'var(--sidebar-border)';
+              }
+            }
+          "
+        >
+          <div class="flex items-center gap-3">
+            <!-- Thumbnail -->
+            <div
+              class="w-16 h-10 rounded overflow-hidden flex-shrink-0 relative"
+              style="background-color: var(--sidebar-surface)"
+            >
+              <img
+                v-if="getThumbnail(asset)"
+                :src="getThumbnail(asset)!"
+                class="w-full h-full object-cover"
+                @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
+              />
+              <div v-else class="w-full h-full flex items-center justify-center">
+                <Play :size="14" style="color: var(--sidebar-text-muted)" />
               </div>
-
-              <!-- Info -->
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-1.5">
-                  <p class="text-sm text-white truncate">{{ asset.name }}</p>
-                  <Building2
-                    v-if="asset.isOrgAsset"
-                    :size="10"
-                    class="text-cyan-400 flex-shrink-0"
-                    title="Organization asset"
-                  />
-                </div>
-                <p class="text-xs text-white/40">
-                  {{ formatDuration(asset.duration || 0) }}
-                  <span v-if="asset.organization_name" class="text-cyan-400/60">• {{ asset.organization_name }}</span>
-                </p>
-              </div>
-
-              <!-- Applied badge or Add button -->
+              <!-- Type Badge -->
               <div
-                v-if="isAssetApplied(asset)"
-                :class="[
-                  'px-2 py-1 text-[10px] font-medium rounded',
-                  asset.type === 'intro' ? 'bg-emerald-500/30 text-emerald-300' : 'bg-violet-500/30 text-violet-300',
-                ]"
+                class="absolute bottom-0.5 left-0.5 px-1 py-0.5 text-[8px] font-medium rounded"
+                :class="asset.type === 'intro' ? 'bg-emerald-500/90 text-white' : 'bg-sky-500/90 text-white'"
               >
-                Applied
+                {{ asset.type === 'intro' ? 'INTRO' : 'OUTRO' }}
               </div>
-              <button
-                v-else
-                @click.stop="handleAssetClick(asset)"
-                :class="[
-                  'p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity',
-                  asset.type === 'intro' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-violet-500/20 text-violet-400',
-                ]"
-                title="Add to timeline"
+              <!-- Organization Badge -->
+              <div
+                v-if="asset.isOrgAsset"
+                class="absolute top-0.5 right-0.5 px-1 py-0.5 text-[8px] font-medium rounded bg-cyan-500/90 text-white flex items-center gap-0.5"
+                :title="asset.organization_name || 'Organization asset'"
               >
-                <Plus :size="14" />
-              </button>
+                <Building2 :size="8" />
+              </div>
             </div>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5">
+                <p class="text-sm truncate" style="color: var(--sidebar-text)">{{ asset.name }}</p>
+              </div>
+              <p class="text-xs" style="color: var(--sidebar-text-muted)">
+                {{ formatDuration(asset.duration || 0) }}
+                <span v-if="asset.organization_name" class="text-cyan-400/60">• {{ asset.organization_name }}</span>
+              </p>
+            </div>
+
+            <!-- Applied badge or action button -->
+            <div
+              v-if="isAssetApplied(asset)"
+              class="px-2 py-1 text-[10px] font-medium rounded"
+              style="background-color: var(--sidebar-active); color: var(--sidebar-accent)"
+            >
+              Applied
+            </div>
+            <button
+              v-else
+              @click.stop="handleAssetClick(asset)"
+              class="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+              style="background-color: var(--sidebar-active); color: var(--sidebar-accent)"
+              title="Add to timeline"
+            >
+              <Plus :size="14" />
+            </button>
           </div>
-        </template>
-      </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, onMounted, watch } from 'vue';
-  import { Play, Plus, X, Loader2, Upload, Building2, Search } from 'lucide-vue-next';
-  import { getAllIntroOutros, createIntroOutro, type IntroOutro } from '@/services/database';
+  import { Play, Plus, X, Loader2, Building2, Clapperboard } from 'lucide-vue-next';
+  import { getAllIntroOutros, type IntroOutro } from '@/services/database';
   import { invoke } from '@tauri-apps/api/core';
-  import { open } from '@tauri-apps/plugin-dialog';
   import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
   import { useAuthStore } from '@/stores/auth';
+  import IntroOutroUploadDialog from '@/components/IntroOutroUploadDialog.vue';
 
   // Extended IntroOutro type that can be a local asset or server org asset
   interface IntroOutroItem extends Omit<IntroOutro, 'id'> {
@@ -271,6 +337,7 @@
   const props = defineProps<{
     currentIntro?: AppliedIntroOutro | null;
     currentOutro?: AppliedIntroOutro | null;
+    searchQuery: string;
   }>();
 
   const emit = defineEmits<{
@@ -291,10 +358,8 @@
   const loadingAssets = ref(false);
   const introThumbnails = ref<Map<string, string>>(new Map());
   const outroThumbnails = ref<Map<string, string>>(new Map());
-  const isUploadingIntro = ref(false);
-  const isUploadingOutro = ref(false);
-  const searchQuery = ref('');
-  const activeSourceTab = ref<'personal' | 'organization'>('personal');
+  const showUploadDialog = ref(false);
+  const typeFilter = ref<'all' | 'intro' | 'outro'>('all');
 
   // Computed
   const hasOrganizations = computed(() => {
@@ -302,37 +367,31 @@
     return user && (user.owned_organization_id || user.created_by_organization_id);
   });
 
-  // Combine intros and outros, sorted by type (intros first) then by name
-  const personalAssets = computed(() => {
-    return [...personalIntros.value, ...personalOutros.value].sort((a, b) => {
+  // Combine all intros and outros (both personal and organization), sorted by type (intros first) then by name
+  const allAssets = computed(() => {
+    return [...personalIntros.value, ...personalOutros.value, ...orgIntros.value, ...orgOutros.value].sort((a, b) => {
       if (a.type !== b.type) return a.type === 'intro' ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
   });
 
-  const orgAssets = computed(() => {
-    return [...orgIntros.value, ...orgOutros.value].sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'intro' ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-  });
+  const allAssetsFiltered = computed(() => {
+    let filtered = allAssets.value;
 
-  const personalAssetsFiltered = computed(() => {
-    if (!searchQuery.value) return personalAssets.value;
-    const query = searchQuery.value.toLowerCase();
-    return personalAssets.value.filter((a) => a.name.toLowerCase().includes(query));
-  });
+    // Filter by type
+    if (typeFilter.value !== 'all') {
+      filtered = filtered.filter((a) => a.type === typeFilter.value);
+    }
 
-  const orgAssetsFiltered = computed(() => {
-    if (!searchQuery.value) return orgAssets.value;
-    const query = searchQuery.value.toLowerCase();
-    return orgAssets.value.filter(
-      (a) => a.name.toLowerCase().includes(query) || a.organization_name?.toLowerCase().includes(query)
-    );
-  });
+    // Filter by search
+    if (props.searchQuery) {
+      const query = props.searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (a) => a.name.toLowerCase().includes(query) || a.organization_name?.toLowerCase().includes(query)
+      );
+    }
 
-  const currentAssetsFiltered = computed(() => {
-    return activeSourceTab.value === 'personal' ? personalAssetsFiltered.value : orgAssetsFiltered.value;
+    return filtered;
   });
 
   // Methods
@@ -464,67 +523,13 @@
     }
   }
 
-  const videoExtensions = ['mp4', 'mov', 'webm', 'mkv', 'avi'];
-
-  async function uploadIntro() {
-    await uploadVideo('intro');
+  function handleUploadComplete() {
+    showUploadDialog.value = false;
+    loadIntroOutros();
   }
 
-  async function uploadOutro() {
-    await uploadVideo('outro');
-  }
-
-  async function uploadVideo(type: 'intro' | 'outro') {
-    const isUploading = type === 'intro' ? isUploadingIntro : isUploadingOutro;
-    isUploading.value = true;
-
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: 'Video Files', extensions: videoExtensions }],
-      });
-
-      if (!selected) {
-        isUploading.value = false;
-        return;
-      }
-
-      const filePath = typeof selected === 'string' ? selected : (selected as { path?: string })?.path;
-      if (!filePath) {
-        isUploading.value = false;
-        return;
-      }
-
-      const pathParts = filePath.replace(/\\/g, '/').split('/');
-      const filename = pathParts[pathParts.length - 1];
-      const name = filename.replace(/\.[^/.]+$/, '');
-
-      let duration: number | undefined;
-      try {
-        const durationResult = await invoke<number>('get_video_duration', { videoPath: filePath });
-        duration = durationResult;
-      } catch (err) {
-        console.warn('[IntroOutroTab] Failed to get video duration:', err);
-      }
-
-      let thumbnailPath: string | null = null;
-      try {
-        thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-          videoPath: filePath,
-          timestampSeconds: 1,
-          outputFilename: `${type}_${Date.now()}`,
-        });
-      } catch (err) {
-        console.warn('[IntroOutroTab] Failed to generate thumbnail:', err);
-      }
-
-      await createIntroOutro(type, name, filePath, duration, thumbnailPath, thumbnailPath ? 'completed' : 'pending');
-      await loadIntroOutros();
-    } catch (error) {
-      console.error(`[IntroOutroTab] Failed to upload ${type}:`, error);
-    } finally {
-      isUploading.value = false;
-    }
+  function openUploadDialog() {
+    showUploadDialog.value = true;
   }
 
   function addIntro(intro: IntroOutroItem) {
@@ -562,20 +567,43 @@
 </script>
 
 <style scoped>
-  .overflow-y-auto::-webkit-scrollbar {
-    width: 4px;
+  /* Custom scrollbar styling */
+  .intro-outro-list::-webkit-scrollbar {
+    width: 6px;
   }
 
-  .overflow-y-auto::-webkit-scrollbar-track {
+  .intro-outro-list::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  .overflow-y-auto::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
+  .intro-outro-list::-webkit-scrollbar-thumb {
+    background-color: var(--sidebar-border);
+    border-radius: 3px;
   }
 
-  .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+  .intro-outro-list::-webkit-scrollbar-thumb:hover {
+    background-color: var(--sidebar-text-muted);
+  }
+
+  /* Firefox scrollbar */
+  .intro-outro-list {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sidebar-border) transparent;
+  }
+
+  /* Smooth transitions */
+  .intro-outro-asset {
+    transition: all 150ms ease;
+  }
+
+  /* Input placeholder styling */
+  input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  /* Button transitions */
+  button {
+    transition: all 150ms ease;
   }
 </style>

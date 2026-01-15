@@ -1,8 +1,5 @@
 <template>
-  <div
-    class="flex-1 min-h-0 rounded-xl bg-black/40 border border-white/3 relative overflow-hidden flex items-center justify-center group/player"
-    :style="{ maxWidth: '100%', maxHeight: '100%' }"
-  >
+  <div class="w-full h-full min-h-0 relative overflow-hidden flex items-center justify-center group/player">
     <!-- Video Crop Container -->
     <div
       ref="videoContainerRef"

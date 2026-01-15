@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["src/main.ts", "src/App.vue"],
+  "project": ["src/**/*.{ts,vue}"],
+  "ignore": ["src-tauri/**", "src/vite-env.d.ts"],
+  "ignoreDependencies": [
+    "@tauri-apps/cli",
+    "husky",
+    "lint-staged",
+    "prettier",
+    "prettier-plugin-vue",
+    "@prettier/plugin-pug"
+  ],
+  "vue": {
+    "entry": ["src/**/*.vue"]
+  },
+  "vite": {
+    "config": ["vite.config.ts"]
+  }
+}

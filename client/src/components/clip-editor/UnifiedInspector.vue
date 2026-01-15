@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-full bg-[#1a1a1a] border-l border-white/10">
+  <div class="unified-inspector">
     <!-- Header -->
     <div class="flex items-center justify-between px-3 py-2 border-b border-white/10">
       <div class="flex items-center gap-2">
@@ -39,7 +39,7 @@
         <!-- Common Properties -->
         <div class="space-y-3">
           <h4 class="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Timing</h4>
-          
+
           <div class="grid grid-cols-2 gap-2">
             <div>
               <label class="block text-[10px] text-white/50 mb-1">Start Time</label>
@@ -69,7 +69,7 @@
         <!-- Transform Properties -->
         <div v-if="hasTransformProperties" class="space-y-3">
           <h4 class="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Transform</h4>
-          
+
           <div class="grid grid-cols-2 gap-2">
             <div>
               <label class="block text-[10px] text-white/50 mb-1">Position X</label>
@@ -138,7 +138,7 @@
         <!-- Text-specific Properties -->
         <div v-if="selectedItem.type === 'text'" class="space-y-3">
           <h4 class="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Text</h4>
-          
+
           <div>
             <label class="block text-[10px] text-white/50 mb-1">Content</label>
             <textarea
@@ -177,11 +177,13 @@
         <!-- Audio-specific Properties -->
         <div v-if="selectedItem.type === 'audio'" class="space-y-3">
           <h4 class="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Audio</h4>
-          
+
           <div>
             <div class="flex items-center justify-between mb-1">
               <label class="text-[10px] text-white/50">Volume</label>
-              <span class="text-[10px] text-white/40">{{ Math.round((selectedItem.originalData?.volume || 1) * 100) }}%</span>
+              <span class="text-[10px] text-white/40">
+                {{ Math.round((selectedItem.originalData?.volume || 1) * 100) }}%
+              </span>
             </div>
             <input
               type="range"
@@ -223,11 +225,13 @@
         <!-- Effect-specific Properties -->
         <div v-if="selectedItem.type === 'effect' || selectedItem.type === 'adjustment_layer'" class="space-y-3">
           <h4 class="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Effect Settings</h4>
-          
+
           <div v-if="selectedItem.originalData?.effect_type === 'blur'">
             <div class="flex items-center justify-between mb-1">
               <label class="text-[10px] text-white/50">Blur Amount</label>
-              <span class="text-[10px] text-white/40">{{ selectedItem.originalData?.settings?.blurAmount || 0 }}px</span>
+              <span class="text-[10px] text-white/40">
+                {{ selectedItem.originalData?.settings?.blurAmount || 0 }}px
+              </span>
             </div>
             <input
               type="range"
@@ -245,7 +249,9 @@
               <div>
                 <div class="flex items-center justify-between mb-1">
                   <label class="text-[10px] text-white/50">Brightness</label>
-                  <span class="text-[10px] text-white/40">{{ selectedItem.originalData?.settings?.brightness || 0 }}</span>
+                  <span class="text-[10px] text-white/40">
+                    {{ selectedItem.originalData?.settings?.brightness || 0 }}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -259,7 +265,9 @@
               <div>
                 <div class="flex items-center justify-between mb-1">
                   <label class="text-[10px] text-white/50">Contrast</label>
-                  <span class="text-[10px] text-white/40">{{ selectedItem.originalData?.settings?.contrast || 0 }}</span>
+                  <span class="text-[10px] text-white/40">
+                    {{ selectedItem.originalData?.settings?.contrast || 0 }}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -273,7 +281,9 @@
               <div>
                 <div class="flex items-center justify-between mb-1">
                   <label class="text-[10px] text-white/50">Saturation</label>
-                  <span class="text-[10px] text-white/40">{{ selectedItem.originalData?.settings?.saturation || 0 }}</span>
+                  <span class="text-[10px] text-white/40">
+                    {{ selectedItem.originalData?.settings?.saturation || 0 }}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -294,7 +304,7 @@
             <h4 class="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Keyframes</h4>
             <span class="text-[10px] text-white/30">{{ selectedItem.keyframes.length }}</span>
           </div>
-          
+
           <div class="space-y-1 max-h-32 overflow-y-auto">
             <div
               v-for="kf in selectedItem.keyframes"
@@ -332,105 +342,137 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import {
-  Settings,
-  X,
-  MousePointer2,
-  Film,
-  Music,
-  Type,
-  Image,
-  Smile,
-  Palette,
-  Layers,
-  Diamond,
-  Copy,
-  Trash2,
-} from 'lucide-vue-next';
-import type { TimelineItem, TimelineItemType } from '@/types/timeline-model';
+  import { computed } from 'vue';
+  import {
+    Settings,
+    X,
+    MousePointer2,
+    Film,
+    Music,
+    Type,
+    Image,
+    Smile,
+    Palette,
+    Layers,
+    Diamond,
+    Copy,
+    Trash2,
+  } from 'lucide-vue-next';
+  import type { TimelineItem, TimelineItemType } from '@/types/timeline-model';
 
-const props = defineProps<{
-  selectedItem: TimelineItem | null;
-}>();
+  const props = defineProps<{
+    selectedItem: TimelineItem | null;
+  }>();
 
-const emit = defineEmits<{
-  (e: 'deselect'): void;
-  (e: 'update', id: string, updates: Partial<TimelineItem>): void;
-  (e: 'updateOriginalData', id: string, key: string, value: any): void;
-  (e: 'updateEffectSetting', id: string, key: string, value: any): void;
-  (e: 'duplicate', item: TimelineItem): void;
-  (e: 'delete', id: string): void;
-}>();
+  const emit = defineEmits<{
+    (e: 'deselect'): void;
+    (e: 'update', id: string, updates: Partial<TimelineItem>): void;
+    (e: 'updateOriginalData', id: string, key: string, value: any): void;
+    (e: 'updateEffectSetting', id: string, key: string, value: any): void;
+    (e: 'duplicate', item: TimelineItem): void;
+    (e: 'delete', id: string): void;
+  }>();
 
-const hasTransformProperties = computed(() => {
-  if (!props.selectedItem) return false;
-  const type = props.selectedItem.type;
-  return ['text', 'sticker', 'watermark', 'video'].includes(type);
-});
+  const hasTransformProperties = computed(() => {
+    if (!props.selectedItem) return false;
+    const type = props.selectedItem.type;
+    return ['text', 'sticker', 'watermark', 'video'].includes(type);
+  });
 
-function getItemIcon(type: TimelineItemType) {
-  switch (type) {
-    case 'video': return Film;
-    case 'audio': return Music;
-    case 'text': return Type;
-    case 'sticker': return Smile;
-    case 'watermark': return Image;
-    case 'effect': return Palette;
-    case 'adjustment_layer': return Layers;
-    default: return Settings;
+  function getItemIcon(type: TimelineItemType) {
+    switch (type) {
+      case 'video':
+        return Film;
+      case 'audio':
+        return Music;
+      case 'text':
+        return Type;
+      case 'sticker':
+        return Smile;
+      case 'watermark':
+        return Image;
+      case 'effect':
+        return Palette;
+      case 'adjustment_layer':
+        return Layers;
+      default:
+        return Settings;
+    }
   }
-}
 
-function getItemIconClass(type: TimelineItemType): string {
-  switch (type) {
-    case 'video': return 'text-blue-400';
-    case 'audio': return 'text-emerald-400';
-    case 'text': return 'text-yellow-400';
-    case 'sticker': return 'text-pink-400';
-    case 'watermark': return 'text-cyan-400';
-    case 'effect': return 'text-purple-400';
-    case 'adjustment_layer': return 'text-violet-400';
-    default: return 'text-white/60';
+  function getItemIconClass(type: TimelineItemType): string {
+    switch (type) {
+      case 'video':
+        return 'text-blue-400';
+      case 'audio':
+        return 'text-emerald-400';
+      case 'text':
+        return 'text-yellow-400';
+      case 'sticker':
+        return 'text-pink-400';
+      case 'watermark':
+        return 'text-cyan-400';
+      case 'effect':
+        return 'text-purple-400';
+      case 'adjustment_layer':
+        return 'text-violet-400';
+      default:
+        return 'text-white/60';
+    }
   }
-}
 
-function formatItemType(type: TimelineItemType): string {
-  if (type === 'adjustment_layer') return 'Adjustment Layer';
-  return type;
-}
-
-function getTransformValue(prop: string): number {
-  if (!props.selectedItem) return 0;
-  
-  const item = props.selectedItem;
-  switch (prop) {
-    case 'positionX': return item.positionX ?? 50;
-    case 'positionY': return item.positionY ?? 50;
-    case 'scale': return item.scale ?? 1;
-    case 'rotation': return item.rotation ?? 0;
-    case 'opacity': return item.opacity ?? 1;
-    default: return 0;
+  function formatItemType(type: TimelineItemType): string {
+    if (type === 'adjustment_layer') return 'Adjustment Layer';
+    return type;
   }
-}
 
-function updateProperty(key: string, value: any) {
-  if (!props.selectedItem) return;
-  emit('update', props.selectedItem.id, { [key]: value });
-}
+  function getTransformValue(prop: string): number {
+    if (!props.selectedItem) return 0;
 
-function updateTransform(prop: string, value: number) {
-  if (!props.selectedItem) return;
-  emit('update', props.selectedItem.id, { [prop]: value });
-}
+    const item = props.selectedItem;
+    switch (prop) {
+      case 'positionX':
+        return item.positionX ?? 50;
+      case 'positionY':
+        return item.positionY ?? 50;
+      case 'scale':
+        return item.scale ?? 1;
+      case 'rotation':
+        return item.rotation ?? 0;
+      case 'opacity':
+        return item.opacity ?? 1;
+      default:
+        return 0;
+    }
+  }
 
-function updateOriginalData(key: string, value: any) {
-  if (!props.selectedItem) return;
-  emit('updateOriginalData', props.selectedItem.id, key, value);
-}
+  function updateProperty(key: string, value: any) {
+    if (!props.selectedItem) return;
+    emit('update', props.selectedItem.id, { [key]: value });
+  }
 
-function updateEffectSetting(key: string, value: any) {
-  if (!props.selectedItem) return;
-  emit('updateEffectSetting', props.selectedItem.id, key, value);
-}
+  function updateTransform(prop: string, value: number) {
+    if (!props.selectedItem) return;
+    emit('update', props.selectedItem.id, { [prop]: value });
+  }
+
+  function updateOriginalData(key: string, value: any) {
+    if (!props.selectedItem) return;
+    emit('updateOriginalData', props.selectedItem.id, key, value);
+  }
+
+  function updateEffectSetting(key: string, value: any) {
+    if (!props.selectedItem) return;
+    emit('updateEffectSetting', props.selectedItem.id, key, value);
+  }
 </script>
+
+<style scoped>
+  .unified-inspector {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: var(--sidebar-surface, #0c0c0c);
+    border-left: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+  }
+</style>
