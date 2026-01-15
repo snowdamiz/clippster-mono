@@ -12,7 +12,14 @@
     "tauri": "tauri",
     "format": "prettier --write \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:check": "prettier --check \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
-    "prepare": "husky"
+    "prepare": "husky",
+    "analyze": "node ../scripts/analyze-codebase.mjs --vue --html",
+    "analyze:all": "node ../scripts/analyze-codebase.mjs --all --html --graph",
+    "knip": "knip",
+    "knip:fix": "knip --fix",
+    "madge:orphans": "madge --orphans --extensions ts,vue src/",
+    "madge:circular": "madge --circular --extensions ts,vue src/",
+    "madge:graph": "madge --image ../analysis-output/dependency-graph.svg --extensions ts,vue src/"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
@@ -48,7 +55,9 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "husky": "^9.1.7",
+    "knip": "^5.81.0",
     "lint-staged": "^16.2.6",
+    "madge": "^8.0.0",
     "postcss": "^8.5.6",
     "prettier": "^3.6.2",
     "prettier-plugin-vue": "^1.1.6",
