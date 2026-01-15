@@ -604,6 +604,7 @@
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { useUnifiedTracks } from '@/composables/useUnifiedTracks';
   import { useAudioWorker } from '@/composables/useAudioWorker';
+  import { useAutoSave } from '@/composables/useAutoSave';
   import { invoke } from '@tauri-apps/api/core';
 
   // Helper function to load watermark preview URL
@@ -786,12 +787,6 @@
   const videoDimensions = ref({ width: 0, height: 0 });
   const clipEditId = ref<string | null>(null);
   const videoEditorEditId = ref<string | null>(null); // For video editor mode
-
-  // Auto-save state
-  const isSaving = ref(false);
-  const lastSaved = ref(false);
-  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-  let isInitialLoad = ref(true); // Prevent auto-save during initial data load
 
   // Segment preview state - for seamless playback across segment cuts
   const segmentPreviewPath = ref<string | null>(null);
@@ -1009,6 +1004,51 @@
 
   // Use transcript data composable for subtitle display
   const { transcriptData, loadTranscriptData } = useTranscriptData(computed(() => projectId.value));
+
+  // Auto-save composable - handles debounced saving of edit data
+  const {
+    isSaving,
+    lastSaved,
+    isInitialLoad,
+    triggerAutoSave,
+    saveNow,
+    watchForChanges,
+    setInitialLoadComplete,
+    resetForNewSession,
+  } = useAutoSave(async () => {
+    const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
+    if (!editId) return;
+
+    if (editorMode.value) {
+      // Video editor mode - save to video_editor_edits table
+      await updateVideoEditorEdit(editId, {
+        filterSegments: filterSegments.value,
+        originalDb: originalDb.value,
+        trackDbValues: trackDbValues.value,
+      });
+    } else {
+      // Clip mode - save to clip_edits table
+      await updateClipEdit(editId, {
+        trim: {
+          startTime: props.clipStartTime,
+          endTime: props.clipEndTime,
+          segments: trimSegments.value,
+        },
+        filterSegments: filterSegments.value,
+        originalDb: originalDb.value,
+        trackDbValues: trackDbValues.value,
+        // Aspect ratio framing data
+        aspectFraming: {
+          selectedRatios: selectedAspectRatios.value,
+          framingMode: framingMode.value,
+          configs: framingConfigs.value,
+          segmentConfigs: segmentFramingConfigs.value,
+        },
+        // Subtitle settings
+        subtitleSettings: subtitleSettings.value,
+      });
+    }
+  });
 
   // Get the source video time ranges covered by all video sources (for editor mode)
   const sourceVideoTimeRanges = computed(() => {
@@ -6573,83 +6613,6 @@
     console.error('[ClipEditorDialog] Build failed:', error);
   }
 
-  // Auto-save function (debounced)
-  function triggerAutoSave() {
-    // Don't save during initial load
-    if (isInitialLoad.value) return;
-
-    // Clear any pending save
-    if (saveTimeout) {
-      clearTimeout(saveTimeout);
-    }
-
-    // Debounce: wait 500ms before saving
-    saveTimeout = setTimeout(() => {
-      performSave();
-    }, 500);
-  }
-
-  // Perform the actual save
-  async function performSave() {
-    const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
-    if (!editId) return;
-
-    isSaving.value = true;
-    lastSaved.value = false;
-
-    try {
-      if (editorMode.value) {
-        // Video editor mode - save to video_editor_edits table
-        await updateVideoEditorEdit(editId, {
-          filterSegments: filterSegments.value,
-          originalDb: originalDb.value,
-          trackDbValues: trackDbValues.value,
-        });
-      } else {
-        // Clip mode - save to clip_edits table
-        await updateClipEdit(editId, {
-          trim: {
-            startTime: props.clipStartTime,
-            endTime: props.clipEndTime,
-            segments: trimSegments.value,
-          },
-          filterSegments: filterSegments.value,
-          originalDb: originalDb.value,
-          trackDbValues: trackDbValues.value,
-          // Aspect ratio framing data
-          aspectFraming: {
-            selectedRatios: selectedAspectRatios.value,
-            framingMode: framingMode.value,
-            configs: framingConfigs.value,
-            segmentConfigs: segmentFramingConfigs.value,
-          },
-          // Subtitle settings
-          subtitleSettings: subtitleSettings.value,
-        });
-      }
-
-      lastSaved.value = true;
-
-      // Hide "Saved" indicator after 2 seconds
-      setTimeout(() => {
-        lastSaved.value = false;
-      }, 2000);
-    } catch (error) {
-      console.error('[ClipEditorDialog] Auto-save failed:', error);
-    } finally {
-      isSaving.value = false;
-    }
-  }
-
-  // Save immediately (used when closing)
-  async function saveNow() {
-    if (saveTimeout) {
-      clearTimeout(saveTimeout);
-      saveTimeout = null;
-    }
-    await performSave();
-  }
-
   // Load project ID from clip (needed for transcript)
   async function loadProjectId() {
     // In editor mode, find the project ID from video sources
@@ -7896,51 +7859,16 @@
   );
 
   // Auto-save watchers - trigger save when data changes
-  watch(
+  watchForChanges([
     () => filterSegments.value,
-    () => triggerAutoSave(),
-    { deep: true }
-  );
-
-  watch(
     () => trimSegments.value,
-    () => triggerAutoSave(),
-    { deep: true }
-  );
-
-  watch(
     () => originalDb.value,
-    () => triggerAutoSave()
-  );
-
-  watch(
     () => trackDbValues.value,
-    () => triggerAutoSave(),
-    { deep: true }
-  );
-
-  watch(
     () => selectedAspectRatios.value,
-    () => triggerAutoSave(),
-    { deep: true }
-  );
-
-  watch(
     () => framingMode.value,
-    () => triggerAutoSave()
-  );
-
-  watch(
     () => framingConfigs.value,
-    () => triggerAutoSave(),
-    { deep: true }
-  );
-
-  watch(
     () => segmentFramingConfigs.value,
-    () => triggerAutoSave(),
-    { deep: true }
-  );
+  ]);
 
   // Watch for clip ID changes - clear command history when switching clips
   watch(
@@ -7972,7 +7900,7 @@
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen) {
-        isInitialLoad.value = true; // Prevent auto-save during load
+        resetForNewSession(); // Prevent auto-save during load
 
         // Clear command history when opening a clip/project
         // This ensures each clip/project starts with a fresh undo/redo stack
@@ -8032,20 +7960,15 @@
 
         // Allow auto-save after initial load is complete
         setTimeout(() => {
-          isInitialLoad.value = false;
+          setInitialLoadComplete();
         }, 100);
       } else if (!isOpen) {
         // Save any pending changes before closing
-        if (saveTimeout) {
-          clearTimeout(saveTimeout);
-          saveTimeout = null;
-        }
-
         // Use computed editorMode/editorProjectId to handle promoted state
         if (editorMode.value && editorProjectId.value) {
           emit('editorSave', editorProjectId.value);
         } else {
-          await performSave();
+          await saveNow();
         }
 
         // Clean up when dialog closes
@@ -8063,9 +7986,7 @@
         // Reset transcript state
         projectId.value = null;
         // Reset auto-save state
-        isSaving.value = false;
-        lastSaved.value = false;
-        isInitialLoad.value = true;
+        resetForNewSession();
         // Reset editor mode state
         videoSources.value = [];
         videoEditorEditId.value = null;
@@ -8084,9 +8005,7 @@
     document.removeEventListener('keydown', handleKeyDown);
     cleanupAudioElements();
     // Clear any pending save timeout
-    if (saveTimeout) {
-      clearTimeout(saveTimeout);
-    }
+    resetForNewSession();
     // Clear command history when closing editor
     commandHistory.clear();
     // Clean up segment preview file
