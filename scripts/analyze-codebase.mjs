@@ -146,10 +146,10 @@ async function analyzeVueClient() {
     log(`Error running knip: ${error.message}`, 'red');
   }
 
-  // Run madge for orphans
+  // Run madge for orphans (only .ts files - madge can't parse Vue SFCs properly)
   logSubsection('Running madge (orphan files)');
   try {
-    const madgeOrphansResult = spawnSync('npx', ['madge', '--orphans', '--extensions', 'ts,vue', 'src/'], {
+    const madgeOrphansResult = spawnSync('npx', ['madge', '--orphans', '--extensions', 'ts', '--exclude', '\\.vue$', 'src/'], {
       cwd: CLIENT_DIR,
       encoding: 'utf-8',
       shell: true,
@@ -186,10 +186,10 @@ async function analyzeVueClient() {
     log(`Error running madge orphans: ${error.message}`, 'red');
   }
 
-  // Run madge for circular dependencies
+  // Run madge for circular dependencies (only .ts files - madge can't parse Vue SFCs properly)
   logSubsection('Running madge (circular dependencies)');
   try {
-    const madgeCircularResult = spawnSync('npx', ['madge', '--circular', '--extensions', 'ts,vue', 'src/'], {
+    const madgeCircularResult = spawnSync('npx', ['madge', '--circular', '--extensions', 'ts', '--exclude', '\\.vue$', 'src/'], {
       cwd: CLIENT_DIR,
       encoding: 'utf-8',
       shell: true,
@@ -216,18 +216,19 @@ async function analyzeVueClient() {
     log(`Error running madge circular: ${error.message}`, 'red');
   }
 
-  // Generate dependency graph if requested
+  // Generate dependency graph if requested (only .ts files - madge can't parse Vue SFCs properly)
   if (options.graph) {
     logSubsection('Generating dependency graph');
     try {
-      const graphPath = join(OUTPUT_DIR, 'vue-dependency-graph.svg');
-      spawnSync('npx', ['madge', '--image', graphPath, '--extensions', 'ts,vue', 'src/'], {
+      const graphPath = join(OUTPUT_DIR, 'ts-dependency-graph.svg');
+      spawnSync('npx', ['madge', '--image', graphPath, '--extensions', 'ts', '--exclude', '\\.vue$', 'src/'], {
         cwd: CLIENT_DIR,
         encoding: 'utf-8',
         shell: true,
         timeout: 120000,
       });
       log(`Dependency graph saved to: ${graphPath}`, 'green');
+      log('Note: Graph only includes .ts files (madge cannot parse Vue SFCs)', 'yellow');
     } catch (error) {
       log(`Error generating graph: ${error.message}`, 'red');
     }

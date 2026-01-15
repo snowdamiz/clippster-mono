@@ -1,10 +1,11 @@
 {
-  "fileExtensions": ["ts", "vue", "js"],
+  "fileExtensions": ["ts", "js"],
   "tsConfig": "./tsconfig.json",
   "excludeRegExp": [
     "node_modules",
     "src-tauri",
-    "\\.d\\.ts$"
+    "\\.d\\.ts$",
+    "\\.vue$"
   ],
   "detectiveOptions": {
     "ts": {
