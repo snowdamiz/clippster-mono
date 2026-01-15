@@ -1,44 +1,60 @@
 <template>
   <Teleport to="body">
-    <div v-if="modelValue" class="clip-editor__overlay">
-      <div ref="dialogRef" class="clip-editor" role="dialog" aria-modal="true">
+    <div v-if="modelValue" class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[9999]">
+      <div
+        ref="dialogRef"
+        class="bg-[var(--sidebar-surface,#0c0c0c)] border border-white/[0.08] rounded-2xl w-[calc(100%-60px)] h-[calc(100%-80px)] mt-[60px] mx-[30px] mb-[33px] max-w-[1800px] max-h-[950px] flex flex-col overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.6),0_0_1px_rgba(255,255,255,0.1)] max-[1200px]:m-5 max-[1200px]:w-[calc(100%-40px)] max-[1200px]:h-[calc(100%-40px)] max-[1200px]:rounded-xl"
+        role="dialog"
+        aria-modal="true"
+      >
         <!-- Header -->
-        <div class="clip-editor__header">
-          <div class="clip-editor__header-left">
-            <div class="clip-editor__header-icon">
+        <div class="flex items-center justify-between py-2 px-3 bg-black/40 border-b border-white/[0.08] shrink-0">
+          <div class="flex items-center gap-2 min-w-0">
+            <div
+              class="flex items-center justify-center w-[26px] h-[26px] rounded-md bg-gradient-to-br from-sky-500/20 to-sky-400/15 border border-sky-500/30 text-sky-400 shrink-0"
+            >
               <Film :size="14" />
             </div>
-            <h2 class="clip-editor__title" :title="editorMode ? editorProjectName : clipTitle">
+            <h2
+              class="text-sm font-semibold text-[var(--sidebar-text,#f4f4f5)] m-0 tracking-tight whitespace-nowrap"
+              :title="editorMode ? editorProjectName : clipTitle"
+            >
               {{ editorMode ? 'Video Editor' : 'Edit Clip' }}
             </h2>
-            <div class="clip-editor__separator"></div>
-            <p class="clip-editor__subtitle">
+            <div class="w-px h-4 bg-white/10"></div>
+            <p class="text-xs text-white/50 m-0 overflow-hidden text-ellipsis whitespace-nowrap max-w-[300px]">
               {{ editorMode ? editorProjectName : clipTitle }}
             </p>
           </div>
-          <div class="clip-editor__header-right">
+          <div class="flex items-center gap-2">
             <!-- Auto-save indicator -->
-            <div v-if="isSaving" class="clip-editor__save-indicator clip-editor__save-indicator--saving">
+            <div v-if="isSaving" class="flex items-center gap-1.5 text-xs text-zinc-500">
               <Loader2 :size="12" class="animate-spin" />
               <span>Saving...</span>
             </div>
-            <div v-else-if="lastSaved" class="clip-editor__save-indicator clip-editor__save-indicator--saved">
+            <div v-else-if="lastSaved" class="flex items-center gap-1.5 text-xs text-green-500">
               <Check :size="12" />
               <span>Saved</span>
             </div>
-            <button @click="close" class="clip-editor__close" title="Close (Esc)">
+            <button
+              @click="close"
+              class="flex items-center justify-center w-7 h-7 bg-transparent border-none rounded-md text-zinc-500 cursor-pointer transition-all duration-150 shrink-0 hover:bg-white/[0.08] hover:text-zinc-100"
+              title="Close (Esc)"
+            >
               <X :size="16" />
             </button>
           </div>
         </div>
 
         <!-- Main Content Area -->
-        <div class="clip-editor__content">
+        <div class="flex flex-col flex-1 min-h-0">
           <!-- Top Row: Preview and Controls -->
-          <div class="clip-editor__top-row">
+          <div class="flex min-h-[340px] border-b border-white/[0.08] flex-[0.55] overflow-hidden">
             <!-- Left: Video Preview Section -->
-            <div class="clip-editor__preview-column">
-              <div class="clip-editor__video-wrapper">
+            <div
+              class="w-1/2 min-w-0 border-r border-white/[0.08] flex flex-col items-center p-4 bg-gradient-to-b from-black/20 to-transparent max-[1200px]:w-1/2"
+            >
+              <div class="flex-1 min-h-0 min-w-0 max-w-full w-full flex flex-row items-stretch gap-3">
                 <!-- Aspect Ratio Selector (left side of video) -->
                 <AspectRatioSelector
                   :preview-aspect-ratio="previewAspectRatio"
@@ -50,7 +66,7 @@
                   @toggle-ratio-selection="toggleAspectRatio"
                 />
 
-                <div class="clip-editor__video-container">
+                <div class="flex-1 min-w-0 min-h-0 flex flex-col items-center justify-start overflow-hidden relative">
                   <ClipEditorPreview
                     ref="previewRef"
                     :video-src="effectiveVideoSrc"
@@ -123,7 +139,9 @@
             </div>
 
             <!-- Right: Controls Section -->
-            <div class="clip-editor__controls-column">
+            <div
+              class="w-1/2 min-w-0 flex flex-row flex-1 bg-gradient-to-b from-transparent to-black/15 max-[1200px]:w-1/2"
+            >
               <!-- Vertical Toolbar (Left side) -->
               <ClipEditorToolbar
                 :active-tab="editorMode ? activeEditorTab : activeTab"
@@ -132,14 +150,14 @@
               />
 
               <!-- Main Controls Area (Right side) -->
-              <div class="clip-editor__controls-main">
+              <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
                 <!-- Keyframe Inspector (Top of panel when selected) -->
-                <div v-if="selectedKeyframe" class="clip-editor__keyframe-inspector">
-                  <div class="clip-editor__keyframe-inspector-header">
-                    <h3 class="clip-editor__keyframe-inspector-title">Keyframe Editor</h3>
+                <div v-if="selectedKeyframe" class="p-4 border-b border-white/10 bg-black/30">
+                  <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-xs font-semibold text-white/70 uppercase tracking-wider m-0">Keyframe Editor</h3>
                     <button
                       @click="selectedKeyframe = null"
-                      class="clip-editor__keyframe-inspector-close"
+                      class="flex items-center justify-center p-1 bg-transparent border-none rounded cursor-pointer transition-all duration-150 text-white/50 hover:bg-white/10 hover:text-white"
                       title="Close Inspector"
                     >
                       <X :size="14" />
@@ -153,7 +171,7 @@
                 </div>
 
                 <!-- Tab Content -->
-                <div class="clip-editor__tab-content">
+                <div class="flex-1 overflow-y-auto p-4 tab-content-scrollbar">
                   <!-- Media Tab (Sources + Intro/Outro + Project Media) -->
                   <MediaTab
                     v-if="editorMode ? activeEditorTab === 'media' : activeTab === 'media'"
@@ -324,7 +342,9 @@
           </div>
 
           <!-- Bottom Row: Timeline (balanced real estate, keeps room for multiple tracks) -->
-          <div class="clip-editor__timeline-section">
+          <div
+            class="flex-[0.45] min-h-[320px] sm:min-h-[340px] max-h-[60vh] border-t border-white/[0.08] bg-gradient-to-b from-transparent to-black/25 py-2 px-2 pb-3 overflow-hidden"
+          >
             <ClipEditorTimeline
               class="h-full"
               :duration="editorMode ? editorDuration : clipDuration"
@@ -430,8 +450,14 @@
       </div>
 
       <!-- Speed Curve Editor Dialog -->
-      <div v-if="showSpeedCurveEditor" class="clip-editor__speed-curve-overlay" @click.self="closeSpeedCurveEditor">
-        <div class="clip-editor__speed-curve-dialog">
+      <div
+        v-if="showSpeedCurveEditor"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+        @click.self="closeSpeedCurveEditor"
+      >
+        <div
+          class="bg-[var(--sidebar-surface,#0c0c0c)] border border-white/[0.08] rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] w-[600px] max-w-[90vw]"
+        >
           <SpeedCurveEditor
             v-if="speedCurveEditorSourceId"
             :source-id="speedCurveEditorSourceId"
@@ -651,24 +677,19 @@
           // Try local cache first
           const localWatermark = await getWatermarkByServerId(serverId);
           if (localWatermark) {
-            console.log('[ClipEditorDialog] Found cached org watermark:', localWatermark.name);
             return await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
           }
 
           // Not cached locally - download through Tauri (bypasses CORS)
-          console.log('[ClipEditorDialog] Org watermark not cached, downloading from server...');
           const serverResponse = await getUserOrganizationAssets();
           if (serverResponse.success && serverResponse.assets) {
             const serverAsset = serverResponse.assets.find((a) => a.id === serverId && a.asset_type === 'watermark');
             if (serverAsset && serverAsset.url) {
-              console.log('[ClipEditorDialog] Downloading org watermark:', serverAsset.name);
               // Download and cache the asset locally (bypasses CORS)
               const downloadResult = await ensureAssetDownloaded(serverAsset);
               if (downloadResult.success && downloadResult.filePath) {
-                console.log('[ClipEditorDialog] Org watermark downloaded to:', downloadResult.filePath);
                 return await invoke<string>('read_file_as_data_url', { filePath: downloadResult.filePath });
               } else {
-                console.error('[ClipEditorDialog] Failed to download org watermark:', downloadResult.error);
               }
             }
           }
@@ -683,7 +704,6 @@
       try {
         const localWatermark = await getWatermarkImage(watermarkId);
         if (localWatermark) {
-          console.log('[ClipEditorDialog] Found local watermark by ID:', watermarkId);
           return await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
         }
       } catch (err) {
@@ -701,7 +721,6 @@
     }
 
     // 7. Fallback to placeholder
-    console.warn('[ClipEditorDialog] Using placeholder for watermark:', watermarkId);
     return PLACEHOLDER_SVG;
   }
 
@@ -899,23 +918,6 @@
   const selectedSegmentIndex = ref<number | undefined>(undefined);
   const originalDb = ref(0);
   const trackDbValues = ref<Record<string, number>>({});
-
-  // Debug watcher for stickers
-  watch(
-    stickers,
-    (newStickers) => {
-      console.log(
-        '[ClipEditorDialog] Stickers updated:',
-        newStickers.map((s) => ({
-          id: s.id,
-          scale: s.scale,
-          path: s.stickerPath.slice(-20),
-          configs: s.perRatioConfigs,
-        }))
-      );
-    },
-    { deep: true }
-  );
 
   // Computed: audio tracks with streaming URLs for timeline/waveform rendering
   const audioTracksWithStreamingUrls = computed(() => {
@@ -1777,12 +1779,6 @@
 
       const outputFilename = `preview_${props.clipId}_${Date.now()}`;
 
-      console.log('[ClipEditorDialog] Generating segment preview:', {
-        sourcePath,
-        segmentCount: previewSegments.length,
-        outputFilename,
-      });
-
       const previewPath = await invoke<string>('generate_segment_preview', {
         videoPath: sourcePath,
         segments: previewSegments,
@@ -1790,9 +1786,7 @@
       });
 
       segmentPreviewPath.value = previewPath;
-      console.log('[ClipEditorDialog] Preview generated:', previewPath);
     } catch (error) {
-      console.error('[ClipEditorDialog] Failed to generate preview:', error);
       previewGenerationError.value = String(error);
       // Fallback to original behavior (direct seeking)
       segmentPreviewPath.value = null;
@@ -2241,25 +2235,12 @@
   async function repairSourceOrderIndex() {
     if (videoSources.value.length === 0) return;
 
-    console.log(
-      '[repairSourceOrderIndex] Starting repair. Sources before:',
-      videoSources.value.map((s) => ({
-        id: s.id,
-        name: s.source_name,
-        order_index: s.order_index,
-        start_time: s.start_time,
-      }))
-    );
-
     // Sort by start_time to get the correct playback order
     const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
 
     let repairCount = 0;
     for (let i = 0; i < sortedSources.length; i++) {
       if (sortedSources[i].order_index !== i) {
-        console.log(
-          `[repairSourceOrderIndex] Fixing ${sortedSources[i].source_name}: order_index ${sortedSources[i].order_index} → ${i}`
-        );
         await updateVideoEditorSource(sortedSources[i].id, { order_index: i });
         sortedSources[i].order_index = i;
         repairCount++;
@@ -2268,18 +2249,6 @@
 
     // Always update the reactive array with the correctly ordered sources
     videoSources.value = sortedSources;
-
-    console.log(
-      '[repairSourceOrderIndex] Repair complete. Fixed:',
-      repairCount,
-      'Sources after:',
-      videoSources.value.map((s) => ({
-        id: s.id,
-        name: s.source_name,
-        order_index: s.order_index,
-        start_time: s.start_time,
-      }))
-    );
   }
 
   async function splitVideoSource(sourceId: string, cutTimelinePosition: number, cutSourceTime: number) {
@@ -2292,13 +2261,6 @@
       return;
     }
 
-    console.log('[splitVideoSource] Starting split with command pattern:', {
-      sourceId,
-      cutTimelinePosition,
-      cutSourceTime,
-      editorProjectId: editorProjectId.value,
-    });
-
     // Find the source index
     const sourceIndex = videoSources.value.findIndex((s) => s.id === sourceId);
     if (sourceIndex === -1) {
@@ -2309,7 +2271,6 @@
     try {
       // Create reload callback
       const reloadCallback = async () => {
-        console.log('[splitVideoSource] Reloading video sources from database...');
         await loadEditorProject();
       };
 
@@ -2323,10 +2284,6 @@
 
       await commandHistory.executeCommand(splitCommand);
       undoRedoTrigger.value++; // Trigger reactivity update
-
-      console.log(
-        `[splitVideoSource] Split complete (with undo support): ${sourceId} at timeline ${cutTimelinePosition.toFixed(2)}s`
-      );
     } catch (error) {
       console.error('[splitVideoSource] Failed to split source:', error);
       alert(`Failed to split source: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -2350,8 +2307,6 @@
     }
 
     try {
-      console.log('[ClipEditorDialog] Creating audio track from extracted audio (with undo support):', data);
-
       // Calculate the next track order (put it after existing audio tracks)
       const maxTrackOrder =
         audioTracks.value.length > 0 ? Math.max(...audioTracks.value.map((t) => t.trackOrder)) + 1 : 0;
@@ -2429,7 +2384,6 @@
       // Reload to update local state
       await reloadCallback();
 
-      console.log('[ClipEditorDialog] Audio extraction complete (with undo support)');
       triggerAutoSave();
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to create audio track:', error);
@@ -2444,8 +2398,6 @@
     newEndTime: number;
     delta: number;
   }) {
-    console.log('[ClipEditorDialog] Handling ripple edit:', data);
-
     try {
       let originalStartTime = 0;
       let originalEndTime = 0;
@@ -2539,8 +2491,6 @@
     newRollTime: number;
     originalRollTime: number;
   }) {
-    console.log('[ClipEditorDialog] Handling roll edit:', data);
-
     try {
       let leftSourceSnapshot;
       let rightSourceSnapshot;
@@ -2628,8 +2578,6 @@
     originalTrimStart: number;
     originalTrimEnd: number | null;
   }) {
-    console.log('[ClipEditorDialog] Handling slip edit:', data);
-
     try {
       const reloadCallback = async () => {
         if (editorMode.value) {
@@ -2901,10 +2849,6 @@
           })
         );
 
-        // Load creator profile watermark if one exists for this project
-        // Note: projectId here is editorProjectId (video_editor_projects.id), not projects.id
-        // We need to find the actual project ID from a video source
-        console.log('[ClipEditorDialog] Checking for creator profile watermark (editor mode)');
         try {
           // Find a source with a source_id (clip or raw_video reference)
           const sourceWithId = videoSources.value.find(
@@ -2926,25 +2870,17 @@
             }
           }
 
-          console.log('[ClipEditorDialog] Actual project ID (editor mode):', actualProjectId);
-
           if (actualProjectId) {
             const { getCreatorProfileByProjectId } = await import('@/services/database');
             const creatorProfile = await getCreatorProfileByProjectId(actualProjectId);
-            console.log('[ClipEditorDialog] Creator profile found (editor mode):', creatorProfile ? 'YES' : 'NO');
 
             if (creatorProfile && creatorProfile.watermark_settings) {
-              console.log('[ClipEditorDialog] Watermark settings (editor mode):', creatorProfile.watermark_settings);
               const watermarkSettings = JSON.parse(creatorProfile.watermark_settings);
 
               // Check if this creator watermark is already in the list
               const hasCreatorWatermark = watermarks.value.some((w) => w.watermarkId === creatorProfile.watermark_id);
 
               if (!hasCreatorWatermark && watermarkSettings.watermarkPath) {
-                console.log('[ClipEditorDialog] Adding creator profile watermark (editor mode)');
-                console.log('[ClipEditorDialog] Watermark path (editor mode):', watermarkSettings.watermarkPath);
-                console.log('[ClipEditorDialog] Current watermarks count (editor mode):', watermarks.value.length);
-
                 // Load watermark preview
                 let previewUrl = watermarkSettings.watermarkPath;
                 try {
@@ -3013,27 +2949,17 @@
   }
 
   function onVideoElementReady(element: HTMLVideoElement) {
-    console.log(
-      '[onVideoElementReady] Called with element src:',
-      element?.src?.slice(-30),
-      'element.paused:',
-      element?.paused,
-      'previous videoElement src:',
-      videoElement.value?.src?.slice(-30)
-    );
     videoElement.value = element;
 
     const updateDimensions = () => {
       if (element.videoWidth && element.videoHeight) {
         videoDimensions.value = { width: element.videoWidth, height: element.videoHeight };
-        console.log('[onVideoElementReady] Updated videoDimensions:', videoDimensions.value);
       }
     };
 
     if (element.videoWidth && element.videoHeight) {
       updateDimensions();
     } else {
-      console.log('[onVideoElementReady] Video dimensions not ready, waiting for loadedmetadata');
       element.addEventListener('loadedmetadata', updateDimensions, { once: true });
     }
 
@@ -3048,21 +2974,11 @@
 
   // Called when the preview component successfully swapped to the preloaded video
   function onVideoSwapped() {
-    console.log(
-      '[onVideoSwapped] Called. crossfadeStarted:',
-      crossfadeStarted.value,
-      'lastCrossfadeTransitionId:',
-      lastCrossfadeTransitionId.value,
-      'currentVideoSourceId:',
-      currentVideoSourceId.value
-    );
-
     // CRITICAL: Update videoElement to point to the now-active preload video
     // This ensures play/pause controls work after crossfade
     const preloadEl = previewRef.value?.getPreloadVideoElement?.();
     if (preloadEl) {
       videoElement.value = preloadEl;
-      console.log('[onVideoSwapped] Updated videoElement to preload video');
     }
 
     // The preload video is now the main video
@@ -3072,44 +2988,16 @@
 
     // Update source tracking to the incoming source (source B)
     const incomingSource = transitionIncomingSource.value;
-    console.log('[onVideoSwapped] incomingSource:', incomingSource?.id);
     if (incomingSource) {
       currentVideoSourceId.value = incomingSource.id;
-      console.log('[onVideoSwapped] Updated currentVideoSourceId to:', incomingSource.id);
     } else {
       // Fallback: find next source by order
       const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
       const currentIdx = sortedSources.findIndex((s) => s.id === currentVideoSourceId.value);
 
-      // Debug: log all sources and their order
-      console.log(
-        '[onVideoSwapped] Fallback - All sources:',
-        sortedSources.map((s) => ({
-          id: s.id,
-          name: s.source_name,
-          order_index: s.order_index,
-          start_time: s.start_time,
-          end_time: s.end_time,
-        }))
-      );
-      console.log(
-        '[onVideoSwapped] Fallback - currentIdx:',
-        currentIdx,
-        'currentVideoSourceId:',
-        currentVideoSourceId.value
-      );
-
       if (currentIdx >= 0 && currentIdx < sortedSources.length - 1) {
         const nextSource = sortedSources[currentIdx + 1];
-        console.log(
-          '[onVideoSwapped] Fallback - Next source:',
-          nextSource.id,
-          nextSource.source_name,
-          'order_index:',
-          nextSource.order_index
-        );
         currentVideoSourceId.value = nextSource.id;
-        console.log('[onVideoSwapped] Fallback: Updated currentVideoSourceId to:', nextSource.id);
       }
     }
 
@@ -3123,14 +3011,11 @@
   // Called when crossfade completes early (e.g., main video media ended before transition zone end)
   // This syncs the timeline playhead with the visual state
   function onCrossfadeCompleted(transitionEndTime: number) {
-    console.log('[onCrossfadeCompleted] Crossfade completed early, jumping to:', transitionEndTime);
-
     // CRITICAL: Update videoElement to point to the now-active preload video
     // This ensures play/pause controls work after crossfade
     const preloadEl = previewRef.value?.getPreloadVideoElement?.();
     if (preloadEl) {
       videoElement.value = preloadEl;
-      console.log('[onCrossfadeCompleted] Updated videoElement to preload video');
     }
 
     // Update preview time to the end of the transition
@@ -3178,28 +3063,15 @@
       if (!crossfadeStarted.value && lastCrossfadeTransitionId.value !== transition.id) {
         // Start the crossfade - both videos need to play
         const incomingSource = transitionIncomingSource.value;
-        console.log('[manageCrossfade] Starting crossfade:', {
-          incomingSourceId: incomingSource?.id,
-          transitionStartTime: transition.startTime,
-          transitionEndTime: transition.endTime,
-        });
         if (incomingSource) {
           // Calculate the seek time in the incoming source
           const timeIntoTransition = previewTime.value - transition.startTime;
           const seekTime = incomingSource.trim_start + timeIntoTransition;
 
-          console.log(
-            '[manageCrossfade] Calling startCrossfade with seekTime:',
-            seekTime,
-            'timeIntoTransition:',
-            timeIntoTransition
-          );
-
           // Try to start crossfade (will work even if preload isn't fully ready)
           if (previewRef.value.startCrossfade?.(seekTime)) {
             crossfadeStarted.value = true;
             lastCrossfadeTransitionId.value = transition.id;
-            console.log('[manageCrossfade] Crossfade started successfully');
           } else {
             console.log('[manageCrossfade] startCrossfade returned false');
           }
@@ -3216,7 +3088,6 @@
       updateCrossfadeAudio();
     } else if (crossfadeStarted.value) {
       // We've exited the transition zone - complete the crossfade
-      console.log('[manageCrossfade] Exited transition zone, completing crossfade. previewTime:', previewTime.value);
       if (previewRef.value.completeCrossfade) {
         previewRef.value.completeCrossfade();
       }
@@ -3227,7 +3098,6 @@
         (s) => previewTime.value >= s.start_time && previewTime.value < s.end_time
       );
       if (newActiveSource) {
-        console.log('[manageCrossfade] Updating currentVideoSourceId to:', newActiveSource.id);
         currentVideoSourceId.value = newActiveSource.id;
       }
 
@@ -3253,7 +3123,6 @@
   function onPreviewTimeUpdate(time: number) {
     // Ignore time updates while seeking to prevent feedback loops
     if (isSeeking.value) {
-      console.log('[onPreviewTimeUpdate] Ignoring - isSeeking is true');
       return;
     }
 
@@ -3297,27 +3166,9 @@
         // If trim_end is null, calculate effective end from timeline duration
         const effectiveTrimEnd = source.trim_end ?? source.trim_start + (source.end_time - source.start_time);
 
-        // Log occasionally to debug trim_end issues (every ~2 seconds)
-        if (Math.floor(time * 10) % 20 === 0) {
-          console.log('[onPreviewTimeUpdate] Trim check:', {
-            videoTime: time.toFixed(2),
-            sourceId: source.id,
-            trim_start: source.trim_start,
-            trim_end: source.trim_end,
-            effectiveTrimEnd: effectiveTrimEnd.toFixed(2),
-            wouldTriggerEnd: time >= effectiveTrimEnd,
-          });
-        }
-
         if (time >= effectiveTrimEnd && isPlaying.value && !activeTransition.value && !crossfadeStarted.value) {
           // We've reached the end of this source's trimmed region
           // Trigger transition to next source
-          console.log(
-            '[onPreviewTimeUpdate] Triggering onVideoEnded at time:',
-            time.toFixed(2),
-            'effectiveTrimEnd:',
-            effectiveTrimEnd.toFixed(2)
-          );
           onVideoEnded();
           return;
         }
@@ -3344,22 +3195,8 @@
   }
 
   function onVideoEnded() {
-    console.log(
-      '[onVideoEnded] Called. crossfadeStarted:',
-      crossfadeStarted.value,
-      'activeTransition:',
-      !!activeTransition.value,
-      'currentVideoSourceId:',
-      currentVideoSourceId.value,
-      'previewTime:',
-      previewTime.value,
-      'editorMode:',
-      editorMode.value
-    );
-
     // In clip mode (non-editor), just stop playback when video ends
     if (!editorMode.value) {
-      console.log('[onVideoEnded] Clip mode - stopping playback');
       isPlaying.value = false;
       return;
     }
@@ -3368,7 +3205,6 @@
     // The outgoing video has reached its end during the crossfade
     // Check crossfadeStarted OR if we're in/near a transition zone
     if (crossfadeStarted.value || activeTransition.value) {
-      console.log('[onVideoEnded] Handling crossfade completion');
       // Complete the crossfade transition
       if (previewRef.value?.completeCrossfade) {
         previewRef.value.completeCrossfade();
@@ -3377,28 +3213,23 @@
       // Update state to reflect we're now on the incoming source
       // Find the incoming source - either from the transition or the next source by order
       let incomingSource = transitionIncomingSource.value;
-      console.log('[onVideoEnded] incomingSource from transition:', incomingSource?.id);
       if (!incomingSource) {
         // Fallback: find the next source in order
         const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
         const currentIdx = sortedSources.findIndex((s) => s.id === currentVideoSourceId.value);
         if (currentIdx >= 0 && currentIdx < sortedSources.length - 1) {
           incomingSource = sortedSources[currentIdx + 1];
-          console.log('[onVideoEnded] Fallback incomingSource:', incomingSource?.id);
         }
       }
 
       if (incomingSource) {
-        console.log('[onVideoEnded] Updating currentVideoSourceId to:', incomingSource.id);
         currentVideoSourceId.value = incomingSource.id;
         // Update videoElement to the new active element (preload video)
         const preloadEl = previewRef.value?.getPreloadVideoElement?.();
         if (preloadEl) {
           videoElement.value = preloadEl;
-          console.log('[onVideoEnded] Updated videoElement to preload');
           // Ensure the preload video is playing
           if (preloadEl.paused && isPlaying.value) {
-            console.log('[onVideoEnded] Starting preload playback');
             preloadEl.play().catch(() => {});
           }
         }
@@ -3462,8 +3293,6 @@
         }
       } else {
         // Preload video is active (after a previous swap), need to swap back to main
-        console.log('[onVideoEnded] Preload is active, swapping back to main for source:', nextSource.id);
-
         // IMPORTANT: Reset activeVideoIndex FIRST before changing currentVideoSourceId
         // This ensures the editorVideoSrc watch doesn't skip loading the new source
         previewRef.value?.resetActiveVideo?.();
@@ -3472,15 +3301,6 @@
         previewTime.value = nextSource.start_time;
         currentVideoSourceId.value = nextSource.id;
         pendingSeekTime.value = nextSource.trim_start;
-
-        // The main video will load the new source via reactivity
-        // onVideoLoaded will seek to pendingSeekTime and start playback
-        console.log(
-          '[onVideoEnded] Set pendingSeekTime to:',
-          nextSource.trim_start,
-          'for source:',
-          nextSource.source_name
-        );
       }
     } else {
       // No more sources, stop playback and go back to beginning
@@ -3518,7 +3338,6 @@
         // This is necessary because the video file hasn't changed, so onVideoLoaded won't fire
         if (videoElement.value) {
           videoElement.value.currentTime = firstSource.trim_start;
-          console.log('[onVideoEnded] Reset video to trim_start:', firstSource.trim_start);
         }
         // Clear pending seek time since we've already seeked
         pendingSeekTime.value = null;
@@ -3532,24 +3351,18 @@
   }
 
   async function togglePlay() {
-    console.log('[togglePlay] Called. isPlaying:', isPlaying.value);
-
     // Use the preview component's unified play/pause methods
     // This ensures all video elements (framed, region, audio, preload) are properly controlled
     if (!previewRef.value) {
-      console.log('[togglePlay] No previewRef available');
       return;
     }
 
     if (isPlaying.value) {
-      console.log('[togglePlay] Pausing video');
       previewRef.value.pause();
       // Pause all audio tracks
       audioElements.value.forEach((audio) => audio.pause());
       isPlaying.value = false;
     } else {
-      console.log('[togglePlay] Playing video');
-
       // Check if active video is ready before playing
       const activeVideo = activeVideoElement.value;
       if (activeVideo) {
@@ -3557,12 +3370,6 @@
         const isReady = activeVideo.readyState >= 1; // HAVE_METADATA or better
 
         if (!hasValidSource || !isReady) {
-          console.log(
-            '[togglePlay] Video not ready - src:',
-            activeVideo.src?.slice(-30),
-            'readyState:',
-            activeVideo.readyState
-          );
           return;
         }
       }
@@ -3580,7 +3387,6 @@
         console.error('[togglePlay] Play failed to start');
       }
     }
-    console.log('[togglePlay] isPlaying is now:', isPlaying.value);
   }
 
   function seekTo(time: number) {
@@ -3649,7 +3455,6 @@
 
           if (videoHasCorrectSrc && videoElement.value) {
             // Video already has the correct src - just seek directly
-            console.log('[seekTo] Video already has correct src, seeking directly to:', timeInSource);
             videoElement.value.currentTime = timeInSource;
             pendingSeekTime.value = null;
 
@@ -3664,8 +3469,6 @@
           } else if (sameVideoFile && videoElement.value && targetVideoUrl) {
             // Same video file but main video has wrong src (e.g., after crossfade from different source)
             // Need to manually update the src since the watch won't fire (same URL computed)
-            console.log('[seekTo] Same video file but wrong src loaded, loading correct src');
-
             const handleSameFileLoad = () => {
               if (videoElement.value) {
                 videoElement.value.removeEventListener('loadeddata', handleSameFileLoad);
@@ -3794,26 +3597,13 @@
       return;
     }
 
-    console.log('[splitTrimSegment] editorMode.value:', editorMode.value);
-    console.log('[splitTrimSegment] props.clipId:', props.clipId);
-    console.log('[splitTrimSegment] editorProjectId:', editorProjectId.value);
-
     // Use command pattern for undo/redo support in both modes
     try {
       // Create reload callback
       const reloadCallback = async () => {
         if (!editorMode.value && props.clipId) {
           // Clip mode: reload from clip segments
-          console.log('[splitTrimSegment] Reloading segments from database...');
           const dbSegments = await getClipSegmentsByClipId(props.clipId!);
-          console.log(
-            '[splitTrimSegment] Loaded segments from DB:',
-            dbSegments.map((s) => ({
-              start: s.start_time,
-              end: s.end_time,
-              duration: s.duration,
-            }))
-          );
           if (dbSegments && dbSegments.length > 0) {
             // Convert absolute times back to relative times
             trimSegments.value = dbSegments.map((seg, index) => ({
@@ -3822,20 +3612,11 @@
               endTime: seg.end_time - props.clipStartTime,
               isDeleted: false,
             }));
-            console.log(
-              '[splitTrimSegment] Converted to relative times:',
-              trimSegments.value.map((s) => ({
-                id: s.id,
-                start: s.startTime,
-                end: s.endTime,
-              }))
-            );
           }
           // Emit save event to notify parent that clip was modified
           emit('save', props.clipId!);
         } else if (editorMode.value && editorProjectId.value) {
           // Editor mode: reload from video sources
-          console.log('[splitTrimSegment] Reloading video sources from database...');
           await loadEditorProject();
         }
       };
@@ -3852,10 +3633,6 @@
 
       await commandHistory.executeCommand(splitCommand);
       undoRedoTrigger.value++; // Trigger reactivity update
-
-      console.log(
-        `[ClipEditorDialog] Split complete (with undo support), mode: ${editorMode.value ? 'editor' : 'clip'}`
-      );
 
       // Trigger preview regeneration for seamless playback
       triggerPreviewGeneration();
@@ -3891,10 +3668,6 @@
 
       // Replace the original segment with the two new segments
       trimSegments.value.splice(segmentIndex, 1, leftSegment, rightSegment);
-
-      console.log(
-        `[ClipEditorDialog] Split segment at ${cutTime.toFixed(2)}s - created ${leftSegment.id} and ${rightSegment.id} (no undo support yet in editor mode)`
-      );
     }
   }
 
@@ -3943,10 +3716,6 @@
         await commandHistory.executeCommand(deleteCommand);
         undoRedoTrigger.value++; // Trigger reactivity update
 
-        console.log(
-          `[ClipEditorDialog] Delete complete (with undo support), now have ${trimSegments.value.length} segments`
-        );
-
         // Trigger preview regeneration for seamless playback
         triggerPreviewGeneration();
       } catch (error) {
@@ -3957,7 +3726,6 @@
       // Editor mode or no clip ID - just update local state
       // TODO: Convert to command pattern when we implement editor mode delete command
       trimSegments.value.splice(segmentIndex, 1);
-      console.log(`[ClipEditorDialog] Deleted segment ${segmentIndex} (no undo support yet in editor mode)`);
     }
   }
 
@@ -4175,20 +3943,17 @@
       createdAt: Date.now(),
     };
     clipTransitions.value.push(newTransition);
-    console.log('[ClipEditorDialog] Added transition:', newTransition);
   }
 
   function onUpdateTransition(id: string, updates: Partial<ClipTransition>) {
     const transition = clipTransitions.value.find((t) => t.id === id);
     if (transition) {
       Object.assign(transition, updates);
-      console.log('[ClipEditorDialog] Updated transition:', id, updates);
     }
   }
 
   function onDeleteTransition(id: string) {
     clipTransitions.value = clipTransitions.value.filter((t) => t.id !== id);
-    console.log('[ClipEditorDialog] Deleted transition:', id);
   }
 
   // Effect operations
@@ -4213,20 +3978,17 @@
       createdAt: Date.now(),
     };
     clipEffects.value.push(newEffect);
-    console.log('[ClipEditorDialog] Added effect:', newEffect);
   }
 
   function onUpdateEffect(id: string, updates: Partial<ClipEffect>) {
     const effect = clipEffects.value.find((e) => e.id === id);
     if (effect) {
       Object.assign(effect, updates);
-      console.log('[ClipEditorDialog] Updated effect:', id, updates);
     }
   }
 
   function onDeleteEffect(id: string) {
     clipEffects.value = clipEffects.value.filter((e) => e.id !== id);
-    console.log('[ClipEditorDialog] Deleted effect:', id);
   }
 
   // Aspect ratio framing operations
@@ -4384,14 +4146,12 @@
     if (selectedSegmentIds.value.size > 0) {
       const segmentIds = Array.from(selectedSegmentIds.value);
       setFramingForSegments(segmentIds, config.targetAspectRatio, config);
-      console.log('[ClipEditorDialog] Applied framing to segments:', segmentIds);
     } else {
       // No segments selected - apply globally (legacy behavior)
       framingConfigs.value = {
         ...framingConfigs.value,
         [ratio]: config,
       };
-      console.log('[ClipEditorDialog] Applied framing globally to aspect ratio:', ratio);
     }
 
     // Set framing mode to manual since we now have manual config
@@ -4529,8 +4289,6 @@
 
     await commandHistory.executeCommand(moveCommand);
     undoRedoTrigger.value++;
-
-    console.log(`[moveTrackWithUndo] Move complete (with undo support): ${data.type} ${data.id}`);
   }
 
   // Auto-apply creator profile watermark settings when opening the clip editor
@@ -4541,12 +4299,6 @@
 
     // If no props provided and in editor mode, try to load from video sources' parent project
     if (!watermarkId && editorMode.value && videoSources.value.length > 0) {
-      console.log('[ClipEditorDialog] No creator watermark props, trying to load from video sources...', {
-        editorMode: editorMode.value,
-        sourceCount: videoSources.value.length,
-        sources: videoSources.value.map((s) => ({ id: s.id, type: s.source_type, sourceId: s.source_id })),
-      });
-
       // Try to find watermark settings from the first video source's parent project
       for (const source of videoSources.value) {
         let parentProjectId: string | null = null;
@@ -4554,48 +4306,20 @@
         if (source.source_type === 'raw_video' && source.source_id) {
           const rawVideo = await getRawVideo(source.source_id);
           parentProjectId = rawVideo?.project_id || null;
-          console.log('[ClipEditorDialog] Raw video lookup:', {
-            sourceId: source.source_id,
-            rawVideo: rawVideo ? { id: rawVideo.id, project_id: rawVideo.project_id } : null,
-          });
         } else if (source.source_type === 'clip' && source.source_id) {
           const clip = await getClip(source.source_id);
           parentProjectId = clip?.project_id || null;
-          console.log('[ClipEditorDialog] Clip lookup:', {
-            sourceId: source.source_id,
-            clip: clip ? { id: clip.id, project_id: clip.project_id } : null,
-          });
         }
 
         if (parentProjectId) {
           const parentProject = await getProject(parentProjectId);
-          console.log(
-            '[ClipEditorDialog] Parent project:',
-            parentProject
-              ? {
-                  id: parentProject.id,
-                  name: parentProject.name,
-                  hasWatermarkSettings: !!parentProject.default_watermark_settings,
-                }
-              : null
-          );
 
           // Check for watermark in the stored settings (format: { watermarkId, watermarkSettings })
           if (parentProject?.default_watermark_settings) {
             try {
               const storedSettings = JSON.parse(parentProject.default_watermark_settings);
-              console.log('[ClipEditorDialog] Found stored watermark settings:', {
-                watermarkId: storedSettings.watermarkId,
-                hasWatermarkSettings: !!storedSettings.watermarkSettings,
-              });
 
               if (storedSettings.watermarkId) {
-                console.log(
-                  '[ClipEditorDialog] Found watermark from parent project:',
-                  parentProject.name,
-                  'watermark:',
-                  storedSettings.watermarkId
-                );
                 watermarkId = storedSettings.watermarkId;
 
                 // Extract the per-ratio configs
@@ -4616,12 +4340,8 @@
     }
 
     if (!watermarkId) {
-      console.log('[ClipEditorDialog] No creator watermark to apply');
       return;
     }
-
-    console.log('[ClipEditorDialog] Auto-applying creator watermark:', watermarkId);
-    console.log('[ClipEditorDialog] Raw watermarkSettingsJson:', watermarkSettingsJson);
 
     try {
       // Parse per-ratio settings from creator profile to check for different watermark images per ratio
@@ -4630,7 +4350,6 @@
         try {
           creatorSettings =
             typeof watermarkSettingsJson === 'string' ? JSON.parse(watermarkSettingsJson) : watermarkSettingsJson;
-          console.log('[ClipEditorDialog] Parsed creatorSettings:', JSON.stringify(creatorSettings, null, 2));
         } catch (e) {
           console.warn('[ClipEditorDialog] Failed to parse creator watermark settings:', e);
         }
@@ -4688,18 +4407,9 @@
       if (watermarkIdToRatios.size === 0 && watermarkId) {
         watermarkIdToRatios.set(watermarkId, ['16:9', '9:16', '1:1', '4:5']);
       }
-
-      console.log(
-        '[ClipEditorDialog] Watermark IDs to ratios mapping:',
-        Array.from(watermarkIdToRatios.entries()).map(([id, ratios]) => ({ id, ratios }))
-      );
-      console.log('[ClipEditorDialog] ratioConfigs:', JSON.stringify(ratioConfigs, null, 2));
-
       // If watermarks already exist, force-sync their perRatioConfigs with creator profile settings
       // We always overwrite to ensure stored data matches the project's watermark settings (source of truth)
       if (watermarks.value.length > 0 && Object.keys(ratioConfigs).length > 0) {
-        console.log('[ClipEditorDialog] Force-syncing existing watermarks with creator profile settings');
-
         for (const watermark of watermarks.value) {
           // Only sync watermarks that are from the creator profile (matching watermarkId)
           // Try direct lookup first
@@ -4716,7 +4426,6 @@
 
           // Skip watermarks not in the creator profile (e.g., manually added watermarks)
           if (!ratiosForThisWatermark) {
-            console.log('[ClipEditorDialog] Skipping non-creator-profile watermark:', watermark.watermarkId);
             continue;
           }
 
@@ -4747,12 +4456,6 @@
 
           const newConfigs = JSON.stringify(updatedPerRatioConfigs);
 
-          console.log('[ClipEditorDialog] Force-updating perRatioConfigs for watermark:', watermark.id, {
-            watermarkId: watermark.watermarkId,
-            ratiosForThisWatermark,
-            updatedPerRatioConfigs,
-          });
-
           // Update in-memory - always overwrite to match source of truth
           watermark.perRatioConfigs = updatedPerRatioConfigs;
 
@@ -4781,13 +4484,11 @@
           }
         }
 
-        console.log('[ClipEditorDialog] Finished force-syncing existing watermarks with creator profile');
         return; // Don't create new watermarks, we've processed the existing ones
       }
 
       // If no watermarks exist yet, create them
       if (watermarks.value.length > 0) {
-        console.log('[ClipEditorDialog] Watermarks exist but no ratioConfigs to sync - skipping');
         return;
       }
 
@@ -4804,30 +4505,25 @@
         // Check if this is an organization asset (ID format: org-asset-{serverId})
         if (wmId.startsWith('org-asset-')) {
           const serverId = parseInt(wmId.replace('org-asset-', ''), 10);
-          console.log('[ClipEditorDialog] Loading org watermark with serverId:', serverId);
 
           if (!isNaN(serverId)) {
             // First try to load from local cache
             const localWatermark = await getWatermarkByServerId(serverId);
             if (localWatermark) {
-              console.log('[ClipEditorDialog] Found cached org watermark:', localWatermark.name);
               record = localWatermark;
               path = localWatermark.file_path;
               preview = await invoke<string>('read_file_as_data_url', { filePath: localWatermark.file_path });
             } else {
               // Not cached locally - download through Tauri (bypasses CORS)
-              console.log('[ClipEditorDialog] Org watermark not cached, downloading from server...');
               const serverResponse = await getUserOrganizationAssets();
               if (serverResponse.success && serverResponse.assets) {
                 const serverAsset = serverResponse.assets.find(
                   (a) => a.id === serverId && a.asset_type === 'watermark'
                 );
                 if (serverAsset && serverAsset.url) {
-                  console.log('[ClipEditorDialog] Downloading org watermark:', serverAsset.name);
                   // Download and cache the asset locally (bypasses CORS)
                   const downloadResult = await ensureAssetDownloaded(serverAsset);
                   if (downloadResult.success && downloadResult.filePath) {
-                    console.log('[ClipEditorDialog] Org watermark downloaded to:', downloadResult.filePath);
                     preview = await invoke<string>('read_file_as_data_url', { filePath: downloadResult.filePath });
                     path = downloadResult.filePath;
                     record = {
@@ -4859,7 +4555,6 @@
       // Create the watermark in the database
       const editId = editorMode.value ? videoEditorEditId.value : clipEditId.value;
       if (!editId) {
-        console.log('[ClipEditorDialog] No edit ID available, cannot add watermark');
         return;
       }
 
@@ -4868,7 +4563,6 @@
         const { record, previewUrl, filePath } = await loadWatermarkData(wmId);
 
         if (!record || !filePath || !previewUrl) {
-          console.log('[ClipEditorDialog] Failed to load watermark data for ID:', wmId);
           continue;
         }
 
@@ -4913,17 +4607,6 @@
           defaultOpacity = config.position.opacity;
         }
 
-        console.log(
-          '[ClipEditorDialog] Creating watermark for ID:',
-          wmId,
-          'visible in ratios:',
-          ratiosForThisWatermark
-        );
-        console.log(
-          '[ClipEditorDialog] perRatioConfigsForThisWatermark:',
-          JSON.stringify(perRatioConfigsForThisWatermark, null, 2)
-        );
-
         const watermarkData = {
           watermark_id: wmId,
           watermark_path: filePath,
@@ -4954,12 +4637,6 @@
           perRatioConfigs: perRatioConfigsForThisWatermark,
         });
       }
-
-      console.log('[ClipEditorDialog] Creator watermark(s) auto-applied successfully:', {
-        watermarkCount: watermarks.value.length,
-        watermarkIds: watermarks.value.map((w) => w.watermarkId),
-        totalDuration: totalSegmentDuration.value,
-      });
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to auto-apply creator watermark:', error);
     }
@@ -5669,9 +5346,6 @@
 
     // If segment counts differ, they're out of sync
     if (activeSavedSegments.length !== currentClipSegments.length) {
-      console.log(
-        `[ClipEditorDialog] Segments out of sync: saved count (${activeSavedSegments.length}) != current count (${currentClipSegments.length})`
-      );
       return true;
     }
 
@@ -5690,9 +5364,6 @@
         Math.abs(savedSeg.startTime - currentRelativeStart) > timeTolerance ||
         Math.abs(savedSeg.endTime - currentRelativeEnd) > timeTolerance
       ) {
-        console.log(
-          `[ClipEditorDialog] Segment ${i} timing mismatch: saved (${savedSeg.startTime.toFixed(2)}-${savedSeg.endTime.toFixed(2)}) vs current (${currentRelativeStart.toFixed(2)}-${currentRelativeEnd.toFixed(2)})`
-        );
         return true;
       }
     }
@@ -5720,7 +5391,6 @@
 
       if (segmentsChanged) {
         // Clip segments have changed - re-initialize from current clip segments
-        console.log('[ClipEditorDialog] Clip segments changed, re-syncing from database');
         trimSegments.value = props.clipSegments!.map((seg, index) => ({
           id: `segment-${index}`,
           startTime: seg.start_time - props.clipStartTime,
@@ -5873,32 +5543,23 @@
         })
       );
 
-      // Load creator profile watermark if one exists for this clip's project
-      console.log('[ClipEditorDialog] Checking for creator profile watermark (clip mode), clipId:', props.clipId);
       try {
         if (props.clipId) {
           // Get the clip to find its project_id
           const clip = await getClipWithBuildStatus(props.clipId);
           const clipProjectId = clip?.project_id;
-          console.log('[ClipEditorDialog] Clip project ID:', clipProjectId);
 
           if (clipProjectId) {
             const { getCreatorProfileByProjectId } = await import('@/services/database');
             const creatorProfile = await getCreatorProfileByProjectId(clipProjectId);
-            console.log('[ClipEditorDialog] Creator profile found (clip mode):', creatorProfile ? 'YES' : 'NO');
 
             if (creatorProfile && creatorProfile.watermark_settings) {
-              console.log('[ClipEditorDialog] Watermark settings (clip mode):', creatorProfile.watermark_settings);
               const watermarkSettings = JSON.parse(creatorProfile.watermark_settings);
 
               // Check if this creator watermark is already in the list
               const hasCreatorWatermark = watermarks.value.some((w) => w.watermarkId === creatorProfile.watermark_id);
 
               if (!hasCreatorWatermark && watermarkSettings.watermarkPath) {
-                console.log('[ClipEditorDialog] Adding creator profile watermark for clip mode');
-                console.log('[ClipEditorDialog] Watermark path (clip mode):', watermarkSettings.watermarkPath);
-                console.log('[ClipEditorDialog] Current watermarks count (clip mode):', watermarks.value.length);
-
                 // Load watermark preview
                 let previewUrl = watermarkSettings.watermarkPath;
                 try {
@@ -6005,16 +5666,6 @@
     // Don't handle shortcuts if user is typing in input fields
     const isTyping = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
 
-    // Debug log for redo keys
-    if (e.key === 'z' || e.key === 'y') {
-      console.log('[handleKeyDown] Key pressed:', e.key, {
-        ctrl: e.ctrlKey,
-        meta: e.metaKey,
-        shift: e.shiftKey,
-        isTyping,
-      });
-    }
-
     if (e.key === 'Escape') {
       close();
     } else if (e.key === ' ' && !isTyping) {
@@ -6024,14 +5675,12 @@
       e.preventDefault();
       saveNow(); // Save immediately on Ctrl+S
     } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !isTyping) {
-      console.log('[handleKeyDown] Undo triggered');
       e.preventDefault();
       performUndo();
     } else if (
       ((e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) || (e.key === 'y' && (e.ctrlKey || e.metaKey))) &&
       !isTyping
     ) {
-      console.log('[handleKeyDown] Redo triggered!');
       e.preventDefault();
       performRedo();
     } else if (e.key === 'c' && (e.ctrlKey || e.metaKey) && !isTyping) {
@@ -6101,14 +5750,8 @@
   // Undo/Redo operations
   async function performUndo() {
     try {
-      console.log('[ClipEditorDialog] Attempting undo...');
-      console.log('[ClipEditorDialog] Can undo?', commandHistory.canUndo());
-      console.log('[ClipEditorDialog] Undo stack size:', commandHistory.getUndoStackSize());
       await commandHistory.undo();
       undoRedoTrigger.value++; // Trigger reactivity update for button states
-      console.log('[ClipEditorDialog] ✅ Undo successful');
-      console.log('[ClipEditorDialog] After undo - Can undo?', commandHistory.canUndo());
-      console.log('[ClipEditorDialog] After undo - Undo stack size:', commandHistory.getUndoStackSize());
     } catch (error) {
       console.error('[ClipEditorDialog] Undo failed:', error);
       alert('Could not undo the last operation');
@@ -6117,12 +5760,8 @@
 
   async function performRedo() {
     try {
-      console.log('[ClipEditorDialog] Attempting redo...');
-      console.log('[ClipEditorDialog] Can redo?', commandHistory.canRedo());
-      console.log('[ClipEditorDialog] Redo stack size:', commandHistory.getRedoStackSize());
       await commandHistory.redo();
       undoRedoTrigger.value++; // Trigger reactivity update for button states
-      console.log('[ClipEditorDialog] ✅ Redo successful');
     } catch (error) {
       console.error('[ClipEditorDialog] Redo failed:', error);
       alert('Could not redo the operation');
@@ -6147,12 +5786,6 @@
 
         if (segmentToCopy) {
           copiedSegment.value = segmentToCopy;
-          console.log('[ClipEditorDialog] ✅ Copied segment:', {
-            start: segmentToCopy.start_time,
-            end: segmentToCopy.end_time,
-            duration: segmentToCopy.duration,
-          });
-          console.log('[ClipEditorDialog] Segment copied to clipboard. Press Ctrl+V to paste.');
         } else {
           console.warn('[ClipEditorDialog] No segment at playhead to copy');
           alert('No segment at current position');
@@ -6203,8 +5836,6 @@
 
         await commandHistory.executeCommand(pasteCommand);
         undoRedoTrigger.value++; // Trigger reactivity update for button states
-
-        console.log('[ClipEditorDialog] ✅ Paste successful - segment added at playhead position');
       } catch (error) {
         console.error('[ClipEditorDialog] Paste failed:', error);
         alert(`Could not paste segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -6255,8 +5886,6 @@
 
         await commandHistory.executeCommand(pasteCommand);
         undoRedoTrigger.value++;
-
-        console.log('[ClipEditorDialog] ✅ Paste in place successful - segment added at original position');
       } catch (error) {
         console.error('[ClipEditorDialog] Paste in place failed:', error);
         alert(`Could not paste segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -6323,7 +5952,6 @@
 
   function handleApplySpeedPreset(keyframes: any[]) {
     if (!speedCurveEditorSourceId.value) return;
-    console.log('[ClipEditorDialog] Applying speed preset:', keyframes);
     // Apply keyframes to source
   }
 
@@ -6364,8 +5992,6 @@
   // ============================================================================
 
   function handleSegmentSelect(segmentId: string, modifiers: { shift: boolean; ctrl: boolean }) {
-    console.log('[ClipEditorDialog] Segment select:', { segmentId, modifiers });
-
     if (modifiers.shift && lastSelectedSegmentId.value) {
       // Shift+Click: Select range
       selectSegmentRange(lastSelectedSegmentId.value, segmentId);
@@ -6383,8 +6009,6 @@
       selectedSegmentIds.value.add(segmentId);
       lastSelectedSegmentId.value = segmentId;
     }
-
-    console.log('[ClipEditorDialog] Selected segments:', Array.from(selectedSegmentIds.value));
   }
 
   function selectSegmentRange(fromId: string, toId: string) {
@@ -6410,8 +6034,6 @@
 
   async function performMultiDelete() {
     if (selectedSegmentIds.value.size === 0) return;
-
-    console.log('[ClipEditorDialog] Multi-delete:', Array.from(selectedSegmentIds.value));
 
     // For now, delete one at a time (simple approach)
     // TODO: Create a MultiDeleteCommand for better undo/redo
@@ -6444,8 +6066,6 @@
     markers.value.push(newMarker);
     markers.value.sort((a, b) => a.time - b.time); // Keep sorted by time
 
-    console.log('[ClipEditorDialog] Added marker at', currentTime, 'seconds');
-
     // TODO: Add MarkerCommand for undo/redo support
   }
 
@@ -6454,7 +6074,6 @@
     if (index !== -1) {
       markers.value.splice(index, 1);
       selectedMarkerId.value = null;
-      console.log('[ClipEditorDialog] Deleted marker', markerId);
     }
 
     // TODO: Add MarkerCommand for undo/redo support
@@ -6465,7 +6084,6 @@
     if (marker) {
       seekTo(marker.time);
       selectedMarkerId.value = markerId;
-      console.log('[ClipEditorDialog] Jumped to marker at', marker.time, 'seconds');
     }
   }
 
@@ -6476,8 +6094,6 @@
 
   // Track Management
   function handleReorderTrack(trackType: 'audio' | 'overlay', trackId: string, newOrder: number) {
-    console.log('[ClipEditorDialog] Reorder track:', { trackType, trackId, newOrder });
-
     if (trackType === 'audio') {
       const track = audioTracks.value.find((t) => t.id === trackId);
       if (!track) return;
@@ -6527,7 +6143,6 @@
   }
 
   function handleToggleTrackCollapse(trackType: string, trackId?: string) {
-    console.log('[ClipEditorDialog] Toggle track collapse:', { trackType, trackId });
     // This state is mostly local to the timeline, but if we need to persist it:
     // const key = trackId ? `${trackType}_${trackId}` : trackType;
     // Save to user preferences
@@ -6590,8 +6205,6 @@
   const beatMarkers = ref<Array<{ id: string; time: number; confidence?: number }>>([]);
 
   async function handleDetectBeatMarkers(audioTrackId?: string) {
-    console.log('[ClipEditorDialog] Detecting beat markers for:', audioTrackId || 'main video');
-
     let url = '';
 
     if (audioTrackId) {
@@ -6613,21 +6226,12 @@
       // Create offline context to decode audio
       // We assume standard sample rate, or use the context's default
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-
-      console.log('[ClipEditorDialog] Fetching audio for analysis:', url);
       const response = await fetch(url);
       const arrayBuffer = await response.arrayBuffer();
-
-      console.log('[ClipEditorDialog] Decoding audio data...');
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
       const channelData = audioBuffer.getChannelData(0); // Use first channel
       const sampleRate = audioBuffer.sampleRate;
-
-      console.log('[ClipEditorDialog] Sending to worker for beat detection...');
       const beats = await detectBeats(channelData, sampleRate, 0.5); // 0.5 sensitivity
-
-      console.log('[ClipEditorDialog] Beat detection complete. Found beats:', beats.length);
 
       // Convert to markers
       beatMarkers.value = beats.map((b, index) => ({
@@ -6699,17 +6303,6 @@
   watch(
     () => editorVideoSrc.value,
     async (newSrc, oldSrc) => {
-      console.log(
-        '[watch editorVideoSrc] Changed from',
-        oldSrc?.slice(-30),
-        'to',
-        newSrc?.slice(-30),
-        'crossfadeStarted:',
-        crossfadeStarted.value,
-        'activeTransition:',
-        !!activeTransition.value
-      );
-
       if (editorMode.value && newSrc && newSrc !== oldSrc && videoElement.value) {
         // Skip processing if the preload video is the active one
         // This happens after crossfade completes - the main video's src changes
@@ -6717,11 +6310,9 @@
         const preloadEl = previewRef.value?.getPreloadVideoElement?.();
         if (preloadEl && videoElement.value === preloadEl) {
           // We're using the preload video as active - don't reload/seek main video
-          console.log('[watch editorVideoSrc] Skipping - preload is active');
           return;
         }
 
-        console.log('[watch editorVideoSrc] Setting isSeeking=true');
         isSeeking.value = true;
 
         // If there's no pending seek, calculate the seek time for the new source
@@ -6729,7 +6320,6 @@
           const source = activeVideoSource.value;
           if (source) {
             pendingSeekTime.value = previewTime.value - source.start_time + source.trim_start;
-            console.log('[watch editorVideoSrc] Set pendingSeekTime:', pendingSeekTime.value);
           }
         }
 
@@ -6767,7 +6357,6 @@
           // We need to wait a microtask for the load() call to update readyState
           await Promise.resolve();
           if (videoElement.value && videoElement.value.readyState >= 2) {
-            console.log('[watch editorVideoSrc] Video already ready, calling handleLoaded directly');
             handleLoaded();
           } else {
             // Fallback: if video doesn't load within 2 seconds, try to proceed anyway
@@ -6802,7 +6391,6 @@
     (newClipId, oldClipId) => {
       if (newClipId && oldClipId && newClipId !== oldClipId) {
         commandHistory.clear();
-        console.log('[ClipEditorDialog] Clip changed, command history cleared:', { oldClipId, newClipId });
       }
     }
   );
@@ -6813,10 +6401,6 @@
     (newProjectId, oldProjectId) => {
       if (newProjectId && oldProjectId && newProjectId !== oldProjectId) {
         commandHistory.clear();
-        console.log('[ClipEditorDialog] Editor project changed, command history cleared:', {
-          oldProjectId,
-          newProjectId,
-        });
       }
     }
   );
@@ -6831,7 +6415,6 @@
         // Clear command history when opening a clip/project
         // This ensures each clip/project starts with a fresh undo/redo stack
         commandHistory.clear();
-        console.log('[ClipEditorDialog] Command history cleared for new clip/project');
 
         if (editorMode.value && editorProjectId.value) {
           // Editor mode - load video sources
@@ -6846,7 +6429,6 @@
           // Generate segment preview if there are multiple segments
           // This enables seamless playback across segment cuts
           if (trimSegments.value.length > 1) {
-            console.log('[ClipEditorDialog] Multiple segments detected in editor mode, generating preview...');
             triggerPreviewGeneration();
           }
         } else if (props.clipId) {
@@ -6879,7 +6461,6 @@
           // Generate segment preview if there are multiple segments
           // This enables seamless playback across segment cuts
           if (trimSegments.value.length > 1) {
-            console.log('[ClipEditorDialog] Multiple segments detected, generating preview...');
             triggerPreviewGeneration();
           }
         }
@@ -6902,7 +6483,6 @@
         isPlaying.value = false;
         // Clear command history when closing
         commandHistory.clear();
-        console.log('[ClipEditorDialog] Command history cleared on close');
         // Clean up segment preview file
         await cleanupSegmentPreview();
         // Reset aspect tab state
@@ -6940,339 +6520,21 @@
 </script>
 
 <style scoped>
-  /* ========================================
-     CLIP EDITOR DIALOG STYLES
-     ======================================== */
-
-  /* ===== Overlay ===== */
-  .clip-editor__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(8px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-  }
-
-  /* ===== Dialog Container ===== */
-  .clip-editor {
-    background-color: var(--sidebar-surface, #0c0c0c);
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    border-radius: 16px;
-    width: calc(100% - 60px);
-    height: calc(100% - 80px);
-    margin: 60px 30px 33px 30px;
-    max-width: 1800px;
-    max-height: 950px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow:
-      0 25px 80px rgba(0, 0, 0, 0.6),
-      0 0 1px rgba(255, 255, 255, 0.1);
-  }
-
-  /* ===== Header ===== */
-  .clip-editor__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(0, 0, 0, 0.4);
-    border-bottom: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    flex-shrink: 0;
-  }
-
-  .clip-editor__header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-  }
-
-  .clip-editor__header-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, rgba(14, 165, 233, 0.2) 0%, rgba(56, 189, 248, 0.15) 100%);
-    border: 1px solid rgba(14, 165, 233, 0.3);
-    color: #38bdf8;
-    flex-shrink: 0;
-  }
-
-  .clip-editor__title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text, #f4f4f5);
-    margin: 0;
-    letter-spacing: -0.01em;
-    white-space: nowrap;
-  }
-
-  .clip-editor__separator {
-    width: 1px;
-    height: 1rem;
-    background-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .clip-editor__subtitle {
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.5);
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 300px;
-  }
-
-  .clip-editor__header-right {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .clip-editor__save-indicator {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.75rem;
-  }
-
-  .clip-editor__save-indicator--saving {
-    color: var(--sidebar-text-muted, #71717a);
-  }
-
-  .clip-editor__save-indicator--saved {
-    color: #22c55e;
-  }
-
-  .clip-editor__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted, #71717a);
-    cursor: pointer;
-    transition: all 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .clip-editor__close:hover {
-    background-color: rgba(255, 255, 255, 0.08);
-    color: var(--sidebar-text, #f4f4f5);
-  }
-
-  /* ===== Content Area ===== */
-  .clip-editor__content {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-  }
-
-  .clip-editor__top-row {
-    display: flex;
-    min-height: 0;
-    border-bottom: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    flex: 0.55;
-    min-height: 340px;
-    overflow: hidden;
-  }
-
-  .clip-editor__preview-column {
-    width: 50%;
-    min-width: 0;
-    border-right: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1rem;
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, transparent 100%);
-  }
-
-  .clip-editor__video-wrapper {
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-    max-width: 100%;
-    width: 100%;
-    display: flex;
-    flex-direction: row;
-    align-items: stretch;
-    gap: 12px;
-  }
-
-  .clip-editor__video-container {
-    flex: 1;
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    overflow: hidden;
-    position: relative;
-  }
-
-  .clip-editor__controls-column {
-    width: 50%;
-    min-width: 0;
-    display: flex;
-    flex-direction: row;
-    flex: 1;
-    background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
-  }
-
-  .clip-editor__controls-main {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .clip-editor__keyframe-inspector {
-    padding: 1rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    background-color: rgba(0, 0, 0, 0.3);
-  }
-
-  .clip-editor__keyframe-inspector-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .clip-editor__keyframe-inspector-title {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.7);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin: 0;
-  }
-
-  .clip-editor__keyframe-inspector-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.25rem;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: rgba(255, 255, 255, 0.5);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .clip-editor__keyframe-inspector-close:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 1);
-  }
-
-  .clip-editor__tab-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1rem;
-  }
-
-  /* Custom scrollbar for tab content */
-  .clip-editor__tab-content::-webkit-scrollbar {
+  /* Custom scrollbar for tab content (not achievable with Tailwind) */
+  .tab-content-scrollbar::-webkit-scrollbar {
     width: 6px;
   }
 
-  .clip-editor__tab-content::-webkit-scrollbar-track {
+  .tab-content-scrollbar::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  .clip-editor__tab-content::-webkit-scrollbar-thumb {
+  .tab-content-scrollbar::-webkit-scrollbar-thumb {
     background-color: rgba(255, 255, 255, 0.12);
     border-radius: 3px;
   }
 
-  .clip-editor__tab-content::-webkit-scrollbar-thumb:hover {
+  .tab-content-scrollbar::-webkit-scrollbar-thumb:hover {
     background-color: rgba(255, 255, 255, 0.2);
-  }
-
-  /* ===== Timeline Section ===== */
-  .clip-editor__timeline-section {
-    flex: 0.45;
-    min-height: 320px;
-    max-height: 60vh;
-    border-top: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.25) 100%);
-    padding: 0.5rem 0.5rem 0.75rem;
-    overflow: hidden;
-  }
-
-  @media (min-width: 640px) {
-    .clip-editor__timeline-section {
-      min-height: 340px;
-    }
-  }
-
-  /* ===== Speed Curve Editor Overlay ===== */
-  .clip-editor__speed-curve-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 60;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-  }
-
-  .clip-editor__speed-curve-dialog {
-    background-color: var(--sidebar-surface, #0c0c0c);
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-    width: 600px;
-    max-width: 90vw;
-  }
-
-  /* ===== Utility Classes for Tailwind Compatibility ===== */
-  .animate-spin {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* Maintain z-index layering */
-  .z-50 {
-    z-index: 50;
-  }
-
-  /* ===== Responsive Adjustments ===== */
-  @media (max-width: 1200px) {
-    .clip-editor {
-      margin: 20px;
-      width: calc(100% - 40px);
-      height: calc(100% - 40px);
-      border-radius: 12px;
-    }
-
-    .clip-editor__preview-column,
-    .clip-editor__controls-column {
-      width: 50%;
-    }
   }
 </style>
