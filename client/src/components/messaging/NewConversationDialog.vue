@@ -542,7 +542,7 @@ textarea.text-input {
 
 .create-btn {
   background: var(--accent-color, #7c3aed);
-  color: white;
+  color: #000;
 }
 
 .create-btn:hover:not(:disabled) {

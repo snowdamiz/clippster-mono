@@ -4,7 +4,7 @@
     <!-- Main content area with left margin to account for fixed sidebar -->
     <main
       class="flex-1 flex flex-col transition-[margin-left] duration-200 ease-out dashboard-container"
-      :class="isCollapsed ? 'ml-16' : 'ml-60'"
+      :class="isCollapsed ? 'ml-12' : 'ml-60'"
     >
       <!-- <DashboardHeader /> -->
       <!-- Page content -->
@@ -16,23 +16,19 @@
     </main>
     <!-- Authentication Modal -->
     <AuthModal v-model="showAuthModal" />
-    <!-- Account Type Selection Dialog (shown for new users) -->
-    <AccountTypeDialog v-model="showAccountTypeDialog" />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted } from 'vue';
+  import { ref, computed, watch } from 'vue';
   import DashboardSidebar from '@/components/DashboardSidebar.vue';
   import AuthModal from '@/components/AuthModal.vue';
-  import AccountTypeDialog from '@/components/AccountTypeDialog.vue';
   import { useAuthStore } from '@/stores/auth';
   import { useSidebarState } from '@/composables/useSidebarState';
 
   const authStore = useAuthStore();
   const { isCollapsed } = useSidebarState();
   const showAuthModal = ref(false);
-  const showAccountTypeDialog = ref(false);
 
   // Check if user needs to select account type
   const needsAccountTypeSelection = computed(() => {
@@ -55,22 +51,16 @@
     return true;
   });
 
-  // Show dialog when user is authenticated but hasn't selected account type
+  // Automatically set account type to personal for new users
   watch(
     needsAccountTypeSelection,
-    (needs) => {
+    async (needs) => {
       if (needs) {
-        showAccountTypeDialog.value = true;
+        await authStore.setAccountType('personal');
       }
     },
     { immediate: true }
   );
-
-  onMounted(() => {
-    if (needsAccountTypeSelection.value) {
-      showAccountTypeDialog.value = true;
-    }
-  });
 </script>
 
 <style scoped>

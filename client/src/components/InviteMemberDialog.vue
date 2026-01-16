@@ -60,10 +60,13 @@
 
                 <div class="invite-dialog__field">
                   <label for="invite-role" class="invite-dialog__label">Role</label>
-                  <select id="invite-role" v-model="inviteData.role" class="invite-dialog__select">
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                  <CustomDropdown
+                    v-model="inviteData.role"
+                    :options="roleOptions"
+                    placeholder="Select role"
+                    class="invite-dialog__dropdown"
+                    trigger-class="invite-dialog__dropdown-trigger"
+                  />
                 </div>
 
                 <div class="invite-dialog__note">
@@ -128,10 +131,13 @@
 
                 <div class="invite-dialog__field">
                   <label for="create-role" class="invite-dialog__label">Role</label>
-                  <select id="create-role" v-model="createData.role" class="invite-dialog__select">
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                  <CustomDropdown
+                    v-model="createData.role"
+                    :options="roleOptions"
+                    placeholder="Select role"
+                    class="invite-dialog__dropdown"
+                    trigger-class="invite-dialog__dropdown-trigger"
+                  />
                 </div>
               </div>
             </div>
@@ -155,6 +161,7 @@
   import { X, Mail, UserPlus, UserCog, Info, Eye, EyeOff, Sparkles } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
 
   const props = defineProps<{
     modelValue: boolean;
@@ -183,6 +190,11 @@
     password: '',
     role: 'member',
   });
+
+  const roleOptions = [
+    { label: 'Member', value: 'member' },
+    { label: 'Admin', value: 'admin' },
+  ];
 
   const canSubmit = computed(() => {
     if (mode.value === 'invite') {
@@ -464,8 +476,7 @@
     color: var(--sidebar-text);
   }
 
-  .invite-dialog__input,
-  .invite-dialog__select {
+  .invite-dialog__input {
     width: 100%;
     padding: 0.75rem 1rem;
     font-size: 0.875rem;
@@ -481,20 +492,46 @@
     opacity: 0.6;
   }
 
-  .invite-dialog__input:focus,
-  .invite-dialog__select:focus {
+  .invite-dialog__input:focus {
     outline: none;
     border-color: var(--sidebar-accent);
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
   }
 
-  .invite-dialog__select {
-    cursor: pointer;
+  .invite-dialog__dropdown {
+    width: 100%;
   }
 
-  .invite-dialog__select option {
-    background-color: var(--sidebar-surface);
-    color: var(--sidebar-text);
+  /* Dropdown trigger button styling */
+  :deep(.invite-dialog__dropdown-trigger) {
+    width: 100% !important;
+    padding: 0.75rem 1rem !important;
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+    justify-content: space-between !important;
+  }
+
+  :deep(.invite-dialog__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  :deep(.invite-dialog__dropdown-trigger:focus-within) {
+    border-color: var(--sidebar-accent) !important;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15) !important;
+  }
+
+  :deep(.invite-dialog__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.invite-dialog__dropdown-trigger svg) {
+    width: 14px !important;
+    height: 14px !important;
+    color: var(--sidebar-text-muted) !important;
   }
 
   /* ===== Input Group ===== */
@@ -614,7 +651,7 @@
 
   .invite-dialog__btn--primary {
     background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
+    color: #000;
   }
 
   .invite-dialog__btn--primary:hover:not(:disabled) {
@@ -648,5 +685,51 @@
   .dialog-leave-to {
     opacity: 0;
     transform: scale(0.98);
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Invite Dialog dropdown menu styling */
+  .invite-dialog__dropdown + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: inviteDialogDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes inviteDialogDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  .invite-dialog__dropdown + div[class*='fixed'] button,
+  div.fixed.bg-popover button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  .invite-dialog__dropdown + div[class*='fixed'] button:hover,
+  div.fixed.bg-popover button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  .invite-dialog__dropdown + div[class*='fixed'] button.bg-primary\/10,
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
   }
 </style>

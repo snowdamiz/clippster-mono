@@ -89,144 +89,167 @@
         <!-- Profiles Grid -->
         <div v-if="creatorProfiles.length > 0" class="org-creators__grid">
           <div v-for="profile in creatorProfiles" :key="profile.id" class="org-creators__card">
-            <div class="org-creators__card-content">
-              <!-- Main Row -->
-              <div class="org-creators__card-row">
-                <div class="org-creators__avatar">
-                  <img
-                    v-if="profile.profile_image_url"
-                    :src="profile.profile_image_url"
-                    :alt="profile.name"
-                    class="org-creators__avatar-img"
-                  />
-                  <div v-else class="org-creators__avatar-fallback">
-                    <UserCircle class="org-creators__avatar-icon" />
-                  </div>
-                </div>
-
-                <div class="org-creators__info">
-                  <div class="org-creators__name">{{ profile.name }}</div>
-                  <div class="org-creators__desc">{{ profile.description || 'No description' }}</div>
-                </div>
-
-                <!-- Branding Badges -->
-                <div class="org-creators__branding">
-                  <div
-                    v-if="profile.intro_id"
-                    class="org-creators__branding-badge org-creators__branding-badge--intro"
-                    title="Intro configured"
-                  >
-                    <Play class="org-creators__branding-badge-icon" />
-                    <span>Intro</span>
-                  </div>
-                  <div
-                    v-if="profile.outro_id"
-                    class="org-creators__branding-badge org-creators__branding-badge--outro"
-                    title="Outro configured"
-                  >
-                    <SkipForward class="org-creators__branding-badge-icon" />
-                    <span>Outro</span>
-                  </div>
-                  <div
-                    v-if="profile.watermark_id"
-                    class="org-creators__branding-badge org-creators__branding-badge--watermark"
-                    title="Watermark configured"
-                  >
-                    <ImageIcon class="org-creators__branding-badge-icon" />
-                    <span>Watermark</span>
-                  </div>
-                </div>
-
-                <!-- Members Count -->
-                <div
-                  class="org-creators__members-count"
-                  :class="{ 'org-creators__members-count--active': profile.assigned_count > 0 }"
-                >
-                  <Users class="org-creators__members-count-icon" />
-                  <span class="org-creators__members-count-value">{{ profile.assigned_count }}</span>
-                  <span class="org-creators__members-count-unit">
-                    {{ profile.assigned_count === 1 ? 'member' : 'members' }}
-                  </span>
-                </div>
-
-                <!-- Actions Menu -->
-                <div v-if="isAdmin" class="org-creators__actions">
-                  <button
-                    :ref="(el) => setProfileMenuButtonRef(el, profile.id)"
-                    class="org-creators__menu-btn"
-                    :class="{ 'org-creators__menu-btn--active': openProfileMenuId === profile.id }"
-                    title="Profile actions"
-                    @click.stop="toggleProfileMenu(profile.id)"
-                  >
-                    <MoreVertical class="org-creators__menu-icon" />
-                  </button>
-
-                  <Teleport to="body">
-                    <div
-                      v-if="openProfileMenuId === profile.id"
-                      class="org-creators__dropdown"
-                      :style="getProfileMenuPosition(profile.id)"
-                      @click.stop
-                    >
-                      <button
-                        class="org-creators__dropdown-item"
-                        @click.stop="
-                          openAssignmentDialog(profile);
-                          closeProfileMenu();
-                        "
-                      >
-                        <Users class="org-creators__dropdown-icon" />
-                        <span>Manage Assignments</span>
-                      </button>
-                      <button
-                        class="org-creators__dropdown-item org-creators__dropdown-item--edit"
-                        @click.stop="
-                          openProfileDialog(profile);
-                          closeProfileMenu();
-                        "
-                      >
-                        <Pencil class="org-creators__dropdown-icon" />
-                        <span>Edit Profile</span>
-                      </button>
-                      <div class="org-creators__dropdown-divider"></div>
-                      <button
-                        class="org-creators__dropdown-item org-creators__dropdown-item--danger"
-                        @click.stop="
-                          confirmDeleteProfile(profile);
-                          closeProfileMenu();
-                        "
-                      >
-                        <Trash2 class="org-creators__dropdown-icon" />
-                        <span>Delete Profile</span>
-                      </button>
-                    </div>
-                  </Teleport>
+            <!-- Card Header: Avatar + Info + Menu -->
+            <div class="org-creators__card-header">
+              <div class="org-creators__avatar">
+                <img
+                  v-if="profile.profile_image_url"
+                  :src="profile.profile_image_url"
+                  :alt="profile.name"
+                  class="org-creators__avatar-img"
+                />
+                <div v-else class="org-creators__avatar-fallback">
+                  <UserCircle class="org-creators__avatar-icon" />
                 </div>
               </div>
+              <div class="org-creators__header-info">
+                <div class="org-creators__name">{{ profile.name }}</div>
+                <div class="org-creators__desc">{{ profile.description || 'No description' }}</div>
+              </div>
+              <!-- Actions Menu -->
+              <div v-if="isAdmin" class="org-creators__actions">
+                <button
+                  :ref="(el) => setProfileMenuButtonRef(el, profile.id)"
+                  class="org-creators__menu-btn"
+                  :class="{ 'org-creators__menu-btn--active': openProfileMenuId === profile.id }"
+                  title="Profile actions"
+                  @click.stop="toggleProfileMenu(profile.id)"
+                >
+                  <MoreVertical class="org-creators__menu-icon" />
+                </button>
 
-              <!-- Platform Links Row -->
-              <div v-if="profile.platform_links.length > 0" class="org-creators__platforms-row">
-                <div class="org-creators__platforms">
+                <Teleport to="body">
+                  <div
+                    v-if="openProfileMenuId === profile.id"
+                    class="org-creators__dropdown"
+                    :style="getProfileMenuPosition(profile.id)"
+                    @click.stop
+                  >
+                    <button
+                      class="org-creators__dropdown-item"
+                      @click.stop="
+                        openAssignmentDialog(profile);
+                        closeProfileMenu();
+                      "
+                    >
+                      <Users class="org-creators__dropdown-icon" />
+                      <span>Manage Assignments</span>
+                    </button>
+                    <button
+                      class="org-creators__dropdown-item org-creators__dropdown-item--edit"
+                      @click.stop="
+                        openProfileDialog(profile);
+                        closeProfileMenu();
+                      "
+                    >
+                      <Pencil class="org-creators__dropdown-icon" />
+                      <span>Edit Profile</span>
+                    </button>
+                    <div class="org-creators__dropdown-divider"></div>
+                    <button
+                      class="org-creators__dropdown-item org-creators__dropdown-item--danger"
+                      @click.stop="
+                        confirmDeleteProfile(profile);
+                        closeProfileMenu();
+                      "
+                    >
+                      <Trash2 class="org-creators__dropdown-icon" />
+                      <span>Delete Profile</span>
+                    </button>
+                  </div>
+                </Teleport>
+              </div>
+            </div>
+
+            <!-- Stats Row: Platforms + Branding + Members -->
+            <div class="org-creators__stats-row">
+              <!-- Platform Icons -->
+              <div class="org-creators__platforms">
+                <template v-if="profile.platform_links.length > 0">
                   <div
                     v-for="link in profile.platform_links.slice(0, 4)"
                     :key="link.id"
-                    class="org-creators__platform-badge"
-                    :style="{
-                      backgroundColor: getPlatformColor(link.platform) + '15',
-                      borderColor: getPlatformColor(link.platform) + '30',
-                      color: getPlatformColor(link.platform),
-                    }"
+                    class="org-creators__platform-icon-wrapper"
+                    :title="link.display_name || link.platform"
                   >
-                    <img :src="getPlatformIcon(link.platform)" class="org-creators__platform-icon" />
-                    <span class="org-creators__platform-name">
-                      {{ link.display_name || truncatePlatformId(link.platform_id) }}
-                    </span>
+                    <img
+                      :src="getPlatformIcon(link.platform)"
+                      :alt="link.platform"
+                      class="org-creators__platform-icon"
+                      :style="{ filter: getPlatformFilter(link.platform) }"
+                    />
                   </div>
-                  <span v-if="profile.platform_links.length > 4" class="org-creators__platforms-more">
-                    +{{ profile.platform_links.length - 4 }} more
+                  <span v-if="profile.platform_links.length > 4" class="org-creators__more-badge">
+                    +{{ profile.platform_links.length - 4 }}
                   </span>
+                </template>
+                <span v-else class="org-creators__empty-indicator">
+                  <Link2 class="org-creators__empty-icon" />
+                </span>
+              </div>
+
+              <div class="org-creators__divider"></div>
+
+              <!-- Branding Icons -->
+              <div class="org-creators__branding">
+                <div
+                  class="org-creators__branding-icon"
+                  :class="{ 'org-creators__branding-icon--active': profile.intro_id }"
+                  :title="profile.intro_id ? 'Intro configured' : 'No intro'"
+                >
+                  <Play />
+                </div>
+                <div
+                  class="org-creators__branding-icon"
+                  :class="{ 'org-creators__branding-icon--active': profile.outro_id }"
+                  :title="profile.outro_id ? 'Outro configured' : 'No outro'"
+                >
+                  <SkipForward />
+                </div>
+                <div
+                  class="org-creators__branding-icon"
+                  :class="{ 'org-creators__branding-icon--active': profile.watermark_id }"
+                  :title="profile.watermark_id ? 'Watermark configured' : 'No watermark'"
+                >
+                  <ImageIcon />
                 </div>
               </div>
+
+              <div class="org-creators__divider"></div>
+
+              <!-- Members Avatar Stack -->
+              <div class="org-creators__members">
+                <template v-if="profile.assignments && profile.assignments.length > 0">
+                  <div class="org-creators__avatar-stack">
+                    <div
+                      v-for="(assignment, idx) in profile.assignments.slice(0, 3)"
+                      :key="assignment.id"
+                      class="org-creators__stack-avatar"
+                      :style="{ zIndex: 3 - idx }"
+                      :title="assignment.user?.name || assignment.user?.email || 'Member'"
+                    >
+                      <img
+                        v-if="assignment.user?.avatar_url"
+                        :src="assignment.user.avatar_url"
+                        :alt="assignment.user?.name || 'Member'"
+                        class="org-creators__stack-avatar-img"
+                      />
+                      <UserCircle v-else class="org-creators__stack-avatar-fallback" />
+                    </div>
+                  </div>
+                  <span v-if="profile.assigned_count > 3" class="org-creators__more-badge">
+                    +{{ profile.assigned_count - 3 }}
+                  </span>
+                </template>
+                <span v-else class="org-creators__empty-indicator">
+                  <Users class="org-creators__empty-icon" />
+                </span>
+              </div>
+            </div>
+
+            <!-- Card Footer: Updated timestamp -->
+            <div class="org-creators__card-footer">
+              <span class="org-creators__updated">{{ formatUpdatedAt(profile.updated_at) }}</span>
             </div>
           </div>
         </div>
@@ -525,9 +548,39 @@
     return colors[platform] || '#6b7280';
   }
 
+  function getPlatformFilter(platform: string): string {
+    // CSS filter to colorize the platform icons
+    const filters: Record<string, string> = {
+      pumpfun: 'brightness(0) saturate(100%) invert(67%) sepia(52%) saturate(559%) hue-rotate(109deg) brightness(93%) contrast(92%)',
+      kick: 'brightness(0) saturate(100%) invert(83%) sepia(47%) saturate(1113%) hue-rotate(57deg) brightness(106%) contrast(98%)',
+      twitch: 'brightness(0) saturate(100%) invert(37%) sepia(98%) saturate(1932%) hue-rotate(249deg) brightness(93%) contrast(109%)',
+      youtube: 'brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3013%) hue-rotate(352deg) brightness(95%) contrast(91%)',
+    };
+    return filters[platform] || 'none';
+  }
+
   function truncatePlatformId(id: string): string {
     if (!id || id.length < 10) return id;
     return `${id.slice(0, 4)}...${id.slice(-4)}`;
+  }
+
+  function formatUpdatedAt(dateStr: string): string {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffSec = Math.floor(diffMs / 1000);
+
+      if (diffSec < 60) return 'Just now';
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+      if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`;
+      if (diffSec < 2592000) return `${Math.floor(diffSec / 604800)}w ago`;
+      return `${Math.floor(diffSec / 2592000)}mo ago`;
+    } catch {
+      return '';
+    }
   }
 
   onMounted(() => {
@@ -811,43 +864,45 @@
 
   /* ===== Grid ===== */
   .org-creators__grid {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  @media (min-width: 768px) {
+    .org-creators__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
   }
 
   /* ===== Profile Card ===== */
   .org-creators__card {
     position: relative;
     display: flex;
+    flex-direction: column;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
     border-radius: 10px;
     overflow: hidden;
-    transition: all 200ms ease;
+    transition: all 150ms ease;
   }
 
   .org-creators__card:hover {
     border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   }
 
-  .org-creators__card-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .org-creators__card-row {
+  /* ===== Card Header ===== */
+  .org-creators__card-header {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.875rem 1rem;
+    gap: 0.75rem;
+    padding: 0.75rem;
   }
 
   .org-creators__avatar {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     border-radius: 10px;
     flex-shrink: 0;
     overflow: hidden;
@@ -871,19 +926,19 @@
   }
 
   .org-creators__avatar-icon {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     color: var(--sidebar-text-muted);
     opacity: 0.6;
   }
 
-  .org-creators__info {
+  .org-creators__header-info {
     flex: 1;
     min-width: 0;
   }
 
   .org-creators__name {
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--sidebar-text);
     white-space: nowrap;
@@ -893,100 +948,160 @@
   }
 
   .org-creators__desc {
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 0.25rem;
+    margin-top: 0.125rem;
   }
 
-  /* ===== Branding Badges ===== */
-  .org-creators__branding {
+  /* ===== Stats Row ===== */
+  .org-creators__stats-row {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0 0.75rem;
-    border-left: 1px solid var(--sidebar-border);
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.1);
   }
 
-  @media (max-width: 768px) {
-    .org-creators__branding {
-      display: none;
-    }
+  .org-creators__divider {
+    width: 1px;
+    height: 20px;
+    background-color: var(--sidebar-border);
   }
 
-  .org-creators__branding-badge {
+  /* ===== Platform Icons ===== */
+  .org-creators__platforms {
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 5px;
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
   }
 
-  .org-creators__branding-badge--intro {
-    background-color: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
-  }
-
-  .org-creators__branding-badge--outro {
-    background-color: rgba(168, 85, 247, 0.15);
-    color: #c084fc;
-  }
-
-  .org-creators__branding-badge--watermark {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-  }
-
-  .org-creators__branding-badge-icon {
-    width: 10px;
-    height: 10px;
-  }
-
-  /* ===== Members Count ===== */
-  .org-creators__members-count {
+  .org-creators__platform-icon-wrapper {
+    width: 24px;
+    height: 24px;
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0 0.75rem;
-    border-left: 1px solid var(--sidebar-border);
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-radius: 5px;
+    transition: all 150ms ease;
   }
 
-  @media (max-width: 640px) {
-    .org-creators__members-count {
-      display: none;
-    }
+  .org-creators__platform-icon-wrapper:hover {
+    background-color: rgba(255, 255, 255, 0.12);
   }
 
-  .org-creators__members-count-icon {
+  .org-creators__platform-icon {
     width: 14px;
     height: 14px;
+  }
+
+  .org-creators__more-badge {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    padding: 0 0.25rem;
+  }
+
+  .org-creators__empty-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.3;
+  }
+
+  .org-creators__empty-icon {
+    width: 16px;
+    height: 16px;
     color: var(--sidebar-text-muted);
   }
 
-  .org-creators__members-count--active .org-creators__members-count-icon {
-    color: var(--sidebar-accent);
+  /* ===== Branding Icons ===== */
+  .org-creators__branding {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
   }
 
-  .org-creators__members-count-value {
-    font-size: 0.875rem;
-    font-weight: 700;
+  .org-creators__branding-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-radius: 5px;
     color: var(--sidebar-text-muted);
-    font-variant-numeric: tabular-nums;
+    opacity: 0.3;
+    transition: all 150ms ease;
   }
 
-  .org-creators__members-count--active .org-creators__members-count-value {
-    color: var(--sidebar-accent);
+  .org-creators__branding-icon svg {
+    width: 12px;
+    height: 12px;
   }
 
-  .org-creators__members-count-unit {
-    font-size: 0.6875rem;
+  .org-creators__branding-icon--active {
+    opacity: 1;
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  /* ===== Members Avatar Stack ===== */
+  .org-creators__members {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-left: auto;
+  }
+
+  .org-creators__avatar-stack {
+    display: flex;
+    align-items: center;
+  }
+
+  .org-creators__stack-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+    border: 2px solid var(--sidebar-surface);
+    margin-left: -6px;
+    flex-shrink: 0;
+  }
+
+  .org-creators__stack-avatar:first-child {
+    margin-left: 0;
+  }
+
+  .org-creators__stack-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .org-creators__stack-avatar-fallback {
+    width: 100%;
+    height: 100%;
     color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Card Footer ===== */
+  .org-creators__card-footer {
+    display: flex;
+    align-items: center;
+    padding: 0.375rem 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .org-creators__updated {
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
   }
 
   /* ===== Actions ===== */
@@ -1087,48 +1202,6 @@
     border-top: 1px solid var(--sidebar-border);
   }
 
-  /* ===== Platform Links Row ===== */
-  .org-creators__platforms-row {
-    padding: 0.625rem 1rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.15);
-  }
-
-  .org-creators__platforms {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    flex-wrap: wrap;
-  }
-
-  .org-creators__platform-badge {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    border: 1px solid;
-  }
-
-  .org-creators__platform-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .org-creators__platform-name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 80px;
-  }
-
-  .org-creators__platforms-more {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    padding: 0 0.375rem;
-  }
 
   /* ===== Empty State ===== */
   .org-creators__empty {

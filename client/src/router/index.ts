@@ -274,6 +274,11 @@ const router = createRouter({
           component: () => import('@/pages/admin/AdminBetaCodes.vue'),
         },
         {
+          path: 'discount-codes',
+          name: 'admin-discount-codes',
+          component: () => import('@/pages/admin/AdminDiscountCodes.vue'),
+        },
+        {
           path: 'waitlist',
           name: 'admin-waitlist',
           component: () => import('@/pages/admin/AdminWaitlist.vue'),

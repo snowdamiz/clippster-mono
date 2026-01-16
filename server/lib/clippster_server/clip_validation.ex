@@ -935,4 +935,84 @@ defmodule ClippsterServer.ClipValidation do
     final_score = base_score + density_bonus + rate_bonus + splicing_bonus - issue_penalty - correction_penalty
     Float.round(Kernel.max(0.0, Kernel.min(1.0, final_score)), 3)
   end
+
+  @doc """
+  Filters clips by minimum duration threshold.
+
+  Removes clips that are shorter than the specified minimum duration.
+  Calculates clip duration from segments if available, otherwise uses total_duration field.
+
+  ## Parameters
+    - clips: List of clip maps to filter
+    - min_duration_seconds: Minimum duration in seconds (integer or float)
+
+  ## Returns
+    - Filtered list of clips that meet or exceed the minimum duration
+  """
+  @spec filter_by_minimum_duration(list(map()), number()) :: list(map())
+  def filter_by_minimum_duration(clips, min_duration_seconds) when is_list(clips) and is_number(min_duration_seconds) do
+    Logger.info("[ClipValidation] Filtering clips by minimum duration: #{min_duration_seconds} seconds")
+
+    {filtered_clips, removed_count} = clips
+    |> Enum.reduce({[], 0}, fn clip, {keep_acc, remove_count} ->
+      clip_duration = get_clip_duration(clip)
+
+      if clip_duration >= min_duration_seconds do
+        {[clip | keep_acc], remove_count}
+      else
+        Logger.debug("[ClipValidation] Removing clip '#{clip["title"] || "Untitled"}' - duration #{Float.round(clip_duration, 2)}s < #{min_duration_seconds}s minimum")
+        {keep_acc, remove_count + 1}
+      end
+    end)
+
+    if removed_count > 0 do
+      Logger.info("[ClipValidation] Filtered out #{removed_count} clip(s) below minimum duration of #{min_duration_seconds}s")
+    end
+
+    Enum.reverse(filtered_clips)
+  end
+
+  def filter_by_minimum_duration(clips, _min_duration_seconds) when is_list(clips), do: clips
+  def filter_by_minimum_duration(_, _), do: []
+
+  # Extracts the duration of a clip in seconds.
+  #
+  # Tries multiple methods to determine clip duration:
+  # 1. Uses total_duration field if present
+  # 2. Calculates from segments (last end_time - first start_time)
+  # 3. Sums individual segment durations
+  # 4. Returns 0 if duration cannot be determined
+  @spec get_clip_duration(map()) :: float()
+  defp get_clip_duration(clip) when is_map(clip) do
+    cond do
+      # Use total_duration field if available
+      Map.has_key?(clip, "total_duration") and is_number(clip["total_duration"]) ->
+        clip["total_duration"]
+
+      # Calculate from segments if available
+      Map.has_key?(clip, "segments") and is_list(clip["segments"]) and length(clip["segments"]) > 0 ->
+        segments = clip["segments"]
+        first_segment = hd(segments)
+        last_segment = List.last(segments)
+
+        cond do
+          # Calculate from first start_time to last end_time
+          Map.has_key?(first_segment, "start_time") and Map.has_key?(last_segment, "end_time") ->
+            last_segment["end_time"] - first_segment["start_time"]
+
+          # Sum individual segment durations
+          true ->
+            segments
+            |> Enum.map(fn seg -> Map.get(seg, "duration", 0) end)
+            |> Enum.sum()
+        end
+
+      # Fallback: return 0 if duration cannot be determined
+      true ->
+        Logger.warning("[ClipValidation] Could not determine duration for clip: #{inspect(Map.keys(clip))}")
+        0
+    end
+  end
+
+  defp get_clip_duration(_), do: 0
 end

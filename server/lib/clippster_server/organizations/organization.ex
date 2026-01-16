@@ -13,6 +13,19 @@ defmodule ClippsterServer.Organizations.Organization do
     field :allow_personal_instagram, :boolean, default: true
     field :scheduling_enabled, :boolean, default: true
 
+    # Restriction defaults for restricted members
+    field :restriction_defaults, :map, default: %{
+      "allow_ai" => true,
+      "allow_asset_uploads" => false,
+      "allow_custom_prompts" => false,
+      "allow_clipper_profile" => false,
+      "allow_personal_social" => true,
+      "allow_clip_deletion" => false,
+      "force_org_watermark" => true,
+      "require_clip_approval" => false,
+      "clips_visible_to_admins" => true
+    }
+
     belongs_to :owner, ClippsterServer.Accounts.User
     has_many :members, ClippsterServer.Organizations.OrganizationMember
     has_many :invitations, ClippsterServer.Organizations.OrganizationInvitation
@@ -40,10 +53,19 @@ defmodule ClippsterServer.Organizations.Organization do
   """
   def update_changeset(organization, attrs) do
     organization
-    |> cast(attrs, [:name, :description, :logo_url, :settings, :allow_personal_instagram, :scheduling_enabled])
+    |> cast(attrs, [:name, :description, :logo_url, :settings, :allow_personal_instagram, :scheduling_enabled, :restriction_defaults])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)
     |> maybe_regenerate_slug()
+  end
+
+  @doc """
+  Changeset for updating restriction defaults.
+  """
+  def update_restriction_defaults_changeset(organization, attrs) do
+    organization
+    |> cast(attrs, [:restriction_defaults])
+    |> validate_required([:restriction_defaults])
   end
 
   defp generate_slug(changeset) do

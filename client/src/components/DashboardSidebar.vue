@@ -1,7 +1,11 @@
 <template>
   <aside
-    class="sidebar fixed left-0 top-0 h-screen w-60 flex flex-col bg-[var(--sidebar-bg)] transition-[width_200ms_ease-out] z-40"
-    :class="{ 'sidebar--native': isNativeEnvironment }"
+    class="sidebar fixed left-0 top-0 h-screen flex flex-col bg-[var(--sidebar-bg)] transition-[width] duration-200 ease-out z-40"
+    :class="{
+      'sidebar--native': isNativeEnvironment,
+      'w-60': !isCollapsed,
+      'w-12': isCollapsed
+    }"
   >
     <!-- Bug Report Dialog -->
     <BugReportDialog
@@ -11,10 +15,15 @@
     />
 
     <!-- ===== Header Section ===== -->
-    <div v-if="!isNativeEnvironment" class="sidebar-header flex items-center justify-between p-4 h-14">
-      <div class="flex items-center gap-2 min-w-0">
+    <div
+      v-if="!isNativeEnvironment"
+      class="sidebar-header flex items-center h-14 transition-all duration-200"
+      :class="isCollapsed ? 'justify-center px-0' : 'justify-between p-4'"
+    >
+      <div class="flex items-center gap-2 min-w-0" :class="isCollapsed ? 'justify-center' : ''">
         <img src="/logo.svg" alt="Clippster" class="w-6 h-6 shrink-0" />
         <span
+          v-if="!isCollapsed"
           class="text-base font-semibold text-[var(--sidebar-text)] whitespace-nowrap overflow-hidden text-ellipsis"
         >
           Clippster
@@ -25,12 +34,18 @@
     <!-- ===== Navigation Section ===== -->
     <nav class="flex-1 overflow-hidden">
       <div class="sidebar-nav__scroll h-full overflow-y-auto overflow-x-hidden">
-        <div class="p-3 flex flex-col gap-4">
-          <template v-for="group in sortedNavigationGroups" :key="group.key">
+        <div class="flex flex-col" :class="isCollapsed ? 'p-1.5 gap-1' : 'p-3 gap-4'">
+          <template v-for="(group, groupIndex) in sortedNavigationGroups" :key="group.key">
             <div v-if="getVisibleGroupItems(group.items).length > 0" class="flex flex-col gap-1">
-              <!-- Group Label -->
+              <!-- Collapsed divider between groups -->
               <div
-                v-if="group.label"
+                v-if="isCollapsed && groupIndex > 0"
+                class="sidebar-collapsed-divider mx-1.5 my-1"
+              />
+
+              <!-- Group Label (hidden when collapsed) -->
+              <div
+                v-if="group.label && !isCollapsed"
                 class="text-xs font-semibold uppercase tracking-wider text-[var(--sidebar-text-muted)] pt-2 px-3 pb-1 opacity-70"
               >
                 {{ group.label }}
@@ -41,8 +56,13 @@
                 <li v-for="item in getVisibleGroupItems(group.items)" :key="item.path">
                   <router-link
                     :to="item.path"
-                    class="flex items-center gap-3 w-full py-2 px-3 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm transition-all duration-150 cursor-pointer hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)]"
-                    :class="{ 'sidebar-nav-item--active': isActive(item.path) }"
+                    class="flex items-center w-full py-2 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm transition-all duration-150 cursor-pointer hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)]"
+                    :class="{
+                      'sidebar-nav-item--active': isActive(item.path),
+                      'justify-center px-0': isCollapsed,
+                      'gap-3 px-3': !isCollapsed
+                    }"
+                    :title="isCollapsed ? item.name : undefined"
                   >
                     <div class="relative flex items-center justify-center shrink-0">
                       <div
@@ -62,7 +82,7 @@
                         {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
                       </span>
                     </div>
-                    <span class="whitespace-nowrap overflow-hidden text-ellipsis">{{ item.name }}</span>
+                    <span v-if="!isCollapsed" class="whitespace-nowrap overflow-hidden text-ellipsis">{{ item.name }}</span>
                   </router-link>
                 </li>
               </ul>
@@ -75,22 +95,37 @@
     <!-- ===== Footer Section ===== -->
     <div class="sidebar-footer p-[0.3rem] flex flex-col gap-2">
       <!-- User Profile Section -->
-      <div class="flex">
+      <div class="flex" :class="isCollapsed ? 'justify-center' : ''">
         <template v-if="authStore.isAuthenticated">
           <DropdownMenu>
             <DropdownMenuTrigger
-              class="sidebar-user__trigger flex items-center gap-2 w-full py-2 px-2 rounded-md bg-transparent border-[none] text-[var(--sidebar-text)] cursor-pointer transform-none hover:bg-[var(--sidebar-hover)]"
+              class="sidebar-user__trigger flex items-center rounded-md bg-transparent border-[none] text-[var(--sidebar-text)] cursor-pointer transform-none hover:bg-[var(--sidebar-hover)]"
+              :class="isCollapsed ? 'justify-center p-1.5 w-full' : 'gap-2 w-full py-2 px-2'"
+              :title="isCollapsed ? formattedAddress : undefined"
             >
-              <div class="w-7 h-7 shrink-0 flex items-center justify-center rounded-[20px] bg-[var(--sidebar-accent)]">
-                <span class="text-xs font-extrabold text-[#0a0a0b] uppercase">{{ userInitials }}</span>
+              <div class="shrink-0 flex items-center justify-center rounded-[20px] overflow-hidden"
+                   :class="[
+                     authStore.user?.avatar_url && !avatarFailed ? '' : 'bg-[var(--sidebar-accent)]',
+                     isCollapsed ? 'w-6 h-6' : 'w-7 h-7'
+                   ]">
+                <img
+                  v-if="authStore.user?.avatar_url && !avatarFailed"
+                  :src="authStore.user.avatar_url"
+                  :alt="authStore.user.name || authStore.email || 'User'"
+                  class="w-full h-full object-cover"
+                  referrerpolicy="no-referrer"
+                  @error="avatarFailed = true"
+                />
+                <span v-else class="text-xs font-extrabold text-[#0a0a0b] uppercase">{{ userInitials }}</span>
               </div>
               <span
+                v-if="!isCollapsed"
                 class="flex-1 text-xs text-left whitespace-nowrap overflow-hidden text-ellipsis text-[var(--sidebar-text-muted)]"
                 :title="formattedAddress"
               >
                 {{ formattedAddress }}
               </span>
-              <ChevronRight class="w-3.5 h-3.5 text-[var(--sidebar-text-muted)] shrink-0" />
+              <ChevronRight v-if="!isCollapsed" class="w-3.5 h-3.5 text-[var(--sidebar-text-muted)] shrink-0" />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" align="end" :side-offset="12" class="sidebar-dropdown">
               <DropdownMenuLabel class="sidebar-dropdown__label">
@@ -141,10 +176,13 @@
         </template>
         <template v-else>
           <button
-            class="flex items-center justify-center w-full py-2 px-3 rounded-md bg-[var(--sidebar-accent)] text-[var(--sidebar-bg)] border-[none] text-sm font-medium cursor-pointer transition-all duration-150 hover:opacity-90"
+            class="flex items-center justify-center py-2 rounded-md bg-[var(--sidebar-accent)] text-[var(--sidebar-bg)] border-[none] text-sm font-medium cursor-pointer transition-all duration-150 hover:opacity-90"
+            :class="isCollapsed ? 'w-full h-9 px-0' : 'w-full px-3'"
+            :title="isCollapsed ? 'Sign In' : undefined"
             @click="showAuthModal"
           >
-            Sign In
+            <span v-if="!isCollapsed">Sign In</span>
+            <LogOut v-else class="w-4 h-4 rotate-180" />
           </button>
         </template>
       </div>
@@ -157,9 +195,11 @@
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useMessagingStore } from '@/stores/messaging';
+  import { usePermissionsStore } from '@/stores/permissions';
   import { useWallet } from '@/composables/useWallet';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
+  import { useSidebarState } from '@/composables/useSidebarState';
   import { getSortedNavigationGroups, type NavigationItem } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
   import {
@@ -178,9 +218,11 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const messagingStore = useMessagingStore();
+  const permissionsStore = usePermissionsStore();
   const { formatAddress } = useWallet();
   const { isAIAllowed } = useAIPermission();
   const { isLiveClipEnabled, initialize: initFeatureFlags } = useFeatureFlags();
+  const { isCollapsed } = useSidebarState();
 
   // ===== Emits =====
   const emit = defineEmits<{
@@ -193,6 +235,7 @@
   const isNativeEnvironment = ref(false);
   const showBugReportDialog = ref(false);
   const userOrganizations = ref<any[]>([]);
+  const avatarFailed = ref(false);
   let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
   // ===== Computed Properties =====
@@ -255,6 +298,18 @@
       }
       // Hide Live when feature is disabled
       if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
+        return false;
+      }
+      // Check restricted account items
+      if (item.restrictedHidden && permissionsStore.isRestricted) {
+        // Special handling for items with specific permission checks
+        if (item.path === '/assets' && permissionsStore.allowAssetUploads) {
+          return true;
+        }
+        if (item.path === '/prompts' && permissionsStore.allowCustomPrompts) {
+          return true;
+        }
+        // Otherwise hide if marked as restrictedHidden
         return false;
       }
       return true;
@@ -332,11 +387,21 @@
     (isAuth) => {
       if (isAuth) {
         loadUserOrganizations();
+        permissionsStore.fetchRestrictions();
       } else {
         userOrganizations.value = [];
+        permissionsStore.reset();
       }
     },
     { immediate: true }
+  );
+
+  // Reset avatar failed state when user changes
+  watch(
+    () => authStore.user?.id,
+    () => {
+      avatarFailed.value = false;
+    }
   );
 
   // ===== Lifecycle =====
@@ -346,6 +411,11 @@
     balanceRefreshInterval = setInterval(fetchBalance, 30000);
     window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
     initFeatureFlags();
+    
+    // Fetch user restrictions
+    if (authStore.isAuthenticated) {
+      permissionsStore.fetchRestrictions();
+    }
   });
 
   onUnmounted(() => {
@@ -395,6 +465,12 @@
 
   .sidebar-nav-item--active:hover {
     background-color: var(--sidebar-active-hover);
+  }
+
+  .sidebar-collapsed-divider {
+    height: 1px;
+    background-color: var(--sidebar-border);
+    opacity: 0.8;
   }
 
   @keyframes spin {

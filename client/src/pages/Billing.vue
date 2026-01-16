@@ -483,6 +483,47 @@
                 </div>
 
                 <div class="billing-modal__body">
+                  <!-- Promo Code Section -->
+                  <div class="billing-modal__promo">
+                    <div class="billing-modal__promo-toggle" @click="showPromoCodeInput = !showPromoCodeInput">
+                      <Tag class="billing-modal__promo-icon" />
+                      <span>Have a promo code?</span>
+                    </div>
+                    <Transition name="promo">
+                      <div v-if="showPromoCodeInput" class="billing-modal__promo-input-wrapper">
+                        <div class="billing-modal__promo-input-group">
+                          <input
+                            v-model="promoCodeInput"
+                            type="text"
+                            placeholder="Enter promo code"
+                            class="billing-modal__promo-input"
+                            :disabled="validatingPromoCode"
+                            @keyup.enter="validatePromoCodeInput"
+                          />
+                          <button
+                            @click="validatePromoCodeInput"
+                            class="billing-modal__promo-btn"
+                            :disabled="validatingPromoCode || !promoCodeInput.trim()"
+                          >
+                            <Loader2 v-if="validatingPromoCode" class="billing-modal__promo-btn-spinner" />
+                            <Check v-else class="billing-modal__promo-btn-icon" />
+                          </button>
+                          <button v-if="validatedPromoCode" @click="clearPromoCode" class="billing-modal__promo-clear">
+                            <X class="billing-modal__promo-clear-icon" />
+                          </button>
+                        </div>
+                        <div v-if="promoCodeError" class="billing-modal__promo-error">
+                          <AlertCircle class="billing-modal__promo-error-icon" />
+                          <span>{{ promoCodeError }}</span>
+                        </div>
+                        <div v-if="validatedPromoCode" class="billing-modal__promo-success">
+                          <Percent class="billing-modal__promo-success-icon" />
+                          <span>{{ validatedPromoCode.percent_off }}% discount applied!</span>
+                        </div>
+                      </div>
+                    </Transition>
+                  </div>
+
                   <div class="billing-modal__summary">
                     <div class="billing-modal__summary-row">
                       <span>Plan:</span>
@@ -492,16 +533,23 @@
                       <span>Credits/month:</span>
                       <span>{{ selectedSubscription?.monthly_credits?.toLocaleString() }}</span>
                     </div>
+                    <div
+                      v-if="validatedPromoCode"
+                      class="billing-modal__summary-row billing-modal__summary-row--discount"
+                    >
+                      <span>Discount:</span>
+                      <span class="billing-modal__summary-discount">-{{ validatedPromoCode.percent_off }}%</span>
+                    </div>
                     <div class="billing-modal__summary-row billing-modal__summary-row--total">
                       <span>Total:</span>
-                      <span class="billing-modal__summary-total">${{ selectedSubscription?.price_usd }}/month</span>
+                      <span class="billing-modal__summary-total">${{ discountedPrice.toFixed(2) }}/month</span>
                     </div>
                   </div>
 
                   <div class="billing-modal__actions">
                     <div class="billing-modal__payment-btns">
                       <button
-                        class="billing-modal__btn billing-modal__btn--stripe"
+                        class="billing-modal__btn billing-modal__btn--primary"
                         @click="initiateStripePayment"
                         :disabled="processing"
                       >
@@ -516,7 +564,7 @@
                       >
                         <Loader2 v-if="processing" class="billing-modal__btn-spinner" />
                         <Wallet v-else />
-                        <span>Phantom</span>
+                        <span>Crypto</span>
                       </button>
                     </div>
                     <button
@@ -591,6 +639,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import api from '@/services/api';
+  import * as promoCodesApi from '@/services/promoCodesApi';
   import {
     CreditCard,
     Check,
@@ -611,6 +660,8 @@
     Building,
     Sparkles,
     Star,
+    Percent,
+    Tag,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
@@ -643,6 +694,13 @@
   const paymentStatus = ref('');
   const errorMessage = ref('');
 
+  // Promo code state
+  const promoCodeInput = ref('');
+  const validatedPromoCode = ref<any>(null);
+  const validatingPromoCode = ref(false);
+  const promoCodeError = ref('');
+  const showPromoCodeInput = ref(false);
+
   // Cancel subscription
   const showCancelConfirm = ref(false);
   const cancellingSubscription = ref(false);
@@ -673,6 +731,15 @@
     if (status === 'active') return 'billing-indicator__status--active';
     if (status === 'cancelled') return 'billing-indicator__status--warning';
     return '';
+  });
+
+  const discountedPrice = computed(() => {
+    const basePrice = selectedSubscription.value?.price_usd || 0;
+    if (validatedPromoCode.value) {
+      const discount = validatedPromoCode.value.percent_off / 100;
+      return basePrice * (1 - discount);
+    }
+    return basePrice;
   });
 
   function isCurrentTier(tierId: string): boolean {
@@ -798,8 +865,48 @@
     if (isCurrentTier(tier.id)) return;
 
     selectedSubscription.value = tier;
+    validatedPromoCode.value = null;
+    promoCodeInput.value = '';
+    promoCodeError.value = '';
     showPaymentModal.value = true;
     paymentStep.value = 'confirm';
+  }
+
+  async function validatePromoCodeInput() {
+    if (!promoCodeInput.value.trim()) {
+      validatedPromoCode.value = null;
+      promoCodeError.value = '';
+      return;
+    }
+
+    validatingPromoCode.value = true;
+    promoCodeError.value = '';
+
+    try {
+      const response = await promoCodesApi.validatePromoCode(
+        promoCodeInput.value.trim(),
+        selectedSubscription.value.id
+      );
+
+      if (response.success && response.promo) {
+        validatedPromoCode.value = response.promo;
+        showSuccessToast('Promo code applied!', `${response.promo.percent_off}% discount`);
+      } else {
+        validatedPromoCode.value = null;
+        promoCodeError.value = response.error || 'Invalid promo code';
+      }
+    } catch (error: any) {
+      validatedPromoCode.value = null;
+      promoCodeError.value = error.message || 'Failed to validate promo code';
+    } finally {
+      validatingPromoCode.value = false;
+    }
+  }
+
+  function clearPromoCode() {
+    promoCodeInput.value = '';
+    validatedPromoCode.value = null;
+    promoCodeError.value = '';
   }
 
   async function cancelSubscription() {
@@ -829,9 +936,15 @@
       const { invoke } = await import('@tauri-apps/api/core');
       const { listen } = await import('@tauri-apps/api/event');
 
-      const response = await api.post('/subscription/checkout', {
+      const checkoutData: any = {
         tier: selectedSubscription.value.id,
-      });
+      };
+
+      if (validatedPromoCode.value && promoCodeInput.value.trim()) {
+        checkoutData.promo_code = promoCodeInput.value.trim();
+      }
+
+      const response = await api.post('/subscription/checkout', checkoutData);
 
       if (!response.data.success) {
         throw new Error(response.data.error || 'Failed to create checkout session');
@@ -882,9 +995,16 @@
       const { invoke } = await import('@tauri-apps/api/core');
       const { listen } = await import('@tauri-apps/api/event');
 
-      const quoteResponse = await api.post('/subscription/crypto-quote', {
+      const quoteData: any = {
         tier: selectedSubscription.value.id,
-      });
+      };
+
+      // Include promo code if validated
+      if (validatedPromoCode.value && promoCodeInput.value.trim()) {
+        quoteData.promo_code = promoCodeInput.value.trim();
+      }
+
+      const quoteResponse = await api.post('/subscription/crypto-quote', quoteData);
 
       if (!quoteResponse.data.success) {
         throw new Error(quoteResponse.data.error || 'Failed to get quote');
@@ -897,11 +1017,18 @@
 
         paymentStatus.value = 'Verifying payment...';
         try {
-          const confirmResponse = await api.post('/subscription/crypto-confirm', {
+          const confirmData: any = {
             tier: selectedSubscription.value.id,
             tx_signature: paymentResult.signature,
             from_address: paymentResult.from_address,
-          });
+          };
+
+          // Include promo code in confirmation if validated
+          if (validatedPromoCode.value && promoCodeInput.value.trim()) {
+            confirmData.promo_code = promoCodeInput.value.trim();
+          }
+
+          const confirmResponse = await api.post('/subscription/crypto-confirm', confirmData);
 
           if (confirmResponse.data.success) {
             subscriptionStatus.value = confirmResponse.data.subscription;
@@ -1005,7 +1132,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 
@@ -2034,6 +2161,15 @@
   .billing-modal__content--centered {
     text-align: center;
     padding: 2.5rem 1.75rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .billing-modal__content--centered .billing-modal__btn {
+    width: 100%;
+    margin-top: 0.5rem;
   }
 
   .billing-modal__header {
@@ -2073,10 +2209,13 @@
 
   .billing-modal__icon--loading {
     background-color: rgba(6, 182, 212, 0.15);
+    border: 1px solid rgba(6, 182, 212, 0.3);
     color: var(--sidebar-accent);
   }
 
   .billing-modal__icon-spinner {
+    width: 26px;
+    height: 26px;
     animation: spin 0.8s linear infinite;
   }
 
@@ -2152,6 +2291,196 @@
     font-size: 1.0625rem;
     font-weight: 700;
     color: var(--sidebar-accent);
+  }
+
+  .billing-modal__summary-row--discount {
+    color: #10b981;
+  }
+
+  .billing-modal__summary-discount {
+    font-weight: 600;
+    color: #10b981;
+  }
+
+  .billing-modal__promo {
+    padding: 1.125rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+  }
+
+  .billing-modal__promo-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background-color: var(--sidebar-bg);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+  }
+
+  .billing-modal__promo-toggle:hover {
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  .billing-modal__promo-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .billing-modal__promo-input-wrapper {
+    margin-top: 0.75rem;
+  }
+
+  .billing-modal__promo-input-group {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .billing-modal__promo-input {
+    flex: 1;
+    padding: 0.625rem 0.75rem;
+    background-color: var(--sidebar-bg);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .billing-modal__promo-input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+  }
+
+  .billing-modal__promo-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .billing-modal__promo-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .billing-modal__promo-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .billing-modal__promo-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .billing-modal__promo-btn-spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  .billing-modal__promo-btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .billing-modal__promo-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.625rem;
+    background-color: transparent;
+    color: var(--sidebar-text-muted);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .billing-modal__promo-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: #f87171;
+  }
+
+  .billing-modal__promo-clear-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .billing-modal__promo-error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem;
+    margin-top: 0.5rem;
+    background-color: rgba(248, 113, 113, 0.1);
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: #f87171;
+  }
+
+  .billing-modal__promo-error-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .billing-modal__promo-success {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem;
+    margin-top: 0.5rem;
+    background-color: rgba(16, 185, 129, 0.1);
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: #10b981;
+    font-weight: 500;
+  }
+
+  .billing-modal__promo-success-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .promo-enter-active,
+  .promo-leave-active {
+    transition: all 150ms ease;
+  }
+
+  .promo-enter-from,
+  .promo-leave-to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  .promo-enter-to,
+  .promo-leave-from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .billing-modal__actions {

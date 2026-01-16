@@ -1,5 +1,6 @@
 import { computed } from 'vue';
 import { useAuthStore } from '@/stores/auth';
+import { usePermissionsStore } from '@/stores/permissions';
 
 /**
  * Composable to check if the current user is allowed to use AI features.
@@ -7,14 +8,14 @@ import { useAuthStore } from '@/stores/auth';
  */
 export function useAIPermission() {
   const authStore = useAuthStore();
+  const permissionsStore = usePermissionsStore();
 
   /**
    * Whether AI features are allowed for the current user.
    * Returns true if:
    * - User is not authenticated (will be blocked by auth anyway)
    * - User is an admin
-   * - User was not created by an organization
-   * - User's organization has allow_ai enabled (or not set, defaulting to true)
+   * - User is not restricted, OR user is restricted but has allow_ai enabled
    */
   const isAIAllowed = computed(() => {
     const user = authStore.user;
@@ -26,9 +27,13 @@ export function useAIPermission() {
     // Admins always have AI access
     if (user.is_admin) return true;
 
-    // Check the ai_allowed field from the server
-    // Default to true if not set (backwards compatibility)
-    return user.ai_allowed !== false;
+    // Check permissions store for restriction settings
+    if (permissionsStore.isRestricted) {
+      return permissionsStore.allowAi;
+    }
+
+    // Non-restricted users have full AI access
+    return true;
   });
 
   /**

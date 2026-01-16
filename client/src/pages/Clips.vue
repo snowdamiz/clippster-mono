@@ -124,14 +124,21 @@
         <!-- Content when not loading -->
         <div v-else-if="displayableBuilds.length > 0" class="clips__main">
           <!-- Selection Bar (shown when items selected) -->
-          <div v-if="totalSelectedCount > 0" class="clips__selection-bar">
-            <button @click="confirmBulkDelete" class="clips__selection-delete">
-              <Trash2 class="clips__selection-icon" />
-              Delete ({{ totalSelectedCount }})
-            </button>
-            <span class="clips__selection-count">{{ totalSelectedCount }} selected</span>
-            <button @click="clearSelection" class="clips__selection-clear">Clear</button>
-          </div>
+          <Transition name="selection-bar">
+            <div v-if="totalSelectedCount > 0" class="clips__selection-bar">
+              <div class="clips__selection-info">
+                <Check class="clips__selection-icon" />
+                <span>{{ totalSelectedCount }} selected</span>
+              </div>
+              <div class="clips__selection-actions">
+                <button @click="clearSelection" class="clips__selection-clear">Clear</button>
+                <button @click="confirmBulkDelete" class="clips__selection-delete">
+                  <Trash2 class="clips__selection-delete-icon" />
+                  Delete Selected
+                </button>
+              </div>
+            </div>
+          </Transition>
 
           <!-- Builds Grid -->
           <div v-if="filteredBuilds.length > 0" class="clips__section">
@@ -809,7 +816,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch } from 'vue';
+  import { ref, onMounted, computed, watch, Transition } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { save } from '@tauri-apps/plugin-dialog';
@@ -2628,7 +2635,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 
@@ -2828,13 +2835,49 @@
   .clips__selection-bar {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    padding: 0.625rem 1rem;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    margin-bottom: 1rem;
+    border-radius: 10px;
+  }
+
+  .clips__selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    font-weight: 500;
+  }
+
+  .clips__selection-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  .clips__selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .clips__selection-clear {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clips__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
   }
 
   .clips__selection-delete {
@@ -2856,32 +2899,40 @@
     background-color: #dc2626;
   }
 
-  .clips__selection-icon {
+  .clips__selection-delete-icon {
     width: 13px;
     height: 13px;
   }
 
-  .clips__selection-count {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
+  /* Selection Bar Transitions */
+  .selection-bar-enter-active {
+    animation: slideDown 0.2s ease-out;
   }
 
-  .clips__selection-clear {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    padding: 0.375rem 0.75rem;
-    cursor: pointer;
-    transition: all 150ms ease;
+  .selection-bar-leave-active {
+    animation: slideUp 0.15s ease-in;
   }
 
-  .clips__selection-clear:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
   }
 
   /* ===== Sections ===== */
@@ -2956,9 +3007,11 @@
 
   .clips-card--selected {
     border-color: var(--sidebar-accent);
-    box-shadow:
-      0 0 0 2px var(--sidebar-accent),
-      0 8px 32px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .clips-card--selected:hover {
+    border-color: var(--sidebar-accent);
   }
 
   .clips-card--skeleton {
@@ -2979,9 +3032,11 @@
   }
 
   .clips-card-wrapper--selected {
-    box-shadow:
-      0 0 0 2px var(--sidebar-accent),
-      0 8px 32px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .clips-card-wrapper--selected:hover {
+    border-color: var(--sidebar-accent);
   }
 
   /* Checkbox */
@@ -3023,6 +3078,11 @@
     background-color: var(--sidebar-accent);
     border-color: var(--sidebar-accent);
     color: var(--sidebar-bg);
+  }
+
+  .clips-card__checkbox-inner--checked:hover {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
   }
 
   .clips-card__checkbox-icon {

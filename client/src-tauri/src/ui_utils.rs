@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs)]
 // Get platform information
 #[tauri::command]
 pub fn get_platform() -> String {
@@ -16,9 +17,10 @@ pub async fn setup_macos_titlebar(_window: tauri::Window) -> Result<(), String> 
     #[cfg(target_os = "macos")]
     {
         // On macOS, we use the window parameter to access the native NSWindow
-        #[allow(unused_imports)]
+        #[allow(unused_imports, deprecated)]
         use cocoa::appkit::{NSColor, NSWindow};
         use cocoa::base::NO;
+        #[allow(deprecated)]
         use cocoa::foundation::NSAutoreleasePool;
         use objc::{msg_send, sel, sel_impl};
 

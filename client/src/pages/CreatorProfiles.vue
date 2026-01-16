@@ -40,9 +40,9 @@
           <div v-if="creators.length > 0 || loading" class="creators__stats">
             <!-- Total Creators Card -->
             <div class="creators-stat">
-              <div class="creators-stat__indicator"></div>
+              <div class="creators-stat__indicator creators-stat__indicator--total"></div>
               <div class="creators-stat__inner">
-                <div class="creators-stat__icon">
+                <div class="creators-stat__icon creators-stat__icon--total">
                   <Users />
                 </div>
                 <div class="creators-stat__info">
@@ -98,25 +98,37 @@
 
           <!-- Loading State -->
           <div v-if="loading" class="creators__loading">
-            <div v-for="i in 4" :key="i" class="creator-skeleton">
-              <div class="creator-skeleton__inner">
-                <div class="creator-skeleton__header">
-                  <div class="creator-skeleton__avatar"></div>
-                  <div class="creator-skeleton__info">
-                    <div class="creator-skeleton__line creator-skeleton__line--name"></div>
-                    <div class="creator-skeleton__line creator-skeleton__line--desc"></div>
-                    <div class="creator-skeleton__badges">
-                      <div class="creator-skeleton__badge"></div>
-                      <div class="creator-skeleton__badge"></div>
-                    </div>
-                  </div>
+            <div v-for="i in 6" :key="i" class="creator-skeleton">
+              <!-- Skeleton Header -->
+              <div class="creator-skeleton__header">
+                <div class="creator-skeleton__avatar"></div>
+                <div class="creator-skeleton__info">
+                  <div class="creator-skeleton__line creator-skeleton__line--name"></div>
+                  <div class="creator-skeleton__line creator-skeleton__line--desc"></div>
                 </div>
-                <div class="creator-skeleton__footer">
-                  <div class="creator-skeleton__status"></div>
-                  <div class="creator-skeleton__actions">
-                    <div class="creator-skeleton__btn"></div>
-                    <div class="creator-skeleton__btn"></div>
-                  </div>
+                <div class="creator-skeleton__menu"></div>
+              </div>
+              <!-- Skeleton Stats Row -->
+              <div class="creator-skeleton__stats-row">
+                <div class="creator-skeleton__icons">
+                  <div class="creator-skeleton__icon"></div>
+                  <div class="creator-skeleton__icon"></div>
+                </div>
+                <div class="creator-skeleton__divider"></div>
+                <div class="creator-skeleton__icons">
+                  <div class="creator-skeleton__icon"></div>
+                  <div class="creator-skeleton__icon"></div>
+                  <div class="creator-skeleton__icon"></div>
+                </div>
+                <div class="creator-skeleton__divider"></div>
+                <div class="creator-skeleton__dot"></div>
+              </div>
+              <!-- Skeleton Footer -->
+              <div class="creator-skeleton__footer">
+                <div class="creator-skeleton__status"></div>
+                <div class="creator-skeleton__actions">
+                  <div class="creator-skeleton__btn"></div>
+                  <div class="creator-skeleton__btn"></div>
                 </div>
               </div>
             </div>
@@ -132,241 +144,253 @@
             <!-- Creator List -->
             <div class="creators__list">
               <transition-group name="list" tag="div" class="creators__list-inner">
-                <div v-for="creator in sortedCreators" :key="creator.id" class="creator-card">
-                  <div class="creator-card__inner">
-                    <!-- Header Row: Avatar + Info + Platform Badges -->
-                    <div class="creator-card__header">
-                      <!-- Avatar with status indicator -->
-                      <div class="creator-card__avatar-wrapper">
-                        <div class="creator-card__avatar">
-                          <img
-                            v-if="getCreatorProfileImage(creator)"
-                            :src="getCreatorProfileImage(creator)"
-                            class="creator-card__avatar-img"
-                            @error="handleImageError($event, creator)"
-                          />
-                          <div v-else class="creator-card__avatar-fallback">
-                            <Users class="creator-card__avatar-icon" />
-                          </div>
-                        </div>
-                        <!-- Live/Monitoring indicator dot -->
-                        <div
-                          v-if="isCreatorMonitored(creator) || isCreatorLive(creator)"
-                          class="creator-card__status-dot"
-                          :class="{
-                            'creator-card__status-dot--monitoring': isCreatorMonitored(creator),
-                            'creator-card__status-dot--live': !isCreatorMonitored(creator) && isCreatorLive(creator),
-                          }"
-                        >
-                          <span class="creator-card__status-dot-inner"></span>
-                        </div>
+                <div 
+                  v-for="creator in sortedCreators" 
+                  :key="creator.id" 
+                  class="creator-card"
+                  :class="{
+                    'creator-card--monitoring': isCreatorMonitored(creator),
+                    'creator-card--live': !isCreatorMonitored(creator) && isCreatorLive(creator)
+                  }"
+                >
+                  <!-- Card Header: Avatar + Info + Menu -->
+                  <div class="creator-card__header">
+                    <div class="creator-card__avatar">
+                      <img
+                        v-if="getCreatorProfileImage(creator)"
+                        :src="getCreatorProfileImage(creator)"
+                        class="creator-card__avatar-img"
+                        @error="handleImageError($event, creator)"
+                      />
+                      <div v-else class="creator-card__avatar-fallback">
+                        <Users class="creator-card__avatar-icon" />
                       </div>
-
-                      <!-- Creator Info -->
-                      <div class="creator-card__info">
-                        <div class="creator-card__name-row">
-                          <h3 class="creator-card__name">{{ creator.name }}</h3>
-                          <!-- Organization Badge -->
-                          <div
-                            v-if="creator.isOrgProfile"
-                            class="creator-card__org-badge"
-                            :title="`Managed by ${creator.organization_name}`"
-                          >
-                            <Building2 class="creator-card__org-badge-icon" />
-                            {{ creator.organization_name }}
-                          </div>
-                        </div>
-                        <!-- Description -->
-                        <p v-if="creator.description" class="creator-card__description">
-                          {{ creator.description }}
-                        </p>
-                        <!-- Platform Badges -->
-                        <div class="creator-card__platforms">
-                          <div v-for="link in creator.platform_links" :key="link.id" class="creator-card__platform">
-                            <img :src="getPlatformIcon(link.platform)" class="creator-card__platform-icon" />
-                            <span class="creator-card__platform-name">
-                              {{ link.display_name || truncateId(link.platform_id) }}
+                    </div>
+                    <div class="creator-card__header-info">
+                      <div class="creator-card__name-row">
+                        <span class="creator-card__name">{{ creator.name }}</span>
+                        <span
+                          v-if="creator.isOrgProfile"
+                          class="creator-card__org-badge"
+                          :title="`Managed by ${creator.organization_name}`"
+                        >
+                          <Building2 class="creator-card__org-badge-icon" />
+                          {{ creator.organization_name }}
+                        </span>
+                      </div>
+                      <div class="creator-card__desc">
+                        {{ creator.description || 'No description' }}
+                      </div>
+                    </div>
+                    <!-- Menu Button -->
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <button class="creator-card__menu-btn" title="More actions">
+                          <MoreVertical class="creator-card__menu-icon" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" :side-offset="4" class="creator-dropdown">
+                        <DropdownMenuItem class="creator-dropdown__item" @click="viewCreatorVods(creator)">
+                          <Video class="creator-dropdown__item-icon" />
+                          View VODs
+                        </DropdownMenuItem>
+                        <DropdownMenuItem class="creator-dropdown__item" @click="openDownloadDialog(creator)">
+                          <Download class="creator-dropdown__item-icon" />
+                          Download VOD
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          v-if="!creator.isOrgProfile"
+                          class="creator-dropdown__item"
+                          @click="openEditDialog(creator)"
+                        >
+                          <Edit class="creator-dropdown__item-icon" />
+                          Edit Profile
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          v-if="creator.isOrgProfile && creator.organization_id"
+                          class="creator-dropdown__item"
+                          @click="openPostSubmitDialog(creator)"
+                        >
+                          <Link class="creator-dropdown__item-icon" />
+                          Submit Post Link
+                        </DropdownMenuItem>
+                        <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                          <DropdownMenuSeparator class="creator-dropdown__separator" />
+                          <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
+                            <HardDrive class="creator-dropdown__item-icon" />
+                            Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
+                            <span
+                              class="creator-dropdown__item-badge"
+                              :class="{ 'creator-dropdown__item-badge--active': isCreatorAutoDvrEnabled(creator) }"
+                            >
+                              {{ isCreatorAutoDvrEnabled(creator) ? 'ON' : 'OFF' }}
                             </span>
-                          </div>
-                        </div>
-                      </div>
+                          </DropdownMenuItem>
+                        </template>
+                        <template v-if="!creator.isOrgProfile">
+                          <DropdownMenuSeparator class="creator-dropdown__separator" />
+                          <DropdownMenuItem
+                            class="creator-dropdown__item creator-dropdown__item--danger"
+                            @click="confirmDeleteCreator(creator)"
+                          >
+                            <Trash2 class="creator-dropdown__item-icon" />
+                            Delete Creator
+                          </DropdownMenuItem>
+                        </template>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
 
-                      <!-- Asset Indicators -->
+                  <!-- Stats Row: Platforms | Branding | Status -->
+                  <div class="creator-card__stats-row">
+                    <!-- Platform Icons -->
+                    <div class="creator-card__platforms">
+                      <template v-if="creator.platform_links.length > 0">
+                        <div
+                          v-for="link in creator.platform_links.slice(0, 4)"
+                          :key="link.id"
+                          class="creator-card__platform-icon-wrapper"
+                          :title="link.display_name || link.platform_id"
+                        >
+                          <img
+                            :src="getPlatformIcon(link.platform)"
+                            :alt="link.platform"
+                            class="creator-card__platform-icon"
+                            :style="{ filter: getPlatformFilter(link.platform) }"
+                          />
+                        </div>
+                        <span v-if="creator.platform_links.length > 4" class="creator-card__more-badge">
+                          +{{ creator.platform_links.length - 4 }}
+                        </span>
+                      </template>
+                      <span v-else class="creator-card__empty-indicator">
+                        <Link class="creator-card__empty-icon" />
+                      </span>
+                    </div>
+
+                    <div class="creator-card__divider"></div>
+
+                    <!-- Branding Icons -->
+                    <div class="creator-card__branding">
                       <div
-                        v-if="creator.intro_id || creator.outro_id || creator.watermark_id"
-                        class="creator-card__assets"
+                        class="creator-card__branding-icon"
+                        :class="{ 'creator-card__branding-icon--active': creator.intro_id }"
+                        :title="creator.intro_id ? 'Intro configured' : 'No intro'"
                       >
-                        <div
-                          v-if="creator.intro_id"
-                          class="creator-card__asset creator-card__asset--intro"
-                          title="Has intro configured"
-                        >
-                          <Play class="creator-card__asset-icon" />
-                        </div>
-                        <div
-                          v-if="creator.outro_id"
-                          class="creator-card__asset creator-card__asset--outro"
-                          title="Has outro configured"
-                        >
-                          <SkipForward class="creator-card__asset-icon" />
-                        </div>
-                        <div
-                          v-if="creator.watermark_id"
-                          class="creator-card__asset creator-card__asset--watermark"
-                          title="Has watermark configured"
-                        >
-                          <ImageIcon class="creator-card__asset-icon" />
-                        </div>
+                        <Play />
+                      </div>
+                      <div
+                        class="creator-card__branding-icon"
+                        :class="{ 'creator-card__branding-icon--active': creator.outro_id }"
+                        :title="creator.outro_id ? 'Outro configured' : 'No outro'"
+                      >
+                        <SkipForward />
+                      </div>
+                      <div
+                        class="creator-card__branding-icon"
+                        :class="{ 'creator-card__branding-icon--active': creator.watermark_id }"
+                        :title="creator.watermark_id ? 'Watermark configured' : 'No watermark'"
+                      >
+                        <ImageIcon />
                       </div>
                     </div>
 
-                    <!-- Footer Row: Status + Actions -->
-                    <div class="creator-card__footer">
-                      <!-- Left: Status -->
-                      <div class="creator-card__status">
-                        <!-- Monitoring status -->
-                        <div
-                          v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
-                          class="creator-status creator-status--monitoring"
-                        >
-                          <span class="creator-status__dot"></span>
-                          {{ getCreatorStatusLabel(creator) }}
+                    <div class="creator-card__divider"></div>
+
+                    <!-- Live/Monitoring Status Dot -->
+                    <div class="creator-card__status-indicator">
+                      <div
+                        v-if="isCreatorMonitored(creator)"
+                        class="creator-card__status-dot creator-card__status-dot--monitoring"
+                        title="Monitoring"
+                      ></div>
+                      <div
+                        v-else-if="isCreatorLive(creator)"
+                        class="creator-card__status-dot creator-card__status-dot--live"
+                        title="Live"
+                      ></div>
+                      <div
+                        v-else
+                        class="creator-card__status-dot creator-card__status-dot--offline"
+                        title="Offline"
+                      ></div>
+                    </div>
+                  </div>
+
+                  <!-- Footer: Status + Actions -->
+                  <div class="creator-card__footer">
+                    <!-- Left: Status -->
+                    <div class="creator-card__status">
+                      <div
+                        v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
+                        class="creator-status creator-status--monitoring"
+                      >
+                        <span class="creator-status__dot"></span>
+                        {{ getCreatorStatusLabel(creator) }}
+                      </div>
+                      <template v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                        <div v-if="isCreatorCheckingLive(creator)" class="creator-status creator-status--checking">
+                          <Loader2 class="creator-status__spinner" />
+                          Checking...
                         </div>
-                        <!-- Live status for monitorable creators -->
-                        <template v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                          <div v-if="isCreatorCheckingLive(creator)" class="creator-status creator-status--checking">
-                            <Loader2 class="creator-status__spinner" />
-                            Checking...
-                          </div>
-                          <div v-else-if="isCreatorLive(creator)" class="creator-status creator-status--live">
-                            <span class="creator-status__dot"></span>
-                            LIVE
-                            <span v-if="getCreatorViewerCount(creator)" class="creator-status__viewers">
-                              {{ formatViewerCount(getCreatorViewerCount(creator)!) }} viewers
-                            </span>
-                          </div>
-                          <div v-else class="creator-status creator-status--offline">
-                            <span class="creator-status__dot"></span>
-                            Offline
+                        <div v-else-if="isCreatorLive(creator)" class="creator-status creator-status--live">
+                          <span class="creator-status__dot"></span>
+                          LIVE
+                        </div>
+                        <div v-else class="creator-status creator-status--offline">
+                          <span class="creator-status__dot"></span>
+                          Offline
+                        </div>
+                      </template>
+                      <span v-else class="creator-card__platform-count">
+                        {{ creator.platform_links.length }} platform{{ creator.platform_links.length !== 1 ? 's' : '' }}
+                      </span>
+                    </div>
+
+                    <!-- Right: Actions -->
+                    <div class="creator-card__actions">
+                      <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                        <template v-if="!isCreatorMonitored(creator)">
+                          <div class="creator-action-group">
+                            <button
+                              @click.stop="startCreatorMonitoring(creator, false)"
+                              class="creator-action-group__btn"
+                              title="Record Only"
+                            >
+                              <span class="creator-action-group__rec-dot"></span>
+                              Rec
+                            </button>
+                            <button
+                              @click.stop="startCreatorMonitoring(creator, true)"
+                              class="creator-action-group__btn creator-action-group__btn--primary"
+                              title="Auto-Detect Clips"
+                            >
+                              <Sparkles class="creator-btn__icon" />
+                              Auto
+                            </button>
                           </div>
                         </template>
-                        <!-- Platform count -->
-                        <span v-else class="creator-card__platform-count">
-                          {{ creator.platform_links.length }} platform{{
-                            creator.platform_links.length !== 1 ? 's' : ''
-                          }}
-                          linked
-                        </span>
-                      </div>
-
-                      <!-- Right: Actions -->
-                      <div class="creator-card__actions">
-                        <!-- Live Clip Controls (Primary Actions) -->
-                        <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                          <template v-if="!isCreatorMonitored(creator)">
-                            <div class="creator-action-group">
-                              <button
-                                @click.stop="startCreatorMonitoring(creator, false)"
-                                class="creator-action-group__btn"
-                                title="Record Only"
-                              >
-                                <span class="creator-action-group__rec-dot"></span>
-                                Rec
-                              </button>
-                              <button
-                                @click.stop="startCreatorMonitoring(creator, true)"
-                                class="creator-action-group__btn creator-action-group__btn--primary"
-                                title="Auto-Detect Clips"
-                              >
-                                <Sparkles class="creator-btn__icon" />
-                                Auto
-                              </button>
-                            </div>
-                          </template>
-                          <template v-else>
-                            <button
-                              @click.stop="stopCreatorMonitoring(creator)"
-                              class="creator-btn creator-btn--stop"
-                              title="Stop Monitoring"
-                            >
-                              <Square class="creator-btn__icon" />
-                              Stop
-                            </button>
-                          </template>
+                        <template v-else>
                           <button
-                            @click.stop="watchCreator(creator)"
-                            :disabled="!canWatchCreator(creator)"
-                            class="creator-btn creator-btn--watch"
-                            :class="{ 'creator-btn--watch-disabled': !canWatchCreator(creator) }"
-                            :title="
-                              canWatchCreator(creator)
-                                ? 'Watch Live'
-                                : 'Watch becomes available when the creator is monitored and live'
-                            "
+                            @click.stop="stopCreatorMonitoring(creator)"
+                            class="creator-btn creator-btn--stop"
+                            title="Stop Monitoring"
                           >
-                            <Eye class="creator-btn__icon" />
-                            Watch
+                            <Square class="creator-btn__icon" />
+                            Stop
                           </button>
                         </template>
-
-                        <!-- More Actions Dropdown -->
-                        <DropdownMenu>
-                          <DropdownMenuTrigger as-child>
-                            <button class="creator-btn creator-btn--more" title="More actions">
-                              <MoreHorizontal class="creator-btn__icon" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" :side-offset="4" class="creator-dropdown">
-                            <DropdownMenuItem class="creator-dropdown__item" @click="viewCreatorVods(creator)">
-                              <Video class="creator-dropdown__item-icon" />
-                              View VODs
-                            </DropdownMenuItem>
-                            <DropdownMenuItem class="creator-dropdown__item" @click="openDownloadDialog(creator)">
-                              <Download class="creator-dropdown__item-icon" />
-                              Download VOD
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              v-if="!creator.isOrgProfile"
-                              class="creator-dropdown__item"
-                              @click="openEditDialog(creator)"
-                            >
-                              <Edit class="creator-dropdown__item-icon" />
-                              Edit Profile
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              v-if="creator.isOrgProfile && creator.organization_id"
-                              class="creator-dropdown__item"
-                              @click="openPostSubmitDialog(creator)"
-                            >
-                              <Link class="creator-dropdown__item-icon" />
-                              Submit Post Link
-                            </DropdownMenuItem>
-                            <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
-                              <DropdownMenuSeparator class="creator-dropdown__separator" />
-                              <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
-                                <HardDrive class="creator-dropdown__item-icon" />
-                                Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
-                                <span
-                                  class="creator-dropdown__item-badge"
-                                  :class="{ 'creator-dropdown__item-badge--active': isCreatorAutoDvrEnabled(creator) }"
-                                >
-                                  {{ isCreatorAutoDvrEnabled(creator) ? 'ON' : 'OFF' }}
-                                </span>
-                              </DropdownMenuItem>
-                            </template>
-                            <template v-if="!creator.isOrgProfile">
-                              <DropdownMenuSeparator class="creator-dropdown__separator" />
-                              <DropdownMenuItem
-                                class="creator-dropdown__item creator-dropdown__item--danger"
-                                @click="confirmDeleteCreator(creator)"
-                              >
-                                <Trash2 class="creator-dropdown__item-icon" />
-                                Delete Creator
-                              </DropdownMenuItem>
-                            </template>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
+                        <button
+                          @click.stop="watchCreator(creator)"
+                          :disabled="!canWatchCreator(creator)"
+                          class="creator-btn creator-btn--watch"
+                          :class="{ 'creator-btn--watch-disabled': !canWatchCreator(creator) }"
+                          :title="canWatchCreator(creator) ? 'Watch Live' : 'Watch becomes available when live'"
+                        >
+                          <Eye class="creator-btn__icon" />
+                          Watch
+                        </button>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -495,6 +519,7 @@
     Building2,
     Eye,
     MoreHorizontal,
+    MoreVertical,
     Radio,
     Activity,
     HardDrive,
@@ -1058,6 +1083,16 @@
     return icons[platform] || '/capsule.svg';
   }
 
+  function getPlatformFilter(platform: PlatformId): string {
+    const filters: Record<PlatformId, string> = {
+      pumpfun: 'brightness(0) saturate(100%) invert(67%) sepia(52%) saturate(559%) hue-rotate(109deg) brightness(93%) contrast(92%)',
+      kick: 'brightness(0) saturate(100%) invert(83%) sepia(47%) saturate(1113%) hue-rotate(57deg) brightness(106%) contrast(98%)',
+      twitch: 'brightness(0) saturate(100%) invert(37%) sepia(98%) saturate(1932%) hue-rotate(249deg) brightness(93%) contrast(109%)',
+      youtube: 'brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3013%) hue-rotate(352deg) brightness(95%) contrast(91%)',
+    };
+    return filters[platform] || 'none';
+  }
+
   function truncateId(id: string): string {
     if (!id || id.length < 8) return id;
     return `${id.slice(0, 4)}...${id.slice(-4)}`;
@@ -1411,7 +1446,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 
@@ -1515,6 +1550,10 @@
     background-color: var(--sidebar-border);
   }
 
+  .creators-stat__indicator--total {
+    background: linear-gradient(to bottom, #06b6d4 0%, #0891b2 100%);
+  }
+
   .creators-stat__indicator--live {
     background-color: #ef4444;
   }
@@ -1546,6 +1585,11 @@
   .creators-stat__icon svg {
     width: 20px;
     height: 20px;
+  }
+
+  .creators-stat__icon--total {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
   }
 
   .creators-stat__icon--live {
@@ -1608,49 +1652,56 @@
   }
 
   .creators__list-inner {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+
+  @media (max-width: 1024px) {
+    .creators__list-inner {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .creators__list-inner {
+      grid-template-columns: 1fr;
+    }
   }
 
   /* ===== Creator Card ===== */
   .creator-card {
+    position: relative;
     display: flex;
+    flex-direction: column;
     background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
     border-radius: 10px;
     overflow: hidden;
-    transition: all 200ms ease;
+    transition: all 150ms ease;
   }
 
   .creator-card:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  }
-
-  .creator-card__inner {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   }
 
   /* Card Header */
   .creator-card__header {
     display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1.25rem;
-  }
-
-  .creator-card__avatar-wrapper {
-    position: relative;
-    flex-shrink: 0;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
   }
 
   .creator-card__avatar {
-    width: 52px;
-    height: 52px;
+    width: 40px;
+    height: 40px;
     border-radius: 10px;
+    flex-shrink: 0;
     overflow: hidden;
     background-color: var(--sidebar-hover);
+    border: 2px solid var(--sidebar-border);
   }
 
   .creator-card__avatar-img {
@@ -1665,44 +1716,213 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
   }
 
   .creator-card__avatar-icon {
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
     color: var(--sidebar-text-muted);
-    opacity: 0.5;
+    opacity: 0.6;
   }
 
-  .creator-card__status-dot {
-    position: absolute;
-    bottom: -2px;
-    right: -2px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    border: 2px solid var(--sidebar-surface);
+  .creator-card__header-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .creator-card__name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .creator-card__name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+
+  .creator-card__org-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.375rem;
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    font-size: 0.5625rem;
+    font-weight: 600;
+    border-radius: 4px;
+  }
+
+  .creator-card__org-badge-icon {
+    width: 10px;
+    height: 10px;
+  }
+
+  .creator-card__desc {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 0.125rem;
+  }
+
+  /* Menu Button */
+  .creator-card__menu-btn {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .creator-card__menu-btn:hover {
+    background-color: var(--sidebar-hover);
+    border-color: var(--sidebar-border);
+    color: var(--sidebar-text);
+  }
+
+  .creator-card__menu-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Stats Row */
+  .creator-card__stats-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .creator-card__divider {
+    width: 1px;
+    height: 20px;
+    background-color: var(--sidebar-border);
+  }
+
+  /* Platform Icons */
+  .creator-card__platforms {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .creator-card__platform-icon-wrapper {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-radius: 5px;
+    transition: all 150ms ease;
+  }
+
+  .creator-card__platform-icon-wrapper:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .creator-card__platform-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .creator-card__more-badge {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    padding: 0 0.25rem;
+  }
+
+  .creator-card__empty-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.3;
+  }
+
+  .creator-card__empty-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* Branding Icons */
+  .creator-card__branding {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .creator-card__branding-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.04);
+    border-radius: 5px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.3;
+    transition: all 150ms ease;
+  }
+
+  .creator-card__branding-icon svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .creator-card__branding-icon--active {
+    opacity: 1;
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  /* Status Indicator */
+  .creator-card__status-indicator {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  .creator-card__status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
     background-color: var(--sidebar-border);
   }
 
   .creator-card__status-dot--monitoring {
     background-color: #10b981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+    animation: pulse 2s ease-in-out infinite;
   }
 
   .creator-card__status-dot--live {
     background-color: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+    animation: pulse 2s ease-in-out infinite;
   }
 
-  .creator-card__status-dot-inner {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background-color: rgba(255, 255, 255, 0.8);
-    animation: pulse 2s ease-in-out infinite;
+  .creator-card__status-dot--offline {
+    opacity: 0.4;
   }
 
   @keyframes pulse {
@@ -1715,142 +1935,14 @@
     }
   }
 
-  .creator-card__info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .creator-card__name-row {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    flex-wrap: wrap;
-  }
-
-  .creator-card__name {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .creator-card__org-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    background-color: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    border-radius: 5px;
-  }
-
-  .creator-card__org-badge-icon {
-    width: 12px;
-    height: 12px;
-  }
-
-  .creator-card__description {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 1;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .creator-card__platforms {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .creator-card__platform {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 6px;
-    font-size: 0.75rem;
-  }
-
-  .creator-card__platform-icon {
-    width: 14px;
-    height: 14px;
-    opacity: 0.7;
-    filter: brightness(0) invert(1);
-  }
-
-  .creator-card__platform-name {
-    color: var(--sidebar-text-muted);
-    max-width: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .creator-card__assets {
-    display: flex;
-    gap: 0.375rem;
-    flex-shrink: 0;
-    margin-left: auto;
-  }
-
-  .creator-card__asset {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-  }
-
-  .creator-card__asset--intro {
-    background-color: rgba(59, 130, 246, 0.15);
-  }
-
-  .creator-card__asset--intro .creator-card__asset-icon {
-    color: #60a5fa;
-  }
-
-  .creator-card__asset--outro {
-    background-color: rgba(139, 92, 246, 0.15);
-  }
-
-  .creator-card__asset--outro .creator-card__asset-icon {
-    color: #a78bfa;
-  }
-
-  .creator-card__asset--watermark {
-    background-color: rgba(245, 158, 11, 0.15);
-  }
-
-  .creator-card__asset--watermark .creator-card__asset-icon {
-    color: #fbbf24;
-  }
-
-  .creator-card__asset-icon {
-    width: 14px;
-    height: 14px;
-  }
-
   /* Card Footer */
   .creator-card__footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.875rem 1.25rem;
-    background-color: rgba(0, 0, 0, 0.15);
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
   }
 
   .creator-card__status {
@@ -1859,31 +1951,32 @@
   }
 
   .creator-card__platform-count {
-    font-size: 0.75rem;
+    font-size: 0.625rem;
     color: var(--sidebar-text-muted);
+    opacity: 0.7;
   }
 
   /* Status Badges */
   .creator-status {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.625rem;
     font-weight: 600;
   }
 
   .creator-status__dot {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     animation: pulse 2s ease-in-out infinite;
   }
 
   .creator-status__spinner {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     animation: spin 0.8s linear infinite;
   }
 
@@ -1905,20 +1998,16 @@
     background-color: #f87171;
   }
 
-  .creator-status__viewers {
-    color: rgba(248, 113, 113, 0.7);
-    font-weight: 500;
-    margin-left: 0.25rem;
-  }
-
   .creator-status--offline {
-    background-color: var(--sidebar-hover);
+    background-color: transparent;
     color: var(--sidebar-text-muted);
+    padding: 0.25rem 0;
+    opacity: 0.7;
   }
 
   .creator-status--offline .creator-status__dot {
     background-color: var(--sidebar-text-muted);
-    opacity: 0.5;
+    opacity: 0.4;
     animation: none;
   }
 
@@ -1931,13 +2020,13 @@
   .creator-card__actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.375rem;
   }
 
   /* Segmented Button Group */
   .creator-action-group {
     display: flex;
-    border-radius: 6px;
+    border-radius: 5px;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
@@ -1945,9 +2034,10 @@
   .creator-action-group__btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
-    font-size: 0.75rem;
+    gap: 0.25rem;
+    padding: 0.375rem 0.5rem;
+    height: 28px;
+    font-size: 0.625rem;
     font-weight: 500;
     background-color: rgba(255, 255, 255, 0.04);
     color: var(--sidebar-text-muted);
@@ -1976,8 +2066,8 @@
   }
 
   .creator-action-group__rec-dot {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     background-color: #ef4444;
   }
@@ -1986,10 +2076,11 @@
   .creator-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
+    gap: 0.25rem;
+    padding: 0.375rem 0.5rem;
+    height: 28px;
+    border-radius: 5px;
+    font-size: 0.625rem;
     font-weight: 500;
     border: 1px solid transparent;
     cursor: pointer;
@@ -1997,8 +2088,8 @@
   }
 
   .creator-btn__icon {
-    width: 13px;
-    height: 13px;
+    width: 11px;
+    height: 11px;
   }
 
   .creator-btn--stop {
@@ -2013,40 +2104,22 @@
   }
 
   .creator-btn--watch {
-    background-color: rgba(239, 68, 68, 0.12);
-    color: #f87171;
-    border-color: rgba(239, 68, 68, 0.2);
-  }
-
-  .creator-btn--watch:hover:not(:disabled) {
-    background-color: rgba(239, 68, 68, 0.2);
-    color: #fca5a5;
-  }
-
-  .creator-btn--watch-disabled {
     background-color: rgba(255, 255, 255, 0.04);
     color: var(--sidebar-text-muted);
     border-color: rgba(255, 255, 255, 0.08);
-    cursor: not-allowed;
-    opacity: 0.5;
   }
 
-  .creator-btn--more {
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(255, 255, 255, 0.04);
-    color: var(--sidebar-text-muted);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
-  }
-
-  .creator-btn--more:hover {
+  .creator-btn--watch:hover:not(:disabled) {
     background-color: rgba(255, 255, 255, 0.08);
     color: var(--sidebar-text);
+  }
+
+  .creator-btn--watch-disabled {
+    background-color: rgba(255, 255, 255, 0.02);
+    color: var(--sidebar-text-muted);
+    border-color: rgba(255, 255, 255, 0.05);
+    cursor: not-allowed;
+    opacity: 0.4;
   }
 
   /* ===== No Results ===== */
@@ -2082,45 +2155,54 @@
 
   /* ===== Loading Skeleton ===== */
   .creators__loading {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+
+  @media (max-width: 1024px) {
+    .creators__loading {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .creators__loading {
+      grid-template-columns: 1fr;
+    }
   }
 
   .creator-skeleton {
     display: flex;
+    flex-direction: column;
     background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
     border-radius: 10px;
     overflow: hidden;
   }
 
-  .creator-skeleton__inner {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
-
   .creator-skeleton__header {
     display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1.25rem;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
   }
 
   .creator-skeleton__avatar {
-    width: 52px;
-    height: 52px;
+    width: 40px;
+    height: 40px;
     border-radius: 10px;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
+    flex-shrink: 0;
   }
 
   .creator-skeleton__info {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.375rem;
   }
 
   .creator-skeleton__line {
@@ -2131,25 +2213,59 @@
   }
 
   .creator-skeleton__line--name {
-    height: 16px;
-    width: 140px;
+    height: 14px;
+    width: 80px;
   }
 
   .creator-skeleton__line--desc {
-    height: 14px;
-    width: 220px;
+    height: 11px;
+    width: 120px;
   }
 
-  .creator-skeleton__badges {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.25rem;
-  }
-
-  .creator-skeleton__badge {
-    height: 26px;
-    width: 80px;
+  .creator-skeleton__menu {
+    width: 28px;
+    height: 28px;
     border-radius: 6px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    flex-shrink: 0;
+  }
+
+  .creator-skeleton__stats-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+
+  .creator-skeleton__icons {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .creator-skeleton__icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .creator-skeleton__divider {
+    width: 1px;
+    height: 20px;
+    background-color: var(--sidebar-border);
+  }
+
+  .creator-skeleton__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-left: auto;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
@@ -2159,15 +2275,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.875rem 1.25rem;
-    background-color: rgba(0, 0, 0, 0.15);
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
   }
 
   .creator-skeleton__status {
-    height: 28px;
-    width: 80px;
-    border-radius: 6px;
+    height: 22px;
+    width: 50px;
+    border-radius: 5px;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
@@ -2175,13 +2290,13 @@
 
   .creator-skeleton__actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.375rem;
   }
 
   .creator-skeleton__btn {
-    height: 36px;
-    width: 70px;
-    border-radius: 6px;
+    height: 28px;
+    width: 50px;
+    border-radius: 5px;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
@@ -2213,12 +2328,11 @@
   .list-enter-from,
   .list-leave-to {
     opacity: 0;
-    transform: translateY(16px);
+    transform: scale(0.95);
   }
 
   .list-leave-active {
     position: absolute;
-    width: calc(100% - 2.5rem);
     z-index: 0;
   }
 </style>

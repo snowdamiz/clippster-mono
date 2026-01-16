@@ -561,6 +561,7 @@
     dvrSessions,
     hasDvrRecording,
     initAutoDvrPolling,
+    restoreActiveRecordings,
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
@@ -594,6 +595,9 @@
   const liveStatusInterval = ref<number | null>(null);
 
   onMounted(async () => {
+    // Restore active recording sessions from backend before other initialization
+    await restoreActiveRecordings();
+    
     await loadStreamers();
     refreshStreamerMetadata();
     syncDetectionState();
@@ -1553,7 +1557,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 

@@ -1340,7 +1340,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 
@@ -1357,6 +1357,7 @@
     gap: 1rem;
     flex: 1;
     min-height: 0;
+    margin-top: 0.8rem;
     overflow: hidden;
   }
 
@@ -2745,7 +2746,7 @@
 
   .messages-modal__btn--primary {
     background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: white;
+    color: #000;
   }
 
   .messages-modal__btn--primary:hover:not(:disabled) {

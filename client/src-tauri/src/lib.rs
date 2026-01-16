@@ -647,6 +647,7 @@ pub fn run() {
             pumpfun::start_livestream_recording,
             pumpfun::stop_livestream_recording,
             pumpfun::stop_all_livestream_recordings,
+            pumpfun::get_active_pumpfun_recordings,
 
             // Kick commands
             kick::check_kick_livestream,
@@ -657,6 +658,7 @@ pub fn run() {
             kick::stop_kick_recording,
             kick::stop_all_kick_recordings,
             kick::get_kick_session_output_dir,
+            kick::get_active_kick_recordings,
 
             // Twitch commands
             twitch::check_twitch_livestream,
@@ -665,6 +667,7 @@ pub fn run() {
             twitch::stop_twitch_recording,
             twitch::stop_all_twitch_recordings,
             twitch::get_twitch_session_output_dir,
+            twitch::get_active_twitch_recordings,
 
             // Download commands
             downloads::download_pumpfun_vod,

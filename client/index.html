@@ -12,13 +12,32 @@
       href="https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Bebas+Neue&family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Lato:wght@100;300;400;700;900&family=Montserrat:wght@100;200;300;400;500;600;700;800;900&family=Nunito:wght@200;300;400;500;600;700;800;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Oswald:wght@200;300;400;500;600;700&family=Poppins:wght@100;200;300;400;500;600;700;800;900&family=Roboto:wght@100;300;400;500;700;900&display=swap"
       rel="stylesheet"
     />
+    <script>
+      // Early platform detection for CSS styling (e.g., rounded corners on macOS)
+      // This runs before Vue mounts to ensure styles are applied immediately
+      (function() {
+        var platform = navigator.platform.toLowerCase();
+        if (platform.includes('mac')) {
+          document.documentElement.classList.add('platform-macos');
+        } else if (platform.includes('win')) {
+          document.documentElement.classList.add('platform-windows');
+        } else if (platform.includes('linux')) {
+          document.documentElement.classList.add('platform-linux');
+        }
+      })();
+    </script>
     <style>
       /* Prevent white flash while window is hidden and loading */
       html, body {
         margin: 0;
         padding: 0;
-        width: 100vw;
+        width: 100%;
         height: 100vh;
+        overflow: hidden;
+      }
+      /* macOS rounded corners - applied early before Vue loads */
+      html.platform-macos, html.platform-macos body {
+        border-radius: 10px;
         overflow: hidden;
       }
     </style>

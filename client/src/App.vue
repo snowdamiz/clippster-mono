@@ -18,6 +18,9 @@
   import { useAppUpdater } from '@/composables/useAppUpdater';
   import { invoke } from '@tauri-apps/api/core';
 
+  // Platform detection for OS-specific styling (e.g., rounded corners on macOS)
+  const detectedPlatform = ref<string>('unknown');
+
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
   const livestreamStore = useLivestreamStore();
@@ -104,6 +107,17 @@
   onMounted(async () => {
     document.documentElement.classList.add('dark');
     document.body.classList.add('dark');
+
+    // Detect platform for OS-specific styling (e.g., rounded corners on macOS)
+    // This supplements the early detection in index.html with accurate Tauri-based detection
+    try {
+      const platform = (await invoke('get_platform')) as string;
+      detectedPlatform.value = platform;
+      // Add platform class to document for CSS targeting (classList.add handles duplicates)
+      document.documentElement.classList.add(`platform-${platform}`);
+    } catch (error) {
+      console.error('[App] Failed to detect platform:', error);
+    }
 
     // Load platform override from localStorage
     loadPlatformOverride();
@@ -290,7 +304,7 @@
 
 <style scoped>
   .app-container {
-    width: 100vw;
+    width: 100%;
     height: 100vh;
     overflow: hidden;
   }
