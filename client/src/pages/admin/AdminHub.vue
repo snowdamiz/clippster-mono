@@ -16,15 +16,6 @@
         </span>
       </template>
 
-      <template #actions>
-        <div class="admin-hub__actions">
-          <router-link to="/admin/beta-codes" class="admin-hub__action-btn admin-hub__action-btn--primary">
-            <KeyRound class="admin-hub__action-icon" />
-            Generate Codes
-          </router-link>
-        </div>
-      </template>
-
       <!-- Error State -->
       <div v-if="error" class="admin-hub__error">
         <div class="admin-hub__error-icon-wrapper">
