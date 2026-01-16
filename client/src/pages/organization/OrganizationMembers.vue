@@ -51,6 +51,20 @@
             <div class="org-members__stat-value org-members__stat-value--pending">{{ invitations.length }}</div>
           </div>
         </div>
+
+        <div class="org-members__stat-card">
+          <div class="org-members__stat-indicator org-members__stat-indicator--restricted"></div>
+          <div class="org-members__stat-inner">
+            <div class="org-members__stat-icon org-members__stat-icon--restricted">
+              <ShieldOff />
+            </div>
+            <div class="org-members__stat-text">
+              <h3 class="org-members__stat-title">Restricted Users</h3>
+              <p class="org-members__stat-desc">Limited access</p>
+            </div>
+            <div class="org-members__stat-value org-members__stat-value--restricted">{{ restrictedMembersCount }}</div>
+          </div>
+        </div>
       </div>
 
       <!-- Pending Invitations Section -->
@@ -531,7 +545,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import {
     Users,
     UserPlus,
@@ -553,6 +567,7 @@
     Zap,
     TrendingUp,
     Lock,
+    ShieldOff,
   } from 'lucide-vue-next';
   import api from '@/services/api';
   import PageLayout from '@/components/PageLayout.vue';
@@ -574,6 +589,9 @@
     updateMemberAccount,
     isOrgCreatedUser,
   } = useOrganization();
+
+  // Computed properties
+  const restrictedMembersCount = computed(() => members.value.filter((m) => m.is_restricted).length);
 
   // Local state
   const showInviteDialog = ref(false);
@@ -875,7 +893,7 @@
 
   @media (min-width: 768px) {
     .org-members__stats {
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 
@@ -901,7 +919,7 @@
   }
 
   .org-members__stat-indicator--members {
-    background: linear-gradient(to bottom, #10b981 0%, #059669 100%);
+    background: linear-gradient(to bottom, #0ea5e9 0%, #0284c7 100%);
   }
 
   .org-members__stat-indicator--invitations {
@@ -934,8 +952,8 @@
   }
 
   .org-members__stat-icon--members {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
+    background-color: rgba(14, 165, 233, 0.15);
+    color: #0ea5e9;
   }
 
   .org-members__stat-icon--invitations {
@@ -965,7 +983,7 @@
   .org-members__stat-value {
     font-size: 1.75rem;
     font-weight: 700;
-    color: #10b981;
+    color: #0ea5e9;
     letter-spacing: -0.02em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -973,6 +991,19 @@
 
   .org-members__stat-value--pending {
     color: #f59e0b;
+  }
+
+  .org-members__stat-indicator--restricted {
+    background: linear-gradient(to bottom, #ef4444 0%, #dc2626 100%);
+  }
+
+  .org-members__stat-icon--restricted {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  .org-members__stat-value--restricted {
+    color: #ef4444;
   }
 
   /* ===== Section ===== */
@@ -1005,8 +1036,8 @@
   }
 
   .org-members__section-header-icon--members {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
+    background-color: rgba(14, 165, 233, 0.15);
+    color: #0ea5e9;
   }
 
   .org-members__section-header-text {
@@ -1042,8 +1073,8 @@
   }
 
   .org-members__section-badge--active {
-    color: #10b981;
-    background-color: rgba(16, 185, 129, 0.15);
+    color: #0ea5e9;
+    background-color: rgba(14, 165, 233, 0.15);
   }
 
   /* ===== Invitations Grid ===== */
@@ -1394,8 +1425,8 @@
   }
 
   .org-members__role--owner {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
   }
 
   .org-members__role--admin {
@@ -1414,8 +1445,8 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.02em;
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
     flex-shrink: 0;
   }
 
@@ -1527,7 +1558,7 @@
   }
 
   .org-members__dropdown-toggle--active {
-    background-color: #f59e0b;
+    background-color: #ef4444;
   }
 
   .org-members__dropdown-toggle-handle {
@@ -1801,7 +1832,7 @@
 
   .org-dialog__btn--primary {
     background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
+    color: #000;
   }
 
   .org-dialog__btn--primary:hover:not(:disabled) {

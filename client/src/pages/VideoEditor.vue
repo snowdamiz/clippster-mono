@@ -104,7 +104,6 @@
                   style="background: rgba(139, 92, 246, 0.9);"
                 >
                   <Film class="videoeditor-card__badge-icon" />
-                  <span>Clip Project</span>
                 </div>
 
                 <!-- Source Count Badge (only show if not a clip project or has multiple sources) -->
@@ -1328,7 +1327,7 @@
     display: flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
+    padding: 0.38rem 0.5rem;
     border-radius: 9999px;
     font-size: 0.75rem;
     font-weight: 700;

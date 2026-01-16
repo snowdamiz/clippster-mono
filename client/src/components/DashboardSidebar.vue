@@ -81,8 +81,17 @@
             <DropdownMenuTrigger
               class="sidebar-user__trigger flex items-center gap-2 w-full py-2 px-2 rounded-md bg-transparent border-[none] text-[var(--sidebar-text)] cursor-pointer transform-none hover:bg-[var(--sidebar-hover)]"
             >
-              <div class="w-7 h-7 shrink-0 flex items-center justify-center rounded-[20px] bg-[var(--sidebar-accent)]">
-                <span class="text-xs font-extrabold text-[#0a0a0b] uppercase">{{ userInitials }}</span>
+              <div class="w-7 h-7 shrink-0 flex items-center justify-center rounded-[20px] overflow-hidden"
+                   :class="authStore.user?.avatar_url && !avatarFailed ? '' : 'bg-[var(--sidebar-accent)]'">
+                <img
+                  v-if="authStore.user?.avatar_url && !avatarFailed"
+                  :src="authStore.user.avatar_url"
+                  :alt="authStore.user.name || authStore.email || 'User'"
+                  class="w-full h-full object-cover"
+                  referrerpolicy="no-referrer"
+                  @error="avatarFailed = true"
+                />
+                <span v-else class="text-xs font-extrabold text-[#0a0a0b] uppercase">{{ userInitials }}</span>
               </div>
               <span
                 class="flex-1 text-xs text-left whitespace-nowrap overflow-hidden text-ellipsis text-[var(--sidebar-text-muted)]"
@@ -195,6 +204,7 @@
   const isNativeEnvironment = ref(false);
   const showBugReportDialog = ref(false);
   const userOrganizations = ref<any[]>([]);
+  const avatarFailed = ref(false);
   let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
   // ===== Computed Properties =====
@@ -353,6 +363,14 @@
       }
     },
     { immediate: true }
+  );
+
+  // Reset avatar failed state when user changes
+  watch(
+    () => authStore.user?.id,
+    () => {
+      avatarFailed.value = false;
+    }
   );
 
   // ===== Lifecycle =====
