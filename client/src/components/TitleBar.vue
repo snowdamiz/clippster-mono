@@ -512,7 +512,7 @@
       } else {
         // Detect platform only if no override is set
         const platform = (await invoke('get_platform')) as string;
-        isMacOS.value = platform === 'darwin';
+        isMacOS.value = platform === 'macos';
         isLinux.value = platform === 'linux';
         isWindows.value = platform === 'windows';
       }
@@ -586,7 +586,7 @@
     background: #0a0a0b;
     border-bottom: 1px solid var(--sidebar-border);
     height: 32px;
-    margin-right: -12px;
+    margin-top: 2px;
   }
 
   .titlebar-macos.titlebar-dark {
@@ -809,36 +809,41 @@
     border: none;
     cursor: pointer;
     position: relative;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, border-color 0.15s ease;
     flex-shrink: 0;
+    /* Default gray state - slightly lighter than titlebar bg (#0a0a0b) */
+    background: #3a3a3c;
+    border: 1px solid #2a2a2c;
   }
 
-  .macos-close {
+  /* When hovering over the controls container, colorize all buttons */
+  .titlebar-controls-macos:hover .macos-close {
     background: #ff5f57;
-    border: 1px solid #e0443e;
+    border-color: #e0443e;
   }
 
-  .macos-close:hover {
+  .titlebar-controls-macos:hover .macos-minimize {
+    background: #ffbd2e;
+    border-color: #dea123;
+  }
+
+  .titlebar-controls-macos:hover .macos-maximize {
+    background: #28ca42;
+    border-color: #12ac28;
+  }
+
+  /* Slightly brighter on individual button hover */
+  .titlebar-controls-macos:hover .macos-close:hover {
     background: #ff6b63;
     border-color: #e8554e;
   }
 
-  .macos-minimize {
-    background: #ffbd2e;
-    border: 1px solid #dea123;
-  }
-
-  .macos-minimize:hover {
+  .titlebar-controls-macos:hover .macos-minimize:hover {
     background: #ffca42;
     border-color: #e5a923;
   }
 
-  .macos-maximize {
-    background: #28ca42;
-    border: 1px solid #12ac28;
-  }
-
-  .macos-maximize:hover {
+  .titlebar-controls-macos:hover .macos-maximize:hover {
     background: #3dd659;
     border-color: #2bc245;
   }

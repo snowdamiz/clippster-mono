@@ -239,6 +239,57 @@
     height: 100vh;
     overflow: hidden;
   }
+
+  /* macOS rounded window corners (matches native 10px radius from Big Sur onwards) */
+  html.platform-macos {
+    border-radius: 10px !important;
+    overflow: hidden !important;
+    /* Use clip-path as a fallback for corner clipping */
+    clip-path: inset(0 round 10px) !important;
+  }
+  
+  html.platform-macos body {
+    border-radius: 10px !important;
+    overflow: hidden !important;
+    background-clip: padding-box;
+  }
+
+  /* macOS: Root app container */
+  html.platform-macos #app {
+    border-radius: 10px !important;
+    overflow: hidden !important;
+    height: 100%;
+  }
+
+  /* Ensure app container also clips to rounded corners */
+  html.platform-macos .app-container {
+    border-radius: 10px !important;
+    overflow: hidden !important;
+  }
+
+  /* macOS: Round the titlebar top corners */
+  html.platform-macos .titlebar {
+    border-top-left-radius: 10px !important;
+    border-top-right-radius: 10px !important;
+  }
+
+  /* macOS: Round the main content bottom corners */
+  html.platform-macos .main-content {
+    border-bottom-left-radius: 10px !important;
+    border-bottom-right-radius: 10px !important;
+  }
+
+  /* macOS: Ensure dashboard container respects rounded corners */
+  html.platform-macos .dashboard-container {
+    border-bottom-left-radius: 10px !important;
+    border-bottom-right-radius: 10px !important;
+  }
+
+  /* macOS: Full-screen overlay components */
+  html.platform-macos .loading-screen,
+  html.platform-macos .update-screen {
+    border-radius: 10px !important;
+  }
   /* Cursor pointer for interactive elements */
   button,
   a,
