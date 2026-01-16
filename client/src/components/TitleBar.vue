@@ -793,7 +793,7 @@
   /* macOS keyboard button positioned on the right edge of titlebar */
   .macos-keyboard-edge {
     position: absolute;
-    right: 12px;
+    right: 2px;
     top: 50%;
     transform: translateY(-50%);
     z-index: 10;

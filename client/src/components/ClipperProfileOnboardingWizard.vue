@@ -1338,7 +1338,7 @@
 
   .onboarding-wizard__btn--primary {
     background: linear-gradient(135deg, #06b6d4, #0ea5e9);
-    color: white;
+    color: #000;
   }
 
   .onboarding-wizard__btn--primary:hover:not(:disabled) {
