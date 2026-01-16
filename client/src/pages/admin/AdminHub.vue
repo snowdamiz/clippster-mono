@@ -153,6 +153,7 @@
     Settings,
     Loader2,
     AlertTriangle,
+    Percent,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
@@ -225,6 +226,13 @@
       description: 'Generate and manage beta access codes',
       icon: KeyRound,
       route: '/admin/beta-codes',
+    },
+    {
+      id: 'discount-codes',
+      title: 'Discount Codes',
+      description: 'Create and manage promotional discount codes',
+      icon: Percent,
+      route: '/admin/discount-codes',
     },
     {
       id: 'waitlist',
