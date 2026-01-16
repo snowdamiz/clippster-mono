@@ -16,6 +16,8 @@ export interface OrganizationMember {
   id: number;
   user_id: number;
   role: 'owner' | 'admin' | 'member';
+  is_restricted?: boolean;
+  restriction_overrides?: Record<string, boolean>;
   user?: {
     id: number;
     name?: string;

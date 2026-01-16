@@ -94,7 +94,7 @@ defmodule ClippsterServerWeb.OrganizationController do
         |> json(%{success: false, error: "Organization not found"})
 
       organization ->
-        attrs = Map.take(params, ["name", "description", "logo_url", "settings"])
+        attrs = Map.take(params, ["name", "description", "logo_url", "settings", "restriction_defaults"])
         
         case Organizations.update_organization(organization, attrs, user) do
           {:ok, updated_org} ->
@@ -731,6 +731,8 @@ defmodule ClippsterServerWeb.OrganizationController do
       user_id: member.user_id,
       role: member.role,
       joined_at: member.joined_at,
+      is_restricted: member.is_restricted || false,
+      restriction_overrides: member.restriction_overrides,
       user: if member.user do
         %{
           id: member.user.id,

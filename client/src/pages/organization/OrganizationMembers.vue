@@ -190,6 +190,16 @@
                   {{ member.role }}
                 </span>
 
+                <!-- Restricted Badge -->
+                <span
+                  v-if="member.is_restricted"
+                  class="org-members__restricted-badge"
+                  title="This member has restricted access"
+                >
+                  <Lock class="org-members__restricted-icon" />
+                  Restricted
+                </span>
+
                 <!-- Actions Menu -->
                 <div v-if="isAdmin && member.role !== 'owner'" class="org-members__actions">
                   <button
@@ -230,6 +240,22 @@
                         <Shield class="org-members__dropdown-icon" />
                         <span>Change Role</span>
                       </button>
+                      <div class="org-members__dropdown-divider"></div>
+                      <div class="org-members__dropdown-toggle-item">
+                        <div class="org-members__dropdown-toggle-label">
+                          <Lock class="org-members__dropdown-icon" />
+                          <span>Restricteds</span>
+                        </div>
+                        <button
+                          type="button"
+                          class="org-members__dropdown-toggle"
+                          :class="{ 'org-members__dropdown-toggle--active': member.is_restricted }"
+                          :disabled="togglingRestrictionId === member.user_id"
+                          @click.stop="toggleMemberRestriction(member)"
+                        >
+                          <span class="org-members__dropdown-toggle-handle"></span>
+                        </button>
+                      </div>
                       <div class="org-members__dropdown-divider"></div>
                       <button
                         class="org-members__dropdown-item org-members__dropdown-item--danger"
@@ -526,7 +552,9 @@
     Crown,
     Zap,
     TrendingUp,
+    Lock,
   } from 'lucide-vue-next';
+  import api from '@/services/api';
   import PageLayout from '@/components/PageLayout.vue';
   import InviteMemberDialog from '@/components/InviteMemberDialog.vue';
   import { useOrganization, type OrganizationMember, type OrganizationInvitation } from '@/composables/useOrganization';
@@ -576,6 +604,9 @@
   const showRemoveMemberDialog = ref(false);
   const removeMemberDialogMember = ref<OrganizationMember | null>(null);
   const removeMemberProcessing = ref(false);
+
+  // Restriction toggle state
+  const togglingRestrictionId = ref<number | null>(null);
 
   function handleAvatarError(event: Event, userId: number) {
     const img = event.target as HTMLImageElement;
@@ -666,6 +697,32 @@
     const newRole = roleDialogNewRole.value;
     closeRoleDialog();
     await updateMemberRole(member, newRole);
+  }
+
+  // Restriction toggle function
+  async function toggleMemberRestriction(member: OrganizationMember) {
+    if (!organizationId.value) return;
+    
+    togglingRestrictionId.value = member.user_id;
+    const newIsRestricted = !member.is_restricted;
+    
+    try {
+      const response = await api.put(
+        `/organizations/${organizationId.value}/members/${member.user_id}/restrictions`,
+        { is_restricted: newIsRestricted }
+      );
+      
+      if (response.data.success) {
+        // Reload organization to refresh member data
+        await loadOrganization(true);
+      } else {
+        console.error('Failed to toggle restriction:', response.data.error);
+      }
+    } catch (error) {
+      console.error('Error toggling restriction:', error);
+    } finally {
+      togglingRestrictionId.value = null;
+    }
   }
 
   // Edit member dialog functions
@@ -1346,6 +1403,27 @@
     color: var(--sidebar-accent);
   }
 
+  /* ===== Restricted Badge ===== */
+  .org-members__restricted-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    flex-shrink: 0;
+  }
+
+  .org-members__restricted-icon {
+    width: 12px;
+    height: 12px;
+  }
+
   /* ===== Dropdown Menu ===== */
   .org-members__dropdown {
     position: fixed;
@@ -1394,6 +1472,15 @@
     color: #f87171;
   }
 
+  .org-members__dropdown-item--warning {
+    color: #f59e0b;
+  }
+
+  .org-members__dropdown-item--warning:hover {
+    background-color: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+  }
+
   .org-members__dropdown-icon {
     width: 16px;
     height: 16px;
@@ -1402,6 +1489,61 @@
   .org-members__dropdown-divider {
     margin: 0.5rem 0;
     border-top: 1px solid var(--sidebar-border);
+  }
+
+  .org-members__dropdown-toggle-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.625rem 0.75rem;
+    cursor: default;
+  }
+
+  .org-members__dropdown-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .org-members__dropdown-toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    background-color: #3f3f46;
+    border: none;
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: background-color 200ms ease;
+    flex-shrink: 0;
+  }
+
+  .org-members__dropdown-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-members__dropdown-toggle--active {
+    background-color: #f59e0b;
+  }
+
+  .org-members__dropdown-toggle-handle {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 200ms ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .org-members__dropdown-toggle--active .org-members__dropdown-toggle-handle {
+    transform: translateX(18px);
   }
 
   /* ===== Empty State ===== */

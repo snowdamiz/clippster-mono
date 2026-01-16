@@ -117,6 +117,161 @@
         </div>
       </section>
 
+      <!-- Restricted Member Settings Section -->
+      <section class="org-settings__section">
+        <div class="org-settings__section-header">
+          <div class="org-settings__section-header-icon org-settings__section-header-icon--restrictions">
+            <Shield />
+          </div>
+          <div class="org-settings__section-header-text">
+            <h2 class="org-settings__section-title">Restricted Member Settings</h2>
+            <p class="org-settings__section-subtitle">Default permissions for accounts created by your organization</p>
+          </div>
+        </div>
+
+        <div class="org-settings__restrictions-grid">
+          <div class="org-settings__restrictions-card">
+            <div class="org-settings__restrictions-header">
+              <Sparkles class="org-settings__restrictions-icon" />
+              <span class="org-settings__restrictions-title">AI & Detection</span>
+            </div>
+            <div class="org-settings__restrictions-item">
+              <div class="org-settings__restrictions-item-info">
+                <div class="org-settings__restrictions-item-title">Enable AI Features</div>
+                <div class="org-settings__restrictions-item-desc">Auto-detect, captions, transcription</div>
+              </div>
+              <button
+                type="button"
+                class="org-settings__toggle"
+                :class="{ 'org-settings__toggle--active': editData.restriction_defaults?.allow_ai }"
+                @click="toggleRestriction('allow_ai')"
+              >
+                <span class="org-settings__toggle-handle"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="org-settings__restrictions-card">
+            <div class="org-settings__restrictions-header">
+              <Archive class="org-settings__restrictions-icon" />
+              <span class="org-settings__restrictions-title">Content & Assets</span>
+            </div>
+            <div class="org-settings__restrictions-item">
+              <div class="org-settings__restrictions-item-info">
+                <div class="org-settings__restrictions-item-title">Allow personal assets</div>
+                <div class="org-settings__restrictions-item-desc">Upload intros, outros, watermarks</div>
+              </div>
+              <button
+                type="button"
+                class="org-settings__toggle"
+                :class="{ 'org-settings__toggle--active': editData.restriction_defaults?.allow_asset_uploads }"
+                @click="toggleRestriction('allow_asset_uploads')"
+              >
+                <span class="org-settings__toggle-handle"></span>
+              </button>
+            </div>
+            <div class="org-settings__restrictions-item">
+              <div class="org-settings__restrictions-item-info">
+                <div class="org-settings__restrictions-item-title">Allow custom prompts</div>
+                <div class="org-settings__restrictions-item-desc">Create custom AI prompts</div>
+              </div>
+              <button
+                type="button"
+                class="org-settings__toggle"
+                :class="{ 'org-settings__toggle--active': editData.restriction_defaults?.allow_custom_prompts }"
+                @click="toggleRestriction('allow_custom_prompts')"
+              >
+                <span class="org-settings__toggle-handle"></span>
+              </button>
+            </div>
+            <div class="org-settings__restrictions-item">
+              <div class="org-settings__restrictions-item-info">
+                <div class="org-settings__restrictions-item-title">Force organization watermark</div>
+                <div class="org-settings__restrictions-item-desc">Required on all exports</div>
+              </div>
+              <button
+                type="button"
+                class="org-settings__toggle"
+                :class="{ 'org-settings__toggle--active': editData.restriction_defaults?.force_org_watermark }"
+                @click="toggleRestriction('force_org_watermark')"
+              >
+                <span class="org-settings__toggle-handle"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="org-settings__restrictions-card">
+            <div class="org-settings__restrictions-header">
+              <CheckCircle class="org-settings__restrictions-icon" />
+              <span class="org-settings__restrictions-title">Publishing & Approval</span>
+            </div>
+            <div class="org-settings__restrictions-item">
+              <div class="org-settings__restrictions-item-info">
+                <div class="org-settings__restrictions-item-title">Require clip approval</div>
+                <div class="org-settings__restrictions-item-desc">Admin review before publishing</div>
+              </div>
+              <button
+                type="button"
+                class="org-settings__toggle"
+                :class="{ 'org-settings__toggle--active': editData.restriction_defaults?.require_clip_approval }"
+                @click="toggleRestriction('require_clip_approval')"
+              >
+                <span class="org-settings__toggle-handle"></span>
+              </button>
+            </div>
+            <div class="org-settings__restrictions-item">
+              <div class="org-settings__restrictions-item-info">
+                <div class="org-settings__restrictions-item-title">Allow clip deletion</div>
+                <div class="org-settings__restrictions-item-desc">Members can delete their clips</div>
+              </div>
+              <button
+                type="button"
+                class="org-settings__toggle"
+                :class="{ 'org-settings__toggle--active': editData.restriction_defaults?.allow_clip_deletion }"
+                @click="toggleRestriction('allow_clip_deletion')"
+              >
+                <span class="org-settings__toggle-handle"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="org-settings__restrictions-card">
+            <div class="org-settings__restrictions-header">
+              <UserCircle class="org-settings__restrictions-icon" />
+              <span class="org-settings__restrictions-title">Profile & Social</span>
+            </div>
+            <div class="org-settings__restrictions-item">
+              <div class="org-settings__restrictions-item-info">
+                <div class="org-settings__restrictions-item-title">Allow clipper profile</div>
+                <div class="org-settings__restrictions-item-desc">Create public clipper profile</div>
+              </div>
+              <button
+                type="button"
+                class="org-settings__toggle"
+                :class="{ 'org-settings__toggle--active': editData.restriction_defaults?.allow_clipper_profile }"
+                @click="toggleRestriction('allow_clipper_profile')"
+              >
+                <span class="org-settings__toggle-handle"></span>
+              </button>
+            </div>
+            <div class="org-settings__restrictions-item">
+              <div class="org-settings__restrictions-item-info">
+                <div class="org-settings__restrictions-item-title">Allow personal social accounts</div>
+                <div class="org-settings__restrictions-item-desc">Connect their own social accounts</div>
+              </div>
+              <button
+                type="button"
+                class="org-settings__toggle"
+                :class="{ 'org-settings__toggle--active': editData.restriction_defaults?.allow_personal_social }"
+                @click="toggleRestriction('allow_personal_social')"
+              >
+                <span class="org-settings__toggle-handle"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Save Success Toast -->
       <Transition name="toast">
         <div v-if="saveSuccess" class="org-settings__toast">
@@ -244,6 +399,9 @@
     Zap,
     Trash2,
     X,
+    Shield,
+    Archive,
+    UserCircle,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { useOrganization } from '@/composables/useOrganization';
@@ -256,6 +414,17 @@
     description: '',
     settings: {
       allow_ai: true,
+    },
+    restriction_defaults: {
+      allow_ai: true,
+      allow_asset_uploads: false,
+      allow_custom_prompts: false,
+      allow_clipper_profile: false,
+      allow_personal_social: true,
+      allow_clip_deletion: false,
+      force_org_watermark: true,
+      require_clip_approval: false,
+      clips_visible_to_admins: true,
     },
   });
   const saving = ref(false);
@@ -270,11 +439,23 @@
     (org) => {
       if (org) {
         const orgSettings = org.settings || {};
+        const restrictionDefaults = org.restriction_defaults || {};
         editData.value = {
           name: org.name,
           description: org.description || '',
           settings: {
             allow_ai: orgSettings.allow_ai !== false,
+          },
+          restriction_defaults: {
+            allow_ai: restrictionDefaults.allow_ai !== false,
+            allow_asset_uploads: restrictionDefaults.allow_asset_uploads === true,
+            allow_custom_prompts: restrictionDefaults.allow_custom_prompts === true,
+            allow_clipper_profile: restrictionDefaults.allow_clipper_profile === true,
+            allow_personal_social: restrictionDefaults.allow_personal_social !== false,
+            allow_clip_deletion: restrictionDefaults.allow_clip_deletion === true,
+            force_org_watermark: restrictionDefaults.force_org_watermark !== false,
+            require_clip_approval: restrictionDefaults.require_clip_approval === true,
+            clips_visible_to_admins: restrictionDefaults.clips_visible_to_admins !== false,
           },
         };
       }
@@ -286,10 +467,24 @@
     if (!organization.value) return false;
     const orgSettings = organization.value.settings || {};
     const currentAllowAi = orgSettings.allow_ai !== false;
+    
+    // Check restriction defaults changes
+    const orgRestrictionDefaults = organization.value.restriction_defaults || {};
+    const restrictionsChanged = 
+      editData.value.restriction_defaults.allow_ai !== (orgRestrictionDefaults.allow_ai !== false) ||
+      editData.value.restriction_defaults.allow_asset_uploads !== (orgRestrictionDefaults.allow_asset_uploads === true) ||
+      editData.value.restriction_defaults.allow_custom_prompts !== (orgRestrictionDefaults.allow_custom_prompts === true) ||
+      editData.value.restriction_defaults.allow_clipper_profile !== (orgRestrictionDefaults.allow_clipper_profile === true) ||
+      editData.value.restriction_defaults.allow_personal_social !== (orgRestrictionDefaults.allow_personal_social !== false) ||
+      editData.value.restriction_defaults.allow_clip_deletion !== (orgRestrictionDefaults.allow_clip_deletion === true) ||
+      editData.value.restriction_defaults.force_org_watermark !== (orgRestrictionDefaults.force_org_watermark !== false) ||
+      editData.value.restriction_defaults.require_clip_approval !== (orgRestrictionDefaults.require_clip_approval === true);
+    
     return (
       editData.value.name !== organization.value.name ||
       editData.value.description !== (organization.value.description || '') ||
-      editData.value.settings.allow_ai !== currentAllowAi
+      editData.value.settings.allow_ai !== currentAllowAi ||
+      restrictionsChanged
     );
   });
 
@@ -322,6 +517,12 @@
     await deleteOrganization();
     deleting.value = false;
     showDeleteConfirm.value = false;
+  }
+
+  function toggleRestriction(key: string) {
+    if (editData.value.restriction_defaults) {
+      editData.value.restriction_defaults[key] = !editData.value.restriction_defaults[key];
+    }
   }
 </script>
 
@@ -1051,6 +1252,73 @@
   .toast-leave-to {
     opacity: 0;
     transform: translateX(-50%) translateY(10px);
+  }
+
+  /* ===== Restrictions Section ===== */
+  .org-settings__section-header-icon--restrictions {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+  }
+
+  .org-settings__restrictions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .org-settings__restrictions-card {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .org-settings__restrictions-header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .org-settings__restrictions-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--sidebar-accent);
+  }
+
+  .org-settings__restrictions-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .org-settings__restrictions-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    justify-content: space-between;
+  }
+
+  .org-settings__restrictions-item-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .org-settings__restrictions-item-title {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    margin-bottom: 0.125rem;
+  }
+
+  .org-settings__restrictions-item-desc {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.4;
   }
 
   @keyframes spin {

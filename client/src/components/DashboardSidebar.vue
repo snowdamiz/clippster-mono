@@ -157,6 +157,7 @@
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
   import { useMessagingStore } from '@/stores/messaging';
+  import { usePermissionsStore } from '@/stores/permissions';
   import { useWallet } from '@/composables/useWallet';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
@@ -178,6 +179,7 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const messagingStore = useMessagingStore();
+  const permissionsStore = usePermissionsStore();
   const { formatAddress } = useWallet();
   const { isAIAllowed } = useAIPermission();
   const { isLiveClipEnabled, initialize: initFeatureFlags } = useFeatureFlags();
@@ -257,6 +259,18 @@
       if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
         return false;
       }
+      // Check restricted account items
+      if (item.restrictedHidden && permissionsStore.isRestricted) {
+        // Special handling for items with specific permission checks
+        if (item.path === '/assets' && permissionsStore.allowAssetUploads) {
+          return true;
+        }
+        if (item.path === '/prompts' && permissionsStore.allowCustomPrompts) {
+          return true;
+        }
+        // Otherwise hide if marked as restrictedHidden
+        return false;
+      }
       return true;
     });
   }
@@ -332,8 +346,10 @@
     (isAuth) => {
       if (isAuth) {
         loadUserOrganizations();
+        permissionsStore.fetchRestrictions();
       } else {
         userOrganizations.value = [];
+        permissionsStore.reset();
       }
     },
     { immediate: true }
@@ -346,6 +362,11 @@
     balanceRefreshInterval = setInterval(fetchBalance, 30000);
     window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
     initFeatureFlags();
+    
+    // Fetch user restrictions
+    if (authStore.isAuthenticated) {
+      permissionsStore.fetchRestrictions();
+    }
   });
 
   onUnmounted(() => {

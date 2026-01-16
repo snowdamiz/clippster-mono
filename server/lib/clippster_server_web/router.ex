@@ -129,6 +129,9 @@ defmodule ClippsterServerWeb.Router do
     # Get current user info (refreshes user data from server)
     get "/auth/me", AuthController, :me
 
+    # User restrictions
+    get "/user/restrictions", RestrictionController, :get_user_restrictions
+
     # Credit balance (requires auth)
     get "/credits/balance", PaymentController, :get_balance
     get "/credits/transactions", PaymentController, :get_transactions
@@ -199,6 +202,14 @@ defmodule ClippsterServerWeb.Router do
     get "/organizations/:organization_id/credits", OrganizationController, :get_credits
     post "/organizations/:organization_id/credits/allocate", OrganizationController, :allocate_credits
     get "/organizations/:organization_id/transactions", OrganizationController, :get_transactions
+
+    # Organization restriction settings
+    get "/organizations/:id/restriction-settings", RestrictionController, :get_restriction_settings
+    put "/organizations/:id/restriction-settings", RestrictionController, :update_restriction_settings
+
+    # Member restriction overrides
+    get "/organizations/:id/members/:user_id/restrictions", RestrictionController, :get_member_restrictions
+    put "/organizations/:id/members/:user_id/restrictions", RestrictionController, :update_member_restrictions
 
     # Organization payments (Stripe)
     post "/organizations/:organization_id/payments/stripe/create-session", StripeController, :create_org_checkout_session

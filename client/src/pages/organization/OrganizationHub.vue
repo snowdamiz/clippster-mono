@@ -235,7 +235,7 @@
     },
     {
       id: 'creators',
-      title: 'Creator Profiles',
+      title: 'Creators',
       description: 'Manage creator profiles and platform links',
       icon: UserCircle,
       route: `/organization/${organizationId.value}/creators`,
