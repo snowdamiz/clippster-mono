@@ -515,6 +515,12 @@ pub fn get_active_twitch_recordings_count() -> usize {
     TWITCH_ACTIVE_RECORDINGS.lock().unwrap().len()
 }
 
+/// Get list of active Twitch recording channel names
+#[tauri::command]
+pub fn get_active_twitch_recordings() -> Vec<String> {
+    TWITCH_ACTIVE_RECORDINGS.lock().unwrap().keys().cloned().collect()
+}
+
 /// Get the output directory for a Twitch session (for HLS playback)
 #[tauri::command]
 pub async fn get_twitch_session_output_dir(session_id: String) -> Result<String, String> {

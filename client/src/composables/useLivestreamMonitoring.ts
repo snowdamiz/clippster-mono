@@ -12,6 +12,7 @@ import {
   hasClipsForProject,
   hasChildProjects,
   getSegmentsBySession,
+  getActiveLivestreamSessions,
 } from '@/services/database';
 import type {
   LiveSession,
@@ -1498,6 +1499,125 @@ export function useLivestreamMonitoring() {
     }
   }
 
+  /**
+   * Restore active recording sessions after app refresh
+   * Queries the database for sessions marked as is_recording=1 and checks if they're still
+   * running in the Rust backend. Restores them to frontend state if active, or cleans up
+   * stale database records if not.
+   */
+  async function restoreActiveRecordings(): Promise<void> {
+    console.log('[LiveMonitor] Restoring active recordings...');
+
+    try {
+      // 1. Get sessions marked as recording in DB
+      const dbSessions = await getActiveLivestreamSessions();
+      console.log(`[LiveMonitor] Found ${dbSessions.length} sessions marked as recording in DB`);
+
+      if (dbSessions.length === 0) {
+        return;
+      }
+
+      // 2. Get actually running recordings from Rust backend
+      const [pumpfunActive, kickActive, twitchActive] = await Promise.all([
+        invoke<string[]>('get_active_pumpfun_recordings'),
+        invoke<string[]>('get_active_kick_recordings'),
+        invoke<string[]>('get_active_twitch_recordings'),
+      ]);
+
+      console.log('[LiveMonitor] Active recordings in backend:', {
+        pumpfun: pumpfunActive,
+        kick: kickActive,
+        twitch: twitchActive,
+      });
+
+      // 3. Create lookup set of all active recordings
+      const activeInBackend = new Set([...pumpfunActive, ...kickActive, ...twitchActive]);
+
+      // 4. Initialize event listeners if not already done
+      await initializeListeners();
+
+      // 5. Process each DB session
+      for (const session of dbSessions) {
+        const isActiveInBackend = activeInBackend.has(session.mint_id);
+
+        console.log(`[LiveMonitor] Session ${session.id} (${session.mint_id}):`, {
+          isActiveInBackend,
+          streamerId: session.monitored_streamer_id,
+        });
+
+        if (isActiveInBackend) {
+          // Recording still running - restore to frontend state
+          console.log(`[LiveMonitor] Restoring session ${session.id} to frontend state`);
+
+          // Get streamer info from DB
+          const streamer = await getMonitoredStreamer(session.monitored_streamer_id);
+          if (!streamer) {
+            console.warn(`[LiveMonitor] Streamer not found for session ${session.id}, skipping restore`);
+            continue;
+          }
+
+          // Restore to activeSessions map
+          updateActiveSessionsMap((map) => {
+            map.set(session.monitored_streamer_id, {
+              streamerId: session.monitored_streamer_id,
+              sessionId: session.id,
+              mintId: session.mint_id,
+              displayName: streamer.display_name,
+              platform: (streamer.platform as SupportedLivestreamPlatform) || 'PumpFun',
+              profileImageUrl: streamer.profile_image_url || undefined,
+              projectId: session.project_id || undefined,
+              streamThumbnailUrl: undefined,
+              isDetecting: true,
+              isStopping: false,
+              startedAt: new Date(session.stream_start_time).getTime(),
+            });
+          });
+
+          // Restore to monitoredStreamers map if not already there
+          if (!monitoredStreamers.value.has(session.monitored_streamer_id)) {
+            updateMonitoredStreamersMap((map) => {
+              map.set(session.monitored_streamer_id, {
+                streamer: {
+                  id: streamer.id,
+                  mintId: streamer.mint_id,
+                  displayName: streamer.display_name,
+                  platform: (streamer.platform as SupportedLivestreamPlatform) || 'PumpFun',
+                  profileImageUrl: streamer.profile_image_url || undefined,
+                  autoDvr: Boolean(streamer.auto_dvr),
+                  segmentDurationMinutes: streamer.segment_duration_minutes || 5,
+                },
+                options: {
+                  detectClips: true, // Assume clip detection was enabled
+                },
+              });
+            });
+          }
+
+          // Add activity log
+          addActivityLog({
+            streamerId: session.monitored_streamer_id,
+            streamerName: streamer.display_name,
+            platform: (streamer.platform as SupportedLivestreamPlatform) || 'PumpFun',
+            mintId: session.mint_id,
+            profileImageUrl: streamer.profile_image_url || undefined,
+            message: 'Session restored after app refresh',
+            status: 'info',
+          });
+
+          console.log(`[LiveMonitor] Successfully restored session for ${streamer.display_name}`);
+        } else {
+          // Recording stopped but DB wasn't updated - clean up
+          console.log(`[LiveMonitor] Session ${session.id} not running in backend, marking as ended`);
+          await endLivestreamSession(session.id);
+        }
+      }
+
+      console.log('[LiveMonitor] Active recordings restoration complete');
+    } catch (error) {
+      console.error('[LiveMonitor] Failed to restore active recordings:', error);
+    }
+  }
+
   return {
     startMonitoring,
     stopMonitoring,
@@ -1532,5 +1652,7 @@ export function useLivestreamMonitoring() {
     // Auto DVR exports
     initAutoDvrPolling,
     stopAutoDvrPolling,
+    // Session restoration
+    restoreActiveRecordings,
   };
 }
