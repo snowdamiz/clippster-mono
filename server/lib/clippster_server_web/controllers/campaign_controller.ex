@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.CampaignController do
 
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Organizations
+  alias ClippsterServer.Storage
 
   plug ClippsterServerWeb.AuthPlug
 
@@ -250,7 +251,7 @@ defmodule ClippsterServerWeb.CampaignController do
         attrs = %{
           title: Map.get(params, "title"),
           description: Map.get(params, "description"),
-          cover_image_url: Map.get(params, "cover_image_url"),
+          cover_image_url: strip_query_params(Map.get(params, "cover_image_url")),
           creator_profile_id: Map.get(params, "creator_profile_id"),
           budget: Map.get(params, "budget"),
           cpm: Map.get(params, "cpm"),
@@ -305,6 +306,7 @@ defmodule ClippsterServerWeb.CampaignController do
                      "global_watermarks", "global_intro_id", "global_outro_id",
                      "require_watermark", "require_intro", "require_outro"])
         |> maybe_add_dates(params)
+        |> maybe_strip_cover_image_url()
 
       case Campaigns.update_campaign(campaign, attrs, user) do
         {:ok, updated} ->
@@ -893,7 +895,7 @@ defmodule ClippsterServerWeb.CampaignController do
       creator_profile_id: campaign.creator_profile_id,
       title: campaign.title,
       description: campaign.description,
-      cover_image_url: campaign.cover_image_url,
+      cover_image_url: presign_url(campaign.cover_image_url),
       budget: campaign.budget,
       spent: campaign.spent,
       cpm: campaign.cpm,
@@ -915,12 +917,12 @@ defmodule ClippsterServerWeb.CampaignController do
       organization: if(Ecto.assoc_loaded?(campaign.organization), do: %{
         id: campaign.organization.id,
         name: campaign.organization.name,
-        logo_url: campaign.organization.logo_url
+        logo_url: maybe_presign_url(campaign.organization.logo_url)
       }, else: nil),
       creator_profile: if(campaign.creator_profile_id && Ecto.assoc_loaded?(campaign.creator_profile) && campaign.creator_profile, do: %{
         id: campaign.creator_profile.id,
         name: campaign.creator_profile.name,
-        profile_image_url: campaign.creator_profile.profile_image_url
+        profile_image_url: maybe_presign_url(campaign.creator_profile.profile_image_url)
       }, else: nil),
       global_intro: if(campaign.global_intro_id && Ecto.assoc_loaded?(campaign.global_intro) && campaign.global_intro, do: serialize_asset(campaign.global_intro), else: nil),
       global_outro: if(campaign.global_outro_id && Ecto.assoc_loaded?(campaign.global_outro) && campaign.global_outro, do: serialize_asset(campaign.global_outro), else: nil),
@@ -1084,7 +1086,7 @@ defmodule ClippsterServerWeb.CampaignController do
       id: profile.id,
       name: profile.name,
       description: profile.description,
-      profile_image_url: profile.profile_image_url || platform_image,
+      profile_image_url: maybe_presign_url(profile.profile_image_url || platform_image),
       watermark_settings: profile.watermark_settings,
       intro: if(Ecto.assoc_loaded?(profile.intro) && profile.intro, do: serialize_asset(profile.intro), else: nil),
       outro: if(Ecto.assoc_loaded?(profile.outro) && profile.outro, do: serialize_asset(profile.outro), else: nil),
@@ -1110,8 +1112,8 @@ defmodule ClippsterServerWeb.CampaignController do
       id: asset.id,
       asset_type: asset.asset_type,
       name: asset.name,
-      url: asset.url,
-      thumbnail_url: asset.thumbnail_url,
+      url: presign_url(asset.url),
+      thumbnail_url: presign_url(asset.thumbnail_url),
       duration: asset.duration,
       width: asset.width,
       height: asset.height,
@@ -1152,4 +1154,50 @@ defmodule ClippsterServerWeb.CampaignController do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  # Strip query params from cover_image_url if present in the map
+  defp maybe_strip_cover_image_url(attrs) do
+    case Map.get(attrs, "cover_image_url") do
+      nil -> attrs
+      url -> Map.put(attrs, "cover_image_url", strip_query_params(url))
+    end
+  end
+
+  # ============================================================================
+  # URL Presigning Helpers
+  # ============================================================================
+
+  # Strip query parameters from a URL (removes presigning params before storing)
+  defp strip_query_params(nil), do: nil
+  defp strip_query_params(url) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{query: nil} -> url
+      %URI{} = uri -> URI.to_string(%{uri | query: nil})
+    end
+  end
+
+  # Presign a URL that is definitely from R2 storage
+  defp presign_url(nil), do: nil
+  defp presign_url(url), do: Storage.presigned_url!(url)
+
+  # Presign a URL only if it's from R2 storage (not external URLs)
+  defp maybe_presign_url(nil), do: nil
+  defp maybe_presign_url(url) when is_binary(url) do
+    if is_r2_storage_url?(url) do
+      Storage.presigned_url!(url)
+    else
+      url
+    end
+  end
+
+  # Check if a URL is from R2 storage
+  defp is_r2_storage_url?(url) do
+    base = Storage.public_url_base()
+    cond do
+      base && String.starts_with?(url, base) -> true
+      String.contains?(url, ".r2.cloudflarestorage.com/") -> true
+      String.starts_with?(url, "org-assets/") -> true  # Storage key format
+      true -> false
+    end
+  end
 end

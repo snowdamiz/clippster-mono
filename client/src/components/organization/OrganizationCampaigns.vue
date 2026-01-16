@@ -2949,12 +2949,12 @@
   }
 
   .campaigns__platform--instagram {
-    background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285aeb 90%);
-    border-color: transparent;
+    background-color: rgba(0, 0, 0, 0.9);
+    border-color: rgba(225, 48, 108, 0.3);
   }
 
   .campaigns__platform--instagram .campaigns__platform-icon {
-    color: white;
+    color: #e1306c;
   }
 
   .campaigns__platform--x {
@@ -4549,7 +4549,7 @@
   }
 
   .campaigns-detail__submission-platform-badge--instagram {
-    background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+    background-color: #000;
   }
 
   .campaigns-detail__submission-platform-badge--tiktok {
@@ -4785,6 +4785,7 @@
   .campaign-wizard__step {
     display: flex;
     flex-direction: column;
+    margin-top: 1.2rem;
   }
 
   /* Header */
