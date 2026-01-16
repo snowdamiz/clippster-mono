@@ -2,28 +2,30 @@
   <Teleport to="body">
   <Transition name="modal">
     <div v-if="show" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="$emit('close')"></div>
+      <div class="absolute inset-0 bg-black/70 backdrop-blur-[4px]" @click="$emit('close')"></div>
       <Transition name="dialog" appear>
         <div
-          class="relative flex flex-col w-full max-w-2xl mx-3 overflow-hidden bg-gradient-to-b from-zinc-900 to-zinc-950 border border-white/10 rounded-xl max-h-[90vh]"
+          class="relative flex flex-col w-full max-w-2xl mx-3 overflow-hidden bg-[var(--sidebar-surface)] border border-[var(--sidebar-border)] rounded-xl max-h-[90vh] shadow-[0_20px_60px_rgba(0,0,0,0.4)]"
         >
+          <!-- Accent bar -->
+          <div class="h-[3px] w-full flex-shrink-0 bg-gradient-to-r from-[var(--sidebar-accent)] to-[#06b6d4]/50"></div>
           <!-- Header -->
           <div
-            class="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/50 flex-shrink-0"
+            class="flex items-center justify-between px-4 py-3 border-b border-[var(--sidebar-border)] flex-shrink-0"
           >
             <div class="flex items-center gap-2.5">
               <div
-                class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center border border-amber-500/30"
+                class="w-8 h-8 rounded-lg bg-[rgba(6,182,212,0.15)] flex items-center justify-center"
               >
-                <Move class="h-4 w-4 text-amber-400" />
+                <Move class="h-4 w-4 text-[var(--sidebar-accent)]" />
               </div>
               <div>
-                <h2 class="text-base font-semibold text-white">Watermark Position</h2>
+                <h2 class="text-base font-semibold text-[var(--sidebar-text)]">Watermark Position</h2>
               </div>
             </div>
             <button
               @click="$emit('close')"
-              class="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              class="p-1.5 rounded-lg text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] transition-colors"
             >
               <X class="w-4 h-4" />
             </button>
@@ -40,10 +42,10 @@
                 class="px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 relative"
                 :class="[
                   currentAspectRatio === ar.id
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    ? 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)] border border-[rgba(6,182,212,0.2)]'
                     : enabledRatios[ar.id]
-                      ? 'bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 border border-zinc-700'
-                      : 'bg-zinc-900 text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800 border border-zinc-800',
+                      ? 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text)] hover:bg-[var(--sidebar-active)] border border-[var(--sidebar-border)]'
+                      : 'bg-transparent text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)]',
                 ]"
               >
                 <component :is="ar.icon" class="w-3 h-3" />
@@ -56,17 +58,17 @@
 
               <!-- Enable Toggle -->
               <div class="ml-auto flex items-center gap-2">
-                <span class="text-[10px] text-zinc-500">
+                <span class="text-[10px] text-[var(--sidebar-text-muted)]">
                   {{ enabledRatios[currentAspectRatio] ? 'Enabled' : 'Disabled' }}
                 </span>
                 <button
                   @click="toggleCurrentRatio"
-                  class="relative w-9 h-5 rounded-full transition-colors"
-                  :class="enabledRatios[currentAspectRatio] ? 'bg-amber-500' : 'bg-zinc-600'"
+                  class="relative w-9 h-5 rounded-full transition-colors border border-[var(--sidebar-border)]"
+                  :class="enabledRatios[currentAspectRatio] ? 'bg-[var(--sidebar-accent)]' : 'bg-[var(--sidebar-hover)]'"
                 >
                   <span
-                    class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"
-                    :class="enabledRatios[currentAspectRatio] ? 'translate-x-4' : 'translate-x-0'"
+                    class="absolute top-0.5 left-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-transform"
+                    :class="enabledRatios[currentAspectRatio] ? 'translate-x-[18px]' : 'translate-x-0'"
                   ></span>
                 </button>
               </div>
@@ -79,12 +81,12 @@
                 <button
                   type="button"
                   @click.stop="showWatermarkDropdown = !showWatermarkDropdown"
-                  class="w-full px-2.5 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-left flex items-center justify-between hover:border-zinc-600 hover:bg-zinc-700/80 transition-all text-xs text-white"
+                  class="w-full px-2.5 py-2 bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] rounded-lg text-left flex items-center justify-between hover:border-[var(--sidebar-text-muted)] transition-all text-xs text-[var(--sidebar-text)]"
                 >
                   <div class="flex items-center gap-2">
                     <div
                       v-if="currentRatioWatermarkUrl"
-                      class="w-6 h-6 rounded bg-zinc-700 border border-zinc-600 flex items-center justify-center overflow-hidden flex-shrink-0"
+                      class="w-6 h-6 rounded bg-[var(--sidebar-surface)] border border-[var(--sidebar-border)] flex items-center justify-center overflow-hidden flex-shrink-0"
                     >
                       <img
                         :src="currentRatioWatermarkUrl"
@@ -94,16 +96,16 @@
                     </div>
                     <div
                       v-else
-                      class="w-6 h-6 rounded bg-zinc-700 border border-zinc-600 flex items-center justify-center flex-shrink-0"
+                      class="w-6 h-6 rounded bg-[var(--sidebar-surface)] border border-[var(--sidebar-border)] flex items-center justify-center flex-shrink-0"
                     >
-                      <ImageIcon class="w-3 h-3 text-zinc-500" />
+                      <ImageIcon class="w-3 h-3 text-[var(--sidebar-text-muted)]" />
                     </div>
                     <span class="truncate">
                       {{ currentRatioWatermark?.name || 'Default watermark' }}
                     </span>
                   </div>
                   <ChevronDown
-                    class="h-3.5 w-3.5 text-zinc-400 transition-transform flex-shrink-0 ml-1"
+                    class="h-3.5 w-3.5 text-[var(--sidebar-text-muted)] transition-transform flex-shrink-0 ml-1"
                     :class="{ 'rotate-180': showWatermarkDropdown }"
                   />
                 </button>
@@ -111,19 +113,19 @@
                 <!-- Watermark Dropdown -->
                 <div
                   v-if="showWatermarkDropdown"
-                  class="absolute top-full left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-y-auto max-h-40 custom-scrollbar"
+                  class="absolute top-full left-0 right-0 mt-1 bg-[var(--sidebar-surface)] border border-[var(--sidebar-border)] rounded-lg shadow-xl z-50 overflow-y-auto max-h-40 custom-scrollbar"
                   @click.stop
                 >
                   <!-- Use default option -->
                   <button
                     @click="selectWatermarkForRatio(null)"
-                    class="w-full text-left px-2.5 py-2 hover:bg-zinc-700 transition-colors text-xs flex items-center gap-2 border-b border-zinc-700/50"
-                    :class="{ 'bg-amber-500/10 text-amber-400': !ratioWatermarkIds[currentAspectRatio] }"
+                    class="w-full text-left px-2.5 py-2 hover:bg-[var(--sidebar-hover)] transition-colors text-xs flex items-center gap-2 border-b border-[var(--sidebar-border)]"
+                    :class="{ 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)]': !ratioWatermarkIds[currentAspectRatio] }"
                   >
-                    <div class="w-6 h-6 rounded bg-zinc-700 border border-zinc-600 flex items-center justify-center">
-                      <ImageIcon class="w-3 h-3 text-zinc-500" />
+                    <div class="w-6 h-6 rounded bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] flex items-center justify-center">
+                      <ImageIcon class="w-3 h-3 text-[var(--sidebar-text-muted)]" />
                     </div>
-                    <span>Default watermark</span>
+                    <span class="text-[var(--sidebar-text)]">Default watermark</span>
                   </button>
 
                   <!-- Watermark options -->
@@ -131,11 +133,11 @@
                     v-for="wm in watermarks"
                     :key="wm.id"
                     @click="selectWatermarkForRatio(wm)"
-                    class="w-full text-left px-2.5 py-2 hover:bg-zinc-700 transition-colors text-xs flex items-center gap-2"
-                    :class="{ 'bg-amber-500/10 text-amber-400': ratioWatermarkIds[currentAspectRatio] === wm.id }"
+                    class="w-full text-left px-2.5 py-2 hover:bg-[var(--sidebar-hover)] transition-colors text-xs flex items-center gap-2"
+                    :class="{ 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)]': ratioWatermarkIds[currentAspectRatio] === wm.id }"
                   >
                     <div
-                      class="w-6 h-6 rounded bg-zinc-700 border border-zinc-600 flex items-center justify-center overflow-hidden"
+                      class="w-6 h-6 rounded bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] flex items-center justify-center overflow-hidden"
                     >
                       <img
                         v-if="watermarkThumbnailCache.get(wm.id)"
@@ -143,24 +145,24 @@
                         :alt="wm.name"
                         class="max-w-full max-h-full object-contain"
                       />
-                      <ImageIcon v-else class="w-3 h-3 text-zinc-500" />
+                      <ImageIcon v-else class="w-3 h-3 text-[var(--sidebar-text-muted)]" />
                     </div>
-                    <span class="truncate">{{ wm.name }}</span>
+                    <span class="truncate text-[var(--sidebar-text)]">{{ wm.name }}</span>
                   </button>
 
-                  <div v-if="loadingWatermarks" class="px-2.5 py-3 text-xs text-center text-zinc-500">Loading...</div>
+                  <div v-if="loadingWatermarks" class="px-2.5 py-3 text-xs text-center text-[var(--sidebar-text-muted)]">Loading...</div>
 
                   <!-- Upload new watermark button -->
                   <button
                     @click="uploadNewWatermark"
                     :disabled="uploadingWatermark"
-                    class="w-full text-left px-2.5 py-2 hover:bg-zinc-700 transition-colors text-xs flex items-center gap-2 border-t border-zinc-700/50 text-amber-400 hover:text-amber-300"
+                    class="w-full text-left px-2.5 py-2 hover:bg-[var(--sidebar-hover)] transition-colors text-xs flex items-center gap-2 border-t border-[var(--sidebar-border)] text-[var(--sidebar-accent)] hover:text-[var(--sidebar-primary)]"
                   >
                     <div
-                      class="w-6 h-6 rounded bg-amber-500/20 border border-amber-500/30 flex items-center justify-center"
+                      class="w-6 h-6 rounded bg-[rgba(6,182,212,0.15)] flex items-center justify-center"
                     >
-                      <Upload v-if="!uploadingWatermark" class="w-3 h-3 text-amber-400" />
-                      <Loader2 v-else class="w-3 h-3 text-amber-400 animate-spin" />
+                      <Upload v-if="!uploadingWatermark" class="w-3 h-3 text-[var(--sidebar-accent)]" />
+                      <Loader2 v-else class="w-3 h-3 text-[var(--sidebar-accent)] animate-spin" />
                     </div>
                     <span>{{ uploadingWatermark ? 'Uploading...' : 'Upload new' }}</span>
                   </button>
@@ -169,15 +171,15 @@
 
               <!-- Full-Frame Overlay Toggle -->
               <label
-                class="flex items-center gap-2 px-2.5 py-2 bg-zinc-800 border border-zinc-700 rounded-lg cursor-pointer hover:bg-zinc-700/80 transition-all flex-shrink-0"
+                class="flex items-center gap-2 px-2.5 py-2 bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] rounded-lg cursor-pointer hover:border-[var(--sidebar-text-muted)] transition-all flex-shrink-0"
               >
                 <input
                   type="checkbox"
                   :checked="fullFrameOverlayRatios[currentAspectRatio]"
                   @change="toggleFullFrameOverlay"
-                  class="w-3.5 h-3.5 rounded border-zinc-600 bg-zinc-700 text-amber-500 focus:ring-amber-500 focus:ring-offset-zinc-900"
+                  class="w-3.5 h-3.5 rounded border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] text-[var(--sidebar-accent)] focus:ring-[var(--sidebar-accent)] focus:ring-offset-[var(--sidebar-surface)]"
                 />
-                <span class="text-xs text-zinc-300 whitespace-nowrap">Full-frame</span>
+                <span class="text-xs text-[var(--sidebar-text)] whitespace-nowrap">Full-frame</span>
               </label>
             </div>
 
@@ -185,11 +187,11 @@
             <div class="flex justify-center mb-3">
               <div
                 ref="previewContainer"
-                class="relative bg-zinc-800 rounded-lg overflow-hidden border-2 shadow-inner transition-all duration-300"
+                class="relative bg-[var(--sidebar-surface)] rounded-lg overflow-hidden border transition-all duration-300"
                 :class="[
                   enabledRatios[currentAspectRatio]
-                    ? 'cursor-crosshair border-zinc-700'
-                    : 'cursor-not-allowed border-zinc-800 opacity-50',
+                    ? 'cursor-crosshair border-[var(--sidebar-border)]'
+                    : 'cursor-not-allowed border-[var(--sidebar-border)] opacity-50',
                 ]"
                 :style="previewContainerStyle"
                 @click="enabledRatios[currentAspectRatio] && handleClick($event)"
@@ -200,25 +202,25 @@
               >
                 <!-- Grid lines for guidance -->
                 <div class="absolute inset-0 pointer-events-none">
-                  <div class="absolute left-1/3 top-0 bottom-0 w-px bg-white/10"></div>
-                  <div class="absolute left-2/3 top-0 bottom-0 w-px bg-white/10"></div>
-                  <div class="absolute top-1/3 left-0 right-0 h-px bg-white/10"></div>
-                  <div class="absolute top-2/3 left-0 right-0 h-px bg-white/10"></div>
+                  <div class="absolute left-1/3 top-0 bottom-0 w-px bg-[var(--sidebar-border)]"></div>
+                  <div class="absolute left-2/3 top-0 bottom-0 w-px bg-[var(--sidebar-border)]"></div>
+                  <div class="absolute top-1/3 left-0 right-0 h-px bg-[var(--sidebar-border)]"></div>
+                  <div class="absolute top-2/3 left-0 right-0 h-px bg-[var(--sidebar-border)]"></div>
                 </div>
 
                 <!-- Aspect ratio label -->
-                <div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/50 rounded text-[10px] text-white/70">
+                <div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/50 rounded text-[10px] text-white/70 z-10">
                   {{ currentAspectRatioLabel }}
                 </div>
 
                 <!-- Sample video content indicator -->
-                <div class="absolute inset-0 flex items-center justify-center text-zinc-600">
+                <div class="absolute inset-0 flex items-center justify-center text-[var(--sidebar-text-muted)]">
                   <Video class="w-8 h-8 opacity-20" />
                 </div>
 
                 <!-- Loading indicator -->
-                <div v-if="loadingWatermark" class="absolute inset-0 flex items-center justify-center bg-black/30">
-                  <div class="text-amber-400 text-xs">Loading...</div>
+                <div v-if="loadingWatermark" class="absolute inset-0 flex items-center justify-center bg-black/30 z-20">
+                  <div class="text-[var(--sidebar-accent)] text-xs">Loading...</div>
                 </div>
 
                 <!-- Watermark preview -->
@@ -243,15 +245,15 @@
                 <!-- Disabled overlay -->
                 <div
                   v-if="!enabledRatios[currentAspectRatio]"
-                  class="absolute inset-0 flex items-center justify-center bg-black/40"
+                  class="absolute inset-0 flex items-center justify-center bg-black/10 backdrop-blur-[1px]"
                 >
-                  <span class="text-zinc-400 text-xs">Disabled</span>
+                  <span class="text-[var(--sidebar-text-muted)] text-xs">Disabled</span>
                 </div>
 
                 <!-- Position indicator -->
                 <div
                   v-if="enabledRatios[currentAspectRatio] && !fullFrameOverlayRatios[currentAspectRatio]"
-                  class="absolute w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white shadow-lg pointer-events-none transform -translate-x-1/2 -translate-y-1/2 transition-all duration-75"
+                  class="absolute w-2.5 h-2.5 bg-[var(--sidebar-accent)] rounded-full border-2 border-white shadow-lg pointer-events-none transform -translate-x-1/2 -translate-y-1/2 transition-all duration-75"
                   :style="{ left: `${currentSettings.x}%`, top: `${currentSettings.y}%` }"
                 ></div>
               </div>
@@ -264,7 +266,7 @@
                 class="flex items-center gap-1.5 flex-wrap"
                 :class="{ 'opacity-50 pointer-events-none': fullFrameOverlayRatios[currentAspectRatio] }"
               >
-                <span class="text-[10px] text-zinc-500 mr-1">Position:</span>
+                <span class="text-[10px] text-[var(--sidebar-text-muted)] mr-1">Position:</span>
                 <button
                   v-for="preset in presets"
                   :key="preset.name"
@@ -273,8 +275,8 @@
                   class="px-2 py-1 text-[10px] font-medium rounded transition-all"
                   :class="
                     isPresetActive(preset)
-                      ? 'bg-amber-500/20 text-amber-400'
-                      : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+                      ? 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)]'
+                      : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]'
                   "
                 >
                   {{ preset.name }}
@@ -285,8 +287,8 @@
               <div class="grid grid-cols-2 gap-4">
                 <div :class="{ 'opacity-50 pointer-events-none': fullFrameOverlayRatios[currentAspectRatio] }">
                   <div class="flex items-center justify-between mb-1">
-                    <label class="text-xs text-zinc-400">Size</label>
-                    <span class="text-[10px] text-zinc-500">
+                    <label class="text-xs text-[var(--sidebar-text-muted)]">Size</label>
+                    <span class="text-[10px] text-[var(--sidebar-text-muted)]">
                       {{ fullFrameOverlayRatios[currentAspectRatio] ? 100 : currentSettings.scale }}%
                     </span>
                   </div>
@@ -297,14 +299,14 @@
                     min="5"
                     max="100"
                     :disabled="!enabledRatios[currentAspectRatio] || fullFrameOverlayRatios[currentAspectRatio]"
-                    class="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                    class="w-full h-1.5 bg-[var(--sidebar-border)] rounded-lg appearance-none cursor-pointer accent-[var(--sidebar-accent)]"
                   />
                 </div>
 
                 <div>
                   <div class="flex items-center justify-between mb-1">
-                    <label class="text-xs text-zinc-400">Opacity</label>
-                    <span class="text-[10px] text-zinc-500">{{ currentSettings.opacity }}%</span>
+                    <label class="text-xs text-[var(--sidebar-text-muted)]">Opacity</label>
+                    <span class="text-[10px] text-[var(--sidebar-text-muted)]">{{ currentSettings.opacity }}%</span>
                   </div>
                   <input
                     type="range"
@@ -313,20 +315,19 @@
                     min="10"
                     max="100"
                     :disabled="!enabledRatios[currentAspectRatio]"
-                    class="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                    class="w-full h-1.5 bg-[var(--sidebar-border)] rounded-lg appearance-none cursor-pointer accent-[var(--sidebar-accent)]"
                   />
                 </div>
               </div>
             </div>
 
-            <!-- Apply to all + Summary -->
-            <div class="mt-3 pt-3 border-t border-zinc-800 flex items-center justify-between gap-3">
+              <div class="mt-3 pt-3 border-t border-[var(--sidebar-border)] flex items-center justify-between gap-3">
               <div class="flex items-center gap-1.5 flex-wrap">
                 <span
                   v-for="ar in aspectRatios"
                   :key="ar.id"
                   class="px-1.5 py-0.5 text-[10px] rounded"
-                  :class="enabledRatios[ar.id] ? 'bg-green-500/20 text-green-400' : 'bg-zinc-800 text-zinc-500'"
+                  :class="enabledRatios[ar.id] ? 'bg-green-500/10 text-green-500' : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'"
                 >
                   {{ ar.label }}
                 </span>
@@ -334,7 +335,7 @@
               <button
                 @click="copyToAllRatios"
                 :disabled="!enabledRatios[currentAspectRatio]"
-                class="px-2.5 py-1 text-[10px] font-medium bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                class="px-2.5 py-1 text-[10px] font-medium bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)] rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
               >
                 Apply to all
               </button>
@@ -343,17 +344,17 @@
 
           <!-- Footer -->
           <div
-            class="flex items-center justify-end gap-2 px-4 py-3 border-t border-zinc-800 bg-zinc-900/50 flex-shrink-0"
+            class="flex items-center justify-end gap-2 px-4 py-3 border-t border-[var(--sidebar-border)] flex-shrink-0"
           >
             <button
               @click="$emit('close')"
-              class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition-all text-sm font-medium border border-zinc-700"
+              class="px-4 py-2 bg-[var(--sidebar-hover)] hover:bg-[var(--sidebar-active)] text-[var(--sidebar-text)] hover:text-[var(--sidebar-text)] rounded-lg transition-all text-sm font-medium border border-[var(--sidebar-border)]"
             >
               Cancel
             </button>
             <button
               @click="savePosition"
-              class="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-lg font-medium transition-all text-sm"
+              class="px-4 py-2 bg-gradient-to-br from-[var(--sidebar-accent)] to-[#0891b2] hover:opacity-90 text-white rounded-lg font-medium transition-all text-sm"
             >
               Save
             </button>
@@ -1030,7 +1031,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #f59e0b;
+    background: var(--sidebar-accent);
     cursor: pointer;
     border: 2px solid white;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
@@ -1040,7 +1041,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: #f59e0b;
+    background: var(--sidebar-accent);
     cursor: pointer;
     border: 2px solid white;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
