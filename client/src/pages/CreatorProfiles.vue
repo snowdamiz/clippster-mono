@@ -40,9 +40,9 @@
           <div v-if="creators.length > 0 || loading" class="creators__stats">
             <!-- Total Creators Card -->
             <div class="creators-stat">
-              <div class="creators-stat__indicator"></div>
+              <div class="creators-stat__indicator creators-stat__indicator--total"></div>
               <div class="creators-stat__inner">
-                <div class="creators-stat__icon">
+                <div class="creators-stat__icon creators-stat__icon--total">
                   <Users />
                 </div>
                 <div class="creators-stat__info">
@@ -132,7 +132,15 @@
             <!-- Creator List -->
             <div class="creators__list">
               <transition-group name="list" tag="div" class="creators__list-inner">
-                <div v-for="creator in sortedCreators" :key="creator.id" class="creator-card">
+                <div 
+                  v-for="creator in sortedCreators" 
+                  :key="creator.id" 
+                  class="creator-card"
+                  :class="{
+                    'creator-card--monitoring': isCreatorMonitored(creator),
+                    'creator-card--live': !isCreatorMonitored(creator) && isCreatorLive(creator)
+                  }"
+                >
                   <div class="creator-card__inner">
                     <!-- Header Row: Avatar + Info + Platform Badges -->
                     <div class="creator-card__header">
@@ -1515,6 +1523,10 @@
     background-color: var(--sidebar-border);
   }
 
+  .creators-stat__indicator--total {
+    background: linear-gradient(to bottom, #06b6d4 0%, #0891b2 100%);
+  }
+
   .creators-stat__indicator--live {
     background-color: #ef4444;
   }
@@ -1546,6 +1558,11 @@
   .creators-stat__icon svg {
     width: 20px;
     height: 20px;
+  }
+
+  .creators-stat__icon--total {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
   }
 
   .creators-stat__icon--live {
@@ -1617,13 +1634,24 @@
   .creator-card {
     display: flex;
     background-color: var(--sidebar-surface);
-    border-radius: 10px;
+    border-radius: 12px;
+    border: 1px solid var(--sidebar-border);
+    border-left: 3px solid rgba(255, 255, 255, 0.1);
     overflow: hidden;
     transition: all 200ms ease;
   }
 
   .creator-card:hover {
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .creator-card--monitoring {
+    border-left-color: #10b981;
+  }
+
+  .creator-card--live {
+    border-left-color: #ef4444;
   }
 
   .creator-card__inner {
@@ -1646,11 +1674,12 @@
   }
 
   .creator-card__avatar {
-    width: 52px;
-    height: 52px;
-    border-radius: 10px;
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
     overflow: hidden;
     background-color: var(--sidebar-hover);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.1);
   }
 
   .creator-card__avatar-img {
@@ -1669,8 +1698,8 @@
   }
 
   .creator-card__avatar-icon {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     color: var(--sidebar-text-muted);
     opacity: 0.5;
   }
@@ -1720,7 +1749,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.625rem;
   }
 
   .creator-card__name-row {
@@ -1731,11 +1760,11 @@
   }
 
   .creator-card__name {
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: 1rem;
+    font-weight: 650;
     color: var(--sidebar-text);
     margin: 0;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
   }
 
   .creator-card__org-badge {
@@ -1758,6 +1787,7 @@
   .creator-card__description {
     font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
+    opacity: 0.85;
     margin: 0;
     line-height: 1.4;
     display: -webkit-box;
@@ -1775,22 +1805,25 @@
   .creator-card__platform {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 6px;
+    gap: 0.4rem;
+    padding: 0.3125rem 0.5625rem;
+    background-color: rgba(139, 92, 246, 0.1);
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    border-radius: 999px;
     font-size: 0.75rem;
+    font-weight: 500;
   }
 
   .creator-card__platform-icon {
-    width: 14px;
-    height: 14px;
-    opacity: 0.7;
+    width: 13px;
+    height: 13px;
+    opacity: 0.8;
     filter: brightness(0) invert(1);
   }
 
   .creator-card__platform-name {
-    color: var(--sidebar-text-muted);
+    color: var(--sidebar-text);
+    opacity: 0.9;
     max-width: 100px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1847,10 +1880,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.875rem 1.25rem;
-    background-color: rgba(0, 0, 0, 0.15);
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 1.25rem;
+    padding: 1rem 1.25rem;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .creator-card__status {
@@ -1859,8 +1892,9 @@
   }
 
   .creator-card__platform-count {
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
+    opacity: 0.7;
   }
 
   /* Status Badges */
@@ -1912,14 +1946,19 @@
   }
 
   .creator-status--offline {
-    background-color: var(--sidebar-hover);
+    background-color: transparent;
     color: var(--sidebar-text-muted);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.6875rem;
+    opacity: 0.7;
   }
 
   .creator-status--offline .creator-status__dot {
     background-color: var(--sidebar-text-muted);
-    opacity: 0.5;
+    opacity: 0.4;
     animation: none;
+    width: 5px;
+    height: 5px;
   }
 
   .creator-status--checking {
@@ -1931,7 +1970,7 @@
   .creator-card__actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.625rem;
   }
 
   /* Segmented Button Group */
@@ -1946,7 +1985,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+    height: 34px;
     font-size: 0.75rem;
     font-weight: 500;
     background-color: rgba(255, 255, 255, 0.04);
@@ -1987,7 +2027,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+    height: 34px;
     border-radius: 6px;
     font-size: 0.75rem;
     font-weight: 500;
@@ -2032,20 +2073,21 @@
   }
 
   .creator-btn--more {
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: rgba(255, 255, 255, 0.04);
+    background-color: rgba(255, 255, 255, 0.05);
     color: var(--sidebar-text-muted);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 6px;
   }
 
   .creator-btn--more:hover {
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.15);
     color: var(--sidebar-text);
   }
 
@@ -2108,9 +2150,9 @@
   }
 
   .creator-skeleton__avatar {
-    width: 52px;
-    height: 52px;
-    border-radius: 10px;
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
