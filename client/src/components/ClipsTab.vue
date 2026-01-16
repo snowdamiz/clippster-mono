@@ -198,7 +198,7 @@
 
                 <div class="flex gap-3 p-3 pl-4">
                   <!-- Thumbnail -->
-                  <div class="flex-shrink-0 w-24 h-16 rounded-md overflow-hidden bg-black/30 border border-border/30">
+                  <div class="flex-shrink-0 w-24 h-16 rounded-md overflow-hidden bg-black/30 border border-border/30 relative">
                     <img
                       v-if="getClipThumbnail(clip.id)"
                       :src="getClipThumbnail(clip.id)!"
@@ -207,6 +207,14 @@
                     />
                     <div v-else class="w-full h-full flex items-center justify-center">
                       <Video class="w-6 h-6 text-muted-foreground/40" />
+                    </div>
+
+                    <!-- Building Overlay -->
+                    <div
+                      v-if="clip.build_status === 'building'"
+                      class="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center"
+                    >
+                      <LoaderIcon class="h-6 w-6 animate-spin text-blue-500" />
                     </div>
                   </div>
 
@@ -397,6 +405,19 @@
                                 <span>Build Clip</span>
                               </button>
 
+                              <!-- Cancel Build -->
+                              <button
+                                v-if="clip.build_status === 'building'"
+                                class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  handleCancelBuild(clip.id);
+                                  closeActionMenu();
+                                "
+                              >
+                                <StopCircle class="h-4 w-4" style="color: #f87171" />
+                                <span style="color: #f87171">Cancel Build</span>
+                              </button>
+
                               <!-- Clear from In Editor (only if in editor) -->
                               <button
                                 v-if="inEditorStore.isInEditor(clip.id)"
@@ -502,24 +523,9 @@
                           {{ formatTime(clip.current_version_end_time || 0) }}
                         </span>
 
-                        <!-- Build Status -->
+                        <!-- Build Status (only show completed state) -->
                         <span
-                          v-if="clip.build_status === 'building'"
-                          class="flex items-center gap-1 leading-none"
-                          style="color: var(--sidebar-accent)"
-                        >
-                          <LoaderIcon class="h-2.5 w-2.5 animate-spin" />
-                          Building...
-                          <button
-                            @click.stop="handleCancelBuild(clip.id)"
-                            class="clips-tab-cancel-build-mini ml-1 p-0.5 rounded transition-colors"
-                            title="Cancel build"
-                          >
-                            <XIcon class="h-2.5 w-2.5" />
-                          </button>
-                        </span>
-                        <span
-                          v-else-if="hasCompletedBuilds(clip)"
+                          v-if="hasCompletedBuilds(clip)"
                           class="text-green-400 flex items-center gap-1 leading-none"
                         >
                           <CheckIcon class="h-2.5 w-2.5" />
@@ -1060,8 +1066,6 @@
   // Generate thumbnails for clips that don't have built_thumbnail_path set
   // This handles manual clips and clips where thumbnail generation failed during detection
   async function generateMissingThumbnails() {
-    if (!props.projectId) return;
-
     const clipsWithoutThumbnails = props.clips.filter(
       (clip) => !clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
     );
@@ -1071,54 +1075,76 @@
     const { invoke } = await import('@tauri-apps/api/core');
     const { getRawVideosByProjectId, updateClipBuildStatus } = await import('@/services/database');
 
-    // Get the raw video for this project
-    let rawVideos;
-    try {
-      rawVideos = await getRawVideosByProjectId(props.projectId);
-    } catch (err) {
-      console.warn('[ClipsTab] Failed to get raw videos for thumbnail generation:', err);
-      return;
+    // Group clips by their project_id (clips may come from different child segments)
+    const clipsByProject = new Map<string, typeof clipsWithoutThumbnails>();
+    for (const clip of clipsWithoutThumbnails) {
+      // Use clip's project_id, fallback to props.projectId
+      const projectId = clip.project_id || props.projectId;
+      if (!projectId) continue;
+
+      if (!clipsByProject.has(projectId)) {
+        clipsByProject.set(projectId, []);
+      }
+      clipsByProject.get(projectId)!.push(clip);
     }
 
-    if (!rawVideos || rawVideos.length === 0) return;
+    if (clipsByProject.size === 0) return;
 
-    const videoPath = rawVideos[0].file_path;
     let hasNewThumbnails = false;
 
-    // Generate thumbnails in parallel (max 3 at a time to avoid overloading)
-    const batchSize = 3;
-    for (let i = 0; i < clipsWithoutThumbnails.length; i += batchSize) {
-      const batch = clipsWithoutThumbnails.slice(i, i + batchSize);
-      await Promise.all(
-        batch.map(async (clip) => {
-          try {
-            const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+    // Process each project's clips with the correct video
+    for (const [projectId, projectClips] of clipsByProject) {
+      // Get the raw video for this project
+      let rawVideos;
+      try {
+        rawVideos = await getRawVideosByProjectId(projectId);
+      } catch (err) {
+        console.warn(`[ClipsTab] Failed to get raw videos for project ${projectId}:`, err);
+        continue;
+      }
 
-            // Generate thumbnail at clip start time
-            const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-              videoPath: videoPath,
-              timestampSeconds: startTime + 0.5, // Slightly after start for better frame
-              outputFilename: `clip_${clip.id}`,
-            });
+      if (!rawVideos || rawVideos.length === 0) {
+        console.warn(`[ClipsTab] No raw videos found for project ${projectId}, skipping thumbnails`);
+        continue;
+      }
 
-            // Load the generated thumbnail into cache
-            const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: thumbnailPath,
-            });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
-            hasNewThumbnails = true;
+      const videoPath = rawVideos[0].file_path;
 
-            // Persist to database (non-blocking)
-            updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
-              builtThumbnailPath: thumbnailPath,
-            }).catch((err) => {
-              console.warn(`[ClipsTab] Failed to persist thumbnail path for clip ${clip.id}:`, err);
-            });
-          } catch (err) {
-            console.warn(`[ClipsTab] Failed to generate thumbnail for clip ${clip.id}:`, err);
-          }
-        })
-      );
+      // Generate thumbnails in parallel (max 3 at a time to avoid overloading)
+      const batchSize = 3;
+      for (let i = 0; i < projectClips.length; i += batchSize) {
+        const batch = projectClips.slice(i, i + batchSize);
+        await Promise.all(
+          batch.map(async (clip) => {
+            try {
+              const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+
+              // Generate thumbnail at clip start time
+              const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+                videoPath: videoPath,
+                timestampSeconds: startTime + 0.5, // Slightly after start for better frame
+                outputFilename: `clip_${clip.id}`,
+              });
+
+              // Load the generated thumbnail into cache
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: thumbnailPath,
+              });
+              clipThumbnailCache.value.set(clip.id, dataUrl);
+              hasNewThumbnails = true;
+
+              // Persist to database (non-blocking)
+              updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
+                builtThumbnailPath: thumbnailPath,
+              }).catch((err) => {
+                console.warn(`[ClipsTab] Failed to persist thumbnail path for clip ${clip.id}:`, err);
+              });
+            } catch (err) {
+              console.warn(`[ClipsTab] Failed to generate thumbnail for clip ${clip.id}:`, err);
+            }
+          })
+        );
+      }
     }
 
     // Trigger Vue reactivity if we generated new thumbnails
@@ -1955,7 +1981,12 @@
       }
 
       // Get the project video file path
-      const rawVideos = await getRawVideosByProjectId(props.projectId);
+      // Use clip's project_id (for clips from child segments) or fallback to props.projectId
+      const clipProjectId = clip.project_id || props.projectId;
+      if (!clipProjectId) {
+        throw new Error('No project ID available for clip');
+      }
+      const rawVideos = await getRawVideosByProjectId(clipProjectId);
       if (rawVideos.length === 0) {
         throw new Error('No project video found');
       }

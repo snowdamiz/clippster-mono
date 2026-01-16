@@ -69,14 +69,13 @@
                 <!-- Team Size -->
                 <div class="org-app-dialog__field">
                   <label for="team-size" class="org-app-dialog__label">Expected Team Size *</label>
-                  <select id="team-size" v-model="form.team_size" class="org-app-dialog__select" required>
-                    <option value="">Select team size</option>
-                    <option value="1-5">1-5 members</option>
-                    <option value="6-10">6-10 members</option>
-                    <option value="11-25">11-25 members</option>
-                    <option value="26-50">26-50 members</option>
-                    <option value="51+">51+ members</option>
-                  </select>
+                  <CustomDropdown
+                    v-model="form.team_size"
+                    :options="teamSizeOptions"
+                    placeholder="Select team size"
+                    class="org-app-dialog__dropdown"
+                    trigger-class="org-app-dialog__dropdown-trigger"
+                  />
                 </div>
 
                 <!-- Use Case -->
@@ -192,6 +191,7 @@
   import { X, Loader2, Building2, AlertCircle, CheckCircle, Upload } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
   import api from '@/services/api';
 
   interface Props {
@@ -226,6 +226,14 @@
     use_case: '',
     contact_email: authStore.user?.email || '',
   });
+
+  const teamSizeOptions = [
+    { label: '1-5 members', value: '1-5' },
+    { label: '6-10 members', value: '6-10' },
+    { label: '11-25 members', value: '11-25' },
+    { label: '26-50 members', value: '26-50' },
+    { label: '51+ members', value: '51+' },
+  ];
 
   const formIsValid = computed(() => {
     return (
@@ -588,8 +596,7 @@
     font-size: 0.8125rem;
   }
 
-  .org-app-dialog__input,
-  .org-app-dialog__select {
+  .org-app-dialog__input {
     width: 100%;
     padding: 0.75rem 1rem;
     font-size: 0.875rem;
@@ -605,20 +612,46 @@
     opacity: 0.6;
   }
 
-  .org-app-dialog__input:focus,
-  .org-app-dialog__select:focus {
+  .org-app-dialog__input:focus {
     outline: none;
     border-color: var(--sidebar-accent);
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
   }
 
-  .org-app-dialog__select {
-    cursor: pointer;
+  .org-app-dialog__dropdown {
+    width: 100%;
   }
 
-  .org-app-dialog__select option {
-    background-color: var(--sidebar-surface);
-    color: var(--sidebar-text);
+  /* Dropdown trigger button styling */
+  :deep(.org-app-dialog__dropdown-trigger) {
+    width: 100% !important;
+    padding: 0.75rem 1rem !important;
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+    justify-content: space-between !important;
+  }
+
+  :deep(.org-app-dialog__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  :deep(.org-app-dialog__dropdown-trigger:focus-within) {
+    border-color: var(--sidebar-accent) !important;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15) !important;
+  }
+
+  :deep(.org-app-dialog__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.org-app-dialog__dropdown-trigger svg) {
+    width: 14px !important;
+    height: 14px !important;
+    color: var(--sidebar-text-muted) !important;
   }
 
   .org-app-dialog__textarea {
@@ -766,7 +799,7 @@
 
   .org-app-dialog__btn--primary {
     background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
+    color: #000;
   }
 
   .org-app-dialog__btn--primary:hover:not(:disabled) {
@@ -810,5 +843,51 @@
     to {
       transform: rotate(360deg);
     }
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Organization Application Dialog dropdown menu styling */
+  .org-app-dialog__dropdown + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: orgAppDialogDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes orgAppDialogDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  .org-app-dialog__dropdown + div[class*='fixed'] button,
+  div.fixed.bg-popover button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  .org-app-dialog__dropdown + div[class*='fixed'] button:hover,
+  div.fixed.bg-popover button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  .org-app-dialog__dropdown + div[class*='fixed'] button.bg-primary\/10,
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
   }
 </style>

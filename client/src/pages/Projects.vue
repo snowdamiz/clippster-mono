@@ -812,190 +812,184 @@
     </Teleport>
 
     <!-- Delete Confirmation Modal -->
-    <div
-      v-if="showDeleteDialog"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    >
-      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">
-          {{ projectHasVideos || projectHasClips ? 'Delete Project with Content' : 'Delete Project' }}
-        </h2>
+    <!-- Delete Project Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showDeleteDialog"
+          class="delete-dialog__overlay"
+          @click.self="handleDeleteDialogClose"
+        >
+          <Transition name="dialog" appear>
+            <div class="delete-dialog">
+              <!-- Accent Bar -->
+              <div class="delete-dialog__accent" />
 
-        <div class="space-y-4">
-          <p class="text-muted-foreground">
-            <span v-if="projectHasVideos && projectHasClips">
-              This project contains both videos and detected clips. Deleting will:
-              <ul class="list-disc ml-4 mt-1 text-sm">
-                <li><strong>Delete</strong> raw video files from disk</li>
-                <li><strong>Delete</strong> unbuilt clips that aren't being edited</li>
-                <li><strong>Keep</strong> built clips (available in My Clips)</li>
-                <li><strong>Keep</strong> clips currently in the editor</li>
-              </ul>
-            </span>
-            <span v-else-if="projectHasVideos">
-              This project contains videos. Deleting will remove raw video files from disk and the project structure.
-            </span>
-            <span v-else-if="projectHasClips">
-              This project contains detected clips. Deleting will:
-              <ul class="list-disc ml-4 mt-1 text-sm">
-                <li><strong>Delete</strong> unbuilt clips that aren't being edited</li>
-                <li><strong>Keep</strong> built clips (available in My Clips)</li>
-                <li><strong>Keep</strong> clips currently in the editor</li>
-              </ul>
-            </span>
-            <span v-else>Are you sure you want to delete</span>
-            "
-            <span class="font-semibold text-foreground">{{ projectToDelete?.name }}</span>
-            "?
-            <span class="block mt-1">This action cannot be undone.</span>
-          </p>
-
-          <!-- Segments deletion option - only show if more than 1 segment -->
-          <div
-            v-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') > 1"
-            class="bg-muted/50 rounded-lg p-4 border border-border"
-          >
-            <p class="text-sm text-muted-foreground mb-3">
-              This project contains
-              <span class="font-semibold text-foreground">{{ getChildCount(projectToDelete?.id || '') }} segments</span>
-              . What would you like to do with them?
-            </p>
-            <div class="space-y-2">
-              <label
-                class="flex items-center gap-3 p-3 rounded-md cursor-pointer transition-colors"
-                :class="!deleteSegmentsToo ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted'"
-              >
-                <input
-                  type="radio"
-                  :value="false"
-                  v-model="deleteSegmentsToo"
-                  class="w-4 h-4 text-primary accent-primary"
-                />
-                <div>
-                  <span class="text-sm font-medium text-foreground">Keep segments</span>
-                  <p class="text-xs text-muted-foreground">Segments will be un-grouped and remain in your library</p>
+              <!-- Header -->
+              <div class="delete-dialog__header">
+                <button
+                  class="delete-dialog__close"
+                  @click="handleDeleteDialogClose"
+                  :disabled="deletingProject"
+                  title="Close"
+                >
+                  <X :size="18" />
+                </button>
+                <div class="delete-dialog__icon">
+                  <HelpCircle :size="24" />
                 </div>
-              </label>
-              <label
-                class="flex items-center gap-3 p-3 rounded-md cursor-pointer transition-colors"
-                :class="deleteSegmentsToo ? 'bg-red-500/10 border border-red-500/30' : 'hover:bg-muted'"
-              >
-                <input
-                  type="radio"
-                  :value="true"
-                  v-model="deleteSegmentsToo"
-                  class="w-4 h-4 text-red-500 accent-red-500"
-                />
-                <div>
-                  <span class="text-sm font-medium text-foreground">Delete all segments</span>
-                  <p class="text-xs text-muted-foreground">
-                    All {{ getChildCount(projectToDelete?.id || '') }} segments will be permanently deleted
+                <h2 class="delete-dialog__title">Delete Project</h2>
+                <p class="delete-dialog__subtitle">
+                  {{ projectHasVideos || projectHasClips ? 'This project contains content' : 'This action cannot be undone' }}
+                </p>
+              </div>
+
+              <!-- Content -->
+              <div class="delete-dialog__content">
+                <div class="delete-dialog__message">
+                  <p class="delete-dialog__text">
+                    Are you sure you want to delete
+                    "<span class="delete-dialog__text--highlight">{{ projectToDelete?.name }}</span>"?
                   </p>
+                  <p class="delete-dialog__warning">This action cannot be undone.</p>
                 </div>
-              </label>
-            </div>
-          </div>
 
-          <!-- Single segment notice - auto-deleted with parent -->
-          <div
-            v-else-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') === 1"
-            class="bg-muted/50 rounded-lg p-4 border border-border"
-          >
-            <p class="text-sm text-muted-foreground">
-              This project contains
-              <span class="font-semibold text-foreground">1 segment</span>
-              which will also be deleted along with its video files.
-            </p>
-          </div>
-          <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            @click="deleteProjectConfirmed"
-            :disabled="deletingProject"
-          >
-            {{
-              deleteSegmentsToo && hasChildren(projectToDelete?.id || '')
-                ? getChildCount(projectToDelete?.id || '') === 1
-                  ? 'Delete Project & Segment'
-                  : `Delete Project & ${getChildCount(projectToDelete?.id || '')} Segments`
-                : 'Delete Project'
-            }}
-          </button>
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
-            @click="handleDeleteDialogClose"
-          >
-            Cancel
-          </button>
+                <!-- Content warnings -->
+                <div v-if="projectHasVideos || projectHasClips" class="delete-dialog__info-card">
+                  <div class="delete-dialog__info-icon">
+                    <Info :size="16" />
+                  </div>
+                  <div class="delete-dialog__info-content">
+                    <p class="delete-dialog__info-title">What will be deleted:</p>
+                    <ul class="delete-dialog__info-list">
+                      <li v-if="projectHasVideos"><strong>Delete:</strong> Raw video files from disk</li>
+                      <li v-if="projectHasClips"><strong>Delete:</strong> Unbuilt clips not being edited</li>
+                      <li v-if="projectHasClips"><strong>Keep:</strong> Built clips (available in My Clips)</li>
+                      <li v-if="projectHasClips"><strong>Keep:</strong> Clips currently in the editor</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <!-- Segments deletion option - only show if more than 1 segment -->
+                <div
+                  v-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') > 1"
+                  class="delete-dialog__segments-section"
+                >
+                  <p class="delete-dialog__segments-title">
+                    This project contains
+                    <span class="delete-dialog__text--highlight">{{ getChildCount(projectToDelete?.id || '') }} segments</span>.
+                    What would you like to do with them?
+                  </p>
+                  <div class="delete-dialog__segments-options">
+                    <label
+                      class="delete-dialog__segment-option"
+                      :class="{ 'delete-dialog__segment-option--selected': !deleteSegmentsToo }"
+                    >
+                      <input
+                        type="radio"
+                        :value="false"
+                        v-model="deleteSegmentsToo"
+                        class="delete-dialog__radio"
+                      />
+                      <div class="delete-dialog__segment-option-content">
+                        <span class="delete-dialog__segment-option-title">Keep segments</span>
+                        <p class="delete-dialog__segment-option-desc">
+                          Segments will be un-grouped and remain in your library
+                        </p>
+                      </div>
+                    </label>
+                    <label
+                      class="delete-dialog__segment-option"
+                      :class="{ 'delete-dialog__segment-option--selected': deleteSegmentsToo }"
+                    >
+                      <input
+                        type="radio"
+                        :value="true"
+                        v-model="deleteSegmentsToo"
+                        class="delete-dialog__radio"
+                      />
+                      <div class="delete-dialog__segment-option-content">
+                        <span class="delete-dialog__segment-option-title">Delete all segments</span>
+                        <p class="delete-dialog__segment-option-desc">
+                          All {{ getChildCount(projectToDelete?.id || '') }} segments will be permanently deleted
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Single segment notice - auto-deleted with parent -->
+                <div
+                  v-else-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') === 1"
+                  class="delete-dialog__info-card"
+                >
+                  <div class="delete-dialog__info-icon">
+                    <Info :size="16" />
+                  </div>
+                  <div class="delete-dialog__info-content">
+                    <p class="delete-dialog__info-text">
+                      This project contains <span class="delete-dialog__text--highlight">1 segment</span>
+                      which will also be deleted along with its video files.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="delete-dialog__footer">
+                <button
+                  class="delete-dialog__btn delete-dialog__btn--secondary"
+                  @click="handleDeleteDialogClose"
+                  :disabled="deletingProject"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="delete-dialog__btn delete-dialog__btn--primary"
+                  @click="deleteProjectConfirmed"
+                  :disabled="deletingProject"
+                >
+                  <Loader2 v-if="deletingProject" :size="16" class="delete-dialog__spinner" />
+                  {{
+                    deletingProject
+                      ? 'Deleting...'
+                      : deleteSegmentsToo && hasChildren(projectToDelete?.id || '')
+                        ? getChildCount(projectToDelete?.id || '') === 1
+                          ? 'Delete Project & Segment'
+                          : `Delete Project & ${getChildCount(projectToDelete?.id || '')} Segments`
+                        : 'Delete Project'
+                  }}
+                </button>
+              </div>
+            </div>
+          </Transition>
         </div>
-      </div>
-    </div>
+      </Transition>
+    </Teleport>
 
     <!-- Bulk Delete Confirmation Modal -->
-    <div
-      v-if="showBulkDeleteDialog"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    >
-      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">Delete {{ selectedProjects.size }} Projects</h2>
-
-        <div class="space-y-4">
-          <p class="text-muted-foreground">
-            Are you sure you want to delete
-            <span class="font-semibold text-foreground">{{ selectedProjects.size }} projects</span>
-            ? This will also delete all associated segments and video files.
-            <span class="block mt-1">This action cannot be undone.</span>
-          </p>
-
-          <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            @click="bulkDeleteConfirmed"
-            :disabled="bulkDeleting"
-          >
-            Delete {{ selectedProjects.size }} Projects
-          </button>
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
-            @click="handleBulkDeleteDialogClose"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmationModal
+      :show="showBulkDeleteDialog"
+      :title="`Delete ${selectedProjects.size} Projects`"
+      subtitle="This action cannot be undone"
+      :message="`Are you sure you want to delete ${selectedProjects.size} projects? This will also delete all associated segments and video files.`"
+      :confirm-text="bulkDeleting ? 'Deleting...' : `Delete ${selectedProjects.size} Projects`"
+      close-text="Cancel"
+      @close="handleBulkDeleteDialogClose"
+      @confirm="bulkDeleteConfirmed"
+    />
 
     <!-- Bulk Delete Folder Children Confirmation Modal -->
-    <div
-      v-if="showBulkDeleteFolderChildrenDialog"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
-    >
-      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">Delete {{ selectedFolderChildren.size }} Segments</h2>
-
-        <div class="space-y-4">
-          <p class="text-muted-foreground">
-            Are you sure you want to delete
-            <span class="font-semibold text-foreground">
-              {{ selectedFolderChildren.size }} segment{{ selectedFolderChildren.size !== 1 ? 's' : '' }}
-            </span>
-            ? This will also delete all associated video files.
-            <span class="block mt-1">This action cannot be undone.</span>
-          </p>
-
-          <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
-            @click="bulkDeleteFolderChildrenConfirmed"
-          >
-            Delete {{ selectedFolderChildren.size }} Segments
-          </button>
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
-            @click="handleBulkDeleteFolderChildrenDialogClose"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmationModal
+      :show="showBulkDeleteFolderChildrenDialog"
+      :title="`Delete ${selectedFolderChildren.size} Segments`"
+      subtitle="This action cannot be undone"
+      :message="`Are you sure you want to delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}? This will also delete all associated video files.`"
+      :confirm-text="`Delete ${selectedFolderChildren.size} Segments`"
+      close-text="Cancel"
+      @close="handleBulkDeleteFolderChildrenDialogClose"
+      @confirm="bulkDeleteFolderChildrenConfirmed"
+    />
 
     <!-- Search Palette Modal -->
     <SearchPalette
@@ -1188,6 +1182,8 @@
     Volume2,
     Maximize2,
     Minimize2,
+    HelpCircle,
+    Info,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
@@ -1241,6 +1237,7 @@
   import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
   import ExistingProjectDialog from '@/components/clip-editor/ExistingProjectDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
@@ -6878,6 +6875,364 @@
     margin: 0;
     max-width: 280px;
     line-height: 1.5;
+  }
+
+  /* ===== Delete Dialog ===== */
+  .delete-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+  }
+
+  .delete-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 520px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .delete-dialog__accent {
+    height: 3px;
+    flex-shrink: 0;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  }
+
+  .delete-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .delete-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .delete-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .delete-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .delete-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    margin-bottom: 0.875rem;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .delete-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .delete-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  .delete-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .delete-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .delete-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .delete-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .delete-dialog__message {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .delete-dialog__text {
+    font-size: 0.9375rem;
+    color: var(--sidebar-text);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .delete-dialog__text--highlight {
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .delete-dialog__warning {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  .delete-dialog__info-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem;
+    background-color: rgba(59, 130, 246, 0.05);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+    border-radius: 10px;
+  }
+
+  .delete-dialog__info-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+  }
+
+  .delete-dialog__info-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .delete-dialog__info-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .delete-dialog__info-text {
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .delete-dialog__info-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .delete-dialog__info-list li {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+  }
+
+  .delete-dialog__info-list li strong {
+    color: var(--sidebar-text);
+    font-weight: 600;
+  }
+
+  .delete-dialog__segments-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .delete-dialog__segments-title {
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .delete-dialog__segments-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .delete-dialog__segment-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .delete-dialog__segment-option:hover {
+    background-color: var(--sidebar-active);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .delete-dialog__segment-option--selected {
+    background-color: rgba(6, 182, 212, 0.08);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .delete-dialog__radio {
+    width: 16px;
+    height: 16px;
+    margin-top: 0.125rem;
+    flex-shrink: 0;
+    accent-color: #06b6d4;
+    cursor: pointer;
+  }
+
+  .delete-dialog__segment-option-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .delete-dialog__segment-option-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .delete-dialog__segment-option-desc {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  .delete-dialog__footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(0, 0, 0, 0.2);
+  }
+
+  .delete-dialog__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+    border: none;
+  }
+
+  .delete-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .delete-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    color: var(--sidebar-text-muted);
+  }
+
+  .delete-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  .delete-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: #000;
+  }
+
+  .delete-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .delete-dialog__spinner {
+    animation: delete-dialog-spin 0.8s linear infinite;
+  }
+
+  @keyframes delete-dialog-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Modal transitions */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 </style>
 
