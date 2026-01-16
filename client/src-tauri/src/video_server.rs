@@ -583,7 +583,7 @@ pub async fn start_video_server_impl() {
         .and(warp::get())
         .and_then(|encoded_dir: String, segment_filename: String| async move {
             use base64::{Engine as _, engine::general_purpose};
-            
+
             // Only allow .ts files
             if !segment_filename.ends_with(".ts") {
                 return Ok::<_, warp::Rejection>(warp::reply::with_status(
@@ -628,21 +628,9 @@ pub async fn start_video_server_impl() {
             match tokio::fs::read(&segment_path).await {
                 Ok(content) => {
                     let file_size = content.len();
-                    let response = warp::reply::with_header(
-                        content,
-                        "Content-Type",
-                        "video/mp2t"
-                    );
-                    let response = warp::reply::with_header(
-                        response,
-                        "Content-Length",
-                        file_size.to_string()
-                    );
-                    let response = warp::reply::with_header(
-                        response,
-                        "Access-Control-Allow-Origin",
-                        "*"
-                    );
+                    let response = warp::reply::with_header(content, "Content-Type", "video/mp2t");
+                    let response = warp::reply::with_header(response, "Content-Length", file_size.to_string());
+                    let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
                     // Live DVR: disable caching so HLS.js always fetches fresh segments
                     let response = warp::reply::with_header(
                         response,
@@ -668,12 +656,12 @@ pub async fn start_video_server_impl() {
         .and(warp::get())
         .and_then(|encoded_url: String| async move {
             use base64::{Engine as _, engine::general_purpose};
-            
+
             // Try URL_SAFE_NO_PAD first (JS btoa with manual conversion), then fallbacks
             let decoded = general_purpose::URL_SAFE_NO_PAD.decode(&encoded_url)
                 .or_else(|_| general_purpose::URL_SAFE.decode(&encoded_url))
                 .or_else(|_| general_purpose::STANDARD.decode(&encoded_url));
-            
+
             let decoded = match decoded {
                 Ok(d) => d,
                 Err(e) => {
@@ -741,7 +729,7 @@ pub async fn start_video_server_impl() {
                             let final_body = if url_str.contains(".m3u8") {
                                 let playlist = String::from_utf8_lossy(&body);
                                 let base = url_str.rsplit_once('/').map(|(b, _)| b).unwrap_or(&url_str);
-                                
+
                                 let rewritten: String = playlist.lines().map(|line| {
                                     if line.starts_with('#') || line.trim().is_empty() {
                                         line.to_string()
@@ -755,7 +743,7 @@ pub async fn start_video_server_impl() {
                                         format!("http://127.0.0.1:{}/kick-hls-proxy/{}", VIDEO_SERVER_PORT, enc)
                                     }
                                 }).collect::<Vec<_>>().join("\n");
-                                
+
                                 rewritten.into_bytes()
                             } else {
                                 body.to_vec()
@@ -793,7 +781,7 @@ pub async fn start_video_server_impl() {
         .and(warp::get())
         .and_then(|encoded_path: String| async move {
             use base64::{Engine as _, engine::general_purpose};
-            
+
             // Decode the base64-encoded file path
             let decoded = general_purpose::STANDARD.decode(&encoded_path)
                 .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_path))
@@ -823,21 +811,6 @@ pub async fn start_video_server_impl() {
             // Verify the file exists and is a .ts file
             if !file_path.exists() {
                 return Ok(warp::reply::with_status(
-                    warp::reply::json(&serde_json::json!({"error": "File not found"})),
-                    warp::http::StatusCode::NOT_FOUND
-                ).into_response());
-            }
-
-            if file_path.extension().and_then(|e| e.to_str()) != Some("ts") {
-                return Ok(warp::reply::with_status(
-                    warp::reply::json(&serde_json::json!({"error": "Only .ts files supported"})),
-                    warp::http::StatusCode::BAD_REQUEST
-                ).into_response());
-            }
-
-            // Probe actual duration using FFmpeg
-            let duration = match probe_ts_duration(&file_path).await {
-                Ok(d) => { eprintln!("[ts-hls] Probed duration: {:.2}s", d); d }
                 Err(_) => {
                     // Fallback: estimate from file size (~2MB/min)
                     let size = tokio::fs::metadata(&file_path).await.map(|m| m.len()).unwrap_or(0);
@@ -845,25 +818,65 @@ pub async fn start_video_server_impl() {
                 }
             };
 
+            // Get file size for byte-range playlist generation
+            let file_size = match tokio::fs::metadata(&file_path).await {
+                Ok(m) => m.len(),
+                Err(_) => 0,
+            };
+
             // Get the filename for the segment reference
             let filename = file_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("segment.ts");
 
-            // Generate a simple HLS playlist for this single segment
-            let playlist = format!(
-                "#EXTM3U\n\
-                #EXT-X-VERSION:3\n\
-                #EXT-X-TARGETDURATION:{}\n\
-                #EXT-X-MEDIA-SEQUENCE:0\n\
-                #EXT-X-PLAYLIST-TYPE:VOD\n\
-                #EXTINF:{:.6},\n\
-                {}\n\
-                #EXT-X-ENDLIST\n",
-                (duration as u64) + 1,
-                duration,
-                filename
-            );
+            // Generate HLS playlist. For large .ts files, use byte-range segments
+            // so HLS.js can request small chunks instead of downloading the entire file.
+            const BYTE_RANGE_THRESHOLD: u64 = 50 * 1024 * 1024; // 50MB
+            const BYTE_RANGE_CHUNK_SIZE: u64 = 5 * 1024 * 1024; // 5MB
+
+            let playlist = if file_size > BYTE_RANGE_THRESHOLD {
+                let segment_count = ((file_size + BYTE_RANGE_CHUNK_SIZE - 1) / BYTE_RANGE_CHUNK_SIZE).max(1);
+                let segment_duration = (duration / segment_count as f64).max(0.1);
+                let target_duration = (segment_duration.ceil() as u64).max(1);
+
+                let mut playlist = String::new();
+                playlist.push_str("#EXTM3U\n");
+                playlist.push_str("#EXT-X-VERSION:3\n");
+                playlist.push_str(&format!("#EXT-X-TARGETDURATION:{}\n", target_duration));
+                playlist.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
+                playlist.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n");
+
+                let mut offset = 0u64;
+                for _ in 0..segment_count {
+                    let remaining = file_size.saturating_sub(offset);
+                    let byte_len = remaining.min(BYTE_RANGE_CHUNK_SIZE);
+                    if byte_len == 0 {
+                        break;
+                    }
+                    playlist.push_str(&format!("#EXTINF:{:.6},\n", segment_duration));
+                    playlist.push_str(&format!("#EXT-X-BYTERANGE:{}@{}\n", byte_len, offset));
+                    playlist.push_str(&format!("{}\n", filename));
+                    offset = offset.saturating_add(byte_len);
+                }
+
+                playlist.push_str("#EXT-X-ENDLIST\n");
+                playlist
+            } else {
+                // Small file - single segment playlist
+                format!(
+                    "#EXTM3U\n\
+                    #EXT-X-VERSION:3\n\
+                    #EXT-X-TARGETDURATION:{}\n\
+                    #EXT-X-MEDIA-SEQUENCE:0\n\
+                    #EXT-X-PLAYLIST-TYPE:VOD\n\
+                    #EXTINF:{:.6},\n\
+                    {}\n\
+                    #EXT-X-ENDLIST\n",
+                    (duration as u64) + 1,
+                    duration,
+                    filename
+                )
+            };
 
             let response = warp::reply::with_header(
                 playlist,
@@ -890,8 +903,8 @@ pub async fn start_video_server_impl() {
         .and(warp::header::optional::<String>("range"))
         .and_then(|encoded_path: String, _segment_filename: String, range_header: Option<String>| async move {
             use base64::{Engine as _, engine::general_purpose};
-            use tokio::io::{AsyncSeekExt, AsyncReadExt};
-            
+            use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
             // Decode the base64-encoded file path
             let decoded = general_purpose::STANDARD.decode(&encoded_path)
                 .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_path))
@@ -947,7 +960,6 @@ pub async fn start_video_server_impl() {
                         let end = std::cmp::min(requested_end, file_size - 1);
 
                         if start < file_size && start <= end {
-                            // Serve full requested range - HLS.js needs complete segment
                             let content_length = end - start + 1;
 
                             match tokio::fs::File::open(&file_path).await {
@@ -968,7 +980,11 @@ pub async fn start_video_server_impl() {
                                     }
 
                                     let response = warp::reply::with_header(buffer, "Content-Type", "video/mp2t");
-                                    let response = warp::reply::with_header(response, "Content-Range", format!("bytes {}-{}/{}", start, end, file_size));
+                                    let response = warp::reply::with_header(
+                                        response,
+                                        "Content-Range",
+                                        format!("bytes {}-{}/{}", start, end, file_size)
+                                    );
                                     let response = warp::reply::with_header(response, "Content-Length", content_length.to_string());
                                     let response = warp::reply::with_header(response, "Accept-Ranges", "bytes");
                                     let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");

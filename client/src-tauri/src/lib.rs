@@ -725,6 +725,10 @@ pub fn run() {
             clips::livestream_clip::extract_livestream_clip,
             clips::video_processor::generate_segment_preview,
             clips::video_processor::delete_segment_preview,
+            clips::video_processor::generate_preview_chunk,
+            clips::video_processor::write_preview_manifest,
+            clips::video_processor::delete_preview_cache,
+            clips::video_processor::get_preview_cache_path,
 
             // Focal detection commands
             detect_focal_points,

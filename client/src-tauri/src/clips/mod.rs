@@ -277,3 +277,4 @@ pub async fn is_clip_build_active(clip_id: String) -> Result<bool, String> {
 pub fn is_build_cancelled(cancel_rx: &CancellationToken) -> bool {
     *cancel_rx.borrow()
 }
+

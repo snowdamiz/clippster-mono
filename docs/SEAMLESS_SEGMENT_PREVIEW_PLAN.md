@@ -9,171 +9,151 @@ When playing video clips with multiple segments (cuts), transitioning between se
 
 The root cause is that HTML5 video elements cannot perform frame-accurate instantaneous seeks. The browser must decode from the nearest keyframe, causing unavoidable latency.
 
-## Solution: FFmpeg Pre-rendered Preview
+## Requirements
 
-Generate a lightweight preview video with all segment cuts pre-applied using FFmpeg concat. This eliminates runtime seeking entirely - the preview plays as a single continuous video file.
+- Seamless playback with **no visible glitches** at segment boundaries.
+- Preview reflects **all effects, transitions, overlays, and audio FX**.
+- **Proxy preview** at 720p for timeline playback.
+- **HQ preview** at 1080p when fullscreen is triggered.
+- **Progressive cache** using 3-second chunks (prioritized around playhead).
+- Render **the whole clip** (not just the viewport).
+- HQ rendering happens **quietly** (no user-facing badge).
+
+## Solution: Progressive Preview Cache (Proxy + HQ)
+
+Render the edited timeline into **chunked preview caches** instead of seeking within source files.
+Playback always uses a single continuous stream (HLS manifest) so segment cuts never cause seeks.
 
 ### How Professional NLEs Solve This
 
-Tools like DaVinci Resolve, Premiere Pro, and Final Cut Pro use "optimized media" or "proxy files":
-1. When edits are made, a preview-quality video is generated in the background
-2. The timeline plays this pre-rendered file
-3. Export uses the full-quality source with cuts applied
+Tools like CapCut and DaVinci Resolve use **background render caches**:
+1. When edits change, preview caches are invalidated and re-rendered in the background.
+2. Timeline playback uses low-res proxy caches for smooth realtime playback.
+3. Fullscreen or review modes can swap to higher-quality cached media.
 
-We will implement a similar approach.
+We will implement the same behavior with a proxy cache plus on-demand HQ cache.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        User Makes Edit                          │
-│              (Split Segment / Delete / Add Clip)                │
+│        (Cuts / Overlays / Transitions / Audio / Effects)         │
 └─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
+                               │
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Generate Preview Video                        │
-│                                                                  │
-│  1. Extract each segment from source video                      │
-│  2. Concatenate segments using FFmpeg concat demuxer            │
-│  3. Output low-quality preview file (480p, fast preset)         │
-│  4. Store in temp directory                                     │
+│               Invalidate Preview Cache (Proxy + HQ)             │
 └─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
+                               │
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Update Preview Player                         │
+│                   Progressive Render Queue                      │
 │                                                                  │
-│  1. Switch video source to generated preview file               │
-│  2. Single video element - no swapping needed                   │
-│  3. Seamless playback across all segment boundaries             │
+│  1. Render 3s chunks around playhead first                       │
+│  2. Continue forward then backward                               │
+│  3. Generate HLS manifests for proxy and HQ                      │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     Preview Playback Flow                        │
+│                                                                  │
+│  - Timeline playback uses 720p proxy manifest                    │
+│  - Fullscreen triggers HQ render (1080p)                         │
+│  - Player auto-swaps to HQ once chunks exist                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Implementation Details
 
-### 1. New Tauri Command: `generate_segment_preview`
+### 1. Preview Cache Render Commands
 
 **Location:** `client/src-tauri/src/clips/video_processor.rs`
 
-**Function signature:**
+**Core commands (proposed):**
 ```rust
 #[tauri::command]
-pub async fn generate_segment_preview(
+pub async fn generate_preview_chunk(
     app: tauri::AppHandle,
-    video_path: String,
-    segments: Vec<PreviewSegment>,
-    output_filename: String,
+    clip_id: String,
+    tier: String,          // "proxy" | "hq"
+    start_time: f64,       // timeline time (seconds)
+    duration: f64,         // 3.0 seconds
+    output_dir: String,
+) -> Result<String, String>
+
+#[tauri::command]
+pub async fn write_preview_manifest(
+    clip_id: String,
+    tier: String,
+    output_dir: String,
+    chunk_count: u32,
 ) -> Result<String, String>
 ```
 
-**Input:**
-```rust
-#[derive(Debug, Deserialize)]
-pub struct PreviewSegment {
-    pub start_time: f64,  // Start time in source video (seconds)
-    pub end_time: f64,    // End time in source video (seconds)
-}
-```
+**Chunk specs:**
+- Duration: **3 seconds**
+- Proxy: **720p** (fast preset)
+- HQ: **1080p** (balanced preset)
+- Audio: AAC 128kbps (proxy), 192kbps (HQ)
+- Output: HLS segments + manifest (`index.m3u8`)
 
-**Output:** Path to generated preview video file
+**Algorithm (per tier):**
+1. Render timeline for `[start_time, start_time + 3s]` including **all effects/overlays/audio**.
+2. Output `seg_{index}.ts` to preview tier directory.
+3. Update HLS manifest with available chunks.
 
-**Preview specs (optimized for speed):**
-- Resolution: 480p (scale to 854x480 or proportional)
-- Codec: libx264 with ultrafast preset
-- CRF: 28 (lower quality, smaller file)
-- Audio: AAC 128kbps
-- Target generation time: 1-3 seconds for typical clips
+### 2. Preview Cache Metadata + Invalidation
 
-**Algorithm:**
-1. Create temp directory for intermediate files
-2. For each segment:
-   - Extract segment using `-ss` (input seeking) and `-t` (duration)
-   - Use stream copy if possible (`-c copy`), else fast transcode
-3. Create concat list file
-4. Run FFmpeg concat demuxer
-5. Return path to output file
+**Cache key:** hash of edit state (segments + effects + overlays + audio + transitions).
 
-### 2. Frontend Integration
+When edit hash changes:
+1. Mark existing proxy/HQ cache as stale.
+2. Start progressive rendering around playhead.
+
+### 3. Frontend Integration
 
 **Location:** `client/src/components/clip-editor/ClipEditorDialog.vue`
 
 **Trigger points:**
-- `splitTrimSegment()` - After segment split completes
-- `deleteTrimSegment()` - After segment delete completes
-- Initial load when clip has multiple segments
+- Any edit that changes visual/audio output (segments, effects, overlays, audio, transitions)
+- Fullscreen entry (HQ tier)
 
 **State management:**
 ```typescript
-const previewVideoPath = ref<string | null>(null);
-const isGeneratingPreview = ref(false);
-const previewGenerationError = ref<string | null>(null);
+const proxyManifestUrl = ref<string | null>(null);
+const hqManifestUrl = ref<string | null>(null);
+const isProxyReady = ref(false);
+const isHqReady = ref(false);
 ```
 
-**Preview generation function:**
-```typescript
-async function generateSegmentPreview() {
-  if (trimSegments.value.length <= 1) {
-    // Single segment - use original source directly
-    previewVideoPath.value = null;
-    return;
-  }
+**Behavior:**
+- Timeline playback uses `proxyManifestUrl`.
+- Fullscreen triggers HQ render and swaps to `hqManifestUrl` once chunks for current time exist.
+- Playback stays on proxy until HQ is ready, then auto-swaps **quietly**.
 
-  isGeneratingPreview.value = true;
-  try {
-    const segments = trimSegments.value
-      .filter(s => !s.isDeleted)
-      .map(s => ({
-        start_time: s.startTime + props.clipStartTime,
-        end_time: s.endTime + props.clipStartTime,
-      }));
-
-    const outputFilename = `preview_${props.clipId}_${Date.now()}`;
-    
-    const previewPath = await invoke<string>('generate_segment_preview', {
-      videoPath: sourceVideoPath.value,
-      segments,
-      outputFilename,
-    });
-
-    previewVideoPath.value = previewPath;
-  } catch (error) {
-    console.error('Failed to generate preview:', error);
-    previewGenerationError.value = String(error);
-    // Fallback to original behavior (direct seeking)
-    previewVideoPath.value = null;
-  } finally {
-    isGeneratingPreview.value = false;
-  }
-}
-```
-
-### 3. Preview Component Updates
+### 4. Preview Component Updates
 
 **Location:** `client/src/components/clip-editor/ClipEditorPreview.vue`
 
 **Changes:**
-1. Remove dual-video element complexity for clip mode
-2. Accept optional `previewVideoSrc` prop
-3. When `previewVideoSrc` is provided, use it instead of segment-based seeking
-4. Time mapping: Preview time maps directly (0 to preview duration)
+1. Use HLS manifest as video source (proxy or HQ)
+2. Remove segment-seeking logic in clip mode
+3. Preview time is **edited timeline time**
+4. Keep transcript/waveform mapping based on trim segments
 
 **Props addition:**
 ```typescript
-previewVideoSrc?: string | null;  // Path to pre-rendered preview video
-previewSegmentMap?: Array<{       // Maps preview time to source time
-  previewStart: number;
-  previewEnd: number;
-  sourceStart: number;
-  sourceEnd: number;
-}>;
+proxyManifestSrc?: string | null;
+hqManifestSrc?: string | null;
 ```
 
-### 4. Time Mapping
+### 5. Time Mapping
 
-When using the preview video, we need to map between:
-- **Preview time:** Position in the concatenated preview file (0 to total duration)
-- **Source time:** Position in the original source video (absolute timestamps)
+When using preview caches, we map between:
+- **Preview time:** Edited timeline time (0 to total duration)
+- **Source time:** Original source time (absolute timestamps)
 
 This is needed for:
 - Subtitle display (subtitles reference source timestamps)
@@ -207,57 +187,58 @@ Time map:
 
 ## File Management
 
-### Preview File Storage
+### Preview Cache Storage
 - Location: App temp directory (`storage::get_temp_dir()`)
-- Naming: `preview_{clipId}_{timestamp}.mp4`
-- Cleanup: Delete old preview files when generating new ones
+- Naming:
+  - `previews/clip_{clipId}/proxy_720/index.m3u8`
+  - `previews/clip_{clipId}/proxy_720/seg_000.ts`
+  - `previews/clip_{clipId}/hq_1080/index.m3u8`
+  - `previews/clip_{clipId}/hq_1080/seg_000.ts`
+- Cleanup: Delete stale cache when edit hash changes
 
 ### Cleanup Strategy
-1. Delete previous preview file before generating new one
+1. Remove stale cache directories on edit hash change
 2. Clean up on clip editor close
-3. Clean up orphaned files on app startup (optional)
+3. Clean up orphaned cache directories on app startup (optional)
 
 ## UI/UX Considerations
 
 ### Loading State
-While generating preview:
-- Show subtle loading indicator on video preview
-- Disable play button until ready
-- Show progress if generation takes >2 seconds
+- No user-facing badge for HQ rendering (quiet mode).
+- Playback remains on proxy until HQ cache is ready.
 
 ### Error Handling
 If preview generation fails:
 - Log error for debugging
-- Fall back to original segment-seeking behavior
-- Show non-blocking warning to user
+- Fall back to proxy cache or direct playback (if no cache exists)
 
 ### Performance Targets
-- Generation time: <3 seconds for clips under 2 minutes
-- Preview file size: ~5-10MB for typical clips
+- Proxy chunk render: near real-time or faster for typical clips
+- HQ chunk render: best-effort in background
 - Memory usage: Minimal (streaming, not loading into memory)
 
 ## Migration Path
 
-### Phase 1: Backend Command
-1. Implement `generate_segment_preview` Tauri command
-2. Add tests with sample video files
+### Phase 1: Backend Commands
+1. Implement preview chunk renderer (proxy + HQ)
+2. Implement HLS manifest writer
 3. Verify output quality and generation speed
 
 ### Phase 2: Frontend Integration
-1. Remove dual-video element code from ClipEditorPreview.vue
-2. Add preview generation triggers in ClipEditorDialog.vue
-3. Implement time mapping for subtitles/transcript
+1. Switch preview to use HLS manifests
+2. Add progressive render queue triggers
+3. Implement HQ fullscreen swap logic
 
 ### Phase 3: Polish
-1. Add loading states and error handling
-2. Implement preview file cleanup
+1. Cache invalidation and cleanup
+2. Playback resilience for missing chunks
 3. Performance optimization if needed
 
 ## Code Locations
 
 | Component | File Path |
 |-----------|-----------|
-| Tauri Command | `client/src-tauri/src/clips/video_processor.rs` |
+| Preview Renderer | `client/src-tauri/src/clips/video_processor.rs` |
 | Command Export | `client/src-tauri/src/clips/mod.rs` |
 | Dialog Integration | `client/src/components/clip-editor/ClipEditorDialog.vue` |
 | Preview Component | `client/src/components/clip-editor/ClipEditorPreview.vue` |
@@ -270,25 +251,22 @@ If preview generation fails:
 - [ ] Many segments (5+)
 - [ ] Very short segments (<1 second)
 - [ ] Long clips (>5 minutes)
-- [ ] Rapid successive edits (debouncing)
+- [ ] Rapid successive edits (queue & prioritization)
 - [ ] Preview generation failure (fallback behavior)
 - [ ] Subtitle sync with preview video
 - [ ] Transcript highlighting sync
 - [ ] Waveform sync
 - [ ] Memory usage during generation
-- [ ] Temp file cleanup
+- [ ] Cache cleanup
 
 ## Rollback Plan
 
-If issues arise, the dual-video approach code can be re-enabled by:
-1. Setting `previewVideoSrc` to null
-2. Re-enabling segment-based seeking in `onTimeUpdate()`
-
-The original segment-seeking code should remain (commented or behind feature flag) as fallback.
+If issues arise, revert preview playback to the proxy cache only (no HQ swap) or
+fallback to direct segment-seeking while keeping the cache pipeline optional.
 
 ## Future Enhancements
 
-1. **Background generation:** Generate preview in background thread, show old preview until new one is ready
-2. **Incremental updates:** Only re-encode changed portions
-3. **Quality options:** Allow user to choose preview quality vs. speed
-4. **Caching:** Cache preview files for unchanged segment configurations
+1. **Incremental updates:** Only re-encode changed regions
+2. **Adaptive quality:** Auto-switch quality based on CPU/GPU load
+3. **Smart prefetch:** Render ahead of the playhead based on playback direction
+4. **Persistent cache:** Persist previews between sessions

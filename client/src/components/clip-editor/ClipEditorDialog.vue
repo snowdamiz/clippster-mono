@@ -73,7 +73,7 @@
                     :preload-video-src="preloadVideoSrc"
                     :segment-preview-src="segmentPreviewStreamingUrl"
                     :segment-time-map="segmentTimeMap"
-                    :is-generating-preview="isGeneratingPreview"
+                    :is-generating-preview="isGeneratingPreviewCombined"
                     :current-time="previewTime"
                     :effective-time="effectivePreviewTime"
                     :is-playing="isPlaying"
@@ -124,6 +124,8 @@
                     @watermark-resize-end="onWatermarkScaleChangeComplete"
                     @video-ended="onVideoEnded"
                     @track-item-select="onTrackItemSelect"
+                    @fullscreen-enter="onFullscreenEnter"
+                    @fullscreen-exit="onFullscreenExit"
                   />
 
                   <!-- Transition frame overlay - shows last frame during source switch to avoid black flash (fallback) -->
@@ -653,6 +655,7 @@
     type IntroOutroWithOrgProps,
   } from '@/composables/useIntroOutroOperations';
   import { useVideoSourceOperations } from '@/composables/useVideoSourceOperations';
+  import { usePreviewCache, type TimelineSegment, type PreviewChunkEditData } from '@/composables/usePreviewCache';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { invoke } from '@tauri-apps/api/core';
 
@@ -836,20 +839,13 @@
   const clipEditId = ref<string | null>(null);
   const videoEditorEditId = ref<string | null>(null); // For video editor mode
 
-  // Segment preview state - for seamless playback across segment cuts
+  // Segment preview state - for seamless playback across segment cuts (legacy single-file approach)
   const segmentPreviewPath = ref<string | null>(null);
   const isGeneratingPreview = ref(false);
   const previewGenerationError = ref<string | null>(null);
   let previewGenerationTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Computed: Segment preview streaming URL (converts file path to HTTP streaming URL)
-  const segmentPreviewStreamingUrl = computed(() => {
-    if (!segmentPreviewPath.value || !videoServerPort.value) {
-      return null;
-    }
-    const encodedPath = btoa(unescape(encodeURIComponent(segmentPreviewPath.value)));
-    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
-  });
+  // Computed: Segment preview streaming URL - defined after previewCache initialization below
 
   // Editor state
   const activeTab = ref<ClipEditorTab>('media');
@@ -1764,6 +1760,127 @@
     return timeMap;
   });
 
+  // Progressive preview cache - converts segmentTimeMap to TimelineSegment format
+  const previewCacheSegments = computed<TimelineSegment[]>(() => {
+    return segmentTimeMap.value.map((seg) => ({
+      sourceStart: seg.sourceStart,
+      sourceEnd: seg.sourceEnd,
+      timelineStart: seg.previewStart,
+      timelineEnd: seg.previewEnd,
+    }));
+  });
+
+  // Preview cache edit data - contains all overlays/effects for rendering
+  const previewCacheEditData = computed<PreviewChunkEditData | null>(() => {
+    // Build edit data from current state
+    const data: PreviewChunkEditData = {
+      textOverlays: textOverlays.value.map((o) => ({
+        id: o.id,
+        text: o.text,
+        startTime: o.startTime,
+        endTime: o.endTime,
+        positionX: o.position.x,
+        positionY: o.position.y,
+        style: o.style as Record<string, unknown>,
+        animation: o.animation || 'none',
+        perRatioConfigs: o.perRatioConfigs as Record<string, unknown> | undefined,
+        previewHeight: undefined, // Will be set by preview component
+      })),
+      stickers: stickers.value.map((s) => ({
+        id: s.id,
+        stickerPath: s.stickerPath,
+        stickerType: s.stickerType,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        positionX: s.position.x,
+        positionY: s.position.y,
+        scale: s.scale,
+        rotation: s.rotation,
+        animation: s.animation || 'none',
+        perRatioConfigs: s.perRatioConfigs as Record<string, unknown> | undefined,
+      })),
+      watermarks: watermarks.value.map((w) => ({
+        id: w.id,
+        watermarkPath: w.filePath,
+        startTime: w.startTime,
+        endTime: w.endTime,
+        positionX: w.position.x,
+        positionY: w.position.y,
+        scale: w.scale,
+        opacity: w.opacity,
+        perRatioConfigs: w.perRatioConfigs as Record<string, unknown> | undefined,
+      })),
+      filterSegments: filterSegments.value.map((f) => ({
+        startTime: f.startTime,
+        endTime: f.endTime,
+        filterType: f.settings.preset || 'custom',
+        settings: f.settings as Record<string, unknown>,
+      })),
+      audioTracks: audioTracks.value
+        .filter((t) => !t.isMuted)
+        .map((t) => ({
+          filePath: t.filePath,
+          startTime: t.startTime,
+          endTime: t.endTime,
+          volume: t.volume,
+          isMuted: t.isMuted,
+        })),
+      videoVolumeDb: originalDb.value,
+    };
+
+    // Only return data if there's something to render
+    const hasOverlays =
+      data.textOverlays.length > 0 ||
+      data.stickers.length > 0 ||
+      data.watermarks.length > 0 ||
+      data.filterSegments.length > 0 ||
+      data.audioTracks.length > 0;
+
+    return hasOverlays ? data : null;
+  });
+
+  // Preview aspect ratio ref
+  const previewAspectRatioRef = computed(() => previewAspectRatio.value);
+
+  // Initialize progressive preview cache composable
+  const clipIdRef = computed(() => props.clipId || `editor_${props.editorProjectId}`);
+  const previewCache = usePreviewCache(
+    clipIdRef,
+    effectiveVideoPath,
+    previewCacheSegments,
+    videoServerPort,
+    previewCacheEditData,
+    previewAspectRatioRef
+  );
+
+  // Combined isGeneratingPreview that includes both legacy and progressive cache
+  const isGeneratingPreviewCombined = computed(() => {
+    return isGeneratingPreview.value || previewCache.isRendering.value;
+  });
+
+  // Computed: Segment preview streaming URL (converts file path to HTTP streaming URL)
+  // Uses progressive preview cache if available, falls back to legacy single-file preview
+  // Only used for multi-segment clips - single segment clips use original source directly
+  const segmentPreviewStreamingUrl = computed(() => {
+    // Only use preview for multi-segment clips
+    if (playbackSegments.value.length <= 1) {
+      return null;
+    }
+    
+    // Use progressive preview cache if available and ready
+    if (previewCache.effectiveManifestUrl.value) {
+      console.log('[ClipEditorDialog] Using progressive preview cache URL:', previewCache.effectiveManifestUrl.value);
+      return previewCache.effectiveManifestUrl.value;
+    }
+    // Fall back to legacy single-file preview
+    if (!segmentPreviewPath.value || !videoServerPort.value) {
+      return null;
+    }
+    const encodedPath = btoa(unescape(encodeURIComponent(segmentPreviewPath.value)));
+    console.log('[ClipEditorDialog] Using legacy preview:', segmentPreviewPath.value);
+    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+  });
+
   // Generate a pre-rendered preview video for seamless segment playback
   // This eliminates runtime seeking by creating a single continuous video file
   async function generateSegmentPreview() {
@@ -1805,12 +1922,14 @@
 
     try {
       // Delete previous preview file before generating new one
+      // Also clear the preview path immediately so we don't keep using a stale preview
       if (segmentPreviewPath.value) {
         try {
           await invoke('delete_segment_preview', { previewPath: segmentPreviewPath.value });
         } catch (e) {
           console.warn('[ClipEditorDialog] Failed to delete old preview:', e);
         }
+        segmentPreviewPath.value = null;
       }
 
       // Convert segments to the format expected by the Rust command
@@ -1838,14 +1957,33 @@
   }
 
   // Debounced preview generation to avoid rapid regeneration during quick edits
+  // Now uses progressive preview cache instead of legacy single-file approach
   function triggerPreviewGeneration() {
-    if (previewGenerationTimeout) {
-      clearTimeout(previewGenerationTimeout);
+    // Invalidate the progressive preview cache - it handles debouncing internally
+    previewCache.invalidateCache();
+  }
+
+  // Start preview cache rendering when clip opens (for multi-segment clips)
+  async function startPreviewCacheRender() {
+    const segments = playbackSegments.value;
+    
+    // Only render preview cache for multi-segment clips
+    if (segments.length <= 1) {
+      return;
     }
-    // Wait 500ms after last edit before generating preview
-    previewGenerationTimeout = setTimeout(() => {
-      generateSegmentPreview();
-    }, 500);
+
+    // Ensure video server port is available
+    if (!videoServerPort.value) {
+      try {
+        videoServerPort.value = await invoke<number>('get_video_server_port');
+      } catch (e) {
+        console.error('[ClipEditorDialog] Failed to get video server port:', e);
+        return;
+      }
+    }
+
+    // Start proxy render
+    previewCache.startProxyRender();
   }
 
   // Clean up preview files when component unmounts or clip closes
@@ -1854,6 +1992,11 @@
       clearTimeout(previewGenerationTimeout);
       previewGenerationTimeout = null;
     }
+    
+    // Clean up progressive preview cache
+    await previewCache.cleanup();
+    
+    // Clean up legacy single-file preview
     if (segmentPreviewPath.value) {
       try {
         await invoke('delete_segment_preview', { previewPath: segmentPreviewPath.value });
@@ -2978,6 +3121,18 @@
     if (isPlaying.value) {
       syncAudioWithVideo();
     }
+  }
+
+  // Fullscreen event handlers for HQ preview rendering
+  function onFullscreenEnter() {
+    console.log('[ClipEditorDialog] Fullscreen entered, triggering HQ render');
+    // Trigger HQ preview cache rendering when entering fullscreen
+    previewCache.startHqRender();
+  }
+
+  function onFullscreenExit() {
+    console.log('[ClipEditorDialog] Fullscreen exited');
+    // HQ cache remains available for future fullscreen sessions
   }
 
   function onVideoEnded() {
@@ -6250,10 +6405,10 @@
           // Auto-apply creator watermark if available (from props or video sources)
           await applyCreatorWatermark();
 
-          // Generate segment preview if there are multiple segments
+          // Start progressive preview cache rendering if there are multiple segments
           // This enables seamless playback across segment cuts
           if (trimSegments.value.length > 1) {
-            triggerPreviewGeneration();
+            startPreviewCacheRender();
           }
         } else if (props.clipId) {
           // Clip mode - existing behavior
@@ -6291,10 +6446,10 @@
           // Load video info for aspect tab
           await loadVideoInfo();
 
-          // Generate segment preview if there are multiple segments
+          // Start progressive preview cache rendering if there are multiple segments
           // This enables seamless playback across segment cuts
           if (trimSegments.value.length > 1) {
-            triggerPreviewGeneration();
+            startPreviewCacheRender();
           }
         }
 

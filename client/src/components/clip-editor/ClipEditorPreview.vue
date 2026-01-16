@@ -527,6 +527,9 @@
     (e: 'subtitleResizeEnd'): void;
     // Track events
     (e: 'trackItemSelect', itemId: string, type: string): void;
+    // Fullscreen events
+    (e: 'fullscreenEnter'): void;
+    (e: 'fullscreenExit'): void;
   }>();
 
   // ... existing refs ...
@@ -804,9 +807,23 @@
   watch(
     () => props.segmentPreviewSrc,
     (newSrc, oldSrc) => {
-      if (newSrc && !oldSrc) {
-        console.log('[ClipEditorPreview] Segment preview now available, resetting video state');
+      // Only act when we have a new valid source (not when it becomes null)
+      if (newSrc && newSrc !== oldSrc) {
+        console.log('[ClipEditorPreview] Segment preview now available:', newSrc);
         resetClipVideoState();
+        
+        // Setup HLS for segment preview if it's an HLS manifest
+        if (isHlsUrl(newSrc)) {
+          if (videoRef.value) {
+            updateVideoSource(videoRef.value, newSrc, 'segment-preview');
+          }
+          if (framedVideoRef.value) {
+            updateVideoSource(framedVideoRef.value, newSrc, 'segment-preview-framed');
+          }
+          if (audioVideoRef.value) {
+            updateVideoSource(audioVideoRef.value, newSrc, 'segment-preview-audio');
+          }
+        }
       }
     }
   );
@@ -3568,6 +3585,21 @@
       }
 
       if (foundSegmentIndex >= 0) {
+        const seg = segments[foundSegmentIndex];
+        const nextSeg = segments[foundSegmentIndex + 1];
+
+        // If we're approaching the end of this segment and there's a next one,
+        // jump immediately to its start to avoid showing gap/thumbnail frames
+        // before the seek logic detects we're outside any segment.
+        if (
+          nextSeg &&
+          !isSegmentSeeking.value &&
+          currentVideoTime >= seg.end_time - 0.04
+        ) {
+          performSegmentSeek(nextSeg.start_time, true);
+          return;
+        }
+
         // We're within a valid segment - emit the time update
         emit('timeUpdate', currentVideoTime);
         return;
@@ -4371,9 +4403,17 @@
   }
 
   function onFullscreenChange() {
+    const wasFullscreen = isFullscreen.value;
     isFullscreen.value = !!document.fullscreenElement;
     // Update container size when fullscreen changes
     updateContainerSize();
+    
+    // Emit fullscreen events for HQ preview rendering
+    if (isFullscreen.value && !wasFullscreen) {
+      emit('fullscreenEnter');
+    } else if (!isFullscreen.value && wasFullscreen) {
+      emit('fullscreenExit');
+    }
   }
 
   function onKeyDown(e: KeyboardEvent) {
