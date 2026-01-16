@@ -5,6 +5,7 @@ defmodule ClippsterServerWeb.ClipsController do
   alias ClippsterServer.AI.OpenRouterAPI
   alias ClippsterServer.AI.SystemPrompt
   alias ClippsterServer.AI.MultimodalClipDetection
+  alias ClippsterServer.AI.PromptRulesParser
   alias ClippsterServer.Analytics
   alias ClippsterServer.ClipValidation
   alias ClippsterServer.Credits
@@ -280,14 +281,34 @@ defmodule ClippsterServerWeb.ClipsController do
             IO.puts("[ClipsController] Enhanced validation completed")
             IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
 
+            # Apply minimum duration filtering if specified in user prompt
+            final_clips = case PromptRulesParser.parse_minimum_duration(user_prompt) do
+              nil ->
+                # No minimum duration rule found, use all validated clips
+                validation_result.validatedClips
+              
+              min_duration ->
+                # Filter clips by minimum duration
+                IO.puts("[ClipsController] Applying minimum duration filter: #{min_duration}s")
+                filtered = ClipValidation.filter_by_minimum_duration(
+                  validation_result.validatedClips,
+                  min_duration
+                )
+                removed_count = length(validation_result.validatedClips) - length(filtered)
+                if removed_count > 0 do
+                  IO.puts("[ClipsController] Removed #{removed_count} clips below minimum duration")
+                end
+                filtered
+            end
+
         # Prepare final response
             total_processed = length(successful_chunks) + length(failed_chunks)
             ProgressChannel.broadcast_progress(project_id, "completed", 100,
-          "Chunked clip detection completed! Found #{length(validation_result.validatedClips)} clips.")
+          "Chunked clip detection completed! Found #{length(final_clips)} clips.")
 
             {:ok, %{
               success: true,
-          clips: %{"clips" => validation_result.validatedClips},
+          clips: %{"clips" => final_clips},
               transcript: reconstructed_transcript,
               processing_info: %{
                 used_chunked_processing: true,
@@ -300,7 +321,7 @@ defmodule ClippsterServerWeb.ClipsController do
                 qualityScore: validation_result.qualityScore,
                 issues: validation_result.issues,
                 corrections: validation_result.corrections,
-                clipsProcessed: length(validation_result.validatedClips)
+                clipsProcessed: length(final_clips)
               }
             }}
 
@@ -1126,9 +1147,29 @@ defmodule ClippsterServerWeb.ClipsController do
                     IO.puts("[ClipsController] Enhanced validation completed")
                     IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
 
+                    # Apply minimum duration filtering if specified in user prompt
+                    final_clips = case PromptRulesParser.parse_minimum_duration(user_prompt) do
+                      nil ->
+                        # No minimum duration rule found, use all validated clips
+                        validation_result.validatedClips
+                      
+                      min_duration ->
+                        # Filter clips by minimum duration
+                        IO.puts("[ClipsController] Applying minimum duration filter: #{min_duration}s")
+                        filtered = ClipValidation.filter_by_minimum_duration(
+                          validation_result.validatedClips,
+                          min_duration
+                        )
+                        removed_count = length(validation_result.validatedClips) - length(filtered)
+                        if removed_count > 0 do
+                          IO.puts("[ClipsController] Removed #{removed_count} clips below minimum duration")
+                        end
+                        filtered
+                    end
+
                     # Replace clips with validated and corrected versions
                     enhanced_response = ai_response
-                    |> Map.put("clips", validation_result.validatedClips)
+                    |> Map.put("clips", final_clips)
                     |> Map.put("validation_metadata", %{
                       "qualityScore" => validation_result.qualityScore,
                       "issuesCount" => length(validation_result.issues),
@@ -1157,7 +1198,7 @@ defmodule ClippsterServerWeb.ClipsController do
                         qualityScore: validation_result.qualityScore,
                         issues: validation_result.issues,
                         corrections: validation_result.corrections,
-                        clipsProcessed: length(validation_result.validatedClips)
+                        clipsProcessed: length(final_clips)
                       }
                     }}
 
