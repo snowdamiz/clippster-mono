@@ -293,54 +293,35 @@
             </div>
 
             <!-- Controls Row -->
-            <div class="space-y-3" :class="{ 'opacity-50 pointer-events-none': !enabledRatios[currentAspectRatio] }">
-              <!-- Quick positions -->
-              <div
-                class="flex items-center gap-1.5 flex-wrap"
-                :class="{ 'opacity-50 pointer-events-none': fullFrameOverlayRatios[currentAspectRatio] }"
-              >
-                <span class="text-[10px] text-[var(--sidebar-text-muted)] mr-1">Position:</span>
-                <button
-                  v-for="preset in presets"
-                  :key="preset.name"
-                  @click="applyPreset(preset)"
-                  :disabled="!enabledRatios[currentAspectRatio] || fullFrameOverlayRatios[currentAspectRatio]"
-                  class="px-2 py-1 text-[10px] font-medium rounded transition-all"
-                  :class="
-                    isPresetActive(preset)
-                      ? 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)]'
-                      : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]'
-                  "
+            <div :class="{ 'opacity-50 pointer-events-none': !enabledRatios[currentAspectRatio] }">
+              <div class="flex items-center gap-6 flex-wrap">
+                <!-- Quick positions -->
+                <div
+                  class="flex items-center gap-1.5"
+                  :class="{ 'opacity-50 pointer-events-none': fullFrameOverlayRatios[currentAspectRatio] }"
                 >
-                  {{ preset.name }}
-                </button>
-              </div>
-
-              <!-- Sliders -->
-              <div class="grid grid-cols-2 gap-4">
-                <div :class="{ 'opacity-50 pointer-events-none': fullFrameOverlayRatios[currentAspectRatio] }">
-                  <div class="flex items-center justify-between mb-1">
-                    <label class="text-xs text-[var(--sidebar-text-muted)]">Size</label>
-                    <span class="text-[10px] text-[var(--sidebar-text-muted)]">
-                      {{ fullFrameOverlayRatios[currentAspectRatio] ? 100 : currentSettings.scale }}%
-                    </span>
+                  <span class="text-[10px] text-[var(--sidebar-text-muted)] mr-1">Position:</span>
+                  <div class="flex items-center gap-1">
+                    <button
+                      v-for="preset in presets"
+                      :key="preset.name"
+                      @click="applyPreset(preset)"
+                      :disabled="!enabledRatios[currentAspectRatio] || fullFrameOverlayRatios[currentAspectRatio]"
+                      class="px-2 py-1 text-[10px] font-medium rounded transition-all whitespace-nowrap"
+                      :class="
+                        isPresetActive(preset)
+                          ? 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)]'
+                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]'
+                      "
+                    >
+                      {{ preset.name }}
+                    </button>
                   </div>
-                  <input
-                    type="range"
-                    :value="fullFrameOverlayRatios[currentAspectRatio] ? 100 : currentSettings.scale"
-                    @input="updateScale(Number(($event.target as HTMLInputElement).value))"
-                    min="5"
-                    max="100"
-                    :disabled="!enabledRatios[currentAspectRatio] || fullFrameOverlayRatios[currentAspectRatio]"
-                    class="w-full h-1.5 bg-[var(--sidebar-border)] rounded-lg appearance-none cursor-pointer accent-[var(--sidebar-accent)]"
-                  />
                 </div>
 
-                <div>
-                  <div class="flex items-center justify-between mb-1">
-                    <label class="text-xs text-[var(--sidebar-text-muted)]">Opacity</label>
-                    <span class="text-[10px] text-[var(--sidebar-text-muted)]">{{ currentSettings.opacity }}%</span>
-                  </div>
+                <!-- Opacity Slider -->
+                <div class="flex items-center gap-2 flex-1 min-w-[200px] max-w-[280px]">
+                  <label class="text-[10px] text-[var(--sidebar-text-muted)] whitespace-nowrap">Opacity</label>
                   <input
                     type="range"
                     :value="currentSettings.opacity"
@@ -348,30 +329,11 @@
                     min="10"
                     max="100"
                     :disabled="!enabledRatios[currentAspectRatio]"
-                    class="w-full h-1.5 bg-[var(--sidebar-border)] rounded-lg appearance-none cursor-pointer accent-[var(--sidebar-accent)]"
+                    class="flex-1 h-1 bg-[var(--sidebar-border)] rounded-lg appearance-none cursor-pointer accent-[var(--sidebar-accent)]"
                   />
+                  <span class="text-[10px] text-[var(--sidebar-text-muted)] whitespace-nowrap min-w-[32px] text-right">{{ currentSettings.opacity }}%</span>
                 </div>
               </div>
-            </div>
-
-              <div class="mt-3 pt-3 border-t border-[var(--sidebar-border)] flex items-center justify-between gap-3">
-              <div class="flex items-center gap-1.5 flex-wrap">
-                <span
-                  v-for="ar in aspectRatios"
-                  :key="ar.id"
-                  class="px-1.5 py-0.5 text-[10px] rounded"
-                  :class="enabledRatios[ar.id] ? 'bg-green-500/10 text-green-500' : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'"
-                >
-                  {{ ar.label }}
-                </span>
-              </div>
-              <button
-                @click="copyToAllRatios"
-                :disabled="!enabledRatios[currentAspectRatio]"
-                class="px-2.5 py-1 text-[10px] font-medium bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)] rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              >
-                Apply to all
-              </button>
             </div>
           </div>
 
