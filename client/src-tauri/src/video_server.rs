@@ -811,6 +811,21 @@ pub async fn start_video_server_impl() {
             // Verify the file exists and is a .ts file
             if !file_path.exists() {
                 return Ok(warp::reply::with_status(
+                    warp::reply::json(&serde_json::json!({"error": "File not found"})),
+                    warp::http::StatusCode::NOT_FOUND
+                ).into_response());
+            }
+
+            if file_path.extension().and_then(|e| e.to_str()) != Some("ts") {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&serde_json::json!({"error": "Not a .ts file"})),
+                    warp::http::StatusCode::BAD_REQUEST
+                ).into_response());
+            }
+
+            // Probe actual duration using FFmpeg
+            let duration = match probe_ts_duration(&file_path).await {
+                Ok(d) => { eprintln!("[ts-hls] Probed duration: {:.2}s", d); d }
                 Err(_) => {
                     // Fallback: estimate from file size (~2MB/min)
                     let size = tokio::fs::metadata(&file_path).await.map(|m| m.len()).unwrap_or(0);

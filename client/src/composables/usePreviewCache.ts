@@ -324,6 +324,13 @@ export function usePreviewCache(
     });
   }
 
+  function buildHlsManifestUrl(manifestPath: string, port: number): string {
+    const lastSlashIndex = Math.max(manifestPath.lastIndexOf('/'), manifestPath.lastIndexOf('\\'));
+    const dirPath = lastSlashIndex >= 0 ? manifestPath.slice(0, lastSlashIndex) : manifestPath;
+    const encodedDir = btoa(unescape(encodeURIComponent(dirPath)));
+    return `http://localhost:${port}/hls/${encodedDir}/playlist.m3u8`;
+  }
+
   /**
    * Render all chunks for a tier with progressive updates
    */
@@ -410,14 +417,14 @@ export function usePreviewCache(
               
               // Convert file:// URL to HTTP streaming URL
               if (videoServerPort.value) {
-                const encodedPath = btoa(unescape(encodeURIComponent(manifest.manifestPath)));
-                state.value.manifestUrl = `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+                state.value.manifestUrl = buildHlsManifestUrl(manifest.manifestPath, videoServerPort.value);
               } else {
                 state.value.manifestUrl = manifest.streamingUrl;
               }
 
-              // Mark as ready once we have at least the first few chunks
-              if (completedChunks.length >= Math.min(3, numChunks)) {
+              // Mark as ready as soon as we have the first chunk
+              // This enables immediate playback while remaining chunks render in background
+              if (completedChunks.length >= 1) {
                 state.value.isReady = true;
               }
             } catch (manifestError) {

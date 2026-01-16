@@ -4255,10 +4255,14 @@ pub async fn write_preview_manifest(
     
     manifest.push_str("#EXT-X-ENDLIST\n");
     
-    // Write manifest file
-    let manifest_path = preview_dir.join("index.m3u8");
+    // Write manifest file (playlist.m3u8 is expected by the local /hls route)
+    let manifest_path = preview_dir.join("playlist.m3u8");
     std::fs::write(&manifest_path, &manifest)
         .map_err(|e| format!("Failed to write manifest file: {}", e))?;
+
+    // Compatibility: also write index.m3u8 for any legacy consumers
+    let legacy_manifest_path = preview_dir.join("index.m3u8");
+    let _ = std::fs::write(&legacy_manifest_path, &manifest);
     
     // Generate streaming URL (file:// protocol for local playback)
     let streaming_url = format!("file:///{}", manifest_path.to_string_lossy().replace('\\', "/"));
