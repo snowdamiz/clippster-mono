@@ -41,7 +41,7 @@
     height: 34px;
     padding: 0 1rem;
     background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
+    color: #000;
     border: none;
     border-radius: 8px;
     font-size: 0.8125rem;

@@ -254,13 +254,20 @@ defmodule ClippsterServerWeb.CampaignController do
           creator_profile_id: Map.get(params, "creator_profile_id"),
           budget: Map.get(params, "budget"),
           cpm: Map.get(params, "cpm"),
+          cpm_views: Map.get(params, "cpm_views"),
           min_views_for_payment: Map.get(params, "min_views_for_payment"),
           join_type: Map.get(params, "join_type", "open"),
           allowed_platforms: Map.get(params, "allowed_platforms", []),
           payment_methods: Map.get(params, "payment_methods", []),
           status: Map.get(params, "status", "draft"),
           starts_at: parse_datetime(Map.get(params, "starts_at")),
-          ends_at: parse_datetime(Map.get(params, "ends_at"))
+          ends_at: parse_datetime(Map.get(params, "ends_at")),
+          global_intro_id: Map.get(params, "global_intro_id"),
+          global_outro_id: Map.get(params, "global_outro_id"),
+          global_watermarks: Map.get(params, "global_watermarks"),
+          require_watermark: Map.get(params, "require_watermark"),
+          require_intro: Map.get(params, "require_intro"),
+          require_outro: Map.get(params, "require_outro")
         }
 
         case Campaigns.create_campaign(organization, attrs, user) do
@@ -1069,10 +1076,10 @@ defmodule ClippsterServerWeb.CampaignController do
   defp serialize_creator_profile(profile) do
     # Get profile image from platform links if not set directly on profile
     platform_links = if Ecto.assoc_loaded?(profile.platform_links), do: profile.platform_links, else: []
-    
+
     # Find first platform link with a profile image
     platform_image = Enum.find_value(platform_links, fn link -> link.profile_image_url end)
-    
+
     %{
       id: profile.id,
       name: profile.name,

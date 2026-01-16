@@ -2746,7 +2746,7 @@
 
   .messages-modal__btn--primary {
     background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: white;
+    color: #000;
   }
 
   .messages-modal__btn--primary:hover:not(:disabled) {
