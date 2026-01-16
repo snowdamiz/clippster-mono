@@ -27,6 +27,7 @@
         <video
           v-show="showFramedPreview && isSingleRegion"
           ref="framedVideoRef"
+          crossorigin="anonymous"
           :src="videoSrc || ''"
           class="absolute max-w-none"
           :style="getSingleRegionVideoStyle()"
@@ -48,6 +49,7 @@
             <!-- Video crop preview - matches POI editor exactly -->
             <video
               :ref="(el) => setRegionVideoRef(idx, el as HTMLVideoElement)"
+              crossorigin="anonymous"
               :src="videoSrc || ''"
               class="absolute max-w-none pointer-events-none"
               :style="getCroppedVideoStyle(region)"
@@ -67,6 +69,7 @@
       <!-- When segment preview is available, uses the pre-rendered preview video for seamless playback -->
       <video
         ref="videoRef"
+        crossorigin="anonymous"
         :src="effectiveVideoSrcWithPreview || ''"
         class="max-w-full max-h-full object-contain relative"
         :style="getMainVideoComputedStyle()"
@@ -81,6 +84,7 @@
       <video
         v-if="showFramedPreview && !isSingleRegion"
         ref="audioVideoRef"
+        crossorigin="anonymous"
         :src="videoSrc || ''"
         class="sr-only"
         @loadedmetadata="onAudioVideoLoadedMetadata"
@@ -95,6 +99,7 @@
       <video
         v-if="editorMode && (preloadVideoSrc || activeVideoIndex === 1)"
         ref="preloadVideoRef"
+        crossorigin="anonymous"
         :src="activePreloadSrc"
         class="max-w-full max-h-full object-contain absolute inset-0 m-auto pointer-events-none"
         :style="getPreloadVideoStyle()"
@@ -3396,9 +3401,14 @@
       if (props.videoSources && props.videoSources.length > 0) {
         for (const source of props.videoSources) {
           if (currentTime >= source.start_time && currentTime < source.end_time) {
-            // Check if this source has audio extracted (use snake_case as returned from DB)
-            // Database stores as 1/0, so use truthy check instead of strict equality
-            if ((source as any).audio_extracted) {
+            // Check if this source has audio extracted.
+            // SQLite returns numeric columns as strings; treat only explicit 1/true/"1" as extracted.
+            const audioExtractedFlag =
+              (source as any).audio_extracted ?? (source as any).audioExtracted ?? (source as any).audioExtracted;
+            const audioExtracted =
+              audioExtractedFlag === true || audioExtractedFlag === 1 || audioExtractedFlag === '1';
+
+            if (audioExtracted) {
               shouldMute = true;
               break;
             }
