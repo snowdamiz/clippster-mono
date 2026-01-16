@@ -615,9 +615,11 @@
                         :video-duration="0"
                         :prompts="folderPrompts"
                         :transcript-data="null"
+                        :show-adjust-clip-button="true"
                         @play-clip="onClipsTabPlayClip"
                         @delete-clip="deleteFolderClip"
                         @edit-clip="onClipsTabEditClip"
+                        @adjust-clip="onClipsTabAdjustClip"
                         @refresh-clips="onClipsTabRefreshClips"
                         @detect-clips="onClipsTabDetectClips"
                       />
@@ -2789,6 +2791,21 @@
     const fullClip = folderClips.value.find((c) => c.id === clip.id);
     if (fullClip) {
       previewClip(fullClip);
+    }
+  }
+
+  function onClipsTabAdjustClip(clipId: string) {
+    // Find the clip to get its project ID
+    const clip = folderClips.value.find((c) => c.id === clipId);
+    if (!clip) return;
+
+    // Find the segment (child project) this clip belongs to
+    const children = getFolderChildren(folderProject.value?.id || '');
+    const segmentProject = children.find((child: Project) => child.id === clip.project_id);
+
+    if (segmentProject) {
+      // Open workspace with the segment project and the clip pre-selected
+      openWorkspace(segmentProject, clipId);
     }
   }
 

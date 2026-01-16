@@ -355,6 +355,19 @@
                                 <span>Edit Clip</span>
                               </button>
 
+                              <!-- Adjust Clip (only in project context) -->
+                              <button
+                                v-if="props.showAdjustClipButton"
+                                class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  onAdjustClip(clip.id);
+                                  closeActionMenu();
+                                "
+                              >
+                                <Settings2 class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
+                                <span>Adjust Clip</span>
+                              </button>
+
                               <!-- Play Clip -->
                               <button
                                 v-if="!props.playOnCardClick"
@@ -638,6 +651,7 @@
     Edit3,
     MoreVertical,
     Plus,
+    Settings2,
   } from 'lucide-vue-next';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useInEditorClips } from '@/stores/useInEditorClips';
@@ -815,6 +829,7 @@
     videoThumbnailUrl?: string | null;
     hideHeader?: boolean;
     playOnCardClick?: boolean;
+    showAdjustClipButton?: boolean;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -838,6 +853,7 @@
     creatorDefaultOutro: null,
     videoThumbnailUrl: null,
     playOnCardClick: false,
+    showAdjustClipButton: false,
   });
 
   // Emits
@@ -852,6 +868,7 @@
     refreshClips: [];
     editClip: [clipId: string];
     addClip: [];
+    adjustClip: [clipId: string];
   }>();
 
   // AI Permission check
@@ -1753,6 +1770,10 @@
 
   function onEditClip(clipId: string) {
     emit('editClip', clipId);
+  }
+
+  function onAdjustClip(clipId: string) {
+    emit('adjustClip', clipId);
   }
 
   function onClearFromInEditor(clipId: string) {
