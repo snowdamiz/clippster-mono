@@ -78,6 +78,11 @@ defmodule ClippsterServer.Repo.Migrations.AddInstagramSchedulingFields do
       add :reviewed_at, :utc_datetime
       add :notes, :text
 
+      # Author metadata from platform API
+      add :author_username, :string
+      add :author_name, :string
+      add :author_profile_image, :string
+
       timestamps()
     end
 
