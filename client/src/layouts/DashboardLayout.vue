@@ -4,7 +4,7 @@
     <!-- Main content area with left margin to account for fixed sidebar -->
     <main
       class="flex-1 flex flex-col transition-[margin-left] duration-200 ease-out dashboard-container"
-      :class="isCollapsed ? 'ml-16' : 'ml-60'"
+      :class="isCollapsed ? 'ml-12' : 'ml-60'"
     >
       <!-- <DashboardHeader /> -->
       <!-- Page content -->

@@ -45,6 +45,16 @@
 
       <!-- Linux controls (right side) -->
       <template v-else-if="isLinux">
+        <!-- Sidebar toggle button -->
+        <button
+          class="titlebar-button titlebar-sidebar-button linux-sidebar"
+          @click="toggleSidebar"
+          :title="isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'"
+        >
+          <PanelLeft v-if="isCollapsed" :size="14" />
+          <PanelLeftClose v-else :size="14" />
+        </button>
+
         <!-- Keyboard shortcuts button (left of normal controls) -->
         <button
           class="titlebar-button titlebar-keyboard-button linux-keyboard"
@@ -76,6 +86,16 @@
 
       <!-- Windows controls (right side) -->
       <template v-else>
+        <!-- Sidebar toggle button -->
+        <button
+          class="titlebar-button titlebar-sidebar-button windows-sidebar"
+          @click="toggleSidebar"
+          :title="isDark ? (isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar') : ''"
+        >
+          <PanelLeft v-if="isCollapsed" :size="14" />
+          <PanelLeftClose v-else :size="14" />
+        </button>
+
         <!-- Keyboard shortcuts button (left of normal controls) -->
         <button
           class="titlebar-button titlebar-keyboard-button windows-keyboard"
@@ -106,15 +126,27 @@
       </template>
     </div>
 
-    <!-- macOS Keyboard shortcuts button (positioned at right edge) -->
-    <button
-      v-if="isMacOS"
-      class="titlebar-button titlebar-keyboard-button macos-keyboard-edge"
-      @click="openKeyboardShortcuts"
-      title="Keyboard Shortcuts"
-    >
-      <KeyboardIcon :size="14" />
-    </button>
+    <!-- macOS right-edge buttons -->
+    <div v-if="isMacOS" class="macos-right-buttons">
+      <!-- Sidebar toggle button -->
+      <button
+        class="titlebar-button titlebar-sidebar-button macos-sidebar-edge"
+        @click="toggleSidebar"
+        :title="isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'"
+      >
+        <PanelLeft v-if="isCollapsed" :size="14" />
+        <PanelLeftClose v-else :size="14" />
+      </button>
+
+      <!-- Keyboard shortcuts button -->
+      <button
+        class="titlebar-button titlebar-keyboard-button macos-keyboard-edge"
+        @click="openKeyboardShortcuts"
+        title="Keyboard Shortcuts"
+      >
+        <KeyboardIcon :size="14" />
+      </button>
+    </div>
 
     <!-- Keyboard Shortcuts Dialog -->
     <Teleport to="body">
@@ -403,7 +435,8 @@
   import { ref, onMounted, onUnmounted } from 'vue';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { invoke } from '@tauri-apps/api/core';
-  import { KeyboardIcon, Play, ZoomIn, MousePointer, Edit3, Scissors, MoreHorizontal, X, Info } from 'lucide-vue-next';
+  import { KeyboardIcon, Play, ZoomIn, MousePointer, Edit3, Scissors, MoreHorizontal, X, Info, PanelLeftClose, PanelLeft } from 'lucide-vue-next';
+  import { useSidebarState } from '@/composables/useSidebarState';
 
   // Props
   interface Props {
@@ -426,6 +459,7 @@
   const appWindow = getCurrentWebviewWindow();
   const showKeyboardShortcuts = ref(false);
   const activeShortcutTab = ref('playback');
+  const { isCollapsed, toggle: toggleSidebar } = useSidebarState();
 
   // Window control functions
   async function minimizeWindow() {
@@ -644,12 +678,15 @@
     white-space: nowrap;
   }
 
-  .titlebar-keyboard-button {
+  .titlebar-keyboard-button,
+  .titlebar-sidebar-button {
     color: rgba(255, 255, 255, 0.7);
+    background: transparent !important;
     transition: all 0.1s ease;
   }
 
-  .titlebar-keyboard-button:hover {
+  .titlebar-keyboard-button:hover,
+  .titlebar-sidebar-button:hover {
     background: rgba(255, 255, 255, 0.1);
     color: rgba(255, 255, 255, 1);
   }
@@ -661,7 +698,7 @@
   }
 
   .titlebar-button {
-    width: 40px;
+    width: 30px;
     height: 100%;
     border: none;
     background: transparent;
@@ -708,6 +745,10 @@
     gap: 6px;
     padding-right: 12px;
     align-items: center;
+  }
+
+  .linux-sidebar {
+    margin-right: 0;
   }
 
   .linux-keyboard {
@@ -790,13 +831,23 @@
     height: auto;
   }
 
-  /* macOS keyboard button positioned on the right edge of titlebar */
-  .macos-keyboard-edge {
+  /* macOS right-edge buttons container */
+  .macos-right-buttons {
     position: absolute;
-    right: 2px;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0;
     z-index: 10;
+    -webkit-app-region: no-drag;
+  }
+
+  /* macOS keyboard and sidebar buttons at right edge */
+  .macos-keyboard-edge,
+  .macos-sidebar-edge {
+    /* No absolute positioning needed - handled by container */
   }
 
   /* macOS traffic light buttons */
