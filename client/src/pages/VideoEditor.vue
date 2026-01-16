@@ -60,14 +60,21 @@
       <!-- Projects Content -->
       <div v-else-if="projects.length > 0" class="videoeditor__main">
         <!-- Selection Bar (shown when items selected) -->
-        <div v-if="selectedProjects.size > 0" class="videoeditor__selection-bar">
-          <button @click="confirmBulkDelete" class="videoeditor__selection-delete">
-            <Trash2 class="videoeditor__selection-icon" />
-            Delete ({{ selectedProjects.size }})
-          </button>
-          <span class="videoeditor__selection-count">{{ selectedProjects.size }} selected</span>
-          <button @click="clearSelection" class="videoeditor__selection-clear">Clear</button>
-        </div>
+        <Transition name="selection-bar">
+          <div v-if="selectedProjects.size > 0" class="videoeditor__selection-bar">
+            <div class="videoeditor__selection-info">
+              <Check class="videoeditor__selection-icon" />
+              <span>{{ selectedProjects.size }} selected</span>
+            </div>
+            <div class="videoeditor__selection-actions">
+              <button @click="clearSelection" class="videoeditor__selection-clear">Clear</button>
+              <button @click="confirmBulkDelete" class="videoeditor__selection-delete">
+                <Trash2 class="videoeditor__selection-delete-icon" />
+                Delete Selected
+              </button>
+            </div>
+          </div>
+        </Transition>
 
         <!-- Projects Grid -->
         <div v-if="filteredProjects.length > 0" class="videoeditor__section">
@@ -363,7 +370,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, watch } from 'vue';
+  import { ref, computed, onMounted, watch, Transition } from 'vue';
   import { Clapperboard, Plus, Trash2, Search, Check, Play, Edit, Film, Clock } from 'lucide-vue-next';
   import { Input } from '@/components/ui/input';
   import PageLayout from '@/components/PageLayout.vue';
@@ -1124,13 +1131,49 @@
   .videoeditor__selection-bar {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    padding: 0.625rem 1rem;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    margin-bottom: 1rem;
+    border-radius: 10px;
+  }
+
+  .videoeditor__selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    font-weight: 500;
+  }
+
+  .videoeditor__selection-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  .videoeditor__selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .videoeditor__selection-clear {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .videoeditor__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
   }
 
   .videoeditor__selection-delete {
@@ -1152,32 +1195,40 @@
     background-color: #dc2626;
   }
 
-  .videoeditor__selection-icon {
+  .videoeditor__selection-delete-icon {
     width: 13px;
     height: 13px;
   }
 
-  .videoeditor__selection-count {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
+  /* Selection Bar Transitions */
+  .selection-bar-enter-active {
+    animation: slideDown 0.2s ease-out;
   }
 
-  .videoeditor__selection-clear {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    padding: 0.375rem 0.75rem;
-    cursor: pointer;
-    transition: all 150ms ease;
+  .selection-bar-leave-active {
+    animation: slideUp 0.15s ease-in;
   }
 
-  .videoeditor__selection-clear:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
   }
 
   /* ===== Sections ===== */
@@ -1258,9 +1309,11 @@
 
   .videoeditor-card--selected {
     border-color: var(--sidebar-accent);
-    box-shadow:
-      0 0 0 2px var(--sidebar-accent),
-      0 8px 32px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .videoeditor-card--selected:hover {
+    border-color: var(--sidebar-accent);
   }
 
   .videoeditor-card--skeleton {
@@ -1311,6 +1364,11 @@
     background-color: var(--sidebar-accent);
     border-color: var(--sidebar-accent);
     color: var(--sidebar-bg);
+  }
+
+  .videoeditor-card__checkbox-inner--checked:hover {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
   }
 
   .videoeditor-card__checkbox-icon {

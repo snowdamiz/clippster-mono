@@ -101,27 +101,34 @@
         class="projects__main"
       >
         <!-- Selection Bar (shown when items selected) -->
-        <div v-if="selectedProjects.size > 0" class="projects__selection-bar">
-          <button
-            @click="confirmBulkDelete"
-            :disabled="hasAnySelectedProjectDetecting()"
-            class="projects__selection-delete"
-            :class="{ 'projects__selection-delete--disabled': hasAnySelectedProjectDetecting() }"
-            :title="hasAnySelectedProjectDetecting() ? 'Cannot delete while detection is in progress' : ''"
-          >
-            <Trash2 class="projects__selection-icon" />
-            Delete ({{ selectedProjects.size }})
-          </button>
-          <button
-            v-if="paginatedProjects.length > 0 && selectedProjects.size < paginatedProjects.length"
-            @click="selectAllCurrentPage"
-            class="projects__selection-action"
-          >
-            Select all on page
-          </button>
-          <span class="projects__selection-count">{{ selectedProjects.size }} selected</span>
-          <button @click="clearSelection" class="projects__selection-clear">Clear</button>
-        </div>
+        <Transition name="selection-bar">
+          <div v-if="selectedProjects.size > 0" class="projects__selection-bar">
+            <div class="projects__selection-info">
+              <Check class="projects__selection-icon" />
+              <span>{{ selectedProjects.size }} selected</span>
+              <button
+                v-if="paginatedProjects.length > 0 && selectedProjects.size < paginatedProjects.length"
+                @click="selectAllCurrentPage"
+                class="projects__selection-action"
+              >
+                Select all on page
+              </button>
+            </div>
+            <div class="projects__selection-actions">
+              <button @click="clearSelection" class="projects__selection-clear">Clear</button>
+              <button
+                @click="confirmBulkDelete"
+                :disabled="hasAnySelectedProjectDetecting()"
+                class="projects__selection-delete"
+                :class="{ 'projects__selection-delete--disabled': hasAnySelectedProjectDetecting() }"
+                :title="hasAnySelectedProjectDetecting() ? 'Cannot delete while detection is in progress' : ''"
+              >
+                <Trash2 class="projects__selection-delete-icon" />
+                Delete Selected
+              </button>
+            </div>
+          </div>
+        </Transition>
 
         <!-- Active Downloads Section -->
         <div v-if="getActiveDownloads().length > 0 || getQueuedDownloads().length > 0" class="projects__section">
@@ -1149,7 +1156,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
+  import { ref, onMounted, onUnmounted, computed, watch, nextTick, Transition } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import Hls from 'hls.js';
@@ -4631,13 +4638,64 @@
   .projects__selection-bar {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    padding: 0.625rem 1rem;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    margin-bottom: 1rem;
+    border-radius: 10px;
+  }
+
+  .projects__selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    font-weight: 500;
+  }
+
+  .projects__selection-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  .projects__selection-action {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.375rem 0;
+    transition: opacity 150ms ease;
+  }
+
+  .projects__selection-action:hover {
+    opacity: 0.8;
+  }
+
+  .projects__selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .projects__selection-clear {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .projects__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
   }
 
   .projects__selection-delete {
@@ -4665,47 +4723,40 @@
     opacity: 0.5;
   }
 
-  .projects__selection-icon {
+  .projects__selection-delete-icon {
     width: 13px;
     height: 13px;
   }
 
-  .projects__selection-action {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-accent);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 0.375rem 0;
-    transition: opacity 150ms ease;
+  /* Selection Bar Transitions */
+  .selection-bar-enter-active {
+    animation: slideDown 0.2s ease-out;
   }
 
-  .projects__selection-action:hover {
-    opacity: 0.8;
+  .selection-bar-leave-active {
+    animation: slideUp 0.15s ease-in;
   }
 
-  .projects__selection-count {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
-  .projects__selection-clear {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    padding: 0.375rem 0.75rem;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .projects__selection-clear:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
+  @keyframes slideUp {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
   }
 
   /* ===== Sections ===== */
@@ -4786,9 +4837,11 @@
 
   .project-card--selected {
     border-color: var(--sidebar-accent);
-    box-shadow:
-      0 0 0 2px var(--sidebar-accent),
-      0 8px 32px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .project-card--selected:hover {
+    border-color: var(--sidebar-accent);
   }
 
   .project-card--skeleton {
@@ -4839,6 +4892,11 @@
     background-color: var(--sidebar-accent);
     border-color: var(--sidebar-accent);
     color: var(--sidebar-bg);
+  }
+
+  .project-card__checkbox-inner--checked:hover {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
   }
 
   .project-card__checkbox-icon {
