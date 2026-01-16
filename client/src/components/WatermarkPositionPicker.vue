@@ -187,15 +187,14 @@
             <div class="flex justify-center mb-3">
               <div
                 ref="previewContainer"
-                class="relative bg-[var(--sidebar-surface)] rounded-lg overflow-hidden border transition-all duration-300"
+                class="relative bg-[var(--sidebar-surface)] rounded-lg overflow-hidden border transition-all duration-300 select-none"
                 :class="[
                   enabledRatios[currentAspectRatio]
                     ? 'cursor-crosshair border-[var(--sidebar-border)]'
                     : 'cursor-not-allowed border-[var(--sidebar-border)] opacity-50',
                 ]"
                 :style="previewContainerStyle"
-                @click="enabledRatios[currentAspectRatio] && handleClick($event)"
-                @mousedown="enabledRatios[currentAspectRatio] && startDrag($event)"
+                @mousedown.prevent="enabledRatios[currentAspectRatio] && startDrag($event)"
                 @mousemove="enabledRatios[currentAspectRatio] && handleDrag($event)"
                 @mouseup="endDrag"
                 @mouseleave="endDrag"
@@ -226,20 +225,54 @@
                 <!-- Watermark preview -->
                 <div
                   v-if="watermarkDataUrl && enabledRatios[currentAspectRatio]"
-                  class="absolute pointer-events-none transition-all duration-75"
+                  class="absolute group"
+                  :class="{
+                    'pointer-events-none': !enabledRatios[currentAspectRatio],
+                    'transition-all duration-75': !watermarkResizeState.isResizing && !justFinishedResize
+                  }"
                   :style="watermarkStyle"
                 >
                   <img
                     :src="watermarkDataUrl"
                     :class="[
-                      'drop-shadow-lg',
+                      'drop-shadow-lg select-none',
                       fullFrameOverlayRatios[currentAspectRatio] || isFullFrameWatermark
                         ? 'w-full h-full object-cover'
                         : 'max-w-full max-h-full object-contain',
                     ]"
                     :style="{ opacity: currentSettings.opacity / 100 }"
+                    draggable="false"
+                    @dragstart.prevent
                     @error="handleImageError"
                   />
+                  <!-- Resize Handles -->
+                  <div
+                    v-if="!fullFrameOverlayRatios[currentAspectRatio] && enabledRatios[currentAspectRatio]"
+                    class="absolute inset-0 pointer-events-none"
+                  >
+                    <!-- Top Left -->
+                    <div
+                      class="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-[var(--sidebar-accent)] rounded-full cursor-nwse-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
+                      @mousedown.stop.prevent="startWatermarkResize($event, 'tl')"
+                    ></div>
+                    <!-- Top Right -->
+                    <div
+                      class="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-[var(--sidebar-accent)] rounded-full cursor-nesw-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
+                      @mousedown.stop.prevent="startWatermarkResize($event, 'tr')"
+                    ></div>
+                    <!-- Bottom Left -->
+                    <div
+                      class="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-[var(--sidebar-accent)] rounded-full cursor-nesw-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
+                      @mousedown.stop.prevent="startWatermarkResize($event, 'bl')"
+                    ></div>
+                    <!-- Bottom Right -->
+                    <div
+                      class="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-[var(--sidebar-accent)] rounded-full cursor-nwse-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
+                      @mousedown.stop.prevent="startWatermarkResize($event, 'br')"
+                    ></div>
+                    <!-- Border on hover -->
+                    <div class="absolute inset-0 border border-[var(--sidebar-accent)] opacity-0 group-hover:opacity-40 pointer-events-none"></div>
+                  </div>
                 </div>
 
                 <!-- Disabled overlay -->
@@ -367,7 +400,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, reactive } from 'vue';
+  import { ref, computed, watch, reactive, onUnmounted } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import {
     X,
@@ -463,6 +496,9 @@
 
   const previewContainer = ref<HTMLElement | null>(null);
   const isDragging = ref(false);
+  const dragStartPos = ref<{ x: number; y: number } | null>(null);
+  const hasDragged = ref(false);
+  const justFinishedResize = ref(false);
   const watermarkDataUrl = ref<string | null>(null);
   const loadingWatermark = ref(false);
   const measuredWidth = ref<number | null>(null);
@@ -915,23 +951,208 @@
     localSettings[currentAspectRatio.value].opacity = value;
   }
 
-  function handleClick(event: MouseEvent) {
+  // State for watermark resizing
+  const watermarkResizeState = reactive<{
+    isResizing: boolean;
+    handle: 'tl' | 'tr' | 'bl' | 'br' | null;
+    anchorX: number;
+    anchorY: number;
+    startWidth: number;
+    startHeight: number;
+    startScale: number;
+    startPosition: { x: number; y: number };
+    containerRect: DOMRect | null;
+  }>({
+    isResizing: false,
+    handle: null,
+    anchorX: 0,
+    anchorY: 0,
+    startWidth: 0,
+    startHeight: 0,
+    startScale: 0,
+    startPosition: { x: 0, y: 0 },
+    containerRect: null,
+  });
+
+  function startWatermarkResize(e: MouseEvent, handle: 'tl' | 'tr' | 'bl' | 'br') {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!previewContainer.value) return;
-    updatePositionFromEvent(event);
+
+    // Get the watermark element (the parent of the handle)
+    const watermarkWrapper = (e.target as HTMLElement).closest('.group');
+    if (!watermarkWrapper) return;
+
+    const rect = watermarkWrapper.getBoundingClientRect();
+    const containerRect = previewContainer.value.getBoundingClientRect();
+    const settings = currentSettings.value;
+
+    // Calculate anchor corner (opposite to the handle being dragged)
+    let anchorX: number, anchorY: number;
+    switch (handle) {
+      case 'tl': // Dragging top-left, anchor is bottom-right
+        anchorX = rect.right;
+        anchorY = rect.bottom;
+        break;
+      case 'tr': // Dragging top-right, anchor is bottom-left
+        anchorX = rect.left;
+        anchorY = rect.bottom;
+        break;
+      case 'bl': // Dragging bottom-left, anchor is top-right
+        anchorX = rect.right;
+        anchorY = rect.top;
+        break;
+      case 'br': // Dragging bottom-right, anchor is top-left
+      default:
+        anchorX = rect.left;
+        anchorY = rect.top;
+        break;
+    }
+
+    watermarkResizeState.isResizing = true;
+    watermarkResizeState.handle = handle;
+    watermarkResizeState.anchorX = anchorX;
+    watermarkResizeState.anchorY = anchorY;
+    watermarkResizeState.startWidth = rect.width;
+    watermarkResizeState.startHeight = rect.height;
+    watermarkResizeState.startScale = settings.scale;
+    watermarkResizeState.startPosition = { x: settings.x, y: settings.y };
+    watermarkResizeState.containerRect = containerRect;
+
+    document.addEventListener('mousemove', onWatermarkResizeMove);
+    document.addEventListener('mouseup', onWatermarkResizeEnd);
   }
 
+  function onWatermarkResizeMove(e: MouseEvent) {
+    if (!watermarkResizeState.isResizing || !watermarkResizeState.containerRect) return;
+
+    const { handle, anchorX, anchorY, startWidth, startHeight, startScale, containerRect } = watermarkResizeState;
+
+    // Calculate new width based on distance from anchor to mouse
+    let newWidth: number, newHeight: number;
+
+    switch (handle) {
+      case 'tl':
+        newWidth = anchorX - e.clientX;
+        newHeight = anchorY - e.clientY;
+        break;
+      case 'tr':
+        newWidth = e.clientX - anchorX;
+        newHeight = anchorY - e.clientY;
+        break;
+      case 'bl':
+        newWidth = anchorX - e.clientX;
+        newHeight = e.clientY - anchorY;
+        break;
+      case 'br':
+      default:
+        newWidth = e.clientX - anchorX;
+        newHeight = e.clientY - anchorY;
+        break;
+    }
+
+    // Maintain aspect ratio - use the larger dimension change
+    const widthRatio = Math.abs(newWidth) / startWidth;
+    const heightRatio = Math.abs(newHeight) / startHeight;
+    const scaleRatio = Math.max(widthRatio, heightRatio, 0.1);
+
+    let newScale = startScale * scaleRatio;
+    // Enforce limits (5% to 100% based on slider limits)
+    newScale = Math.max(5, Math.min(100, newScale));
+
+    // Calculate actual new dimensions based on the clamped scale
+    // We need to re-calculate the ratio because we clamped the scale
+    const effectiveRatio = newScale / startScale;
+    const actualNewWidth = startWidth * effectiveRatio;
+    const actualNewHeight = startHeight * effectiveRatio;
+
+    // Calculate new center position based on anchor and new dimensions
+    let newCenterX: number, newCenterY: number;
+
+    switch (handle) {
+      case 'tl': // Anchor is bottom-right
+        newCenterX = anchorX - actualNewWidth / 2;
+        newCenterY = anchorY - actualNewHeight / 2;
+        break;
+      case 'tr': // Anchor is bottom-left
+        newCenterX = anchorX + actualNewWidth / 2;
+        newCenterY = anchorY - actualNewHeight / 2;
+        break;
+      case 'bl': // Anchor is top-right
+        newCenterX = anchorX - actualNewWidth / 2;
+        newCenterY = anchorY + actualNewHeight / 2;
+        break;
+      case 'br': // Anchor is top-left
+      default:
+        newCenterX = anchorX + actualNewWidth / 2;
+        newCenterY = anchorY + actualNewHeight / 2;
+        break;
+    }
+
+    // Convert center position to percentage relative to container
+    const newX = ((newCenterX - containerRect.left) / containerRect.width) * 100;
+    const newY = ((newCenterY - containerRect.top) / containerRect.height) * 100;
+
+    // Update settings with precise values (rounding happens on resize end)
+    localSettings[currentAspectRatio.value].scale = newScale;
+    localSettings[currentAspectRatio.value].x = newX;
+    localSettings[currentAspectRatio.value].y = newY;
+  }
+
+  function onWatermarkResizeEnd() {
+    // Round values only when resize completes
+    const ratio = currentAspectRatio.value;
+    localSettings[ratio].scale = Math.round(localSettings[ratio].scale);
+    localSettings[ratio].x = Math.round(localSettings[ratio].x);
+    localSettings[ratio].y = Math.round(localSettings[ratio].y);
+
+    // Set flag to prevent transitions from animating the rounding difference
+    justFinishedResize.value = true;
+
+    watermarkResizeState.isResizing = false;
+    watermarkResizeState.handle = null;
+    watermarkResizeState.containerRect = null;
+
+    document.removeEventListener('mousemove', onWatermarkResizeMove);
+    document.removeEventListener('mouseup', onWatermarkResizeEnd);
+
+    // Clear the flag after a frame so transitions can resume
+    requestAnimationFrame(() => {
+      justFinishedResize.value = false;
+    });
+  }
+
+  onUnmounted(() => {
+    document.removeEventListener('mousemove', onWatermarkResizeMove);
+    document.removeEventListener('mouseup', onWatermarkResizeEnd);
+  });
+
   function startDrag(event: MouseEvent) {
+    if (watermarkResizeState.isResizing) return;
+    if (justFinishedResize.value) return; // Prevent accidental drag right after resize
     isDragging.value = true;
-    updatePositionFromEvent(event);
+    hasDragged.value = false;
+    dragStartPos.value = { x: event.clientX, y: event.clientY };
   }
 
   function handleDrag(event: MouseEvent) {
-    if (!isDragging.value) return;
+    if (watermarkResizeState.isResizing) return;
+    if (!isDragging.value || !dragStartPos.value) return;
+
+    // Require minimum 3px movement to start actual drag
+    const dx = event.clientX - dragStartPos.value.x;
+    const dy = event.clientY - dragStartPos.value.y;
+    if (!hasDragged.value && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+
+    hasDragged.value = true;
     updatePositionFromEvent(event);
   }
 
   function endDrag() {
     isDragging.value = false;
+    dragStartPos.value = null;
+    // hasDragged resets on next startDrag
   }
 
   function updatePositionFromEvent(event: MouseEvent) {
