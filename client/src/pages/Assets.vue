@@ -471,6 +471,7 @@
       :item-name="assetToDelete?.name || (assetToDelete as any)?.file_path?.split(/[\\\\/]/).pop()"
       suffix="?"
       confirm-text="Delete"
+      variant="destructive"
       @close="handleDeleteDialogClose"
       @confirm="deleteAssetConfirmed"
     />

@@ -235,6 +235,7 @@
       :message="deleteMessage"
       suffix="This action cannot be undone."
       confirm-text="Delete"
+      variant="destructive"
       @close="showDeleteDialog = false"
       @confirm="handleDeleteConfirm"
     />

@@ -711,6 +711,7 @@
       :item-name="creatorToDelete?.name"
       suffix="? This will remove all platform links but not the associated VODs or clips."
       confirm-text="Delete"
+      variant="destructive"
       @close="showDeleteDialog = false"
       @confirm="deleteCreatorConfirmed"
     />

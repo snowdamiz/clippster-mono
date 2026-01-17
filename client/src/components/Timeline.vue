@@ -168,6 +168,7 @@
       :message="`Are you sure you want to delete ${segmentToDelete?.clipTitle || ''}?`"
       suffix="This action cannot be undone."
       confirm-text="Delete"
+      variant="destructive"
       @close="handleDeleteSegmentDialogClose"
       @confirm="deleteSegmentConfirmed"
     />

@@ -311,179 +311,219 @@
       </div>
     </PageLayout>
     <!-- Folder Contents Dialog -->
-    <div
-      v-if="showFolderDialog && folderProject"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    >
-      <div
-        class="bg-card rounded-lg w-full mx-4 border border-border flex flex-col overflow-hidden shadow-2xl transition-all duration-200 max-h-[80vh]"
-        :class="{
-          'max-w-lg': paginatedFolderBuilds.length <= 1,
-          'max-w-3xl': paginatedFolderBuilds.length === 2,
-          'max-w-5xl': paginatedFolderBuilds.length >= 3,
-        }"
-      >
-        <!-- Header -->
-        <div class="py-2 px-3 border-b border-border flex items-center justify-between bg-black/30">
-          <div class="flex items-center justify-center gap-2.5">
-            <!-- Selection Controls (visible when items selected) -->
-            <div v-if="selectedFolderDialogBuilds.size > 0" class="flex items-center gap-3">
-              <button
-                @click="confirmBulkDeleteFolderDialogBuilds"
-                class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
-              >
-                <Trash2 class="h-4 w-4" />
-                Delete ({{ selectedFolderDialogBuilds.size }})
-              </button>
-              <span class="text-sm text-muted-foreground">{{ selectedFolderDialogBuilds.size }} selected</span>
-              <button
-                @click="clearFolderDialogBuildSelection"
-                class="text-xs text-muted-foreground hover:text-foreground font-medium"
-              >
-                Clear
-              </button>
-            </div>
-
-            <!-- Normal header (hidden when items selected) -->
-            <template v-else>
-              <div class="bg-primary/10 p-1.5 rounded-md">
-                <FolderOpen class="h-4 w-4 text-primary" />
-              </div>
-              <h2 class="text-md font-medium text-foreground -mt-1">{{ folderProject.name }}</h2>
-              <span class="text-xs text-muted-foreground ml-1">
-                ({{ folderBuilds.length }} file{{ folderBuilds.length !== 1 ? 's' : '' }})
-              </span>
-            </template>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <!-- Aspect Ratio Filter (only show if multiple ratios available) -->
-            <div v-if="folderAspectRatioOptions.length > 2" class="flex items-center gap-2">
-              <div class="flex items-center gap-1.5 bg-muted/50 rounded-md p-0.5">
-                <button
-                  v-for="option in folderAspectRatioOptions"
-                  :key="option.value"
-                  @click="folderAspectRatioFilter = option.value"
-                  :class="[
-                    'px-2 py-1 text-xs font-medium rounded transition-all',
-                    folderAspectRatioFilter === option.value
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted',
-                  ]"
-                >
-                  {{ option.value === 'all' ? 'All' : option.label }}
-                </button>
-              </div>
-            </div>
-
-            <button
-              @click="showFolderDialog = false"
-              class="p-2 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground"
-            >
-              <X class="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        <!-- Content -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-8">
-          <div v-for="group in groupedFolderBuilds" :key="group.dateLabel" class="space-y-4">
-            <!-- Date Header -->
-            <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
-              {{ group.dateLabel }}
-            </h3>
-
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showFolderDialog && folderProject"
+          class="folder-dialog__overlay"
+          @click.self="showFolderDialog = false"
+        >
+          <Transition name="dialog" appear>
             <div
-              class="grid gap-5"
-              :class="{
-                'grid-cols-1': group.builds.length === 1 && groupedFolderBuilds.length === 1,
-                'grid-cols-1 md:grid-cols-2':
-                  (group.builds.length === 2 && groupedFolderBuilds.length === 1) ||
-                  (paginatedFolderBuilds.length > 1 && paginatedFolderBuilds.length <= 4),
-                'grid-cols-1 md:grid-cols-2 lg:grid-cols-3':
-                  paginatedFolderBuilds.length >= 5 || groupedFolderBuilds.length > 1,
-              }"
+              v-if="showFolderDialog"
+              class="folder-dialog"
+              :class="folderDialogSizeClass"
+              role="dialog"
+              aria-modal="true"
             >
-              <div
-                v-for="item in group.builds"
-                :key="item.id"
-                class="relative group/select"
-                :class="{
-                  'ring-2 ring-primary ring-offset-2 ring-offset-background rounded-md': isFolderDialogBuildSelected(
-                    item.id
-                  ),
-                }"
-              >
-                <!-- Sibling count badge (shows when filtered and there are other aspect ratios) -->
-                <div
-                  v-if="folderAspectRatioFilter !== 'all' && getBuildSiblingCount(item.build.id) > 1"
-                  class="absolute top-4 left-20 z-20"
-                  :title="`This build has ${getBuildSiblingCount(item.build.id)} aspect ratio variants`"
-                >
-                  <span
-                    class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/80 text-white font-medium backdrop-blur-sm flex items-center gap-1"
-                  >
-                    <Ratio class="w-2.5 h-2.5" />
-                    {{ getBuildSiblingCount(item.build.id) }}
-                  </span>
+              <!-- Accent bar -->
+              <div class="folder-dialog__accent"></div>
+
+              <!-- Header (compact) -->
+              <div class="folder-dialog__header">
+                <div class="folder-dialog__header-left">
+                  <!-- Selection Controls (visible when items selected) -->
+                  <template v-if="selectedFolderDialogBuilds.size > 0">
+                    <button
+                      @click="confirmBulkDeleteFolderDialogBuilds"
+                      class="folder-dialog__selection-delete"
+                    >
+                      <Trash2 :size="14" />
+                      Delete ({{ selectedFolderDialogBuilds.size }})
+                    </button>
+                    <span class="folder-dialog__selection-count">{{ selectedFolderDialogBuilds.size }} selected</span>
+                    <button @click="clearFolderDialogBuildSelection" class="folder-dialog__selection-clear">
+                      Clear
+                    </button>
+                  </template>
+
+                  <!-- Normal header (hidden when items selected) -->
+                  <template v-else>
+                    <div class="folder-dialog__header-icon">
+                      <FolderOpen :size="16" />
+                    </div>
+                    <h2 class="folder-dialog__title" :title="folderProject.name">{{ folderProject.name }}</h2>
+                    <span class="folder-dialog__file-count">
+                      ({{ folderBuilds.length }} file{{ folderBuilds.length !== 1 ? 's' : '' }})
+                    </span>
+                  </template>
                 </div>
 
-                <!-- Selection Checkbox (visible on hover or when selected) -->
-                <div
-                  class="absolute top-4 left-4 z-30 transition-opacity"
-                  :class="
-                    isFolderDialogBuildSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover/select:opacity-100'
-                  "
-                  @click.stop="toggleFolderDialogBuildSelection(item.id)"
-                >
+                <div class="folder-dialog__header-right">
+                  <!-- Aspect Ratio Filter (only show if multiple ratios available) -->
+                  <div v-if="folderAspectRatioOptions.length > 2" class="folder-dialog__aspect-filter">
+                    <button
+                      v-for="option in folderAspectRatioOptions"
+                      :key="option.value"
+                      @click="folderAspectRatioFilter = option.value"
+                      class="folder-dialog__aspect-btn"
+                      :class="{ 'folder-dialog__aspect-btn--active': folderAspectRatioFilter === option.value }"
+                    >
+                      {{ option.value === 'all' ? 'All' : option.label }}
+                    </button>
+                  </div>
+
+                  <button class="folder-dialog__close" @click="showFolderDialog = false" title="Close">
+                    <X :size="18" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Content -->
+              <div class="folder-dialog__content">
+                <div v-for="group in groupedFolderBuilds" :key="group.dateLabel" class="folder-dialog__date-group">
+                  <!-- Date Header -->
+                  <h3 class="folder-dialog__date-header">
+                    {{ group.dateLabel }}
+                  </h3>
+
                   <div
-                    :class="[
-                      'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
-                      isFolderDialogBuildSelected(item.id)
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-black/60 text-white hover:bg-black/80',
-                    ]"
+                    class="folder-dialog__builds-grid"
+                    :class="{
+                      'folder-dialog__builds-grid--1': group.builds.length === 1 && groupedFolderBuilds.length === 1,
+                      'folder-dialog__builds-grid--2':
+                        (group.builds.length === 2 && groupedFolderBuilds.length === 1) ||
+                        (paginatedFolderBuilds.length > 1 && paginatedFolderBuilds.length <= 4),
+                      'folder-dialog__builds-grid--3':
+                        paginatedFolderBuilds.length >= 5 || groupedFolderBuilds.length > 1,
+                    }"
                   >
-                    <Check v-if="isFolderDialogBuildSelected(item.id)" class="w-4 h-4" />
+                    <div
+                      v-for="item in group.builds"
+                      :key="item.id"
+                      class="folder-dialog__build-card"
+                      :class="{ 'folder-dialog__build-card--selected': isFolderDialogBuildSelected(item.id) }"
+                    >
+                      <!-- Sibling count badge (shows when filtered and there are other aspect ratios) -->
+                      <div
+                        v-if="folderAspectRatioFilter !== 'all' && getBuildSiblingCount(item.build.id) > 1"
+                        class="folder-dialog__sibling-badge"
+                        :title="`This build has ${getBuildSiblingCount(item.build.id)} aspect ratio variants`"
+                      >
+                        <Ratio class="w-2.5 h-2.5" />
+                        {{ getBuildSiblingCount(item.build.id) }}
+                      </div>
+
+                      <!-- Selection Checkbox (visible on hover or when selected) -->
+                      <div
+                        class="folder-dialog__checkbox"
+                        :class="{ 'folder-dialog__checkbox--visible': isFolderDialogBuildSelected(item.id) }"
+                        @click.stop="toggleFolderDialogBuildSelection(item.id)"
+                      >
+                        <div
+                          class="folder-dialog__checkbox-box"
+                          :class="{ 'folder-dialog__checkbox-box--checked': isFolderDialogBuildSelected(item.id) }"
+                        >
+                          <Check v-if="isFolderDialogBuildSelected(item.id)" :size="14" />
+                        </div>
+                      </div>
+
+                      <!-- Card Content -->
+                      <div class="folder-dialog__build-inner" @click="playBuild(item.build, item.filePath, item.clipName, item.projectId)">
+                        <!-- Thumbnail background -->
+                        <div
+                          v-if="item.thumbnailUrl"
+                          class="folder-dialog__build-thumb"
+                          :style="{ backgroundImage: `url(${item.thumbnailUrl})` }"
+                        >
+                          <div class="folder-dialog__build-thumb-overlay"></div>
+                        </div>
+                        <div v-else class="folder-dialog__build-thumb folder-dialog__build-thumb--empty">
+                          <div class="folder-dialog__build-thumb-overlay"></div>
+                          <div class="folder-dialog__build-thumb-placeholder">
+                            <Video :size="32" />
+                          </div>
+                        </div>
+
+                        <!-- Build Status Badge -->
+                        <div v-if="item.build.status === 'building'" class="folder-dialog__build-status">
+                          <Loader2 :size="12" class="folder-dialog__spin" />
+                          <span>Building...</span>
+                        </div>
+                        <!-- Duration Badge -->
+                        <div v-else-if="item.build.duration" class="folder-dialog__build-duration">
+                          <Clock :size="12" />
+                          {{ formatDuration(item.build.duration) }}
+                        </div>
+
+                        <!-- Build Number Badge (top right) -->
+                        <div v-if="item.hasMultipleBuilds" class="folder-dialog__build-number">
+                          #{{ item.build.build_number }}
+                        </div>
+
+                        <!-- Info -->
+                        <div class="folder-dialog__build-info">
+                          <h3 class="folder-dialog__build-name">{{ item.clipName }}</h3>
+                          <p class="folder-dialog__build-meta">
+                            {{ item.aspectRatio || 'Unknown ratio' }} • {{ getRelativeTime(item.build.created_at) }}
+                          </p>
+                        </div>
+
+                        <!-- Hover Overlay -->
+                        <div class="folder-dialog__build-hover">
+                          <button
+                            class="folder-dialog__build-action"
+                            title="Play"
+                            @click.stop="playBuild(item.build, item.filePath, item.clipName, item.projectId)"
+                          >
+                            <Play :size="20" />
+                          </button>
+                          <button
+                            class="folder-dialog__build-action"
+                            title="Save"
+                            @click.stop="saveBuild(item.build, item.filePath)"
+                          >
+                            <Download :size="20" />
+                          </button>
+                          <button
+                            class="folder-dialog__build-action"
+                            title="Publish to Instagram"
+                            @click.stop="initiatePublish(item.build, item.filePath, item.thumbnailUrl)"
+                          >
+                            <Instagram :size="20" />
+                          </button>
+                          <button
+                            class="folder-dialog__build-action"
+                            title="Delete"
+                            @click.stop="confirmDeleteBuild(item.build)"
+                          >
+                            <Trash2 :size="20" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                <BuildCard
-                  :build="item.build"
-                  :clip-name="item.clipName"
-                  :thumbnail-url="item.thumbnailUrl"
-                  :project-name="null"
-                  :file-path="item.filePath"
-                  :display-aspect-ratio="item.aspectRatio ?? undefined"
-                  :show-build-number="item.hasMultipleBuilds"
-                  @play="
-                    (build, filePath) => playBuild(build, filePath || item.filePath, item.clipName, item.projectId)
-                  "
-                  @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
-                  @delete="confirmDeleteBuild"
-                  @openProject="(build) => openProjectForClip(build, item.clip)"
-                  @publish="(build, filePath) => initiatePublish(build, filePath || item.filePath, item.thumbnailUrl)"
+              <!-- Footer with Pagination -->
+              <div v-if="folderTotalPages > 1" class="folder-dialog__footer">
+                <PaginationFooter
+                  :current-page="folderCurrentPage"
+                  :total-pages="folderTotalPages"
+                  :total-items="folderBuilds.length"
+                  item-label="build"
+                  mode="static"
+                  @go-to-page="(page) => (folderCurrentPage = page)"
+                  @previous="folderCurrentPage--"
+                  @next="folderCurrentPage++"
                 />
               </div>
             </div>
-          </div>
+          </Transition>
         </div>
-
-        <!-- Footer with Pagination -->
-        <div v-if="folderTotalPages > 1" class="bg-muted/10">
-          <PaginationFooter
-            :current-page="folderCurrentPage"
-            :total-pages="folderTotalPages"
-            :total-items="folderBuilds.length"
-            item-label="build"
-            mode="static"
-            @go-to-page="(page) => (folderCurrentPage = page)"
-            @previous="folderCurrentPage--"
-            @next="folderCurrentPage++"
-          />
-        </div>
-      </div>
-    </div>
+      </Transition>
+    </Teleport>
 
     <!-- Video Player Dialog -->
     <VideoPlayerDialog
@@ -508,99 +548,36 @@
       :item-name="buildToDelete ? `#${buildToDelete.build_number}` : 'this build'"
       suffix="? The video file will be permanently removed."
       confirm-text="Delete Build"
+      variant="destructive"
       @close="handleDeleteBuildDialogClose"
       @confirm="deleteBuildConfirmed"
     />
 
     <!-- Bulk Delete Confirmation Modal -->
-    <div
-      v-if="showBulkDeleteDialog"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    >
-      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">
-          Delete
-          {{
-            viewMode === 'folders'
-              ? selectedFolders.size + ' Project' + (selectedFolders.size !== 1 ? 's' : '')
-              : totalSelectedCount + ' Build' + (totalSelectedCount !== 1 ? 's' : '')
-          }}
-        </h2>
-
-        <div class="space-y-4">
-          <p class="text-muted-foreground">
-            <span v-if="viewMode === 'folders'">
-              Are you sure you want to delete all builds from
-              <span class="font-semibold text-foreground">
-                {{ selectedFolders.size }} project{{ selectedFolders.size !== 1 ? 's' : '' }}
-              </span>
-              ?
-            </span>
-            <span v-else>
-              Are you sure you want to delete
-              <span class="font-semibold text-foreground">
-                {{ totalSelectedCount }} build{{ totalSelectedCount !== 1 ? 's' : '' }}
-              </span>
-              ?
-            </span>
-            The video files will be permanently removed.
-            <span class="block mt-1">This action cannot be undone.</span>
-          </p>
-
-          <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
-            @click="bulkDeleteConfirmed"
-          >
-            Delete
-            {{
-              viewMode === 'folders'
-                ? 'All Builds'
-                : totalSelectedCount + ' Build' + (totalSelectedCount !== 1 ? 's' : '')
-            }}
-          </button>
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
-            @click="handleBulkDeleteDialogClose"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmationModal
+      :show="showBulkDeleteDialog"
+      :title="bulkDeleteTitle"
+      message="Are you sure you want to delete"
+      :item-name="bulkDeleteItemName"
+      suffix="? The video files will be permanently removed."
+      :confirm-text="bulkDeleteConfirmText"
+      variant="destructive"
+      @close="handleBulkDeleteDialogClose"
+      @confirm="bulkDeleteConfirmed"
+    />
 
     <!-- Bulk Delete Folder Dialog Builds Confirmation Modal -->
-    <div
-      v-if="showBulkDeleteFolderDialogBuildsDialog"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
-    >
-      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">Delete {{ selectedFolderDialogBuilds.size }} Builds</h2>
-
-        <div class="space-y-4">
-          <p class="text-muted-foreground">
-            Are you sure you want to delete
-            <span class="font-semibold text-foreground">
-              {{ selectedFolderDialogBuilds.size }} build{{ selectedFolderDialogBuilds.size !== 1 ? 's' : '' }}
-            </span>
-            ? The video files will be permanently removed.
-            <span class="block mt-1">This action cannot be undone.</span>
-          </p>
-
-          <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
-            @click="bulkDeleteFolderDialogBuildsConfirmed"
-          >
-            Delete {{ selectedFolderDialogBuilds.size }} Builds
-          </button>
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
-            @click="handleBulkDeleteFolderDialogBuildsDialogClose"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmationModal
+      :show="showBulkDeleteFolderDialogBuildsDialog"
+      :title="`Delete ${selectedFolderDialogBuilds.size} Build${selectedFolderDialogBuilds.size !== 1 ? 's' : ''}`"
+      :message="`Are you sure you want to delete`"
+      :item-name="`${selectedFolderDialogBuilds.size} build${selectedFolderDialogBuilds.size !== 1 ? 's' : ''}`"
+      suffix="? The video files will be permanently removed."
+      :confirm-text="`Delete ${selectedFolderDialogBuilds.size} Build${selectedFolderDialogBuilds.size !== 1 ? 's' : ''}`"
+      variant="destructive"
+      @close="handleBulkDeleteFolderDialogBuildsDialogClose"
+      @confirm="bulkDeleteFolderDialogBuildsConfirmed"
+    />
 
     <!-- Organization Select Dialog for Publishing -->
     <OrganizationSelectDialog
@@ -833,6 +810,11 @@
     Ratio,
     FileText,
     AlertCircle,
+    Play,
+    Download,
+    Instagram,
+    Clock,
+    Loader2,
   } from 'lucide-vue-next';
   import {
     getAllClipsWithBuilds,
@@ -931,7 +913,7 @@
   const buildThumbnailCache = ref<Map<string, string>>(new Map());
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
-  const { getRelativeTime } = useFormatters();
+  const { getRelativeTime, formatDuration } = useFormatters();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
   // Build deletion state
@@ -1557,6 +1539,14 @@
     return folderBuildsAll.value.filter((b) => b.aspectRatio === folderAspectRatioFilter.value);
   });
 
+  // Computed class for folder dialog size based on build count
+  const folderDialogSizeClass = computed(() => {
+    const buildCount = paginatedFolderBuilds.value.length;
+    if (buildCount <= 1) return 'folder-dialog--sm';
+    if (buildCount === 2) return 'folder-dialog--md';
+    return 'folder-dialog--lg';
+  });
+
   // Check if a build has siblings (other aspect ratios from the same build)
   function getBuildSiblingCount(buildId: string): number {
     const baseBuildId = buildId.split('-')[0];
@@ -1709,6 +1699,7 @@
 
   function handleBulkDeleteFolderDialogBuildsDialogClose() {
     showBulkDeleteFolderDialogBuildsDialog.value = false;
+    selectedFolderDialogBuilds.value.clear();
   }
 
   async function bulkDeleteFolderDialogBuildsConfirmed() {
@@ -1733,10 +1724,19 @@
       showSuccessToast('Builds Deleted', `${deletedCount} build${deletedCount !== 1 ? 's' : ''} deleted successfully.`);
       selectedFolderDialogBuilds.value.clear();
 
-      // Close folder dialog if all builds were deleted
-      if (folderProject.value && folderBuilds.value.length === 0) {
-        showFolderDialog.value = false;
-        folderProject.value = null;
+      // If folder dialog is open, refresh its data
+      if (showFolderDialog.value && folderProject.value) {
+        const currentFolderId = folderProject.value.id;
+        const updatedGroup = Array.from(groupedByProject.value.values()).find(g => g.id === currentFolderId);
+        
+        if (updatedGroup && getFolderBuildsCount(updatedGroup.clips) > 0) {
+          // Update the folder project with fresh data
+          folderProject.value = updatedGroup;
+        } else {
+          // No builds left, close the dialog
+          showFolderDialog.value = false;
+          folderProject.value = null;
+        }
       }
     } catch (error) {
       console.error('Failed to delete builds:', error);
@@ -2146,6 +2146,22 @@
       }
 
       await loadClips();
+
+      // If folder dialog is open, refresh its data
+      if (showFolderDialog.value && folderProject.value) {
+        const currentFolderId = folderProject.value.id;
+        const updatedGroup = Array.from(groupedByProject.value.values()).find(g => g.id === currentFolderId);
+        
+        if (updatedGroup && getFolderBuildsCount(updatedGroup.clips) > 0) {
+          // Update the folder project with fresh data
+          folderProject.value = updatedGroup;
+        } else {
+          // No builds left, close the dialog
+          showFolderDialog.value = false;
+          folderProject.value = null;
+        }
+      }
+
       showSuccessToast('Build Deleted', 'The build has been deleted.');
     } catch (error) {
       console.error('Failed to delete build:', error);
@@ -2197,6 +2213,32 @@
       return selectedFolders.value.size;
     }
     return selectedBuilds.value.size;
+  });
+
+  const bulkDeleteTitle = computed(() => {
+    if (viewMode.value === 'folders') {
+      const count = selectedFolders.value.size;
+      return `Delete ${count} Project${count !== 1 ? 's' : ''}`;
+    }
+    const count = totalSelectedCount.value;
+    return `Delete ${count} Build${count !== 1 ? 's' : ''}`;
+  });
+
+  const bulkDeleteItemName = computed(() => {
+    if (viewMode.value === 'folders') {
+      const count = selectedFolders.value.size;
+      return `all builds from ${count} project${count !== 1 ? 's' : ''}`;
+    }
+    const count = totalSelectedCount.value;
+    return `${count} build${count !== 1 ? 's' : ''}`;
+  });
+
+  const bulkDeleteConfirmText = computed(() => {
+    if (viewMode.value === 'folders') {
+      return 'Delete All Builds';
+    }
+    const count = totalSelectedCount.value;
+    return `Delete ${count} Build${count !== 1 ? 's' : ''}`;
   });
 
   function clearSelection() {
@@ -3624,5 +3666,543 @@
 
   .search-palette__apply-btn:active {
     transform: translateY(0);
+  }
+
+  /* ========================================
+     FOLDER DIALOG STYLES
+     ======================================== */
+
+  /* ===== Overlay ===== */
+  .folder-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  /* ===== Dialog Container ===== */
+  .folder-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .folder-dialog--sm {
+    max-width: 520px;
+  }
+
+  .folder-dialog--md {
+    max-width: 768px;
+  }
+
+  .folder-dialog--lg {
+    max-width: 1024px;
+  }
+
+  /* ===== Accent Bar ===== */
+  .folder-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header (Compact) ===== */
+  .folder-dialog__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.625rem 0.75rem;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .folder-dialog__header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .folder-dialog__header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__file-count {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Selection Controls ===== */
+  .folder-dialog__selection-delete {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .folder-dialog__selection-delete:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .folder-dialog__selection-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .folder-dialog__selection-clear {
+    background: none;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: color 150ms ease;
+  }
+
+  .folder-dialog__selection-clear:hover {
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Aspect Ratio Filter ===== */
+  .folder-dialog__aspect-filter {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    padding: 0.25rem;
+  }
+
+  .folder-dialog__aspect-btn {
+    padding: 0.375rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__aspect-btn:hover {
+    color: var(--sidebar-text);
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .folder-dialog__aspect-btn--active {
+    background-color: var(--sidebar-accent);
+    color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  /* ===== Content ===== */
+  .folder-dialog__content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.5rem;
+  }
+
+  .folder-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .folder-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .folder-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Date Groups ===== */
+  .folder-dialog__date-group {
+    margin-bottom: 2rem;
+  }
+
+  .folder-dialog__date-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .folder-dialog__date-header {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    border-bottom: 1px solid var(--sidebar-border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  /* ===== Builds Grid ===== */
+  .folder-dialog__builds-grid {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .folder-dialog__builds-grid--1 {
+    grid-template-columns: 1fr;
+  }
+
+  .folder-dialog__builds-grid--2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .folder-dialog__builds-grid--3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* ===== Build Card ===== */
+  .folder-dialog__build-card {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 1px solid var(--sidebar-border);
+    transition: all 200ms ease;
+  }
+
+  .folder-dialog__build-card:hover {
+    transform: scale(1.02);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .folder-dialog__build-card--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow:
+      0 0 0 2px var(--sidebar-surface),
+      0 0 0 4px var(--sidebar-accent);
+  }
+
+  .folder-dialog__build-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ===== Build Thumbnail ===== */
+  .folder-dialog__build-thumb {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .folder-dialog__build-thumb--empty {
+    background-color: var(--sidebar-hover);
+  }
+
+  .folder-dialog__build-thumb-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom right, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6));
+  }
+
+  .folder-dialog__build-thumb-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text);
+    opacity: 0.2;
+  }
+
+  /* ===== Build Badges ===== */
+  .folder-dialog__build-status {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background-color: rgba(147, 51, 234, 0.9);
+    backdrop-filter: blur(4px);
+    border-radius: 6px;
+    color: white;
+    font-size: 0.6875rem;
+    font-weight: 700;
+  }
+
+  .folder-dialog__build-duration {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    border-radius: 6px;
+    color: white;
+    font-size: 0.6875rem;
+    font-weight: 500;
+  }
+
+  .folder-dialog__build-number {
+    position: absolute;
+    top: 3rem;
+    right: 0.75rem;
+    z-index: 5;
+    padding: 0.25rem 0.5rem;
+    background-color: rgba(34, 197, 94, 0.8);
+    backdrop-filter: blur(4px);
+    border-radius: 6px;
+    color: white;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  /* ===== Build Info ===== */
+  .folder-dialog__build-info {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+
+  .folder-dialog__build-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: white;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__build-meta {
+    font-size: 0.6875rem;
+    color: rgba(255, 255, 255, 0.7);
+    margin: 0.25rem 0 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ===== Build Hover Overlay ===== */
+  .folder-dialog__build-hover {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .folder-dialog__build-card:hover .folder-dialog__build-hover {
+    opacity: 1;
+  }
+
+  .folder-dialog__build-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 9999px;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .folder-dialog__build-action:hover {
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Spin animation for loading states */
+  .folder-dialog__spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* ===== Sibling Badge ===== */
+  .folder-dialog__sibling-badge {
+    position: absolute;
+    top: 1rem;
+    left: 5rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background-color: rgba(59, 130, 246, 0.8);
+    backdrop-filter: blur(4px);
+    border-radius: 4px;
+    color: white;
+    font-size: 0.625rem;
+    font-weight: 600;
+  }
+
+  /* ===== Checkbox ===== */
+  .folder-dialog__checkbox {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .folder-dialog__build-card:hover .folder-dialog__checkbox,
+  .folder-dialog__checkbox--visible {
+    opacity: 1;
+  }
+
+  .folder-dialog__checkbox-box {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: white;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .folder-dialog__checkbox-box:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .folder-dialog__checkbox-box--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  /* ===== Footer ===== */
+  .folder-dialog__footer {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid var(--sidebar-border);
+    flex-shrink: 0;
+  }
+
+  /* ===== Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 200ms ease-out;
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 </style>

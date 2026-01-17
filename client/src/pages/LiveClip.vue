@@ -150,7 +150,7 @@
                         </button>
                         <button
                           v-if="!streamer.isDetecting"
-                          @click.stop="removeStreamer(streamer.id)"
+                          @click.stop="confirmRemoveStreamer(streamer)"
                           class="monitor-card__icon-btn monitor-card__icon-btn--danger"
                           title="Remove"
                         >
@@ -327,6 +327,19 @@
         :show-cannot-undone-text="false"
         @close="showCreditWarningDialog = false"
         @confirm="confirmCreditWarning"
+      />
+
+      <!-- Delete Streamer Confirmation Dialog -->
+      <ConfirmationModal
+        :show="showDeleteStreamerDialog"
+        title="Remove Streamer"
+        message="Are you sure you want to remove"
+        :item-name="streamerToDelete?.displayName || streamerToDelete?.username"
+        suffix="from monitoring?"
+        confirm-text="Remove"
+        variant="destructive"
+        @close="handleDeleteStreamerDialogClose"
+        @confirm="deleteStreamerConfirmed"
       />
 
       <!-- Segment & Prompt Selection Dialog -->
@@ -591,6 +604,9 @@
 
   const showCreditWarningDialog = ref(false);
   const pendingStreamerStart = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
+  
+  const showDeleteStreamerDialog = ref(false);
+  const streamerToDelete = ref<ExtendedStreamer | null>(null);
 
   const liveStatusInterval = ref<number | null>(null);
 
@@ -1205,10 +1221,26 @@
     confirmAddStreamer(token.mint, token.symbol, token.image);
   }
 
-  async function removeStreamer(id: string) {
-    try {
-      const streamer = streamers.value.find((s) => s.id === id);
+  function confirmRemoveStreamer(streamer: ExtendedStreamer) {
+    streamerToDelete.value = streamer;
+    showDeleteStreamerDialog.value = true;
+  }
 
+  function handleDeleteStreamerDialogClose() {
+    showDeleteStreamerDialog.value = false;
+    streamerToDelete.value = null;
+  }
+
+  async function deleteStreamerConfirmed() {
+    if (!streamerToDelete.value) return;
+
+    const id = streamerToDelete.value.id;
+    const streamer = streamerToDelete.value;
+
+    // Close dialog immediately
+    showDeleteStreamerDialog.value = false;
+
+    try {
       if (streamer) {
         try {
           await invoke('cleanup_hls_recordings', { mintId: streamer.mintId });
@@ -1220,8 +1252,10 @@
 
       await deleteMonitoredStreamer(id);
       streamers.value = streamers.value.filter((s) => s.id !== id);
+      streamerToDelete.value = null;
     } catch (error) {
       console.error('[LiveClip] Failed to remove streamer', error);
+      streamerToDelete.value = null;
     }
   }
 

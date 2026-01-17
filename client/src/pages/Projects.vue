@@ -843,7 +843,7 @@
                   <X :size="18" />
                 </button>
                 <div class="delete-dialog__icon">
-                  <HelpCircle :size="24" />
+                  <AlertTriangle :size="24" />
                 </div>
                 <h2 class="delete-dialog__title">Delete Project</h2>
                 <p class="delete-dialog__subtitle">
@@ -982,6 +982,7 @@
       :message="`Are you sure you want to delete ${selectedProjects.size} projects? This will also delete all associated segments and video files.`"
       :confirm-text="bulkDeleting ? 'Deleting...' : `Delete ${selectedProjects.size} Projects`"
       close-text="Cancel"
+      variant="destructive"
       @close="handleBulkDeleteDialogClose"
       @confirm="bulkDeleteConfirmed"
     />
@@ -994,6 +995,7 @@
       :message="`Are you sure you want to delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}? This will also delete all associated video files.`"
       :confirm-text="`Delete ${selectedFolderChildren.size} Segments`"
       close-text="Cancel"
+      variant="destructive"
       @close="handleBulkDeleteFolderChildrenDialogClose"
       @confirm="bulkDeleteFolderChildrenConfirmed"
     />
@@ -1190,6 +1192,7 @@
     Maximize2,
     Minimize2,
     HelpCircle,
+    AlertTriangle,
     Info,
   } from 'lucide-vue-next';
   import {
@@ -6944,7 +6947,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 60;
+    z-index: 9999;
   }
 
   .delete-dialog {
@@ -6952,7 +6955,7 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     width: 100%;
-    max-width: 520px;
+    max-width: 480px;
     margin: 1rem;
     max-height: 85vh;
     display: flex;
@@ -6964,7 +6967,7 @@
   .delete-dialog__accent {
     height: 3px;
     flex-shrink: 0;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    background: linear-gradient(90deg, #ef4444, rgba(239, 68, 68, 0.5));
   }
 
   .delete-dialog__header {
@@ -7011,8 +7014,8 @@
     height: 52px;
     border-radius: 12px;
     margin-bottom: 0.875rem;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
   }
 
   .delete-dialog__title {
@@ -7058,10 +7061,10 @@
   }
 
   .delete-dialog__text {
-    font-size: 0.9375rem;
-    color: var(--sidebar-text);
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.6;
   }
 
   .delete-dialog__text--highlight {
@@ -7070,9 +7073,10 @@
   }
 
   .delete-dialog__warning {
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     color: var(--sidebar-text-muted);
-    margin: 0;
+    margin: 0.75rem 0 0;
+    opacity: 0.7;
   }
 
   .delete-dialog__info-card {
@@ -7207,20 +7211,18 @@
 
   .delete-dialog__footer {
     display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    padding: 1rem 1.5rem;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
     border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.2);
   }
 
   .delete-dialog__btn {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
+    padding: 0.75rem 1rem;
     border-radius: 8px;
     font-size: 0.875rem;
     font-weight: 600;
@@ -7237,17 +7239,17 @@
   .delete-dialog__btn--secondary {
     background-color: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
-    color: var(--sidebar-text-muted);
+    color: var(--sidebar-text);
   }
 
   .delete-dialog__btn--secondary:hover:not(:disabled) {
     background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   .delete-dialog__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: #000;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
   }
 
   .delete-dialog__btn--primary:hover:not(:disabled) {

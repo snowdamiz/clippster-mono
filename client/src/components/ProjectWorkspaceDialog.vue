@@ -154,6 +154,7 @@
     message="Are you sure you want to delete this clip?"
     suffix="This action cannot be undone."
     confirm-text="Delete"
+    variant="destructive"
     @close="handleDeleteDialogClose"
     @confirm="deleteClipConfirmed"
   />
