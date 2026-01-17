@@ -75,33 +75,22 @@
           </div>
         </div>
 
-        <!-- Item Count -->
-        <div v-if="allAssets.length > 0 || showSkeletonCard" class="assets__item-count">
-          {{ paginatedAssets.length }} {{ paginatedAssets.length === 1 ? 'item' : 'items' }}
-          <span v-if="totalPages > 1">(Page {{ currentPage }} of {{ totalPages }})</span>
-        </div>
-
-        <!-- Assets Grid -->
-        <TransitionGroup
-          v-if="allAssets.length > 0 || showSkeletonCard"
-          name="card-list"
-          tag="div"
-          class="assets__grid"
-        >
-          <!-- Upload progress card -->
-          <div v-if="showSkeletonCard" key="upload-skeleton" class="asset-card asset-card--uploading">
-            <div class="asset-card__upload-overlay">
-              <div class="asset-card__upload-icon">
-                <Loader2 class="asset-card__upload-spinner" />
-              </div>
-              <span class="asset-card__upload-text">Uploading...</span>
-              <span class="asset-card__upload-subtext">Processing asset</span>
+        <!-- Organization Assets Section -->
+        <div v-if="orgAssetsForDisplay.length > 0" class="assets__section">
+          <div class="assets__section-header">
+            <div class="assets__section-title-wrapper">
+              <Building2 class="assets__section-icon" />
+              <h2 class="assets__section-title">Organization Assets</h2>
+            </div>
+            <div class="assets__item-count">
+              {{ orgAssetsForDisplay.length }} {{ orgAssetsForDisplay.length === 1 ? 'item' : 'items' }}
             </div>
           </div>
 
+          <TransitionGroup name="card-list" tag="div" class="assets__grid">
           <!-- Asset cards -->
           <div
-            v-for="asset in paginatedAssets"
+            v-for="asset in orgAssetsForDisplay"
             :key="`asset-${asset.isOrgAsset ? 'org' : 'local'}-${asset.id}`"
             class="asset-card group"
             :class="{
@@ -264,9 +253,201 @@
             </div>
           </div>
         </TransitionGroup>
+      </div>
 
-        <!-- Empty State -->
-        <div v-if="allAssets.length === 0 && !uploading" class="assets__empty">
+      <!-- User Assets Section -->
+      <div v-if="personalAssets.length > 0 || showSkeletonCard" class="assets__section">
+        <div class="assets__section-header">
+          <div class="assets__section-title-wrapper">
+            <Archive class="assets__section-icon" />
+            <h2 class="assets__section-title">Your Assets</h2>
+          </div>
+          <div class="assets__item-count">
+            {{ personalAssets.length }} {{ personalAssets.length === 1 ? 'item' : 'items' }}
+          </div>
+        </div>
+
+        <TransitionGroup name="card-list" tag="div" class="assets__grid">
+          <!-- Upload progress card -->
+          <div v-if="showSkeletonCard" key="upload-skeleton" class="asset-card asset-card--uploading">
+            <div class="asset-card__upload-overlay">
+              <div class="asset-card__upload-icon">
+                <Loader2 class="asset-card__upload-spinner" />
+              </div>
+              <span class="asset-card__upload-text">Uploading...</span>
+              <span class="asset-card__upload-subtext">Processing asset</span>
+            </div>
+          </div>
+
+          <!-- Asset cards -->
+          <div
+            v-for="asset in personalAssets"
+            :key="`asset-${asset.isOrgAsset ? 'org' : 'local'}-${asset.id}`"
+            class="asset-card group"
+            :class="{
+              'asset-card--selected': isAssetSelected(String(asset.id)),
+              'asset-card--watermark': asset.assetType === 'watermark',
+              'asset-card--image': asset.assetType === 'image',
+            }"
+            @click="handleAssetClick(asset)"
+          >
+            <!-- Thumbnail background -->
+            <div
+              v-if="getThumbnailUrl(asset)"
+              class="asset-card__thumbnail-bg"
+              :style="{
+                backgroundImage: `url(${getThumbnailUrl(asset)})`,
+                backgroundSize: asset.assetType === 'watermark' || asset.assetType === 'image' ? 'contain' : 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat',
+              }"
+            ></div>
+
+            <!-- Vignette overlay -->
+            <div class="asset-card__vignette"></div>
+
+            <!-- Selection checkbox -->
+            <div
+              v-if="!asset.isOrgAsset"
+              class="asset-card__checkbox"
+              :class="{ 'asset-card__checkbox--visible': isAssetSelected(String(asset.id)) }"
+              @click.stop="toggleAssetSelection(String(asset.id))"
+            >
+              <div
+                class="asset-card__checkbox-box"
+                :class="{ 'asset-card__checkbox-box--checked': isAssetSelected(String(asset.id)) }"
+              >
+                <Check v-if="isAssetSelected(String(asset.id))" class="asset-card__checkbox-icon" />
+              </div>
+            </div>
+
+            <!-- Badges -->
+            <div class="asset-card__badges">
+              <span
+                class="asset-card__badge"
+                :class="{
+                  'asset-card__badge--intro': asset.assetType === 'intro',
+                  'asset-card__badge--outro': asset.assetType === 'outro',
+                  'asset-card__badge--watermark': asset.assetType === 'watermark',
+                  'asset-card__badge--audio': asset.assetType === 'audio',
+                  'asset-card__badge--image': asset.assetType === 'image',
+                }"
+              >
+                <component
+                  :is="
+                    asset.assetType === 'watermark' || asset.assetType === 'image'
+                      ? ImageIcon
+                      : asset.assetType === 'audio'
+                        ? Music
+                        : Package
+                  "
+                  class="asset-card__badge-icon"
+                />
+                {{
+                  asset.assetType === 'intro'
+                    ? 'Intro'
+                    : asset.assetType === 'outro'
+                      ? 'Outro'
+                      : asset.assetType === 'audio'
+                        ? 'Audio'
+                        : asset.assetType === 'image'
+                          ? 'Image'
+                          : 'Watermark'
+                }}
+              </span>
+              <span
+                v-if="asset.isOrgAsset || asset.organization_id"
+                class="asset-card__badge asset-card__badge--org"
+                :title="`From: ${asset.organization_name || 'Organization'}`"
+              >
+                <Building2 class="asset-card__badge-icon" />
+                {{ asset.organization_name || 'Org' }}
+              </span>
+            </div>
+
+            <!-- Downloading overlay -->
+            <div v-if="isAssetDownloading(asset)" class="asset-card__downloading">
+              <Loader2 class="asset-card__downloading-spinner" />
+              <span class="asset-card__downloading-text">Downloading...</span>
+            </div>
+
+            <!-- Hover actions -->
+            <div
+              class="asset-card__actions"
+              :class="{
+                'asset-card__actions--visible':
+                  asset.assetType === 'audio' && isAudioPlaying(asset.id, asset.isOrgAsset),
+              }"
+            >
+              <button
+                v-if="asset.assetType === 'intro' || asset.assetType === 'outro'"
+                class="asset-card__action-btn"
+                title="Play"
+                @click.stop="playAsset(asset as any)"
+              >
+                <Play class="asset-card__action-icon" />
+              </button>
+              <button
+                v-if="asset.assetType === 'audio'"
+                class="asset-card__action-btn"
+                :title="isAudioPlaying(asset.id, asset.isOrgAsset) ? 'Pause' : 'Play'"
+                @click.stop="toggleAudioPlayback(asset as any)"
+              >
+                <Pause v-if="isAudioPlaying(asset.id, asset.isOrgAsset)" class="asset-card__action-icon" />
+                <Play v-else class="asset-card__action-icon" />
+              </button>
+              <button
+                v-if="asset.assetType === 'image' || asset.assetType === 'watermark'"
+                class="asset-card__action-btn"
+                title="View full size"
+                @click.stop="openImagePreview(asset)"
+              >
+                <Maximize2 class="asset-card__action-icon" />
+              </button>
+              <button
+                v-if="!asset.isOrgAsset"
+                class="asset-card__action-btn asset-card__action-btn--danger"
+                title="Delete"
+                @click.stop="confirmDelete(asset)"
+              >
+                <Trash2 class="asset-card__action-icon" />
+              </button>
+            </div>
+
+            <!-- Bottom Info Overlay -->
+            <div class="asset-card__bottom">
+              <h3 class="asset-card__name" :title="asset.name">{{ asset.name }}</h3>
+              <div class="asset-card__meta">
+                <span v-if="asset.assetType === 'watermark'">
+                  {{
+                    (asset as WatermarkImage).width && (asset as WatermarkImage).height
+                      ? `${(asset as WatermarkImage).width}×${(asset as WatermarkImage).height}`
+                      : 'Image'
+                  }}
+                </span>
+                <span v-else-if="asset.assetType === 'image'">
+                  {{
+                    (asset as ImageAsset).width && (asset as ImageAsset).height
+                      ? `${(asset as ImageAsset).width}×${(asset as ImageAsset).height}`
+                      : 'Image'
+                  }}
+                </span>
+                <span v-else-if="asset.assetType === 'audio'">
+                  {{ formatDuration((asset as AudioAsset).duration || undefined) }}
+                </span>
+                <span v-else>{{ formatDuration((asset as IntroOutro).duration || undefined) }}</span>
+                <span class="asset-card__meta-dot"></span>
+                <span>
+                  {{ formatRelativeTime(asset.isOrgAsset ? (asset as any).inserted_at : (asset as any).created_at) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </TransitionGroup>
+      </div>
+
+      <!-- Empty State -->
+      <div v-if="allAssets.length === 0 && !uploading" class="assets__empty">
           <div class="assets__empty-icon-wrapper">
             <Package class="assets__empty-icon" />
           </div>
@@ -292,18 +473,6 @@
       confirm-text="Delete"
       @close="handleDeleteDialogClose"
       @confirm="deleteAssetConfirmed"
-    />
-
-    <!-- Pagination Footer -->
-    <PaginationFooter
-      v-if="!loading && allAssets.length > 0"
-      :current-page="currentPage"
-      :total-pages="totalPages"
-      :total-items="allAssets.length"
-      item-label="asset"
-      @go-to-page="goToPage"
-      @previous="previousPage"
-      @next="nextPage"
     />
 
     <!-- Asset Upload Dialog -->
@@ -568,14 +737,18 @@
     return grouped;
   });
 
-  // Combined assets for display (personal + org from server)
-  const allAssets = computed<DisplayAsset[]>(() => {
-    const orgAssetsDisplay: DisplayAsset[] = serverOrgAssets.value.map((a) => ({
+  // Organization assets for display (flat array)
+  const orgAssetsForDisplay = computed<DisplayAsset[]>(() => {
+    return serverOrgAssets.value.map((a) => ({
       ...a,
       assetType: a.asset_type,
       isOrgAsset: true as const,
     }));
-    return [...personalAssets.value, ...orgAssetsDisplay];
+  });
+
+  // Combined assets for display (personal + org from server)
+  const allAssets = computed<DisplayAsset[]>(() => {
+    return [...personalAssets.value, ...orgAssetsForDisplay.value];
   });
 
   // Check if user has any organization memberships
@@ -1346,6 +1519,7 @@
   /* ===== Page Heading ===== */
   .assets__heading {
     flex-shrink: 0;
+    margin-bottom: 1rem;
   }
 
   .assets__title {
@@ -1361,6 +1535,50 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     line-height: 1.5;
+  }
+
+  /* ===== Section Headers ===== */
+  .assets__section {
+    margin-bottom: 1rem;
+  }
+
+  .assets__section:first-child {
+    margin-top: 1rem;
+  }
+
+  .assets__section:last-child {
+    margin-bottom: 0;
+  }
+
+  .assets__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .assets__section-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .assets__section-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .assets__section-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
   }
 
   /* ===== Item Count ===== */

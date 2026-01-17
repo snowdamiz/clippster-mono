@@ -929,6 +929,7 @@ defmodule ClippsterServer.Organizations do
   @doc """
   Creates a new organization asset.
   Uploads the file to R2 storage and creates the database record.
+  Checks for existing assets with the same content hash to prevent duplicates.
   """
   def create_organization_asset(organization_id, user_id, asset_type, file_binary, filename, opts \\ []) do
     content_type = Keyword.get(opts, :content_type, "application/octet-stream")
@@ -938,31 +939,55 @@ defmodule ClippsterServer.Organizations do
     height = Keyword.get(opts, :height)
     file_size = byte_size(file_binary)
 
-    # Generate storage key and upload to R2
-    key = Storage.generate_key(organization_id, asset_type, filename)
+    # Compute SHA-256 hash of file content for deduplication
+    content_hash = :crypto.hash(:sha256, file_binary) |> Base.encode16(case: :lower)
 
-    with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
-         {:ok, thumbnail_url} <- maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
+    # Check for existing asset with same content hash, organization, and asset type
+    case get_asset_by_hash(organization_id, asset_type, content_hash) do
+      %OrganizationAsset{} = existing ->
+        # Asset with same content already exists, return it without uploading
+        {:ok, existing}
 
-      # Create database record
-      attrs = %{
-        organization_id: organization_id,
-        uploaded_by_user_id: user_id,
-        asset_type: asset_type,
-        name: filename,
-        url: url,
-        thumbnail_url: thumbnail_url,
-        duration: duration,
-        width: width,
-        height: height,
-        file_size: file_size,
-        mime_type: content_type
-      }
+      nil ->
+        # No existing asset found, proceed with upload
+        # Generate storage key and upload to R2
+        key = Storage.generate_key(organization_id, asset_type, filename)
 
-      %OrganizationAsset{}
-      |> OrganizationAsset.create_changeset(attrs)
-      |> Repo.insert()
+        with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
+             {:ok, thumbnail_url} <- maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
+
+          # Create database record with content hash
+          attrs = %{
+            organization_id: organization_id,
+            uploaded_by_user_id: user_id,
+            asset_type: asset_type,
+            name: filename,
+            url: url,
+            thumbnail_url: thumbnail_url,
+            duration: duration,
+            width: width,
+            height: height,
+            file_size: file_size,
+            mime_type: content_type,
+            content_hash: content_hash
+          }
+
+          %OrganizationAsset{}
+          |> OrganizationAsset.create_changeset(attrs)
+          |> Repo.insert()
+        end
     end
+  end
+
+  # Gets an organization asset by content hash, organization ID, and asset type.
+  # Used for deduplication - returns existing asset if found.
+  defp get_asset_by_hash(organization_id, asset_type, content_hash) do
+    OrganizationAsset
+    |> where([a], a.organization_id == ^organization_id)
+    |> where([a], a.asset_type == ^asset_type)
+    |> where([a], a.content_hash == ^content_hash)
+    |> preload(:uploaded_by)
+    |> Repo.one()
   end
 
   defp maybe_upload_thumbnail(_org_id, _asset_type, _filename, nil), do: {:ok, nil}

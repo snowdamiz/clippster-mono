@@ -115,18 +115,29 @@
             <thead>
               <tr>
                 <th>Member</th>
-                <th class="org-billing__table-th--right">Allocated</th>
-                <th class="org-billing__table-th--right">Used</th>
-                <th class="org-billing__table-th--right">Remaining</th>
-                <th class="org-billing__table-th--right">Add Credits</th>
+                <th>Allocated</th>
+                <th>Used</th>
+                <th>Remaining</th>
+                <th>Add Credits</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="member in members" :key="member.id" class="org-billing__table-row">
                 <td>
                   <div class="org-billing__member-cell">
-                    <div class="org-billing__member-avatar">
-                      {{ getMemberInitials(member) }}
+                    <div
+                      class="org-billing__member-avatar"
+                      :class="{ 'org-billing__member-avatar--has-image': member.user?.avatar_url && !avatarFailed[member.user_id] }"
+                    >
+                      <img
+                        v-if="member.user?.avatar_url && !avatarFailed[member.user_id]"
+                        :src="member.user.avatar_url"
+                        :alt="member.user?.name || member.user?.email || 'User'"
+                        class="org-billing__member-avatar-img"
+                        referrerpolicy="no-referrer"
+                        @error="avatarFailed[member.user_id] = true"
+                      />
+                      <span v-else>{{ getMemberInitials(member) }}</span>
                     </div>
                     <div class="org-billing__member-details">
                       <span class="org-billing__member-name">
@@ -138,25 +149,25 @@
                     </div>
                   </div>
                 </td>
-                <td class="org-billing__table-td--right">
+                <td>
                   <span class="org-billing__table-value">
                     {{ formatAllocation(member.allocation?.hours_allocated) }}
                     <span class="org-billing__table-value-unit">min</span>
                   </span>
                 </td>
-                <td class="org-billing__table-td--right">
+                <td>
                   <span class="org-billing__table-value org-billing__table-value--muted">
                     {{ formatAllocation(member.allocation?.hours_used) }}
                     <span class="org-billing__table-value-unit">min</span>
                   </span>
                 </td>
-                <td class="org-billing__table-td--right">
+                <td>
                   <span class="org-billing__table-value org-billing__table-value--accent">
                     {{ formatAllocation(member.allocation?.hours_remaining) }}
                     <span class="org-billing__table-value-unit">min</span>
                   </span>
                 </td>
-                <td class="org-billing__table-td--right">
+                <td>
                   <div class="org-billing__allocate-form">
                     <div class="org-billing__input-wrap">
                       <Input
@@ -400,6 +411,7 @@
 
   const showBuyCreditsModal = ref(false);
   const allocations = ref<Record<number, number>>({});
+  const avatarFailed = ref<Record<number, boolean>>({});
 
   function getMemberInitials(member: any): string {
     const name = member.user?.name || member.user?.email || '';
@@ -674,6 +686,7 @@
   .org-billing__table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
   }
 
   .org-billing__table thead {
@@ -691,7 +704,38 @@
     text-align: left;
   }
 
-  .org-billing__table-th--right {
+  /* Column 1: Member - left aligned */
+  .org-billing__table th:nth-child(1),
+  .org-billing__table td:nth-child(1) {
+    width: 30%;
+    text-align: left;
+  }
+
+  /* Column 2: Allocated - right aligned */
+  .org-billing__table th:nth-child(2),
+  .org-billing__table td:nth-child(2) {
+    width: 13%;
+    text-align: right;
+  }
+
+  /* Column 3: Used - right aligned */
+  .org-billing__table th:nth-child(3),
+  .org-billing__table td:nth-child(3) {
+    width: 13%;
+    text-align: right;
+  }
+
+  /* Column 4: Remaining - right aligned */
+  .org-billing__table th:nth-child(4),
+  .org-billing__table td:nth-child(4) {
+    width: 13%;
+    text-align: right;
+  }
+
+  /* Column 5: Add Credits - right aligned */
+  .org-billing__table th:nth-child(5),
+  .org-billing__table td:nth-child(5) {
+    width: 31%;
     text-align: right;
   }
 
@@ -711,10 +755,6 @@
   .org-billing__table td {
     padding: 1rem 1.25rem;
     vertical-align: middle;
-  }
-
-  .org-billing__table-td--right {
-    text-align: right;
   }
 
   .org-billing__table-value {
@@ -758,6 +798,17 @@
     font-weight: 700;
     color: var(--sidebar-bg);
     flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .org-billing__member-avatar--has-image {
+    background: transparent;
+  }
+
+  .org-billing__member-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .org-billing__member-details {

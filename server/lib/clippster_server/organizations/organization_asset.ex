@@ -16,6 +16,7 @@ defmodule ClippsterServer.Organizations.OrganizationAsset do
     field :height, :integer
     field :file_size, :integer
     field :mime_type, :string
+    field :content_hash, :string  # SHA-256 hash of file content for deduplication
 
     belongs_to :organization, ClippsterServer.Organizations.Organization
     belongs_to :uploaded_by, ClippsterServer.Accounts.User, foreign_key: :uploaded_by_user_id
@@ -41,11 +42,13 @@ defmodule ClippsterServer.Organizations.OrganizationAsset do
       :height,
       :file_size,
       :mime_type,
+      :content_hash,
       :uploaded_by_user_id
     ])
     |> validate_required([:organization_id, :asset_type, :name, :url])
     |> validate_inclusion(:asset_type, @asset_types)
     |> validate_length(:name, min: 1, max: 255)
+    |> validate_length(:content_hash, max: 64)
     |> validate_number(:duration, greater_than_or_equal_to: 0)
     |> validate_number(:width, greater_than: 0)
     |> validate_number(:height, greater_than: 0)

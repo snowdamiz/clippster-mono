@@ -136,16 +136,290 @@
 
           <!-- Main Content Area -->
           <div v-else-if="creators.length > 0" class="creators__list-section">
-            <!-- Item Count -->
-            <div class="creators__item-count">
-              {{ filteredCreators.length }} {{ filteredCreators.length === 1 ? 'profile' : 'profiles' }}
+            <!-- Organization Profiles Section -->
+            <div v-if="organizationProfiles.length > 0" class="creators__section">
+              <div class="creators__section-header">
+                <div class="creators__section-title-wrapper">
+                  <Building2 class="creators__section-icon" />
+                  <h2 class="creators__section-title">Organization Profiles</h2>
+                </div>
+                <div class="creators__item-count">
+                  {{ organizationProfiles.length }} {{ organizationProfiles.length === 1 ? 'profile' : 'profiles' }}
+                </div>
+              </div>
+
+              <div class="creators__list">
+                <transition-group name="list" tag="div" class="creators__list-inner">
+                  <div 
+                    v-for="creator in organizationProfiles" 
+                    :key="creator.id" 
+                    class="creator-card"
+                    :class="{
+                      'creator-card--monitoring': isCreatorMonitored(creator),
+                      'creator-card--live': !isCreatorMonitored(creator) && isCreatorLive(creator)
+                    }"
+                  >
+                  <!-- Card Header: Avatar + Info + Menu -->
+                  <div class="creator-card__header">
+                    <div class="creator-card__avatar">
+                      <img
+                        v-if="getCreatorProfileImage(creator)"
+                        :src="getCreatorProfileImage(creator)"
+                        class="creator-card__avatar-img"
+                        @error="handleImageError($event, creator)"
+                      />
+                      <div v-else class="creator-card__avatar-fallback">
+                        <Users class="creator-card__avatar-icon" />
+                      </div>
+                    </div>
+                    <div class="creator-card__header-info">
+                      <div class="creator-card__name-row">
+                        <span class="creator-card__name">{{ creator.name }}</span>
+                        <span
+                          v-if="creator.isOrgProfile"
+                          class="creator-card__org-badge"
+                          :title="`Managed by ${creator.organization_name}`"
+                        >
+                          <Building2 class="creator-card__org-badge-icon" />
+                          {{ creator.organization_name }}
+                        </span>
+                      </div>
+                      <div class="creator-card__desc">
+                        {{ creator.description || 'No description' }}
+                      </div>
+                    </div>
+                    <!-- Menu Button -->
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <button class="creator-card__menu-btn" title="More actions">
+                          <MoreVertical class="creator-card__menu-icon" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" :side-offset="4" class="creator-dropdown">
+                        <DropdownMenuItem class="creator-dropdown__item" @click="viewCreatorVods(creator)">
+                          <Video class="creator-dropdown__item-icon" />
+                          View VODs
+                        </DropdownMenuItem>
+                        <DropdownMenuItem class="creator-dropdown__item" @click="openDownloadDialog(creator)">
+                          <Download class="creator-dropdown__item-icon" />
+                          Download VOD
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          v-if="!creator.isOrgProfile"
+                          class="creator-dropdown__item"
+                          @click="openEditDialog(creator)"
+                        >
+                          <Edit class="creator-dropdown__item-icon" />
+                          Edit Profile
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          v-if="creator.isOrgProfile && creator.organization_id"
+                          class="creator-dropdown__item"
+                          @click="openPostSubmitDialog(creator)"
+                        >
+                          <Link class="creator-dropdown__item-icon" />
+                          Submit Post Link
+                        </DropdownMenuItem>
+                        <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                          <DropdownMenuSeparator class="creator-dropdown__separator" />
+                          <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
+                            <HardDrive class="creator-dropdown__item-icon" />
+                            Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
+                            <span
+                              class="creator-dropdown__item-badge"
+                              :class="{ 'creator-dropdown__item-badge--active': isCreatorAutoDvrEnabled(creator) }"
+                            >
+                              {{ isCreatorAutoDvrEnabled(creator) ? 'ON' : 'OFF' }}
+                            </span>
+                          </DropdownMenuItem>
+                        </template>
+                        <template v-if="!creator.isOrgProfile">
+                          <DropdownMenuSeparator class="creator-dropdown__separator" />
+                          <DropdownMenuItem
+                            class="creator-dropdown__item creator-dropdown__item--danger"
+                            @click="confirmDeleteCreator(creator)"
+                          >
+                            <Trash2 class="creator-dropdown__item-icon" />
+                            Delete Creator
+                          </DropdownMenuItem>
+                        </template>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <!-- Stats Row: Platforms | Branding | Status -->
+                  <div class="creator-card__stats-row">
+                    <!-- Platform Icons -->
+                    <div class="creator-card__platforms">
+                      <template v-if="creator.platform_links.length > 0">
+                        <div
+                          v-for="link in creator.platform_links.slice(0, 4)"
+                          :key="link.id"
+                          class="creator-card__platform-icon-wrapper"
+                          :title="link.display_name || link.platform_id"
+                        >
+                          <img
+                            :src="getPlatformIcon(link.platform)"
+                            :alt="link.platform"
+                            class="creator-card__platform-icon"
+                            :style="{ filter: getPlatformFilter(link.platform) }"
+                          />
+                        </div>
+                        <span v-if="creator.platform_links.length > 4" class="creator-card__more-badge">
+                          +{{ creator.platform_links.length - 4 }}
+                        </span>
+                      </template>
+                      <span v-else class="creator-card__empty-indicator">
+                        <Link class="creator-card__empty-icon" />
+                      </span>
+                    </div>
+
+                    <div class="creator-card__divider"></div>
+
+                    <!-- Branding Icons -->
+                    <div class="creator-card__branding">
+                      <div
+                        class="creator-card__branding-icon"
+                        :class="{ 'creator-card__branding-icon--active': creator.intro_id }"
+                        :title="creator.intro_id ? 'Intro configured' : 'No intro'"
+                      >
+                        <Play />
+                      </div>
+                      <div
+                        class="creator-card__branding-icon"
+                        :class="{ 'creator-card__branding-icon--active': creator.outro_id }"
+                        :title="creator.outro_id ? 'Outro configured' : 'No outro'"
+                      >
+                        <SkipForward />
+                      </div>
+                      <div
+                        class="creator-card__branding-icon"
+                        :class="{ 'creator-card__branding-icon--active': creator.watermark_id }"
+                        :title="creator.watermark_id ? 'Watermark configured' : 'No watermark'"
+                      >
+                        <ImageIcon />
+                      </div>
+                    </div>
+
+                    <div class="creator-card__divider"></div>
+
+                    <!-- Live/Monitoring Status Dot -->
+                    <div class="creator-card__status-indicator">
+                      <div
+                        v-if="isCreatorMonitored(creator)"
+                        class="creator-card__status-dot creator-card__status-dot--monitoring"
+                        title="Monitoring"
+                      ></div>
+                      <div
+                        v-else-if="isCreatorLive(creator)"
+                        class="creator-card__status-dot creator-card__status-dot--live"
+                        title="Live"
+                      ></div>
+                      <div
+                        v-else
+                        class="creator-card__status-dot creator-card__status-dot--offline"
+                        title="Offline"
+                      ></div>
+                    </div>
+                  </div>
+
+                  <!-- Footer: Status + Actions -->
+                  <div class="creator-card__footer">
+                    <!-- Left: Status -->
+                    <div class="creator-card__status">
+                      <div
+                        v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
+                        class="creator-status creator-status--monitoring"
+                      >
+                        <span class="creator-status__dot"></span>
+                        {{ getCreatorStatusLabel(creator) }}
+                      </div>
+                      <template v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                        <div v-if="isCreatorCheckingLive(creator)" class="creator-status creator-status--checking">
+                          <Loader2 class="creator-status__spinner" />
+                          Checking...
+                        </div>
+                        <div v-else-if="isCreatorLive(creator)" class="creator-status creator-status--live">
+                          <span class="creator-status__dot"></span>
+                          LIVE
+                        </div>
+                        <div v-else class="creator-status creator-status--offline">
+                          <span class="creator-status__dot"></span>
+                          Offline
+                        </div>
+                      </template>
+                      <span v-else class="creator-card__platform-count">
+                        {{ creator.platform_links.length }} platform{{ creator.platform_links.length !== 1 ? 's' : '' }}
+                      </span>
+                    </div>
+
+                    <!-- Right: Actions -->
+                    <div class="creator-card__actions">
+                      <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                        <template v-if="!isCreatorMonitored(creator)">
+                          <div class="creator-action-group">
+                            <button
+                              @click.stop="startCreatorMonitoring(creator, false)"
+                              class="creator-action-group__btn"
+                              title="Record Only"
+                            >
+                              <span class="creator-action-group__rec-dot"></span>
+                              Rec
+                            </button>
+                            <button
+                              @click.stop="startCreatorMonitoring(creator, true)"
+                              class="creator-action-group__btn creator-action-group__btn--primary"
+                              title="Auto-Detect Clips"
+                            >
+                              <Sparkles class="creator-btn__icon" />
+                              Auto
+                            </button>
+                          </div>
+                        </template>
+                        <template v-else>
+                          <button
+                            @click.stop="stopCreatorMonitoring(creator)"
+                            class="creator-btn creator-btn--stop"
+                            title="Stop Monitoring"
+                          >
+                            <Square class="creator-btn__icon" />
+                            Stop
+                          </button>
+                        </template>
+                        <button
+                          @click.stop="watchCreator(creator)"
+                          :disabled="!canWatchCreator(creator)"
+                          class="creator-btn creator-btn--watch"
+                          :class="{ 'creator-btn--watch-disabled': !canWatchCreator(creator) }"
+                          :title="canWatchCreator(creator) ? 'Watch Live' : 'Watch becomes available when live'"
+                        >
+                          <Eye class="creator-btn__icon" />
+                          Watch
+                        </button>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </transition-group>
+            </div>
+          </div>
+
+          <!-- User Profiles Section -->
+          <div v-if="userProfiles.length > 0 || (creators.length > 0 && organizationProfiles.length === creators.length)" class="creators__section">
+            <div class="creators__section-header">
+              <div class="creators__section-title-wrapper">
+                <Users class="creators__section-icon" />
+                <h2 class="creators__section-title">Your Creator Profiles</h2>
+              </div>
+              <div class="creators__item-count">
+                {{ userProfiles.length }} {{ userProfiles.length === 1 ? 'profile' : 'profiles' }}
+              </div>
             </div>
 
-            <!-- Creator List -->
             <div class="creators__list">
               <transition-group name="list" tag="div" class="creators__list-inner">
                 <div 
-                  v-for="creator in sortedCreators" 
+                  v-for="creator in userProfiles" 
                   :key="creator.id" 
                   class="creator-card"
                   :class="{
@@ -395,15 +669,16 @@
                   </div>
                 </div>
               </transition-group>
-
-              <!-- No results from search -->
-              <div v-if="filteredCreators.length === 0 && searchQuery" class="creators__no-results">
-                <Search class="creators__no-results-icon" />
-                <p class="creators__no-results-title">No creators found</p>
-                <p class="creators__no-results-text">No results for "{{ searchQuery }}"</p>
-              </div>
             </div>
           </div>
+
+          <!-- No results from search -->
+          <div v-if="filteredCreators.length === 0 && searchQuery" class="creators__no-results">
+            <Search class="creators__no-results-icon" />
+            <p class="creators__no-results-title">No creators found</p>
+            <p class="creators__no-results-text">No results for "{{ searchQuery }}"</p>
+          </div>
+        </div>
 
           <!-- Empty State -->
           <div v-else class="creators__empty">
@@ -743,6 +1018,19 @@
     return [...filteredCreators.value].sort((a, b) => {
       return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
     });
+  });
+
+  // Separate organization and user profiles
+  const organizationProfiles = computed(() => {
+    return [...filteredCreators.value]
+      .filter((c) => c.isOrgProfile === true)
+      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  });
+
+  const userProfiles = computed(() => {
+    return [...filteredCreators.value]
+      .filter((c) => !c.isOrgProfile)
+      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   });
 
   // Load creators on mount
@@ -1637,6 +1925,50 @@
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     border-radius: 4px;
+  }
+
+  /* ===== Section Headers ===== */
+  .creators__section {
+    margin-bottom: 3rem;
+  }
+
+  .creators__section:first-child {
+    margin-bottom: 3.5rem;
+  }
+
+  .creators__section:last-child {
+    margin-bottom: 0;
+  }
+
+  .creators__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .creators__section-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .creators__section-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .creators__section-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
   }
 
   /* ===== Item Count ===== */
