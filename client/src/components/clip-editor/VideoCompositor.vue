@@ -508,6 +508,21 @@ watch(
   }
 );
 
+// Watch for muted state changes and apply to both video elements immediately
+watch(
+  () => props.videoMuted,
+  (muted) => {
+    console.log('[VideoCompositor] videoMuted changed to:', muted);
+    if (videoARef.value) {
+      videoARef.value.muted = muted;
+    }
+    if (videoBRef.value) {
+      videoBRef.value.muted = muted;
+    }
+  },
+  { immediate: true }
+);
+
 // Lifecycle
 onMounted(() => {
   const video = getActiveVideo();

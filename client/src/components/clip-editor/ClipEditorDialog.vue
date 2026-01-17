@@ -530,7 +530,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+  import { ref, computed, watch, onMounted, onUnmounted, nextTick, triggerRef } from 'vue';
   import { Film, X, Loader2, Check } from 'lucide-vue-next';
   import { Separator } from '@/components/ui/separator';
   import {
@@ -3478,21 +3478,31 @@
     }
   }
 
-  function seekTo(time: number) {
+  function seekTo(time: number, options?: { shouldResumePlayback?: boolean }) {
     stopGapPlayback(true);
     if (editorMode.value) {
       // Editor mode: time is already the global timeline position
       isSeeking.value = true;
       previewTime.value = time;
+      
+      // CRITICAL: Update playback engine's currentTime so it knows where we are
+      // This ensures when play is pressed, the engine syncs video to the correct position
+      if (useNewPlaybackEngine.value && previewV2Ref.value?.seek) {
+        previewV2Ref.value.seek(time);
+      }
 
       // Reset crossfade state when seeking
       crossfadeStarted.value = false;
       lastCrossfadeTransitionId.value = null;
 
-      // IMPORTANT: Reset shouldResumePlayback at start of seek
-      // Only set to true if video was actually playing (prevents auto-play bugs)
-      const actuallyPlaying = videoElement.value ? !videoElement.value.paused : false;
-      shouldResumePlayback.value = isPlaying.value && actuallyPlaying;
+      // IMPORTANT: Use explicit shouldResumePlayback from options if provided (from playhead drag end)
+      // Otherwise, detect if video was actually playing (prevents auto-play bugs)
+      if (options?.shouldResumePlayback !== undefined) {
+        shouldResumePlayback.value = options.shouldResumePlayback;
+      } else {
+        const actuallyPlaying = videoElement.value ? !videoElement.value.paused : false;
+        shouldResumePlayback.value = isPlaying.value && actuallyPlaying;
+      }
 
       // Find the source that contains this time
       // Sort sources to handle overlaps consistently (prefer earlier source)
@@ -6131,11 +6141,15 @@
         selectedSegmentIds.value.add(segmentId);
       }
       lastSelectedSegmentId.value = segmentId;
+      // Trigger reactivity manually
+      triggerRef(selectedSegmentIds);
     } else {
       // Regular click: Select only this segment
       selectedSegmentIds.value.clear();
       selectedSegmentIds.value.add(segmentId);
       lastSelectedSegmentId.value = segmentId;
+      // Trigger reactivity manually
+      triggerRef(selectedSegmentIds);
     }
   }
 
@@ -6153,6 +6167,9 @@
     for (let i = startIndex; i <= endIndex; i++) {
       selectedSegmentIds.value.add(trimSegments.value[i].id);
     }
+    
+    // Trigger reactivity manually
+    triggerRef(selectedSegmentIds);
   }
 
   function clearSelection() {

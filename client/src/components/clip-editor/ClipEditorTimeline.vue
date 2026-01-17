@@ -517,10 +517,15 @@
                     v-if="overlayItem.type === 'source'"
                     :ref="(el) => setSegmentRef(el, 'source', overlayItem.item.id)"
                     class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group border-2 border-cyan-500"
-                    :class="getSegmentClasses('source', overlayItem.item.id)"
+                    :class="[
+                      getSegmentClasses('source', overlayItem.item.id),
+                      selectedItemKey === `source_${overlayItem.item.id}` || props.selectedSourceIds?.has(overlayItem.item.id)
+                        ? 'ring-2 ring-cyan-400 ring-offset-1 ring-offset-black shadow-lg shadow-cyan-400/40 selected-source'
+                        : '',
+                    ]"
                     :style="getVideoSourceStyle(overlayItem.item, dragPreview)"
                     @mousedown="(e) => onSourceMouseDown(e, overlayItem.item)"
-                    @click.stop="selectItem('source', overlayItem.item.id)"
+                    @click.stop="onOverlaySourceClick($event, overlayItem.item)"
                   >
                     <div class="timeline-track-content-bg"></div>
                     <span
@@ -928,9 +933,9 @@
                         : isCutToolActive
                           ? 'cursor-crosshair z-[30] border-cyan-500'
                           : 'cursor-pointer border-cyan-500',
-                      // Multi-select visual feedback
-                      props.selectedSourceIds?.has(source.id)
-                        ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-black shadow-lg shadow-blue-400/30'
+                      // Selection visual feedback (single or multi-select)
+                      selectedItemKey === `source_${source.id}` || props.selectedSourceIds?.has(source.id)
+                        ? 'ring-2 ring-cyan-400 ring-offset-1 ring-offset-black shadow-lg shadow-cyan-400/40 selected-source'
                         : '',
                     ]"
                     :style="getVideoSourceStyle(source, dragPreview)"
@@ -1040,8 +1045,9 @@
                       class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group"
                       :class="[
                         getSegmentClasses('trim', segmentLayout.segment.id, segmentLayout.segment.isDeleted),
-                        props.selectedSegmentIds?.has(segmentLayout.segment.id)
-                          ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-black shadow-lg shadow-blue-400/30'
+                        // Selection visual feedback (single or multi-select)
+                        selectedItemKey === `trim_${segmentLayout.segment.id}` || props.selectedSegmentIds?.has(segmentLayout.segment.id)
+                          ? 'ring-2 ring-violet-400 ring-offset-1 ring-offset-black shadow-lg shadow-violet-400/40 selected-trim'
                           : '',
                         isCutToolActive && cutHoverInfo?.segmentId === segmentLayout.segment.id
                           ? 'cursor-crosshair z-65 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
@@ -1193,7 +1199,12 @@
                     :aria-label="`Audio track: ${track.name}, duration ${formatTime(track.endTime - track.startTime)}, starts at ${formatTime(track.startTime)}`"
                     :aria-selected="selectedItemKey === `audio_${track.id}`"
                     class="clip-segment absolute top-1 bottom-1 rounded-md overflow-hidden group cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 focus:ring-offset-black"
-                    :class="getSegmentClasses('audio', track.id)"
+                    :class="[
+                      getSegmentClasses('audio', track.id),
+                      selectedItemKey === `audio_${track.id}`
+                        ? 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-black shadow-lg shadow-emerald-400/40 selected-audio'
+                        : '',
+                    ]"
                     :style="getAudioVisualSegmentStyle(track, visualSeg)"
                     @mousedown="(e) => onSegmentMouseDown(e, 'audio', track.id, track)"
                     @click.stop="selectItem('audio', track.id)"
@@ -1778,6 +1789,7 @@
     targetTrackIndex?: number;
     currentDeltaX?: number; // Current drag delta X (for final position calculation)
     currentDeltaY?: number; // Current drag delta Y (for final position calculation)
+    hasMoved?: boolean; // Track if mouse has moved to distinguish click from drag
   }
 
   interface ResizeInfo {
@@ -1905,7 +1917,7 @@
   }
 
   const emit = defineEmits<{
-    (e: 'seek', time: number): void;
+    (e: 'seek', time: number, options?: { shouldResumePlayback?: boolean }): void;
     (e: 'updateTrimSegment', segmentId: string, startTime: number, endTime: number): void;
     (e: 'splitTrimSegment', segmentId: string, cutTime: number): void;
     (e: 'deleteTrimSegment', segmentId: string): void;
@@ -2321,6 +2333,8 @@
   // Video editor mode state
   const isDragOverTimeline = ref(false);
   const isDraggingSource = ref(false);
+  const mouseDownOnSegment = ref(false); // Track if mousedown was on a segment to prevent track click from clearing selection
+  const lastSegmentMouseDownTime = ref(0); // Timestamp of last mousedown on a segment - used to detect segment clicks
   const dragSourceInfo = ref<{
     sourceId: string;
     startX: number;
@@ -2956,6 +2970,7 @@
 
   // Playhead drag state
   const isDraggingPlayhead = ref(false);
+  const wasPlayingBeforeDrag = ref(false); // Track if video was playing when drag started
 
   // Optimistic playhead position during drag (avoids round-trip lag)
   // This is the time value we're dragging to, updated immediately during drag
@@ -4647,6 +4662,27 @@
   }
 
   function onTrackContentClick(e: MouseEvent) {
+    // CapCut behavior: clicking on a clip should ONLY select it, not move playhead
+    // Only move playhead when clicking on empty track area (not on a segment)
+    
+    const timeSinceSegmentMouseDown = Date.now() - lastSegmentMouseDownTime.value;
+    
+    // Check if mousedown was recently on a segment (within 200ms) - if so, this click should not clear selection or seek
+    // This is more robust than just checking the flag because it handles timing edge cases
+    if (mouseDownOnSegment.value || timeSinceSegmentMouseDown < 200) {
+      mouseDownOnSegment.value = false; // Reset flag
+      return;
+    }
+    
+    // Check if click target is a clip segment - if so, don't clear selection or seek
+    const target = e.target as HTMLElement;
+    const isClipSegment = target.closest('.clip-segment');
+    if (isClipSegment) {
+      // Click was on a segment - don't clear selection or move playhead
+      return;
+    }
+
+    // Click was on empty track area - clear selection and seek
     selectedItemKey.value = null;
 
     // Use contentWrapperRef for consistency with playhead position calculation
@@ -4666,7 +4702,25 @@
   }
 
   function onTimelineContainerClick(e: MouseEvent) {
-    // Only handle clicks that weren't already handled by child elements
+    // CapCut behavior: clicking on a clip should ONLY select it, not move playhead
+    // Only move playhead when clicking on empty timeline area or ruler
+    
+    const timeSinceSegmentMouseDown = Date.now() - lastSegmentMouseDownTime.value;
+    
+    // Check if mousedown was recently on a segment (within 200ms) - if so, this click should not seek
+    if (mouseDownOnSegment.value || timeSinceSegmentMouseDown < 200) {
+      mouseDownOnSegment.value = false; // Reset flag
+      return;
+    }
+    
+    // Check if click target is a clip segment - if so, don't seek
+    const target = e.target as HTMLElement;
+    const isClipSegment = target.closest('.clip-segment');
+    if (isClipSegment) {
+      // Click was on a segment - don't move playhead, let segment handle selection
+      return;
+    }
+
     if (!contentWrapperRef.value) return;
 
     const contentRect = contentWrapperRef.value.getBoundingClientRect();
@@ -4702,6 +4756,9 @@
   }
 
   function onSegmentClick(e: MouseEvent, segment: TrimSegment) {
+    // CapCut behavior: clicking a clip ONLY selects it, NEVER moves playhead
+    // Playhead movement is handled by clicking the timeline ruler only
+    
     // Emit multi-select event with modifier keys
     emit('segmentSelect', segment.id, {
       shift: e.shiftKey,
@@ -4710,18 +4767,6 @@
 
     // Select the segment (for internal timeline state)
     selectItem('trim', segment.id);
-
-    // Also seek to the clicked position within the segment
-    const segmentEl = e.currentTarget as HTMLElement;
-    const rect = segmentEl.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const percentInSegment = x / rect.width;
-
-    // Calculate time within this segment
-    const segmentDuration = segment.endTime - segment.startTime;
-    const time = segment.startTime + percentInSegment * segmentDuration;
-
-    emit('seek', Math.max(segment.startTime, Math.min(segment.endTime, time)));
   }
 
   // Delete selected item
@@ -5362,6 +5407,10 @@
     e.stopPropagation();
 
     isDraggingPlayhead.value = true;
+    
+    // Capture the playing state at the START of the drag
+    // This ensures we resume playback correctly after dragging, even if the video gets paused during the drag
+    wasPlayingBeforeDrag.value = props.isPlaying;
 
     // Initialize optimistic drag time with current position to avoid flicker
     optimisticDragTime.value = props.currentTime;
@@ -5478,8 +5527,14 @@
   function onPlayheadDragEnd() {
     isDraggingPlayhead.value = false;
 
+    // Emit final seek with shouldResumePlayback flag to tell parent to resume playback if needed
+    const finalTime = optimisticDragTime.value ?? props.currentTime;
+    
     // Clear optimistic drag time - playhead will now use props.currentTime
     optimisticDragTime.value = null;
+
+    // Emit seek with resume flag
+    emit('seek', finalTime, { shouldResumePlayback: wasPlayingBeforeDrag.value });
 
     document.removeEventListener('mousemove', onPlayheadDragMove);
     document.removeEventListener('mouseup', onPlayheadDragEnd);
@@ -5685,8 +5740,11 @@
     return {
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
-      borderColor: isDraggingThis ? '#3b82f6' : isSelected ? '#06b6d4' : 'transparent', // Blue when dragging, Cyan when selected
-      borderWidth: isDraggingThis ? '1px' : '0px', // 1px border when dragging
+      // Border: bright cyan when selected, subtle when not selected, blue when dragging
+      borderColor: isDraggingThis ? '#3b82f6' : isSelected ? '#22d3ee' : 'rgba(6, 182, 212, 0.3)',
+      borderWidth: '2px',
+      // Add glow effect only when selected
+      boxShadow: isSelected ? '0 0 12px rgba(34, 211, 238, 0.6), 0 0 4px rgba(34, 211, 238, 0.8)' : 'none',
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
@@ -5705,7 +5763,8 @@
   }
 
   function onSourceClick(e: MouseEvent, source: VideoEditorSource) {
-    // Select the source (with multi-select support via modifier keys)
+    // CapCut behavior: clicking a clip ONLY selects it, NEVER moves playhead
+    // Playhead movement is handled by clicking the timeline ruler only
     selectItem('source', source.id);
 
     // Emit multi-select event with modifier keys for parent to handle
@@ -5713,18 +5772,17 @@
       shift: e.shiftKey,
       ctrl: e.ctrlKey || e.metaKey,
     });
+  }
 
-    // Calculate the clicked position within the source and seek there
-    const sourceEl = e.currentTarget as HTMLElement;
-    const rect = sourceEl.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const percentInSource = x / rect.width;
+  function onOverlaySourceClick(e: MouseEvent, source: VideoEditorSource) {
+    // CapCut behavior: clicking a clip ONLY selects it, NEVER moves playhead
+    selectItem('source', source.id);
 
-    // Calculate time position: start_time + relative position within the source
-    const sourceDuration = source.end_time - source.start_time;
-    const time = source.start_time + percentInSource * sourceDuration;
-
-    emit('seek', Math.max(source.start_time, Math.min(source.end_time - 0.01, time)));
+    // Emit multi-select event with modifier keys for parent to handle
+    emit('sourceSelect', source.id, {
+      shift: e.shiftKey,
+      ctrl: e.ctrlKey || e.metaKey,
+    });
   }
 
   function onSourceMouseDown(e: MouseEvent, source: VideoEditorSource) {
@@ -5736,6 +5794,10 @@
     }
 
     e.preventDefault();
+    
+    // Set flag AND timestamp to prevent onTrackContentClick from clearing selection
+    mouseDownOnSegment.value = true;
+    lastSegmentMouseDownTime.value = Date.now();
 
     selectItem('source', source.id);
 
@@ -5892,8 +5954,27 @@
 
     // Commit the final position to database only on drag end
     if (dragSourceInfo.value && videoTrackContentRef.value) {
+      // Check if any actual movement occurred - if not, this was just a click, not a drag
+      // Use a threshold of 0.05 seconds to account for tiny mouse movements during clicks
+      const MOVE_THRESHOLD = 0.05;
+      const timeDelta = dragSourceInfo.value.computedStartTime !== undefined 
+        ? Math.abs(dragSourceInfo.value.computedStartTime - dragSourceInfo.value.originalStartTime)
+        : 0;
+      const hasMoved = timeDelta > MOVE_THRESHOLD;
+      const hasChangedTrack = dragSourceInfo.value.targetTrackIndex !== dragSourceInfo.value.originalTrackIndex;
+      
+      if (!hasMoved && !hasChangedTrack) {
+        // No significant movement - this was just a click, not a drag
+        // Clean up and return without emitting update
+        dragGhostState.value = null;
+        isDraggingSource.value = false;
+        dragSourceInfo.value = null;
+        activeSnapTime.value = null;
+        activeSnapTrackType.value = null;
+        return;
+      }
+
       // Use the computed times stored during drag - avoids pixel-to-time conversion errors
-      // Falls back to original position if no drag movement occurred
       const finalStartTime = dragSourceInfo.value.computedStartTime ?? dragSourceInfo.value.originalStartTime;
       const finalEndTime = dragSourceInfo.value.computedEndTime ?? dragSourceInfo.value.originalEndTime;
 
@@ -5912,7 +5993,7 @@
       };
 
       // Include track_index if it changed
-      if (dragSourceInfo.value.targetTrackIndex !== dragSourceInfo.value.originalTrackIndex) {
+      if (hasChangedTrack) {
         updates.track_index = dragSourceInfo.value.targetTrackIndex;
       }
 
@@ -6532,6 +6613,18 @@
 
     e.preventDefault();
     e.stopPropagation();
+    
+    // Set flag AND timestamp to prevent onTrackContentClick from clearing selection
+    mouseDownOnSegment.value = true;
+    lastSegmentMouseDownTime.value = Date.now();
+
+    // Handle selection for trim segments
+    if (type === 'trim') {
+      emit('segmentSelect', id, {
+        shift: e.shiftKey,
+        ctrl: e.ctrlKey || e.metaKey,
+      });
+    }
 
     const trackContentWidth = getTrackContentWidth();
     const originalLayer = ['text', 'sticker'].includes(type) ? (item.layer ?? 0) : undefined;
@@ -6579,7 +6672,8 @@
       dragGhostRef.value.style.transform = 'translateX(0px)';
     }
 
-    isDragging.value = true;
+    // Don't set isDragging immediately - wait for mouse movement
+    // This allows us to distinguish between clicks and drags
     dragInfo.value = {
       type,
       id,
@@ -6592,18 +6686,32 @@
       originalLayer,
       originalTrackIndex,
       trackContentWidth,
+      hasMoved: false, // Track if mouse has moved
     };
 
     document.addEventListener('mousemove', onDragMove);
-    document.addEventListener('mouseup', onDragEnd);
+    document.addEventListener('mouseup', onDragEnd as EventListener);
   }
 
   function onDragMove(e: MouseEvent) {
-    if (!isDragging.value || !dragInfo.value) return;
+    if (!dragInfo.value) return;
 
-    const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
     const deltaX = e.clientX - dragInfo.value.startX;
     const deltaY = e.clientY - dragInfo.value.startY;
+
+    // Only start dragging if mouse has moved more than 3 pixels (threshold to distinguish click from drag)
+    if (!dragInfo.value.hasMoved) {
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      if (distance < 3) return; // Still within click threshold
+      
+      // Mouse has moved enough - start dragging
+      dragInfo.value.hasMoved = true;
+      isDragging.value = true;
+    }
+
+    if (!isDragging.value) return;
+
+    const itemDuration = dragInfo.value.originalEndTime - dragInfo.value.originalStartTime;
 
     // For audio tracks, detect which track row the mouse is over
     if (dragInfo.value.type === 'audio' && dragInfo.value.originalTrackOrder !== undefined) {
@@ -6832,13 +6940,23 @@
     }
   }
 
-  function onDragEnd() {
+  function onDragEnd(e?: MouseEvent) {
     // Remove event listeners immediately to prevent further drag events
     document.removeEventListener('mousemove', onDragMove);
-    document.removeEventListener('mouseup', onDragEnd);
+    document.removeEventListener('mouseup', onDragEnd as EventListener);
 
     // Commit the final position to database with undo/redo support
     if (dragInfo.value) {
+      // If mouse didn't move, this was a click, not a drag
+      if (!dragInfo.value.hasMoved) {
+        // CapCut behavior: clicking a clip ONLY selects it, NEVER moves playhead
+        // Playhead movement is handled by clicking the timeline ruler only
+        // Clean up without processing drag
+        isDragging.value = false;
+        dragInfo.value = null;
+        dragGhostState.value = null;
+        return;
+      }
       // Handle Slip Edit End
       if (isSlipTool.value && slipState.value) {
         emit('slipEdit', {
@@ -8941,6 +9059,27 @@
   .clip-segment.selected-segment {
     z-index: 15;
     border-color: #3b82f6 !important;
+  }
+
+  /* Selected source styling (Video track) */
+  .clip-segment.selected-source {
+    z-index: 15;
+    border-color: #22d3ee !important;
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  /* Selected trim segment styling (Clip mode) */
+  .clip-segment.selected-trim {
+    z-index: 15;
+    border-color: #a78bfa !important;
+    box-shadow: 0 0 12px rgba(167, 139, 250, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  /* Selected audio segment styling */
+  .clip-segment.selected-audio {
+    z-index: 15;
+    border-color: #34d399 !important;
+    box-shadow: 0 0 12px rgba(52, 211, 153, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3) !important;
   }
 
   /* Active resize handle styling */

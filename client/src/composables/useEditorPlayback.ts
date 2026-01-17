@@ -30,6 +30,7 @@ export interface EditorPlaybackReturn {
   isPlaying: Readonly<Ref<boolean>>;
   playbackRate: Ref<number>;
   duration: ComputedRef<number>;
+  shouldMuteVideo: ComputedRef<boolean>;
 
   // Active content
   activeSource: ComputedRef<ActiveVideoSource | null>;
@@ -207,6 +208,19 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     return renderer.getActiveAudioTracks(engine.currentTime.value);
   });
 
+  // Computed: should mute video (only when there are ACTIVE extracted audio tracks at current time)
+  const shouldMuteVideo = computed(() => {
+    const currentTime = engine.currentTime.value;
+    // Check if any active audio track is linked to a video source (extracted audio)
+    const hasActiveExtracted = activeAudioTracks.value.some(activeTrack => {
+      // Find the original track to check linkedSourceId
+      const originalTrack = audioTracks.value.find(t => t.id === activeTrack.id);
+      return originalTrack?.linkedSourceId !== undefined;
+    });
+    console.log('[shouldMuteVideo] Computed:', hasActiveExtracted, 'currentTime:', currentTime, 'activeAudioTracks:', activeAudioTracks.value.length);
+    return hasActiveExtracted;
+  });
+
   // Track source changes
   let lastSourceId: string | null = null;
   watch(activeSource, (source) => {
@@ -215,6 +229,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
       onSourceChange?.(source);
     }
   });
+
 
   /**
    * Build video URL from file path
@@ -284,11 +299,9 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
       videoElement.load();
     }
 
-    // Sync time
-    const drift = Math.abs(videoElement.currentTime - source.videoTime);
-    if (drift > SYNC_TOLERANCE) {
-      videoElement.currentTime = source.videoTime;
-    }
+    // Sync time - ALWAYS sync when called, not just when drift is large
+    // This ensures video is at correct position when play button is pressed
+    videoElement.currentTime = source.videoTime;
 
     // Sync play state
     if (engine.isPlaying.value && videoElement.paused && videoElement.readyState >= 2) {
@@ -320,6 +333,29 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     mixer.dispose();
   }
 
+  // Wrap play/pause/togglePlay to ensure video is synced before playback starts
+  function play() {
+    // Sync video element to current timeline position BEFORE starting playback
+    // This ensures video starts from the correct position (e.g., where playhead was moved to)
+    syncVideoToTimeline();
+    engine.play();
+  }
+
+  function pause() {
+    engine.pause();
+    // CRITICAL: Sync audio immediately when pausing to stop audio playback
+    // Without this, audio continues playing because syncAudioToTimeline is only called in the animation loop
+    syncAudioToTimeline();
+  }
+
+  function togglePlay() {
+    if (engine.isPlaying.value) {
+      pause();
+    } else {
+      play();
+    }
+  }
+
   onUnmounted(() => {
     dispose();
   });
@@ -330,6 +366,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     isPlaying: engine.isPlaying,
     playbackRate: engine.playbackRate,
     duration: engine.duration,
+    shouldMuteVideo,
 
     // Active content
     activeSource,
@@ -341,10 +378,10 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     activeVideoUrl,
     preloadVideoUrl,
 
-    // Controls (from engine)
-    play: engine.play,
-    pause: engine.pause,
-    togglePlay: engine.togglePlay,
+    // Controls (wrapped to sync video before play)
+    play,
+    pause,
+    togglePlay,
     seek: engine.seek,
     seekRelative: engine.seekRelative,
     setPlaybackRate: engine.setPlaybackRate,

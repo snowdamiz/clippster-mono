@@ -27,7 +27,7 @@
         :active-transition="null"
         :is-in-gap="playback.isInGap.value"
         :video-server-port="videoServerPort"
-        :video-muted="isVideoMuted"
+        :video-muted="computedVideoMuted"
         :playback-rate="playback.playbackRate.value"
         @video-element-ready="onVideoElementReady"
         @error="onVideoError"
@@ -281,6 +281,36 @@ const volume = ref(1);
 const showSpeedMenu = ref(false);
 const containerSize = ref({ width: 0, height: 0 });
 
+// Calculate overlay scale factor based on container height
+// All overlay sizes are defined relative to a 1920x1080 reference resolution
+// This ensures the preview matches what the export will look like
+const overlayScaleFactor = computed(() => {
+  const { width: containerWidth, height: containerHeight } = containerSize.value;
+  if (containerWidth === 0 || containerHeight === 0) return 1;
+
+  // Parse the preview aspect ratio
+  const [ratioW, ratioH] = props.previewAspectRatio.split(':').map(Number);
+  const targetAspect = ratioW / ratioH;
+  const containerAspect = containerWidth / containerHeight;
+
+  let overlayHeight: number;
+  
+  // Calculate the actual display height of the video content
+  // The video uses object-contain, so it fits within container while maintaining aspect ratio
+  if (containerAspect > targetAspect) {
+    // Container is wider - video is constrained by height
+    overlayHeight = containerHeight;
+  } else {
+    // Container is taller - video is constrained by width
+    overlayHeight = containerWidth / targetAspect;
+  }
+
+  // Scale relative to 1080p reference height
+  // When overlay container is 1080px tall, scale is 1.0
+  // When overlay container is 540px tall, scale is 0.5
+  return overlayHeight / 1080;
+});
+
 // Initialize playback engine
 const playback = useEditorPlayback({
   videoServerPort: toRef(props, 'videoServerPort'),
@@ -320,6 +350,13 @@ const currentSubtitle = computed(() => {
   if (activeWords.length === 0) return null;
 
   return activeWords.map((w) => w.word).join(' ');
+});
+
+// Computed: video muted state (combine playback engine's shouldMuteVideo with user's isVideoMuted)
+const computedVideoMuted = computed(() => {
+  const shouldMute = playback.shouldMuteVideo.value || props.isVideoMuted;
+  console.log('[ClipEditorPreviewV2] computedVideoMuted:', shouldMute, 'shouldMuteVideo:', playback.shouldMuteVideo.value, 'isVideoMuted:', props.isVideoMuted);
+  return shouldMute;
 });
 
 // Drag state
@@ -400,6 +437,8 @@ function getOverlayPosition(overlay: TextOverlay): { x: number; y: number } {
 
 function getTextOverlayStyle(overlay: TextOverlay): Record<string, string> {
   const pos = getOverlayPosition(overlay);
+  const scale = overlayScaleFactor.value;
+  
   return {
     left: `${pos.x}%`,
     top: `${pos.y}%`,
@@ -410,10 +449,15 @@ function getTextOverlayStyle(overlay: TextOverlay): Record<string, string> {
 function getTextOverlayContentStyle(overlay: TextOverlay): Record<string, string> {
   const config = overlay.perRatioConfigs?.[props.previewAspectRatio];
   const style = config?.style ?? overlay.style ?? {};
+  const scale = overlayScaleFactor.value;
+
+  // Scale font size based on container size relative to 1080p reference
+  const baseFontSize = style.fontSize || 24;
+  const scaledFontSize = Math.round(baseFontSize * scale);
 
   return {
     fontFamily: style.fontFamily || 'sans-serif',
-    fontSize: `${style.fontSize || 24}px`,
+    fontSize: `${scaledFontSize}px`,
     fontWeight: String(style.fontWeight || 400),
     color: style.color || '#ffffff',
     textAlign: style.textAlign || 'center',
@@ -428,12 +472,17 @@ function getStickerPosition(sticker: Sticker): { x: number; y: number } {
 function getStickerStyle(sticker: Sticker): Record<string, string> {
   const pos = getStickerPosition(sticker);
   const config = sticker.perRatioConfigs?.[props.previewAspectRatio];
-  const scale = config?.scale ?? sticker.scale ?? 1;
+  const baseScale = config?.scale ?? sticker.scale ?? 1;
+  const containerScale = overlayScaleFactor.value;
+  
+  // Base width at current container scale (matching export: video_height * 0.1)
+  const baseWidth = 108 * containerScale;
 
   return {
     left: `${pos.x}%`,
     top: `${pos.y}%`,
-    transform: `translate(-50%, -50%) scale(${scale})`,
+    transform: `translate(-50%, -50%)`,
+    width: `${baseWidth * baseScale}px`,
   };
 }
 
@@ -445,12 +494,33 @@ function getWatermarkPosition(watermark: ClipWatermark): { x: number; y: number 
 function getWatermarkStyle(watermark: ClipWatermark): Record<string, string> {
   const pos = getWatermarkPosition(watermark);
   const config = watermark.perRatioConfigs?.[props.previewAspectRatio];
-  const scale = config?.scale ?? watermark.scale ?? 1;
+  const baseScale = config?.scale ?? watermark.scale ?? 1;
+  const containerScale = overlayScaleFactor.value;
+  
+  // Check if this is a full-frame overlay (1920x1080 watermark)
+  const isFullFrame = config?.isFullFrameOverlay ?? false;
+  
+  if (isFullFrame) {
+    // Full-frame watermarks fill the entire container
+    return {
+      left: '0',
+      top: '0',
+      width: '100%',
+      height: '100%',
+      transform: 'none',
+    };
+  }
+  
+  // Regular watermarks: scale is percentage of video width (0-100)
+  // Convert to actual pixel width based on container scale
+  // At 1080p: scale 20 = 20% of 1920px = 384px width
+  const baseWidth = (1920 * baseScale / 100) * containerScale;
 
   return {
     left: `${pos.x}%`,
     top: `${pos.y}%`,
-    transform: `translate(-50%, -50%) scale(${scale})`,
+    transform: `translate(-50%, -50%)`,
+    width: `${baseWidth}px`,
   };
 }
 
@@ -467,15 +537,20 @@ function getSubtitleStyle(): Record<string, string> {
 function getSubtitleTextStyle(): Record<string, string> {
   const settings = props.subtitleSettings;
   if (!settings) return {};
+  
+  const scale = overlayScaleFactor.value;
+  const scaledFontSize = Math.round((settings.fontSize || 24) * scale);
+  const scaledPadding = Math.round((settings.padding || 8) * scale);
+  const scaledBorderRadius = Math.round((settings.borderRadius || 4) * scale);
 
   return {
     fontFamily: settings.fontFamily || 'sans-serif',
-    fontSize: `${settings.fontSize || 24}px`,
+    fontSize: `${scaledFontSize}px`,
     fontWeight: String(settings.fontWeight || 700),
     color: settings.textColor || '#ffffff',
     backgroundColor: settings.backgroundEnabled ? settings.backgroundColor : 'transparent',
-    padding: `${settings.padding || 8}px`,
-    borderRadius: `${settings.borderRadius || 4}px`,
+    padding: `${scaledPadding}px`,
+    borderRadius: `${scaledBorderRadius}px`,
   };
 }
 
