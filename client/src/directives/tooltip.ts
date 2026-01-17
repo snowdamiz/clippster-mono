@@ -245,6 +245,10 @@ export function setupGlobalTooltips() {
     subtree: true,
   });
 
+  // Dismiss tooltip on any click to prevent it from persisting
+  // after clicking buttons that may remove elements (e.g., dialog close)
+  document.addEventListener('mousedown', hideTooltip);
+
   return observer;
 }
 
