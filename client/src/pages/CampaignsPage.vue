@@ -126,7 +126,21 @@
                 <!-- Content -->
                 <div class="campaign-card__body">
                   <div class="campaign-card__header">
-                    <h3 class="campaign-card__title">{{ campaign.title }}</h3>
+                    <div class="campaign-card__title-row">
+                      <h3 class="campaign-card__title">{{ campaign.title }}</h3>
+                      <!-- Platforms -->
+                      <div class="campaign-card__platforms">
+                        <div
+                          v-for="platform in campaign.allowed_platforms"
+                          :key="platform"
+                          class="campaign-card__platform"
+                          :class="getPlatformClass(platform)"
+                          :title="getPlatformDisplayName(platform)"
+                        >
+                          <component :is="getPlatformIcon(platform)" class="campaign-card__platform-icon" />
+                        </div>
+                      </div>
+                    </div>
                     <p v-if="campaign.description" class="campaign-card__description">
                       {{ campaign.description }}
                     </p>
@@ -160,19 +174,6 @@
                       >
                         +{{ campaign.creator_profiles.length - 4 }}
                       </div>
-                    </div>
-                  </div>
-
-                  <!-- Platforms -->
-                  <div class="campaign-card__platforms">
-                    <div
-                      v-for="platform in campaign.allowed_platforms"
-                      :key="platform"
-                      class="campaign-card__platform"
-                      :class="getPlatformClass(platform)"
-                    >
-                      <component :is="getPlatformIcon(platform)" class="campaign-card__platform-icon" />
-                      <span>{{ getPlatformDisplayName(platform) }}</span>
                     </div>
                   </div>
 
@@ -649,6 +650,13 @@
     gap: 0.375rem;
   }
 
+  .campaign-card__title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
   .campaign-card__title {
     font-size: 0.9375rem;
     font-weight: 600;
@@ -659,6 +667,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     transition: color 150ms ease;
+    flex: 1;
+    min-width: 0;
   }
 
   .campaign-card:hover .campaign-card__title {
@@ -749,21 +759,19 @@
   /* Platforms */
   .campaign-card__platforms {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.375rem;
-    padding-top: 0.125rem;
+    flex-shrink: 0;
   }
 
   .campaign-card__platform {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.4375rem;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     background-color: rgba(255, 255, 255, 0.04);
-    border-radius: 4px;
-    font-size: 0.625rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
+    border-radius: 5px;
     transition: background-color 150ms ease;
   }
 
@@ -772,9 +780,9 @@
   }
 
   .campaign-card__platform-icon {
-    width: 11px;
-    height: 11px;
-    opacity: 0.8;
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
   }
 
   .campaign-card__platform--tiktok {
