@@ -3638,11 +3638,6 @@
         const absoluteTime = props.clipStartTime + time;
         videoElement.value.currentTime = absoluteTime;
         previewTime.value = absoluteTime; // Store absolute time
-
-        // Reset clip video state and re-initialize preload for seamless segment transitions
-        if (previewRef.value?.resetClipVideoState) {
-          previewRef.value.resetClipVideoState();
-        }
       }
     }
   }

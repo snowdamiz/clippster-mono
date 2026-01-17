@@ -174,7 +174,6 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
   // Computed: active video source at current time
   const activeSource = computed(() => {
     const source = renderer.getActiveVideoSource(engine.currentTime.value);
-    console.log('[useEditorPlayback] activeSource:', source?.id, 'at time', engine.currentTime.value);
     return source;
   });
 
@@ -217,7 +216,6 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
       const originalTrack = audioTracks.value.find(t => t.id === activeTrack.id);
       return originalTrack?.linkedSourceId !== undefined;
     });
-    console.log('[shouldMuteVideo] Computed:', hasActiveExtracted, 'currentTime:', currentTime, 'activeAudioTracks:', activeAudioTracks.value.length);
     return hasActiveExtracted;
   });
 
@@ -279,7 +277,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
   /**
    * Sync video element to current timeline position
    */
-  function syncVideoToTimeline(): void {
+  function syncVideoToTimeline(force: boolean = false): void {
     if (!videoElement) return;
 
     const source = activeSource.value;
@@ -299,8 +297,24 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
       videoElement.load();
     }
 
-    // Sync time - ALWAYS sync when called, not just when drift is large
-    // This ensures video is at correct position when play button is pressed
+    // Only sync if:
+    // 1. Force flag is set (e.g., when play button is pressed)
+    // 2. Video is not already seeking
+    // 3. Video has enough data (readyState >= 3)
+    // 4. Drift exceeds tolerance
+    if (!force) {
+      // Don't sync if video is seeking or not ready
+      if (videoElement.seeking || videoElement.readyState < 3) {
+        return;
+      }
+      
+      // Only sync if drift exceeds tolerance
+      const drift = Math.abs(videoElement.currentTime - source.videoTime);
+      if (drift <= SYNC_TOLERANCE) {
+        return;
+      }
+    }
+
     videoElement.currentTime = source.videoTime;
 
     // Sync play state
@@ -337,7 +351,8 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
   function play() {
     // Sync video element to current timeline position BEFORE starting playback
     // This ensures video starts from the correct position (e.g., where playhead was moved to)
-    syncVideoToTimeline();
+    // Force sync here since user explicitly pressed play
+    syncVideoToTimeline(true);
     engine.play();
   }
 
