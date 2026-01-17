@@ -64,7 +64,7 @@
           activeSourceTab === 'clips' ? 'bg-violet-500/20 text-violet-300' : 'text-white/50 hover:text-white/70',
         ]"
       >
-        My Clips ({{ filteredClips.length }})
+        Clips ({{ filteredClips.length }})
       </button>
       <button
         @click="activeSourceTab = 'videos'"

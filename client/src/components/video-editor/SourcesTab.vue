@@ -64,7 +64,7 @@
           activeSourceTab === 'clips' ? 'bg-violet-500/20 text-violet-300' : 'text-white/50 hover:text-white/70',
         ]"
       >
-        My Clips ({{ filteredClips.length }})
+        Built Clips ({{ filteredClips.length }})
       </button>
       <button
         @click="activeSourceTab = 'videos'"
@@ -88,7 +88,7 @@
       <template v-else-if="activeSourceTab === 'clips'">
         <div class="space-y-2">
           <div class="flex items-center justify-between">
-            <h4 class="text-xs font-semibold text-white/70 uppercase tracking-wide">My Clips</h4>
+            <h4 class="text-xs font-semibold text-white/70 uppercase tracking-wide">Clips</h4>
             <span class="text-[11px] text-white/40">Showing built clips</span>
           </div>
         </div>

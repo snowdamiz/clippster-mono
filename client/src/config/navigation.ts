@@ -66,7 +66,7 @@ export const navigationItems: NavigationItem[] = [
     group: 'create',
   },
   {
-    name: 'My Clips',
+    name: 'Built Clips',
     path: '/clips',
     icon: LayoutGrid,
     group: 'create',

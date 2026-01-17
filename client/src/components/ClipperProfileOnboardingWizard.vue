@@ -55,6 +55,7 @@
                         type="text"
                         class="onboarding-wizard__input onboarding-wizard__input--with-prefix"
                         placeholder="your-username"
+                        @input="slugManuallyEdited = true"
                         @keydown.enter="nextStep"
                       />
                     </div>
@@ -138,12 +139,13 @@
                   <div class="onboarding-wizard__row">
                     <div class="onboarding-wizard__field">
                       <label class="onboarding-wizard__label">Experience Level</label>
-                      <select v-model="profile.experience_level" class="onboarding-wizard__select">
-                        <option value="" disabled>Select level</option>
-                        <option v-for="level in EXPERIENCE_LEVELS" :key="level.value" :value="level.value">
-                          {{ level.label }}
-                        </option>
-                      </select>
+                      <CustomDropdown
+                        v-model="profile.experience_level"
+                        :options="[...EXPERIENCE_LEVELS]"
+                        placeholder="Select level"
+                        class="onboarding-wizard__dropdown"
+                        trigger-class="onboarding-wizard__dropdown-trigger"
+                      />
                     </div>
 
                     <div class="onboarding-wizard__field">
@@ -151,11 +153,12 @@
                         Timezone
                         <span class="onboarding-wizard__optional">(optional)</span>
                       </label>
-                      <input
+                      <CustomDropdown
                         v-model="profile.timezone"
-                        type="text"
-                        class="onboarding-wizard__input"
-                        placeholder="America/New_York"
+                        :options="TIMEZONE_OPTIONS"
+                        placeholder="Select timezone"
+                        class="onboarding-wizard__dropdown"
+                        trigger-class="onboarding-wizard__dropdown-trigger"
                       />
                     </div>
                   </div>
@@ -441,7 +444,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, computed, watch } from 'vue';
+  import { ref, reactive, computed, watch, onMounted } from 'vue';
   import {
     UserCircle,
     ImageIcon,
@@ -458,6 +461,7 @@
     CheckCircle,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
   import {
     updateMyClipperProfile,
     uploadClipperAvatar,
@@ -468,6 +472,42 @@
     PREFERRED_PLATFORMS,
     LANGUAGES,
   } from '@/services/clipperProfilesApi';
+
+  const TIMEZONE_OPTIONS = [
+    { value: 'America/New_York', label: 'Eastern Time (US & Canada)' },
+    { value: 'America/Chicago', label: 'Central Time (US & Canada)' },
+    { value: 'America/Denver', label: 'Mountain Time (US & Canada)' },
+    { value: 'America/Los_Angeles', label: 'Pacific Time (US & Canada)' },
+    { value: 'America/Anchorage', label: 'Alaska' },
+    { value: 'Pacific/Honolulu', label: 'Hawaii' },
+    { value: 'America/Phoenix', label: 'Arizona' },
+    { value: 'America/Toronto', label: 'Toronto' },
+    { value: 'America/Vancouver', label: 'Vancouver' },
+    { value: 'America/Mexico_City', label: 'Mexico City' },
+    { value: 'America/Sao_Paulo', label: 'São Paulo' },
+    { value: 'America/Buenos_Aires', label: 'Buenos Aires' },
+    { value: 'Europe/London', label: 'London' },
+    { value: 'Europe/Paris', label: 'Paris' },
+    { value: 'Europe/Berlin', label: 'Berlin' },
+    { value: 'Europe/Madrid', label: 'Madrid' },
+    { value: 'Europe/Rome', label: 'Rome' },
+    { value: 'Europe/Amsterdam', label: 'Amsterdam' },
+    { value: 'Europe/Moscow', label: 'Moscow' },
+    { value: 'Europe/Istanbul', label: 'Istanbul' },
+    { value: 'Asia/Dubai', label: 'Dubai' },
+    { value: 'Asia/Kolkata', label: 'Mumbai, Kolkata' },
+    { value: 'Asia/Bangkok', label: 'Bangkok' },
+    { value: 'Asia/Singapore', label: 'Singapore' },
+    { value: 'Asia/Hong_Kong', label: 'Hong Kong' },
+    { value: 'Asia/Shanghai', label: 'Beijing, Shanghai' },
+    { value: 'Asia/Tokyo', label: 'Tokyo' },
+    { value: 'Asia/Seoul', label: 'Seoul' },
+    { value: 'Australia/Sydney', label: 'Sydney' },
+    { value: 'Australia/Melbourne', label: 'Melbourne' },
+    { value: 'Australia/Perth', label: 'Perth' },
+    { value: 'Pacific/Auckland', label: 'Auckland' },
+    { value: 'UTC', label: 'UTC' },
+  ];
 
   interface Props {
     show: boolean;
@@ -503,6 +543,30 @@
     languages: [],
     timezone: '',
   });
+
+  // Track if user has manually edited the slug
+  const slugManuallyEdited = ref(false);
+
+  // Generate slug from display name
+  const generateSlug = (name: string): string => {
+    return name
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
+      .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+  };
+
+  // Auto-generate slug from display name
+  watch(
+    () => profile.display_name,
+    (newName) => {
+      if (!slugManuallyEdited.value && newName) {
+        profile.slug = generateSlug(newName);
+      }
+    }
+  );
 
   // Reset avatar load error when avatar_url changes
   watch(
@@ -678,6 +742,7 @@
     });
     error.value = null;
     saving.value = false;
+    slugManuallyEdited.value = false;
   };
 
   // Reset form when dialog opens/closes
@@ -687,11 +752,28 @@
       if (newShow) {
         currentStep.value = 1;
         error.value = null;
+        slugManuallyEdited.value = false;
       } else {
         resetForm();
       }
     }
   );
+
+  // Detect and auto-fill timezone
+  const detectTimezone = () => {
+    try {
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (detected && !profile.timezone) {
+        profile.timezone = detected;
+      }
+    } catch (e) {
+      console.warn('Could not detect timezone:', e);
+    }
+  };
+
+  onMounted(() => {
+    detectTimezone();
+  });
 </script>
 
 <style scoped>
@@ -905,6 +987,44 @@
     outline: none;
     border-color: transparent;
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  /* ===== Custom Dropdown Styling ===== */
+  .onboarding-wizard__dropdown {
+    width: 100%;
+  }
+
+  /* Dropdown trigger button styling */
+  :deep(.onboarding-wizard__dropdown-trigger) {
+    width: 100% !important;
+    height: auto !important;
+    padding: 0.75rem 1rem !important;
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    font-size: 0.9375rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+    justify-content: space-between !important;
+  }
+
+  :deep(.onboarding-wizard__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  :deep(.onboarding-wizard__dropdown-trigger:focus-within) {
+    border-color: transparent !important;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3) !important;
+  }
+
+  :deep(.onboarding-wizard__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.onboarding-wizard__dropdown-trigger svg) {
+    width: 16px !important;
+    height: 16px !important;
+    color: var(--sidebar-text-muted) !important;
   }
 
   .onboarding-wizard__textarea {
@@ -1419,5 +1539,52 @@
     .onboarding-wizard__row {
       grid-template-columns: 1fr;
     }
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Onboarding Wizard dropdown menu styling */
+  .onboarding-wizard__dropdown + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: onboardingDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes onboardingDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  .onboarding-wizard__dropdown + div[class*='fixed'] button,
+  div.fixed.bg-popover button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.625rem 0.75rem !important;
+    border-radius: 6px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  .onboarding-wizard__dropdown + div[class*='fixed'] button:hover,
+  div.fixed.bg-popover button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  .onboarding-wizard__dropdown + div[class*='fixed'] button.bg-primary\/10,
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
+    font-weight: 600 !important;
   }
 </style>

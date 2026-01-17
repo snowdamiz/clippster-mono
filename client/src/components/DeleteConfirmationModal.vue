@@ -1,52 +1,35 @@
 <template>
   <Transition name="modal">
-    <div v-if="show" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]">
+    <div v-if="show" class="delete-modal__overlay" @click.self="$emit('close')">
       <Transition name="dialog" appear>
-        <div
-          class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-sm sm:max-w-md w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden"
-        >
-          <!-- Decorative top accent -->
-          <div class="h-1 w-full bg-gradient-to-r from-red-500 via-rose-500 to-red-600" />
+        <div v-if="show" class="delete-modal" role="dialog" aria-modal="true">
+          <!-- Accent bar -->
+          <div class="delete-modal__accent"></div>
 
-          <div class="p-5 sm:p-6 lg:p-8">
-            <!-- Header -->
-            <div class="mb-4 sm:mb-6 text-center">
-              <div
-                class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-red-500/20 to-rose-500/20 border border-red-500/30 mb-3 sm:mb-4"
-              >
-                <Trash2 class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-red-400" />
-              </div>
-              <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">{{ title }}</h2>
+          <!-- Header -->
+          <div class="delete-modal__header">
+            <div class="delete-modal__icon">
+              <Trash2 :size="24" />
             </div>
+            <h2 class="delete-modal__title">{{ title }}</h2>
+          </div>
 
-            <!-- Content -->
-            <div class="mb-5 sm:mb-6 lg:mb-8">
-              <p class="text-zinc-400 text-center text-sm sm:text-base">
-                {{ message }}
-                <span v-if="itemName" class="font-semibold text-white">"{{ itemName }}"</span>
-                {{ suffix }}
-              </p>
-              <p class="text-zinc-500 text-xs sm:text-sm text-center mt-2">This action cannot be undone.</p>
-            </div>
+          <!-- Content -->
+          <div class="delete-modal__content">
+            <p class="delete-modal__message">
+              {{ message }}
+              <span v-if="itemName" class="delete-modal__item-name">"{{ itemName }}"</span>
+              {{ suffix }}
+            </p>
+            <p class="delete-modal__warning">This action cannot be undone.</p>
+          </div>
 
-            <!-- Actions -->
-            <div class="space-y-2 sm:space-y-3">
-              <button
-                class="w-full px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group text-sm sm:text-base"
-                @click="$emit('confirm')"
-              >
-                <div
-                  class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                />
-                <span class="relative">{{ confirmText }}</span>
-              </button>
-              <button
-                class="w-full px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 text-sm sm:text-base"
-                @click="$emit('close')"
-              >
-                Cancel
-              </button>
-            </div>
+          <!-- Footer -->
+          <div class="delete-modal__footer">
+            <button @click="$emit('close')" class="delete-modal__btn delete-modal__btn--secondary">Cancel</button>
+            <button @click="$emit('confirm')" class="delete-modal__btn delete-modal__btn--primary">
+              {{ confirmText }}
+            </button>
           </div>
         </div>
       </Transition>
@@ -82,10 +65,146 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
+  /* ===== Overlay ===== */
+  .delete-modal__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+  }
+
+  /* ===== Dialog Container ===== */
+  .delete-modal {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 448px;
+    margin: 1rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ===== Accent Bar ===== */
+  .delete-modal__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .delete-modal__header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .delete-modal__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .delete-modal__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  /* ===== Content Area ===== */
+  .delete-modal__content {
+    padding: 0 1.5rem 1.5rem;
+    text-align: center;
+  }
+
+  .delete-modal__message {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin: 0 0 0.5rem;
+  }
+
+  .delete-modal__item-name {
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .delete-modal__warning {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+    margin: 0;
+  }
+
+  /* ===== Footer ===== */
+  .delete-modal__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
+  .delete-modal__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .delete-modal__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .delete-modal__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .delete-modal__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .delete-modal__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .delete-modal__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 200ms ease;
   }
 
   .modal-enter-from,
@@ -93,18 +212,17 @@
     opacity: 0;
   }
 
-  /* Dialog transition */
   .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 0.2s ease-in;
+    transition: all 150ms ease-in;
   }
 
   .dialog-enter-from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
 
   .dialog-leave-to {

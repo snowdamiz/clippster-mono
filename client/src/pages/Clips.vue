@@ -1,7 +1,7 @@
 <template>
   <div class="clips-page">
     <PageLayout
-      title="My Clips"
+      title="Built Clips"
       description="Browse and manage your generated video clips"
       :show-header="true"
       :icon="LayoutGrid"

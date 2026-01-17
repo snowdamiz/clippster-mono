@@ -494,7 +494,7 @@
       <ConfirmationModal
         :show="showClearInEditorDialog"
         title="Clear 'In Editor' Status?"
-        message="Your clip has been built successfully. Would you like to remove it from the 'In Editor' tracking? The built clip will still be available in My Clips."
+        message="Your clip has been built successfully. Would you like to remove it from the 'In Editor' tracking? The built clip will still be available in Built Clips."
         confirm-text="Yes, Clear"
         cancel-text="No, Keep"
         @close="onClearInEditorCancel"

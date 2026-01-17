@@ -547,47 +547,15 @@
 
               <form @submit.prevent="savePaymentMethod" class="payment-dialog__form">
                 <div class="payment-dialog__content">
-                  <div class="payment-dialog__field" @click.stop>
+                  <div class="payment-dialog__field">
                     <label class="payment-dialog__label">Method Type</label>
-                    <div class="payment-dialog__dropdown-wrapper">
-                      <button
-                        ref="paymentMethodDropdownTrigger"
-                        type="button"
-                        @click="togglePaymentMethodDropdown"
-                        :disabled="!!editingPaymentMethod"
-                        class="payment-dialog__dropdown-trigger"
-                      >
-                        <span class="payment-dialog__dropdown-label">{{ getSelectedPaymentMethodLabel() }}</span>
-                        <ChevronDown
-                          class="payment-dialog__chevron"
-                          :class="{ 'payment-dialog__chevron--open': showPaymentMethodDropdown }"
-                        />
-                      </button>
-                      <Teleport to="body">
-                        <div
-                          v-if="showPaymentMethodDropdown"
-                          class="payment-dialog__dropdown-backdrop"
-                          @click="showPaymentMethodDropdown = false"
-                        >
-                          <div class="payment-dialog__dropdown" :style="paymentMethodDropdownStyle" @click.stop>
-                            <div class="payment-dialog__dropdown-list">
-                              <button
-                                v-for="m in PAYMENT_METHOD_TYPES"
-                                :key="m.value"
-                                type="button"
-                                @click="selectPaymentMethodType(m.value)"
-                                class="payment-dialog__dropdown-item"
-                                :class="{
-                                  'payment-dialog__dropdown-item--active': paymentMethodForm.method_type === m.value,
-                                }"
-                              >
-                                {{ m.label }}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </Teleport>
-                    </div>
+                    <CustomDropdown
+                      v-model="paymentMethodForm.method_type"
+                      :options="[...PAYMENT_METHOD_TYPES]"
+                      placeholder="Select method"
+                      class="payment-dialog__dropdown"
+                      trigger-class="payment-dialog__dropdown-trigger"
+                    />
                   </div>
 
                   <template v-if="paymentMethodForm.method_type === 'paypal'">
@@ -754,13 +722,13 @@
     Clock,
     Users,
     X,
-    ChevronDown,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
   import UserPostsList from '@/components/UserPostsList.vue';
   import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Label } from '@/components/ui/label';
@@ -902,9 +870,6 @@
   const selectedAccountForPosts = ref<UserInstagramAccount | null>(null);
   const editingPaymentMethod = ref<ClipperPaymentMethod | null>(null);
   const savingPaymentMethod = ref(false);
-  const showPaymentMethodDropdown = ref(false);
-  const paymentMethodDropdownTrigger = ref<HTMLButtonElement | null>(null);
-  const paymentMethodDropdownStyle = ref<Record<string, string>>({});
   const deleting = ref(false);
   const deleteType = ref<'social account' | 'payment method'>('social account');
   const deleteTarget = ref<UserInstagramAccount | ClipperPaymentMethod | null>(null);
@@ -1095,41 +1060,11 @@
     editingPaymentMethod.value = null;
     Object.assign(paymentMethodForm, { method_type: '', is_default: false, details: {} });
     showPaymentMethodDialog.value = true;
-    showPaymentMethodDropdown.value = false;
-  };
-
-  const getSelectedPaymentMethodLabel = () => {
-    if (!paymentMethodForm.method_type) return 'Select method';
-    const method = PAYMENT_METHOD_TYPES.find((m) => m.value === paymentMethodForm.method_type);
-    return method?.label || 'Select method';
-  };
-
-  const selectPaymentMethodType = (value: string) => {
-    paymentMethodForm.method_type = value;
-    showPaymentMethodDropdown.value = false;
-  };
-
-  const togglePaymentMethodDropdown = () => {
-    if (showPaymentMethodDropdown.value) {
-      showPaymentMethodDropdown.value = false;
-      return;
-    }
-    // Calculate position based on trigger button
-    if (paymentMethodDropdownTrigger.value) {
-      const rect = paymentMethodDropdownTrigger.value.getBoundingClientRect();
-      paymentMethodDropdownStyle.value = {
-        top: `${rect.bottom + 4}px`,
-        left: `${rect.left}px`,
-        width: `${rect.width}px`,
-      };
-    }
-    showPaymentMethodDropdown.value = true;
   };
 
   const closePaymentMethodDialog = () => {
     if (savingPaymentMethod.value) return;
     showPaymentMethodDialog.value = false;
-    showPaymentMethodDropdown.value = false;
   };
 
   const editPaymentMethod = (method: ClipperPaymentMethod) => {
@@ -3029,113 +2964,37 @@
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
   }
 
-  /* ===== Custom Dropdown ===== */
-  .payment-dialog__dropdown-wrapper {
-    position: relative;
-  }
-
-  .payment-dialog__dropdown-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    height: 44px;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .payment-dialog__dropdown-trigger:hover:not(:disabled) {
-    border-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .payment-dialog__dropdown-trigger:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .payment-dialog__dropdown-label {
-    flex: 1;
-    text-align: left;
-  }
-
-  .payment-dialog__chevron {
-    width: 16px;
-    height: 16px;
-    color: var(--sidebar-text-muted);
-    transition: transform 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .payment-dialog__chevron--open {
-    transform: rotate(180deg);
-  }
-
-  .payment-dialog__dropdown-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 10000;
-  }
-
+  /* ===== Custom Dropdown Styling ===== */
   .payment-dialog__dropdown {
-    position: fixed;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-    z-index: 10001;
-    overflow: hidden;
-  }
-
-  .payment-dialog__dropdown-list {
-    padding: 0.25rem;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-
-  .payment-dialog__dropdown-list::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .payment-dialog__dropdown-list::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .payment-dialog__dropdown-list::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .payment-dialog__dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
     width: 100%;
-    padding: 0.625rem 0.75rem;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: left;
   }
 
-  .payment-dialog__dropdown-item:hover {
-    background-color: rgba(6, 182, 212, 0.1);
-    color: var(--sidebar-accent);
+  /* Dropdown trigger button styling */
+  :deep(.payment-dialog__dropdown-trigger) {
+    width: 100% !important;
+    height: 44px !important;
+    padding: 0.75rem 1rem !important;
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+    justify-content: space-between !important;
   }
 
-  .payment-dialog__dropdown-item--active {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    font-weight: 600;
+  :deep(.payment-dialog__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  :deep(.payment-dialog__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.payment-dialog__dropdown-trigger svg) {
+    width: 16px !important;
+    height: 16px !important;
+    color: var(--sidebar-text-muted) !important;
   }
 
   .payment-dialog__checkbox {
@@ -3303,5 +3162,53 @@
   .profile-empty__btn-icon {
     width: 14px;
     height: 14px;
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Payment Dialog dropdown menu styling */
+  .payment-dialog__dropdown + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: paymentDialogDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes paymentDialogDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  .payment-dialog__dropdown + div[class*='fixed'] button,
+  div.fixed.bg-popover button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.625rem 0.75rem !important;
+    border-radius: 6px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  .payment-dialog__dropdown + div[class*='fixed'] button:hover,
+  div.fixed.bg-popover button:hover {
+    background-color: rgba(6, 182, 212, 0.1) !important;
+    color: var(--sidebar-accent) !important;
+  }
+
+  .payment-dialog__dropdown + div[class*='fixed'] button.bg-primary\/10,
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
+    font-weight: 600 !important;
   }
 </style>
