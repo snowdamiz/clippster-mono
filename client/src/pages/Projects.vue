@@ -77,7 +77,7 @@
         v-if="projects.length > 0 || loading || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
         class="projects__heading"
       >
-        <h1 class="projects__title">Your Projects</h1>
+        <h1 class="projects__title">Projects</h1>
         <p class="projects__subtitle">Manage and organize your video projects, detect clips, and build content</p>
       </div>
 

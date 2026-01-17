@@ -104,7 +104,7 @@
 
         <!-- Page Heading -->
         <div v-if="displayableBuilds.length > 0 || loading" class="clips__heading">
-          <h1 class="clips__title">Your Clips</h1>
+          <h1 class="clips__title">Built Clips</h1>
           <p class="clips__subtitle">Browse and manage your generated video clips</p>
         </div>
 

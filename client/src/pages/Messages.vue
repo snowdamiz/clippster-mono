@@ -628,7 +628,7 @@
       <div class="messages__content">
         <!-- Page Heading -->
         <div class="messages__heading">
-          <h1 class="messages__title">Your Conversations</h1>
+          <h1 class="messages__title">Messages</h1>
           <p class="messages__subtitle">Chat with your team and organization members</p>
         </div>
 

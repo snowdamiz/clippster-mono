@@ -39,7 +39,7 @@
     <div class="videoeditor__content" :class="{ 'videoeditor__content--empty': !loading && projects.length === 0 }">
       <!-- Page Heading -->
       <div v-if="projects.length > 0 || loading" class="videoeditor__heading">
-        <h1 class="videoeditor__title">Your Editor Projects</h1>
+        <h1 class="videoeditor__title">Editor Projects</h1>
         <p class="videoeditor__subtitle">Create multi-source video projects with professional editing tools</p>
       </div>
 

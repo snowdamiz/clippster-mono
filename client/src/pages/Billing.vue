@@ -61,7 +61,7 @@
         <div v-else class="billing__content">
           <!-- Page Heading -->
           <div class="billing__heading">
-            <h1 class="billing__title">Manage Your Subscription</h1>
+            <h1 class="billing__title">Billing</h1>
             <p class="billing__subtitle">View your current plan, credit balance, and payment history</p>
           </div>
 

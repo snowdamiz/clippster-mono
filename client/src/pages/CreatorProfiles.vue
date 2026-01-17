@@ -32,7 +32,7 @@
         <div v-else class="creators__content">
           <!-- Page Heading (hidden in empty state) -->
           <div v-if="creators.length > 0 || loading" class="creators__heading">
-            <h1 class="creators__title">Manage Your Creators</h1>
+            <h1 class="creators__title">Creators</h1>
             <p class="creators__subtitle">View your creator profiles, monitor live streams, and manage recordings</p>
           </div>
 
