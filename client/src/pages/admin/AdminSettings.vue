@@ -13,17 +13,6 @@
         <p class="admin-settings__subtitle">Feature flags and UI configuration</p>
       </div>
 
-      <!-- Stats Header -->
-      <div class="admin-settings__header">
-        <div class="admin-settings__header-icon">
-          <Settings class="admin-settings__header-icon-svg" />
-        </div>
-        <div>
-          <h2 class="admin-settings__header-title">Settings</h2>
-          <p class="admin-settings__header-desc">Feature flags and UI configuration</p>
-        </div>
-      </div>
-
       <!-- Feature Flags -->
       <div class="admin-settings__section">
         <div class="admin-settings__section-header">
