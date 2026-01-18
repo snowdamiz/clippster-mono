@@ -274,6 +274,9 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     videoElement = video;
   }
 
+  // Large drift threshold - if drift exceeds this, it's a user-initiated seek (scrubbing)
+  const LARGE_DRIFT_THRESHOLD = 0.5;
+
   /**
    * Sync video element to current timeline position
    */
@@ -297,19 +300,18 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
       videoElement.load();
     }
 
-    // Only sync if:
-    // 1. Force flag is set (e.g., when play button is pressed)
-    // 2. Video is not already seeking
-    // 3. Video has enough data (readyState >= 3)
-    // 4. Drift exceeds tolerance
-    if (!force) {
-      // Don't sync if video is seeking or not ready
+    const drift = Math.abs(videoElement.currentTime - source.videoTime);
+    
+    // Large drift = user scrubbed the playhead, always sync immediately
+    const isUserSeek = drift > LARGE_DRIFT_THRESHOLD;
+
+    if (!force && !isUserSeek) {
+      // Small drift - only sync if video is ready and not seeking
       if (videoElement.seeking || videoElement.readyState < 3) {
         return;
       }
       
-      // Only sync if drift exceeds tolerance
-      const drift = Math.abs(videoElement.currentTime - source.videoTime);
+      // Only sync if drift exceeds small tolerance
       if (drift <= SYNC_TOLERANCE) {
         return;
       }

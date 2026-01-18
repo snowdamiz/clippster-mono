@@ -3164,7 +3164,13 @@
   // V2 Playback Engine event handlers (new timeline-driven system)
   function onPreviewTimeUpdateV2(time: number) {
     // V2 engine directly provides timeline time, no mapping needed
+    const oldTime = previewTime.value;
     previewTime.value = time;
+    
+    // Log every 0.5 seconds
+    if (Math.floor(oldTime * 2) !== Math.floor(time * 2)) {
+      console.log(`[ClipEditorDialog] 📍 previewTime updated: ${oldTime.toFixed(3)}s → ${time.toFixed(3)}s`);
+    }
   }
 
   function onPlayStateChangeV2(playing: boolean) {
@@ -3479,15 +3485,19 @@
   }
 
   function seekTo(time: number, options?: { shouldResumePlayback?: boolean }) {
+    console.log(`[ClipEditorDialog] 🎯 seekTo called: ${time.toFixed(3)}s, options:`, options);
     stopGapPlayback(true);
     if (editorMode.value) {
       // Editor mode: time is already the global timeline position
       isSeeking.value = true;
+      const oldPreviewTime = previewTime.value;
       previewTime.value = time;
+      console.log(`[ClipEditorDialog] 📍 Set previewTime: ${oldPreviewTime.toFixed(3)}s → ${time.toFixed(3)}s`);
       
       // CRITICAL: Update playback engine's currentTime so it knows where we are
       // This ensures when play is pressed, the engine syncs video to the correct position
       if (useNewPlaybackEngine.value && previewV2Ref.value?.seek) {
+        console.log(`[ClipEditorDialog] 🎯 Calling previewV2Ref.seek(${time.toFixed(3)}s)`);
         previewV2Ref.value.seek(time);
       }
 

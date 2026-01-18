@@ -5530,9 +5530,10 @@
     // Emit final seek with shouldResumePlayback flag to tell parent to resume playback if needed
     const finalTime = optimisticDragTime.value ?? props.currentTime;
     
-    // Clear optimistic drag time - playhead will now use props.currentTime
-    optimisticDragTime.value = null;
-
+    // DON'T clear optimistic drag time yet - keep it until props.currentTime updates
+    // This prevents the playhead from snapping back to the old position
+    // It will be cleared by the watcher when props.currentTime catches up
+    
     // Emit seek with resume flag
     emit('seek', finalTime, { shouldResumePlayback: wasPlayingBeforeDrag.value });
 
@@ -8028,12 +8029,24 @@
     lastSyncTime = performance.now();
   }
 
+  // Watch for currentTime updates to clear optimisticDragTime when seek completes
+  watch(() => props.currentTime, (newTime) => {
+    // Clear optimistic drag time if props.currentTime has caught up to it
+    // This allows the playhead to stay at the dragged position until the seek completes
+    if (optimisticDragTime.value !== null && !isDraggingPlayhead.value) {
+      const diff = Math.abs(newTime - optimisticDragTime.value);
+      // Clear if within 50ms (close enough)
+      if (diff < 0.05) {
+        optimisticDragTime.value = null;
+      }
+    }
+  });
+
   // The effective playhead position used in the template
   const effectivePlayheadPosition = computed(() => {
-    // During dragging, use optimistic position to avoid round-trip lag
-    // This shows the playhead exactly where the user is dragging, not where
-    // the video has caught up to (which can lag behind during fast dragging)
-    if (isDraggingPlayhead.value && optimisticDragTime.value !== null) {
+    // During dragging OR after drag (until seek completes), use optimistic position
+    // This shows the playhead exactly where the user dragged it
+    if (optimisticDragTime.value !== null) {
       // Use totalDuration.value consistently to match clickPositionToTime() and playheadPosition
       const duration = totalDuration.value;
       if (duration > 0) {

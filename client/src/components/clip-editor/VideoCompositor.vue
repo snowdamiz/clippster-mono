@@ -1,10 +1,11 @@
 <template>
   <div ref="containerRef" class="video-compositor relative w-full h-full overflow-hidden bg-black">
     <!-- Video A (double-buffer slot A) -->
+    <!-- Using z-index stacking instead of opacity transitions for instant segment switching -->
     <video
       ref="videoARef"
-      class="absolute inset-0 w-full h-full object-contain transition-opacity duration-75"
-      :class="{ 'opacity-0': activeSlot !== 'A' || showBlackScreen, 'z-10': activeSlot === 'A' }"
+      class="absolute inset-0 w-full h-full object-contain"
+      :class="{ 'z-20': activeSlot === 'A', 'z-10': activeSlot !== 'A', 'invisible': showBlackScreen }"
       :muted="videoMuted"
       crossorigin="anonymous"
       playsinline
@@ -21,8 +22,8 @@
     <!-- Video B (double-buffer slot B) -->
     <video
       ref="videoBRef"
-      class="absolute inset-0 w-full h-full object-contain transition-opacity duration-75"
-      :class="{ 'opacity-0': activeSlot !== 'B' || showBlackScreen, 'z-10': activeSlot === 'B' }"
+      class="absolute inset-0 w-full h-full object-contain"
+      :class="{ 'z-20': activeSlot === 'B', 'z-10': activeSlot !== 'B', 'invisible': showBlackScreen }"
       :muted="videoMuted"
       crossorigin="anonymous"
       playsinline
@@ -127,6 +128,34 @@ function getInactiveSlot(): Slot {
 // Get active video element
 function getActiveVideo(): HTMLVideoElement | null {
   return getVideoForSlot(activeSlot.value);
+}
+
+// Get inactive video element
+function getInactiveVideo(): HTMLVideoElement | null {
+  return getVideoForSlot(getInactiveSlot());
+}
+
+/**
+ * Ensure only the active video is playing - pause inactive video
+ * This prevents audio echo from both videos playing simultaneously
+ */
+function ensureOnlyActiveVideoPlays(): void {
+  const activeVideo = getActiveVideo();
+  const inactiveVideo = getInactiveVideo();
+  
+  console.log(`[VideoCompositor] 🔊 Audio Check - Active: ${activeSlot.value}, ActivePaused: ${activeVideo?.paused}, InactivePaused: ${inactiveVideo?.paused}`);
+  
+  if (inactiveVideo && !inactiveVideo.paused) {
+    console.log(`[VideoCompositor] 🔇 PAUSING inactive video in slot ${getInactiveSlot()}`);
+    inactiveVideo.pause();
+  }
+  
+  if (activeVideo) {
+    console.log(`[VideoCompositor] 🔊 Active video in slot ${activeSlot.value}: paused=${activeVideo.paused}, muted=${activeVideo.muted}, volume=${activeVideo.volume}`);
+  }
+  if (inactiveVideo) {
+    console.log(`[VideoCompositor] 🔇 Inactive video in slot ${getInactiveSlot()}: paused=${inactiveVideo.paused}, muted=${inactiveVideo.muted}, volume=${inactiveVideo.volume}`);
+  }
 }
 
 /**
@@ -415,6 +444,7 @@ async function updatePlayback(): Promise<void> {
 
       // Switch active slot - this is instant because video is already buffered at correct position
       activeSlot.value = inactiveSlot;
+      ensureOnlyActiveVideoPlays();
 
       // Sync and play new active video
       const newVideo = getActiveVideo();
@@ -445,6 +475,7 @@ async function updatePlayback(): Promise<void> {
   if (video && video.readyState >= 3) {
     // Ready immediately - swap now
     activeSlot.value = inactiveSlot;
+    ensureOnlyActiveVideoPlays();
     syncVideoToTimeline(video, source.videoTime);
     video.playbackRate = props.playbackRate;
 
@@ -504,24 +535,28 @@ function onVideoCanPlay(slot: Slot): void {
   if (source && slotSourceIds.value[slot] === source.id && slot !== activeSlot.value) {
     console.log(`[VideoCompositor] Swapping to newly ready slot ${slot} with ${bufferedAhead.toFixed(2)}s buffer`);
 
+    // Swap immediately - the video is buffered and ready
+    console.log(`[VideoCompositor] 🔄 Performing instant swap from ${activeSlot.value} to ${slot}`);
+    
     // Pause old video
-    const oldVideo = getActiveVideo();
+    const oldSlot = activeSlot.value;
+    const oldVideo = getVideoForSlot(oldSlot);
     if (oldVideo && !oldVideo.paused) {
+      console.log(`[VideoCompositor] ⏸️ Pausing old video in slot ${oldSlot}`);
       oldVideo.pause();
     }
 
-    // Switch to new slot
+    // Switch to new slot (changes z-index to bring new video to front)
     activeSlot.value = slot;
+    ensureOnlyActiveVideoPlays();
     isLoading.value = false;
-
-    // Sync and play
-    if (video) {
+    console.log(`[VideoCompositor] ✅ Swap complete, activeSlot is now ${activeSlot.value}`);
+    
+    // Start playing the new video after it's visible
+    if (video && props.isPlaying) {
       syncVideoToTimeline(video, source.videoTime);
       video.playbackRate = props.playbackRate;
-
-      if (props.isPlaying) {
-        video.play().catch((e) => console.warn('[VideoCompositor] Play failed:', e));
-      }
+      video.play().catch((e) => console.warn('[VideoCompositor] Play failed:', e));
     }
   } else if (slot === activeSlot.value) {
     isLoading.value = false;
@@ -679,6 +714,33 @@ watch(
     }
   },
   { immediate: true }
+);
+
+// CRITICAL: Watch activeSlot and isPlaying to ALWAYS pause inactive video
+// This prevents audio echo from both videos playing simultaneously
+watch(
+  [() => activeSlot.value, () => props.isPlaying, videoARef, videoBRef],
+  () => {
+    const activeVideo = getActiveVideo();
+    const inactiveVideo = getInactiveVideo();
+    
+    console.log(`[VideoCompositor] 🔒 Enforcing audio exclusivity - Active: ${activeSlot.value}, isPlaying: ${props.isPlaying}`);
+    
+    // ALWAYS pause the inactive video, regardless of state
+    if (inactiveVideo && !inactiveVideo.paused) {
+      console.log(`[VideoCompositor] 🔇 FORCE PAUSING inactive video in slot ${getInactiveSlot()}`);
+      inactiveVideo.pause();
+    }
+    
+    // Log current state for debugging
+    if (activeVideo) {
+      console.log(`[VideoCompositor] 🔊 Active slot ${activeSlot.value}: paused=${activeVideo.paused}, muted=${activeVideo.muted}`);
+    }
+    if (inactiveVideo) {
+      console.log(`[VideoCompositor] 🔇 Inactive slot ${getInactiveSlot()}: paused=${inactiveVideo.paused}, muted=${inactiveVideo.muted}`);
+    }
+  },
+  { flush: 'post' } // Run after DOM updates
 );
 
 // Lifecycle

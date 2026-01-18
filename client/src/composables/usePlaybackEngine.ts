@@ -158,7 +158,14 @@ export function usePlaybackEngine(options: PlaybackEngineOptions = {}): Playback
     }
 
     // Update time
+    const oldTime = currentTime.value;
     currentTime.value = newTime;
+    
+    // Log every 30 frames (~0.5 seconds)
+    if (Math.floor(oldTime * 60) !== Math.floor(newTime * 60)) {
+      console.log(`[PlaybackEngine] ⏩ Tick: ${oldTime.toFixed(3)}s → ${newTime.toFixed(3)}s (delta: ${deltaSec.toFixed(3)}s)`);
+    }
+    
     onTimeUpdate?.(newTime);
 
     // Schedule next frame
@@ -218,8 +225,21 @@ export function usePlaybackEngine(options: PlaybackEngineOptions = {}): Playback
    */
   function seek(time: number) {
     const clampedTime = Math.max(0, Math.min(time, duration.value));
+    const oldTime = currentTime.value;
     currentTime.value = clampedTime;
+    
+    console.log(`[PlaybackEngine] 🎯 SEEK: ${oldTime.toFixed(3)}s → ${clampedTime.toFixed(3)}s, isPlaying: ${isPlaying.value}`);
+    
+    // Reset lastFrameTime to prevent stale delta calculations on next tick
+    // This ensures the animation loop uses the seek position as the new baseline
+    if (isPlaying.value) {
+      const oldLastFrameTime = lastFrameTime;
+      lastFrameTime = performance.now();
+      console.log(`[PlaybackEngine] ⏱️ Reset lastFrameTime (was ${oldLastFrameTime}, now ${lastFrameTime})`);
+    }
+    
     onTimeUpdate?.(clampedTime);
+    console.log(`[PlaybackEngine] 📢 Called onTimeUpdate with ${clampedTime.toFixed(3)}s`);
   }
 
   /**
