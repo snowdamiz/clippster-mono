@@ -302,25 +302,6 @@
                     </div>
 
                     <div class="creator-card__divider"></div>
-
-                    <!-- Live/Monitoring Status Dot -->
-                    <div class="creator-card__status-indicator">
-                      <div
-                        v-if="isCreatorMonitored(creator)"
-                        class="creator-card__status-dot creator-card__status-dot--monitoring"
-                        title="Monitoring"
-                      ></div>
-                      <div
-                        v-else-if="isCreatorLive(creator)"
-                        class="creator-card__status-dot creator-card__status-dot--live"
-                        title="Live"
-                      ></div>
-                      <div
-                        v-else
-                        class="creator-card__status-dot creator-card__status-dot--offline"
-                        title="Offline"
-                      ></div>
-                    </div>
                   </div>
 
                   <!-- Footer: Status + Actions -->
@@ -570,25 +551,6 @@
                     </div>
 
                     <div class="creator-card__divider"></div>
-
-                    <!-- Live/Monitoring Status Dot -->
-                    <div class="creator-card__status-indicator">
-                      <div
-                        v-if="isCreatorMonitored(creator)"
-                        class="creator-card__status-dot creator-card__status-dot--monitoring"
-                        title="Monitoring"
-                      ></div>
-                      <div
-                        v-else-if="isCreatorLive(creator)"
-                        class="creator-card__status-dot creator-card__status-dot--live"
-                        title="Live"
-                      ></div>
-                      <div
-                        v-else
-                        class="creator-card__status-dot creator-card__status-dot--offline"
-                        title="Offline"
-                      ></div>
-                    </div>
                   </div>
 
                   <!-- Footer: Status + Actions -->
@@ -2227,29 +2189,6 @@
     display: flex;
     align-items: center;
     margin-left: auto;
-  }
-
-  .creator-card__status-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background-color: var(--sidebar-border);
-  }
-
-  .creator-card__status-dot--monitoring {
-    background-color: #10b981;
-    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
-    animation: pulse 2s ease-in-out infinite;
-  }
-
-  .creator-card__status-dot--live {
-    background-color: #ef4444;
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
-    animation: pulse 2s ease-in-out infinite;
-  }
-
-  .creator-card__status-dot--offline {
-    opacity: 0.4;
   }
 
   @keyframes pulse {
