@@ -119,11 +119,13 @@ export function useHlsPlayback() {
   }
 
   /**
-   * Wait for the HLS playlist to become available
+   * Wait for the HLS playlist to become available.
+   * If expectedUrl is provided, abort when the active target changes.
    */
-  async function waitForPlaylist(url: string): Promise<boolean> {
+  async function waitForPlaylist(url: string, expectedUrl?: string): Promise<boolean> {
     for (let attempt = 0; attempt < PLAYLIST_POLL_MAX_ATTEMPTS; attempt++) {
       if (isCleaningUp) return false;
+      if (expectedUrl && hlsUrl && hlsUrl !== expectedUrl) return false;
 
       try {
         const response = await fetch(url, { method: 'GET', mode: 'cors' });
@@ -140,11 +142,13 @@ export function useHlsPlayback() {
   }
 
   /**
-   * Wait for the first segment to appear in the playlist
+   * Wait for the first segment to appear in the playlist.
+   * If expectedUrl is provided, abort when the active target changes.
    */
-  async function waitForFirstSegment(url: string): Promise<boolean> {
+  async function waitForFirstSegment(url: string, expectedUrl?: string): Promise<boolean> {
     for (let attempt = 0; attempt < PLAYLIST_SEGMENT_POLL_MAX_ATTEMPTS; attempt++) {
       if (isCleaningUp) return false;
+      if (expectedUrl && hlsUrl && hlsUrl !== expectedUrl) return false;
 
       try {
         const response = await fetch(url, { method: 'GET', cache: 'no-store', mode: 'cors' });
@@ -175,7 +179,8 @@ export function useHlsPlayback() {
     // Detect if this is a direct URL or a local directory path
     const isDirectUrl = outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
     const newUrl = isDirectUrl ? outputDirOrUrl : getHlsUrl(outputDirOrUrl);
-    
+    const expectedUrl = newUrl;
+
     // Skip if already initialized for this URL
     if (hlsUrl === newUrl && videoElement === video && state.value.isInitialized) {
       return true;
@@ -203,7 +208,7 @@ export function useHlsPlayback() {
     // For direct URLs (like Kick proxy), skip the playlist polling - just try to load directly
     // For local recordings, wait for the playlist to be available
     if (!isDirectUrl) {
-      const playlistReady = await waitForPlaylist(hlsUrl);
+      const playlistReady = await waitForPlaylist(hlsUrl, expectedUrl);
       if (!playlistReady) {
         if (!isCleaningUp) {
           state.value.error = 'Playlist not available - recording may not have started';
@@ -212,7 +217,13 @@ export function useHlsPlayback() {
       }
 
       // Ensure at least one segment exists
-      await waitForFirstSegment(hlsUrl);
+      const segmentReady = await waitForFirstSegment(hlsUrl, expectedUrl);
+      if (!segmentReady) {
+        if (!isCleaningUp) {
+          state.value.error = 'No segments produced for recording';
+        }
+        return false;
+      }
     }
 
     try {
@@ -352,15 +363,40 @@ export function useHlsPlayback() {
     hlsInstance.on(Hls.Events.ERROR, (event, data) => {
       if (isCleaningUp) return;
 
-      console.log('[HlsPlayback] Error:', data.type, data.details, 'fatal:', data.fatal);
+      // Enhanced error logging with buffer state
+      let bufferAhead = 0;
+      if (videoElement && videoElement.buffered.length > 0) {
+        const currentTime = videoElement.currentTime;
+        for (let i = 0; i < videoElement.buffered.length; i++) {
+          if (currentTime >= videoElement.buffered.start(i) && currentTime <= videoElement.buffered.end(i)) {
+            bufferAhead = videoElement.buffered.end(i) - currentTime;
+            break;
+          }
+        }
+      }
+      console.log('[HlsPlayback] Error:', data.type, data.details, 'fatal:', data.fatal, 
+        videoElement ? `| Buffer ahead: ${bufferAhead.toFixed(1)}s, currentTime: ${videoElement.currentTime.toFixed(1)}s, liveEdge: ${state.value.liveEdgeTime.toFixed(1)}s` : '');
 
       // Handle specific error types
       if (data.details === 'bufferStalledError') {
+        // Log detailed buffer state on stall
+        if (videoElement) {
+          const buffered = videoElement.buffered;
+          const ranges: string[] = [];
+          for (let i = 0; i < buffered.length; i++) {
+            ranges.push(`[${buffered.start(i).toFixed(1)}-${buffered.end(i).toFixed(1)}]`);
+          }
+          console.warn(`[HlsPlayback] ⚠️ BUFFER STALL at ${videoElement.currentTime.toFixed(1)}s | Buffered ranges: ${ranges.join(', ') || 'none'} | Live edge: ${state.value.liveEdgeTime.toFixed(1)}s`);
+        }
         handleBufferStall();
         return;
       }
 
       if (data.details === 'bufferSeekOverHole') {
+        // Log the hole that was skipped
+        if (data.frag) {
+          console.warn(`[HlsPlayback] ⚠️ BUFFER HOLE detected, skipped from ${(data as any).previousTime?.toFixed(1) || '?'}s to frag at ${data.frag.start?.toFixed(1) || '?'}s`);
+        }
         clearBufferStallRecovery();
         return;
       }
@@ -553,9 +589,27 @@ export function useHlsPlayback() {
     if (isCleaningUp || !hls || !videoElement) return;
 
     bufferStallRetries++;
+    console.log(`[HlsPlayback] Buffer stall recovery attempt ${bufferStallRetries}/${MAX_BUFFER_STALL_RETRIES}`);
+
+    // Check if we're near the live edge - if so, seek back to give more buffer room
+    const currentTime = videoElement.currentTime;
+    const liveEdge = state.value.liveEdgeTime;
+    const isNearLiveEdge = liveEdge > 0 && (liveEdge - currentTime) < 8; // Within 8 seconds of live edge
+
+    if (isNearLiveEdge && bufferStallRetries === 1) {
+      // First attempt near live edge: seek back 8 seconds to give buffer room
+      const seekBackTarget = Math.max(0, currentTime - 8);
+      console.log(`[HlsPlayback] Near live edge stall, seeking back from ${currentTime.toFixed(1)}s to ${seekBackTarget.toFixed(1)}s`);
+      videoElement.currentTime = seekBackTarget;
+      hls.startLoad();
+      clearBufferStallRecovery();
+      return;
+    }
 
     if (bufferStallRetries >= MAX_BUFFER_STALL_RETRIES) {
-      const resumeTime = videoElement.currentTime;
+      // Max retries reached - do a full reload and seek back if near live edge
+      console.log('[HlsPlayback] Max buffer stall retries, reloading');
+      const resumeTime = isNearLiveEdge ? Math.max(0, currentTime - 8) : currentTime;
       hls.stopLoad();
       hls.startLoad();
       if (!Number.isNaN(resumeTime)) {
@@ -566,11 +620,12 @@ export function useHlsPlayback() {
     }
 
     if (bufferStallRetries === 1) {
-      const currentTime = videoElement.currentTime;
+      // First attempt: try to skip over any gap in buffer
       const buffered = videoElement.buffered;
 
       for (let i = 0; i < buffered.length; i++) {
         if (buffered.start(i) > currentTime) {
+          console.log(`[HlsPlayback] Skipping buffer gap to ${buffered.start(i).toFixed(1)}s`);
           videoElement.currentTime = buffered.start(i) + 0.1;
           break;
         }
@@ -719,8 +774,11 @@ export function useHlsPlayback() {
     // NOT what's currently buffered. HLS.js will load necessary segments when seeking.
     const minAvailableOffset = Math.max(0, availableStartTime - offset);
     const safeFloor = minAvailableOffset > 0 ? minAvailableOffset + SAFE_SEEK_PADDING : 0;
-    const liveEdge = state.value.liveEdgeTime || state.value.duration || 0;
-    const clampedTime = Math.max(safeFloor, Math.min(time, liveEdge));
+    // Use duration as the upper bound for seeking, NOT liveEdgeTime.
+    // liveEdgeTime represents the "safe" live sync position (a few segments behind),
+    // but users should be able to seek anywhere within the available duration.
+    const maxSeekable = state.value.duration || 0;
+    const clampedTime = Math.max(safeFloor, Math.min(time, maxSeekable));
 
     // Map back to absolute player time
     const targetAbsolute = clampedTime + offset;
@@ -901,6 +959,19 @@ export function useHlsPlayback() {
     await cleanupInternal(true);
   }
 
+  /**
+   * Wait for playlist + first segment readiness without attaching a player.
+   * Useful for gating before initializing playback.
+   */
+  async function waitForPlaylistReady(outputDirOrUrl: string): Promise<boolean> {
+    const isDirectUrl = outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
+    const targetUrl = isDirectUrl ? outputDirOrUrl : getHlsUrl(outputDirOrUrl);
+
+    const playlistReady = await waitForPlaylist(targetUrl, targetUrl);
+    if (!playlistReady) return false;
+    return waitForFirstSegment(targetUrl, targetUrl);
+  }
+
   // Cleanup on unmount
   onUnmounted(() => {
     cleanup();
@@ -925,6 +996,7 @@ export function useHlsPlayback() {
     toggleMute,
     cleanup,
     refreshPlaylist,
+    waitForPlaylistReady,
 
     // Utility
     getHlsUrl,

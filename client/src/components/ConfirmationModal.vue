@@ -125,7 +125,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 9999;
+    z-index: 10000;
   }
 
   /* ===== Dialog Container ===== */
@@ -278,7 +278,7 @@
 
   .confirm-dialog__btn--primary {
     background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
+    color: #000;
   }
 
   .confirm-dialog__btn--primary:hover {

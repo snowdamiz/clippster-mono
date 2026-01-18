@@ -46,6 +46,7 @@ export function useLivestreamSegmentProcessing() {
     sessionId: string,
     payload: SegmentEventPayload,
     detectClips: boolean = true,
+    promptContent?: string,
     onProgress?: (status: string) => void
   ) {
     const session = await getLivestreamSession(sessionId);
@@ -90,6 +91,7 @@ export function useLivestreamSegmentProcessing() {
       projectId: session.project_id,
       detectClips,
       duration: payload.duration,
+      promptContent,
       onProgress,
     });
 
@@ -153,7 +155,7 @@ export function useLivestreamSegmentProcessing() {
         segmentProjectName,
         parentProject?.description || undefined,
         job.projectId,
-        'PumpFun'
+        parentProject?.platform || 'PumpFun'
       );
 
       // Generate thumbnail for the segment video
@@ -201,7 +203,7 @@ export function useLivestreamSegmentProcessing() {
 
         const formData = new FormData();
         formData.append('project_id', segmentProjectId);
-        formData.append('prompt', DEFAULT_LIVE_PROMPT);
+        formData.append('prompt', job.promptContent || DEFAULT_LIVE_PROMPT);
         formData.append('audio', audioFile, audioFile.name);
         if (job.duration) {
           formData.append('duration', job.duration.toString());
@@ -217,7 +219,7 @@ export function useLivestreamSegmentProcessing() {
           if (response.data?.success) {
             const detectionSessionId = await persistClipDetectionResults(
               segmentProjectId,
-              DEFAULT_LIVE_PROMPT,
+              job.promptContent || DEFAULT_LIVE_PROMPT,
               response.data,
               {
                 processingTimeMs: 0,
@@ -241,24 +243,35 @@ export function useLivestreamSegmentProcessing() {
             throw new Error(response.data?.error || 'Clip detection failed');
           }
         } catch (apiError: any) {
+          const status = apiError?.response?.status;
+
           // Handle 402 Payment Required (Insufficient Credits) gracefully
-          if (apiError.response && apiError.response.status === 402) {
+          if (status === 402) {
             console.warn(
               '[LiveSegments] Insufficient credits for detection. Switching to recording only.'
             );
 
-            // Mark this segment as completed (recorded only) instead of error
             job.onProgress?.('Insufficient credits - Detection skipped');
             await updateSegmentStatus(job.segmentId, 'completed');
             await updateLivestreamSessionProgress(job.sessionId, { processedSegmentsDelta: 1 });
 
-            // Update the session status via event so the main monitor knows to stop trying to detect
             window.dispatchEvent(
               new CustomEvent('livestream-credit-exhausted', {
                 detail: { sessionId: job.sessionId, streamerId: job.streamerId },
               })
             );
 
+            return;
+          }
+
+          // Handle server-side errors gracefully by keeping the recording
+          if (status && status >= 500) {
+            console.warn(
+              `[LiveSegments] Server error (${status}) during detection. Keeping recording and marking segment completed.`
+            );
+            job.onProgress?.(`Error: Server ${status} - recording kept (detection skipped)`);
+            await updateSegmentStatus(job.segmentId, 'completed');
+            await updateLivestreamSessionProgress(job.sessionId, { processedSegmentsDelta: 1 });
             return;
           }
 

@@ -2,7 +2,7 @@
   <Transition name="modal">
     <div
       v-if="showVideoPlayer"
-      class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50"
+      class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center"
       :class="zIndexClass"
     >
       <Transition name="dialog" appear>
@@ -280,7 +280,9 @@
 
   // Computed: z-index class
   const zIndexClass = computed(() => {
-    return props.zIndex === 60 ? 'z-[60]' : 'z-50';
+    if (props.zIndex === 10000) return 'z-[10000]';
+    if (props.zIndex === 60) return 'z-[60]';
+    return 'z-50';
   });
 
   // Computed: Effective start/end times

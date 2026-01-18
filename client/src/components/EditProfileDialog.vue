@@ -134,12 +134,13 @@
                   <div class="profile-dialog__row">
                     <div class="profile-dialog__field">
                       <label class="profile-dialog__label">Experience Level</label>
-                      <select v-model="profile.experience_level" class="profile-dialog__select">
-                        <option value="" disabled>Select level</option>
-                        <option v-for="level in EXPERIENCE_LEVELS" :key="level.value" :value="level.value">
-                          {{ level.label }}
-                        </option>
-                      </select>
+                      <CustomDropdown
+                        v-model="profile.experience_level"
+                        :options="[...EXPERIENCE_LEVELS]"
+                        placeholder="Select level"
+                        class="profile-dialog__dropdown"
+                        trigger-class="profile-dialog__dropdown-trigger"
+                      />
                     </div>
                     <div class="profile-dialog__field">
                       <label class="profile-dialog__label">Timezone</label>
@@ -245,14 +246,13 @@
                   <div class="profile-dialog__form-card-items">
                     <div class="profile-dialog__field">
                       <label class="profile-dialog__label">Platform</label>
-                      <select
+                      <CustomDropdown
                         v-model="channelLinkForm.platform"
-                        :disabled="!!editingChannelLink"
-                        class="profile-dialog__select"
-                      >
-                        <option value="" disabled>Select platform</option>
-                        <option v-for="p in CHANNEL_PLATFORMS" :key="p.value" :value="p.value">{{ p.label }}</option>
-                      </select>
+                        :options="[...CHANNEL_PLATFORMS]"
+                        placeholder="Select platform"
+                        class="profile-dialog__dropdown"
+                        trigger-class="profile-dialog__dropdown-trigger"
+                      />
                     </div>
                     <div class="profile-dialog__field">
                       <label class="profile-dialog__label">URL</label>
@@ -565,6 +565,7 @@
     X,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
   import {
     getMyClipperProfile,
     updateMyClipperProfile,
@@ -1498,6 +1499,44 @@
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
   }
 
+  /* ===== Custom Dropdown Styling ===== */
+  .profile-dialog__dropdown {
+    width: 100%;
+  }
+
+  /* Dropdown trigger button styling */
+  :deep(.profile-dialog__dropdown-trigger) {
+    width: 100% !important;
+    height: auto !important;
+    padding: 0.625rem 0.875rem !important;
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+    justify-content: space-between !important;
+  }
+
+  :deep(.profile-dialog__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  :deep(.profile-dialog__dropdown-trigger:focus-within) {
+    border-color: transparent !important;
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3) !important;
+  }
+
+  :deep(.profile-dialog__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.profile-dialog__dropdown-trigger svg) {
+    width: 16px !important;
+    height: 16px !important;
+    color: var(--sidebar-text-muted) !important;
+  }
+
   .profile-dialog__textarea {
     resize: vertical;
     min-height: 80px;
@@ -2260,5 +2299,52 @@
     .profile-dialog__portfolio-grid {
       grid-template-columns: repeat(2, 1fr);
     }
+  }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Profile Dialog dropdown menu styling */
+  .profile-dialog__dropdown + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: profileDialogDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes profileDialogDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  .profile-dialog__dropdown + div[class*='fixed'] button,
+  div.fixed.bg-popover button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.625rem 0.75rem !important;
+    border-radius: 6px !important;
+    font-size: 0.875rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  .profile-dialog__dropdown + div[class*='fixed'] button:hover,
+  div.fixed.bg-popover button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  .profile-dialog__dropdown + div[class*='fixed'] button.bg-primary\/10,
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
+    font-weight: 600 !important;
   }
 </style>

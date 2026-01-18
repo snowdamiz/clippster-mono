@@ -195,7 +195,6 @@
               <div class="vod-card__badges">
                 <span v-if="detectedPlatform" class="vod-card__badge" :class="`vod-card__badge--${detectedPlatform}`">
                   <img :src="getPlatformIcon(detectedPlatform)" class="vod-card__badge-icon" />
-                  {{ getPlatformDisplayName(detectedPlatform) }}
                 </span>
                 <span class="vod-card__badge vod-card__badge--duration">
                   <Clock class="vod-card__badge-icon-svg" />
@@ -684,7 +683,7 @@
     if (!detectedPlatform.value) {
       showError(
         'Unknown Platform',
-        'Could not detect the platform. Please enter a valid PumpFun link/mint ID or Kick link/username.'
+        'Could not detect the platform. Please enter a valid PumpFun link/mint ID, Kick link/username, or Twitch link/channel name.'
       );
       return;
     }
@@ -887,7 +886,7 @@
         {
           autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick',
+          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick' | 'twitch',
           creatorWatermarkSettings,
         }
       );
@@ -949,7 +948,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 
@@ -1407,47 +1406,45 @@
   .vod-card__badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.3rem 0.625rem;
+    gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
     backdrop-filter: blur(8px);
-    border-radius: 9999px;
-    font-size: 0.6875rem;
-    font-weight: 700;
-    color: white;
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.02em;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .vod-card__badge--pumpfun {
-    background-color: rgba(16, 185, 129, 0.95);
-    border: 1px solid rgba(16, 185, 129, 0.5);
+    background-color: rgba(16, 185, 129, 0.3);
+    color: #6ee7b7;
   }
 
   .vod-card__badge--kick {
-    background-color: rgba(83, 252, 24, 0.9);
-    border: 1px solid rgba(83, 252, 24, 0.5);
-    color: #000;
+    background-color: rgba(83, 252, 24, 0.3);
+    color: #bef264;
   }
 
   .vod-card__badge--twitch {
-    background-color: rgba(145, 70, 255, 0.95);
-    border: 1px solid rgba(145, 70, 255, 0.5);
+    background-color: rgba(147, 51, 234, 0.3);
+    color: #c4b5fd;
   }
 
   .vod-card__badge--youtube {
-    background-color: rgba(220, 38, 38, 0.95);
-    border: 1px solid rgba(220, 38, 38, 0.5);
+    background-color: rgba(220, 38, 38, 0.3);
+    color: #fca5a5;
   }
 
   .vod-card__badge--duration {
-    background-color: rgba(139, 92, 246, 0.95);
-    border: 1px solid rgba(139, 92, 246, 0.5);
+    background-color: rgba(14, 165, 233, 0.3);
+    color: #7dd3fc;
   }
 
   .vod-card__badge-icon {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
     filter: brightness(0) invert(1);
   }
 
@@ -1456,8 +1453,8 @@
   }
 
   .vod-card__badge-icon-svg {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
   }
 
   .vod-card__actions {

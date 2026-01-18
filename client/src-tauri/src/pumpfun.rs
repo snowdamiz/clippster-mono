@@ -280,6 +280,11 @@ pub fn get_active_recordings_count() -> usize {
     ACTIVE_RECORDINGS.lock().unwrap().len()
 }
 
+#[tauri::command]
+pub fn get_active_pumpfun_recordings() -> Vec<String> {
+    ACTIVE_RECORDINGS.lock().unwrap().keys().cloned().collect()
+}
+
 pub async fn stop_all_recordings() {
     let mut recordings = ACTIVE_RECORDINGS.lock().unwrap();
     for (_, entry) in recordings.drain() {

@@ -6,14 +6,14 @@
   <title>Complete Payment - Clippster</title>
   <style>
     :root {
-      --background: oklch(0.145 0 0);
-      --foreground: oklch(0.985 0 0);
-      --card: oklch(0.145 0 0);
-      --primary: oklch(0.985 0 0);
-      --muted-foreground: oklch(0.708 0 0);
-      --destructive-foreground: oklch(0.637 0.237 25.331);
-      --success: oklch(0.696 0.17 162.48);
-      --success-bg: oklch(0.269 0.05 162.48);
+      /* App design system colors */
+      --sidebar-bg: #18181b;
+      --sidebar-surface: #27272a;
+      --sidebar-border: #3f3f46;
+      --sidebar-text: #fafafa;
+      --sidebar-text-muted: #a1a1aa;
+      --sidebar-accent: #06b6d4;
+      --sidebar-hover: rgba(255, 255, 255, 0.05);
       --radius: 0.625rem;
     }
 
@@ -30,8 +30,8 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      background: var(--background);
-      color: var(--foreground);
+      background: var(--sidebar-bg);
+      color: var(--sidebar-text);
       padding: 1.5rem;
     }
 
@@ -43,66 +43,68 @@
     .card {
       position: relative;
       overflow: hidden;
-      border-radius: calc(var(--radius) * 2);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      background: var(--card);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      border-radius: 12px;
+      border: 1px solid var(--sidebar-border);
+      background: var(--sidebar-surface);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
     }
 
-    .gradient-overlay {
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, transparent 50%, rgba(147, 51, 234, 0.03) 100%);
-      pointer-events: none;
+    .accent-bar {
+      height: 3px;
+      background-color: var(--sidebar-accent);
     }
 
     .content {
       position: relative;
-      padding: 2rem;
+      padding: 1.75rem;
     }
 
     h1 {
-      font-size: 1.5rem;
+      font-size: 1.1875rem;
       font-weight: 700;
-      margin-bottom: 1rem;
+      margin-bottom: 1.25rem;
       text-align: center;
+      color: var(--sidebar-text);
+      letter-spacing: -0.01em;
     }
 
     .payment-details {
       margin: 1.5rem 0;
-      padding: 1rem;
-      background: rgba(255, 255, 255, 0.03);
-      border-radius: var(--radius);
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 1.125rem;
+      background: var(--sidebar-hover);
+      border-radius: 8px;
+      border: 1px solid var(--sidebar-border);
     }
 
     .detail-row {
       display: flex;
       justify-content: space-between;
-      margin: 0.5rem 0;
-      font-size: 0.875rem;
+      margin: 0.375rem 0;
+      font-size: 0.8125rem;
     }
 
     .detail-label {
-      color: var(--muted-foreground);
+      color: var(--sidebar-text-muted);
     }
 
     .detail-value {
       font-weight: 600;
+      color: var(--sidebar-text);
+      font-size: 0.875rem;
     }
 
     #pay-btn {
       width: 100%;
       margin-top: 1.5rem;
-      border-radius: var(--radius);
-      background: linear-gradient(to right, rgb(147, 51, 234), rgb(79, 70, 229));
+      border-radius: 8px;
+      background-color: var(--sidebar-accent);
       border: none;
-      padding: 0.75rem 1.5rem;
+      padding: 0.875rem 1rem;
       cursor: pointer;
-      transition: all 0.3s ease;
+      transition: all 150ms ease;
       color: white;
       font-weight: 600;
+      font-size: 0.875rem;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -110,7 +112,7 @@
     }
 
     #pay-btn:hover:not(:disabled) {
-      box-shadow: 0 10px 25px -5px rgba(147, 51, 234, 0.5);
+      opacity: 0.9;
     }
 
     #pay-btn:disabled {
@@ -119,7 +121,7 @@
     }
 
     .spinner {
-      animation: spin 1s linear infinite;
+      animation: spin 0.8s linear infinite;
     }
 
     @keyframes spin {
@@ -130,28 +132,30 @@
     .status {
       margin-top: 1rem;
       font-size: 0.875rem;
-      color: var(--muted-foreground);
+      color: var(--sidebar-text-muted);
       text-align: center;
+      line-height: 1.5;
     }
 
     .message-box {
       margin-top: 1rem;
-      padding: 0.75rem 1rem;
-      border-radius: calc(var(--radius) - 2px);
-      font-size: 0.875rem;
+      padding: 0.625rem 1rem;
+      border-radius: 6px;
+      font-size: 0.8125rem;
       display: none;
+      line-height: 1.5;
     }
 
     .error {
-      color: var(--destructive-foreground);
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.2);
     }
 
     .success {
-      color: var(--success);
-      background: var(--success-bg);
-      border: 1px solid rgba(var(--success), 0.2);
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
       font-weight: 500;
     }
   </style>
@@ -159,7 +163,7 @@
 <body>
   <div class="container">
     <div class="card">
-      <div class="gradient-overlay"></div>
+      <div class="accent-bar"></div>
       <div class="content">
         <h1>Complete Payment</h1>
 

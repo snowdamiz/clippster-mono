@@ -455,7 +455,7 @@
             "
           >
             <Film :size="12" />
-            My Clips ({{ filteredClips.length }})
+            Clips ({{ filteredClips.length }})
           </button>
           <button
             @click="libraryFilter = 'videos'"

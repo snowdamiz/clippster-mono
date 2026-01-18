@@ -154,6 +154,7 @@
     message="Are you sure you want to delete this clip?"
     suffix="This action cannot be undone."
     confirm-text="Delete"
+    variant="destructive"
     @close="handleDeleteDialogClose"
     @confirm="deleteClipConfirmed"
   />
@@ -233,6 +234,7 @@
   import ClipEditorDialog from './clip-editor/ClipEditorDialog.vue';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
   import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
+  import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
   import { useToast } from '@/composables/useToast';
@@ -247,14 +249,11 @@
 
   const authStore = useAuthStore();
   const { error: showError } = useToast();
+  const { hasAnyActiveDetection, startDetection, updateProgress, completeDetection, getDetectionState } =
+    useClipDetectionTracking();
   const { setClipGenerationInProgress } = useWindowClose();
-  const {
-    startDetection,
-    updateProgress: updateGlobalProgress,
-    completeDetection,
-    getDetectionState,
-    hasAnyActiveDetection,
-  } = useClipDetectionTracking();
+  const inEditorStore = useInEditorClips();
+  inEditorStore.hydrate();
 
   const props = defineProps<{
     modelValue: boolean;
@@ -691,13 +690,7 @@
         chunkedProgress,
         (newProgress) => {
           // Always update global tracking (this persists across navigation)
-          updateGlobalProgress(
-            projectId,
-            newProgress.progress,
-            newProgress.stage,
-            newProgress.message,
-            newProgress.error || ''
-          );
+          updateProgress(projectId, newProgress.progress, newProgress.stage, newProgress.message, newProgress.error || '');
 
           // Only update local UI refs if the user is still viewing THIS project
           // This prevents other project's progress from overwriting the current view
@@ -1802,6 +1795,15 @@
         clipSegments: segments,
       });
 
+      // Add clip to in-editor tracking
+      await inEditorStore.addClip({
+        clipId,
+        projectId: props.project?.id ?? null,
+        projectNameSnapshot: props.project?.name ?? null,
+        origin: 'project',
+        assetPath: videoSrc.value,
+      });
+
       // Set the editor state
       clipEditorClipId.value = clipId;
       clipEditorStartTime.value = startTime;
@@ -1834,6 +1836,15 @@
   async function openClipInExistingProject(project: VideoEditorProject) {
     const pending = pendingClipToEdit.value;
     if (!pending) return;
+
+    // Add clip to in-editor tracking (re-opening existing project)
+    await inEditorStore.addClip({
+      clipId: pending.clipId,
+      projectId: props.project?.id ?? null,
+      projectNameSnapshot: props.project?.name ?? null,
+      origin: 'project',
+      assetPath: videoSrc.value,
+    });
 
     // Set the editor state
     clipEditorClipId.value = pending.clipId;
@@ -2200,7 +2211,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 9999;
+    z-index: 10000;
   }
 
   /* ===== Dialog Container ===== */

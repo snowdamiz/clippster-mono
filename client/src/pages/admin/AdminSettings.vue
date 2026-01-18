@@ -13,17 +13,6 @@
         <p class="admin-settings__subtitle">Feature flags and UI configuration</p>
       </div>
 
-      <!-- Stats Header -->
-      <div class="admin-settings__header">
-        <div class="admin-settings__header-icon">
-          <Settings class="admin-settings__header-icon-svg" />
-        </div>
-        <div>
-          <h2 class="admin-settings__header-title">Settings</h2>
-          <p class="admin-settings__header-desc">Feature flags and UI configuration</p>
-        </div>
-      </div>
-
       <!-- Feature Flags -->
       <div class="admin-settings__section">
         <div class="admin-settings__section-header">
@@ -258,7 +247,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 

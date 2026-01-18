@@ -16,15 +16,6 @@
         </span>
       </template>
 
-      <template #actions>
-        <div class="admin-hub__actions">
-          <router-link to="/admin/beta-codes" class="admin-hub__action-btn admin-hub__action-btn--primary">
-            <KeyRound class="admin-hub__action-icon" />
-            Generate Codes
-          </router-link>
-        </div>
-      </template>
-
       <!-- Error State -->
       <div v-if="error" class="admin-hub__error">
         <div class="admin-hub__error-icon-wrapper">
@@ -153,6 +144,7 @@
     Settings,
     Loader2,
     AlertTriangle,
+    Percent,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
@@ -227,6 +219,13 @@
       route: '/admin/beta-codes',
     },
     {
+      id: 'discount-codes',
+      title: 'Discount Codes',
+      description: 'Create and manage promotional discount codes',
+      icon: Percent,
+      route: '/admin/discount-codes',
+    },
+    {
       id: 'waitlist',
       title: 'Waitlist',
       description: 'Users who signed up for early access',
@@ -279,7 +278,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 

@@ -39,7 +39,7 @@
     <div class="videoeditor__content" :class="{ 'videoeditor__content--empty': !loading && projects.length === 0 }">
       <!-- Page Heading -->
       <div v-if="projects.length > 0 || loading" class="videoeditor__heading">
-        <h1 class="videoeditor__title">Your Editor Projects</h1>
+        <h1 class="videoeditor__title">Editor Projects</h1>
         <p class="videoeditor__subtitle">Create multi-source video projects with professional editing tools</p>
       </div>
 
@@ -60,14 +60,21 @@
       <!-- Projects Content -->
       <div v-else-if="projects.length > 0" class="videoeditor__main">
         <!-- Selection Bar (shown when items selected) -->
-        <div v-if="selectedProjects.size > 0" class="videoeditor__selection-bar">
-          <button @click="confirmBulkDelete" class="videoeditor__selection-delete">
-            <Trash2 class="videoeditor__selection-icon" />
-            Delete ({{ selectedProjects.size }})
-          </button>
-          <span class="videoeditor__selection-count">{{ selectedProjects.size }} selected</span>
-          <button @click="clearSelection" class="videoeditor__selection-clear">Clear</button>
-        </div>
+        <Transition name="selection-bar">
+          <div v-if="selectedProjects.size > 0" class="videoeditor__selection-bar">
+            <div class="videoeditor__selection-info">
+              <Check class="videoeditor__selection-icon" />
+              <span>{{ selectedProjects.size }} selected</span>
+            </div>
+            <div class="videoeditor__selection-actions">
+              <button @click="clearSelection" class="videoeditor__selection-clear">Clear</button>
+              <button @click="confirmBulkDelete" class="videoeditor__selection-delete">
+                <Trash2 class="videoeditor__selection-delete-icon" />
+                Delete Selected
+              </button>
+            </div>
+          </div>
+        </Transition>
 
         <!-- Projects Grid -->
         <div v-if="filteredProjects.length > 0" class="videoeditor__section">
@@ -97,13 +104,31 @@
                   </div>
                 </div>
 
-                <!-- Source Count Badge -->
+                <!-- Clip Project Badge -->
                 <div
-                  v-if="getSourceCount(project.id) > 0"
+                  v-if="isClipBasedProject(project.id)"
+                  class="videoeditor-card__badge videoeditor-card__badge--clip"
+                >
+                  <Film class="videoeditor-card__badge-icon" />
+                  <span>Clip Project</span>
+                </div>
+
+                <!-- Source Count Badge (only show if not a clip project or has multiple sources) -->
+                <div
+                  v-else-if="getSourceCount(project.id) > 0"
                   class="videoeditor-card__badge videoeditor-card__badge--sources"
                 >
                   <Film class="videoeditor-card__badge-icon" />
                   <span>{{ getSourceCount(project.id) }} Sources</span>
+                </div>
+
+                <!-- In Editor Badge -->
+                <div
+                  v-if="hasInEditorClips(project.id)"
+                  class="videoeditor-card__badge videoeditor-card__badge--in-editor"
+                >
+                  <Edit class="videoeditor-card__badge-icon" />
+                  <span>{{ getInEditorClipCount(project.id) }} In Editor</span>
                 </div>
 
                 <!-- Thumbnail background with vignette -->
@@ -209,6 +234,7 @@
       :message="deleteMessage"
       suffix="This action cannot be undone."
       confirm-text="Delete"
+      variant="destructive"
       @close="showDeleteDialog = false"
       @confirm="handleDeleteConfirm"
     />
@@ -344,7 +370,8 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, watch } from 'vue';
+  import { ref, computed, onMounted, watch, Transition } from 'vue';
+  import { useRouter } from 'vue-router';
   import { Clapperboard, Plus, Trash2, Search, Check, Play, Edit, Film, Clock } from 'lucide-vue-next';
   import { Input } from '@/components/ui/input';
   import PageLayout from '@/components/PageLayout.vue';
@@ -367,9 +394,14 @@
   import { getRawVideo } from '@/services/database/raw-videos';
   import { getClipWithBuildStatus } from '@/services/database/clip-build';
   import { useFormatters } from '@/composables/useFormatters';
+  import { useInEditorClips } from '@/stores/useInEditorClips';
   import { invoke } from '@tauri-apps/api/core';
 
   const { getRelativeTime: formatRelativeTime } = useFormatters();
+
+  // In-editor clips store
+  const inEditorStore = useInEditorClips();
+  inEditorStore.hydrate();
 
   // Types for project metadata
   interface ProjectEditInfo {
@@ -717,6 +749,35 @@
     return sourceThumbnails.value.get(projectId) || [];
   }
 
+  // Check if a project has any in-editor clips as sources
+  function hasInEditorClips(projectId: string): boolean {
+    const sources = projectSources.value.get(projectId) || [];
+    return sources.some(
+      (source) => source.source_type === 'clip' && source.source_id && inEditorStore.isInEditor(source.source_id)
+    );
+  }
+
+  // Get count of in-editor clips in a project
+  function getInEditorClipCount(projectId: string): number {
+    const sources = projectSources.value.get(projectId) || [];
+    return sources.filter(
+      (source) => source.source_type === 'clip' && source.source_id && inEditorStore.isInEditor(source.source_id)
+    ).length;
+  }
+
+  // Check if a project is a clip-based project (has clip sources)
+  function isClipBasedProject(projectId: string): boolean {
+    const sources = projectSources.value.get(projectId) || [];
+    return sources.some((source) => source.source_type === 'clip' && source.source_id);
+  }
+
+  // Get the primary clip ID for a clip-based project
+  function getPrimaryClipId(projectId: string): string | null {
+    const sources = projectSources.value.get(projectId) || [];
+    const clipSource = sources.find((source) => source.source_type === 'clip' && source.source_id);
+    return clipSource?.source_id || null;
+  }
+
   function formatDuration(seconds: number): string {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -793,10 +854,14 @@
       if (selectedProjects.value.size > 0) {
         // Bulk delete
         for (const id of selectedProjects.value) {
+          // Clear in-editor clips for this project before deleting
+          clearInEditorClipsForProject(id);
           await deleteVideoEditorProject(id);
         }
         selectedProjects.value.clear();
       } else if (projectToDelete.value) {
+        // Clear in-editor clips for this project before deleting
+        clearInEditorClipsForProject(projectToDelete.value.id);
         // Single delete
         await deleteVideoEditorProject(projectToDelete.value.id);
       }
@@ -806,6 +871,19 @@
     } finally {
       showDeleteDialog.value = false;
       projectToDelete.value = null;
+    }
+  }
+
+  // Clear in-editor clips that belong to a video editor project
+  function clearInEditorClipsForProject(projectId: string) {
+    const sources = projectSources.value.get(projectId) || [];
+    const clipIdsToRemove = sources
+      .filter((source) => source.source_type === 'clip' && source.source_id && inEditorStore.isInEditor(source.source_id))
+      .map((source) => source.source_id!);
+
+    if (clipIdsToRemove.length > 0) {
+      inEditorStore.clearMany(clipIdsToRemove);
+      console.log('[VideoEditor] Cleared in-editor clips for deleted project:', projectId, clipIdsToRemove);
     }
   }
 
@@ -851,8 +929,20 @@
   }
 
   // Lifecycle
-  onMounted(() => {
-    loadProjects();
+  onMounted(async () => {
+    const router = useRouter();
+    await loadProjects();
+    
+    // Check if we should auto-open a project (from navigation state)
+    const state = history.state as { openProjectId?: string };
+    if (state?.openProjectId && projects.value.length > 0) {
+      const projectToOpen = projects.value.find(p => p.id === state.openProjectId);
+      if (projectToOpen) {
+        openProject(projectToOpen);
+        // Clear the state so it doesn't auto-open again on refresh
+        router.replace({ path: '/video-editor' });
+      }
+    }
   });
 
   // Watch for editor dialog close to refresh projects
@@ -900,7 +990,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 
@@ -1054,13 +1144,49 @@
   .videoeditor__selection-bar {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    padding: 0.625rem 1rem;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    margin-bottom: 1rem;
+    border-radius: 10px;
+  }
+
+  .videoeditor__selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    font-weight: 500;
+  }
+
+  .videoeditor__selection-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  .videoeditor__selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .videoeditor__selection-clear {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .videoeditor__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
   }
 
   .videoeditor__selection-delete {
@@ -1082,32 +1208,40 @@
     background-color: #dc2626;
   }
 
-  .videoeditor__selection-icon {
+  .videoeditor__selection-delete-icon {
     width: 13px;
     height: 13px;
   }
 
-  .videoeditor__selection-count {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
+  /* Selection Bar Transitions */
+  .selection-bar-enter-active {
+    animation: slideDown 0.2s ease-out;
   }
 
-  .videoeditor__selection-clear {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    padding: 0.375rem 0.75rem;
-    cursor: pointer;
-    transition: all 150ms ease;
+  .selection-bar-leave-active {
+    animation: slideUp 0.15s ease-in;
   }
 
-  .videoeditor__selection-clear:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
   }
 
   /* ===== Sections ===== */
@@ -1188,9 +1322,11 @@
 
   .videoeditor-card--selected {
     border-color: var(--sidebar-accent);
-    box-shadow:
-      0 0 0 2px var(--sidebar-accent),
-      0 8px 32px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .videoeditor-card--selected:hover {
+    border-color: var(--sidebar-accent);
   }
 
   .videoeditor-card--skeleton {
@@ -1243,6 +1379,11 @@
     color: var(--sidebar-bg);
   }
 
+  .videoeditor-card__checkbox-inner--checked:hover {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
   .videoeditor-card__checkbox-icon {
     width: 16px;
     height: 16px;
@@ -1256,23 +1397,37 @@
     z-index: 20;
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    backdrop-filter: blur(4px);
+    gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(8px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .videoeditor-card__badge--sources {
-    background-color: rgba(139, 92, 246, 0.9);
-    color: white;
+    background-color: rgba(139, 92, 246, 0.3);
+    color: #c4b5fd;
+  }
+
+  .videoeditor-card__badge--clip {
+    background-color: rgba(139, 92, 246, 0.3);
+    color: #c4b5fd;
+  }
+
+  .videoeditor-card__badge--in-editor {
+    top: auto;
+    bottom: 52px;
+    background-color: rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
   }
 
   .videoeditor-card__badge-icon {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
   }
 
   /* Thumbnail */

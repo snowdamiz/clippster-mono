@@ -100,12 +100,14 @@ fn resolve_service_script(app: &tauri::AppHandle, script_name: &str) -> Result<S
 
 /// Start HLS recording for a livestream
 /// This starts the Node.js recorder which outputs HLS format (.ts segments + .m3u8 playlist)
+/// If resume_dir is provided, it will continue recording to that directory instead of creating a new one
 #[tauri::command]
 pub async fn start_hls_recording(
     app: tauri::AppHandle,
     mint_id: String,
     streamer_id: String,
     _display_name: String,
+    resume_dir: Option<String>,
 ) -> Result<HlsRecordingResult, String> {
     // Check if already recording
     {
@@ -124,15 +126,26 @@ pub async fn start_hls_recording(
     let storage_paths = storage::init_storage_dirs()
         .map_err(|e| format!("Failed to initialize storage: {}", e))?;
 
-    // Create unique session ID
-    let session_id = format!("hls_{}_{}", mint_id, chrono::Utc::now().timestamp());
-    
-    // Output directory for HLS segments
-    let output_dir = storage_paths
-        .videos
-        .join("hls_live")
-        .join(&mint_id)
-        .join(&session_id);
+    // Use resume_dir if provided, otherwise create a new unique session
+    let (session_id, output_dir) = if let Some(ref resume_path) = resume_dir {
+        // Extract session_id from the resume path (last component)
+        let path = std::path::Path::new(resume_path);
+        let session = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&format!("hls_{}_{}", mint_id, chrono::Utc::now().timestamp()))
+            .to_string();
+        println!("[HLS] Resuming recording in existing directory: {}", resume_path);
+        (session, std::path::PathBuf::from(resume_path))
+    } else {
+        // Create unique session ID and new directory
+        let session = format!("hls_{}_{}", mint_id, chrono::Utc::now().timestamp());
+        let dir = storage_paths
+            .videos
+            .join("hls_live")
+            .join(&mint_id)
+            .join(&session);
+        (session, dir)
+    };
     
     std::fs::create_dir_all(&output_dir)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
@@ -330,51 +343,48 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
         }
     }
 
-    // Fallback: if the parsed playlist yields <= 1 segment but the directory
-    // contains multiple TS files (e.g., tmp playlist not finalized or short sliding window),
-    // synthesize a contiguous timeline from the files on disk.
-    if segments.len() <= 1 {
-        let mut entries: Vec<_> = std::fs::read_dir(&output_dir)
-            .map_err(|e| format!("Failed to read HLS output dir: {}", e))?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                if let Ok(name) = e.file_name().into_string() {
-                    name.starts_with("segment_") && name.ends_with(".ts")
-                } else {
-                    false
-                }
-            })
-            .collect();
-
-        entries.sort_by_key(|e| e.file_name());
-
-        if entries.len() > 1 {
-            let assumed_duration = if first_duration > 0.0 {
-                first_duration
-            } else if current_duration > 0.0 {
-                current_duration
+    // ALWAYS scan directory for .ts files to handle Windows file locking issues
+    // where FFmpeg may hold a lock on the playlist file during writes.
+    // Use the larger of: parsed playlist segments OR actual files on disk.
+    let mut entries: Vec<_> = std::fs::read_dir(&output_dir)
+        .map_err(|e| format!("Failed to read HLS output dir: {}", e))?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            if let Ok(name) = e.file_name().into_string() {
+                name.starts_with("segment_") && name.ends_with(".ts")
             } else {
-                4.0
-            };
-
-            let mut fallback_segments = Vec::with_capacity(entries.len());
-            let mut start = 0.0;
-            for (idx, entry) in entries.iter().enumerate() {
-                let path = entry.path();
-                fallback_segments.push(HlsSegmentInfo {
-                    segment_number: idx as u32,
-                    file_path: path.to_string_lossy().to_string(),
-                    start_time: start,
-                    duration: assumed_duration,
-                    end_time: start + assumed_duration,
-                });
-                start += assumed_duration;
+                false
             }
+        })
+        .collect();
 
-            if fallback_segments.len() > segments.len() {
-                segments = fallback_segments;
-            }
+    entries.sort_by_key(|e| e.file_name());
+
+    // If there are more files on disk than in the parsed playlist, use file-based segments
+    if entries.len() > segments.len() {
+        let assumed_duration = if first_duration > 0.0 {
+            first_duration
+        } else if current_duration > 0.0 {
+            current_duration
+        } else {
+            4.0
+        };
+
+        let mut fallback_segments = Vec::with_capacity(entries.len());
+        let mut start = 0.0;
+        for (idx, entry) in entries.iter().enumerate() {
+            let path = entry.path();
+            fallback_segments.push(HlsSegmentInfo {
+                segment_number: idx as u32,
+                file_path: path.to_string_lossy().to_string(),
+                start_time: start,
+                duration: assumed_duration,
+                end_time: start + assumed_duration,
+            });
+            start += assumed_duration;
         }
+
+        segments = fallback_segments;
     }
 
     Ok(segments)

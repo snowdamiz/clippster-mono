@@ -82,161 +82,104 @@
                     'monitor-card--live': !streamer.isDetecting && streamer.isLive,
                   }"
                 >
-                  <div class="monitor-card__content">
-                    <!-- Header: Avatar + Info + Status -->
-                    <div class="monitor-card__header">
-                      <div class="monitor-card__avatar">
+                  <!-- Card Header -->
+                  <div class="monitor-card__header">
+                    <div class="monitor-card__avatar">
+                      <img
+                        v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
+                        :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
+                        class="monitor-card__avatar-img"
+                      />
+                      <div
+                        v-else
+                        class="monitor-card__avatar-fallback"
+                        :class="getPlatformBgClass(streamer.platform)"
+                      >
                         <img
-                          v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
-                          :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
-                          class="monitor-card__avatar-img"
+                          :src="getPlatformIcon(streamer.platform)"
+                          class="monitor-card__avatar-icon"
+                          :class="getPlatformIconClasses(streamer.platform)"
                         />
-                        <div
-                          v-else
-                          class="monitor-card__avatar-fallback"
-                          :class="getPlatformBgClass(streamer.platform)"
-                        >
-                          <img
-                            :src="getPlatformIcon(streamer.platform)"
-                            class="monitor-card__avatar-icon"
-                            :class="getPlatformIconClasses(streamer.platform)"
-                          />
-                        </div>
-                      </div>
-
-                      <div class="monitor-card__info">
-                        <h3 class="monitor-card__name">{{ streamer.displayName }}</h3>
-                        <div class="monitor-card__meta">
-                          <span class="monitor-card__platform" :class="getPlatformTextClass(streamer.platform)">
-                            {{ streamer.platform }}
-                          </span>
-                          <span class="monitor-card__divider"></span>
-                          <!-- Status Badge -->
-                          <div v-if="streamer.isDetecting" class="monitor-status monitor-status--active">
-                            <span class="monitor-status__dot"></span>
-                            {{ getStatusLabel(streamer) }}
-                          </div>
-                          <template v-else>
-                            <div v-if="streamer.isCheckingLive" class="monitor-status monitor-status--checking">
-                              <Loader2 class="monitor-status__spinner" />
-                            </div>
-                            <div v-else-if="streamer.isLive" class="monitor-status monitor-status--live">
-                              <span class="monitor-status__dot"></span>
-                              LIVE
-                              <span v-if="streamer.viewerCount" class="monitor-status__viewers">
-                                {{ formatViewerCount(streamer.viewerCount) }}
-                              </span>
-                              <span v-if="streamer.hasTempRecording" class="monitor-status__dvr">DVR</span>
-                            </div>
-                            <div v-else class="monitor-status monitor-status--offline">
-                              <span class="monitor-status__dot"></span>
-                              Offline
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-
-                      <!-- Quick Actions (top right) -->
-                      <div class="monitor-card__quick-actions">
-                        <button
-                          v-if="!streamer.isDetecting"
-                          @click.stop="refreshLiveStatus(streamer)"
-                          class="monitor-card__icon-btn"
-                          :class="{ 'monitor-card__icon-btn--spinning': streamer.isCheckingLive }"
-                          :disabled="streamer.isCheckingLive"
-                          title="Refresh status"
-                        >
-                          <RefreshCw class="monitor-card__icon-btn-icon" />
-                        </button>
-                        <button
-                          v-if="!streamer.isDetecting"
-                          @click.stop="removeStreamer(streamer.id)"
-                          class="monitor-card__icon-btn monitor-card__icon-btn--danger"
-                          title="Remove"
-                        >
-                          <Trash2 class="monitor-card__icon-btn-icon" />
-                        </button>
                       </div>
                     </div>
 
-                    <!-- Controls Row -->
-                    <div class="monitor-card__controls">
-                      <!-- Left: Settings -->
-                      <div class="monitor-card__settings">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger as-child>
-                            <button
-                              class="monitor-setting__dropdown-trigger"
-                              :class="{ 'monitor-setting__dropdown-trigger--disabled': streamer.isDetecting }"
-                              :disabled="streamer.isDetecting"
-                            >
-                              {{ streamer.segmentDurationMinutes }} min
-                              <ChevronDown class="monitor-setting__dropdown-chevron" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" :side-offset="4" class="segment-dropdown">
-                            <DropdownMenuItem
-                              v-for="duration in [3, 5, 10, 15, 30]"
-                              :key="duration"
-                              class="segment-dropdown__item"
-                              :class="{
-                                'segment-dropdown__item--selected': streamer.segmentDurationMinutes === duration,
-                              }"
-                              @click="updateSegmentDuration(streamer, duration)"
-                            >
-                              {{ duration }} min
-                              <Check
-                                v-if="streamer.segmentDurationMinutes === duration"
-                                class="segment-dropdown__check"
-                              />
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                        <button
-                          @click="updateAutoDvr(streamer, !streamer.autoDvr)"
-                          :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
-                          class="monitor-setting__toggle"
-                          :class="{ 'monitor-setting__toggle--on': streamer.autoDvr }"
-                          title="Auto DVR"
-                        >
-                          <Video class="monitor-setting__toggle-icon" />
-                          DVR
-                        </button>
+                    <div class="monitor-card__info">
+                      <h3 class="monitor-card__name">{{ streamer.displayName }}</h3>
+                      <div class="monitor-card__platform" :class="getPlatformTextClass(streamer.platform)">
+                        {{ streamer.platform }}
                       </div>
+                    </div>
 
-                      <!-- Right: Action Buttons -->
-                      <div class="monitor-card__actions">
-                        <template v-if="!streamer.isDetecting">
-                          <div v-if="streamer.status === 'STOPPING'" class="monitor-action monitor-action--stopping">
-                            <Loader2 class="monitor-action__spinner" />
-                            Stopping...
-                          </div>
-                          <template v-else>
-                            <button
-                              v-if="streamer.isLive"
-                              @click="openWatchDialog(streamer)"
-                              class="monitor-action monitor-action--watch"
-                            >
-                              <Eye class="monitor-action__icon" />
-                              Watch
-                            </button>
-                            <div class="monitor-action-group">
-                              <button @click="startStreamer(streamer, false)" class="monitor-action-group__btn">
-                                <Video class="monitor-action__icon" />
-                                Rec
-                              </button>
-                              <button
-                                @click="startStreamer(streamer, true)"
-                                class="monitor-action-group__btn monitor-action-group__btn--primary"
-                              >
-                                <Sparkles class="monitor-action__icon" />
-                                Auto
-                              </button>
-                            </div>
-                          </template>
-                        </template>
+                    <!-- Quick Actions (top right) -->
+                    <div class="monitor-card__quick-actions">
+                      <button
+                        v-if="!streamer.isDetecting"
+                        @click.stop="refreshLiveStatus(streamer)"
+                        class="monitor-card__icon-btn"
+                        :class="{ 'monitor-card__icon-btn--spinning': streamer.isCheckingLive }"
+                        :disabled="streamer.isCheckingLive"
+                        title="Refresh status"
+                      >
+                        <RefreshCw class="monitor-card__icon-btn-icon" />
+                      </button>
+                      <button
+                        v-if="!streamer.isDetecting"
+                        @click.stop="confirmRemoveStreamer(streamer)"
+                        class="monitor-card__icon-btn monitor-card__icon-btn--danger"
+                        title="Remove"
+                      >
+                        <Trash2 class="monitor-card__icon-btn-icon" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Footer: Status + Settings + Actions -->
+                  <div class="monitor-card__footer">
+                    <!-- Left: Status -->
+                    <div class="monitor-card__status">
+                      <div v-if="streamer.isDetecting" class="monitor-status monitor-status--active">
+                        <span class="monitor-status__dot"></span>
+                        {{ getStatusLabel(streamer) }}
+                      </div>
+                      <template v-else>
+                        <div v-if="streamer.isCheckingLive" class="monitor-status monitor-status--checking">
+                          <Loader2 class="monitor-status__spinner" />
+                          Checking...
+                        </div>
+                        <div v-else-if="streamer.isLive" class="monitor-status monitor-status--live">
+                          <span class="monitor-status__dot"></span>
+                          LIVE
+                          <span v-if="streamer.viewerCount" class="monitor-status__viewers">
+                            {{ formatViewerCount(streamer.viewerCount) }}
+                          </span>
+                          <span v-if="streamer.hasTempRecording" class="monitor-status__dvr">DVR</span>
+                        </div>
+                        <div v-else class="monitor-status monitor-status--offline">
+                          <span class="monitor-status__dot"></span>
+                          Offline
+                        </div>
+                      </template>
+                    </div>
+
+                    <!-- Right: Settings + Actions -->
+                    <div class="monitor-card__controls">
+                      <button
+                        @click="updateAutoDvr(streamer, !streamer.autoDvr)"
+                        :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
+                        class="monitor-action monitor-action--dvr"
+                        :class="{ 'monitor-action--dvr-on': streamer.autoDvr }"
+                        title="Auto DVR"
+                      >
+                        <Video class="monitor-action__icon" />
+                        Auto DVR
+                      </button>
+
+                      <template v-if="!streamer.isDetecting">
+                        <div v-if="streamer.status === 'STOPPING'" class="monitor-action monitor-action--stopping">
+                          <Loader2 class="monitor-action__spinner" />
+                          Stopping...
+                        </div>
                         <template v-else>
-                          <!-- Watch button available even while detecting/recording -->
                           <button
                             v-if="streamer.isLive"
                             @click="openWatchDialog(streamer)"
@@ -245,12 +188,35 @@
                             <Eye class="monitor-action__icon" />
                             Watch
                           </button>
-                          <button class="monitor-action monitor-action--stop" @click="stopStreamer(streamer)">
-                            <Square class="monitor-action__icon" />
-                            Stop
-                          </button>
+                          <div class="monitor-action-group">
+                            <button @click="startStreamer(streamer, false)" class="monitor-action-group__btn">
+                              <Video class="monitor-action__icon" />
+                              Rec
+                            </button>
+                            <button
+                              @click="startStreamer(streamer, true)"
+                              class="monitor-action-group__btn monitor-action-group__btn--primary"
+                            >
+                              <Sparkles class="monitor-action__icon" />
+                              Auto
+                            </button>
+                          </div>
                         </template>
-                      </div>
+                      </template>
+                      <template v-else>
+                        <button
+                          v-if="streamer.isLive"
+                          @click="openWatchDialog(streamer)"
+                          class="monitor-action monitor-action--watch"
+                        >
+                          <Eye class="monitor-action__icon" />
+                          Watch
+                        </button>
+                        <button class="monitor-action monitor-action--stop" @click="stopStreamer(streamer)">
+                          <Square class="monitor-action__icon" />
+                          Stop
+                        </button>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -358,6 +324,128 @@
         @confirm="confirmCreditWarning"
       />
 
+      <!-- Delete Streamer Confirmation Dialog -->
+      <ConfirmationModal
+        :show="showDeleteStreamerDialog"
+        title="Remove Streamer"
+        message="Are you sure you want to remove"
+        :item-name="streamerToDelete?.displayName || streamerToDelete?.username"
+        suffix="from monitoring?"
+        confirm-text="Remove"
+        variant="destructive"
+        @close="handleDeleteStreamerDialogClose"
+        @confirm="deleteStreamerConfirmed"
+      />
+
+      <!-- Segment & Prompt Selection Dialog -->
+      <Teleport to="body">
+        <Transition name="modal">
+          <div v-if="showSegmentDialog" class="segment-dialog__overlay" @click.self="closeSegmentDialog">
+            <Transition name="dialog" appear>
+              <div v-if="showSegmentDialog" class="segment-dialog" role="dialog" aria-modal="true">
+                <!-- Accent bar -->
+                <div class="segment-dialog__accent"></div>
+
+                <!-- Header -->
+                <div class="segment-dialog__header">
+                  <button class="segment-dialog__close" @click="closeSegmentDialog" title="Close">
+                    <X :size="18" />
+                  </button>
+                  <div class="segment-dialog__icon">
+                    <Sparkles v-if="pendingMode === 'auto'" :size="24" />
+                    <Video v-else :size="24" />
+                  </div>
+                  <h2 class="segment-dialog__title">
+                    {{ pendingMode === 'auto' ? 'Auto-Detect Settings' : 'Record Settings' }}
+                  </h2>
+                  <p class="segment-dialog__subtitle">
+                    {{ pendingMode === 'auto' ? 'AI-powered clip detection' : 'Record stream segments' }}
+                  </p>
+                </div>
+
+                <!-- Content -->
+                <div class="segment-dialog__content">
+                  <!-- Duration Selection -->
+                  <div class="segment-dialog__field">
+                    <label class="segment-dialog__label">Segment Duration</label>
+                    <div class="segment-dialog__duration-grid">
+                      <button
+                        v-for="duration in pendingMode === 'auto' ? availableDurationsAuto : availableDurationsRecord"
+                        :key="duration"
+                        class="segment-dialog__duration-btn"
+                        :class="{ 'segment-dialog__duration-btn--selected': selectedDuration === duration }"
+                        @click="selectDuration(duration)"
+                      >
+                        {{ duration === 0 ? 'Entire' : `${duration} min` }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Prompt Selection (Auto only) -->
+                  <div v-if="pendingMode === 'auto'" class="segment-dialog__field">
+                    <label class="segment-dialog__label">Detection Prompt</label>
+                    <div ref="dropdownTriggerRef" class="segment-dialog__dropdown-wrapper">
+                      <button
+                        class="segment-dialog__dropdown-trigger"
+                        @click="togglePromptDropdown"
+                      >
+                        <span class="segment-dialog__dropdown-value" :class="{ 'segment-dialog__dropdown-value--placeholder': !selectedPromptName }">
+                          {{ selectedPromptName || 'Select a prompt...' }}
+                        </span>
+                        <ChevronDown
+                          class="segment-dialog__dropdown-chevron"
+                          :class="{ 'segment-dialog__dropdown-chevron--open': showPromptDropdown }"
+                          :size="16"
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="segment-dialog__footer">
+                  <button class="segment-dialog__btn segment-dialog__btn--secondary" @click="closeSegmentDialog">
+                    Cancel
+                  </button>
+                  <button
+                    class="segment-dialog__btn segment-dialog__btn--primary"
+                    :disabled="pendingMode === 'auto' && !selectedPromptId"
+                    @click="handleConfirmSegmentDialog"
+                  >
+                    Start
+                  </button>
+                </div>
+              </div>
+            </Transition>
+          </div>
+        </Transition>
+      </Teleport>
+
+      <!-- Teleported Prompt Dropdown Menu -->
+      <Teleport to="body">
+        <div
+          v-if="showPromptDropdown"
+          class="segment-dialog__dropdown-menu"
+          :style="dropdownMenuStyle"
+        >
+          <div v-if="loadingPrompts" class="segment-dialog__dropdown-loading">
+            Loading prompts...
+          </div>
+          <div v-else-if="prompts.length === 0" class="segment-dialog__dropdown-empty">
+            No prompts available
+          </div>
+          <button
+            v-for="prompt in prompts"
+            :key="prompt.id"
+            class="segment-dialog__dropdown-item"
+            :class="{ 'segment-dialog__dropdown-item--selected': selectedPromptId === prompt.id }"
+            @click="selectPromptAndClose(prompt)"
+          >
+            {{ prompt.name }}
+          </button>
+        </div>
+      </Teleport>
+
       <!-- Campaign Selection Dialog -->
       <CampaignSelectionDialog
         :is-open="showCampaignDialog"
@@ -388,18 +476,13 @@
     Sparkles,
     RefreshCw,
     Eye,
+    X,
     ChevronDown,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-  import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-  } from '@/components/ui/dropdown-menu';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CampaignSelectionDialog from '@/components/campaigns/CampaignSelectionDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
@@ -420,6 +503,7 @@
     type TokenSearchResult,
   } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
+  import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
@@ -455,6 +539,23 @@
   const pendingWatchAction = ref<ExtendedStreamer | null>(null);
   const selectedCampaignForSession = ref<Campaign | null>(null);
 
+  // Segment & prompt selection dialog state
+  const showSegmentDialog = ref(false);
+  const pendingMode = ref<'auto' | 'record' | null>(null);
+  const pendingStreamerSelection = ref<ExtendedStreamer | null>(null);
+  const selectedDuration = ref<number>(5);
+  const availableDurationsAuto = [3, 5, 10, 15, 30];
+  const availableDurationsRecord = [3, 5, 10, 15, 30, 60, 0]; // 0 => Entire stream
+
+  const prompts = ref<{ id: string; name: string; content: string }[]>([]);
+  const loadingPrompts = ref(false);
+  const selectedPromptId = ref<string>('');
+  const selectedPromptName = ref<string>('');
+  const selectedPromptContent = ref<string>('');
+  const showPromptDropdown = ref(false);
+  const dropdownTriggerRef = ref<HTMLElement | null>(null);
+  const dropdownMenuStyle = ref<{ top: string; left: string; width: string }>({ top: '0px', left: '0px', width: '300px' });
+
   const livestreamStore = useLivestreamStore();
 
   const {
@@ -467,6 +568,8 @@
     clearLogs,
     dvrSessions,
     hasDvrRecording,
+    initAutoDvrPolling,
+    restoreActiveRecordings,
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
@@ -496,14 +599,23 @@
 
   const showCreditWarningDialog = ref(false);
   const pendingStreamerStart = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
+  
+  const showDeleteStreamerDialog = ref(false);
+  const streamerToDelete = ref<ExtendedStreamer | null>(null);
 
   const liveStatusInterval = ref<number | null>(null);
 
   onMounted(async () => {
+    // Restore active recording sessions from backend before other initialization
+    await restoreActiveRecordings();
+    
     await loadStreamers();
     refreshStreamerMetadata();
     syncDetectionState();
     checkAllLiveStatuses(false); // Skip Kick - only check on manual refresh
+
+    // Initialize Auto DVR polling for streamers with auto_dvr enabled
+    initAutoDvrPolling();
 
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
@@ -574,7 +686,8 @@
     const needsUpdate = streamers.value.filter(
       (s) =>
         (s.platform === 'PumpFun' && (s.displayName === s.mintId || !s.profileImageUrl)) ||
-        (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId))
+        (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId)) ||
+        (s.platform === 'Twitch' && (!s.profileImageUrl || s.displayName === s.mintId))
     );
 
     if (needsUpdate.length === 0) return;
@@ -587,6 +700,22 @@
 
           if (streamer.displayName === streamer.mintId && status.username) {
             updates.display_name = status.username;
+          }
+          if (!streamer.profileImageUrl && status.profileImageUrl) {
+            updates.profile_image_url = status.profileImageUrl;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await updateMonitoredStreamer(streamer.id, updates);
+            if (updates.display_name) streamer.displayName = updates.display_name;
+            if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+          }
+        } else if (streamer.platform === 'Twitch') {
+          const status = await checkTwitchLivestream(streamer.mintId);
+          const updates: any = {};
+
+          if (streamer.displayName === streamer.mintId && status.displayName) {
+            updates.display_name = status.displayName;
           }
           if (!streamer.profileImageUrl && status.profileImageUrl) {
             updates.profile_image_url = status.profileImageUrl;
@@ -911,6 +1040,37 @@
         }
         return;
       }
+    } else if (detectedPlatform.value === 'Twitch') {
+      const channelName = extractChannelName(inputValue.value) || inputValue.value.trim();
+      if (channelName) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Twitch',
+          message: `Checking Twitch channel "${channelName}"...`,
+          status: 'loading',
+        });
+
+        try {
+          const twitchStatus = await checkTwitchLivestream(channelName);
+          const displayName = twitchStatus.displayName || twitchStatus.channelName || channelName;
+          const profileImage = twitchStatus.profileImageUrl;
+
+          addActivityLog({
+            streamerId: 'system',
+            streamerName: 'System',
+            platform: 'Twitch',
+            message: twitchStatus.isLive ? `Found ${displayName} - Currently LIVE!` : `Found ${displayName}`,
+            status: 'success',
+          });
+
+          await confirmAddStreamer(channelName, displayName, profileImage, 'twitch');
+        } catch (error) {
+          console.error('[LiveClip] Failed to fetch Twitch channel info', error);
+          await confirmAddStreamer(channelName, channelName, undefined, 'twitch');
+        }
+        return;
+      }
     }
 
     const mintId = extractMintId(inputValue.value);
@@ -1022,7 +1182,7 @@
     profileImageUrl?: string,
     platform: string = 'pumpfun'
   ) {
-    const platformDisplay = platform === 'kick' ? 'Kick' : 'PumpFun';
+    const platformDisplay = platform === 'kick' ? 'Kick' : platform === 'twitch' ? 'Twitch' : 'PumpFun';
     try {
       await createMonitoredStreamer(platformId, displayName, profileImageUrl, 5, false, platform);
       await loadStreamers();
@@ -1056,10 +1216,26 @@
     confirmAddStreamer(token.mint, token.symbol, token.image);
   }
 
-  async function removeStreamer(id: string) {
-    try {
-      const streamer = streamers.value.find((s) => s.id === id);
+  function confirmRemoveStreamer(streamer: ExtendedStreamer) {
+    streamerToDelete.value = streamer;
+    showDeleteStreamerDialog.value = true;
+  }
 
+  function handleDeleteStreamerDialogClose() {
+    showDeleteStreamerDialog.value = false;
+    streamerToDelete.value = null;
+  }
+
+  async function deleteStreamerConfirmed() {
+    if (!streamerToDelete.value) return;
+
+    const id = streamerToDelete.value.id;
+    const streamer = streamerToDelete.value;
+
+    // Close dialog immediately
+    showDeleteStreamerDialog.value = false;
+
+    try {
       if (streamer) {
         try {
           await invoke('cleanup_hls_recordings', { mintId: streamer.mintId });
@@ -1071,16 +1247,205 @@
 
       await deleteMonitoredStreamer(id);
       streamers.value = streamers.value.filter((s) => s.id !== id);
+      streamerToDelete.value = null;
     } catch (error) {
       console.error('[LiveClip] Failed to remove streamer', error);
+      streamerToDelete.value = null;
     }
   }
 
   async function startStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
-    const mode = detectClips ? 'Auto-Detect' : 'Record';
+    // Open selection dialog instead of immediate start
+    pendingMode.value = detectClips ? 'auto' : 'record';
+    pendingStreamerSelection.value = streamer;
+    selectedDuration.value = streamer.segmentDurationMinutes || 5;
+    selectedPromptId.value = '';
+    selectedPromptName.value = '';
+    selectedPromptContent.value = '';
+
+    if (detectClips) {
+      if (prompts.value.length === 0) {
+        await loadPrompts();
+      }
+
+      // Ensure a prompt is selected if we have prompts (auto-select default)
+      if (prompts.value.length > 0 && !selectedPromptId.value) {
+        const defaultPrompt = prompts.value.find((p) => p.name === 'Default Clip Detector');
+        const promptToSelect = defaultPrompt || prompts.value[0];
+        if (promptToSelect) {
+          selectPrompt(promptToSelect);
+        }
+      }
+    }
+
+    showSegmentDialog.value = true;
+  }
+
+  function handleCampaignSelect(campaign: Campaign | null) {
+    selectedCampaignForSession.value = campaign;
+    showCampaignDialog.value = false;
+
+    if (pendingCampaignAction.value) {
+      const { streamer, detectClips } = pendingCampaignAction.value;
+      pendingCampaignAction.value = null;
+
+      if (campaign) {
+        livestreamStore.setSessionCampaign(streamer.id, campaign);
+      }
+
+      // Pass the selected duration and prompt from the segment dialog
+      executeStartStreamer(streamer, detectClips, selectedDuration.value, {
+        promptId: selectedPromptId.value || undefined,
+        promptContent: selectedPromptContent.value || undefined,
+      });
+      return;
+    }
+
+    if (pendingWatchAction.value) {
+      const streamer = pendingWatchAction.value;
+      pendingWatchAction.value = null;
+
+      if (campaign) {
+        livestreamStore.setSessionCampaign(streamer.id, campaign);
+      }
+
+      livestreamStore.openWatchDialog(
+        streamer.mintId,
+        streamer.id,
+        streamer.displayName,
+        streamer.profileImageUrl,
+        streamer.platform
+      );
+    }
+  }
+
+  function handleCampaignCancel() {
+    showCampaignDialog.value = false;
+    pendingCampaignAction.value = null;
+    pendingWatchAction.value = null;
+  }
+
+  function confirmCreditWarning() {
+    if (pendingStreamerStart.value) {
+      executeStartStreamer(pendingStreamerStart.value.streamer, pendingStreamerStart.value.detectClips, selectedDuration.value, {
+        promptId: selectedPromptId.value || undefined,
+        promptContent: selectedPromptContent.value || undefined,
+      });
+      pendingStreamerStart.value = null;
+    }
+    showCreditWarningDialog.value = false;
+  }
+
+  async function executeStartStreamer(
+    streamer: ExtendedStreamer,
+    detectClips: boolean,
+    durationOverride?: number,
+    prompt?: { promptId?: string; promptContent?: string }
+  ) {
+    if (!isDetectingAny.value) {
+      clearLogs();
+    }
+
+    const segmentDurationMinutes =
+      typeof durationOverride === 'number' ? durationOverride : streamer.segmentDurationMinutes;
+
+    console.log('[LiveClip] executeStartStreamer duration:', {
+      durationOverride,
+      'streamer.segmentDurationMinutes': streamer.segmentDurationMinutes,
+      segmentDurationMinutes,
+    });
+
+    if (typeof segmentDurationMinutes === 'number' && segmentDurationMinutes > 0) {
+      await updateSegmentDuration(streamer, segmentDurationMinutes);
+    }
+
+    const finalDuration = segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5;
+    console.log('[LiveClip] Calling startMonitoring with segmentDurationMinutes:', finalDuration);
+
+    await startMonitoring([streamer], {
+      detectClips,
+      segmentDurationMinutes: finalDuration,
+      promptId: prompt?.promptId,
+      promptContent: prompt?.promptContent,
+    });
+
+    const index = streamers.value.findIndex((s) => s.id === streamer.id);
+    if (index > 0) {
+      const [movedStreamer] = streamers.value.splice(index, 1);
+      streamers.value.unshift(movedStreamer);
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function stopStreamer(streamer: ExtendedStreamer) {
+    try {
+      await stopMonitoring([streamer.id]);
+      resolvePendingLogs();
+      addActivityLog({
+        streamerId: streamer.id,
+        streamerName: streamer.displayName,
+        platform: streamer.platform,
+        mintId: streamer.mintId,
+        message: `${streamer.isDetecting ? 'Detection' : 'Recording'} stopped by user`,
+        status: 'success',
+        profileImageUrl: streamer.profileImageUrl,
+      });
+    } catch (error) {
+      console.error('Failed to stop monitoring', error);
+    }
+  }
+
+  async function loadPrompts() {
+    try {
+      loadingPrompts.value = true;
+      const { getAllPrompts } = await import('@/services/database');
+      const list = await getAllPrompts();
+      prompts.value = list || [];
+
+      // Auto-select default prompt if none selected
+      if (prompts.value.length > 0 && !selectedPromptId.value) {
+        const defaultPrompt = prompts.value.find((p) => p.name === 'Default Clip Detector');
+        const promptToSelect = defaultPrompt || prompts.value[0];
+        selectedPromptId.value = promptToSelect.id;
+        selectedPromptName.value = promptToSelect.name;
+        selectedPromptContent.value = promptToSelect.content;
+      }
+    } catch (e) {
+      console.error('[LiveClip] Failed to load prompts', e);
+    } finally {
+      loadingPrompts.value = false;
+    }
+  }
+
+  function openSegmentDialogFor(streamer: ExtendedStreamer, mode: 'auto' | 'record') {
+    pendingMode.value = mode;
+    pendingStreamerSelection.value = streamer;
+    selectedDuration.value = streamer.segmentDurationMinutes || 5;
+    showSegmentDialog.value = true;
+  }
+
+  function handleConfirmSegmentDialog() {
+    if (!pendingStreamerSelection.value || !pendingMode.value) return;
+    const detectClips = pendingMode.value === 'auto';
+
+    // Validate prompt for auto
+    if (detectClips && !selectedPromptId.value) {
+      return;
+    }
+
+    const streamer = pendingStreamerSelection.value;
+    showSegmentDialog.value = false;
+
+    // Existing gating/credits flow reused
+    proceedStartWithGuards(streamer, detectClips);
+  }
+
+  async function proceedStartWithGuards(streamer: ExtendedStreamer, detectClips: boolean) {
+    const modeLabel = detectClips ? 'Auto-Detect' : 'Record';
     if (
       !(await requireSubscription({
-        context: `${mode} mode for ${streamer.displayName}`,
+        context: `${modeLabel} mode for ${streamer.displayName}`,
         type: 'live',
       }))
     ) {
@@ -1116,80 +1481,44 @@
       }
     }
 
-    await executeStartStreamer(streamer, detectClips);
+    await executeStartStreamer(streamer, detectClips, selectedDuration.value, {
+      promptId: selectedPromptId.value || undefined,
+      promptContent: selectedPromptContent.value || undefined,
+    });
   }
 
-  function handleCampaignSelect(campaign: Campaign | null) {
-    selectedCampaignForSession.value = campaign;
-    showCampaignDialog.value = false;
-
-    if (pendingCampaignAction.value) {
-      const { streamer, detectClips } = pendingCampaignAction.value;
-      pendingCampaignAction.value = null;
-
-      if (campaign) {
-        livestreamStore.setSessionCampaign(streamer.id, campaign);
-      }
-
-      executeStartStreamer(streamer, detectClips);
-      return;
-    }
-
-    if (pendingWatchAction.value) {
-      const streamer = pendingWatchAction.value;
-      pendingWatchAction.value = null;
-
-      if (campaign) {
-        livestreamStore.setSessionCampaign(streamer.id, campaign);
-      }
-
-      livestreamStore.openWatchDialog(
-        streamer.mintId,
-        streamer.id,
-        streamer.displayName,
-        streamer.profileImageUrl,
-        streamer.platform
-      );
-    }
+  function closeSegmentDialog() {
+    showSegmentDialog.value = false;
+    showPromptDropdown.value = false;
+    pendingMode.value = null;
+    pendingStreamerSelection.value = null;
   }
 
-  function handleCampaignCancel() {
-    showCampaignDialog.value = false;
-    pendingCampaignAction.value = null;
-    pendingWatchAction.value = null;
+  function selectDuration(duration: number) {
+    selectedDuration.value = duration;
   }
 
-  function confirmCreditWarning() {
-    if (pendingStreamerStart.value) {
-      executeStartStreamer(pendingStreamerStart.value.streamer, pendingStreamerStart.value.detectClips);
-      pendingStreamerStart.value = null;
-    }
-    showCreditWarningDialog.value = false;
+  function selectPrompt(prompt: { id: string; name: string; content: string }) {
+    selectedPromptId.value = prompt.id;
+    selectedPromptName.value = prompt.name;
+    selectedPromptContent.value = prompt.content;
   }
 
-  async function executeStartStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
-    if (!isDetectingAny.value) {
-      clearLogs();
-    }
-
-    await startMonitoring([streamer], { detectClips });
-
-    const index = streamers.value.findIndex((s) => s.id === streamer.id);
-    if (index > 0) {
-      const [movedStreamer] = streamers.value.splice(index, 1);
-      streamers.value.unshift(movedStreamer);
-    }
-
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  function selectPromptAndClose(prompt: { id: string; name: string; content: string }) {
+    selectPrompt(prompt);
+    showPromptDropdown.value = false;
   }
 
-  async function stopStreamer(streamer: ExtendedStreamer) {
-    try {
-      await stopMonitoring([streamer.id]);
-      resolvePendingLogs();
-    } catch (error) {
-      console.error('Failed to stop monitoring', error);
+  function togglePromptDropdown() {
+    if (!showPromptDropdown.value && dropdownTriggerRef.value) {
+      const rect = dropdownTriggerRef.value.getBoundingClientRect();
+      dropdownMenuStyle.value = {
+        top: `${rect.bottom + 4}px`,
+        left: `${rect.left}px`,
+        width: `${rect.width}px`,
+      };
     }
+    showPromptDropdown.value = !showPromptDropdown.value;
   }
 
   function resolvePendingLogs() {
@@ -1257,7 +1586,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 
@@ -1546,18 +1875,19 @@
 
   /* ===== Monitor Card ===== */
   .monitor-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
     background-color: var(--sidebar-surface);
-    border-radius: 12px;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
     overflow: hidden;
-    transition: all 200ms ease;
+    transition: all 150ms ease;
   }
 
   .monitor-card:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  }
-
-  .monitor-card__content {
-    padding: 1rem 1.25rem;
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   }
 
   /* Card Header */
@@ -1565,7 +1895,7 @@
     display: flex;
     align-items: center;
     gap: 0.875rem;
-    margin-bottom: 1rem;
+    padding: 1rem;
   }
 
   .monitor-card__avatar {
@@ -1574,6 +1904,8 @@
     border-radius: 10px;
     overflow: hidden;
     flex-shrink: 0;
+    border: 2px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
   }
 
   .monitor-card__avatar-img {
@@ -1604,8 +1936,8 @@
   }
 
   .monitor-card__avatar-icon {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
   }
 
   .monitor-card__info {
@@ -1614,24 +1946,18 @@
   }
 
   .monitor-card__name {
-    font-size: 0.9375rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0 0 0.25rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .monitor-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
+    line-height: 1.3;
   }
 
   .monitor-card__platform {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     font-weight: 500;
   }
 
@@ -1648,17 +1974,10 @@
     color: #34d399;
   }
 
-  .monitor-card__divider {
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background-color: var(--sidebar-text-muted);
-    opacity: 0.4;
-  }
-
   .monitor-card__quick-actions {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.375rem;
+    flex-shrink: 0;
   }
 
   .monitor-card__icon-btn {
@@ -1669,14 +1988,16 @@
     justify-content: center;
     border-radius: 6px;
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
+    flex-shrink: 0;
   }
 
   .monitor-card__icon-btn:hover:not(:disabled) {
     background-color: var(--sidebar-hover);
+    border-color: var(--sidebar-border);
     color: var(--sidebar-text);
   }
 
@@ -1690,15 +2011,18 @@
   }
 
   .monitor-card__icon-btn-icon {
-    width: 14px;
-    height: 14px;
+    width: 18px;
+    height: 18px;
   }
+
 
   /* Status Badges */
   .monitor-status {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 5px;
     font-size: 0.6875rem;
     font-weight: 600;
   }
@@ -1717,6 +2041,7 @@
   }
 
   .monitor-status--active {
+    background-color: rgba(16, 185, 129, 0.15);
     color: #34d399;
   }
 
@@ -1725,6 +2050,7 @@
   }
 
   .monitor-status--live {
+    background-color: rgba(239, 68, 68, 0.15);
     color: #f87171;
   }
 
@@ -1747,111 +2073,40 @@
   }
 
   .monitor-status--offline {
+    background-color: transparent;
     color: var(--sidebar-text-muted);
-    opacity: 0.6;
+    padding: 0.375rem 0;
+    opacity: 0.7;
   }
 
   .monitor-status--offline .monitor-status__dot {
     background-color: var(--sidebar-text-muted);
+    opacity: 0.4;
     animation: none;
   }
 
   .monitor-status--checking {
+    background-color: var(--sidebar-hover);
     color: var(--sidebar-text-muted);
   }
 
-  /* Card Controls */
-  .monitor-card__controls {
+  /* Card Footer */
+  .monitor-card__footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-top: 0.875rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    gap: 0.75rem;
+    gap: 0.625rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--sidebar-border);
   }
 
-  .monitor-card__settings {
+  .monitor-card__status {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    flex-shrink: 0;
   }
 
-  .monitor-setting__dropdown-trigger {
-    height: 30px;
-    padding: 0 0.5rem 0 0.625rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    background-color: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .monitor-setting__dropdown-trigger:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.12);
-    color: var(--sidebar-text);
-  }
-
-  .monitor-setting__dropdown-trigger--disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .monitor-setting__dropdown-chevron {
-    width: 12px;
-    height: 12px;
-    opacity: 0.6;
-  }
-
-  .monitor-setting__toggle {
-    height: 30px;
-    padding: 0 0.625rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background-color: rgba(255, 255, 255, 0.04);
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .monitor-setting__toggle:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-
-  .monitor-setting__toggle--on {
-    background-color: rgba(16, 185, 129, 0.12);
-    border-color: rgba(16, 185, 129, 0.25);
-    color: #34d399;
-  }
-
-  .monitor-setting__toggle--on:hover:not(:disabled) {
-    background-color: rgba(16, 185, 129, 0.18);
-  }
-
-  .monitor-setting__toggle-icon {
-    width: 12px;
-    height: 12px;
-    opacity: 0.7;
-  }
-
-  .monitor-setting__toggle--on .monitor-setting__toggle-icon {
-    opacity: 1;
-  }
-
-  /* Card Actions */
-  .monitor-card__actions {
+  .monitor-card__controls {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -1869,7 +2124,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
+    padding: 0.5rem 0.625rem;
+    height: 32px;
     font-size: 0.6875rem;
     font-weight: 500;
     background-color: rgba(255, 255, 255, 0.04);
@@ -1903,7 +2159,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
+    padding: 0.5rem 0.625rem;
+    height: 32px;
     border-radius: 6px;
     font-size: 0.6875rem;
     font-weight: 500;
@@ -1949,6 +2206,28 @@
   .monitor-action--stop:hover {
     background-color: rgba(239, 68, 68, 0.2);
     color: #fca5a5;
+  }
+
+  .monitor-action--dvr {
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--sidebar-text-muted);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .monitor-action--dvr:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+  }
+
+  .monitor-action--dvr-on {
+    background-color: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.25);
+    color: #34d399;
+  }
+
+  .monitor-action--dvr-on:hover:not(:disabled) {
+    background-color: rgba(16, 185, 129, 0.18);
+    color: #34d399;
   }
 
   /* ===== Activity Log ===== */
@@ -2116,71 +2395,350 @@
   }
 </style>
 
-<!-- Global styles for dropdown (rendered via portal outside component scope) -->
+<!-- Global styles for segment dialog (matching BugReportDialog design) -->
 <style>
-  /* Prevent button animation when dropdown opens */
-  .monitor-setting__dropdown-trigger {
-    transform: none !important;
-    animation: none !important;
+  /* ===== Overlay ===== */
+  .segment-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
   }
 
-  .monitor-setting__dropdown-trigger[data-state='open'] {
-    transform: none !important;
+  /* ===== Dialog Container ===== */
+  .segment-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 440px;
+    margin: 1rem;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
   }
 
-  .segment-dropdown {
-    min-width: 100px !important;
-    background-color: var(--sidebar-surface) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 8px !important;
-    padding: 0.25rem !important;
-    z-index: 100 !important;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
-    /* Disable all slide/zoom animations, only fade */
-    animation: segmentDropdownFade 100ms ease-out !important;
-    --tw-enter-translate-x: 0 !important;
-    --tw-enter-translate-y: 0 !important;
-    --tw-enter-scale: 1 !important;
-  }
-
-  @keyframes segmentDropdownFade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  .segment-dropdown__item {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    gap: 0.75rem !important;
-    padding: 0.5rem 0.75rem !important;
-    border-radius: 5px !important;
-    font-size: 0.75rem !important;
-    color: var(--sidebar-text-muted) !important;
-    cursor: pointer !important;
-    transition: all 100ms ease !important;
-  }
-
-  .segment-dropdown__item:hover,
-  .segment-dropdown__item:focus,
-  .segment-dropdown__item[data-highlighted] {
-    background-color: var(--sidebar-hover) !important;
-    color: var(--sidebar-text) !important;
-    outline: none !important;
-  }
-
-  .segment-dropdown__item--selected {
-    color: var(--sidebar-text) !important;
-  }
-
-  .segment-dropdown__check {
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-accent);
+  /* ===== Accent Bar ===== */
+  .segment-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
     flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .segment-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .segment-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .segment-dialog__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .segment-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .segment-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .segment-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content Area ===== */
+  .segment-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .segment-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .segment-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .segment-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Field ===== */
+  .segment-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .segment-dialog__field:last-child {
+    margin-bottom: 0;
+  }
+
+  .segment-dialog__label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Duration Grid ===== */
+  .segment-dialog__duration-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+
+  .segment-dialog__duration-btn {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .segment-dialog__duration-btn:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--sidebar-text);
+  }
+
+  .segment-dialog__duration-btn--selected {
+    background-color: rgba(6, 182, 212, 0.15);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Dropdown ===== */
+  .segment-dialog__dropdown-wrapper {
+    position: relative;
+  }
+
+  .segment-dialog__dropdown-trigger {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+  }
+
+  .segment-dialog__dropdown-trigger:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .segment-dialog__dropdown-trigger:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .segment-dialog__dropdown-value {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .segment-dialog__dropdown-value--placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .segment-dialog__dropdown-chevron {
+    flex-shrink: 0;
+    color: var(--sidebar-text-muted);
+    transition: transform 150ms ease;
+  }
+
+  .segment-dialog__dropdown-chevron--open {
+    transform: rotate(180deg);
+  }
+
+  .segment-dialog__dropdown-menu {
+    position: fixed;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 10000;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  .segment-dialog__dropdown-menu::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .segment-dialog__dropdown-menu::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .segment-dialog__dropdown-menu::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .segment-dialog__dropdown-loading,
+  .segment-dialog__dropdown-empty {
+    padding: 0.75rem 1rem;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .segment-dialog__dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 100ms ease;
+  }
+
+  .segment-dialog__dropdown-item:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .segment-dialog__dropdown-item--selected {
+    background-color: rgba(6, 182, 212, 0.1);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Footer ===== */
+  .segment-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
+  .segment-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .segment-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .segment-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .segment-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .segment-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .segment-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  /* ===== Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
   }
 </style>

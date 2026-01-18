@@ -51,6 +51,20 @@
             <div class="org-members__stat-value org-members__stat-value--pending">{{ invitations.length }}</div>
           </div>
         </div>
+
+        <div class="org-members__stat-card">
+          <div class="org-members__stat-indicator org-members__stat-indicator--restricted"></div>
+          <div class="org-members__stat-inner">
+            <div class="org-members__stat-icon org-members__stat-icon--restricted">
+              <ShieldOff />
+            </div>
+            <div class="org-members__stat-text">
+              <h3 class="org-members__stat-title">Restricted Users</h3>
+              <p class="org-members__stat-desc">Limited access</p>
+            </div>
+            <div class="org-members__stat-value org-members__stat-value--restricted">{{ restrictedMembersCount }}</div>
+          </div>
+        </div>
       </div>
 
       <!-- Pending Invitations Section -->
@@ -190,6 +204,16 @@
                   {{ member.role }}
                 </span>
 
+                <!-- Restricted Badge -->
+                <span
+                  v-if="member.is_restricted"
+                  class="org-members__restricted-badge"
+                  title="This member has restricted access"
+                >
+                  <Lock class="org-members__restricted-icon" />
+                  Restricted
+                </span>
+
                 <!-- Actions Menu -->
                 <div v-if="isAdmin && member.role !== 'owner'" class="org-members__actions">
                   <button
@@ -230,6 +254,22 @@
                         <Shield class="org-members__dropdown-icon" />
                         <span>Change Role</span>
                       </button>
+                      <div class="org-members__dropdown-divider"></div>
+                      <div class="org-members__dropdown-toggle-item">
+                        <div class="org-members__dropdown-toggle-label">
+                          <Lock class="org-members__dropdown-icon" />
+                          <span>Restricteds</span>
+                        </div>
+                        <button
+                          type="button"
+                          class="org-members__dropdown-toggle"
+                          :class="{ 'org-members__dropdown-toggle--active': member.is_restricted }"
+                          :disabled="togglingRestrictionId === member.user_id"
+                          @click.stop="toggleMemberRestriction(member)"
+                        >
+                          <span class="org-members__dropdown-toggle-handle"></span>
+                        </button>
+                      </div>
                       <div class="org-members__dropdown-divider"></div>
                       <button
                         class="org-members__dropdown-item org-members__dropdown-item--danger"
@@ -505,7 +545,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import {
     Users,
     UserPlus,
@@ -526,7 +566,10 @@
     Crown,
     Zap,
     TrendingUp,
+    Lock,
+    ShieldOff,
   } from 'lucide-vue-next';
+  import api from '@/services/api';
   import PageLayout from '@/components/PageLayout.vue';
   import InviteMemberDialog from '@/components/InviteMemberDialog.vue';
   import { useOrganization, type OrganizationMember, type OrganizationInvitation } from '@/composables/useOrganization';
@@ -546,6 +589,9 @@
     updateMemberAccount,
     isOrgCreatedUser,
   } = useOrganization();
+
+  // Computed properties
+  const restrictedMembersCount = computed(() => members.value.filter((m) => m.is_restricted).length);
 
   // Local state
   const showInviteDialog = ref(false);
@@ -576,6 +622,9 @@
   const showRemoveMemberDialog = ref(false);
   const removeMemberDialogMember = ref<OrganizationMember | null>(null);
   const removeMemberProcessing = ref(false);
+
+  // Restriction toggle state
+  const togglingRestrictionId = ref<number | null>(null);
 
   function handleAvatarError(event: Event, userId: number) {
     const img = event.target as HTMLImageElement;
@@ -666,6 +715,32 @@
     const newRole = roleDialogNewRole.value;
     closeRoleDialog();
     await updateMemberRole(member, newRole);
+  }
+
+  // Restriction toggle function
+  async function toggleMemberRestriction(member: OrganizationMember) {
+    if (!organizationId.value) return;
+    
+    togglingRestrictionId.value = member.user_id;
+    const newIsRestricted = !member.is_restricted;
+    
+    try {
+      const response = await api.put(
+        `/organizations/${organizationId.value}/members/${member.user_id}/restrictions`,
+        { is_restricted: newIsRestricted }
+      );
+      
+      if (response.data.success) {
+        // Reload organization to refresh member data
+        await loadOrganization(true);
+      } else {
+        console.error('Failed to toggle restriction:', response.data.error);
+      }
+    } catch (error) {
+      console.error('Error toggling restriction:', error);
+    } finally {
+      togglingRestrictionId.value = null;
+    }
   }
 
   // Edit member dialog functions
@@ -818,7 +893,7 @@
 
   @media (min-width: 768px) {
     .org-members__stats {
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 
@@ -844,7 +919,7 @@
   }
 
   .org-members__stat-indicator--members {
-    background: linear-gradient(to bottom, #10b981 0%, #059669 100%);
+    background: linear-gradient(to bottom, #0ea5e9 0%, #0284c7 100%);
   }
 
   .org-members__stat-indicator--invitations {
@@ -877,8 +952,8 @@
   }
 
   .org-members__stat-icon--members {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
+    background-color: rgba(14, 165, 233, 0.15);
+    color: #0ea5e9;
   }
 
   .org-members__stat-icon--invitations {
@@ -908,7 +983,7 @@
   .org-members__stat-value {
     font-size: 1.75rem;
     font-weight: 700;
-    color: #10b981;
+    color: #0ea5e9;
     letter-spacing: -0.02em;
     line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -916,6 +991,19 @@
 
   .org-members__stat-value--pending {
     color: #f59e0b;
+  }
+
+  .org-members__stat-indicator--restricted {
+    background: linear-gradient(to bottom, #ef4444 0%, #dc2626 100%);
+  }
+
+  .org-members__stat-icon--restricted {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  .org-members__stat-value--restricted {
+    color: #ef4444;
   }
 
   /* ===== Section ===== */
@@ -948,8 +1036,8 @@
   }
 
   .org-members__section-header-icon--members {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
+    background-color: rgba(14, 165, 233, 0.15);
+    color: #0ea5e9;
   }
 
   .org-members__section-header-text {
@@ -985,8 +1073,8 @@
   }
 
   .org-members__section-badge--active {
-    color: #10b981;
-    background-color: rgba(16, 185, 129, 0.15);
+    color: #0ea5e9;
+    background-color: rgba(14, 165, 233, 0.15);
   }
 
   /* ===== Invitations Grid ===== */
@@ -1337,13 +1425,34 @@
   }
 
   .org-members__role--owner {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
   }
 
   .org-members__role--admin {
     background-color: rgba(6, 182, 212, 0.15);
     color: var(--sidebar-accent);
+  }
+
+  /* ===== Restricted Badge ===== */
+  .org-members__restricted-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    flex-shrink: 0;
+  }
+
+  .org-members__restricted-icon {
+    width: 12px;
+    height: 12px;
   }
 
   /* ===== Dropdown Menu ===== */
@@ -1394,6 +1503,15 @@
     color: #f87171;
   }
 
+  .org-members__dropdown-item--warning {
+    color: #f59e0b;
+  }
+
+  .org-members__dropdown-item--warning:hover {
+    background-color: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+  }
+
   .org-members__dropdown-icon {
     width: 16px;
     height: 16px;
@@ -1402,6 +1520,61 @@
   .org-members__dropdown-divider {
     margin: 0.5rem 0;
     border-top: 1px solid var(--sidebar-border);
+  }
+
+  .org-members__dropdown-toggle-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.625rem 0.75rem;
+    cursor: default;
+  }
+
+  .org-members__dropdown-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .org-members__dropdown-toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    background-color: #3f3f46;
+    border: none;
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: background-color 200ms ease;
+    flex-shrink: 0;
+  }
+
+  .org-members__dropdown-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .org-members__dropdown-toggle--active {
+    background-color: #ef4444;
+  }
+
+  .org-members__dropdown-toggle-handle {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 200ms ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .org-members__dropdown-toggle--active .org-members__dropdown-toggle-handle {
+    transform: translateX(18px);
   }
 
   /* ===== Empty State ===== */
@@ -1659,7 +1832,7 @@
 
   .org-dialog__btn--primary {
     background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
+    color: #000;
   }
 
   .org-dialog__btn--primary:hover:not(:disabled) {

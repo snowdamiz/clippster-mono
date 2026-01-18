@@ -4,6 +4,7 @@ defmodule ClippsterServerWeb.StripeController do
   alias ClippsterServer.Accounts
   alias ClippsterServer.Organizations
   alias ClippsterServer.Subscriptions
+  alias ClippsterServer.PromoCodes
 
   @doc """
   Creates a Stripe Checkout session for purchasing a credit pack.
@@ -13,7 +14,6 @@ defmodule ClippsterServerWeb.StripeController do
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, user} <- get_user(user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type) do
-
       # Get Stripe configuration
       stripe_config = Application.get_env(:clippster_server, :stripe)
       success_url = stripe_config[:success_url] || "http://localhost:48276/stripe-success"
@@ -31,7 +31,8 @@ defmodule ClippsterServerWeb.StripeController do
                 name: "#{String.capitalize(pack_type)} Credit Pack",
                 description: "#{pack_info.hours} minutes of video processing credits"
               },
-              unit_amount: trunc(pack_info.usd * 100)  # Stripe expects cents
+              # Stripe expects cents
+              unit_amount: trunc(pack_info.usd * 100)
             },
             quantity: 1
           }
@@ -93,7 +94,6 @@ defmodule ClippsterServerWeb.StripeController do
          {:ok, _org} <- get_organization(org_id),
          true <- Organizations.is_admin?(org_id, user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type) do
-
       # Get Stripe configuration
       stripe_config = Application.get_env(:clippster_server, :stripe)
       success_url = stripe_config[:success_url] || "http://localhost:48276/stripe-success"
@@ -109,16 +109,19 @@ defmodule ClippsterServerWeb.StripeController do
               currency: "usd",
               product_data: %{
                 name: "#{String.capitalize(pack_type)} Credit Pack (Organization)",
-                description: "#{pack_info.hours} minutes of video processing credits for your organization"
+                description:
+                  "#{pack_info.hours} minutes of video processing credits for your organization"
               },
-              unit_amount: trunc(pack_info.usd * 100)  # Stripe expects cents
+              # Stripe expects cents
+              unit_amount: trunc(pack_info.usd * 100)
             },
             quantity: 1
           }
         ],
         metadata: %{
           user_id: to_string(user_id),
-          organization_id: to_string(org_id),  # Key addition for org purchases
+          # Key addition for org purchases
+          organization_id: to_string(org_id),
           pack_type: pack_type,
           hours: to_string(pack_info.hours),
           amount_usd: to_string(pack_info.usd)
@@ -193,13 +196,15 @@ defmodule ClippsterServerWeb.StripeController do
 
       {:error, reason} ->
         IO.puts("[Stripe Webhook] Verification failed: #{inspect(reason)}")
+
         conn
         |> put_status(400)
         |> json(%{error: "Webhook verification failed"})
     end
   end
 
-  defp verify_and_construct_event(payload, signature, webhook_secret) when is_binary(webhook_secret) and byte_size(webhook_secret) > 0 do
+  defp verify_and_construct_event(payload, signature, webhook_secret)
+       when is_binary(webhook_secret) and byte_size(webhook_secret) > 0 do
     case Stripe.Webhook.construct_event(payload, signature, webhook_secret) do
       {:ok, event} -> {:ok, event}
       {:error, reason} -> {:error, reason}
@@ -235,6 +240,7 @@ defmodule ClippsterServerWeb.StripeController do
     amount_usd = get_metadata_value(metadata, "amount_usd")
     payment_type = get_metadata_value(metadata, "type")
     subscription_tier = get_metadata_value(metadata, "subscription_tier")
+    promo_code_id = get_metadata_value(metadata, "promo_code_id")
 
     session_id = session["id"] || session.id
     payment_intent = session["payment_intent"] || Map.get(session, :payment_intent)
@@ -242,20 +248,45 @@ defmodule ClippsterServerWeb.StripeController do
     stripe_customer_id = session["customer"] || Map.get(session, :customer)
     amount_total = session["amount_total"] || Map.get(session, :amount_total)
 
-    IO.puts("[Stripe Webhook] User ID: #{user_id}, Type: #{payment_type}, Tier: #{subscription_tier}, Pack: #{pack_type}, Hours: #{hours}")
+    IO.puts(
+      "[Stripe Webhook] User ID: #{user_id}, Type: #{payment_type}, Tier: #{subscription_tier}, Pack: #{pack_type}, Hours: #{hours}, Promo Code ID: #{promo_code_id}"
+    )
 
     cond do
       # Handle subscription checkout
       payment_type == "subscription" && user_id && subscription_tier ->
-        handle_subscription_checkout(user_id, subscription_tier, stripe_subscription_id, stripe_customer_id)
+        handle_subscription_checkout(
+          user_id,
+          subscription_tier,
+          stripe_subscription_id,
+          stripe_customer_id,
+          promo_code_id
+        )
 
       # Handle credit pack purchase for organization
       user_id && pack_type && hours && organization_id ->
-        handle_org_stripe_payment(organization_id, user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent)
+        handle_org_stripe_payment(
+          organization_id,
+          user_id,
+          pack_type,
+          hours,
+          amount_usd,
+          amount_total,
+          session_id,
+          payment_intent
+        )
 
       # Handle credit pack purchase for personal use
       user_id && pack_type && hours ->
-        handle_personal_stripe_payment(user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent)
+        handle_personal_stripe_payment(
+          user_id,
+          pack_type,
+          hours,
+          amount_usd,
+          amount_total,
+          session_id,
+          payment_intent
+        )
 
       true ->
         IO.puts("[Stripe Webhook] Missing required metadata for checkout")
@@ -274,12 +305,20 @@ defmodule ClippsterServerWeb.StripeController do
     subscription_tier = get_metadata_value(metadata, "subscription_tier")
 
     if user_id && subscription_tier do
-      handle_subscription_created(user_id, subscription_tier, stripe_subscription_id, stripe_customer_id)
+      handle_subscription_created(
+        user_id,
+        subscription_tier,
+        stripe_subscription_id,
+        stripe_customer_id
+      )
     else
       # Try to find user by customer ID
       case Subscriptions.get_user_by_stripe_customer(stripe_customer_id) do
         nil ->
-          IO.puts("[Stripe Webhook] Could not find user for subscription #{stripe_subscription_id}")
+          IO.puts(
+            "[Stripe Webhook] Could not find user for subscription #{stripe_subscription_id}"
+          )
+
         user ->
           # Can't determine tier without metadata, log warning
           IO.puts("[Stripe Webhook] Found user #{user.id} but missing tier metadata")
@@ -299,10 +338,12 @@ defmodule ClippsterServerWeb.StripeController do
       case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
         nil ->
           IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+
         user ->
           case Subscriptions.renew_subscription(user.id) do
             {:ok, _result} ->
               IO.puts("[Stripe Webhook] Renewed subscription for user #{user.id}")
+
             {:error, reason} ->
               IO.puts("[Stripe Webhook] Failed to renew subscription: #{inspect(reason)}")
           end
@@ -322,11 +363,15 @@ defmodule ClippsterServerWeb.StripeController do
       case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
         nil ->
           IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+
         user ->
           # Expire the subscription on payment failure
           case Subscriptions.expire_subscription(user.id) do
             {:ok, _user} ->
-              IO.puts("[Stripe Webhook] Expired subscription for user #{user.id} due to payment failure")
+              IO.puts(
+                "[Stripe Webhook] Expired subscription for user #{user.id} due to payment failure"
+              )
+
             {:error, reason} ->
               IO.puts("[Stripe Webhook] Failed to expire subscription: #{inspect(reason)}")
           end
@@ -343,10 +388,31 @@ defmodule ClippsterServerWeb.StripeController do
     case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
       nil ->
         IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+
       user ->
         case Subscriptions.expire_subscription(user.id) do
           {:ok, _user} ->
             IO.puts("[Stripe Webhook] Expired subscription for user #{user.id}")
+
+            # Cancel any active promo redemptions for this subscription
+            case PromoCodes.get_redemption_by_subscription(stripe_subscription_id) do
+              nil ->
+                IO.puts(
+                  "[Stripe Webhook] No promo redemption found for subscription #{stripe_subscription_id}"
+                )
+
+              redemption ->
+                case PromoCodes.update_redemption_status(redemption, "cancelled") do
+                  {:ok, _updated} ->
+                    IO.puts("[Stripe Webhook] Cancelled promo redemption for user #{user.id}")
+
+                  {:error, reason} ->
+                    IO.puts(
+                      "[Stripe Webhook] Failed to cancel promo redemption: #{inspect(reason)}"
+                    )
+                end
+            end
+
           {:error, reason} ->
             IO.puts("[Stripe Webhook] Failed to expire subscription: #{inspect(reason)}")
         end
@@ -359,25 +425,33 @@ defmodule ClippsterServerWeb.StripeController do
 
     stripe_subscription_id = subscription["id"] || Map.get(subscription, :id)
     status = subscription["status"] || Map.get(subscription, :status)
-    cancel_at_period_end = subscription["cancel_at_period_end"] || Map.get(subscription, :cancel_at_period_end)
+
+    cancel_at_period_end =
+      subscription["cancel_at_period_end"] || Map.get(subscription, :cancel_at_period_end)
 
     case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
       nil ->
         IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+
       user ->
         cond do
           cancel_at_period_end == true ->
             # User has requested cancellation
             case Subscriptions.cancel_subscription(user.id) do
-              {:ok, _} -> IO.puts("[Stripe Webhook] Marked subscription as cancelled for user #{user.id}")
-              {:error, reason} -> IO.puts("[Stripe Webhook] Failed to cancel: #{inspect(reason)}")
+              {:ok, _} ->
+                IO.puts("[Stripe Webhook] Marked subscription as cancelled for user #{user.id}")
+
+              {:error, reason} ->
+                IO.puts("[Stripe Webhook] Failed to cancel: #{inspect(reason)}")
             end
+
           status in ["canceled", "unpaid", "incomplete_expired"] ->
             # Subscription is no longer active
             case Subscriptions.expire_subscription(user.id) do
               {:ok, _} -> IO.puts("[Stripe Webhook] Expired subscription for user #{user.id}")
               {:error, reason} -> IO.puts("[Stripe Webhook] Failed to expire: #{inspect(reason)}")
             end
+
           true ->
             IO.puts("[Stripe Webhook] Subscription update - status: #{status}")
         end
@@ -391,14 +465,46 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(_), do: :ok
 
   # Handle subscription checkout completion
-  defp handle_subscription_checkout(user_id, tier, stripe_subscription_id, stripe_customer_id) do
+  defp handle_subscription_checkout(
+         user_id,
+         tier,
+         stripe_subscription_id,
+         stripe_customer_id,
+         promo_code_id
+       ) do
     user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
 
-    IO.puts("[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, sub_id=#{stripe_subscription_id}")
+    IO.puts(
+      "[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, sub_id=#{stripe_subscription_id}, promo_code_id=#{promo_code_id}"
+    )
 
-    case Subscriptions.create_stripe_subscription(user_id_int, tier, stripe_subscription_id, stripe_customer_id) do
+    case Subscriptions.create_stripe_subscription(
+           user_id_int,
+           tier,
+           stripe_subscription_id,
+           stripe_customer_id
+         ) do
       {:ok, _result} ->
-        IO.puts("[Stripe Webhook] Successfully created #{tier} subscription for user #{user_id_int}")
+        IO.puts(
+          "[Stripe Webhook] Successfully created #{tier} subscription for user #{user_id_int}"
+        )
+
+        # Create promo code redemption if promo_code_id is provided
+        if promo_code_id do
+          case PromoCodes.create_redemption(promo_code_id, user_id_int, %{
+                 customer_id: stripe_customer_id,
+                 subscription_id: stripe_subscription_id
+               }) do
+            {:ok, _redemption} ->
+              IO.puts(
+                "[Stripe Webhook] Created promo redemption for user #{user_id_int}, promo #{promo_code_id}"
+              )
+
+            {:error, reason} ->
+              IO.puts("[Stripe Webhook] Failed to create promo redemption: #{inspect(reason)}")
+          end
+        end
+
       {:error, reason} ->
         IO.puts("[Stripe Webhook] Failed to create subscription: #{inspect(reason)}")
     end
@@ -414,29 +520,47 @@ defmodule ClippsterServerWeb.StripeController do
     if user && user.stripe_subscription_id == stripe_subscription_id do
       IO.puts("[Stripe Webhook] Subscription already created for user #{user_id_int}")
     else
-      case Subscriptions.create_stripe_subscription(user_id_int, tier, stripe_subscription_id, stripe_customer_id) do
+      case Subscriptions.create_stripe_subscription(
+             user_id_int,
+             tier,
+             stripe_subscription_id,
+             stripe_customer_id
+           ) do
         {:ok, _result} ->
           IO.puts("[Stripe Webhook] Created #{tier} subscription for user #{user_id_int}")
+
         {:error, reason} ->
           IO.puts("[Stripe Webhook] Failed to create subscription: #{inspect(reason)}")
       end
     end
   end
 
-  defp handle_personal_stripe_payment(user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent) do
+  defp handle_personal_stripe_payment(
+         user_id,
+         pack_type,
+         hours,
+         amount_usd,
+         amount_total,
+         session_id,
+         payment_intent
+       ) do
     # Create and confirm the transaction for personal credits
     attrs = %{
       user_id: String.to_integer(user_id),
       pack_type: pack_type,
       hours_purchased: String.to_integer(hours),
       amount_usd: parse_decimal(amount_usd) || Decimal.div(Decimal.new(amount_total || 0), 100),
-      amount_sol: Decimal.new("0"),  # No SOL for Stripe payments
-      sol_usd_rate: Decimal.new("0"),  # N/A for Stripe
-      tx_signature: "stripe_#{session_id}",  # Use session ID as unique identifier
+      # No SOL for Stripe payments
+      amount_sol: Decimal.new("0"),
+      # N/A for Stripe
+      sol_usd_rate: Decimal.new("0"),
+      # Use session ID as unique identifier
+      tx_signature: "stripe_#{session_id}",
       payment_method: "stripe",
       stripe_session_id: session_id,
       stripe_payment_intent_id: payment_intent,
-      status: "confirmed"  # Stripe webhook means payment is already confirmed
+      # Stripe webhook means payment is already confirmed
+      status: "confirmed"
     }
 
     case Credits.create_stripe_transaction(attrs) do
@@ -451,9 +575,20 @@ defmodule ClippsterServerWeb.StripeController do
     end
   end
 
-  defp handle_org_stripe_payment(organization_id, user_id, pack_type, hours, amount_usd, amount_total, session_id, payment_intent) do
+  defp handle_org_stripe_payment(
+         organization_id,
+         user_id,
+         pack_type,
+         hours,
+         amount_usd,
+         amount_total,
+         session_id,
+         payment_intent
+       ) do
     # Add credits to organization pool with transaction record
-    org_id = if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+    org_id =
+      if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+
     user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
     hours_int = if is_binary(hours), do: String.to_integer(hours), else: hours
     amount = parse_decimal(amount_usd) || Decimal.div(Decimal.new(amount_total || 0), 100)
@@ -461,20 +596,25 @@ defmodule ClippsterServerWeb.StripeController do
     IO.puts("[Stripe Webhook] Adding #{hours_int} hours to organization #{org_id} pool")
 
     case Organizations.create_org_credit_transaction_and_add_credits(
-      org_id,
-      user_id_int,
-      pack_type,
-      hours_int,
-      amount,
-      nil,  # No SOL amount for Stripe
-      nil,  # No SOL rate for Stripe
-      "stripe_#{session_id}",  # Use session ID as unique identifier
-      "stripe",
-      stripe_session_id: session_id,
-      stripe_payment_intent_id: payment_intent
-    ) do
+           org_id,
+           user_id_int,
+           pack_type,
+           hours_int,
+           amount,
+           # No SOL amount for Stripe
+           nil,
+           # No SOL rate for Stripe
+           nil,
+           # Use session ID as unique identifier
+           "stripe_#{session_id}",
+           "stripe",
+           stripe_session_id: session_id,
+           stripe_payment_intent_id: payment_intent
+         ) do
       {:ok, %{transaction: _transaction, org_credit: _org_credit}} ->
-        IO.puts("[Stripe Webhook] Successfully added #{hours_int} hours to organization #{org_id} with transaction record")
+        IO.puts(
+          "[Stripe Webhook] Successfully added #{hours_int} hours to organization #{org_id} with transaction record"
+        )
 
       {:error, :already_processed} ->
         IO.puts("[Stripe Webhook] Transaction already processed for session #{session_id}")
@@ -490,12 +630,14 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   defp parse_decimal(nil), do: nil
+
   defp parse_decimal(value) when is_binary(value) do
     case Decimal.parse(value) do
       {decimal, _} -> decimal
       :error -> nil
     end
   end
+
   defp parse_decimal(value) when is_number(value), do: Decimal.new(to_string(value))
 
   # Helper functions (similar to PaymentController)
@@ -545,6 +687,7 @@ defmodule ClippsterServerWeb.StripeController do
 
   defp get_organization(org_id) do
     org_id = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
+
     case Organizations.get_organization(org_id) do
       nil -> {:error, :organization_not_found}
       org -> {:ok, org}

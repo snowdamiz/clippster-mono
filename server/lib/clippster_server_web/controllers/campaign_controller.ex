@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.CampaignController do
 
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Organizations
+  alias ClippsterServer.Storage
 
   plug ClippsterServerWeb.AuthPlug
 
@@ -250,17 +251,24 @@ defmodule ClippsterServerWeb.CampaignController do
         attrs = %{
           title: Map.get(params, "title"),
           description: Map.get(params, "description"),
-          cover_image_url: Map.get(params, "cover_image_url"),
+          cover_image_url: strip_query_params(Map.get(params, "cover_image_url")),
           creator_profile_id: Map.get(params, "creator_profile_id"),
           budget: Map.get(params, "budget"),
           cpm: Map.get(params, "cpm"),
+          cpm_views: Map.get(params, "cpm_views"),
           min_views_for_payment: Map.get(params, "min_views_for_payment"),
           join_type: Map.get(params, "join_type", "open"),
           allowed_platforms: Map.get(params, "allowed_platforms", []),
           payment_methods: Map.get(params, "payment_methods", []),
           status: Map.get(params, "status", "draft"),
           starts_at: parse_datetime(Map.get(params, "starts_at")),
-          ends_at: parse_datetime(Map.get(params, "ends_at"))
+          ends_at: parse_datetime(Map.get(params, "ends_at")),
+          global_intro_id: Map.get(params, "global_intro_id"),
+          global_outro_id: Map.get(params, "global_outro_id"),
+          global_watermarks: Map.get(params, "global_watermarks"),
+          require_watermark: Map.get(params, "require_watermark"),
+          require_intro: Map.get(params, "require_intro"),
+          require_outro: Map.get(params, "require_outro")
         }
 
         case Campaigns.create_campaign(organization, attrs, user) do
@@ -298,6 +306,7 @@ defmodule ClippsterServerWeb.CampaignController do
                      "global_watermarks", "global_intro_id", "global_outro_id",
                      "require_watermark", "require_intro", "require_outro"])
         |> maybe_add_dates(params)
+        |> maybe_strip_cover_image_url()
 
       case Campaigns.update_campaign(campaign, attrs, user) do
         {:ok, updated} ->
@@ -552,12 +561,21 @@ defmodule ClippsterServerWeb.CampaignController do
     status = Map.get(params, "status")
 
     if Organizations.is_member?(org_id, user.id) do
-      participants = Campaigns.list_campaign_participants(campaign_id, status: status)
+      try do
+        participants = Campaigns.list_campaign_participants(campaign_id, status: status)
 
-      json(conn, %{
-        success: true,
-        participants: Enum.map(participants, &serialize_participant/1)
-      })
+        json(conn, %{
+          success: true,
+          participants: Enum.map(participants, &serialize_participant/1)
+        })
+      rescue
+        e ->
+          require Logger
+          Logger.error("Failed to list participants: #{inspect(e)}")
+          conn
+          |> put_status(500)
+          |> json(%{success: false, error: "Failed to load participants: #{inspect(e)}"})
+      end
     else
       conn
       |> put_status(403)
@@ -643,6 +661,36 @@ defmodule ClippsterServerWeb.CampaignController do
   # ============================================================================
   # Submission Management
   # ============================================================================
+
+  @doc """
+  List all submissions for an organization (across all campaigns).
+  GET /organizations/:organization_id/campaign-submissions
+  """
+  def list_organization_submissions(conn, %{"organization_id" => org_id} = params) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_member?(org_id, user.id) do
+      opts = [
+        status: Map.get(params, "status"),
+        platform: Map.get(params, "platform"),
+        campaign_id: Map.get(params, "campaign_id"),
+        limit: (Map.get(params, "limit") || "100") |> String.to_integer(),
+        offset: (Map.get(params, "offset") || "0") |> String.to_integer()
+      ] |> Enum.reject(fn {_, v} -> is_nil(v) end)
+
+      {:ok, %{submissions: submissions, total: total}} = Campaigns.list_organization_submissions(org_id, opts)
+
+      json(conn, %{
+        success: true,
+        submissions: Enum.map(submissions, &serialize_submission/1),
+        total: total
+      })
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not a member of this organization"})
+    end
+  end
 
   @doc """
   List submissions for a campaign.
@@ -847,7 +895,7 @@ defmodule ClippsterServerWeb.CampaignController do
       creator_profile_id: campaign.creator_profile_id,
       title: campaign.title,
       description: campaign.description,
-      cover_image_url: campaign.cover_image_url,
+      cover_image_url: presign_url(campaign.cover_image_url),
       budget: campaign.budget,
       spent: campaign.spent,
       cpm: campaign.cpm,
@@ -869,12 +917,12 @@ defmodule ClippsterServerWeb.CampaignController do
       organization: if(Ecto.assoc_loaded?(campaign.organization), do: %{
         id: campaign.organization.id,
         name: campaign.organization.name,
-        logo_url: campaign.organization.logo_url
+        logo_url: maybe_presign_url(campaign.organization.logo_url)
       }, else: nil),
       creator_profile: if(campaign.creator_profile_id && Ecto.assoc_loaded?(campaign.creator_profile) && campaign.creator_profile, do: %{
         id: campaign.creator_profile.id,
         name: campaign.creator_profile.name,
-        profile_image_url: campaign.creator_profile.profile_image_url
+        profile_image_url: maybe_presign_url(campaign.creator_profile.profile_image_url)
       }, else: nil),
       global_intro: if(campaign.global_intro_id && Ecto.assoc_loaded?(campaign.global_intro) && campaign.global_intro, do: serialize_asset(campaign.global_intro), else: nil),
       global_outro: if(campaign.global_outro_id && Ecto.assoc_loaded?(campaign.global_outro) && campaign.global_outro, do: serialize_asset(campaign.global_outro), else: nil),
@@ -906,7 +954,7 @@ defmodule ClippsterServerWeb.CampaignController do
       user: if(Ecto.assoc_loaded?(participant.user), do: %{
         id: participant.user.id,
         email: participant.user.email,
-        display_name: participant.user.display_name
+        display_name: participant.user.name
       }, else: nil),
       clipper_profile: serialize_clipper_profile_summary(clipper_profile)
     }
@@ -914,6 +962,14 @@ defmodule ClippsterServerWeb.CampaignController do
 
   defp serialize_clipper_profile_summary(nil), do: nil
   defp serialize_clipper_profile_summary(profile) do
+    badges = if Ecto.assoc_loaded?(profile.badges) do
+      Enum.map(profile.badges || [], fn badge ->
+        %{badge_type: badge.badge_type, earned_at: badge.earned_at}
+      end)
+    else
+      []
+    end
+
     %{
       id: profile.id,
       display_name: profile.display_name,
@@ -928,9 +984,7 @@ defmodule ClippsterServerWeb.CampaignController do
       total_campaigns_completed: profile.total_campaigns_completed,
       total_clips_delivered: profile.total_clips_delivered,
       total_endorsements: profile.total_endorsements,
-      badges: Enum.map(profile.badges || [], fn badge ->
-        %{badge_type: badge.badge_type, earned_at: badge.earned_at}
-      end)
+      badges: badges
     }
   end
 
@@ -944,6 +998,22 @@ defmodule ClippsterServerWeb.CampaignController do
   end
 
   defp serialize_submission(submission) do
+    # Get creator profile from campaign (single or first from many)
+    creator_profile = if Ecto.assoc_loaded?(submission.campaign) do
+      cond do
+        # Single creator profile on campaign
+        Ecto.assoc_loaded?(submission.campaign.creator_profile) and submission.campaign.creator_profile ->
+          submission.campaign.creator_profile
+        # Multiple creator profiles - use first one
+        Ecto.assoc_loaded?(submission.campaign.creator_profiles) and length(submission.campaign.creator_profiles) > 0 ->
+          hd(submission.campaign.creator_profiles)
+        true ->
+          nil
+      end
+    else
+      nil
+    end
+
     %{
       id: submission.id,
       campaign_id: submission.campaign_id,
@@ -957,14 +1027,30 @@ defmodule ClippsterServerWeb.CampaignController do
       rejection_reason: submission.rejection_reason,
       verified_at: submission.verified_at,
       inserted_at: submission.inserted_at,
+      # Analytics fields
+      like_count: submission.like_count,
+      comment_count: submission.comment_count,
+      share_count: submission.share_count,
+      save_count: submission.save_count,
+      # Author metadata from platform
+      author_username: submission.author_username,
+      author_name: submission.author_name,
+      author_profile_image: submission.author_profile_image,
+      caption: submission.caption,
+      media_type: submission.media_type,
       user: if(Ecto.assoc_loaded?(submission.user), do: %{
         id: submission.user.id,
         email: submission.user.email,
-        display_name: submission.user.display_name
+        display_name: submission.user.name
       }, else: nil),
       campaign: if(Ecto.assoc_loaded?(submission.campaign), do: %{
         id: submission.campaign.id,
         title: submission.campaign.title
+      }, else: nil),
+      creator_profile: if(creator_profile, do: %{
+        id: creator_profile.id,
+        name: creator_profile.name,
+        profile_image_url: creator_profile.profile_image_url
       }, else: nil)
     }
   end
@@ -992,15 +1078,15 @@ defmodule ClippsterServerWeb.CampaignController do
   defp serialize_creator_profile(profile) do
     # Get profile image from platform links if not set directly on profile
     platform_links = if Ecto.assoc_loaded?(profile.platform_links), do: profile.platform_links, else: []
-    
+
     # Find first platform link with a profile image
     platform_image = Enum.find_value(platform_links, fn link -> link.profile_image_url end)
-    
+
     %{
       id: profile.id,
       name: profile.name,
       description: profile.description,
-      profile_image_url: profile.profile_image_url || platform_image,
+      profile_image_url: maybe_presign_url(profile.profile_image_url || platform_image),
       watermark_settings: profile.watermark_settings,
       intro: if(Ecto.assoc_loaded?(profile.intro) && profile.intro, do: serialize_asset(profile.intro), else: nil),
       outro: if(Ecto.assoc_loaded?(profile.outro) && profile.outro, do: serialize_asset(profile.outro), else: nil),
@@ -1026,8 +1112,8 @@ defmodule ClippsterServerWeb.CampaignController do
       id: asset.id,
       asset_type: asset.asset_type,
       name: asset.name,
-      url: asset.url,
-      thumbnail_url: asset.thumbnail_url,
+      url: presign_url(asset.url),
+      thumbnail_url: presign_url(asset.thumbnail_url),
       duration: asset.duration,
       width: asset.width,
       height: asset.height,
@@ -1068,4 +1154,50 @@ defmodule ClippsterServerWeb.CampaignController do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  # Strip query params from cover_image_url if present in the map
+  defp maybe_strip_cover_image_url(attrs) do
+    case Map.get(attrs, "cover_image_url") do
+      nil -> attrs
+      url -> Map.put(attrs, "cover_image_url", strip_query_params(url))
+    end
+  end
+
+  # ============================================================================
+  # URL Presigning Helpers
+  # ============================================================================
+
+  # Strip query parameters from a URL (removes presigning params before storing)
+  defp strip_query_params(nil), do: nil
+  defp strip_query_params(url) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{query: nil} -> url
+      %URI{} = uri -> URI.to_string(%{uri | query: nil})
+    end
+  end
+
+  # Presign a URL that is definitely from R2 storage
+  defp presign_url(nil), do: nil
+  defp presign_url(url), do: Storage.presigned_url!(url)
+
+  # Presign a URL only if it's from R2 storage (not external URLs)
+  defp maybe_presign_url(nil), do: nil
+  defp maybe_presign_url(url) when is_binary(url) do
+    if is_r2_storage_url?(url) do
+      Storage.presigned_url!(url)
+    else
+      url
+    end
+  end
+
+  # Check if a URL is from R2 storage
+  defp is_r2_storage_url?(url) do
+    base = Storage.public_url_base()
+    cond do
+      base && String.starts_with?(url, base) -> true
+      String.contains?(url, ".r2.cloudflarestorage.com/") -> true
+      String.starts_with?(url, "org-assets/") -> true  # Storage key format
+      true -> false
+    end
+  end
 end

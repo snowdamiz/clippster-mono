@@ -643,12 +643,14 @@ pub async fn start_video_server_impl() {
                         "Access-Control-Allow-Origin",
                         "*"
                     );
-                    // Segments can be cached since they're immutable
+                    // Live DVR: disable caching so HLS.js always fetches fresh segments
                     let response = warp::reply::with_header(
                         response,
                         "Cache-Control",
-                        "max-age=3600"
+                        "no-cache, no-store, must-revalidate"
                     );
+                    let response = warp::reply::with_header(response, "Pragma", "no-cache");
+                    let response = warp::reply::with_header(response, "Expires", "0");
                     Ok(response.into_response())
                 }
                 Err(e) => {

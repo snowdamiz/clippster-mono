@@ -94,6 +94,10 @@ config :clippster_server, :instagram,
 config :clippster_server,
   social_token_encryption_key: System.get_env("SOCIAL_TOKEN_ENCRYPTION_KEY")
 
+# Twitter API configuration (twitterapi.io - read-only API for tweet analytics)
+config :clippster_server, :twitter,
+  api_key: System.get_env("TWITTER_API_IO_KEY")
+
 # PulseKit error tracking and event monitoring
 pulsekit_key = System.get_env("PULSEKIT_CLIPPSTER_SERVER_KEY")
 pulsekit_endpoint = System.get_env("PULSEKIT_ENDPOINT") || "https://pulsekit.fly.dev"

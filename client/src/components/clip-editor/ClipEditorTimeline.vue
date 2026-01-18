@@ -1646,6 +1646,31 @@
           <Music :size="14" />
           <span>{{ isExtractingAudio ? 'Extracting...' : 'Extract Audio' }}</span>
         </button>
+        <!-- Configure Framing submenu -->
+        <div class="relative group/framing">
+          <button
+            class="w-full px-3 py-2 text-left text-sm text-white/80 hover:bg-white/10 flex items-center justify-between"
+          >
+            <span class="flex items-center gap-2">
+              <Crop :size="14" />
+              <span>Configure Framing</span>
+            </span>
+            <ChevronRight :size="14" class="text-white/40" />
+          </button>
+          <!-- Framing submenu -->
+          <div
+            class="absolute left-full top-0 ml-1 bg-[#161618] border border-white/10 rounded-lg shadow-xl py-1 min-w-[120px] hidden group-hover/framing:block"
+          >
+            <button
+              v-for="ratio in ['9:16', '4:5', '1:1']"
+              :key="ratio"
+              class="w-full px-3 py-1.5 text-left text-sm text-white/80 hover:bg-white/10 flex items-center gap-2"
+              @click="configureSegmentFraming(ratio)"
+            >
+              <span>{{ ratio }}</span>
+            </button>
+          </div>
+        </div>
       </div>
     </Teleport>
 
@@ -1711,6 +1736,7 @@
     GripVertical,
     TrendingUp,
     Headphones,
+    Crop,
   } from 'lucide-vue-next';
   import { useTimelineTools, type TimelineTool } from '@/composables/useTimelineTools';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
@@ -2038,6 +2064,7 @@
     (e: 'deleteFreezePoint', sourceId: string, freezeId: string): void;
     // Speed curve editor event
     (e: 'openSpeedCurveEditor', sourceId: string): void;
+    (e: 'configureSegmentFraming', segmentId: string, aspectRatio: string): void;
   }>();
 
   // Computed: Organized tracks for rendering (Unified Model)
@@ -5659,7 +5686,7 @@
       left: `${leftPercent}%`,
       width: `${widthPercent}%`,
       borderColor: isDraggingThis ? '#3b82f6' : isSelected ? '#06b6d4' : 'transparent', // Blue when dragging, Cyan when selected
-      borderWidth: isDraggingThis ? '1px' : undefined, // 1px border when dragging
+      borderWidth: isDraggingThis ? '1px' : '0px', // 1px border when dragging
       pointerEvents: isDraggingThis ? 'none' : 'auto',
     };
   }
@@ -5923,6 +5950,15 @@
   function closeSegmentContextMenu() {
     segmentContextMenu.visible = false;
     segmentContextMenu.segment = null;
+  }
+
+  function configureSegmentFraming(aspectRatio: string) {
+    if (!segmentContextMenu.segment) return;
+
+    const segmentId = segmentContextMenu.segment.id;
+    closeSegmentContextMenu();
+
+    emit('configureSegmentFraming', segmentId, aspectRatio);
   }
 
   async function extractAudioFromSegment() {

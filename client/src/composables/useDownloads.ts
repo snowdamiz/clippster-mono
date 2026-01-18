@@ -54,7 +54,7 @@ export interface ActiveDownload {
   // Project grouping
   projectId?: string;
   parentProjectId?: string;
-  provider?: 'pumpfun' | 'kick';
+  provider?: 'pumpfun' | 'kick' | 'twitch';
   groupId?: string;
   totalSegments?: number;
   currentSegmentIndex?: number;
@@ -390,7 +390,7 @@ export function useDownloads() {
     options: {
       autoSegment?: boolean;
       segmentDuration?: number;
-      provider?: 'pumpfun' | 'kick';
+      provider?: 'pumpfun' | 'kick' | 'twitch';
       // Watermark settings from creator profile (stored with project for automatic application)
       creatorWatermarkSettings?: {
         watermarkId: string;
@@ -485,22 +485,24 @@ export function useDownloads() {
           parentProjectId = existingProjects[0].id;
         } else {
           // Create a new parent project
-          const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
+          const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : provider === 'twitch' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
+          const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun';
           parentProjectId = await createProject(
             title,
-            `Manual downloads from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`,
+            `Manual downloads from ${providerLabel} (${sourceLabel})`,
             undefined,
-            provider === 'kick' ? 'Kick' : 'PumpFun',
+            providerLabel,
             watermarkSettingsJson
           );
         }
 
         // Create the child project for this specific segment
+        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun';
         projectId = await createProject(
           finalTitle,
           `Segment ${segmentNumber} of ${title}`,
           parentProjectId,
-          provider === 'kick' ? 'Kick' : 'PumpFun',
+          providerLabel,
           watermarkSettingsJson
         );
       } else {
@@ -510,12 +512,13 @@ export function useDownloads() {
           : undefined;
 
         // Full stream download - create a standard project
-        const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
+        const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : provider === 'twitch' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
+        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun';
         projectId = await createProject(
           finalTitle,
-          `Downloaded from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${sourceLabel})`,
+          `Downloaded from ${providerLabel} (${sourceLabel})`,
           undefined,
-          provider === 'kick' ? 'Kick' : 'PumpFun',
+          providerLabel,
           watermarkSettingsJson
         );
       }
@@ -574,6 +577,29 @@ export function useDownloads() {
             activeDownloads.delete(downloadId);
           });
         }
+      } else if (provider === 'twitch') {
+        // Twitch VODs use yt-dlp based download
+        if (isSegmentDownload) {
+          invoke('download_twitch_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            videoUrl,
+            channelName: mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_twitch_vod', {
+            downloadId,
+            title: finalTitle,
+            videoUrl,
+            channelName: mintId,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
       } else {
         // PumpFun (default)
         if (isSegmentDownload) {
@@ -615,7 +641,7 @@ export function useDownloads() {
     sourceClipId: string,
     totalDuration: number,
     maxSegmentDuration: number = 3600,
-    provider: 'pumpfun' | 'kick' = 'pumpfun',
+    provider: 'pumpfun' | 'kick' | 'twitch' = 'pumpfun',
     creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string }
   ): Promise<string> {
     await initialize();
@@ -654,9 +680,9 @@ export function useDownloads() {
 
       parentProjectId = await createProject(
         title,
-        `Auto-segmented download from ${provider === 'kick' ? 'Kick' : 'PumpFun'} (${provider === 'kick' ? 'Channel' : 'Mint'}: ${mintId}). ${numberOfSegments} parts.`,
+        `Auto-segmented download from ${provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun'} (${provider === 'kick' || provider === 'twitch' ? 'Channel' : 'Mint'}: ${mintId}). ${numberOfSegments} parts.`,
         undefined,
-        provider === 'kick' ? 'Kick' : 'PumpFun',
+        provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun',
         watermarkSettingsJson
       );
     } catch (error) {
@@ -708,24 +734,35 @@ export function useDownloads() {
         activeDownloadIds.add(downloadId);
 
         // Start the download immediately
-        const startPromise =
-          provider === 'kick'
-            ? invoke('download_kick_vod_segment', {
-                downloadId,
-                title: segmentTitle,
-                videoUrl,
-                channelSlug: mintId,
-                startTime: segment.startTime,
-                endTime: segment.endTime,
-              })
-            : invoke('download_pumpfun_vod_segment', {
-                downloadId,
-                title: segmentTitle,
-                videoUrl,
-                mintId,
-                startTime: segment.startTime,
-                endTime: segment.endTime,
-              });
+        let startPromise;
+        if (provider === 'kick') {
+          startPromise = invoke('download_kick_vod_segment', {
+            downloadId,
+            title: segmentTitle,
+            videoUrl,
+            channelSlug: mintId,
+            startTime: segment.startTime,
+            endTime: segment.endTime,
+          });
+        } else if (provider === 'twitch') {
+          startPromise = invoke('download_twitch_vod_segment', {
+            downloadId,
+            title: segmentTitle,
+            videoUrl,
+            channelName: mintId,
+            startTime: segment.startTime,
+            endTime: segment.endTime,
+          });
+        } else {
+          startPromise = invoke('download_pumpfun_vod_segment', {
+            downloadId,
+            title: segmentTitle,
+            videoUrl,
+            mintId,
+            startTime: segment.startTime,
+            endTime: segment.endTime,
+          });
+        }
 
         startPromise.catch((_error) => {
           // Remove from active downloads if failed to start
@@ -812,24 +849,35 @@ export function useDownloads() {
     );
 
     const provider = queuedDownload.provider || 'pumpfun';
-    const startPromise =
-      provider === 'kick'
-        ? invoke('download_kick_vod_segment', {
-            downloadId: nextQueuedId,
-            title: queuedDownload.title,
-            videoUrl: queuedDownload.videoUrl!,
-            channelSlug: queuedDownload.mintId,
-            startTime: segmentRange.startTime,
-            endTime: segmentRange.endTime,
-          })
-        : invoke('download_pumpfun_vod_segment', {
-            downloadId: nextQueuedId,
-            title: queuedDownload.title,
-            videoUrl: queuedDownload.videoUrl!,
-            mintId: queuedDownload.mintId,
-            startTime: segmentRange.startTime,
-            endTime: segmentRange.endTime,
-          });
+    let startPromise;
+    if (provider === 'kick') {
+      startPromise = invoke('download_kick_vod_segment', {
+        downloadId: nextQueuedId,
+        title: queuedDownload.title,
+        videoUrl: queuedDownload.videoUrl!,
+        channelSlug: queuedDownload.mintId,
+        startTime: segmentRange.startTime,
+        endTime: segmentRange.endTime,
+      });
+    } else if (provider === 'twitch') {
+      startPromise = invoke('download_twitch_vod_segment', {
+        downloadId: nextQueuedId,
+        title: queuedDownload.title,
+        videoUrl: queuedDownload.videoUrl!,
+        channelName: queuedDownload.mintId,
+        startTime: segmentRange.startTime,
+        endTime: segmentRange.endTime,
+      });
+    } else {
+      startPromise = invoke('download_pumpfun_vod_segment', {
+        downloadId: nextQueuedId,
+        title: queuedDownload.title,
+        videoUrl: queuedDownload.videoUrl!,
+        mintId: queuedDownload.mintId,
+        startTime: segmentRange.startTime,
+        endTime: segmentRange.endTime,
+      });
+    }
 
     // Start the download
     startPromise.catch((_error) => {

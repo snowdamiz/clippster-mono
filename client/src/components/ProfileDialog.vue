@@ -578,6 +578,7 @@
   import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
+  import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
@@ -654,7 +655,7 @@
   const availablePlatforms = [
     { id: 'pumpfun' as PlatformId, name: 'PumpFun', disabled: false },
     { id: 'kick' as PlatformId, name: 'Kick', disabled: false },
-    { id: 'twitch' as PlatformId, name: 'Twitch', disabled: true },
+    { id: 'twitch' as PlatformId, name: 'Twitch', disabled: false },
     { id: 'youtube' as PlatformId, name: 'YouTube', disabled: true },
   ];
 
@@ -885,8 +886,8 @@
     link.platform = platformId;
     openPlatformDropdown.value = null;
 
-    // If switching to PumpFun or Kick and we have a platform ID, extract metadata
-    if ((platformId === 'pumpfun' || platformId === 'kick') && link.platform_id.trim()) {
+    // If switching to PumpFun, Kick, or Twitch and we have a platform ID, extract metadata
+    if ((platformId === 'pumpfun' || platformId === 'kick' || platformId === 'twitch') && link.platform_id.trim()) {
       await extractPlatformId(link);
     }
   }
@@ -974,6 +975,41 @@
           }
         } catch (e) {
           console.warn('Failed to fetch Kick channel metadata:', e);
+        } finally {
+          fetchingProfileImage.value = false;
+        }
+      }
+    } else if (link.platform === 'twitch') {
+      const channelName = extractChannelName(input);
+      if (channelName) {
+        link.platform_id = channelName;
+
+        // Check if we already have a profile image from another link
+        const existingProfileImage = formData.value.platformLinks.find(
+          (l) => l !== link && l.profile_image_url
+        )?.profile_image_url;
+
+        if (existingProfileImage) {
+          link.profile_image_url = existingProfileImage;
+          return;
+        }
+
+        // Fetch profile image from Twitch API
+        fetchingProfileImage.value = true;
+        try {
+          const status = await checkTwitchLivestream(channelName);
+          if (status) {
+            // Update display name if not already set
+            if (!link.display_name && status.displayName) {
+              link.display_name = status.displayName;
+            }
+            // Store the profile image URL
+            if (status.profileImageUrl) {
+              link.profile_image_url = status.profileImageUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch Twitch channel metadata:', e);
         } finally {
           fetchingProfileImage.value = false;
         }
@@ -1485,7 +1521,7 @@
       let monitoredStreamerId: string | null = null;
 
       // Resolve monitored streamer for supported platforms
-      if (link.platform === 'pumpfun' || link.platform === 'kick') {
+      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch') {
         try {
           const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
           if (existing) {
@@ -2306,7 +2342,7 @@
 
   .org-dialog__btn--primary {
     background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
+    color: #000;
   }
 
   .org-dialog__btn--primary:hover:not(:disabled) {

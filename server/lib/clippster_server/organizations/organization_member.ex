@@ -8,6 +8,10 @@ defmodule ClippsterServer.Organizations.OrganizationMember do
     field :role, :string, default: "member"
     field :joined_at, :utc_datetime
 
+    # Restriction fields
+    field :is_restricted, :boolean, default: false
+    field :restriction_overrides, :map
+
     belongs_to :organization, ClippsterServer.Organizations.Organization
     belongs_to :user, ClippsterServer.Accounts.User
 
@@ -19,7 +23,7 @@ defmodule ClippsterServer.Organizations.OrganizationMember do
   """
   def create_changeset(member, attrs) do
     member
-    |> cast(attrs, [:organization_id, :user_id, :role])
+    |> cast(attrs, [:organization_id, :user_id, :role, :is_restricted])
     |> validate_required([:organization_id, :user_id, :role])
     |> validate_inclusion(:role, @roles)
     |> put_joined_at()
@@ -72,5 +76,13 @@ defmodule ClippsterServer.Organizations.OrganizationMember do
   Checks if a role is the owner role.
   """
   def is_owner_role?(role), do: role == "owner"
+
+  @doc """
+  Changeset for updating member restriction overrides.
+  """
+  def update_restriction_overrides_changeset(member, attrs) do
+    member
+    |> cast(attrs, [:restriction_overrides, :is_restricted])
+  end
 end
 

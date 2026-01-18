@@ -355,7 +355,7 @@
 
   .videoeditor-dialog__btn--primary {
     background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
+    color: #000;
   }
 
   .videoeditor-dialog__btn--primary:hover:not(:disabled) {

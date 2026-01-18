@@ -440,6 +440,7 @@
               @delete-region="handleDeleteRegion"
               @detect-beat-markers="handleDetectBeatMarkers"
               @clear-beat-markers="handleClearBeatMarkers"
+              @configure-segment-framing="handleConfigureSegmentFraming"
               :regions="regions"
               :beat-markers="beatMarkers"
               :in-point="inPoint"
@@ -487,6 +488,17 @@
         :clip-start-time="effectivePOIClipStartTime"
         :clip-end-time="effectivePOIClipEndTime"
         @confirm="onManualPOIConfigConfirm"
+      />
+
+      <!-- Clear In Editor Confirmation Dialog -->
+      <ConfirmationModal
+        :show="showClearInEditorDialog"
+        title="Clear 'In Editor' Status?"
+        message="Your clip has been built successfully. Would you like to remove it from the 'In Editor' tracking? The built clip will still be available in Built Clips."
+        confirm-text="Yes, Clear"
+        cancel-text="No, Keep"
+        @close="onClearInEditorCancel"
+        @confirm="onClearInEditorConfirm"
       />
     </div>
   </Teleport>
@@ -641,6 +653,7 @@
     type IntroOutroWithOrgProps,
   } from '@/composables/useIntroOutroOperations';
   import { useVideoSourceOperations } from '@/composables/useVideoSourceOperations';
+  import { useInEditorClips } from '@/stores/useInEditorClips';
   import { invoke } from '@tauri-apps/api/core';
 
   // Helper function to load watermark preview URL
@@ -776,6 +789,9 @@
     (e: 'editorSave', projectId: string): void;
   }>();
 
+  // In-editor clips store
+  const inEditorStore = useInEditorClips();
+
   // Command history for undo/redo
   const commandHistory = new CommandHistory();
 
@@ -800,6 +816,9 @@
 
   // Reactive undo/redo availability (updates after each operation)
   const undoRedoTrigger = ref(0); // Increment this to force reactivity
+
+  // Clear In Editor confirmation dialog state
+  const showClearInEditorDialog = ref(false);
   const canUndo = computed(() => {
     undoRedoTrigger.value; // Access to make it reactive
     return commandHistory.canUndo();
@@ -3811,6 +3830,14 @@
     showManualPOIEditor.value = true;
   }
 
+  // Handle configure segment framing from timeline context menu
+  function handleConfigureSegmentFraming(segmentId: string, aspectRatio: string) {
+    // Select the segment so the framing will be applied to it
+    selectedSegmentIds.value = new Set([segmentId]);
+    // Open the manual POI editor for the specified aspect ratio
+    openManualPOIEditor(aspectRatio);
+  }
+
   // Get config for a specific aspect ratio
   function getConfigForRatio(ratio: string): ManualFramingConfig | null {
     return framingConfigs.value[ratio as keyof ManualFramingConfigs] || null;
@@ -5045,12 +5072,42 @@
     console.log('[ClipEditorDialog] Build started');
   }
 
-  function onBuildCompleted(buildId: string) {
+  async function onBuildCompleted(buildId: string) {
     console.log('[ClipEditorDialog] Build completed:', buildId);
+
+    // Handle in-editor tracking for built clips
+    if (props.clipId && inEditorStore.isInEditor(props.clipId)) {
+      // Update asset path to the built file path if available
+      try {
+        const clip = await getClipWithBuildStatus(props.clipId);
+        if (clip?.built_file_path) {
+          inEditorStore.updateAssetPath(props.clipId, clip.built_file_path);
+        }
+      } catch (err) {
+        console.warn('[ClipEditorDialog] Failed to update asset path after build:', err);
+      }
+
+      // Show confirmation dialog to ask user if they want to clear from in-editor tracking
+      showClearInEditorDialog.value = true;
+    }
   }
 
   function onBuildFailed(error: string) {
     console.error('[ClipEditorDialog] Build failed:', error);
+  }
+
+  // Clear In Editor dialog handlers
+  function onClearInEditorConfirm() {
+    if (props.clipId) {
+      inEditorStore.clearClip(props.clipId);
+      console.log('[ClipEditorDialog] Cleared clip from in-editor tracking after user confirmation');
+    }
+    showClearInEditorDialog.value = false;
+  }
+
+  function onClearInEditorCancel() {
+    console.log('[ClipEditorDialog] User chose to keep clip in in-editor tracking');
+    showClearInEditorDialog.value = false;
   }
 
   // Load project ID from clip (needed for transcript)
@@ -6202,6 +6259,15 @@
           // Clip mode - existing behavior
           await loadEditData();
           await loadProjectId();
+
+          // Add clip to in-editor tracking (idempotent)
+          await inEditorStore.addClip({
+            clipId: props.clipId,
+            projectId: projectId.value,
+            projectNameSnapshot: null, // Will be populated from clip data if available
+            origin: 'project',
+            assetPath: props.videoSrc || null,
+          });
 
           // Auto-apply creator watermark if provided and no existing watermarks
           await applyCreatorWatermark();

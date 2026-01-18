@@ -196,8 +196,10 @@
                 </div>
               </div>
 
+              <!-- Only show connection failed overlay if NO DVR content is available -->
+              <!-- If DVR content exists, user can continue watching the recorded stream -->
               <div
-                v-if="viewer.state.value.connectionState === 'failed'"
+                v-if="viewer.state.value.connectionState === 'failed' && viewer.state.value.availableSegments.length === 0"
                 class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
@@ -1283,6 +1285,27 @@
       loadWatermark();
     },
     { immediate: true }
+  );
+
+  // Track if we've already shown the offline toast to avoid spam
+  const hasShownOfflineToast = ref(false);
+
+  // Watch for stream going offline - show toast instead of blocking overlay when DVR is available
+  watch(
+    () => viewer.state.value.connectionState,
+    (newState, oldState) => {
+      if (newState === 'failed' && oldState === 'connected') {
+        // Stream went offline
+        if (viewer.state.value.availableSegments.length > 0 && !hasShownOfflineToast.value) {
+          // DVR content available - show toast and allow continued playback
+          showError('Stream went offline. You can continue watching the recorded content.');
+          hasShownOfflineToast.value = true;
+        }
+      } else if (newState === 'connected') {
+        // Reset toast flag when reconnected
+        hasShownOfflineToast.value = false;
+      }
+    }
   );
 
   // Lifecycle

@@ -4,6 +4,7 @@ defmodule ClippsterServer.Campaigns do
   """
 
   import Ecto.Query, warn: false
+  require Logger
   alias ClippsterServer.Repo
   alias ClippsterServer.Accounts.User
   alias ClippsterServer.Organizations
@@ -17,6 +18,7 @@ defmodule ClippsterServer.Campaigns do
     ClipperSocialAccount,
     ClipperPaymentMethod
   }
+  alias ClippsterServer.Social.Platforms.Twitter
 
   # ============================================================================
   # Campaign CRUD
@@ -488,7 +490,7 @@ defmodule ClippsterServer.Campaigns do
         if platform && platform not in campaign.allowed_platforms do
           {:error, :platform_not_allowed}
         else
-          %CampaignSubmission{}
+          result = %CampaignSubmission{}
           |> CampaignSubmission.create_changeset(Map.merge(attrs, %{
             campaign_id: campaign.id,
             participant_id: participant.id,
@@ -496,8 +498,65 @@ defmodule ClippsterServer.Campaigns do
             platform: platform || Map.get(attrs, :platform) || Map.get(attrs, "platform")
           }))
           |> Repo.insert()
+
+          # Fetch platform metadata asynchronously after successful insert
+          case result do
+            {:ok, submission} ->
+              Task.start(fn -> fetch_and_update_submission_metadata(submission) end)
+              {:ok, submission}
+            error ->
+              error
+          end
         end
     end
+  end
+
+  @doc """
+  Fetches platform metadata for a submission and updates it.
+  """
+  def fetch_and_update_submission_metadata(%CampaignSubmission{} = submission) do
+    case submission.platform do
+      platform when platform in ["x", "twitter"] ->
+        fetch_twitter_metadata(submission)
+      # Add other platforms as needed
+      _ ->
+        Logger.debug("[Campaigns] No metadata fetcher for platform: #{submission.platform}")
+        {:ok, submission}
+    end
+  end
+
+  defp fetch_twitter_metadata(%CampaignSubmission{} = submission) do
+    case Twitter.extract_tweet_id(submission.clip_url) do
+      {:ok, tweet_id} ->
+        case Twitter.get_tweet_analytics(tweet_id) do
+          {:ok, analytics} ->
+            update_submission_metadata(submission, %{
+              view_count: analytics[:view_count] || 0,
+              like_count: analytics[:like_count] || 0,
+              comment_count: analytics[:comment_count] || 0,
+              author_username: analytics[:author_username],
+              author_name: analytics[:author_name],
+              author_profile_image: analytics[:author_profile_image],
+              caption: analytics[:text],
+              platform_post_id: tweet_id
+            })
+          {:error, reason} ->
+            Logger.warning("[Campaigns] Failed to fetch Twitter metadata: #{inspect(reason)}")
+            {:error, reason}
+        end
+      {:error, reason} ->
+        Logger.warning("[Campaigns] Failed to extract tweet ID: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Updates a submission with metadata from the platform.
+  """
+  def update_submission_metadata(%CampaignSubmission{} = submission, attrs) do
+    submission
+    |> Ecto.Changeset.change(attrs)
+    |> Repo.update()
   end
 
   @doc """
@@ -569,6 +628,33 @@ defmodule ClippsterServer.Campaigns do
     end
 
     Repo.all(query)
+  end
+
+  @doc """
+  Lists all submissions for an organization (across all campaigns).
+  """
+  def list_organization_submissions(organization_id, opts \\ []) do
+    org_id = if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+    status = Keyword.get(opts, :status)
+    platform = Keyword.get(opts, :platform)
+    campaign_id = Keyword.get(opts, :campaign_id)
+    limit_val = Keyword.get(opts, :limit, 100)
+    offset_val = Keyword.get(opts, :offset, 0)
+
+    query = from s in CampaignSubmission,
+      join: c in Campaign, on: s.campaign_id == c.id,
+      where: c.organization_id == ^org_id,
+      order_by: [desc: s.inserted_at],
+      preload: [:user, :social_account, campaign: [:creator_profile, :creator_profiles]]
+
+    query = if status, do: where(query, [s], s.status == ^status), else: query
+    query = if platform, do: where(query, [s], s.platform == ^platform), else: query
+    query = if campaign_id, do: where(query, [s], s.campaign_id == ^campaign_id), else: query
+
+    total = Repo.aggregate(query, :count, :id)
+    submissions = query |> limit(^limit_val) |> offset(^offset_val) |> Repo.all()
+
+    {:ok, %{submissions: submissions, total: total}}
   end
 
   @doc """
@@ -758,6 +844,16 @@ defmodule ClippsterServer.Campaigns do
     else
       {:error, :unauthorized}
     end
+  end
+
+  @doc """
+  Updates social account tokens (for token refresh).
+  Used by the scheduled post worker to refresh tokens before publishing.
+  """
+  def update_social_account_tokens(%ClipperSocialAccount{} = account, attrs) do
+    account
+    |> ClipperSocialAccount.update_tokens_changeset(attrs)
+    |> Repo.update()
   end
 
   @doc """

@@ -132,6 +132,23 @@
               <span class="post-submissions__filter-dot post-submissions__filter-dot--failed"></span>
               Failed
             </DropdownMenuItem>
+            <DropdownMenuSeparator class="post-submissions__filter-sep" />
+            <DropdownMenuItem
+              class="post-submissions__filter-item"
+              :class="{ 'post-submissions__filter-item--active': filters.status === 'verified' }"
+              @click="filters.status = 'verified'"
+            >
+              <span class="post-submissions__filter-dot post-submissions__filter-dot--verified"></span>
+              Verified
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="post-submissions__filter-item"
+              :class="{ 'post-submissions__filter-item--active': filters.status === 'paid' }"
+              @click="filters.status = 'paid'"
+            >
+              <span class="post-submissions__filter-dot post-submissions__filter-dot--paid"></span>
+              Paid
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -158,6 +175,30 @@
             >
               <Instagram class="post-submissions__filter-platform-icon" />
               Instagram
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="post-submissions__filter-item"
+              :class="{ 'post-submissions__filter-item--active': filters.platform === 'x' }"
+              @click="filters.platform = 'x'"
+            >
+              <span class="post-submissions__filter-platform-icon post-submissions__x-filter-icon">𝕏</span>
+              X (Twitter)
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="post-submissions__filter-item"
+              :class="{ 'post-submissions__filter-item--active': filters.platform === 'tiktok' }"
+              @click="filters.platform = 'tiktok'"
+            >
+              <FileVideo class="post-submissions__filter-platform-icon" />
+              TikTok
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="post-submissions__filter-item"
+              :class="{ 'post-submissions__filter-item--active': filters.platform === 'youtube' }"
+              @click="filters.platform = 'youtube'"
+            >
+              <FileVideo class="post-submissions__filter-platform-icon" />
+              YouTube
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -222,12 +263,12 @@
 
         <div class="post-submissions__filters-spacer"></div>
 
-        <button class="post-submissions__refresh-btn" @click="loadPosts" :disabled="loading">
+        <button class="post-submissions__refresh-btn" @click="handleRefresh" :disabled="loading || syncing">
           <RefreshCw
             class="post-submissions__refresh-icon"
-            :class="{ 'post-submissions__refresh-icon--spin': loading }"
+            :class="{ 'post-submissions__refresh-icon--spin': loading || syncing }"
           />
-          Refresh
+          {{ syncing ? 'Syncing...' : 'Refresh' }}
         </button>
       </div>
     </section>
@@ -293,61 +334,68 @@
               'post-submissions__card-indicator--pending': post.status === 'pending',
               'post-submissions__card-indicator--publishing': post.status === 'publishing',
               'post-submissions__card-indicator--failed': post.status === 'failed',
+              'post-submissions__card-indicator--approved': post.status === 'approved',
+              'post-submissions__card-indicator--rejected': post.status === 'rejected',
+              'post-submissions__card-indicator--verified': post.status === 'verified',
+              'post-submissions__card-indicator--paid': post.status === 'paid',
             }"
           ></div>
 
           <div class="post-submissions__card-content">
-            <!-- Thumbnail -->
-            <div class="post-submissions__thumbnail">
-              <img
-                v-if="post.thumbnail_url"
-                :src="post.thumbnail_url"
-                alt="Post thumbnail"
-                class="post-submissions__thumbnail-img"
-              />
-              <div v-else class="post-submissions__thumbnail-fallback">
-                <FileVideo class="post-submissions__thumbnail-icon" />
-              </div>
-              <!-- Status badge -->
-              <span
-                class="post-submissions__status"
+            <!-- Platform Badge -->
+            <div class="post-submissions__platform-badge">
+              <div
+                class="post-submissions__platform-icon-wrapper"
                 :class="{
-                  'post-submissions__status--published': post.status === 'published',
-                  'post-submissions__status--pending': post.status === 'pending',
-                  'post-submissions__status--publishing': post.status === 'publishing',
-                  'post-submissions__status--failed': post.status === 'failed',
+                  'post-submissions__platform-icon-wrapper--instagram': post.platform === 'instagram',
+                  'post-submissions__platform-icon-wrapper--twitter': post.platform === 'twitter' || post.platform === 'x',
+                  'post-submissions__platform-icon-wrapper--tiktok': post.platform === 'tiktok',
+                  'post-submissions__platform-icon-wrapper--youtube': post.platform === 'youtube',
                 }"
               >
-                {{ post.status }}
-              </span>
+                <Instagram v-if="post.platform === 'instagram'" class="post-submissions__platform-badge-icon" />
+                <span v-else-if="post.platform === 'twitter' || post.platform === 'x'" class="post-submissions__platform-badge-icon post-submissions__x-icon">𝕏</span>
+                <FileVideo v-else class="post-submissions__platform-badge-icon" />
+              </div>
             </div>
 
             <!-- Post Info -->
             <div class="post-submissions__info">
               <div class="post-submissions__info-header">
-                <!-- Platform Icon -->
-                <div
-                  v-if="post.platform === 'instagram'"
-                  class="post-submissions__platform post-submissions__platform--instagram"
-                >
-                  <Instagram class="post-submissions__platform-icon" />
-                </div>
+                <!-- Author info (for external posts with platform metadata) -->
+                <template v-if="post.author_username">
+                  <img
+                    v-if="post.author_profile_image"
+                    :src="post.author_profile_image"
+                    :alt="post.author_username"
+                    class="post-submissions__author-avatar"
+                  />
+                  <span class="post-submissions__account">
+                    @{{ post.author_username }}
+                  </span>
+                </template>
 
-                <!-- Account -->
-                <span v-if="post.social_account" class="post-submissions__account">
+                <!-- Account (for scheduled posts) -->
+                <span v-else-if="post.social_account" class="post-submissions__account">
                   @{{ post.social_account.username }}
                 </span>
 
-                <!-- Creator Profile -->
-                <span v-if="post.creator_profile" class="post-submissions__creator">
+                <!-- Creator Profile - more prominent with label -->
+                <span v-if="post.creator_profile" class="post-submissions__creator-badge">
+                  <span class="post-submissions__creator-label">Creator:</span>
                   {{ post.creator_profile.name }}
                 </span>
-              </div>
 
-              <!-- Caption -->
-              <p v-if="post.caption" class="post-submissions__caption">
-                {{ post.caption }}
-              </p>
+                <!-- Campaign -->
+                <span v-if="post.campaign" class="post-submissions__campaign">
+                  {{ post.campaign.name }}
+                </span>
+
+                <!-- Type Badge for campaign submissions -->
+                <span v-if="post.type === 'campaign'" class="post-submissions__type-badge post-submissions__type-badge--campaign">
+                  Campaign Submission
+                </span>
+              </div>
 
               <!-- Meta -->
               <div class="post-submissions__meta">
@@ -355,23 +403,10 @@
                   <User class="post-submissions__meta-icon" />
                   {{ post.submitted_by.name || post.submitted_by.email }}
                 </span>
-                <span v-if="post.posted_at" class="post-submissions__meta-item">
+                <span class="post-submissions__meta-item">
                   <Clock class="post-submissions__meta-icon" />
-                  {{ formatDate(post.posted_at) }}
+                  {{ formatDate(post.inserted_at) }}
                 </span>
-                <span
-                  v-if="post.manual_override"
-                  class="post-submissions__meta-item post-submissions__meta-item--warning"
-                >
-                  <AlertCircle class="post-submissions__meta-icon" />
-                  Manual override
-                </span>
-              </div>
-
-              <!-- Error Message -->
-              <div v-if="post.error_message" class="post-submissions__error">
-                <AlertCircle class="post-submissions__error-icon" />
-                {{ post.error_message }}
               </div>
             </div>
 
@@ -379,17 +414,17 @@
             <div class="post-submissions__analytics">
               <div class="post-submissions__analytic">
                 <Eye class="post-submissions__analytic-icon" />
-                <span class="post-submissions__analytic-value">{{ formatNumber(post.analytics.view_count) }}</span>
+                <span class="post-submissions__analytic-value">{{ formatNumber(post.view_count) }}</span>
                 <span class="post-submissions__analytic-label">Views</span>
               </div>
               <div class="post-submissions__analytic">
                 <Heart class="post-submissions__analytic-icon" />
-                <span class="post-submissions__analytic-value">{{ formatNumber(post.analytics.like_count) }}</span>
+                <span class="post-submissions__analytic-value">{{ formatNumber(post.like_count) }}</span>
                 <span class="post-submissions__analytic-label">Likes</span>
               </div>
               <div class="post-submissions__analytic">
                 <MessageCircle class="post-submissions__analytic-icon" />
-                <span class="post-submissions__analytic-value">{{ formatNumber(post.analytics.comment_count) }}</span>
+                <span class="post-submissions__analytic-value">{{ formatNumber(post.comment_count) }}</span>
                 <span class="post-submissions__analytic-label">Comments</span>
               </div>
             </div>
@@ -401,62 +436,10 @@
                 :href="post.post_url"
                 target="_blank"
                 class="post-submissions__action-btn"
-                title="View on Instagram"
+                :title="'View on ' + getPlatformName(post.platform)"
               >
                 <ExternalLink class="post-submissions__action-icon" />
               </a>
-              <div v-if="isAdmin" class="post-submissions__dropdown-wrapper">
-                <button
-                  :ref="(el) => setPostMenuButtonRef(el, post.id)"
-                  class="post-submissions__action-btn"
-                  :class="{ 'post-submissions__action-btn--active': openPostMenuId === post.id }"
-                  @click.stop="togglePostMenu(post.id)"
-                >
-                  <MoreVertical class="post-submissions__action-icon" />
-                </button>
-
-                <Teleport to="body">
-                  <div
-                    v-if="openPostMenuId === post.id"
-                    class="post-submissions__dropdown"
-                    :style="getPostMenuPosition(post.id)"
-                    @click.stop
-                  >
-                    <button
-                      class="post-submissions__dropdown-item"
-                      @click.stop="
-                        syncPost(post);
-                        closePostMenu();
-                      "
-                    >
-                      <RefreshCw class="post-submissions__dropdown-icon" />
-                      <span>Sync Analytics</span>
-                    </button>
-                    <button
-                      class="post-submissions__dropdown-item"
-                      @click.stop="
-                        editAnalytics(post);
-                        closePostMenu();
-                      "
-                    >
-                      <Edit class="post-submissions__dropdown-icon" />
-                      <span>Edit Analytics</span>
-                    </button>
-                    <div v-if="post.manual_override" class="post-submissions__dropdown-divider"></div>
-                    <button
-                      v-if="post.manual_override"
-                      class="post-submissions__dropdown-item post-submissions__dropdown-item--warning"
-                      @click.stop="
-                        resetOverride(post);
-                        closePostMenu();
-                      "
-                    >
-                      <RotateCcw class="post-submissions__dropdown-icon" />
-                      <span>Reset Override</span>
-                    </button>
-                  </div>
-                </Teleport>
-              </div>
             </div>
           </div>
         </div>
@@ -614,6 +597,8 @@
     type PostSubmission,
     type AnalyticsSummary,
   } from '@/services/socialAccountsApi';
+  import { listExternalPosts, syncOrgAnalytics, type ExternalPostSubmission } from '@/services/schedulingApi';
+  import { listOrganizationCampaignSubmissions, type CampaignSubmission } from '@/services/campaignApi';
 
   interface CreatorProfile {
     id: number;
@@ -640,8 +625,31 @@
 
   const { showToast } = useToast();
 
+  // Unified post type that can represent post_submissions, external_post_submissions, and campaign_submissions
+  interface UnifiedPost {
+    id: number;
+    type: 'scheduled' | 'external' | 'campaign';
+    platform: string;
+    status: string;
+    post_url: string | null;
+    caption: string | null;
+    view_count: number;
+    like_count: number;
+    comment_count: number;
+    creator_profile: { id: number; name: string; profile_image_url?: string } | null;
+    campaign: { id: number; name: string } | null;
+    social_account: { id: number; username: string; platform: string } | null;
+    submitted_by: { id: number; name?: string; email: string } | null;
+    // Author metadata from platform API (for external posts)
+    author_username: string | null;
+    author_name: string | null;
+    author_profile_image: string | null;
+    posted_at: string | null;
+    inserted_at: string;
+  }
+
   const loading = ref(true);
-  const posts = ref<PostSubmission[]>([]);
+  const posts = ref<UnifiedPost[]>([]);
   const total = ref(0);
   const limit = ref(20);
   const offset = ref(0);
@@ -670,6 +678,7 @@
   const showEditDialog = ref(false);
   const editingPost = ref<PostSubmission | null>(null);
   const saving = ref(false);
+  const syncing = ref(false);
   const editForm = reactive({
     view_count: 0,
     like_count: 0,
@@ -678,11 +687,47 @@
     reach_count: 0,
   });
 
-  onMounted(() => {
+  onMounted(async () => {
+    // Sync analytics on page load (runs in background)
+    syncAnalyticsOnLoad();
     loadPosts();
     loadSummary();
     document.addEventListener('click', handlePostMenuClickOutside);
   });
+
+  // Sync analytics when page loads
+  async function syncAnalyticsOnLoad() {
+    if (!props.organizationId) return;
+    try {
+      await syncOrgAnalytics(props.organizationId);
+      // Reload posts after sync completes to get updated analytics
+      setTimeout(() => {
+        loadPosts();
+        loadSummary();
+      }, 2000); // Give backend time to fetch from APIs
+    } catch (error) {
+      console.warn('[PostSubmissionsList] Analytics sync failed:', error);
+    }
+  }
+
+  // Handle manual refresh button click
+  async function handleRefresh() {
+    if (!props.organizationId) return;
+    syncing.value = true;
+    try {
+      await syncOrgAnalytics(props.organizationId);
+      // Wait a bit for backend to fetch from APIs, then reload
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await loadPosts();
+      await loadSummary();
+      showToast('Analytics refreshed', 'success');
+    } catch (error) {
+      console.error('[PostSubmissionsList] Refresh failed:', error);
+      showToast('Failed to refresh analytics', 'error');
+    } finally {
+      syncing.value = false;
+    }
+  }
 
   onUnmounted(() => {
     document.removeEventListener('click', handlePostMenuClickOutside);
@@ -745,21 +790,149 @@
   async function loadPosts() {
     loading.value = true;
     try {
-      const response = await listPostSubmissions(props.organizationId, {
-        status: filters.status !== 'all' ? filters.status : undefined,
-        platform: filters.platform !== 'all' ? filters.platform : undefined,
-        creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
-        submitted_by_user_id: filters.submittedByUserId !== 'all' ? parseInt(filters.submittedByUserId) : undefined,
-        limit: limit.value,
-        offset: offset.value,
-      });
+      // Fetch scheduled posts, external link submissions, and campaign submissions
+      const [scheduledResponse, externalResponse, campaignResponse] = await Promise.all([
+        listPostSubmissions(props.organizationId, {
+          status: filters.status !== 'all' ? filters.status : undefined,
+          platform: filters.platform !== 'all' ? filters.platform : undefined,
+          creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
+          submitted_by_user_id: filters.submittedByUserId !== 'all' ? parseInt(filters.submittedByUserId) : undefined,
+          limit: limit.value,
+          offset: offset.value,
+        }),
+        listExternalPosts(props.organizationId, {
+          status: filters.status !== 'all' ? filters.status : undefined,
+          creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
+          limit: limit.value,
+          offset: offset.value,
+        }),
+        listOrganizationCampaignSubmissions(props.organizationId, {
+          status: filters.status !== 'all' ? filters.status : undefined,
+          platform: filters.platform !== 'all' ? filters.platform : undefined,
+          limit: limit.value,
+          offset: offset.value,
+        }),
+      ]);
 
-      if (response.success) {
-        posts.value = response.posts;
-        total.value = response.total;
-      } else {
-        showToast('Failed to load posts', 'error');
+      const unifiedPosts: UnifiedPost[] = [];
+
+      // Map scheduled posts to unified format
+      if (scheduledResponse.success) {
+        for (const post of scheduledResponse.posts) {
+          unifiedPosts.push({
+            id: post.id,
+            type: 'scheduled',
+            platform: post.platform,
+            status: post.status,
+            post_url: post.post_url,
+            caption: post.caption,
+            view_count: post.analytics?.view_count || 0,
+            like_count: post.analytics?.like_count || 0,
+            comment_count: post.analytics?.comment_count || 0,
+            creator_profile: post.creator_profile ? {
+              id: post.creator_profile.id,
+              name: post.creator_profile.name,
+              profile_image_url: post.creator_profile.profile_image_url || undefined,
+            } : null,
+            campaign: null,
+            social_account: post.social_account,
+            submitted_by: post.submitted_by ? {
+              id: post.submitted_by.id,
+              email: post.submitted_by.email,
+              name: post.submitted_by.name || undefined,
+            } : null,
+            author_username: null,
+            author_name: null,
+            author_profile_image: null,
+            posted_at: post.posted_at,
+            inserted_at: post.inserted_at,
+          });
+        }
       }
+
+      // Map external posts to unified format
+      if (externalResponse.success) {
+        for (const post of externalResponse.submissions) {
+          unifiedPosts.push({
+            id: post.id,
+            type: 'external',
+            platform: post.platform,
+            // External links are already published on the platform
+            status: 'published',
+            post_url: post.post_url,
+            caption: post.caption,
+            view_count: post.analytics?.view_count || 0,
+            like_count: post.analytics?.like_count || 0,
+            comment_count: post.analytics?.comment_count || 0,
+            creator_profile: post.creator_profile ? {
+              id: post.creator_profile.id,
+              name: post.creator_profile.name,
+              profile_image_url: post.creator_profile.profile_image_url || undefined,
+            } : null,
+            campaign: post.campaign,
+            social_account: null,
+            submitted_by: post.submitted_by ? {
+              id: post.submitted_by.id,
+              email: post.submitted_by.email,
+              name: post.submitted_by.name || undefined,
+            } : null,
+            author_username: post.author_username,
+            author_name: post.author_name,
+            author_profile_image: post.author_profile_image,
+            posted_at: post.reviewed_at,
+            inserted_at: post.inserted_at,
+          });
+        }
+      }
+
+      // Map campaign submissions to unified format
+      if (campaignResponse.success) {
+        for (const submission of campaignResponse.submissions) {
+          // Map campaign submission status to display status
+          // verified/paid = published (it's live on the platform)
+          const displayStatus = (submission.status === 'verified' || submission.status === 'paid') 
+            ? 'published' 
+            : submission.status;
+          
+          unifiedPosts.push({
+            id: submission.id,
+            type: 'campaign',
+            platform: submission.platform,
+            status: displayStatus,
+            post_url: submission.clip_url,
+            caption: submission.caption || null,
+            view_count: submission.view_count || 0,
+            like_count: submission.like_count || 0,
+            comment_count: submission.comment_count || 0,
+            creator_profile: submission.creator_profile ? {
+              id: submission.creator_profile.id,
+              name: submission.creator_profile.name,
+              profile_image_url: submission.creator_profile.profile_image_url || undefined,
+            } : null,
+            campaign: submission.campaign ? {
+              id: submission.campaign.id,
+              name: submission.campaign.title,
+            } : null,
+            social_account: null,
+            submitted_by: submission.user ? {
+              id: submission.user.id,
+              email: submission.user.email,
+              name: submission.user.display_name || undefined,
+            } : null,
+            author_username: submission.author_username || null,
+            author_name: submission.author_name || null,
+            author_profile_image: submission.author_profile_image || null,
+            posted_at: submission.verified_at,
+            inserted_at: submission.inserted_at,
+          });
+        }
+      }
+
+      // Sort by inserted_at descending (newest first)
+      unifiedPosts.sort((a, b) => new Date(b.inserted_at).getTime() - new Date(a.inserted_at).getTime());
+
+      posts.value = unifiedPosts;
+      total.value = (scheduledResponse.total || 0) + (externalResponse.total || 0) + (campaignResponse.total || 0);
     } catch (error) {
       console.error('Failed to load posts:', error);
       showToast('Failed to load posts', 'error');
@@ -770,13 +943,67 @@
 
   async function loadSummary() {
     try {
-      const response = await getAnalyticsSummary(props.organizationId, {
-        creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
-      });
+      // Get summary from scheduled posts, external posts, and campaign submissions
+      const [scheduledResponse, externalResponse, campaignResponse] = await Promise.all([
+        getAnalyticsSummary(props.organizationId, {
+          creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
+        }),
+        listExternalPosts(props.organizationId, {
+          creator_profile_id: filters.creatorProfileId !== 'all' ? parseInt(filters.creatorProfileId) : undefined,
+          limit: 1000, // Get all for summary
+        }),
+        listOrganizationCampaignSubmissions(props.organizationId, {
+          limit: 1000, // Get all for summary
+        }),
+      ]);
 
-      if (response.success && response.summary) {
-        summary.value = response.summary;
+      // Start with scheduled posts summary
+      let totalPosts = 0;
+      let totalViews = 0;
+      let totalLikes = 0;
+      let totalComments = 0;
+      let totalSaves = 0;
+      let totalReach = 0;
+      let totalImpressions = 0;
+
+      if (scheduledResponse.success && scheduledResponse.summary) {
+        totalPosts = scheduledResponse.summary.total_posts || 0;
+        totalViews = scheduledResponse.summary.total_views || 0;
+        totalLikes = scheduledResponse.summary.total_likes || 0;
+        totalComments = scheduledResponse.summary.total_comments || 0;
+        totalSaves = scheduledResponse.summary.total_saves || 0;
+        totalReach = scheduledResponse.summary.total_reach || 0;
+        totalImpressions = scheduledResponse.summary.total_impressions || 0;
       }
+
+      // Add external posts to summary
+      if (externalResponse.success && externalResponse.submissions) {
+        totalPosts += externalResponse.submissions.length;
+        for (const post of externalResponse.submissions) {
+          totalViews += post.analytics?.view_count || 0;
+          totalLikes += post.analytics?.like_count || 0;
+          totalComments += post.analytics?.comment_count || 0;
+          totalSaves += post.analytics?.save_count || 0;
+        }
+      }
+
+      // Add campaign submissions to summary
+      if (campaignResponse.success && campaignResponse.submissions) {
+        totalPosts += campaignResponse.submissions.length;
+        for (const submission of campaignResponse.submissions) {
+          totalViews += submission.view_count || 0;
+        }
+      }
+
+      summary.value = {
+        total_posts: totalPosts,
+        total_views: totalViews,
+        total_likes: totalLikes,
+        total_comments: totalComments,
+        total_saves: totalSaves,
+        total_reach: totalReach,
+        total_impressions: totalImpressions,
+      };
     } catch (error) {
       console.error('Failed to load summary:', error);
     }
@@ -865,6 +1092,16 @@
     return num.toString();
   }
 
+  function getPlatformName(platform: string): string {
+    const names: Record<string, string> = {
+      instagram: 'Instagram',
+      twitter: 'X',
+      tiktok: 'TikTok',
+      youtube: 'YouTube',
+    };
+    return names[platform] || platform;
+  }
+
   function formatDate(dateString: string): string {
     const date = new Date(dateString);
     const now = new Date();
@@ -887,6 +1124,8 @@
       pending: 'Pending',
       publishing: 'Publishing',
       failed: 'Failed',
+      verified: 'Verified',
+      paid: 'Paid',
     };
     return labels[status] || 'All Status';
   }
@@ -895,6 +1134,10 @@
     const labels: Record<string, string> = {
       all: 'All Platforms',
       instagram: 'Instagram',
+      twitter: 'X (Twitter)',
+      x: 'X (Twitter)',
+      tiktok: 'TikTok',
+      youtube: 'YouTube',
     };
     return labels[platform] || 'All Platforms';
   }
@@ -1295,12 +1538,88 @@
     background: linear-gradient(to bottom, #ef4444 0%, #dc2626 100%);
   }
 
+  .post-submissions__card-indicator--verified {
+    background: linear-gradient(to bottom, #22d3ee 0%, #06b6d4 100%);
+  }
+
+  .post-submissions__card-indicator--paid {
+    background: linear-gradient(to bottom, #10b981 0%, #059669 100%);
+  }
+
   .post-submissions__card-content {
     flex: 1;
     display: flex;
     align-items: center;
     gap: 1rem;
     padding: 0.875rem 1rem;
+  }
+
+  /* ===== Platform Badge ===== */
+  .post-submissions__platform-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    flex-shrink: 0;
+  }
+
+  .post-submissions__platform-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background-color: var(--sidebar-hover);
+  }
+
+  .post-submissions__platform-icon-wrapper--instagram {
+    background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  }
+
+  .post-submissions__platform-icon-wrapper--twitter {
+    background-color: transparent;
+  }
+
+  .post-submissions__platform-icon-wrapper--tiktok {
+    background-color: #000;
+  }
+
+  .post-submissions__platform-icon-wrapper--youtube {
+    background-color: #ff0000;
+  }
+
+  .post-submissions__platform-badge-icon {
+    width: 22px;
+    height: 22px;
+    color: white;
+  }
+
+  .post-submissions__x-icon {
+    font-size: 1.25rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .post-submissions__type-badge {
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .post-submissions__type-badge--external {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+  }
+
+  .post-submissions__type-badge--scheduled {
+    background-color: rgba(16, 185, 129, 0.2);
+    color: #34d399;
   }
 
   /* ===== Thumbnail ===== */
@@ -1401,10 +1720,27 @@
     color: white;
   }
 
+  .post-submissions__author-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
   .post-submissions__account {
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--sidebar-text);
+  }
+
+  .post-submissions__campaign {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #a78bfa;
+    background-color: rgba(167, 139, 250, 0.15);
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
   }
 
   .post-submissions__creator {
@@ -1412,6 +1748,39 @@
     color: var(--sidebar-text-muted);
     padding-left: 0.5rem;
     border-left: 1px solid var(--sidebar-border);
+  }
+
+  .post-submissions__creator-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: #f59e0b;
+    background-color: rgba(245, 158, 11, 0.12);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+  }
+
+  .post-submissions__creator-label {
+    font-size: 0.5625rem;
+    font-weight: 500;
+    color: rgba(245, 158, 11, 0.7);
+    text-transform: uppercase;
+  }
+
+  .post-submissions__type-badge {
+    font-size: 0.625rem;
+    font-weight: 600;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+
+  .post-submissions__type-badge--campaign {
+    color: #22d3ee;
+    background-color: rgba(34, 211, 238, 0.15);
   }
 
   .post-submissions__caption {
@@ -2157,10 +2526,27 @@
     background-color: #ef4444;
   }
 
+  .post-submissions__filter-dot--verified {
+    background-color: #22d3ee;
+  }
+
+  .post-submissions__filter-dot--paid {
+    background-color: #10b981;
+  }
+
   .post-submissions__filter-platform-icon {
     width: 16px;
     height: 16px;
     color: #e1306c;
     flex-shrink: 0;
+  }
+
+  .post-submissions__x-filter-icon {
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 </style>

@@ -12,6 +12,7 @@ mod assets;
 mod ui_utils;
 mod pumpfun;
 mod kick;
+mod twitch;
 mod waveform;
 mod focal_detection;
 mod commands;
@@ -646,6 +647,7 @@ pub fn run() {
             pumpfun::start_livestream_recording,
             pumpfun::stop_livestream_recording,
             pumpfun::stop_all_livestream_recordings,
+            pumpfun::get_active_pumpfun_recordings,
 
             // Kick commands
             kick::check_kick_livestream,
@@ -656,12 +658,24 @@ pub fn run() {
             kick::stop_kick_recording,
             kick::stop_all_kick_recordings,
             kick::get_kick_session_output_dir,
+            kick::get_active_kick_recordings,
+
+            // Twitch commands
+            twitch::check_twitch_livestream,
+            twitch::get_twitch_vods,
+            twitch::start_twitch_recording,
+            twitch::stop_twitch_recording,
+            twitch::stop_all_twitch_recordings,
+            twitch::get_twitch_session_output_dir,
+            twitch::get_active_twitch_recordings,
 
             // Download commands
             downloads::download_pumpfun_vod,
             downloads::download_pumpfun_vod_segment,
             downloads::download_kick_vod,
             downloads::download_kick_vod_segment,
+            twitch::download_twitch_vod,
+            twitch::download_twitch_vod_segment,
 
             // Audio commands
             audio::extract_audio_from_video,
@@ -737,19 +751,20 @@ pub fn run() {
             dvr::list_dvr_chunks,
             dvr::get_dvr_directory,
             dvr::has_dvr_chunks,
-            dvr::read_dvr_chunk,
             dvr::read_all_dvr_chunks,
+            dvr::read_dvr_chunk,
             dvr::read_dvr_init_segment,
             dvr::read_dvr_cluster,
             dvr::build_vod_from_dvr,
             dvr::build_segment_from_dvr_chunks,
+            dvr::convert_dvr_chunk_to_hls,
             
             // HLS commands
             hls::start_hls_recording,
             hls::stop_hls_recording,
             hls::cleanup_hls_recordings,
             hls::get_recording_output_dir,
-            hls::get_hls_segments
+            hls::get_hls_segments,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

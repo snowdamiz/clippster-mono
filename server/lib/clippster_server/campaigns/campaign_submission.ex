@@ -21,6 +21,21 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
     field :rejection_reason, :string
     field :verified_at, :utc_datetime
 
+    # Analytics fields (to match external_post_submissions)
+    field :like_count, :integer, default: 0
+    field :comment_count, :integer, default: 0
+    field :share_count, :integer, default: 0
+    field :save_count, :integer, default: 0
+
+    # Author metadata from platform API
+    field :author_username, :string
+    field :author_name, :string
+    field :author_profile_image, :string
+
+    # Additional metadata
+    field :caption, :string
+    field :media_type, :string
+
     belongs_to :campaign, Campaign
     belongs_to :participant, CampaignParticipant
     belongs_to :user, User

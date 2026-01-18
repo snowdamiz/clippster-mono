@@ -235,7 +235,7 @@
     },
     {
       id: 'creators',
-      title: 'Creator Profiles',
+      title: 'Creators',
       description: 'Manage creator profiles and platform links',
       icon: UserCircle,
       route: `/organization/${organizationId.value}/creators`,
@@ -362,7 +362,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 

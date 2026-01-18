@@ -58,9 +58,7 @@ export const platformConfigs: Record<PlatformId, PlatformConfig> = {
     searchLabel: 'Channel',
     emptyStateTitle: 'Search for VODs',
     emptyStateDescription: 'Search for VODs by channel name or Twitch URL.',
-    isComingSoon: true,
-    comingSoonMessage:
-      "We're working hard to bring Twitch streaming content management to Clippster. This feature will allow you to import, organize, and create clips from your Twitch streams and VODs.",
+    isComingSoon: false,
     provider: 'twitch',
     localStorageKey: 'twitch_recent_searches',
   },

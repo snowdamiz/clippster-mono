@@ -132,25 +132,25 @@
     z-index: 20;
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.3rem 0.625rem;
-    border-radius: 9999px;
-    font-size: 0.6875rem;
-    font-weight: 700;
+    gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
     letter-spacing: 0.02em;
     backdrop-filter: blur(8px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .vod-card__badge--duration {
-    background-color: rgba(139, 92, 246, 0.95);
-    color: white;
-    border: 1px solid rgba(139, 92, 246, 0.5);
+    background-color: rgba(14, 165, 233, 0.3);
+    color: #7dd3fc;
   }
 
   .vod-card__badge-icon {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
   }
 
   /* Bottom Info Overlay */

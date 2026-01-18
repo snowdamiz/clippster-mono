@@ -136,6 +136,17 @@ export interface CampaignSubmission {
   rejection_reason: string | null;
   verified_at: string | null;
   inserted_at: string;
+  // Analytics fields
+  like_count?: number;
+  comment_count?: number;
+  share_count?: number;
+  save_count?: number;
+  // Author metadata from platform
+  author_username?: string | null;
+  author_name?: string | null;
+  author_profile_image?: string | null;
+  caption?: string | null;
+  media_type?: string | null;
   user?: {
     id: number;
     email: string;
@@ -144,6 +155,11 @@ export interface CampaignSubmission {
   campaign?: {
     id: number;
     title: string;
+  };
+  creator_profile?: {
+    id: number;
+    name: string;
+    profile_image_url: string | null;
   };
 }
 
@@ -216,6 +232,7 @@ export interface SubmissionResponse {
 export interface ListSubmissionsResponse {
   success: boolean;
   submissions: CampaignSubmission[];
+  total?: number;
   error?: string;
 }
 
@@ -503,6 +520,26 @@ export async function removeParticipant(
 // ============================================
 // Submission Management API
 // ============================================
+
+/**
+ * List all campaign submissions for an organization (across all campaigns)
+ */
+export async function listOrganizationCampaignSubmissions(
+  organizationId: number | string,
+  options?: {
+    status?: string;
+    platform?: string;
+    campaign_id?: number;
+    limit?: number;
+    offset?: number;
+  }
+): Promise<ListSubmissionsResponse> {
+  const response = await api.get(
+    `/organizations/${organizationId}/campaign-submissions`,
+    { params: options }
+  );
+  return response.data;
+}
 
 /**
  * List submissions for a campaign

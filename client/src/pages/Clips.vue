@@ -1,7 +1,7 @@
 <template>
   <div class="clips-page">
     <PageLayout
-      title="My Clips"
+      title="Built Clips"
       description="Browse and manage your generated video clips"
       :show-header="true"
       :icon="LayoutGrid"
@@ -104,7 +104,7 @@
 
         <!-- Page Heading -->
         <div v-if="displayableBuilds.length > 0 || loading" class="clips__heading">
-          <h1 class="clips__title">Your Clips</h1>
+          <h1 class="clips__title">Built Clips</h1>
           <p class="clips__subtitle">Browse and manage your generated video clips</p>
         </div>
 
@@ -124,14 +124,21 @@
         <!-- Content when not loading -->
         <div v-else-if="displayableBuilds.length > 0" class="clips__main">
           <!-- Selection Bar (shown when items selected) -->
-          <div v-if="totalSelectedCount > 0" class="clips__selection-bar">
-            <button @click="confirmBulkDelete" class="clips__selection-delete">
-              <Trash2 class="clips__selection-icon" />
-              Delete ({{ totalSelectedCount }})
-            </button>
-            <span class="clips__selection-count">{{ totalSelectedCount }} selected</span>
-            <button @click="clearSelection" class="clips__selection-clear">Clear</button>
-          </div>
+          <Transition name="selection-bar">
+            <div v-if="totalSelectedCount > 0" class="clips__selection-bar">
+              <div class="clips__selection-info">
+                <Check class="clips__selection-icon" />
+                <span>{{ totalSelectedCount }} selected</span>
+              </div>
+              <div class="clips__selection-actions">
+                <button @click="clearSelection" class="clips__selection-clear">Clear</button>
+                <button @click="confirmBulkDelete" class="clips__selection-delete">
+                  <Trash2 class="clips__selection-delete-icon" />
+                  Delete Selected
+                </button>
+              </div>
+            </div>
+          </Transition>
 
           <!-- Builds Grid -->
           <div v-if="filteredBuilds.length > 0" class="clips__section">
@@ -304,185 +311,303 @@
       </div>
     </PageLayout>
     <!-- Folder Contents Dialog -->
-    <div
-      v-if="showFolderDialog && folderProject"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    >
-      <div
-        class="bg-card rounded-lg w-full mx-4 border border-border flex flex-col overflow-hidden shadow-2xl transition-all duration-200 max-h-[80vh]"
-        :class="{
-          'max-w-lg': paginatedFolderBuilds.length <= 1,
-          'max-w-3xl': paginatedFolderBuilds.length === 2,
-          'max-w-5xl': paginatedFolderBuilds.length >= 3,
-        }"
-      >
-        <!-- Header -->
-        <div class="py-2 px-3 border-b border-border flex items-center justify-between bg-black/30">
-          <div class="flex items-center justify-center gap-2.5">
-            <!-- Selection Controls (visible when items selected) -->
-            <div v-if="selectedFolderDialogBuilds.size > 0" class="flex items-center gap-3">
-              <button
-                @click="confirmBulkDeleteFolderDialogBuilds"
-                class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-2 font-medium text-sm transition-all"
-              >
-                <Trash2 class="h-4 w-4" />
-                Delete ({{ selectedFolderDialogBuilds.size }})
-              </button>
-              <span class="text-sm text-muted-foreground">{{ selectedFolderDialogBuilds.size }} selected</span>
-              <button
-                @click="clearFolderDialogBuildSelection"
-                class="text-xs text-muted-foreground hover:text-foreground font-medium"
-              >
-                Clear
-              </button>
-            </div>
-
-            <!-- Normal header (hidden when items selected) -->
-            <template v-else>
-              <div class="bg-primary/10 p-1.5 rounded-md">
-                <FolderOpen class="h-4 w-4 text-primary" />
-              </div>
-              <h2 class="text-md font-medium text-foreground -mt-1">{{ folderProject.name }}</h2>
-              <span class="text-xs text-muted-foreground ml-1">
-                ({{ folderBuilds.length }} file{{ folderBuilds.length !== 1 ? 's' : '' }})
-              </span>
-            </template>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <!-- Aspect Ratio Filter (only show if multiple ratios available) -->
-            <div v-if="folderAspectRatioOptions.length > 2" class="flex items-center gap-2">
-              <div class="flex items-center gap-1.5 bg-muted/50 rounded-md p-0.5">
-                <button
-                  v-for="option in folderAspectRatioOptions"
-                  :key="option.value"
-                  @click="folderAspectRatioFilter = option.value"
-                  :class="[
-                    'px-2 py-1 text-xs font-medium rounded transition-all',
-                    folderAspectRatioFilter === option.value
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted',
-                  ]"
-                >
-                  {{ option.value === 'all' ? 'All' : option.label }}
-                </button>
-              </div>
-            </div>
-
-            <button
-              @click="showFolderDialog = false"
-              class="p-2 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground"
-            >
-              <X class="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        <!-- Content -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-8">
-          <div v-for="group in groupedFolderBuilds" :key="group.dateLabel" class="space-y-4">
-            <!-- Date Header -->
-            <h3 class="text-sm font-medium text-muted-foreground border-b border-border pb-2">
-              {{ group.dateLabel }}
-            </h3>
-
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showFolderDialog && folderProject"
+          class="folder-dialog__overlay"
+          @click.self="showFolderDialog = false"
+        >
+          <Transition name="dialog" appear>
             <div
-              class="grid gap-5"
-              :class="{
-                'grid-cols-1': group.builds.length === 1 && groupedFolderBuilds.length === 1,
-                'grid-cols-1 md:grid-cols-2':
-                  (group.builds.length === 2 && groupedFolderBuilds.length === 1) ||
-                  (paginatedFolderBuilds.length > 1 && paginatedFolderBuilds.length <= 4),
-                'grid-cols-1 md:grid-cols-2 lg:grid-cols-3':
-                  paginatedFolderBuilds.length >= 5 || groupedFolderBuilds.length > 1,
-              }"
+              v-if="showFolderDialog"
+              class="folder-dialog"
+              :class="folderDialogSizeClass"
+              role="dialog"
+              aria-modal="true"
             >
-              <div
-                v-for="item in group.builds"
-                :key="item.id"
-                class="relative group/select"
-                :class="{
-                  'ring-2 ring-primary ring-offset-2 ring-offset-background rounded-md': isFolderDialogBuildSelected(
-                    item.id
-                  ),
-                }"
-              >
-                <!-- Sibling count badge (shows when filtered and there are other aspect ratios) -->
-                <div
-                  v-if="folderAspectRatioFilter !== 'all' && getBuildSiblingCount(item.build.id) > 1"
-                  class="absolute top-4 left-20 z-20"
-                  :title="`This build has ${getBuildSiblingCount(item.build.id)} aspect ratio variants`"
-                >
-                  <span
-                    class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/80 text-white font-medium backdrop-blur-sm flex items-center gap-1"
-                  >
-                    <Ratio class="w-2.5 h-2.5" />
-                    {{ getBuildSiblingCount(item.build.id) }}
-                  </span>
+              <!-- Accent bar -->
+              <div class="folder-dialog__accent"></div>
+
+              <!-- Header (compact) -->
+              <div class="folder-dialog__header">
+                <div class="folder-dialog__header-left">
+                  <!-- Selection Controls (visible when items selected) -->
+                  <template v-if="selectedFolderDialogBuilds.size > 0">
+                    <button
+                      @click="confirmBulkDeleteFolderDialogBuilds"
+                      class="folder-dialog__selection-delete"
+                    >
+                      <Trash2 :size="14" />
+                      Delete ({{ selectedFolderDialogBuilds.size }})
+                    </button>
+                    <span class="folder-dialog__selection-count">{{ selectedFolderDialogBuilds.size }} selected</span>
+                    <button @click="clearFolderDialogBuildSelection" class="folder-dialog__selection-clear">
+                      Clear
+                    </button>
+                  </template>
+
+                  <!-- Normal header (hidden when items selected) -->
+                  <template v-else>
+                    <div class="folder-dialog__header-icon">
+                      <FolderOpen :size="16" />
+                    </div>
+                    <h2 class="folder-dialog__title" :title="folderProject.name">{{ folderProject.name }}</h2>
+                    <span class="folder-dialog__file-count">
+                      ({{ folderBuilds.length }} file{{ folderBuilds.length !== 1 ? 's' : '' }})
+                    </span>
+                  </template>
                 </div>
 
-                <!-- Selection Checkbox (visible on hover or when selected) -->
-                <div
-                  class="absolute top-4 left-4 z-30 transition-opacity"
-                  :class="
-                    isFolderDialogBuildSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover/select:opacity-100'
-                  "
-                  @click.stop="toggleFolderDialogBuildSelection(item.id)"
-                >
-                  <div
-                    :class="[
-                      'w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/45',
-                      isFolderDialogBuildSelected(item.id)
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-black/60 text-white hover:bg-black/80',
-                    ]"
-                  >
-                    <Check v-if="isFolderDialogBuildSelected(item.id)" class="w-4 h-4" />
+                <div class="folder-dialog__header-right">
+                  <!-- Aspect Ratio Filter (only show if multiple ratios available) -->
+                  <div v-if="folderAspectRatioOptions.length > 2" class="folder-dialog__aspect-filter">
+                    <button
+                      v-for="option in folderAspectRatioOptions"
+                      :key="option.value"
+                      @click="folderAspectRatioFilter = option.value"
+                      class="folder-dialog__aspect-btn"
+                      :class="{ 'folder-dialog__aspect-btn--active': folderAspectRatioFilter === option.value }"
+                    >
+                      {{ option.value === 'all' ? 'All' : option.label }}
+                    </button>
+                  </div>
+
+                  <button class="folder-dialog__close" @click="showFolderDialog = false" title="Close">
+                    <X :size="18" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Content -->
+              <div class="folder-dialog__content">
+                <div v-for="group in groupedFolderBuilds" :key="group.dateLabel" class="folder-dialog__date-group">
+                  <!-- Date Header -->
+                  <h3 class="folder-dialog__date-header">
+                    {{ group.dateLabel }}
+                  </h3>
+
+                  <div class="folder-dialog__builds-list">
+                    <div
+                      v-for="item in group.builds"
+                      :key="item.id"
+                      class="folder-dialog__build-row"
+                      :class="{ 'folder-dialog__build-row--selected': isFolderDialogBuildSelected(item.id) }"
+                    >
+                      <!-- Selection Checkbox -->
+                      <div
+                        class="folder-dialog__checkbox"
+                        @click.stop="toggleFolderDialogBuildSelection(item.id)"
+                      >
+                        <div
+                          class="folder-dialog__checkbox-box"
+                          :class="{ 'folder-dialog__checkbox-box--checked': isFolderDialogBuildSelected(item.id) }"
+                        >
+                          <Check v-if="isFolderDialogBuildSelected(item.id)" :size="14" />
+                        </div>
+                      </div>
+
+                      <!-- Thumbnail -->
+                      <div 
+                        class="folder-dialog__build-thumb"
+                        @click="playBuild(item.build, item.filePath, item.clipName, item.projectId)"
+                      >
+                        <img
+                          v-if="item.thumbnailUrl"
+                          :src="item.thumbnailUrl"
+                          :alt="item.clipName"
+                          class="folder-dialog__build-thumb-img"
+                        />
+                        <div v-else class="folder-dialog__build-thumb-placeholder">
+                          <Video :size="24" />
+                        </div>
+
+                        <!-- Building Overlay -->
+                        <div
+                          v-if="item.build.status === 'building'"
+                          class="folder-dialog__build-thumb-overlay-building"
+                        >
+                          <Loader2 :size="20" class="folder-dialog__spin" />
+                        </div>
+                      </div>
+
+                      <!-- Content -->
+                      <div 
+                        class="folder-dialog__build-content"
+                        @click="playBuild(item.build, item.filePath, item.clipName, item.projectId)"
+                      >
+                        <!-- Header: Title -->
+                        <div class="folder-dialog__build-header">
+                          <h3 class="folder-dialog__build-name">{{ item.clipName }}</h3>
+                        </div>
+
+                        <!-- Badges Row -->
+                        <div class="folder-dialog__build-badges">
+                          <!-- Duration Badge -->
+                          <div v-if="item.build.duration" class="folder-dialog__build-badge">
+                            <Clock :size="11" />
+                            {{ formatDuration(item.build.duration) }}
+                          </div>
+
+                          <!-- Building Status Badge -->
+                          <div v-if="item.build.status === 'building'" class="folder-dialog__build-badge folder-dialog__build-badge--building">
+                            <Loader2 :size="11" class="folder-dialog__spin" />
+                            Building...
+                          </div>
+
+                          <!-- Aspect Ratio Badge -->
+                          <div v-if="item.aspectRatio" class="folder-dialog__build-badge">
+                            {{ item.aspectRatio }}
+                          </div>
+
+                          <!-- Build Number Badge -->
+                          <div v-if="item.hasMultipleBuilds" class="folder-dialog__build-badge folder-dialog__build-badge--number">
+                            #{{ item.build.build_number }}
+                          </div>
+
+                          <!-- Sibling count badge -->
+                          <div
+                            v-if="folderAspectRatioFilter !== 'all' && getBuildSiblingCount(item.build.id) > 1"
+                            class="folder-dialog__build-badge folder-dialog__build-badge--sibling"
+                            :title="`This build has ${getBuildSiblingCount(item.build.id)} aspect ratio variants`"
+                          >
+                            <Ratio class="w-2.5 h-2.5" />
+                            {{ getBuildSiblingCount(item.build.id) }}
+                          </div>
+                        </div>
+
+                        <!-- Timestamp -->
+                        <div class="folder-dialog__build-meta">
+                          {{ getRelativeTime(item.build.created_at) }}
+                        </div>
+                      </div>
+
+                      <!-- Actions -->
+                      <div class="folder-dialog__build-actions">
+                        <!-- Play Button -->
+                        <button
+                          class="folder-dialog__build-action-btn"
+                          title="Play"
+                          @click.stop="playBuild(item.build, item.filePath, item.clipName, item.projectId)"
+                        >
+                          <Play :size="16" />
+                        </button>
+                        
+                        <!-- Download Button -->
+                        <button
+                          class="folder-dialog__build-action-btn"
+                          title="Download"
+                          @click.stop="saveBuild(item.build, item.filePath)"
+                        >
+                          <Download :size="16" />
+                        </button>
+
+                        <!-- More Actions Menu -->
+                        <div class="relative" data-action-menu>
+                          <button
+                            :ref="(el) => setFolderDialogActionMenuButtonRef(el, item.id)"
+                            class="folder-dialog__build-action-btn"
+                            :class="{ 'folder-dialog__build-action-btn--active': folderDialogActionMenuId === item.id }"
+                            title="More actions"
+                            @click.stop="toggleFolderDialogActionMenu(item.id)"
+                          >
+                            <MoreVertical :size="16" />
+                          </button>
+
+                          <!-- Action Menu Dropdown - Teleported to body -->
+                          <Teleport to="body">
+                            <div
+                              v-if="folderDialogActionMenuId === item.id"
+                              class="folder-dialog-dropdown fixed z-[9999] w-[200px] rounded-lg shadow-2xl py-1.5 overflow-hidden"
+                              :style="getFolderDialogActionMenuPosition(item.id)"
+                              data-action-menu
+                              @click.stop
+                            >
+                              <!-- Open in Project Workspace -->
+                              <button
+                                class="folder-dialog-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  openProjectForClip(item.build, item.clip);
+                                  closeFolderDialogActionMenu();
+                                "
+                              >
+                                <ExternalLink class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
+                                <span>Open in Project</span>
+                              </button>
+
+                              <!-- Open in Video Editor -->
+                              <button
+                                v-if="item.videoEditorProjectId"
+                                class="folder-dialog-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  openVideoEditorProject(item.videoEditorProjectId);
+                                  closeFolderDialogActionMenu();
+                                "
+                              >
+                                <Film class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
+                                <span>Open in Video Editor</span>
+                              </button>
+
+                              <!-- Publish to Instagram -->
+                              <button
+                                class="folder-dialog-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  initiatePublish(item.build, item.filePath, item.thumbnailUrl);
+                                  closeFolderDialogActionMenu();
+                                "
+                              >
+                                <Instagram class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
+                                <span>Publish to Instagram</span>
+                              </button>
+
+                              <!-- Divider -->
+                              <div class="folder-dialog-dropdown-divider h-px my-1 mx-2"></div>
+
+                              <!-- Delete -->
+                              <button
+                                class="folder-dialog-dropdown-item folder-dialog-dropdown-item--danger w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  confirmDeleteBuild(item.build);
+                                  closeFolderDialogActionMenu();
+                                "
+                              >
+                                <Trash2 class="h-4 w-4" />
+                                <span>Delete Build</span>
+                              </button>
+                            </div>
+                          </Teleport>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                <BuildCard
-                  :build="item.build"
-                  :clip-name="item.clipName"
-                  :thumbnail-url="item.thumbnailUrl"
-                  :project-name="null"
-                  :file-path="item.filePath"
-                  :display-aspect-ratio="item.aspectRatio ?? undefined"
-                  :show-build-number="item.hasMultipleBuilds"
-                  @play="
-                    (build, filePath) => playBuild(build, filePath || item.filePath, item.clipName, item.projectId)
-                  "
-                  @save="(build, filePath) => saveBuild(build, filePath || item.filePath)"
-                  @delete="confirmDeleteBuild"
-                  @openProject="(build) => openProjectForClip(build, item.clip)"
-                  @publish="(build, filePath) => initiatePublish(build, filePath || item.filePath, item.thumbnailUrl)"
+              <!-- Footer with Pagination -->
+              <div v-if="folderTotalPages > 1" class="folder-dialog__footer">
+                <PaginationFooter
+                  :current-page="folderCurrentPage"
+                  :total-pages="folderTotalPages"
+                  :total-items="folderBuilds.length"
+                  item-label="build"
+                  mode="static"
+                  @go-to-page="(page) => (folderCurrentPage = page)"
+                  @previous="folderCurrentPage--"
+                  @next="folderCurrentPage++"
                 />
               </div>
             </div>
-          </div>
+          </Transition>
         </div>
-
-        <!-- Footer with Pagination -->
-        <div v-if="folderTotalPages > 1" class="bg-muted/10">
-          <PaginationFooter
-            :current-page="folderCurrentPage"
-            :total-pages="folderTotalPages"
-            :total-items="folderBuilds.length"
-            item-label="build"
-            mode="static"
-            @go-to-page="(page) => (folderCurrentPage = page)"
-            @previous="folderCurrentPage--"
-            @next="folderCurrentPage++"
-          />
-        </div>
-      </div>
-    </div>
+      </Transition>
+    </Teleport>
 
     <!-- Video Player Dialog -->
     <VideoPlayerDialog
       :video="clipToPlay"
       :show-video-player="showVideoPlayer"
       :watermark-settings="playerWatermarkSettings"
+      :z-index="10000"
       @close="showVideoPlayer = false"
     />
 
@@ -501,112 +626,50 @@
       :item-name="buildToDelete ? `#${buildToDelete.build_number}` : 'this build'"
       suffix="? The video file will be permanently removed."
       confirm-text="Delete Build"
+      variant="destructive"
       @close="handleDeleteBuildDialogClose"
       @confirm="deleteBuildConfirmed"
     />
 
     <!-- Bulk Delete Confirmation Modal -->
-    <div
-      v-if="showBulkDeleteDialog"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-    >
-      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">
-          Delete
-          {{
-            viewMode === 'folders'
-              ? selectedFolders.size + ' Project' + (selectedFolders.size !== 1 ? 's' : '')
-              : totalSelectedCount + ' Build' + (totalSelectedCount !== 1 ? 's' : '')
-          }}
-        </h2>
-
-        <div class="space-y-4">
-          <p class="text-muted-foreground">
-            <span v-if="viewMode === 'folders'">
-              Are you sure you want to delete all builds from
-              <span class="font-semibold text-foreground">
-                {{ selectedFolders.size }} project{{ selectedFolders.size !== 1 ? 's' : '' }}
-              </span>
-              ?
-            </span>
-            <span v-else>
-              Are you sure you want to delete
-              <span class="font-semibold text-foreground">
-                {{ totalSelectedCount }} build{{ totalSelectedCount !== 1 ? 's' : '' }}
-              </span>
-              ?
-            </span>
-            The video files will be permanently removed.
-            <span class="block mt-1">This action cannot be undone.</span>
-          </p>
-
-          <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
-            @click="bulkDeleteConfirmed"
-          >
-            Delete
-            {{
-              viewMode === 'folders'
-                ? 'All Builds'
-                : totalSelectedCount + ' Build' + (totalSelectedCount !== 1 ? 's' : '')
-            }}
-          </button>
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
-            @click="handleBulkDeleteDialogClose"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmationModal
+      :show="showBulkDeleteDialog"
+      :title="bulkDeleteTitle"
+      message="Are you sure you want to delete"
+      :item-name="bulkDeleteItemName"
+      suffix="? The video files will be permanently removed."
+      :confirm-text="bulkDeleteConfirmText"
+      variant="destructive"
+      @close="handleBulkDeleteDialogClose"
+      @confirm="bulkDeleteConfirmed"
+    />
 
     <!-- Bulk Delete Folder Dialog Builds Confirmation Modal -->
-    <div
-      v-if="showBulkDeleteFolderDialogBuildsDialog"
-      class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]"
-    >
-      <div class="bg-card rounded-lg p-8 max-w-md w-full mx-4 border border-border">
-        <h2 class="text-2xl font-bold mb-4">Delete {{ selectedFolderDialogBuilds.size }} Builds</h2>
+    <ConfirmationModal
+      :show="showBulkDeleteFolderDialogBuildsDialog"
+      :title="`Delete ${selectedFolderDialogBuilds.size} Build${selectedFolderDialogBuilds.size !== 1 ? 's' : ''}`"
+      :message="`Are you sure you want to delete`"
+      :item-name="`${selectedFolderDialogBuilds.size} build${selectedFolderDialogBuilds.size !== 1 ? 's' : ''}`"
+      suffix="? The video files will be permanently removed."
+      :confirm-text="`Delete ${selectedFolderDialogBuilds.size} Build${selectedFolderDialogBuilds.size !== 1 ? 's' : ''}`"
+      variant="destructive"
+      @close="handleBulkDeleteFolderDialogBuildsDialogClose"
+      @confirm="bulkDeleteFolderDialogBuildsConfirmed"
+    />
 
-        <div class="space-y-4">
-          <p class="text-muted-foreground">
-            Are you sure you want to delete
-            <span class="font-semibold text-foreground">
-              {{ selectedFolderDialogBuilds.size }} build{{ selectedFolderDialogBuilds.size !== 1 ? 's' : '' }}
-            </span>
-            ? The video files will be permanently removed.
-            <span class="block mt-1">This action cannot be undone.</span>
-          </p>
-
-          <button
-            class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-md font-semibold hover:from-red-700 hover:to-red-800 transition-all"
-            @click="bulkDeleteFolderDialogBuildsConfirmed"
-          >
-            Delete {{ selectedFolderDialogBuilds.size }} Builds
-          </button>
-          <button
-            class="w-full py-3 bg-muted text-foreground rounded-md font-semibold hover:bg-muted/80 transition-all"
-            @click="handleBulkDeleteFolderDialogBuildsDialogClose"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Organization Select Dialog for Publishing -->
-    <OrganizationSelectDialog
+    <!-- Publish Destination Dialog -->
+    <PublishDestinationDialog
       :open="showOrgSelectDialog"
       @close="showOrgSelectDialog = false"
-      @select="onOrganizationSelected"
+      @selectPersonal="onPersonalAccountSelected"
+      @selectOrganization="onOrganizationSelected"
     />
 
     <!-- Publish to Instagram Dialog -->
-    <PublishDialog
-      v-if="selectedOrganization"
+    <InstagramPublishDialog
       :open="showPublishDialog"
-      :organization-id="selectedOrganization.id"
+      :organization-id="selectedOrganization?.id"
+      :organization-name="selectedOrganization?.name"
       :media-url="publishMediaUrl"
       :thumbnail-url="publishThumbnailUrl"
       :media-type="'video'"
@@ -809,10 +872,11 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch } from 'vue';
+  import { ref, onMounted, onUnmounted, computed, watch, Transition } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { save } from '@tauri-apps/plugin-dialog';
+  import { useRouter } from 'vue-router';
   import {
     LayoutGrid,
     Folder,
@@ -826,6 +890,14 @@
     Ratio,
     FileText,
     AlertCircle,
+    Play,
+    Download,
+    Instagram,
+    Clock,
+    Loader2,
+    ExternalLink,
+    Film,
+    MoreVertical,
   } from 'lucide-vue-next';
   import {
     getAllClipsWithBuilds,
@@ -835,6 +907,8 @@
     getRawVideosByProjectId,
     getCreatorProfileByProjectId,
     searchTranscriptSegmentsByClipIds,
+    getClipIdsWithTranscripts,
+    getVideoEditorProjectsForClip,
     type Clip,
     type ClipBuild,
     type Project,
@@ -851,8 +925,8 @@
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import BuildCard from '@/components/BuildCard.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
-  import OrganizationSelectDialog from '@/components/OrganizationSelectDialog.vue';
-  import PublishDialog from '@/components/organization/PublishDialog.vue';
+  import PublishDestinationDialog from '@/components/PublishDestinationDialog.vue';
+  import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
@@ -861,6 +935,7 @@
     getMyAssignedCreatorProfiles,
     type AssignedCreatorProfile,
   } from '@/services/socialAccountsApi';
+  import { uploadUserMediaForPost } from '@/services/userInstagramApi';
 
   type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
@@ -875,6 +950,7 @@
     projectId: string | null;
     thumbnailUrl: string | null;
     createdAt: number; // For sorting - use build completion time
+    videoEditorProjectId?: string | null; // ID of video editor project containing this clip
     /** The specific file path for this item (may differ from build.file_path for multi-file builds) */
     filePath: string;
     /** The aspect ratio for this specific file (extracted from filename) */
@@ -923,7 +999,7 @@
   const buildThumbnailCache = ref<Map<string, string>>(new Map());
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
-  const { getRelativeTime } = useFormatters();
+  const { getRelativeTime, formatDuration } = useFormatters();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
   // Build deletion state
@@ -952,6 +1028,7 @@
 
   // Instagram publish state
   const authStore = useAuthStore();
+  const router = useRouter();
   const showOrgSelectDialog = ref(false);
   const showPublishDialog = ref(false);
   const publishingBuild = ref<{ build: ClipBuild; filePath: string; thumbnailUrl: string | null } | null>(null);
@@ -968,12 +1045,20 @@
   const projectFilter = ref('all');
   const aspectRatioFilter = ref('all');
   const clipIdsWithTranscriptMatch = ref<Set<string>>(new Set());
+  const clipIdsWithTranscripts = ref<Set<string>>(new Set());
 
   // Search palette state
   const showSearchPalette = ref(false);
   const paletteSearchQuery = ref('');
   const showOnlyUntranscribed = ref(false);
   const paletteViewMode = ref<'search' | 'untranscribed'>('search');
+
+  // Video editor project tracking (clipId -> videoEditorProjectId)
+  const clipVideoEditorProjects = ref<Map<string, string>>(new Map());
+
+  // Folder dialog action menu dropdown state
+  const folderDialogActionMenuId = ref<string | null>(null);
+  const folderDialogActionMenuButtonRefs = ref<Map<string, HTMLElement>>(new Map());
 
   // Computed tabs for search palette
   const clipsPaletteTabs = computed((): SearchPaletteTab[] => [
@@ -1174,22 +1259,8 @@
 
     // 0. Filter for untranscribed clips only (if active)
     if (showOnlyUntranscribed.value) {
-      // Get unique clips that don't have transcripts
-      const untranscribedClipIds = new Set<string>();
-      const seenClips = new Set<string>();
-
-      for (const build of displayableBuilds.value) {
-        if (!seenClips.has(build.clip.id)) {
-          seenClips.add(build.clip.id);
-          // A clip is untranscribed if it has no transcript segments
-          // We check if it's NOT in the transcript match set
-          if (!clipIdsWithTranscriptMatch.value.has(build.clip.id)) {
-            untranscribedClipIds.add(build.clip.id);
-          }
-        }
-      }
-
-      result = result.filter((item) => untranscribedClipIds.has(item.clip.id));
+      // Filter to clips that don't have transcripts (using clipIdsWithTranscripts loaded on mount)
+      result = result.filter((item) => !clipIdsWithTranscripts.value.has(item.clip.id));
     }
 
     // 1. Search Text - now includes transcript search
@@ -1518,6 +1589,7 @@
                 filePath,
                 aspectRatio,
                 hasMultipleBuilds,
+                videoEditorProjectId: clipVideoEditorProjects.value.get(clip.id) || null,
               });
             }
           }
@@ -1562,6 +1634,12 @@
     return folderBuildsAll.value.filter((b) => b.aspectRatio === folderAspectRatioFilter.value);
   });
 
+  // Computed class for folder dialog size (list layout uses consistent width)
+  const folderDialogSizeClass = computed(() => {
+    // List layout works better with a consistent width
+    return 'folder-dialog--list';
+  });
+
   // Check if a build has siblings (other aspect ratios from the same build)
   function getBuildSiblingCount(buildId: string): number {
     const baseBuildId = buildId.split('-')[0];
@@ -1582,11 +1660,122 @@
     return Math.ceil(folderBuilds.value.length / folderItemsPerPage);
   });
 
-  function openFolder(group: { id: string; name: string; clips: ClipWithBuilds[] }) {
+  async function openFolder(group: { id: string; name: string; clips: ClipWithBuilds[] }) {
     folderProject.value = group;
     folderCurrentPage.value = 1;
     folderAspectRatioFilter.value = 'all';
     showFolderDialog.value = true;
+    
+    // Load video editor projects for all clips in the folder
+    await loadVideoEditorProjectsForClips(group.clips.map(c => c.id));
+  }
+
+  // Load video editor projects for clips
+  async function loadVideoEditorProjectsForClips(clipIds: string[]) {
+    try {
+      // Load in batches to avoid overwhelming the system
+      const batchSize = 10;
+      for (let i = 0; i < clipIds.length; i += batchSize) {
+        const batch = clipIds.slice(i, i + batchSize);
+        await Promise.all(
+          batch.map(async (clipId) => {
+            try {
+              const projects = await getVideoEditorProjectsForClip(clipId);
+              if (projects.length > 0) {
+                // If clip is in multiple video editor projects, use the first one
+                clipVideoEditorProjects.value.set(clipId, projects[0].id);
+              }
+            } catch (error) {
+              console.warn(`[Clips] Failed to load video editor projects for clip ${clipId}:`, error);
+            }
+          })
+        );
+      }
+      // Trigger reactivity
+      clipVideoEditorProjects.value = new Map(clipVideoEditorProjects.value);
+    } catch (error) {
+      console.warn('[Clips] Failed to load video editor projects:', error);
+    }
+  }
+
+  // Open video editor with a specific project
+  function openVideoEditorProject(projectId: string) {
+    // Navigate to video editor page with state to auto-open the project
+    router.push({
+      path: '/video-editor',
+      state: { openProjectId: projectId }
+    });
+  }
+
+  // Folder dialog action menu functions
+  function setFolderDialogActionMenuButtonRef(el: any, buildId: string) {
+    if (el && el instanceof HTMLElement) {
+      folderDialogActionMenuButtonRefs.value.set(buildId, el);
+    } else {
+      folderDialogActionMenuButtonRefs.value.delete(buildId);
+    }
+  }
+
+  function toggleFolderDialogActionMenu(buildId: string) {
+    folderDialogActionMenuId.value = folderDialogActionMenuId.value === buildId ? null : buildId;
+  }
+
+  function closeFolderDialogActionMenu() {
+    folderDialogActionMenuId.value = null;
+  }
+
+  function getFolderDialogActionMenuPosition(buildId: string): Record<string, string> {
+    const button = folderDialogActionMenuButtonRefs.value.get(buildId);
+    if (!button) {
+      return { top: '0px', left: '0px' };
+    }
+
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 200;
+    const menuMaxHeight = 280;
+    const padding = 8;
+
+    // Align to right edge of button
+    let left = rect.right - menuWidth;
+
+    // Ensure it doesn't go off the left edge
+    if (left < padding) {
+      left = padding;
+    }
+
+    // Ensure it doesn't go off the right edge
+    const viewportWidth = window.innerWidth;
+    if (left + menuWidth > viewportWidth - padding) {
+      left = viewportWidth - menuWidth - padding;
+    }
+
+    // Position below button
+    let top = rect.bottom + 4;
+    const viewportHeight = window.innerHeight;
+
+    // Flip above if not enough space below
+    if (top + menuMaxHeight > viewportHeight - padding) {
+      top = rect.top - menuMaxHeight - 4;
+      // If still doesn't fit, position at top of viewport
+      if (top < padding) {
+        top = padding;
+      }
+    }
+
+    return {
+      top: `${top}px`,
+      left: `${left}px`,
+    };
+  }
+
+  // Close folder dialog action menu when clicking outside
+  function handleFolderDialogClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('[data-action-menu]')) {
+      if (folderDialogActionMenuId.value !== null) {
+        folderDialogActionMenuId.value = null;
+      }
+    }
   }
 
   // Count total output files in a project folder (counts each aspect ratio variant separately)
@@ -1608,8 +1797,8 @@
 
   // Check if any clips in a folder are untranscribed
   function hasUntranscribedClips(clips: ClipWithBuilds[]): boolean {
-    // A folder has untranscribed clips if any of its clips don't have transcript matches
-    return clips.some((clip) => !clipIdsWithTranscriptMatch.value.has(clip.id));
+    // A folder has untranscribed clips if any of its clips don't have transcripts
+    return clips.some((clip) => !clipIdsWithTranscripts.value.has(clip.id));
   }
 
   function getDateLabel(timestamp: number): string {
@@ -1676,6 +1865,7 @@
   watch(showFolderDialog, (isOpen) => {
     if (!isOpen) {
       clearFolderDialogBuildSelection();
+      closeFolderDialogActionMenu();
     }
   });
 
@@ -1714,6 +1904,7 @@
 
   function handleBulkDeleteFolderDialogBuildsDialogClose() {
     showBulkDeleteFolderDialogBuildsDialog.value = false;
+    selectedFolderDialogBuilds.value.clear();
   }
 
   async function bulkDeleteFolderDialogBuildsConfirmed() {
@@ -1738,10 +1929,19 @@
       showSuccessToast('Builds Deleted', `${deletedCount} build${deletedCount !== 1 ? 's' : ''} deleted successfully.`);
       selectedFolderDialogBuilds.value.clear();
 
-      // Close folder dialog if all builds were deleted
-      if (folderProject.value && folderBuilds.value.length === 0) {
-        showFolderDialog.value = false;
-        folderProject.value = null;
+      // If folder dialog is open, refresh its data
+      if (showFolderDialog.value && folderProject.value) {
+        const currentFolderId = folderProject.value.id;
+        const updatedGroup = Array.from(groupedByProject.value.values()).find(g => g.id === currentFolderId);
+        
+        if (updatedGroup && getFolderBuildsCount(updatedGroup.clips) > 0) {
+          // Update the folder project with fresh data
+          folderProject.value = updatedGroup;
+        } else {
+          // No builds left, close the dialog
+          showFolderDialog.value = false;
+          folderProject.value = null;
+        }
       }
     } catch (error) {
       console.error('Failed to delete builds:', error);
@@ -1756,6 +1956,9 @@
     try {
       // Load all clips with their builds
       clips.value = await getAllClipsWithBuilds();
+
+      // Load which clips have transcripts (for untranscribed detection)
+      await loadTranscribedClipIds();
 
       // Load thumbnails, project info, and raw videos for all clips
       for (const clip of clips.value) {
@@ -1790,6 +1993,21 @@
       console.error('Failed to load clips:', error);
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function loadTranscribedClipIds() {
+    try {
+      const clipIds = clips.value.map((clip) => clip.id);
+      if (clipIds.length === 0) {
+        clipIdsWithTranscripts.value = new Set();
+        return;
+      }
+      const transcribedIds = await getClipIdsWithTranscripts(clipIds);
+      clipIdsWithTranscripts.value = new Set(transcribedIds);
+    } catch (error) {
+      console.error('Failed to load transcribed clip IDs:', error);
+      clipIdsWithTranscripts.value = new Set();
     }
   }
 
@@ -2133,6 +2351,22 @@
       }
 
       await loadClips();
+
+      // If folder dialog is open, refresh its data
+      if (showFolderDialog.value && folderProject.value) {
+        const currentFolderId = folderProject.value.id;
+        const updatedGroup = Array.from(groupedByProject.value.values()).find(g => g.id === currentFolderId);
+        
+        if (updatedGroup && getFolderBuildsCount(updatedGroup.clips) > 0) {
+          // Update the folder project with fresh data
+          folderProject.value = updatedGroup;
+        } else {
+          // No builds left, close the dialog
+          showFolderDialog.value = false;
+          folderProject.value = null;
+        }
+      }
+
       showSuccessToast('Build Deleted', 'The build has been deleted.');
     } catch (error) {
       console.error('Failed to delete build:', error);
@@ -2184,6 +2418,32 @@
       return selectedFolders.value.size;
     }
     return selectedBuilds.value.size;
+  });
+
+  const bulkDeleteTitle = computed(() => {
+    if (viewMode.value === 'folders') {
+      const count = selectedFolders.value.size;
+      return `Delete ${count} Project${count !== 1 ? 's' : ''}`;
+    }
+    const count = totalSelectedCount.value;
+    return `Delete ${count} Build${count !== 1 ? 's' : ''}`;
+  });
+
+  const bulkDeleteItemName = computed(() => {
+    if (viewMode.value === 'folders') {
+      const count = selectedFolders.value.size;
+      return `all builds from ${count} project${count !== 1 ? 's' : ''}`;
+    }
+    const count = totalSelectedCount.value;
+    return `${count} build${count !== 1 ? 's' : ''}`;
+  });
+
+  const bulkDeleteConfirmText = computed(() => {
+    if (viewMode.value === 'folders') {
+      return 'Delete All Builds';
+    }
+    const count = totalSelectedCount.value;
+    return `Delete ${count} Build${count !== 1 ? 's' : ''}`;
   });
 
   function clearSelection() {
@@ -2326,6 +2586,65 @@
   }
 
   /**
+   * Handle personal account selection from the dialog
+   */
+  async function onPersonalAccountSelected() {
+    showOrgSelectDialog.value = false;
+    selectedOrganization.value = null;
+
+    if (!publishingBuild.value) return;
+
+    // Show loading state
+    isUploadingMedia.value = true;
+
+    try {
+      // 1. Read the video file from disk as data URL
+      const { filePath, thumbnailUrl } = publishingBuild.value;
+      const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath });
+      const fileName = filePath.split(/[/\\]/).pop() || 'video.mp4';
+      const videoFile = dataUrlToFile(videoDataUrl, fileName);
+
+      // 2. Optionally read thumbnail
+      let thumbnailFile: File | undefined;
+      if (thumbnailUrl) {
+        try {
+          // Try to load thumbnail from local path
+          const thumbPath = thumbnailUrl.startsWith('file://') ? thumbnailUrl.replace('file://', '') : thumbnailUrl;
+
+          // Check if it's a local path (not a data URL or http)
+          if (!thumbPath.startsWith('data:') && !thumbPath.startsWith('http')) {
+            const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
+            thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
+          }
+        } catch (thumbError) {
+          console.warn('Could not read thumbnail:', thumbError);
+        }
+      }
+
+      // 3. Upload to user storage (not organization)
+      const uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
+
+      if (!uploadResult.success || !uploadResult.media_url) {
+        throw new Error(uploadResult.error || 'Failed to upload media');
+      }
+
+      publishMediaUrl.value = uploadResult.media_url;
+      publishThumbnailUrl.value = uploadResult.thumbnail_url || thumbnailUrl || '';
+
+      // 4. No creator profiles for personal publishing
+      publishCreatorProfiles.value = [];
+
+      // 5. Open the publish dialog without organization context
+      showPublishDialog.value = true;
+    } catch (error) {
+      console.error('Failed to prepare for publishing:', error);
+      showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
+    } finally {
+      isUploadingMedia.value = false;
+    }
+  }
+
+  /**
    * Handle organization selection from the dialog
    */
   async function onOrganizationSelected(org: { id: string | number; name: string; role: string }) {
@@ -2464,23 +2783,19 @@
   // Count clips without transcripts
   const untranscribedClipsCount = computed(() => {
     // Count unique clips that don't have transcript segments
-    const uniqueClips = new Map<string, ClipWithBuilds>();
+    const uniqueClipIds = new Set<string>();
     for (const build of displayableBuilds.value) {
-      if (!uniqueClips.has(build.clip.id)) {
-        uniqueClips.set(build.clip.id, build.clip);
+      uniqueClipIds.add(build.clip.id);
+    }
+
+    // Count clips that don't have transcripts
+    let count = 0;
+    for (const clipId of uniqueClipIds) {
+      if (!clipIdsWithTranscripts.value.has(clipId)) {
+        count++;
       }
     }
-
-    let count = 0;
-    for (const clip of uniqueClips.values()) {
-      // A clip is considered untranscribed if it has no transcript segments linked to it
-      // We'll check this by attempting a transcript search for this specific clip
-      // For now, we'll mark all clips as potentially untranscribed if they don't match transcript search
-      count++;
-    }
-
-    // Return a rough estimate - clips that exist but don't have transcript matches
-    return uniqueClips.size - clipIdsWithTranscriptMatch.value.size;
+    return count;
   });
 
   // Get untranscribed clips for palette display
@@ -2493,7 +2808,7 @@
         if (seenClipIds.has(build.clip.id)) return false;
         seenClipIds.add(build.clip.id);
         // Only show clips without transcripts
-        return !clipIdsWithTranscriptMatch.value.has(build.clip.id);
+        return !clipIdsWithTranscripts.value.has(build.clip.id);
       })
       .slice(0, 30) // Limit results
       .map((item) => ({
@@ -2511,6 +2826,7 @@
       .filter((item) => {
         const nameMatch = item.clipName.toLowerCase().includes(query);
         const projectMatch = item.projectName && item.projectName.toLowerCase().includes(query);
+        // clipIdsWithTranscriptMatch contains clips that matched the search query in their transcript
         const transcriptMatch = clipIdsWithTranscriptMatch.value.has(item.clip.id);
         return nameMatch || projectMatch || transcriptMatch;
       })
@@ -2518,7 +2834,8 @@
       .map((item) => ({
         ...item,
         matchType: clipIdsWithTranscriptMatch.value.has(item.clip.id) ? 'transcript' : 'name',
-        isTranscribed: clipIdsWithTranscriptMatch.value.has(item.clip.id),
+        // isTranscribed uses clipIdsWithTranscripts (which clips have any transcripts at all)
+        isTranscribed: clipIdsWithTranscripts.value.has(item.clip.id),
       }));
   });
 
@@ -2529,6 +2846,11 @@
 
   onMounted(() => {
     loadClips();
+    document.addEventListener('click', handleFolderDialogClickOutside);
+  });
+
+  onUnmounted(() => {
+    document.removeEventListener('click', handleFolderDialogClickOutside);
   });
 </script>
 
@@ -2624,7 +2946,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 
@@ -2824,13 +3146,49 @@
   .clips__selection-bar {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    padding: 0.625rem 1rem;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    margin-bottom: 1rem;
+    border-radius: 10px;
+  }
+
+  .clips__selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    font-weight: 500;
+  }
+
+  .clips__selection-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  .clips__selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .clips__selection-clear {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clips__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
   }
 
   .clips__selection-delete {
@@ -2852,32 +3210,40 @@
     background-color: #dc2626;
   }
 
-  .clips__selection-icon {
+  .clips__selection-delete-icon {
     width: 13px;
     height: 13px;
   }
 
-  .clips__selection-count {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
+  /* Selection Bar Transitions */
+  .selection-bar-enter-active {
+    animation: slideDown 0.2s ease-out;
   }
 
-  .clips__selection-clear {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    padding: 0.375rem 0.75rem;
-    cursor: pointer;
-    transition: all 150ms ease;
+  .selection-bar-leave-active {
+    animation: slideUp 0.15s ease-in;
   }
 
-  .clips__selection-clear:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
   }
 
   /* ===== Sections ===== */
@@ -2952,9 +3318,11 @@
 
   .clips-card--selected {
     border-color: var(--sidebar-accent);
-    box-shadow:
-      0 0 0 2px var(--sidebar-accent),
-      0 8px 32px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .clips-card--selected:hover {
+    border-color: var(--sidebar-accent);
   }
 
   .clips-card--skeleton {
@@ -2975,9 +3343,11 @@
   }
 
   .clips-card-wrapper--selected {
-    box-shadow:
-      0 0 0 2px var(--sidebar-accent),
-      0 8px 32px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .clips-card-wrapper--selected:hover {
+    border-color: var(--sidebar-accent);
   }
 
   /* Checkbox */
@@ -3021,6 +3391,11 @@
     color: var(--sidebar-bg);
   }
 
+  .clips-card__checkbox-inner--checked:hover {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
   .clips-card__checkbox-icon {
     width: 16px;
     height: 16px;
@@ -3040,35 +3415,35 @@
   .clips-card__badge {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    backdrop-filter: blur(4px);
+    gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(8px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .clips-card__badge--count {
-    background-color: rgba(37, 99, 235, 0.9);
-    color: white;
+    background-color: rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
   }
 
   .clips-card__badge--untranscribed {
-    background-color: rgba(0, 0, 0, 0.6);
-    color: rgba(251, 191, 36, 0.9);
-    border: 1px solid rgba(251, 191, 36, 0.3);
-    padding: 0.25rem 0.375rem;
+    background-color: rgba(245, 158, 11, 0.3);
+    color: #fcd34d;
   }
 
   .clips-card__badge-icon {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
   }
 
   .clips-card__badge-icon-sm {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
   }
 
   /* Thumbnail */
@@ -3560,5 +3935,534 @@
 
   .search-palette__apply-btn:active {
     transform: translateY(0);
+  }
+
+  /* ========================================
+     FOLDER DIALOG STYLES
+     ======================================== */
+
+  /* ===== Overlay ===== */
+  .folder-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+
+  /* ===== Dialog Container ===== */
+  .folder-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .folder-dialog--list {
+    max-width: 700px;
+  }
+
+  /* ===== Accent Bar ===== */
+  .folder-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header (Compact) ===== */
+  .folder-dialog__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.625rem 0.75rem;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .folder-dialog__header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .folder-dialog__header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__file-count {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Selection Controls ===== */
+  .folder-dialog__selection-delete {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .folder-dialog__selection-delete:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .folder-dialog__selection-count {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .folder-dialog__selection-clear {
+    background: none;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: color 150ms ease;
+  }
+
+  .folder-dialog__selection-clear:hover {
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Aspect Ratio Filter ===== */
+  .folder-dialog__aspect-filter {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    padding: 0.25rem;
+  }
+
+  .folder-dialog__aspect-btn {
+    padding: 0.375rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .folder-dialog__aspect-btn:hover {
+    color: var(--sidebar-text);
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .folder-dialog__aspect-btn--active {
+    background-color: var(--sidebar-accent);
+    color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  /* ===== Content ===== */
+  .folder-dialog__content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.5rem;
+  }
+
+  .folder-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .folder-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .folder-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Date Groups ===== */
+  .folder-dialog__date-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .folder-dialog__date-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .folder-dialog__date-header {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    border-bottom: 1px solid var(--sidebar-border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  /* ===== Builds List ===== */
+  .folder-dialog__builds-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  /* ===== Build Row ===== */
+  .folder-dialog__build-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 200ms ease;
+  }
+
+  .folder-dialog__build-row:hover {
+    background-color: var(--sidebar-hover);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .folder-dialog__build-row--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 1px var(--sidebar-accent);
+  }
+
+  /* ===== Checkbox ===== */
+  .folder-dialog__checkbox {
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+
+  .folder-dialog__checkbox-box {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .folder-dialog__checkbox-box:hover {
+    background-color: rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+
+  .folder-dialog__checkbox-box--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  /* ===== Build Thumbnail ===== */
+  .folder-dialog__build-thumb {
+    position: relative;
+    flex-shrink: 0;
+    width: 120px;
+    height: 68px;
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .folder-dialog__build-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .folder-dialog__build-thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+    opacity: 0.3;
+  }
+
+  .folder-dialog__build-thumb-overlay-building {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+
+  /* ===== Build Content ===== */
+  .folder-dialog__build-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .folder-dialog__build-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .folder-dialog__build-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ===== Build Badges ===== */
+  .folder-dialog__build-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .folder-dialog__build-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+  }
+
+  .folder-dialog__build-badge--building {
+    background-color: rgba(147, 51, 234, 0.2);
+    color: rgb(196, 181, 253);
+  }
+
+  .folder-dialog__build-badge--number {
+    background-color: rgba(34, 197, 94, 0.2);
+    color: rgb(134, 239, 172);
+  }
+
+  .folder-dialog__build-badge--sibling {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: rgb(147, 197, 253);
+  }
+
+  .folder-dialog__build-meta {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  /* ===== Build Actions ===== */
+  .folder-dialog__build-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+
+  .folder-dialog__build-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .folder-dialog__build-action-btn:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .folder-dialog__build-action-btn--danger:hover {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: rgb(248, 113, 113);
+  }
+
+  .folder-dialog__build-action-btn--editor:hover {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: rgb(96, 165, 250);
+  }
+
+  .folder-dialog__build-action-btn--active {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  /* Spin animation for loading states */
+  .folder-dialog__spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* ===== Footer ===== */
+  .folder-dialog__footer {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid var(--sidebar-border);
+    flex-shrink: 0;
+  }
+
+  /* ===== Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 200ms ease-out;
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+</style>
+
+<!-- Global styles for folder dialog dropdown menus (rendered via Teleport outside component scope) -->
+<style>
+  /* ===== Folder Dialog Dropdown Menu Styling ===== */
+  .folder-dialog-dropdown {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    animation: folderDialogDropdownFade 150ms ease-out;
+  }
+
+  @keyframes folderDialogDropdownFade {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .folder-dialog-dropdown-item {
+    color: var(--sidebar-text);
+  }
+
+  .folder-dialog-dropdown-item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .folder-dialog-dropdown-item--danger {
+    color: #f87171;
+  }
+
+  .folder-dialog-dropdown-item--danger:hover {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+  }
+
+  .folder-dialog-dropdown-divider {
+    background-color: var(--sidebar-border);
   }
 </style>

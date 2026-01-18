@@ -7,24 +7,26 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.AppSettings
   alias ClippsterServer.BetaCodes
   alias ClippsterServer.Subscriptions
+  alias ClippsterServer.PromoCodes
 
   def get_ai_usage_stats(conn, _params) do
     stats = AI.get_usage_stats()
 
     # Transform logs for JSON response
-    recent_logs_data = Enum.map(stats.recent_logs, fn log ->
-      %{
-        id: log.id,
-        user_wallet: log.user.wallet_address,
-        project_id: log.project_id,
-        provider: log.provider,
-        model: log.model,
-        tokens: log.total_tokens,
-        duration: log.duration_seconds,
-        operation: log.operation_type,
-        created_at: log.inserted_at
-      }
-    end)
+    recent_logs_data =
+      Enum.map(stats.recent_logs, fn log ->
+        %{
+          id: log.id,
+          user_wallet: log.user.wallet_address,
+          project_id: log.project_id,
+          provider: log.provider,
+          model: log.model,
+          tokens: log.total_tokens,
+          duration: log.duration_seconds,
+          operation: log.operation_type,
+          created_at: log.inserted_at
+        }
+      end)
 
     json(conn, %{
       success: true,
@@ -43,36 +45,39 @@ defmodule ClippsterServerWeb.AdminController do
     users = Accounts.list_users()
 
     # Transform users data for JSON response
-    users_data = Enum.map(users, fn user ->
-      # Get user credits - admins have unlimited credits
-      credits_info = if user.is_admin do
-        %{
-          hours_remaining: :unlimited,
-          hours_used: 0.0
-        }
-      else
-        {:ok, balance} = Credits.get_user_balance(user.id)
-        %{
-          hours_remaining: Decimal.to_float(balance.hours_remaining),
-          hours_used: Decimal.to_float(balance.hours_used)
-        }
-      end
+    users_data =
+      Enum.map(users, fn user ->
+        # Get user credits - admins have unlimited credits
+        credits_info =
+          if user.is_admin do
+            %{
+              hours_remaining: :unlimited,
+              hours_used: 0.0
+            }
+          else
+            {:ok, balance} = Credits.get_user_balance(user.id)
 
-      # Get subscription info
-      subscription_info = Subscriptions.get_subscription_status(user.id)
+            %{
+              hours_remaining: Decimal.to_float(balance.hours_remaining),
+              hours_used: Decimal.to_float(balance.hours_used)
+            }
+          end
 
-      %{
-        id: user.id,
-        wallet_address: user.wallet_address,
-        email: user.email,
-        provider: user.provider,
-        is_admin: user.is_admin,
-        created_at: user.inserted_at,
-        updated_at: user.updated_at,
-        credits: credits_info,
-        subscription: subscription_info
-      }
-    end)
+        # Get subscription info
+        subscription_info = Subscriptions.get_subscription_status(user.id)
+
+        %{
+          id: user.id,
+          wallet_address: user.wallet_address,
+          email: user.email,
+          provider: user.provider,
+          is_admin: user.is_admin,
+          created_at: user.inserted_at,
+          updated_at: user.updated_at,
+          credits: credits_info,
+          subscription: subscription_info
+        }
+      end)
 
     json(conn, %{
       success: true,
@@ -140,7 +145,8 @@ defmodule ClippsterServerWeb.AdminController do
 
                       json(conn, %{
                         success: true,
-                        message: "Successfully added #{credit_params.hours_to_add} hours to user balance",
+                        message:
+                          "Successfully added #{credit_params.hours_to_add} hours to user balance",
                         credits: %{
                           hours_remaining: Decimal.to_float(balance.hours_remaining),
                           hours_used: Decimal.to_float(balance.hours_used)
@@ -188,6 +194,7 @@ defmodule ClippsterServerWeb.AdminController do
         case Float.parse(value) do
           {float_val, ""} when float_val > 0 ->
             {:ok, %{hours_to_add: float_val}}
+
           _ ->
             {:error, "Invalid hours_to_add value - must be a positive number"}
         end
@@ -265,10 +272,11 @@ defmodule ClippsterServerWeb.AdminController do
       {:ok, org_id} ->
         case validate_hours_param(params, "hours_remaining") do
           {:ok, hours_remaining} ->
-            hours_used = case params do
-              %{"hours_used" => used} -> parse_float(used) || 0.0
-              _ -> nil
-            end
+            hours_used =
+              case params do
+                %{"hours_used" => used} -> parse_float(used) || 0.0
+                _ -> nil
+              end
 
             case Organizations.get_organization(org_id) do
               nil ->
@@ -351,22 +359,23 @@ defmodule ClippsterServerWeb.AdminController do
   def list_organizations(conn, _params) do
     organizations = Organizations.list_all_organizations()
 
-    orgs_data = Enum.map(organizations, fn org ->
-      {:ok, credits} = Organizations.get_organization_credits(org.id)
-      member_count = Organizations.count_members(org.id)
+    orgs_data =
+      Enum.map(organizations, fn org ->
+        {:ok, credits} = Organizations.get_organization_credits(org.id)
+        member_count = Organizations.count_members(org.id)
 
-      %{
-        id: org.id,
-        name: org.name,
-        description: org.description,
-        member_count: member_count,
-        credits: %{
-          hours_remaining: Decimal.to_float(credits.hours_remaining),
-          hours_used: Decimal.to_float(credits.hours_used)
-        },
-        created_at: org.inserted_at
-      }
-    end)
+        %{
+          id: org.id,
+          name: org.name,
+          description: org.description,
+          member_count: member_count,
+          credits: %{
+            hours_remaining: Decimal.to_float(credits.hours_remaining),
+            hours_used: Decimal.to_float(credits.hours_used)
+          },
+          created_at: org.inserted_at
+        }
+      end)
 
     json(conn, %{
       success: true,
@@ -383,6 +392,7 @@ defmodule ClippsterServerWeb.AdminController do
       _ -> {:error, :invalid_integer}
     end
   end
+
   defp parse_integer(value) when is_integer(value), do: {:ok, value}
   defp parse_integer(_), do: {:error, :invalid_integer}
 
@@ -392,6 +402,7 @@ defmodule ClippsterServerWeb.AdminController do
       _ -> nil
     end
   end
+
   defp parse_float(value) when is_number(value), do: value / 1
   defp parse_float(_), do: nil
 
@@ -407,6 +418,7 @@ defmodule ClippsterServerWeb.AdminController do
         case Float.parse(value) do
           {float_val, ""} when float_val >= 0 ->
             {:ok, float_val}
+
           _ ->
             {:error, "Invalid #{key} value - must be a non-negative number"}
         end
@@ -482,7 +494,9 @@ defmodule ClippsterServerWeb.AdminController do
 
   def generate_beta_codes(conn, %{"count" => count}) when is_binary(count) do
     case Integer.parse(count) do
-      {int_count, ""} -> do_generate_beta_codes(conn, int_count)
+      {int_count, ""} ->
+        do_generate_beta_codes(conn, int_count)
+
       _ ->
         conn
         |> put_status(400)
@@ -499,13 +513,14 @@ defmodule ClippsterServerWeb.AdminController do
   defp do_generate_beta_codes(conn, count) when count > 0 and count <= 100 do
     case BetaCodes.generate_codes(count) do
       {:ok, codes} ->
-        codes_data = Enum.map(codes, fn code ->
-          %{
-            id: code.id,
-            code: code.code,
-            created_at: code.inserted_at
-          }
-        end)
+        codes_data =
+          Enum.map(codes, fn code ->
+            %{
+              id: code.id,
+              code: code.code,
+              created_at: code.inserted_at
+            }
+          end)
 
         json(conn, %{
           success: true,
@@ -534,24 +549,26 @@ defmodule ClippsterServerWeb.AdminController do
     codes = BetaCodes.list_codes()
     stats = BetaCodes.get_code_stats()
 
-    codes_data = Enum.map(codes, fn code ->
-      %{
-        id: code.id,
-        code: code.code,
-        used: not is_nil(code.used_by_user_id),
-        used_at: code.used_at,
-        used_by: if code.used_by_user do
-          %{
-            id: code.used_by_user.id,
-            email: code.used_by_user.email,
-            wallet_address: code.used_by_user.wallet_address
-          }
-        else
-          nil
-        end,
-        created_at: code.inserted_at
-      }
-    end)
+    codes_data =
+      Enum.map(codes, fn code ->
+        %{
+          id: code.id,
+          code: code.code,
+          used: not is_nil(code.used_by_user_id),
+          used_at: code.used_at,
+          used_by:
+            if code.used_by_user do
+              %{
+                id: code.used_by_user.id,
+                email: code.used_by_user.email,
+                wallet_address: code.used_by_user.wallet_address
+              }
+            else
+              nil
+            end,
+          created_at: code.inserted_at
+        }
+      end)
 
     json(conn, %{
       success: true,
@@ -581,7 +598,12 @@ defmodule ClippsterServerWeb.AdminController do
             days_int = parse_days(days)
             grant_credits_bool = parse_boolean(grant_credits)
 
-            case Subscriptions.admin_grant_subscription(user_id, tier, days_int, grant_credits_bool) do
+            case Subscriptions.admin_grant_subscription(
+                   user_id,
+                   tier,
+                   days_int,
+                   grant_credits_bool
+                 ) do
               {:ok, _result} ->
                 subscription_info = Subscriptions.get_subscription_status(user_id)
 
@@ -599,7 +621,10 @@ defmodule ClippsterServerWeb.AdminController do
               {:error, reason} ->
                 conn
                 |> put_status(500)
-                |> json(%{success: false, error: "Failed to grant subscription: #{inspect(reason)}"})
+                |> json(%{
+                  success: false,
+                  error: "Failed to grant subscription: #{inspect(reason)}"
+                })
             end
 
           {:error, reason} ->
@@ -628,9 +653,9 @@ defmodule ClippsterServerWeb.AdminController do
         days_int = parse_days(days)
         grant_credits_bool = parse_boolean(grant_credits)
 
-            case Subscriptions.admin_extend_subscription(user_id, days_int, grant_credits_bool) do
-              {:ok, _result} ->
-                subscription_info = Subscriptions.get_subscription_status(user_id)
+        case Subscriptions.admin_extend_subscription(user_id, days_int, grant_credits_bool) do
+          {:ok, _result} ->
+            subscription_info = Subscriptions.get_subscription_status(user_id)
 
             json(conn, %{
               success: true,
@@ -753,19 +778,21 @@ defmodule ClippsterServerWeb.AdminController do
       {:ok, user_id} ->
         subscriptions = Subscriptions.list_user_subscriptions(user_id)
 
-        subscriptions_data = Enum.map(subscriptions, fn sub ->
-          %{
-            id: sub.id,
-            status: sub.status,
-            tier: sub.subscription_tier,
-            start_date: sub.start_date,
-            end_date: sub.end_date,
-            credits_granted: (if sub.credits_granted, do: Decimal.to_float(sub.credits_granted), else: nil),
-            payment_method: sub.payment_method,
-            amount_usd: (if sub.amount_usd, do: Decimal.to_float(sub.amount_usd), else: nil),
-            created_at: sub.inserted_at
-          }
-        end)
+        subscriptions_data =
+          Enum.map(subscriptions, fn sub ->
+            %{
+              id: sub.id,
+              status: sub.status,
+              tier: sub.subscription_tier,
+              start_date: sub.start_date,
+              end_date: sub.end_date,
+              credits_granted:
+                if(sub.credits_granted, do: Decimal.to_float(sub.credits_granted), else: nil),
+              payment_method: sub.payment_method,
+              amount_usd: if(sub.amount_usd, do: Decimal.to_float(sub.amount_usd), else: nil),
+              created_at: sub.inserted_at
+            }
+          end)
 
         json(conn, %{
           success: true,
@@ -780,18 +807,262 @@ defmodule ClippsterServerWeb.AdminController do
     end
   end
 
+  # ============================================================================
+  # Promo Code Management
+  # ============================================================================
+
+  @doc """
+  List all promo codes with optional filters.
+  Filters: is_active (boolean), tier (string), expired (boolean), search (string)
+  """
+  def list_promos(conn, params) do
+    filters =
+      %{}
+      |> maybe_put_filter(:is_active, params["is_active"])
+      |> maybe_put_filter(:tier, params["tier"])
+      |> maybe_put_filter(:expired, params["expired"])
+      |> maybe_put_filter(:search, params["search"])
+
+    promos = PromoCodes.list_promo_codes(filters)
+
+    promos_data =
+      Enum.map(promos, fn promo ->
+        %{
+          id: promo.id,
+          code: promo.code,
+          name: promo.name,
+          percent_off: promo.percent_off,
+          duration_kind: promo.duration_kind,
+          duration_months: promo.duration_months,
+          allowed_tiers: promo.allowed_tiers,
+          max_redemptions: promo.max_redemptions,
+          redeem_by: promo.redeem_by,
+          is_active: promo.is_active,
+          redemption_count: promo.redemption_count,
+          stripe_coupon_id: promo.stripe_coupon_id,
+          stripe_promo_code_id: promo.stripe_promo_code_id,
+          notes: promo.notes,
+          created_by: %{
+            id: promo.created_by_admin.id,
+            wallet_address: promo.created_by_admin.wallet_address
+          },
+          created_at: promo.inserted_at,
+          updated_at: promo.updated_at
+        }
+      end)
+
+    json(conn, %{
+      success: true,
+      promos: promos_data,
+      count: length(promos_data)
+    })
+  end
+
+  @doc """
+  Get a single promo code with detailed statistics.
+  """
+  def get_promo(conn, %{"id" => id}) do
+    case PromoCodes.get_promo_with_stats(id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Promo code not found"})
+
+      promo ->
+        redemptions_data =
+          Enum.map(Map.get(promo, :redemptions, []), fn redemption ->
+            %{
+              id: redemption.id,
+              user: %{
+                id: redemption.user.id,
+                wallet_address: redemption.user.wallet_address,
+                email: redemption.user.email
+              },
+              stripe_customer_id: redemption.stripe_customer_id,
+              stripe_subscription_id: redemption.stripe_subscription_id,
+              stripe_invoice_id: redemption.stripe_invoice_id,
+              redeemed_at: redemption.redeemed_at,
+              status: redemption.status,
+              created_at: redemption.inserted_at
+            }
+          end)
+
+        json(conn, %{
+          success: true,
+          promo: %{
+            id: promo.id,
+            code: promo.code,
+            name: promo.name,
+            percent_off: promo.percent_off,
+            duration_kind: promo.duration_kind,
+            duration_months: promo.duration_months,
+            allowed_tiers: promo.allowed_tiers,
+            max_redemptions: promo.max_redemptions,
+            redeem_by: promo.redeem_by,
+            is_active: promo.is_active,
+            redemption_count: promo.redemption_count,
+            stripe_coupon_id: promo.stripe_coupon_id,
+            stripe_promo_code_id: promo.stripe_promo_code_id,
+            notes: promo.notes,
+            created_by: %{
+              id: promo.created_by_admin.id,
+              wallet_address: promo.created_by_admin.wallet_address
+            },
+            created_at: promo.inserted_at,
+            updated_at: promo.updated_at
+          },
+          redemptions: redemptions_data
+        })
+    end
+  end
+
+  @doc """
+  Create a new promo code.
+  """
+  def create_promo(conn, params) do
+    admin_id = conn.assigns[:current_user_id]
+
+    case PromoCodes.create_promo_code(params, admin_id) do
+      {:ok, promo} ->
+        json(conn, %{
+          success: true,
+          message: "Promo code created successfully",
+          promo: %{
+            id: promo.id,
+            code: promo.code,
+            name: promo.name,
+            percent_off: promo.percent_off,
+            duration_kind: promo.duration_kind,
+            duration_months: promo.duration_months,
+            allowed_tiers: promo.allowed_tiers,
+            max_redemptions: promo.max_redemptions,
+            redeem_by: promo.redeem_by,
+            is_active: promo.is_active,
+            stripe_coupon_id: promo.stripe_coupon_id,
+            stripe_promo_code_id: promo.stripe_promo_code_id,
+            notes: promo.notes
+          }
+        })
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        conn
+        |> put_status(400)
+        |> json(%{
+          success: false,
+          error: "Failed to create promo code",
+          details: format_changeset_errors(changeset)
+        })
+
+      {:error, reason} ->
+        conn
+        |> put_status(500)
+        |> json(%{
+          success: false,
+          error: "Failed to create promo code: #{inspect(reason)}"
+        })
+    end
+  end
+
+  @doc """
+  Update a promo code.
+  """
+  def update_promo(conn, %{"id" => id} = params) do
+    case PromoCodes.get_promo_code(id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Promo code not found"})
+
+      promo ->
+        update_params =
+          Map.take(params, ["name", "max_redemptions", "redeem_by", "is_active", "notes"])
+
+        case PromoCodes.update_promo_code(promo, update_params) do
+          {:ok, updated_promo} ->
+            json(conn, %{
+              success: true,
+              message: "Promo code updated successfully",
+              promo: %{
+                id: updated_promo.id,
+                code: updated_promo.code,
+                name: updated_promo.name,
+                percent_off: updated_promo.percent_off,
+                duration_kind: updated_promo.duration_kind,
+                duration_months: updated_promo.duration_months,
+                allowed_tiers: updated_promo.allowed_tiers,
+                max_redemptions: updated_promo.max_redemptions,
+                redeem_by: updated_promo.redeem_by,
+                is_active: updated_promo.is_active,
+                notes: updated_promo.notes,
+                updated_at: updated_promo.updated_at
+              }
+            })
+
+          {:error, changeset} ->
+            conn
+            |> put_status(400)
+            |> json(%{
+              success: false,
+              error: "Failed to update promo code",
+              details: format_changeset_errors(changeset)
+            })
+        end
+    end
+  end
+
+  @doc """
+  Toggle the active status of a promo code.
+  """
+  def toggle_promo_active(conn, %{"id" => id, "active" => active}) do
+    case PromoCodes.get_promo_code(id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Promo code not found"})
+
+      promo ->
+        active? = parse_boolean(active)
+
+        case PromoCodes.toggle_active(promo, active?) do
+          {:ok, updated_promo} ->
+            action = if active?, do: "activated", else: "deactivated"
+
+            json(conn, %{
+              success: true,
+              message: "Promo code #{action} successfully",
+              promo: %{
+                id: updated_promo.id,
+                code: updated_promo.code,
+                is_active: updated_promo.is_active,
+                updated_at: updated_promo.updated_at
+              }
+            })
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{
+              success: false,
+              error: "Failed to toggle promo code: #{inspect(reason)}"
+            })
+        end
+    end
+  end
+
   # Helper functions for subscription management
 
   defp validate_tier(tier) when tier in ["starter", "creator", "pro"], do: :ok
   defp validate_tier(_), do: {:error, "Invalid tier - must be one of: starter, creator, pro"}
 
   defp parse_days(value) when is_integer(value) and value > 0, do: value
+
   defp parse_days(value) when is_binary(value) do
     case Integer.parse(value) do
       {int, ""} when int > 0 -> int
       _ -> 30
     end
   end
+
   defp parse_days(_), do: 30
 
   defp parse_boolean("true"), do: true
@@ -799,4 +1070,8 @@ defmodule ClippsterServerWeb.AdminController do
   defp parse_boolean(true), do: true
   defp parse_boolean(false), do: false
   defp parse_boolean(_), do: false
+
+  defp maybe_put_filter(filters, _key, nil), do: filters
+  defp maybe_put_filter(filters, _key, ""), do: filters
+  defp maybe_put_filter(filters, key, value), do: Map.put(filters, key, value)
 end

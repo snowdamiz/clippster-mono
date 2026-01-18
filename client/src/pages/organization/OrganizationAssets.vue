@@ -122,6 +122,17 @@
                     {{ asset.asset_type }}
                   </span>
 
+                  <!-- Campaign Badge -->
+                  <button
+                    v-if="getAttachedCampaign(asset)"
+                    class="org-assets__campaign-badge"
+                    :title="`Used in campaign: ${getAttachedCampaign(asset)?.title}`"
+                    @click.stop="viewAttachedCampaign(asset)"
+                  >
+                    <Megaphone class="org-assets__campaign-badge-icon" />
+                    <span class="org-assets__campaign-badge-text">Campaign</span>
+                  </button>
+
                   <!-- Actions Menu -->
                   <div class="org-assets__actions">
                     <button
@@ -166,15 +177,33 @@
                           <span>{{ asset.asset_type === 'audio' ? 'Play Audio' : 'Preview' }}</span>
                         </button>
                         <div v-if="isPlayableAsset(asset)" class="org-assets__dropdown-divider"></div>
+                        <template v-if="getAttachedCampaign(asset)">
+                          <button
+                            class="org-assets__dropdown-item"
+                            @click.stop="
+                              viewAttachedCampaign(asset);
+                              closeAssetMenu();
+                            "
+                          >
+                            <Megaphone class="org-assets__dropdown-icon" />
+                            <span>View attached campaign</span>
+                          </button>
+                          <div class="org-assets__dropdown-divider"></div>
+                        </template>
                         <button
-                          class="org-assets__dropdown-item org-assets__dropdown-item--danger"
+                          class="org-assets__dropdown-item"
+                          :class="{
+                            'org-assets__dropdown-item--danger': !isAttachedToActiveCampaign(asset),
+                            'org-assets__dropdown-item--disabled': isAttachedToActiveCampaign(asset),
+                          }"
+                          :disabled="isAttachedToActiveCampaign(asset)"
                           @click.stop="
-                            confirmDeleteAsset(asset);
-                            closeAssetMenu();
+                            !isAttachedToActiveCampaign(asset) && (confirmDeleteAsset(asset), closeAssetMenu())
                           "
                         >
                           <Trash2 class="org-assets__dropdown-icon" />
-                          <span>Delete Asset</span>
+                          <span v-if="isAttachedToActiveCampaign(asset)">In use by campaign</span>
+                          <span v-else>Delete Asset</span>
                         </button>
                       </div>
                     </Teleport>
@@ -428,6 +457,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
+  import { useRouter } from 'vue-router';
   import {
     Upload,
     Loader2,
@@ -444,6 +474,7 @@
     MoreVertical,
     Clock,
     Maximize2,
+    Megaphone,
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
@@ -453,12 +484,18 @@
     deleteOrganizationAsset,
     type ServerOrganizationAsset,
   } from '@/services/organizationAssetsApi';
+  import { listOrganizationCampaigns, type Campaign } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
   import { useOrganization } from '@/composables/useOrganization';
 
   const { success: showSuccess, error: showError } = useToast();
+  const router = useRouter();
 
   const { organizationId, isAdmin, orgAssets, assetsLoading, assetsLoaded, loadOrgAssets } = useOrganization();
+
+  // Campaigns state
+  const campaigns = ref<Campaign[]>([]);
+  const campaignsLoaded = ref(false);
 
   // Audio waveform thumbnail
   const AUDIO_THUMBNAIL =
@@ -624,7 +661,7 @@
     if (!button) return { top: '0px', left: '0px' };
 
     const rect = button.getBoundingClientRect();
-    const menuWidth = 180;
+    const menuWidth = 210;
     const menuMaxHeight = 120;
     const padding = 8;
 
@@ -921,10 +958,60 @@
     imageToPreview.value = null;
   }
 
+  // Load campaigns to check for asset usage
+  async function loadCampaigns() {
+    if (!organizationId.value || campaignsLoaded.value) return;
+
+    try {
+      const response = await listOrganizationCampaigns(Number(organizationId.value));
+      if (response.success) {
+        campaigns.value = response.campaigns;
+        campaignsLoaded.value = true;
+      }
+    } catch (err) {
+      console.error('[OrganizationAssets] Failed to load campaigns:', err);
+    }
+  }
+
+  // Helper to strip query params from URLs for comparison
+  function getBaseUrl(url: string | null | undefined): string {
+    if (!url) return '';
+    try {
+      const parsed = new URL(url);
+      return parsed.origin + parsed.pathname;
+    } catch {
+      return url.split('?')[0];
+    }
+  }
+
+  // Check if an asset is attached to an active campaign
+  function getAttachedCampaign(asset: ServerOrganizationAsset): Campaign | null {
+    if (asset.asset_type !== 'image') return null;
+    const assetBaseUrl = getBaseUrl(asset.url);
+    return (
+      campaigns.value.find(
+        (c) => c.status === 'active' && getBaseUrl(c.cover_image_url) === assetBaseUrl
+      ) || null
+    );
+  }
+
+  function isAttachedToActiveCampaign(asset: ServerOrganizationAsset): boolean {
+    return getAttachedCampaign(asset) !== null;
+  }
+
+  // Navigate to the campaign page for the attached campaign
+  function viewAttachedCampaign(asset: ServerOrganizationAsset) {
+    const campaign = getAttachedCampaign(asset);
+    if (campaign && organizationId.value) {
+      router.push(`/organizations/${organizationId.value}/campaigns`);
+    }
+  }
+
   onMounted(() => {
     if (!assetsLoaded.value) {
       loadOrgAssets();
     }
+    loadCampaigns();
     document.addEventListener('click', handleAssetMenuClickOutside);
   });
 
@@ -1368,6 +1455,45 @@
     }
   }
 
+  /* ===== Campaign Badge ===== */
+  .org-assets__campaign-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.3125rem 0.625rem;
+    border-radius: 6px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    flex-shrink: 0;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-assets__campaign-badge:hover {
+    background-color: rgba(245, 158, 11, 0.25);
+    transform: translateY(-1px);
+  }
+
+  .org-assets__campaign-badge-icon {
+    width: 11px;
+    height: 11px;
+  }
+
+  .org-assets__campaign-badge-text {
+    font-size: 0.625rem;
+  }
+
+  @media (max-width: 640px) {
+    .org-assets__campaign-badge {
+      display: none;
+    }
+  }
+
   /* ===== Actions ===== */
   .org-assets__actions {
     display: flex;
@@ -1431,7 +1557,7 @@
   .org-assets__dropdown {
     position: fixed;
     z-index: 9999;
-    width: 180px;
+    width: 210px;
     background-color: var(--sidebar-surface);
     backdrop-filter: blur(12px);
     border: 1px solid var(--sidebar-border);
@@ -1468,6 +1594,17 @@
   .org-assets__dropdown-item--danger:hover {
     background-color: rgba(239, 68, 68, 0.1);
     color: #f87171;
+  }
+
+  .org-assets__dropdown-item--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-assets__dropdown-item--disabled:hover {
+    background-color: transparent;
+    color: var(--sidebar-text-muted);
   }
 
   .org-assets__dropdown-icon {

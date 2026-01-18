@@ -31,6 +31,7 @@ export interface NavigationItem {
   orgOnly?: boolean; // Only show for organization account owners
   orgMember?: boolean; // Show for any organization member
   action?: 'dialog'; // New property to handle dialog actions instead of routing
+  restrictedHidden?: boolean; // Hide for restricted accounts
 }
 
 export const navigationGroups: Record<NavigationGroup, { label: string; order: number }> = {
@@ -47,12 +48,14 @@ export const navigationItems: NavigationItem[] = [
     path: '/creators',
     icon: Users,
     group: 'browse',
+    restrictedHidden: true,
   },
   {
     name: 'Campaigns',
     path: '/campaigns',
     icon: Megaphone,
     group: 'browse',
+    restrictedHidden: true,
   },
 
   // Create group - content creation tools
@@ -63,7 +66,7 @@ export const navigationItems: NavigationItem[] = [
     group: 'create',
   },
   {
-    name: 'My Clips',
+    name: 'Built Clips',
     path: '/clips',
     icon: LayoutGrid,
     group: 'create',
@@ -100,12 +103,14 @@ export const navigationItems: NavigationItem[] = [
     path: '/assets',
     icon: Archive,
     group: 'manage',
+    restrictedHidden: true, // Hidden if restricted and no asset upload permission
   },
   {
     name: 'Prompts',
     path: '/prompts',
     icon: MessageSquare,
     group: 'manage',
+    restrictedHidden: true, // Hidden if restricted and no custom prompts permission
   },
   {
     name: 'Messages',
@@ -119,6 +124,7 @@ export const navigationItems: NavigationItem[] = [
     path: '/billing',
     icon: Receipt,
     group: 'manage',
+    restrictedHidden: true, // Hidden for restricted accounts
   },
 
   // System group - admin and utilities (pinned at bottom)

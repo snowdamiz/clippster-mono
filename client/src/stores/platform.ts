@@ -7,6 +7,7 @@ import {
   fetchTokenMetadataFromServer,
 } from '@/services/pumpfun';
 import { getKickClips, extractChannelSlug, checkKickLivestream } from '@/services/kick';
+import { getTwitchVods, extractChannelName, checkTwitchLivestream, type TwitchVod } from '@/services/twitch';
 
 // Unified clip type that works across platforms
 export interface PlatformClip {
@@ -246,6 +247,8 @@ export const usePlatformStore = defineStore('platform', {
       for (const search of this.recentSearches) {
         if (search.platform === 'kick' && !search.imageUrl) {
           await this.fetchKickMetadata(search.id);
+        } else if (search.platform === 'twitch' && !search.imageUrl) {
+          await this.fetchTwitchMetadata(search.id);
         }
       }
     },
@@ -370,6 +373,17 @@ export const usePlatformStore = defineStore('platform', {
             result = await getKickClips(extractedId, limit);
             break;
 
+          case 'twitch':
+            extractedId = extractChannelName(trimmedInput);
+            if (!extractedId) {
+              this.error = 'Invalid Twitch channel URL or username';
+              this.loading = false;
+              return { success: false, error: this.error };
+            }
+            this.currentSearchId = extractedId;
+            result = await this.getTwitchClips(extractedId, limit);
+            break;
+
           default:
             this.error = 'Platform not supported yet';
             this.loading = false;
@@ -393,11 +407,13 @@ export const usePlatformStore = defineStore('platform', {
           // Save to recent searches with platform
           this.addToRecentSearches(extractedId!, trimmedInput, this.activePlatform, undefined);
 
-          // Fetch metadata for PumpFun or Kick searches
+          // Fetch metadata for PumpFun, Kick, or Twitch searches
           if (this.activePlatform === 'pumpfun') {
             this.fetchPumpFunMetadata(extractedId!);
           } else if (this.activePlatform === 'kick') {
             this.fetchKickMetadata(extractedId!);
+          } else if (this.activePlatform === 'twitch') {
+            this.fetchTwitchMetadata(extractedId!);
           }
 
           return {
@@ -415,6 +431,59 @@ export const usePlatformStore = defineStore('platform', {
         return { success: false, error: this.error };
       } finally {
         this.loading = false;
+      }
+    },
+
+    // Helper to convert Twitch VODs to PlatformClip format
+    async getTwitchClips(channelName: string, limit: number = 20): Promise<{
+      success: boolean;
+      clips: PlatformClip[];
+      hasMore: boolean;
+      total: number;
+      error?: string;
+    }> {
+      try {
+        const vods = await getTwitchVods(channelName, limit);
+        const clips: PlatformClip[] = vods.map((vod: TwitchVod) => ({
+          clipId: vod.vodId,
+          title: vod.title || `VOD ${vod.vodId}`,
+          duration: vod.duration || 0,
+          thumbnailUrl: vod.thumbnailUrl,
+          playlistUrl: vod.url,
+          mp4Url: vod.url,
+          clipType: 'COMPLETE' as const,
+          createdAt: vod.createdAt,
+          views: vod.viewCount,
+        }));
+        return {
+          success: true,
+          clips,
+          hasMore: clips.length >= limit,
+          total: clips.length,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          clips: [],
+          hasMore: false,
+          total: 0,
+          error: error instanceof Error ? error.message : 'Failed to fetch Twitch VODs',
+        };
+      }
+    },
+
+    // Background metadata fetch for Twitch (avatar/username)
+    async fetchTwitchMetadata(channelName: string) {
+      try {
+        const status = await checkTwitchLivestream(channelName);
+        if (status) {
+          this.updateRecentSearchMetadata(channelName, 'twitch', {
+            name: status.displayName,
+            imageUrl: status.profileImageUrl,
+          });
+        }
+      } catch {
+        // Ignore errors; non-fatal
       }
     },
 

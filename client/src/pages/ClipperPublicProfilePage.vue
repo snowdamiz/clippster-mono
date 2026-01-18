@@ -6,207 +6,280 @@
       :show-header="true"
       :icon="UserCircle"
     >
-      <div v-if="loading" class="flex items-center justify-center py-16">
-        <Loader2 class="w-8 h-8 animate-spin text-muted-foreground" />
+      <template #actions>
+        <div v-if="profile" class="profile-header-actions">
+          <button @click="openMessageDialog" class="profile-action-btn profile-action-btn--primary">
+            <MessageCircle class="profile-action-btn__icon" />
+            Message
+          </button>
+          <button @click="openEndorsementDialog" class="profile-action-btn profile-action-btn--outline">
+            <Star class="profile-action-btn__icon" />
+            Endorse
+          </button>
+          <button @click="copyProfileLink" class="profile-action-btn profile-action-btn--outline">
+            <Share2 class="profile-action-btn__icon" />
+            Share
+          </button>
+        </div>
+      </template>
+      <!-- Loading State -->
+      <div v-if="loading" class="profile-content profile-content--loading">
+        <div class="loading-spinner">
+          <Loader2 class="loading-spinner__icon" />
+        </div>
       </div>
 
-      <div v-else-if="!profile" class="text-center py-16">
-        <UserCircle class="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-        <h3 class="text-lg font-medium text-foreground mb-1">Profile not found</h3>
-        <p class="text-sm text-muted-foreground">This clipper profile doesn't exist or is private</p>
+      <!-- Not Found State -->
+      <div v-else-if="!profile" class="profile-content profile-content--empty">
+        <div class="empty-state">
+          <div class="empty-state__icon-wrapper">
+            <UserCircle class="empty-state__icon" />
+          </div>
+          <h3 class="empty-state__title">Profile not found</h3>
+          <p class="empty-state__description">This clipper profile doesn't exist or is private</p>
+        </div>
       </div>
 
-      <div v-else class="max-w-4xl pt-4 space-y-6">
-        <!-- Header Card -->
-        <div class="bg-card border border-border/60 rounded-xl p-6">
-          <div class="flex items-start gap-6">
-            <!-- Avatar -->
-            <div
-              class="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden flex-shrink-0"
-            >
-              <img v-if="profile.avatar_url" :src="profile.avatar_url" class="w-full h-full object-cover" />
-              <UserCircle v-else class="w-12 h-12 text-primary" />
+      <!-- Profile Content -->
+      <div v-else class="profile-content">
+        <!-- Profile Header -->
+        <header class="profile-header">
+          <div class="profile-header__main">
+            <div class="profile-avatar">
+              <img
+                v-if="profile.avatar_url"
+                :src="profile.avatar_url"
+                class="profile-avatar__img"
+              />
+              <UserCircle v-else class="profile-avatar__fallback" />
+              <div v-if="profile.is_verified" class="profile-avatar__verified">
+                <CheckCircle />
+              </div>
             </div>
-
-            <!-- Info -->
-            <div class="flex-1">
-              <div class="flex items-center gap-2 mb-1">
-                <h1 class="text-2xl font-bold text-foreground">{{ profile.display_name || 'Unnamed Clipper' }}</h1>
-                <CheckCircle v-if="profile.is_verified" class="w-5 h-5 text-blue-500" />
-                <div v-for="badge in profile.badges" :key="badge.id">
+            <div class="profile-meta">
+              <div class="profile-meta__top">
+                <h1 class="profile-name">{{ profile.display_name || 'Unnamed Clipper' }}</h1>
+                <span v-if="profile.looking_for_work" class="available-badge">
+                  <span class="available-badge__dot"></span>
+                  Available
+                </span>
+                <div v-for="badge in profile.badges" :key="badge.id" class="profile-badge">
                   <Badge :class="getBadgeColor(badge.badge_type)">
                     {{ getBadgeLabel(badge.badge_type) }}
                   </Badge>
                 </div>
               </div>
-
-              <p v-if="profile.bio" class="text-muted-foreground mb-3">{{ profile.bio }}</p>
-
-              <div class="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                <span v-if="profile.experience_level" class="flex items-center gap-1">
-                  <Star class="w-4 h-4" />
-                  {{ getExperienceLevelLabel(profile.experience_level) }}
-                </span>
-                <span v-if="profile.timezone" class="flex items-center gap-1">
-                  <Clock class="w-4 h-4" />
-                  {{ profile.timezone }}
-                </span>
-                <span v-if="profile.response_time_hours" class="flex items-center gap-1">
-                  <MessageCircle class="w-4 h-4" />
-                  ~{{ profile.response_time_hours }}h response
+              <p v-if="profile.bio" class="profile-bio">{{ profile.bio }}</p>
+              <div v-if="profile.specialty_tags?.length" class="profile-tags">
+                <span v-for="tag in profile.specialty_tags.slice(0, 5)" :key="tag" class="profile-tag">
+                  {{ getSpecialtyTagLabel(tag) }}
                 </span>
               </div>
-
-              <!-- Looking for Work Badge -->
-              <div v-if="profile.looking_for_work" class="mt-3">
-                <Badge variant="outline" class="bg-green-500/10 text-green-500 border-green-500/30">
-                  <Briefcase class="w-3 h-3 mr-1" />
-                  Available for Work
-                </Badge>
-              </div>
             </div>
+          </div>
+          <div class="profile-stats">
+            <div class="stat">
+              <span class="stat__value">{{ profile.total_campaigns_completed }}</span>
+              <span class="stat__label">Campaigns</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">{{ profile.total_clips_delivered }}</span>
+              <span class="stat__label">Clips</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">{{ profile.total_endorsements }}</span>
+              <span class="stat__label">Endorsements</span>
+            </div>
+          </div>
+        </header>
 
-            <!-- Stats & Actions -->
-            <div class="flex flex-col items-end gap-4">
-              <div class="flex gap-6 text-center">
-                <div>
-                  <div class="text-2xl font-bold text-foreground">{{ profile.total_campaigns_completed }}</div>
-                  <div class="text-xs text-muted-foreground">Campaigns</div>
+        <!-- Two Column Layout -->
+        <div class="main-layout">
+          <!-- Left Column -->
+          <div class="main-column">
+            <!-- About Section -->
+            <section v-if="profile.experience_level || profile.timezone || profile.response_time_hours" class="section">
+              <div class="section__header">
+                <div class="section__header-icon">
+                  <Info />
                 </div>
-                <div>
-                  <div class="text-2xl font-bold text-foreground">{{ profile.total_clips_delivered }}</div>
-                  <div class="text-xs text-muted-foreground">Clips</div>
-                </div>
-                <div>
-                  <div class="text-2xl font-bold text-foreground">{{ profile.total_endorsements }}</div>
-                  <div class="text-xs text-muted-foreground">Endorsements</div>
+                <div class="section__header-text">
+                  <h2 class="section__title">About</h2>
+                  <p class="section__subtitle">Professional details</p>
                 </div>
               </div>
-
-              <!-- Action Buttons (for org members) -->
-              <div class="flex gap-2">
-                <Button @click="openMessageDialog" size="sm">
-                  <MessageCircle class="w-4 h-4 mr-1" />
-                  Message
-                </Button>
-                <Button @click="openEndorsementDialog" variant="outline" size="sm">
-                  <Star class="w-4 h-4 mr-1" />
-                  Endorse
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tags Section -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Specialties -->
-          <div v-if="profile.specialty_tags?.length" class="bg-card border border-border/60 rounded-xl p-4">
-            <h3 class="font-semibold text-foreground mb-3">Specialties</h3>
-            <div class="flex flex-wrap gap-2">
-              <Badge v-for="tag in profile.specialty_tags" :key="tag" variant="secondary">
-                {{ getSpecialtyTagLabel(tag) }}
-              </Badge>
-            </div>
-          </div>
-
-          <!-- Content Styles -->
-          <div v-if="profile.content_style_tags?.length" class="bg-card border border-border/60 rounded-xl p-4">
-            <h3 class="font-semibold text-foreground mb-3">Content Style</h3>
-            <div class="flex flex-wrap gap-2">
-              <Badge v-for="tag in profile.content_style_tags" :key="tag" variant="secondary">
-                {{ getContentStyleTagLabel(tag) }}
-              </Badge>
-            </div>
-          </div>
-
-          <!-- Platforms -->
-          <div v-if="profile.preferred_platforms?.length" class="bg-card border border-border/60 rounded-xl p-4">
-            <h3 class="font-semibold text-foreground mb-3">Preferred Platforms</h3>
-            <div class="flex flex-wrap gap-2">
-              <Badge v-for="platform in profile.preferred_platforms" :key="platform" variant="secondary">
-                {{ getPlatformLabel(platform) }}
-              </Badge>
-            </div>
-          </div>
-
-          <!-- Languages -->
-          <div v-if="profile.languages?.length" class="bg-card border border-border/60 rounded-xl p-4">
-            <h3 class="font-semibold text-foreground mb-3">Languages</h3>
-            <div class="flex flex-wrap gap-2">
-              <Badge v-for="lang in profile.languages" :key="lang" variant="secondary">
-                {{ getLanguageName(lang) }}
-              </Badge>
-            </div>
-          </div>
-        </div>
-
-        <!-- Channel Links -->
-        <div v-if="profile.channel_links?.length" class="bg-card border border-border/60 rounded-xl p-4">
-          <h3 class="font-semibold text-foreground mb-3">Clip Channels</h3>
-          <div class="flex flex-wrap gap-3">
-            <a
-              v-for="link in profile.channel_links"
-              :key="link.id"
-              :href="link.url"
-              target="_blank"
-              class="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
-            >
-              <component :is="getPlatformIcon(link.platform)" class="w-5 h-5" />
-              <span class="font-medium">{{ link.username || getPlatformLabel(link.platform) }}</span>
-              <ExternalLink class="w-3.5 h-3.5 text-muted-foreground" />
-            </a>
-          </div>
-        </div>
-
-        <!-- Portfolio Clips -->
-        <div v-if="profile.portfolio_clips?.length" class="bg-card border border-border/60 rounded-xl p-4">
-          <h3 class="font-semibold text-foreground mb-3">Portfolio</h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div
-              v-for="clip in profile.portfolio_clips"
-              :key="clip.id"
-              class="rounded-xl overflow-hidden border border-border/60"
-            >
-              <div class="aspect-video bg-muted relative">
-                <img v-if="clip.thumbnail_url" :src="clip.thumbnail_url" class="w-full h-full object-cover" />
-                <div v-else class="w-full h-full flex items-center justify-center">
-                  <Video class="w-8 h-8 text-muted-foreground/50" />
-                </div>
-                <a
-                  :href="clip.video_url"
-                  target="_blank"
-                  class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 hover:opacity-100 transition-opacity"
-                >
-                  <Play class="w-12 h-12 text-white" />
-                </a>
-              </div>
-              <div class="p-3">
-                <div class="font-medium text-foreground truncate">{{ clip.title || 'Untitled' }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Endorsements -->
-        <div v-if="profile.endorsements?.length" class="bg-card border border-border/60 rounded-xl p-4">
-          <h3 class="font-semibold text-foreground mb-3">Endorsements</h3>
-          <div class="space-y-4">
-            <div v-for="endorsement in profile.endorsements" :key="endorsement.id" class="p-4 bg-muted/30 rounded-lg">
-              <div class="flex items-start justify-between mb-2">
-                <div>
-                  <div class="font-medium text-foreground">{{ endorsement.organization?.name || 'Organization' }}</div>
-                  <div class="text-xs text-muted-foreground">
-                    {{ endorsement.endorsed_by?.name ? `by ${endorsement.endorsed_by.name}` : '' }}
+              <div class="about-grid">
+                <div v-if="profile.experience_level" class="about-item">
+                  <Star class="about-item__icon" />
+                  <div class="about-item__content">
+                    <div class="about-item__label">Experience</div>
+                    <div class="about-item__value">{{ getExperienceLevelLabel(profile.experience_level) }}</div>
                   </div>
                 </div>
-                <div v-if="endorsement.rating" class="flex items-center gap-0.5">
-                  <Star v-for="i in endorsement.rating" :key="i" class="w-4 h-4 text-amber-500 fill-amber-500" />
+                <div v-if="profile.timezone" class="about-item">
+                  <Clock class="about-item__icon" />
+                  <div class="about-item__content">
+                    <div class="about-item__label">Timezone</div>
+                    <div class="about-item__value">{{ profile.timezone }}</div>
+                  </div>
+                </div>
+                <div v-if="profile.response_time_hours" class="about-item">
+                  <MessageCircle class="about-item__icon" />
+                  <div class="about-item__content">
+                    <div class="about-item__label">Response Time</div>
+                    <div class="about-item__value">~{{ profile.response_time_hours }} hours</div>
+                  </div>
                 </div>
               </div>
-              <p v-if="endorsement.content" class="text-sm text-muted-foreground">"{{ endorsement.content }}"</p>
-            </div>
+            </section>
+
+            <!-- Portfolio Section -->
+            <section v-if="profile.portfolio_clips?.length" class="section">
+              <div class="section__header">
+                <div class="section__header-icon section__header-icon--purple">
+                  <Video />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section__title">Portfolio</h2>
+                  <p class="section__subtitle">{{ profile.portfolio_clips.length }} clips</p>
+                </div>
+              </div>
+              <div class="portfolio-grid">
+                <div v-for="clip in profile.portfolio_clips" :key="clip.id" class="portfolio-item">
+                  <div class="portfolio-item__thumbnail">
+                    <img v-if="clip.thumbnail_url" :src="clip.thumbnail_url" class="portfolio-item__thumbnail-img" />
+                    <div v-else class="portfolio-item__thumbnail-placeholder">
+                      <Video class="portfolio-item__thumbnail-icon" />
+                    </div>
+                    <a
+                      :href="clip.video_url"
+                      target="_blank"
+                      class="portfolio-item__overlay"
+                    >
+                      <div class="portfolio-item__play">
+                        <Play class="portfolio-item__play-icon" />
+                      </div>
+                    </a>
+                  </div>
+                  <div class="portfolio-item__info">
+                    <div class="portfolio-item__title">{{ clip.title || 'Untitled' }}</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Endorsements Section -->
+            <section v-if="profile.endorsements?.length" class="section">
+              <div class="section__header">
+                <div class="section__header-icon section__header-icon--amber">
+                  <Award />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section__title">Endorsements</h2>
+                  <p class="section__subtitle">{{ profile.endorsements.length }} reviews</p>
+                </div>
+              </div>
+              <div class="endorsements-list">
+                <div v-for="endorsement in profile.endorsements" :key="endorsement.id" class="endorsement-card">
+                  <div class="endorsement-card__header">
+                    <div class="endorsement-card__org">
+                      <div class="endorsement-card__org-logo">
+                        <Building2 />
+                      </div>
+                      <div class="endorsement-card__org-info">
+                        <div class="endorsement-card__org-name">
+                          {{ endorsement.organization?.name || 'Organization' }}
+                        </div>
+                        <div v-if="endorsement.endorsed_by?.name" class="endorsement-card__org-by">
+                          by {{ endorsement.endorsed_by.name }}
+                        </div>
+                      </div>
+                    </div>
+                    <div v-if="endorsement.rating" class="endorsement-card__rating">
+                      <Star
+                        v-for="i in endorsement.rating"
+                        :key="i"
+                        class="endorsement-card__rating-star"
+                      />
+                    </div>
+                  </div>
+                  <p v-if="endorsement.content" class="endorsement-card__content">"{{ endorsement.content }}"</p>
+                </div>
+              </div>
+            </section>
           </div>
+
+          <!-- Right Sidebar -->
+          <aside class="sidebar-column">
+            <!-- Skills & Expertise -->
+            <div v-if="profile.content_style_tags?.length" class="sidebar-card">
+              <div class="sidebar-card__header">
+                <Sparkles class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Content Style</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="tag-list">
+                  <span v-for="tag in profile.content_style_tags" :key="tag" class="tag tag--style">
+                    {{ getContentStyleTagLabel(tag) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Platforms -->
+            <div v-if="profile.preferred_platforms?.length" class="sidebar-card">
+              <div class="sidebar-card__header">
+                <Monitor class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Platforms</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="platform-list">
+                  <div v-for="platform in profile.preferred_platforms" :key="platform" class="platform-item">
+                    <component :is="getPlatformIcon(platform)" class="platform-item__icon" />
+                    <span class="platform-item__name">{{ getPlatformLabel(platform) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Languages -->
+            <div v-if="profile.languages?.length" class="sidebar-card">
+              <div class="sidebar-card__header">
+                <Globe class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Languages</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="language-list">
+                  <div v-for="lang in profile.languages" :key="lang" class="language-item">
+                    {{ getLanguageName(lang) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Channel Links -->
+            <div v-if="profile.channel_links?.length" class="sidebar-card">
+              <div class="sidebar-card__header">
+                <Link class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Social Channels</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="channel-list">
+                  <a
+                    v-for="link in profile.channel_links"
+                    :key="link.id"
+                    :href="link.url"
+                    target="_blank"
+                    class="channel-item"
+                  >
+                    <component :is="getPlatformIcon(link.platform)" class="channel-item__icon" />
+                    <span class="channel-item__username">{{ link.username || getPlatformLabel(link.platform) }}</span>
+                    <ExternalLink class="channel-item__external" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
     </PageLayout>
@@ -278,6 +351,14 @@
     Youtube,
     Twitch,
     Link2,
+    Info,
+    Award,
+    Building2,
+    Sparkles,
+    Monitor,
+    Globe,
+    Link,
+    Share2,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
@@ -321,7 +402,6 @@
 
   const openMessageDialog = () => {
     if (!profile.value) return;
-    // Navigate directly to messages page with clipper user_id
     router.push(`/messages?to=${profile.value.user_id}`);
   };
 
@@ -331,13 +411,21 @@
     showEndorsementDialog.value = true;
   };
 
+  const copyProfileLink = () => {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+      toast({
+        title: 'Link Copied',
+        description: 'Profile link copied to clipboard',
+      });
+    });
+  };
+
   const submitEndorsement = async () => {
     if (!profile.value || endorsementRating.value === 0) return;
 
     submittingEndorsement.value = true;
     try {
-      // Note: organizationId would need to be selected by the user if they belong to multiple orgs
-      // For now, we'll pass 0 and let the backend handle it or show an error
       const response = await createEndorsement(profile.value.slug!, 0, {
         content: endorsementContent.value || undefined,
         rating: endorsementRating.value,
@@ -349,7 +437,6 @@
           description: "Your endorsement has been added to this clipper's profile.",
         });
         showEndorsementDialog.value = false;
-        // Reload profile to show new endorsement
         loadProfile();
       } else {
         toast({
@@ -403,7 +490,833 @@
 </script>
 
 <style scoped>
+  /* ===== Page Container ===== */
   .clipper-public-profile-page {
+    width: 100%;
+    min-height: 100%;
+  }
+
+  .profile-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .profile-content--loading,
+  .profile-content--empty {
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+  }
+
+  /* ===== Loading State ===== */
+  .loading-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .loading-spinner__icon {
+    width: 40px;
+    height: 40px;
+    color: var(--sidebar-text-muted);
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* ===== Empty State ===== */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .empty-state__icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .empty-state__icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .empty-state__title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .empty-state__description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  /* ===== Profile Header ===== */
+  .profile-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 2rem;
+  }
+
+  @media (max-width: 640px) {
+    .profile-header {
+      flex-direction: column;
+    }
+  }
+
+  .profile-header__main {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.25rem;
+    flex: 1;
+  }
+
+  .profile-avatar {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
+    background: var(--sidebar-surface);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .profile-avatar__img {
+    width: 100%;
     height: 100%;
+    object-fit: cover;
+  }
+
+  .profile-avatar__fallback {
+    width: 100%;
+    height: 100%;
+    padding: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .profile-avatar__verified {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 20px;
+    height: 20px;
+    background: var(--sidebar-accent);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--sidebar-bg);
+  }
+
+  .profile-avatar__verified svg {
+    width: 10px;
+    height: 10px;
+    color: white;
+  }
+
+  .profile-meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .profile-meta__top {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.375rem;
+  }
+
+  .profile-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .available-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background: rgba(16, 185, 129, 0.12);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: #10b981;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .available-badge__dot {
+    width: 5px;
+    height: 5px;
+    background: #10b981;
+    border-radius: 50%;
+  }
+
+  .profile-badge {
+    display: inline-block;
+  }
+
+  .profile-bio {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.625rem;
+    line-height: 1.5;
+    max-width: 420px;
+  }
+
+  .profile-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .profile-tag {
+    padding: 0.25rem 0.4375rem;
+    background: rgba(6, 182, 212, 0.1);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+  }
+
+  .profile-stats {
+    display: flex;
+    gap: 2rem;
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat__value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .stat__label {
+    display: block;
+    font-size: 0.5625rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.25rem;
+  }
+
+  /* Header Action Buttons */
+  .profile-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .profile-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 32px;
+    padding: 0 0.875rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .profile-action-btn--primary {
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+  }
+
+  .profile-action-btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .profile-action-btn--outline {
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    color: var(--sidebar-text);
+  }
+
+  .profile-action-btn--outline:hover:not(:disabled) {
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-accent);
+  }
+
+  .profile-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .profile-action-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ===== Main Layout ===== */
+  .main-layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  @media (max-width: 1024px) {
+    .main-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* ===== Main Column ===== */
+  .main-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* ===== Section ===== */
+  .section {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+
+  .section__header {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .section__header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .section__header-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .section__header-icon--purple {
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+  }
+
+  .section__header-icon--amber {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+
+  .section__header-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .section__title {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .section__subtitle {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.1875rem 0 0;
+  }
+
+  /* About Section */
+  .about-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+  }
+
+  .about-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    padding: 0.875rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .about-item__icon {
+    width: 20px;
+    height: 20px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+  }
+
+  .about-item__content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .about-item__label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.25rem;
+  }
+
+  .about-item__value {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  /* Portfolio Section */
+  .portfolio-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+
+  .portfolio-item {
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    transition: all 180ms ease;
+  }
+
+  .portfolio-item:hover {
+    border-color: var(--sidebar-accent);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .portfolio-item__thumbnail {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: var(--sidebar-hover);
+    overflow: hidden;
+  }
+
+  .portfolio-item__thumbnail-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 300ms ease;
+  }
+
+  .portfolio-item:hover .portfolio-item__thumbnail-img {
+    transform: scale(1.05);
+  }
+
+  .portfolio-item__thumbnail-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .portfolio-item__thumbnail-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.3;
+  }
+
+  .portfolio-item__overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 180ms ease;
+  }
+
+  .portfolio-item:hover .portfolio-item__overlay {
+    opacity: 1;
+  }
+
+  .portfolio-item__play {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    background: var(--sidebar-accent);
+    border: 2px solid white;
+    border-radius: 50%;
+    transition: all 180ms ease;
+  }
+
+  .portfolio-item:hover .portfolio-item__play {
+    transform: scale(1.1);
+    opacity: 0.9;
+  }
+
+  .portfolio-item__play-icon {
+    width: 20px;
+    height: 20px;
+    color: white;
+    margin-left: 2px;
+  }
+
+  .portfolio-item__info {
+    padding: 0.75rem;
+  }
+
+  .portfolio-item__title {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Endorsements Section */
+  .endorsements-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .endorsement-card {
+    padding: 1.125rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .endorsement-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .endorsement-card__org {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .endorsement-card__org-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: var(--sidebar-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .endorsement-card__org-logo svg {
+    width: 18px;
+    height: 18px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .endorsement-card__org-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .endorsement-card__org-name {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin-bottom: 0.125rem;
+  }
+
+  .endorsement-card__org-by {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .endorsement-card__rating {
+    display: flex;
+    gap: 0.125rem;
+  }
+
+  .endorsement-card__rating-star {
+    width: 16px;
+    height: 16px;
+    color: #fbbf24;
+    fill: #fbbf24;
+  }
+
+  .endorsement-card__content {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.6;
+    font-style: italic;
+    margin: 0;
+  }
+
+  /* ===== Sidebar Column ===== */
+  .sidebar-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    position: sticky;
+    top: 1.5rem;
+  }
+
+  @media (max-width: 1024px) {
+    .sidebar-column {
+      position: static;
+    }
+  }
+
+  /* Sidebar Card */
+  .sidebar-card {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .sidebar-card__header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 1rem 1.125rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .sidebar-card__icon {
+    width: 18px;
+    height: 18px;
+    color: var(--sidebar-accent);
+  }
+
+  .sidebar-card__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .sidebar-card__content {
+    padding: 1rem 1.125rem;
+  }
+
+  /* Tag Groups */
+  .tag-group {
+    margin-bottom: 1rem;
+  }
+
+  .tag-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .tag-group__label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.625rem;
+  }
+
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .tag {
+    padding: 0.375rem 0.625rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .tag--specialty {
+    background: rgba(6, 182, 212, 0.12);
+    color: var(--sidebar-accent);
+  }
+
+  .tag--style {
+    background: rgba(139, 92, 246, 0.12);
+    color: #a78bfa;
+  }
+
+  /* Platform List */
+  .platform-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .platform-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem;
+    background: var(--sidebar-hover);
+    border-radius: 6px;
+  }
+
+  .platform-item__icon {
+    width: 18px;
+    height: 18px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .platform-item__name {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+  }
+
+  /* Language List */
+  .language-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .language-item {
+    padding: 0.625rem;
+    background: var(--sidebar-hover);
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+  }
+
+  /* Channel List */
+  .channel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .channel-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.75rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    text-decoration: none;
+    transition: all 150ms ease;
+  }
+
+  .channel-item:hover {
+    background: var(--sidebar-active);
+    border-color: var(--sidebar-accent);
+  }
+
+  .channel-item__icon {
+    width: 18px;
+    height: 18px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .channel-item__username {
+    flex: 1;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .channel-item__external {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
+  }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 768px) {
+    .profile-content {
+      padding: 1rem;
+      gap: 1.25rem;
+    }
+
+    .profile-header {
+      flex-direction: column;
+    }
+
+    .profile-header__main {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .profile-name {
+      font-size: 1.125rem;
+    }
+
+    .profile-meta__top {
+      justify-content: center;
+    }
+
+    .profile-stats {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .stat {
+      min-width: 80px;
+    }
+
+    .main-layout {
+      gap: 1rem;
+    }
+
+    .portfolio-grid {
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .about-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

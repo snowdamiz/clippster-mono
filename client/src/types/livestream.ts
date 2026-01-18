@@ -46,6 +46,9 @@ export interface LiveSession {
   detectClips?: boolean;
   isStopping?: boolean;
   segmentDurationMinutes?: number;
+  promptId?: string;
+  promptContent?: string;
+  offlineSince?: number;
 }
 
 export interface SegmentEventPayload {
@@ -68,6 +71,7 @@ export interface SegmentJob {
   projectId: string;
   detectClips?: boolean;
   duration?: number;
+  promptContent?: string;
 }
 
 export interface ActivityLog {

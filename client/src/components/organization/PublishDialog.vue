@@ -99,6 +99,32 @@
                   <p class="text-xs text-zinc-500">Associate this post with a creator profile for tracking</p>
                 </div>
 
+                <!-- Campaign Selection (shows when creator has campaigns) -->
+                <div v-if="creatorCampaigns.length > 0" class="space-y-1.5 sm:space-y-2">
+                  <label for="campaign" class="block text-xs sm:text-sm font-medium text-zinc-300">
+                    Campaign
+                    <span v-if="creatorCampaigns.length > 1" class="text-zinc-500 font-normal">({{ creatorCampaigns.length }} available)</span>
+                  </label>
+                  <div class="relative">
+                    <select
+                      id="campaign"
+                      v-model="selectedCampaignId"
+                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all pr-10"
+                      :disabled="publishing || loadingCampaigns"
+                    >
+                      <option value="">No campaign</option>
+                      <option v-for="campaign in creatorCampaigns" :key="campaign.id" :value="String(campaign.id)">
+                        {{ campaign.title }}
+                        <template v-if="campaign.organization?.name"> ({{ campaign.organization.name }})</template>
+                      </option>
+                    </select>
+                    <ChevronDown
+                      class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none"
+                    />
+                  </div>
+                  <p class="text-xs text-zinc-500">Associate this post with a campaign for tracking and analytics</p>
+                </div>
+
                 <!-- Caption -->
                 <div class="space-y-1.5 sm:space-y-2">
                   <label for="caption" class="block text-xs sm:text-sm font-medium text-zinc-300">Caption</label>
@@ -111,7 +137,65 @@
                     class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all resize-y min-h-[100px]"
                     placeholder="Write a caption for your post..."
                   ></textarea>
-                  <p class="text-xs text-zinc-500 text-right">{{ caption.length }} / 2,200</p>
+                  <div class="flex items-center justify-between">
+                    <p v-if="hashtagCount > 30" class="text-xs text-red-400">Too many hashtags ({{ hashtagCount }}/30)</p>
+                    <p class="text-xs text-zinc-500 text-right ml-auto">{{ caption.length }} / 2,200</p>
+                  </div>
+                </div>
+
+                <!-- Schedule Toggle -->
+                <div v-if="schedulingEnabled" class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Schedule for later</label>
+                    <button
+                      type="button"
+                      @click="isScheduled = !isScheduled"
+                      :class="[
+                        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                        isScheduled ? 'bg-pink-600' : 'bg-zinc-700'
+                      ]"
+                      :disabled="publishing"
+                    >
+                      <span
+                        :class="[
+                          'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                          isScheduled ? 'translate-x-6' : 'translate-x-1'
+                        ]"
+                      />
+                    </button>
+                  </div>
+
+                  <!-- Date/Time Picker -->
+                  <div v-if="isScheduled" class="space-y-3">
+                    <div class="grid grid-cols-2 gap-3">
+                      <div class="space-y-1.5">
+                        <label for="scheduleDate" class="block text-xs font-medium text-zinc-400">Date</label>
+                        <input
+                          id="scheduleDate"
+                          type="date"
+                          v-model="scheduleDate"
+                          :min="minDate"
+                          :disabled="publishing"
+                          class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all"
+                        />
+                      </div>
+                      <div class="space-y-1.5">
+                        <label for="scheduleTime" class="block text-xs font-medium text-zinc-400">Time</label>
+                        <input
+                          id="scheduleTime"
+                          type="time"
+                          v-model="scheduleTime"
+                          :disabled="publishing"
+                          class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all"
+                        />
+                      </div>
+                    </div>
+                    <p v-if="scheduledDateTime" class="text-xs text-zinc-400 flex items-center gap-1.5">
+                      <Calendar class="h-3.5 w-3.5" />
+                      Will be published {{ formatScheduleTime(scheduledDateTime) }}
+                    </p>
+                    <p v-if="scheduleError" class="text-xs text-red-400">{{ scheduleError }}</p>
+                  </div>
                 </div>
 
                 <!-- Error Display -->
@@ -139,11 +223,12 @@
                     />
                     <span v-if="publishing" class="relative flex items-center justify-center">
                       <Loader2 class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2 animate-spin" />
-                      Publishing...
+                      {{ isScheduled ? 'Scheduling...' : 'Publishing...' }}
                     </span>
                     <span v-else class="relative flex items-center justify-center">
-                      <Instagram class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
-                      Publish
+                      <Calendar v-if="isScheduled" class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
+                      <Instagram v-else class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
+                      {{ isScheduled ? 'Schedule' : 'Publish Now' }}
                     </span>
                   </button>
                 </div>
@@ -158,29 +243,39 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, FileVideo, Loader2, ChevronDown } from 'lucide-vue-next';
+  import { Instagram, FileVideo, Loader2, ChevronDown, Calendar } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import {
-    getMyAssignedAccounts,
     listSocialAccounts,
+    getMyAssignedAccounts,
     publishPost,
     type SocialAccount,
   } from '@/services/socialAccountsApi';
+  import { schedulePost } from '@/services/schedulingApi';
+  import { getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
 
   interface CreatorProfile {
     id: number;
     name: string;
   }
 
-  const props = defineProps<{
-    open: boolean;
-    organizationId: string | number;
-    mediaUrl: string;
-    thumbnailUrl?: string;
-    mediaType?: 'image' | 'video' | 'reel';
-    isAdmin: boolean;
-    creatorProfiles: CreatorProfile[];
-  }>();
+  const props = withDefaults(
+    defineProps<{
+      open: boolean;
+      organizationId: string | number;
+      mediaUrl: string;
+      thumbnailUrl?: string;
+      mediaType?: 'image' | 'video' | 'reel';
+      isAdmin: boolean;
+      creatorProfiles: CreatorProfile[];
+      clipId?: string;
+      campaignId?: number;
+      schedulingEnabled?: boolean;
+    }>(),
+    {
+      schedulingEnabled: true,
+    }
+  );
 
   const emit = defineEmits<{
     (e: 'close'): void;
@@ -198,8 +293,84 @@
   const loading = ref(true);
   const error = ref<string | null>(null);
 
+  // Campaign selection state
+  const creatorCampaigns = ref<Campaign[]>([]);
+  const selectedCampaignId = ref<string>('');
+  const loadingCampaigns = ref(false);
+
+  // Scheduling state
+  const isScheduled = ref(false);
+  const scheduleDate = ref('');
+  const scheduleTime = ref('');
+  const scheduleError = ref<string | null>(null);
+
+  // Compute hashtag count
+  const hashtagCount = computed(() => {
+    const matches = caption.value.match(/#\w+/g);
+    return matches ? matches.length : 0;
+  });
+
+  // Compute minimum date (today)
+  const minDate = computed(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+
+  // Compute scheduled datetime
+  const scheduledDateTime = computed(() => {
+    if (!scheduleDate.value || !scheduleTime.value) return null;
+    const dateTime = new Date(`${scheduleDate.value}T${scheduleTime.value}`);
+    return isNaN(dateTime.getTime()) ? null : dateTime;
+  });
+
+  // Validate schedule time
+  watch([scheduleDate, scheduleTime], () => {
+    if (!isScheduled.value || !scheduledDateTime.value) {
+      scheduleError.value = null;
+      return;
+    }
+
+    const now = new Date();
+    const minTime = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes from now
+
+    if (scheduledDateTime.value < minTime) {
+      scheduleError.value = 'Schedule time must be at least 5 minutes in the future';
+    } else {
+      scheduleError.value = null;
+    }
+  });
+
+  // Format schedule time for display
+  function formatScheduleTime(date: Date): string {
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+    const diffMins = Math.round(diffMs / 60000);
+    const diffHours = Math.round(diffMs / 3600000);
+    const diffDays = Math.round(diffMs / 86400000);
+
+    let relative = '';
+    if (diffMins < 60) relative = `in ${diffMins} minutes`;
+    else if (diffHours < 24) relative = `in ${diffHours} hours`;
+    else relative = `in ${diffDays} days`;
+
+    const formatted = date.toLocaleString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+    return `${relative} (${formatted})`;
+  }
+
   const canPublish = computed(() => {
-    return selectedAccountId.value && props.mediaUrl;
+    const hasAccount = !!selectedAccountId.value;
+    const hasMedia = !!props.mediaUrl;
+    const hashtagsValid = hashtagCount.value <= 30;
+    const scheduleValid = !isScheduled.value || (scheduledDateTime.value && !scheduleError.value);
+
+    return hasAccount && hasMedia && hashtagsValid && scheduleValid;
   });
 
   // Load available accounts when dialog opens
@@ -213,6 +384,46 @@
     },
     { immediate: true }
   );
+
+  // Watch for creator profile changes to load campaigns
+  watch(
+    () => selectedCreatorProfileId.value,
+    async (profileId) => {
+      if (profileId && profileId !== 'none' && profileId !== '') {
+        await loadCampaignsForCreator(parseInt(profileId));
+      } else {
+        // Reset campaigns when no creator selected
+        creatorCampaigns.value = [];
+        selectedCampaignId.value = '';
+      }
+    }
+  );
+
+  // Note: Campaign selection is used for tracking purposes
+  // Account filtering by campaign org would require multi-org account loading
+
+  async function loadCampaignsForCreator(creatorProfileId: number) {
+    loadingCampaigns.value = true;
+    try {
+      const response = await getCampaignsByCreatorProfile(creatorProfileId);
+      if (response.success && response.campaigns) {
+        creatorCampaigns.value = response.campaigns;
+        // Auto-select if only one campaign
+        if (creatorCampaigns.value.length === 1) {
+          selectedCampaignId.value = String(creatorCampaigns.value[0].id);
+        } else {
+          selectedCampaignId.value = '';
+        }
+      } else {
+        creatorCampaigns.value = [];
+      }
+    } catch (err) {
+      console.error('Failed to load campaigns:', err);
+      creatorCampaigns.value = [];
+    } finally {
+      loadingCampaigns.value = false;
+    }
+  }
 
   async function loadAccounts() {
     loading.value = true;
@@ -244,31 +455,59 @@
     error.value = null;
 
     try {
-      const response = await publishPost(props.organizationId, {
-        social_account_id: parseInt(selectedAccountId.value),
-        creator_profile_id:
-          selectedCreatorProfileId.value && selectedCreatorProfileId.value !== 'none'
-            ? parseInt(selectedCreatorProfileId.value)
-            : undefined,
-        media_url: props.mediaUrl,
-        caption: caption.value,
-        media_type: postType.value,
-        thumbnail_url: props.thumbnailUrl,
-      });
+      let response;
 
-      if (response.success) {
-        showToast('Post is being published to Instagram', 'success');
-        emit('published', response.post);
-        emit('close');
+      if (isScheduled.value && scheduledDateTime.value) {
+        // Schedule the post for later
+        response = await schedulePost({
+          platform: 'instagram',
+          media_url: props.mediaUrl,
+          caption: caption.value,
+          media_type: postType.value,
+          thumbnail_url: props.thumbnailUrl,
+          scheduled_at: scheduledDateTime.value.toISOString(),
+          organization_id: Number(props.organizationId),
+          social_account_id: parseInt(selectedAccountId.value),
+          creator_profile_id:
+            selectedCreatorProfileId.value && selectedCreatorProfileId.value !== 'none'
+              ? parseInt(selectedCreatorProfileId.value)
+              : undefined,
+          clip_id: props.clipId,
+          campaign_id: selectedCampaignId.value ? parseInt(selectedCampaignId.value) : props.campaignId,
+        });
 
-        // Reset form
-        selectedAccountId.value = '';
-        selectedCreatorProfileId.value = '';
-        caption.value = '';
-        postType.value = 'reel';
+        if (response.success) {
+          showToast(`Post scheduled for ${formatScheduleTime(scheduledDateTime.value)}`, 'success');
+          emit('published', response.post);
+          emit('close');
+          resetForm();
+        } else {
+          error.value = response.error || 'Failed to schedule';
+          showToast(response.error || 'Failed to schedule', 'error');
+        }
       } else {
-        error.value = response.error || 'Failed to publish';
-        showToast(response.error || 'Failed to publish', 'error');
+        // Publish immediately
+        response = await publishPost(props.organizationId, {
+          social_account_id: parseInt(selectedAccountId.value),
+          creator_profile_id:
+            selectedCreatorProfileId.value && selectedCreatorProfileId.value !== 'none'
+              ? parseInt(selectedCreatorProfileId.value)
+              : undefined,
+          media_url: props.mediaUrl,
+          caption: caption.value,
+          media_type: postType.value,
+          thumbnail_url: props.thumbnailUrl,
+        });
+
+        if (response.success) {
+          showToast('Post is being published to Instagram', 'success');
+          emit('published', response.post);
+          emit('close');
+          resetForm();
+        } else {
+          error.value = response.error || 'Failed to publish';
+          showToast(response.error || 'Failed to publish', 'error');
+        }
       }
     } catch (err) {
       console.error('Failed to publish:', err);
@@ -277,6 +516,19 @@
     } finally {
       publishing.value = false;
     }
+  }
+
+  function resetForm() {
+    selectedAccountId.value = '';
+    selectedCreatorProfileId.value = '';
+    selectedCampaignId.value = '';
+    creatorCampaigns.value = [];
+    caption.value = '';
+    postType.value = 'reel';
+    isScheduled.value = false;
+    scheduleDate.value = '';
+    scheduleTime.value = '';
+    scheduleError.value = null;
   }
 </script>
 

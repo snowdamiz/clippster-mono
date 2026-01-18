@@ -117,6 +117,8 @@ export {
   getAllProjects,
   updateProject,
   deleteProject,
+  deleteProjectWithRetention,
+  getClipsToDeleteForProject,
   hasRawVideosForProject,
   hasClipsForProject,
   hasDetectedOrGeneratedClips,
@@ -145,6 +147,7 @@ export {
   searchTranscripts,
   searchSegments,
   searchTranscriptSegmentsByClipIds,
+  getClipIdsWithTranscripts,
 } from './database/transcripts';
 
 // Re-export chunked transcript functions
@@ -220,6 +223,7 @@ export {
 // Livestream monitoring exports
 export {
   getAllMonitoredStreamers,
+  getAutoDvrStreamers,
   getMonitoredStreamer,
   getMonitoredStreamerByMint,
   createMonitoredStreamer,

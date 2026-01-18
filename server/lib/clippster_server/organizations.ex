@@ -490,8 +490,8 @@ defmodule ClippsterServer.Organizations do
         # Create the user account (already verified since admin is creating it)
         case create_verified_user(email, password, organization_id, name) do
           {:ok, user} ->
-            # Add as member
-            {:ok, _member} = add_member(organization_id, user.id, role)
+            # Add as member - mark as restricted since account was created by org
+            {:ok, _member} = add_member_restricted(organization_id, user.id, role)
 
             # Initialize credit allocation
             {:ok, _allocation} = %MemberCreditAllocation{}
@@ -511,6 +511,21 @@ defmodule ClippsterServer.Organizations do
       {:error, reason} -> {:error, reason}
       _existing_user -> {:error, :email_already_exists}
     end
+  end
+
+  @doc """
+  Adds a user as a restricted member to an organization.
+  Used when creating accounts directly for clippers.
+  """
+  def add_member_restricted(organization_id, user_id, role \\ "member") do
+    %OrganizationMember{}
+    |> OrganizationMember.create_changeset(%{
+      organization_id: organization_id,
+      user_id: user_id,
+      role: role,
+      is_restricted: true
+    })
+    |> Repo.insert()
   end
 
   defp create_verified_user(email, password, created_by_organization_id, name) do
@@ -914,6 +929,7 @@ defmodule ClippsterServer.Organizations do
   @doc """
   Creates a new organization asset.
   Uploads the file to R2 storage and creates the database record.
+  Checks for existing assets with the same content hash to prevent duplicates.
   """
   def create_organization_asset(organization_id, user_id, asset_type, file_binary, filename, opts \\ []) do
     content_type = Keyword.get(opts, :content_type, "application/octet-stream")
@@ -923,31 +939,55 @@ defmodule ClippsterServer.Organizations do
     height = Keyword.get(opts, :height)
     file_size = byte_size(file_binary)
 
-    # Generate storage key and upload to R2
-    key = Storage.generate_key(organization_id, asset_type, filename)
+    # Compute SHA-256 hash of file content for deduplication
+    content_hash = :crypto.hash(:sha256, file_binary) |> Base.encode16(case: :lower)
 
-    with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
-         {:ok, thumbnail_url} <- maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
+    # Check for existing asset with same content hash, organization, and asset type
+    case get_asset_by_hash(organization_id, asset_type, content_hash) do
+      %OrganizationAsset{} = existing ->
+        # Asset with same content already exists, return it without uploading
+        {:ok, existing}
 
-      # Create database record
-      attrs = %{
-        organization_id: organization_id,
-        uploaded_by_user_id: user_id,
-        asset_type: asset_type,
-        name: filename,
-        url: url,
-        thumbnail_url: thumbnail_url,
-        duration: duration,
-        width: width,
-        height: height,
-        file_size: file_size,
-        mime_type: content_type
-      }
+      nil ->
+        # No existing asset found, proceed with upload
+        # Generate storage key and upload to R2
+        key = Storage.generate_key(organization_id, asset_type, filename)
 
-      %OrganizationAsset{}
-      |> OrganizationAsset.create_changeset(attrs)
-      |> Repo.insert()
+        with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
+             {:ok, thumbnail_url} <- maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
+
+          # Create database record with content hash
+          attrs = %{
+            organization_id: organization_id,
+            uploaded_by_user_id: user_id,
+            asset_type: asset_type,
+            name: filename,
+            url: url,
+            thumbnail_url: thumbnail_url,
+            duration: duration,
+            width: width,
+            height: height,
+            file_size: file_size,
+            mime_type: content_type,
+            content_hash: content_hash
+          }
+
+          %OrganizationAsset{}
+          |> OrganizationAsset.create_changeset(attrs)
+          |> Repo.insert()
+        end
     end
+  end
+
+  # Gets an organization asset by content hash, organization ID, and asset type.
+  # Used for deduplication - returns existing asset if found.
+  defp get_asset_by_hash(organization_id, asset_type, content_hash) do
+    OrganizationAsset
+    |> where([a], a.organization_id == ^organization_id)
+    |> where([a], a.asset_type == ^asset_type)
+    |> where([a], a.content_hash == ^content_hash)
+    |> preload(:uploaded_by)
+    |> Repo.one()
   end
 
   defp maybe_upload_thumbnail(_org_id, _asset_type, _filename, nil), do: {:ok, nil}
@@ -1640,6 +1680,179 @@ defmodule ClippsterServer.Organizations do
         # Check if recipient
         recipient = Repo.get_by(SharedClipRecipient, shared_clip_id: clip_id, user_id: user_id)
         recipient != nil
+    end
+  end
+
+  # ============================================================================
+  # Restriction Management
+  # ============================================================================
+
+  @doc """
+  Checks if a user is a restricted member of any organization.
+  """
+  def is_restricted_member?(user_id) do
+    OrganizationMember
+    |> where([m], m.user_id == ^user_id and m.is_restricted == true)
+    |> Repo.exists?()
+  end
+
+  @doc """
+  Gets the effective restrictions for a user.
+  Returns a map of all effective restriction settings, merging org defaults with member overrides.
+  Returns nil if user is not a restricted member.
+  """
+  def get_user_restrictions(user_id) do
+    # Get the first organization where user is a restricted member
+    member = OrganizationMember
+    |> where([m], m.user_id == ^user_id and m.is_restricted == true)
+    |> preload(:organization)
+    |> Repo.one()
+
+    case member do
+      nil ->
+        # User is not restricted
+        nil
+
+      member ->
+        get_effective_restrictions(member.organization.id, user_id)
+    end
+  end
+
+  @doc """
+  Gets effective restrictions for a specific user in an organization.
+  Merges org defaults with member-specific overrides.
+  """
+  def get_effective_restrictions(organization_id, user_id) do
+    org = get_organization(organization_id)
+    member = get_member(organization_id, user_id)
+
+    cond do
+      is_nil(org) or is_nil(member) ->
+        nil
+
+      not member.is_restricted ->
+        # Non-restricted members have no restrictions
+        %{restricted: false}
+
+      true ->
+        # Merge org defaults with member overrides
+        org_defaults = org.restriction_defaults || %{}
+        member_overrides = member.restriction_overrides || %{}
+
+        # Member overrides take precedence
+        effective = Map.merge(org_defaults, member_overrides)
+
+        Map.put(effective, "restricted", true)
+        |> Map.put("restricting_org_id", organization_id)
+    end
+  end
+
+  @doc """
+  Updates restriction defaults for an organization.
+  Admin only.
+  """
+  def update_restriction_defaults(organization_id, settings, %User{} = admin) do
+    with {:ok, _} <- verify_admin(organization_id, admin.id),
+         org when not is_nil(org) <- get_organization(organization_id) do
+
+      org
+      |> Organization.update_restriction_defaults_changeset(%{restriction_defaults: settings})
+      |> Repo.update()
+    else
+      nil -> {:error, :organization_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Updates restriction overrides for a specific member.
+  Admin only.
+  """
+  def update_member_restrictions(organization_id, user_id, overrides, %User{} = admin) do
+    with {:ok, _} <- verify_admin(organization_id, admin.id),
+         member when not is_nil(member) <- get_member(organization_id, user_id) do
+
+      member
+      |> OrganizationMember.update_restriction_overrides_changeset(%{
+        restriction_overrides: overrides
+      })
+      |> Repo.update()
+    else
+      nil -> {:error, :member_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Sets whether a member is restricted.
+  Admin only.
+  """
+  def set_member_restricted(organization_id, user_id, is_restricted, %User{} = admin) do
+    with {:ok, _} <- verify_admin(organization_id, admin.id),
+         member when not is_nil(member) <- get_member(organization_id, user_id) do
+
+      # Cannot restrict the owner
+      if member.role == "owner" do
+        {:error, :cannot_restrict_owner}
+      else
+        member
+        |> OrganizationMember.update_restriction_overrides_changeset(%{
+          is_restricted: is_restricted
+        })
+        |> Repo.update()
+      end
+    else
+      nil -> {:error, :member_not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Checks if a user can access a specific creator profile.
+  Returns true if:
+  - User is not restricted
+  - User is an admin of the org
+  - User is assigned to the creator profile
+  """
+  def can_access_creator?(user_id, creator_profile_id) do
+    profile = get_creator_profile(creator_profile_id)
+
+    cond do
+      is_nil(profile) ->
+        false
+
+      # Check if user is restricted
+      not is_restricted_member?(user_id) ->
+        true
+
+      # Check if user is admin of the organization
+      is_admin?(profile.organization_id, user_id) ->
+        true
+
+      true ->
+        # Check if user is assigned to this creator profile
+        assignment = Repo.get_by(OrganizationProfileAssignment,
+          organization_creator_profile_id: creator_profile_id,
+          user_id: user_id
+        )
+        assignment != nil
+    end
+  end
+
+  @doc """
+  Gets all creator profile IDs that a user is allowed to access.
+  Returns :all if user is not restricted, otherwise returns list of assigned profile IDs.
+  """
+  def get_allowed_creators_for_user(user_id) do
+    # Check if user is restricted
+    unless is_restricted_member?(user_id) do
+      :all
+    else
+      # Get assigned creator profiles
+      OrganizationProfileAssignment
+      |> where([a], a.user_id == ^user_id)
+      |> select([a], a.organization_creator_profile_id)
+      |> Repo.all()
     end
   end
 

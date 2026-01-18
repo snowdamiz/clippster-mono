@@ -32,8 +32,10 @@ defmodule ClippsterServer.ClipperProfiles do
   Gets a profile by user ID.
   """
   def get_profile_by_user_id(user_id) do
-    Repo.get_by(ClipperProfile, user_id: user_id)
-    |> Repo.preload([:channel_links, :portfolio_clips, :badges])
+    case Repo.get_by(ClipperProfile, user_id: user_id) do
+      nil -> nil
+      profile -> Repo.preload(profile, [:channel_links, :portfolio_clips, :badges])
+    end
   end
 
   @doc """
@@ -51,8 +53,10 @@ defmodule ClippsterServer.ClipperProfiles do
   Gets a profile by ID.
   """
   def get_profile(id) do
-    Repo.get(ClipperProfile, id)
-    |> Repo.preload([:channel_links, :portfolio_clips, :badges])
+    case Repo.get(ClipperProfile, id) do
+      nil -> nil
+      profile -> Repo.preload(profile, [:channel_links, :portfolio_clips, :badges])
+    end
   end
 
   @doc """
@@ -292,8 +296,10 @@ defmodule ClippsterServer.ClipperProfiles do
   Gets an endorsement by ID.
   """
   def get_endorsement(id) do
-    Repo.get(ClipperEndorsement, id)
-    |> Repo.preload([:organization, :endorsed_by_user])
+    case Repo.get(ClipperEndorsement, id) do
+      nil -> nil
+      endorsement -> Repo.preload(endorsement, [:organization, :endorsed_by_user])
+    end
   end
 
   @doc """
