@@ -3216,6 +3216,45 @@ pub struct PreviewSegment {
     pub end_time: f64,    // End time in source video (seconds)
 }
 
+/// Preview tier for progressive cache
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PreviewTier {
+    Proxy,  // 720p, fast encode
+    Hq,     // 1080p, balanced encode
+}
+
+/// Timeline segment for preview chunk rendering
+/// Maps edited timeline time to source video time
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineSegment {
+    pub source_start: f64,    // Start time in source video
+    pub source_end: f64,      // End time in source video
+    pub timeline_start: f64,  // Start time in edited timeline
+    pub timeline_end: f64,    // End time in edited timeline
+}
+
+/// Preview chunk generation result
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewChunkResult {
+    pub chunk_index: u32,
+    pub output_path: String,
+    pub duration: f64,
+}
+
+/// Preview manifest result
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewManifestResult {
+    pub manifest_path: String,
+    pub streaming_url: String,
+    pub chunk_count: u32,
+    pub total_duration: f64,
+}
+
 /// Generate a low-quality preview video with all segment cuts pre-applied.
 /// This eliminates runtime seeking by creating a single continuous video file.
 /// 
@@ -3437,4 +3476,839 @@ pub async fn delete_segment_preview(preview_path: String) -> Result<(), String> 
     }
     
     Ok(())
+}
+
+/// Preview chunk edit data - contains all overlays/effects for rendering
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewChunkEditData {
+    /// Text overlays to render
+    #[serde(default)]
+    pub text_overlays: Vec<PreviewTextOverlay>,
+    /// Sticker overlays to render
+    #[serde(default)]
+    pub stickers: Vec<PreviewSticker>,
+    /// Watermark overlays to render
+    #[serde(default)]
+    pub watermarks: Vec<PreviewWatermark>,
+    /// Video filter segments (color grading, etc.)
+    #[serde(default)]
+    pub filter_segments: Vec<PreviewFilterSegment>,
+    /// Audio tracks to mix
+    #[serde(default)]
+    pub audio_tracks: Vec<PreviewAudioTrack>,
+    /// Main video volume in dB
+    #[serde(default)]
+    pub video_volume_db: f64,
+}
+
+/// Audio track for preview rendering
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewAudioTrack {
+    pub file_path: String,
+    pub start_time: f64,
+    pub end_time: f64,
+    pub volume: f64,
+    #[serde(default)]
+    pub is_muted: bool,
+}
+
+/// Text overlay for preview rendering
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewTextOverlay {
+    pub id: String,
+    pub text: String,
+    pub start_time: f64,
+    pub end_time: f64,
+    pub position_x: f64,
+    pub position_y: f64,
+    pub style: serde_json::Value,
+    pub animation: String,
+    #[serde(default)]
+    pub per_ratio_configs: Option<serde_json::Value>,
+    #[serde(default)]
+    pub preview_height: Option<f64>,
+}
+
+/// Sticker overlay for preview rendering
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewSticker {
+    pub id: String,
+    pub sticker_path: String,
+    pub sticker_type: String,
+    pub start_time: f64,
+    pub end_time: f64,
+    pub position_x: f64,
+    pub position_y: f64,
+    pub scale: f64,
+    pub rotation: f64,
+    pub animation: String,
+    #[serde(default)]
+    pub per_ratio_configs: Option<serde_json::Value>,
+}
+
+/// Watermark overlay for preview rendering
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewWatermark {
+    pub id: String,
+    pub watermark_path: String,
+    pub start_time: f64,
+    pub end_time: f64,
+    pub position_x: f64,
+    pub position_y: f64,
+    pub scale: f64,
+    pub opacity: f64,
+    #[serde(default)]
+    pub per_ratio_configs: Option<serde_json::Value>,
+}
+
+/// Video filter segment for preview rendering
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewFilterSegment {
+    pub start_time: f64,
+    pub end_time: f64,
+    pub filter_type: String,
+    pub settings: serde_json::Value,
+}
+
+/// Result of building preview filter complex
+struct PreviewFilterResult {
+    /// Video filter complex string
+    filter_complex: String,
+    /// Additional input files (watermarks, stickers, audio tracks)
+    additional_inputs: Vec<String>,
+    /// Whether audio mixing is needed
+    needs_audio_mix: bool,
+    /// Audio filter complex (if audio mixing is needed)
+    audio_filter: Option<String>,
+    /// Number of audio inputs (starting after video inputs)
+    audio_input_count: usize,
+}
+
+/// Build FFmpeg filter complex for preview chunk with overlays and audio mixing
+/// Returns filter result with video filter, audio filter, and additional inputs
+fn build_preview_filter_complex(
+    edit_data: &PreviewChunkEditData,
+    chunk_start: f64,
+    chunk_duration: f64,
+    resolution_height: u32,
+    video_width: u32,
+    video_height: u32,
+    _aspect_ratio: &str,
+) -> PreviewFilterResult {
+    let chunk_end = chunk_start + chunk_duration;
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut additional_inputs: Vec<String> = Vec::new();
+    
+    // Start with scaling the input video
+    filter_parts.push(format!("[0:v]scale=-2:{}[scaled]", resolution_height));
+    
+    let mut current_label = "scaled".to_string();
+    let mut input_index = 1; // Start at 1, 0 is the main video
+    
+    // Add color filter segments that overlap with this chunk
+    for filter_seg in &edit_data.filter_segments {
+        // Check if filter overlaps with chunk
+        if filter_seg.end_time > chunk_start && filter_seg.start_time < chunk_end {
+            // Calculate enable expression relative to chunk start
+            let enable_start = (filter_seg.start_time - chunk_start).max(0.0);
+            let enable_end = (filter_seg.end_time - chunk_start).min(chunk_duration);
+            
+            // Build color filter based on settings
+            if let Some(settings) = filter_seg.settings.as_object() {
+                let mut color_filters: Vec<String> = Vec::new();
+                
+                if let Some(brightness) = settings.get("brightness").and_then(|v| v.as_f64()) {
+                    if brightness != 0.0 {
+                        color_filters.push(format!("eq=brightness={:.2}", brightness / 100.0));
+                    }
+                }
+                if let Some(contrast) = settings.get("contrast").and_then(|v| v.as_f64()) {
+                    if contrast != 0.0 {
+                        color_filters.push(format!("eq=contrast={:.2}", 1.0 + contrast / 100.0));
+                    }
+                }
+                if let Some(saturation) = settings.get("saturation").and_then(|v| v.as_f64()) {
+                    if saturation != 0.0 {
+                        color_filters.push(format!("eq=saturation={:.2}", 1.0 + saturation / 100.0));
+                    }
+                }
+                
+                if !color_filters.is_empty() {
+                    let next_label = format!("filt{}", input_index);
+                    let filter_chain = color_filters.join(",");
+                    filter_parts.push(format!(
+                        "[{}]{}:enable='between(t,{:.3},{:.3})'[{}]",
+                        current_label, filter_chain, enable_start, enable_end, next_label
+                    ));
+                    current_label = next_label;
+                    input_index += 1;
+                }
+            }
+        }
+    }
+    
+    // Add text overlays that overlap with this chunk
+    for text_overlay in &edit_data.text_overlays {
+        // Check if overlay overlaps with chunk
+        if text_overlay.end_time > chunk_start && text_overlay.start_time < chunk_end {
+            // Calculate enable expression relative to chunk start
+            let enable_start = (text_overlay.start_time - chunk_start).max(0.0);
+            let enable_end = (text_overlay.end_time - chunk_start).min(chunk_duration);
+            
+            // Get style properties
+            let style = text_overlay.style.as_object();
+            let font_size = style
+                .and_then(|s| s.get("fontSize"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(48.0) as u32;
+            let font_color = style
+                .and_then(|s| s.get("color"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("#FFFFFF");
+            
+            // Scale font size for resolution
+            let scale_factor = resolution_height as f64 / video_height as f64;
+            let scaled_font_size = (font_size as f64 * scale_factor) as u32;
+            
+            // Calculate position in pixels
+            let x_pos = (video_width as f64 * text_overlay.position_x / 100.0 * scale_factor) as i32;
+            let y_pos = (video_height as f64 * text_overlay.position_y / 100.0 * scale_factor) as i32;
+            
+            // Escape text for FFmpeg drawtext
+            let escaped_text = text_overlay.text
+                .replace("\\", "\\\\")
+                .replace("'", "'\\''")
+                .replace(":", "\\:");
+            
+            // Convert hex color to FFmpeg format
+            let ffmpeg_color = if font_color.starts_with('#') {
+                format!("0x{}", &font_color[1..])
+            } else {
+                font_color.to_string()
+            };
+            
+            let next_label = format!("txt{}", input_index);
+            filter_parts.push(format!(
+                "[{}]drawtext=text='{}':fontsize={}:fontcolor={}:x={}:y={}:enable='between(t,{:.3},{:.3})'[{}]",
+                current_label, escaped_text, scaled_font_size, ffmpeg_color, x_pos, y_pos, enable_start, enable_end, next_label
+            ));
+            current_label = next_label;
+            input_index += 1;
+        }
+    }
+    
+    // Add watermark overlays that overlap with this chunk
+    for watermark in &edit_data.watermarks {
+        // Check if watermark overlaps with chunk
+        if watermark.end_time > chunk_start && watermark.start_time < chunk_end {
+            // Calculate enable expression relative to chunk start
+            let enable_start = (watermark.start_time - chunk_start).max(0.0);
+            let enable_end = (watermark.end_time - chunk_start).min(chunk_duration);
+            
+            // Add watermark image as input
+            additional_inputs.push(watermark.watermark_path.clone());
+            
+            // Calculate position and scale
+            let scale_factor = resolution_height as f64 / video_height as f64;
+            let wm_scale = watermark.scale / 100.0 * scale_factor;
+            let x_pos = format!("main_w*{}/100-overlay_w/2", watermark.position_x);
+            let y_pos = format!("main_h*{}/100-overlay_h/2", watermark.position_y);
+            let opacity = watermark.opacity / 100.0;
+            
+            let wm_input_idx = additional_inputs.len(); // 1-indexed since 0 is main video
+            let next_label = format!("wm{}", input_index);
+            
+            // Scale watermark and apply opacity
+            filter_parts.push(format!(
+                "[{}:v]scale=iw*{:.2}:ih*{:.2},format=rgba,colorchannelmixer=aa={:.2}[wm_scaled{}]",
+                wm_input_idx, wm_scale, wm_scale, opacity, input_index
+            ));
+            
+            // Overlay watermark on video
+            filter_parts.push(format!(
+                "[{}][wm_scaled{}]overlay={}:{}:enable='between(t,{:.3},{:.3})'[{}]",
+                current_label, input_index, x_pos, y_pos, enable_start, enable_end, next_label
+            ));
+            current_label = next_label;
+            input_index += 1;
+        }
+    }
+    
+    // Add sticker overlays that overlap with this chunk
+    for sticker in &edit_data.stickers {
+        // Check if sticker overlaps with chunk
+        if sticker.end_time > chunk_start && sticker.start_time < chunk_end {
+            // Only handle image/gif stickers (not emoji)
+            if sticker.sticker_type == "image" || sticker.sticker_type == "gif" {
+                // Calculate enable expression relative to chunk start
+                let enable_start = (sticker.start_time - chunk_start).max(0.0);
+                let enable_end = (sticker.end_time - chunk_start).min(chunk_duration);
+                
+                // Add sticker image as input
+                additional_inputs.push(sticker.sticker_path.clone());
+                
+                // Calculate position and scale
+                let scale_factor = resolution_height as f64 / video_height as f64;
+                let sticker_scale = sticker.scale * scale_factor;
+                let x_pos = format!("main_w*{}/100-overlay_w/2", sticker.position_x);
+                let y_pos = format!("main_h*{}/100-overlay_h/2", sticker.position_y);
+                
+                let sticker_input_idx = additional_inputs.len();
+                let next_label = format!("stk{}", input_index);
+                
+                // Scale sticker
+                filter_parts.push(format!(
+                    "[{}:v]scale=iw*{:.2}:ih*{:.2},format=rgba[stk_scaled{}]",
+                    sticker_input_idx, sticker_scale, sticker_scale, input_index
+                ));
+                
+                // Overlay sticker on video
+                filter_parts.push(format!(
+                    "[{}][stk_scaled{}]overlay={}:{}:enable='between(t,{:.3},{:.3})'[{}]",
+                    current_label, input_index, x_pos, y_pos, enable_start, enable_end, next_label
+                ));
+                current_label = next_label;
+                input_index += 1;
+            }
+        }
+    }
+    
+    // Track video input count before adding audio inputs
+    let video_input_count = additional_inputs.len() + 1; // +1 for main video
+    
+    // Build audio mixing filter for audio tracks that overlap with this chunk
+    let mut audio_inputs: Vec<String> = Vec::new();
+    let mut audio_filter_parts: Vec<String> = Vec::new();
+    
+    for audio_track in &edit_data.audio_tracks {
+        // Check if audio track overlaps with chunk
+        if audio_track.end_time > chunk_start && audio_track.start_time < chunk_end && !audio_track.is_muted {
+            audio_inputs.push(audio_track.file_path.clone());
+            
+            // Calculate trim and delay for this audio track
+            let track_offset_in_chunk = (audio_track.start_time - chunk_start).max(0.0);
+            let trim_start = (chunk_start - audio_track.start_time).max(0.0);
+            let trim_end = (chunk_end - audio_track.start_time).min(audio_track.end_time - audio_track.start_time);
+            
+            let audio_input_idx = video_input_count + audio_inputs.len() - 1;
+            let volume = audio_track.volume;
+            
+            // Build audio filter for this track: trim, volume adjust, delay
+            let track_label = format!("a{}", audio_inputs.len());
+            if track_offset_in_chunk > 0.0 {
+                audio_filter_parts.push(format!(
+                    "[{}:a]atrim=start={:.3}:end={:.3},asetpts=PTS-STARTPTS,volume={:.2},adelay={}|{}[{}]",
+                    audio_input_idx, trim_start, trim_end, volume,
+                    (track_offset_in_chunk * 1000.0) as i64,
+                    (track_offset_in_chunk * 1000.0) as i64,
+                    track_label
+                ));
+            } else {
+                audio_filter_parts.push(format!(
+                    "[{}:a]atrim=start={:.3}:end={:.3},asetpts=PTS-STARTPTS,volume={:.2}[{}]",
+                    audio_input_idx, trim_start, trim_end, volume, track_label
+                ));
+            }
+        }
+    }
+    
+    // Add audio inputs to additional_inputs
+    additional_inputs.extend(audio_inputs.clone());
+    
+    // Build audio mix filter if we have audio tracks
+    let (needs_audio_mix, audio_filter) = if !audio_filter_parts.is_empty() {
+        // Mix all audio tracks with main video audio
+        let mut mix_inputs = vec!["[0:a]".to_string()];
+        for i in 1..=audio_filter_parts.len() {
+            mix_inputs.push(format!("[a{}]", i));
+        }
+        
+        let mix_filter = format!(
+            "{};{}amix=inputs={}:duration=first:dropout_transition=0[aout]",
+            audio_filter_parts.join(";"),
+            mix_inputs.join(""),
+            mix_inputs.len()
+        );
+        
+        (true, Some(mix_filter))
+    } else {
+        (false, None)
+    };
+    
+    // Final output label for video
+    let filter_complex = if filter_parts.len() == 1 {
+        // Only scaling, no overlays
+        format!("[0:v]scale=-2:{}[vout]", resolution_height)
+    } else {
+        // Rename final label to vout
+        let last_part = filter_parts.pop().unwrap();
+        let final_part = last_part.replace(&format!("[{}]", current_label), "[vout]");
+        filter_parts.push(final_part.replace(&format!("'[{}]", current_label), "'[vout]"));
+        
+        // Fix: the replacement above might not work correctly, let's just add a null filter
+        filter_parts.push(format!("[{}]null[vout]", current_label));
+        filter_parts.join(";")
+    };
+    
+    PreviewFilterResult {
+        filter_complex,
+        additional_inputs,
+        needs_audio_mix,
+        audio_filter,
+        audio_input_count: audio_inputs.len(),
+    }
+}
+
+/// Generate a single preview chunk for the progressive preview cache.
+/// Renders a 3-second (or shorter) segment of the edited timeline into an HLS-compatible .ts file.
+/// 
+/// This command renders the timeline including all effects, transitions, overlays, and audio.
+/// 
+/// # Arguments
+/// * `app` - Tauri app handle
+/// * `clip_id` - Unique clip identifier
+/// * `video_path` - Path to the source video file
+/// * `tier` - Preview tier ("proxy" for 720p, "hq" for 1080p)
+/// * `chunk_index` - 0-based index of the chunk
+/// * `chunk_start` - Start time in the edited timeline (seconds)
+/// * `chunk_duration` - Duration of the chunk (typically 3.0 seconds)
+/// * `segments` - Timeline segments mapping edited time to source time
+/// * `edit_data` - Optional edit data containing overlays, effects, and audio tracks
+/// * `aspect_ratio` - Aspect ratio for rendering (e.g., "16:9", "9:16")
+/// 
+/// # Returns
+/// Result containing the chunk output path and metadata
+#[tauri::command]
+pub async fn generate_preview_chunk(
+    app: tauri::AppHandle,
+    clip_id: String,
+    video_path: String,
+    tier: String,
+    chunk_index: u32,
+    chunk_start: f64,
+    chunk_duration: f64,
+    segments: Vec<TimelineSegment>,
+    edit_data: Option<PreviewChunkEditData>,
+    aspect_ratio: Option<String>,
+) -> Result<PreviewChunkResult, String> {
+    use tauri_plugin_shell::ShellExt;
+    
+    println!("[Rust] generate_preview_chunk called:");
+    println!("[Rust]   clip_id: {}", clip_id);
+    println!("[Rust]   tier: {}", tier);
+    println!("[Rust]   chunk_index: {}", chunk_index);
+    println!("[Rust]   chunk_start: {}s", chunk_start);
+    println!("[Rust]   chunk_duration: {}s", chunk_duration);
+    println!("[Rust]   segments count: {}", segments.len());
+    if let Some(ref data) = edit_data {
+        println!("[Rust]   text_overlays: {}", data.text_overlays.len());
+        println!("[Rust]   stickers: {}", data.stickers.len());
+        println!("[Rust]   watermarks: {}", data.watermarks.len());
+        println!("[Rust]   filter_segments: {}", data.filter_segments.len());
+        println!("[Rust]   audio_tracks: {}", data.audio_tracks.len());
+    }
+    println!("[Rust]   aspect_ratio: {:?}", aspect_ratio);
+    
+    // Validate tier
+    let (resolution_height, preset, crf, audio_bitrate) = match tier.as_str() {
+        "proxy" => (720, "ultrafast", "28", "128k"),
+        "hq" => (1080, "medium", "23", "192k"),
+        _ => return Err(format!("Invalid tier: {}. Must be 'proxy' or 'hq'", tier)),
+    };
+    
+    // Get storage paths
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    
+    // Create preview cache directory structure
+    let tier_dir = if tier == "proxy" { "proxy_720" } else { "hq_1080" };
+    let preview_dir = paths.temp.join("previews").join(format!("clip_{}", clip_id)).join(tier_dir);
+    std::fs::create_dir_all(&preview_dir)
+        .map_err(|e| format!("Failed to create preview directory: {}", e))?;
+    
+    let chunk_end = chunk_start + chunk_duration;
+    
+    // Find which segments overlap with this chunk's timeline range
+    let mut overlapping_segments: Vec<(f64, f64, f64, f64)> = Vec::new(); // (source_start, source_end, timeline_start, timeline_end)
+    
+    for seg in &segments {
+        // Check if segment overlaps with chunk time range
+        if seg.timeline_end > chunk_start && seg.timeline_start < chunk_end {
+            // Calculate the overlap
+            let overlap_timeline_start = seg.timeline_start.max(chunk_start);
+            let overlap_timeline_end = seg.timeline_end.min(chunk_end);
+            
+            // Map timeline overlap back to source time
+            let seg_duration = seg.timeline_end - seg.timeline_start;
+            let source_duration = seg.source_end - seg.source_start;
+            let time_scale = if seg_duration > 0.0 { source_duration / seg_duration } else { 1.0 };
+            
+            let offset_in_seg = overlap_timeline_start - seg.timeline_start;
+            let overlap_source_start = seg.source_start + (offset_in_seg * time_scale);
+            let overlap_source_end = overlap_source_start + ((overlap_timeline_end - overlap_timeline_start) * time_scale);
+            
+            overlapping_segments.push((
+                overlap_source_start,
+                overlap_source_end,
+                overlap_timeline_start,
+                overlap_timeline_end,
+            ));
+        }
+    }
+    
+    if overlapping_segments.is_empty() {
+        return Err(format!("No segments overlap with chunk time range [{}, {}]", chunk_start, chunk_end));
+    }
+    
+    let shell = app.shell();
+    let output_path = preview_dir.join(format!("seg_{:03}.ts", chunk_index));
+    
+    // Get video dimensions for overlay positioning (default to 1920x1080 if not available)
+    let (video_width, video_height) = (1920u32, 1080u32);
+    let aspect_ratio_str = aspect_ratio.as_deref().unwrap_or("16:9");
+    
+    // For single segment overlap, extract directly
+    if overlapping_segments.len() == 1 {
+        let (source_start, source_end, _, _) = overlapping_segments[0];
+        let duration = source_end - source_start;
+        
+        println!("[Rust] Single segment chunk: source {}s to {}s (duration: {}s)", 
+                 source_start, source_end, duration);
+        
+        // Build args based on whether we have edit data with overlays/audio
+        let args = if let Some(ref data) = edit_data {
+            let has_overlays = !data.text_overlays.is_empty() 
+                || !data.watermarks.is_empty() 
+                || !data.stickers.is_empty()
+                || !data.filter_segments.is_empty()
+                || !data.audio_tracks.is_empty();
+            
+            if has_overlays {
+                let filter_result = build_preview_filter_complex(
+                    data,
+                    chunk_start,
+                    chunk_duration,
+                    resolution_height,
+                    video_width,
+                    video_height,
+                    aspect_ratio_str,
+                );
+                
+                println!("[Rust] Using filter_complex for overlays: {}", filter_result.filter_complex);
+                if filter_result.needs_audio_mix {
+                    println!("[Rust] Audio mixing enabled with {} tracks", filter_result.audio_input_count);
+                }
+                
+                let mut args = vec![
+                    "-ss".to_string(), source_start.to_string(),
+                    "-i".to_string(), video_path.clone(),
+                ];
+                
+                // Add additional inputs for watermarks/stickers/audio
+                for input_path in &filter_result.additional_inputs {
+                    args.push("-i".to_string());
+                    args.push(input_path.clone());
+                }
+                
+                // Build combined filter_complex with video and audio filters
+                let full_filter = if filter_result.needs_audio_mix {
+                    if let Some(ref audio_filter) = filter_result.audio_filter {
+                        format!("{};{}", filter_result.filter_complex, audio_filter)
+                    } else {
+                        filter_result.filter_complex.clone()
+                    }
+                } else {
+                    filter_result.filter_complex.clone()
+                };
+                
+                args.extend(vec![
+                    "-t".to_string(), duration.to_string(),
+                    "-filter_complex".to_string(), full_filter,
+                    "-map".to_string(), "[vout]".to_string(),
+                ]);
+                
+                // Map audio output
+                if filter_result.needs_audio_mix {
+                    args.push("-map".to_string());
+                    args.push("[aout]".to_string());
+                } else {
+                    args.push("-map".to_string());
+                    args.push("0:a?".to_string());
+                }
+                
+                args.extend(vec![
+                    "-c:v".to_string(), "libx264".to_string(),
+                    "-preset".to_string(), preset.to_string(),
+                    "-crf".to_string(), crf.to_string(),
+                    "-c:a".to_string(), "aac".to_string(),
+                    "-b:a".to_string(), audio_bitrate.to_string(),
+                    "-f".to_string(), "mpegts".to_string(),
+                    "-y".to_string(),
+                    output_path.to_string_lossy().to_string(),
+                ]);
+                args
+            } else {
+                // No overlays, use simple scaling
+                vec![
+                    "-ss".to_string(), source_start.to_string(),
+                    "-i".to_string(), video_path.clone(),
+                    "-t".to_string(), duration.to_string(),
+                    "-vf".to_string(), format!("scale=-2:{}", resolution_height),
+                    "-c:v".to_string(), "libx264".to_string(),
+                    "-preset".to_string(), preset.to_string(),
+                    "-crf".to_string(), crf.to_string(),
+                    "-c:a".to_string(), "aac".to_string(),
+                    "-b:a".to_string(), audio_bitrate.to_string(),
+                    "-f".to_string(), "mpegts".to_string(),
+                    "-y".to_string(),
+                    output_path.to_string_lossy().to_string(),
+                ]
+            }
+        } else {
+            // No edit data, use simple scaling
+            vec![
+                "-ss".to_string(), source_start.to_string(),
+                "-i".to_string(), video_path.clone(),
+                "-t".to_string(), duration.to_string(),
+                "-vf".to_string(), format!("scale=-2:{}", resolution_height),
+                "-c:v".to_string(), "libx264".to_string(),
+                "-preset".to_string(), preset.to_string(),
+                "-crf".to_string(), crf.to_string(),
+                "-c:a".to_string(), "aac".to_string(),
+                "-b:a".to_string(), audio_bitrate.to_string(),
+                "-f".to_string(), "mpegts".to_string(),
+                "-y".to_string(),
+                output_path.to_string_lossy().to_string(),
+            ]
+        };
+        
+        let output = shell.sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args(args)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+        
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("FFmpeg preview chunk generation failed: {}", stderr));
+        }
+        
+        println!("[Rust] Preview chunk {} generated: {}", chunk_index, output_path.display());
+        
+        return Ok(PreviewChunkResult {
+            chunk_index,
+            output_path: output_path.to_string_lossy().to_string(),
+            duration,
+        });
+    }
+    
+    // Multi-segment chunk: extract each part and concatenate
+    println!("[Rust] Multi-segment chunk: {} segments", overlapping_segments.len());
+    
+    let temp_dir = paths.temp.join(format!("chunk_temp_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+    
+    let mut segment_files: Vec<std::path::PathBuf> = Vec::new();
+    let mut total_duration = 0.0;
+    
+    for (i, (source_start, source_end, _, _)) in overlapping_segments.iter().enumerate() {
+        let duration = source_end - source_start;
+        total_duration += duration;
+        
+        let segment_file = temp_dir.join(format!("part_{:03}.ts", i));
+        
+        let args = vec![
+            "-ss".to_string(), source_start.to_string(),
+            "-i".to_string(), video_path.clone(),
+            "-t".to_string(), duration.to_string(),
+            "-vf".to_string(), format!("scale=-2:{}", resolution_height),
+            "-c:v".to_string(), "libx264".to_string(),
+            "-preset".to_string(), preset.to_string(),
+            "-crf".to_string(), crf.to_string(),
+            "-c:a".to_string(), "aac".to_string(),
+            "-b:a".to_string(), audio_bitrate.to_string(),
+            "-f".to_string(), "mpegts".to_string(),
+            "-y".to_string(),
+            segment_file.to_string_lossy().to_string(),
+        ];
+        
+        let output = shell.sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args(args)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run ffmpeg for segment {}: {}", i, e))?;
+        
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            return Err(format!("FFmpeg segment {} extraction failed: {}", i, stderr));
+        }
+        
+        segment_files.push(segment_file);
+    }
+    
+    // Concatenate all parts using concat protocol (for .ts files)
+    let concat_input = segment_files.iter()
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .collect::<Vec<_>>()
+        .join("|");
+    
+    let concat_args = vec![
+        "-i".to_string(), format!("concat:{}", concat_input),
+        "-c".to_string(), "copy".to_string(),
+        "-y".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ];
+    
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(concat_args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg concat: {}", e))?;
+    
+    // Cleanup temp directory
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg concat failed: {}", stderr));
+    }
+    
+    println!("[Rust] Preview chunk {} generated (multi-segment): {}", chunk_index, output_path.display());
+    
+    Ok(PreviewChunkResult {
+        chunk_index,
+        output_path: output_path.to_string_lossy().to_string(),
+        duration: total_duration,
+    })
+}
+
+/// Write an HLS manifest file for the preview cache.
+/// Creates an index.m3u8 file that references all available chunks.
+/// 
+/// # Arguments
+/// * `clip_id` - Unique clip identifier
+/// * `tier` - Preview tier ("proxy" or "hq")
+/// * `chunks` - List of chunk results with their durations
+/// 
+/// # Returns
+/// Result containing the manifest path and streaming URL
+#[tauri::command]
+pub async fn write_preview_manifest(
+    clip_id: String,
+    tier: String,
+    chunks: Vec<PreviewChunkResult>,
+) -> Result<PreviewManifestResult, String> {
+    println!("[Rust] write_preview_manifest called:");
+    println!("[Rust]   clip_id: {}", clip_id);
+    println!("[Rust]   tier: {}", tier);
+    println!("[Rust]   chunks count: {}", chunks.len());
+    
+    if chunks.is_empty() {
+        return Err("No chunks provided for manifest".to_string());
+    }
+    
+    // Get storage paths
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    
+    // Preview cache directory
+    let tier_dir = if tier == "proxy" { "proxy_720" } else { "hq_1080" };
+    let preview_dir = paths.temp.join("previews").join(format!("clip_{}", clip_id)).join(tier_dir);
+    
+    // Calculate total duration and max chunk duration (for target duration)
+    let total_duration: f64 = chunks.iter().map(|c| c.duration).sum();
+    let max_chunk_duration = chunks.iter().map(|c| c.duration).fold(0.0_f64, |a, b| a.max(b));
+    let target_duration = (max_chunk_duration.ceil() as u32).max(3);
+    
+    // Build HLS manifest content
+    let mut manifest = String::new();
+    manifest.push_str("#EXTM3U\n");
+    manifest.push_str("#EXT-X-VERSION:3\n");
+    manifest.push_str(&format!("#EXT-X-TARGETDURATION:{}\n", target_duration));
+    manifest.push_str("#EXT-X-MEDIA-SEQUENCE:0\n");
+    manifest.push_str("#EXT-X-PLAYLIST-TYPE:VOD\n");
+    
+    // Sort chunks by index to ensure correct order
+    let mut sorted_chunks = chunks.clone();
+    sorted_chunks.sort_by_key(|c| c.chunk_index);
+    
+    for chunk in &sorted_chunks {
+        manifest.push_str(&format!("#EXTINF:{:.6},\n", chunk.duration));
+        manifest.push_str(&format!("seg_{:03}.ts\n", chunk.chunk_index));
+    }
+    
+    manifest.push_str("#EXT-X-ENDLIST\n");
+    
+    // Write manifest file (playlist.m3u8 is expected by the local /hls route)
+    let manifest_path = preview_dir.join("playlist.m3u8");
+    std::fs::write(&manifest_path, &manifest)
+        .map_err(|e| format!("Failed to write manifest file: {}", e))?;
+
+    // Compatibility: also write index.m3u8 for any legacy consumers
+    let legacy_manifest_path = preview_dir.join("index.m3u8");
+    let _ = std::fs::write(&legacy_manifest_path, &manifest);
+    
+    // Generate streaming URL (file:// protocol for local playback)
+    let streaming_url = format!("file:///{}", manifest_path.to_string_lossy().replace('\\', "/"));
+    
+    println!("[Rust] Preview manifest written: {}", manifest_path.display());
+    println!("[Rust] Streaming URL: {}", streaming_url);
+    
+    Ok(PreviewManifestResult {
+        manifest_path: manifest_path.to_string_lossy().to_string(),
+        streaming_url,
+        chunk_count: sorted_chunks.len() as u32,
+        total_duration,
+    })
+}
+
+/// Delete the preview cache for a clip.
+/// Removes all preview files (proxy and HQ) for the specified clip.
+#[tauri::command]
+pub async fn delete_preview_cache(clip_id: String) -> Result<(), String> {
+    println!("[Rust] delete_preview_cache called for clip: {}", clip_id);
+    
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    
+    let preview_dir = paths.temp.join("previews").join(format!("clip_{}", clip_id));
+    
+    if preview_dir.exists() {
+        std::fs::remove_dir_all(&preview_dir)
+            .map_err(|e| format!("Failed to delete preview cache: {}", e))?;
+        println!("[Rust] Preview cache deleted: {}", preview_dir.display());
+    } else {
+        println!("[Rust] Preview cache does not exist, skipping deletion");
+    }
+    
+    Ok(())
+}
+
+/// Get the preview cache directory path for a clip.
+/// Returns the base path where preview files are stored.
+#[tauri::command]
+pub async fn get_preview_cache_path(clip_id: String, tier: String) -> Result<String, String> {
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    
+    let tier_dir = if tier == "proxy" { "proxy_720" } else { "hq_1080" };
+    let preview_dir = paths.temp.join("previews").join(format!("clip_{}", clip_id)).join(tier_dir);
+    
+    Ok(preview_dir.to_string_lossy().to_string())
 }

@@ -24,10 +24,12 @@
         :style="getFramedContainerStyle()"
       >
         <!-- Framed video element - used for non-16:9 single region mode -->
+        <!-- Uses segment preview source when available for seamless playback -->
         <video
           v-show="showFramedPreview && isSingleRegion"
           ref="framedVideoRef"
-          :src="videoSrc || ''"
+          crossorigin="anonymous"
+          :src="effectiveVideoSrcWithPreview || ''"
           class="absolute max-w-none"
           :style="getSingleRegionVideoStyle()"
           @loadedmetadata="onFramedVideoLoadedMetadata"
@@ -46,9 +48,11 @@
             :style="getRegionOutputStyle(region)"
           >
             <!-- Video crop preview - matches POI editor exactly -->
+            <!-- Uses segment preview source when available for seamless playback -->
             <video
               :ref="(el) => setRegionVideoRef(idx, el as HTMLVideoElement)"
-              :src="videoSrc || ''"
+              crossorigin="anonymous"
+              :src="effectiveVideoSrcWithPreview || ''"
               class="absolute max-w-none pointer-events-none"
               :style="getCroppedVideoStyle(region)"
               muted
@@ -67,6 +71,7 @@
       <!-- When segment preview is available, uses the pre-rendered preview video for seamless playback -->
       <video
         ref="videoRef"
+        crossorigin="anonymous"
         :src="effectiveVideoSrcWithPreview || ''"
         class="max-w-full max-h-full object-contain relative"
         :style="getMainVideoComputedStyle()"
@@ -78,10 +83,12 @@
       />
 
       <!-- Hidden audio-only video for framed multi-region mode -->
+      <!-- Uses segment preview source when available for seamless playback -->
       <video
         v-if="showFramedPreview && !isSingleRegion"
         ref="audioVideoRef"
-        :src="videoSrc || ''"
+        crossorigin="anonymous"
+        :src="effectiveVideoSrcWithPreview || ''"
         class="sr-only"
         @loadedmetadata="onAudioVideoLoadedMetadata"
         @timeupdate="onAudioVideoTimeUpdate"
@@ -95,6 +102,7 @@
       <video
         v-if="editorMode && (preloadVideoSrc || activeVideoIndex === 1)"
         ref="preloadVideoRef"
+        crossorigin="anonymous"
         :src="activePreloadSrc"
         class="max-w-full max-h-full object-contain absolute inset-0 m-auto pointer-events-none"
         :style="getPreloadVideoStyle()"
@@ -131,6 +139,15 @@
 
       <!-- Black screen overlay when playhead is in a gap with no video source (editor mode) -->
       <div v-if="showBlackScreen" class="absolute inset-0 bg-black z-[5]" />
+
+      <!-- Segment transition canvas - captures last frame during segment seek to prevent visual glitches -->
+      <canvas
+        v-if="!editorMode && !useSegmentPreview"
+        ref="segmentTransitionCanvasRef"
+        class="absolute inset-0 z-[4] pointer-events-none"
+        :class="showSegmentTransitionFrame ? 'opacity-100' : 'opacity-0'"
+        :style="{ objectFit: 'contain', width: '100%', height: '100%', transition: 'opacity 50ms ease-out' }"
+      />
 
       <!-- Preview generation loading indicator -->
       <div
@@ -522,6 +539,9 @@
     (e: 'subtitleResizeEnd'): void;
     // Track events
     (e: 'trackItemSelect', itemId: string, type: string): void;
+    // Fullscreen events
+    (e: 'fullscreenEnter'): void;
+    (e: 'fullscreenExit'): void;
   }>();
 
   // ... existing refs ...
@@ -634,6 +654,10 @@
   const isSegmentSeeking = ref(false); // Whether we're currently seeking to a new segment
   const segmentSeekTargetTime = ref<number | null>(null); // Target time for segment seek
   const wasPlayingBeforeSegmentSeek = ref(false); // Whether video was playing before segment seek
+
+  // Segment transition canvas state (for clip mode - captures frame during seek to prevent glitches)
+  const segmentTransitionCanvasRef = ref<HTMLCanvasElement | null>(null);
+  const showSegmentTransitionFrame = ref(false); // Whether to show the captured frame during seek
 
   // Crossfade animation state - uses requestAnimationFrame for smooth 60fps opacity transitions
   const crossfadeAnimationId = ref<number | null>(null);
@@ -799,9 +823,23 @@
   watch(
     () => props.segmentPreviewSrc,
     (newSrc, oldSrc) => {
-      if (newSrc && !oldSrc) {
-        console.log('[ClipEditorPreview] Segment preview now available, resetting video state');
+      // Only act when we have a new valid source (not when it becomes null)
+      if (newSrc && newSrc !== oldSrc) {
+        console.log('[ClipEditorPreview] Segment preview now available:', newSrc);
         resetClipVideoState();
+        
+        // Setup HLS for segment preview if it's an HLS manifest
+        if (isHlsUrl(newSrc)) {
+          if (videoRef.value) {
+            updateVideoSource(videoRef.value, newSrc, 'segment-preview');
+          }
+          if (framedVideoRef.value) {
+            updateVideoSource(framedVideoRef.value, newSrc, 'segment-preview-framed');
+          }
+          if (audioVideoRef.value) {
+            updateVideoSource(audioVideoRef.value, newSrc, 'segment-preview-audio');
+          }
+        }
       }
     }
   );
@@ -1411,11 +1449,10 @@
   // This is true when:
   // - We have a segment preview source
   // - We have multiple segments
-  // - NOT in framed preview mode (framed mode requires source resolution for cropping)
-  // Note: showFramedPreview is defined later in this file, but Vue computed properties
-  // are evaluated lazily so the reference order doesn't matter
+  // The preview is used in ALL modes including framed preview - CSS framing is applied on top
+  // This ensures seamless playback without glitches at segment boundaries
   const useSegmentPreview = computed(() => {
-    return !!props.segmentPreviewSrc && sortedSegments.value.length > 1 && !showFramedPreview.value;
+    return !!props.segmentPreviewSrc && sortedSegments.value.length > 1;
   });
 
   // The effective video source - use segment preview if available for seamless playback
@@ -3396,9 +3433,14 @@
       if (props.videoSources && props.videoSources.length > 0) {
         for (const source of props.videoSources) {
           if (currentTime >= source.start_time && currentTime < source.end_time) {
-            // Check if this source has audio extracted (use snake_case as returned from DB)
-            // Database stores as 1/0, so use truthy check instead of strict equality
-            if ((source as any).audio_extracted) {
+            // Check if this source has audio extracted.
+            // SQLite returns numeric columns as strings; treat only explicit 1/true/"1" as extracted.
+            const audioExtractedFlag =
+              (source as any).audio_extracted ?? (source as any).audioExtracted ?? (source as any).audioExtracted;
+            const audioExtracted =
+              audioExtractedFlag === true || audioExtractedFlag === 1 || audioExtractedFlag === '1';
+
+            if (audioExtracted) {
               shouldMute = true;
               break;
             }
@@ -3558,6 +3600,22 @@
       }
 
       if (foundSegmentIndex >= 0) {
+        const seg = segments[foundSegmentIndex];
+        const nextSeg = segments[foundSegmentIndex + 1];
+
+        // If we're approaching the end of this segment and there's a next one,
+        // jump immediately to its start to avoid showing gap/thumbnail frames.
+        // Use a larger threshold (150ms) to give time for seek to complete before
+        // the video plays past the segment end.
+        if (
+          nextSeg &&
+          !isSegmentSeeking.value &&
+          currentVideoTime >= seg.end_time - 0.15
+        ) {
+          performSegmentSeek(nextSeg.start_time, true);
+          return;
+        }
+
         // We're within a valid segment - emit the time update
         emit('timeUpdate', currentVideoTime);
         return;
@@ -3595,8 +3653,44 @@
   }
 
   /**
+   * Capture the current video frame to the segment transition canvas.
+   * This prevents visual glitches during segment seeks by showing a frozen frame.
+   */
+  function captureSegmentTransitionFrame() {
+    const video = showFramedPreview.value && isSingleRegion.value 
+      ? framedVideoRef.value 
+      : videoRef.value;
+    const canvas = segmentTransitionCanvasRef.value;
+    
+    if (!video || !canvas) return;
+    
+    // Only capture if video has valid dimensions
+    if (!video.videoWidth || !video.videoHeight) return;
+    
+    // Set canvas size to match video's natural dimensions
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    
+    // Draw current frame
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
+    
+    showSegmentTransitionFrame.value = true;
+  }
+  
+  /**
+   * Hide the segment transition frame overlay.
+   */
+  function hideSegmentTransitionFrame() {
+    showSegmentTransitionFrame.value = false;
+  }
+
+  /**
    * Perform a controlled seek to a new segment position.
-   * This pauses the video before seeking and resumes after, to prevent stutter.
+   * Captures the current frame to a canvas before seeking to prevent visual glitches,
+   * then hides the canvas after seek completes.
    * @param targetTime - The time to seek to
    * @param shouldResume - Whether to resume playback after the seek completes
    */
@@ -3606,9 +3700,15 @@
     // Mark that we're seeking
     isSegmentSeeking.value = true;
     segmentSeekTargetTime.value = targetTime;
-    wasPlayingBeforeSegmentSeek.value = shouldResume && (props.isPlaying || !videoRef.value.paused);
+    const wasPlaying = shouldResume && (props.isPlaying || !videoRef.value.paused);
+    wasPlayingBeforeSegmentSeek.value = wasPlaying;
 
-    // Pause video before seeking to prevent visual stutter
+    // Capture the current frame to the canvas BEFORE pausing/seeking
+    // This ensures we show a clean frozen frame during the seek
+    captureSegmentTransitionFrame();
+
+    // Pause the video FIRST to prevent it from playing past the segment end
+    // while the seek is happening.
     if (!videoRef.value.paused) {
       videoRef.value.pause();
     }
@@ -3620,7 +3720,7 @@
     };
     videoRef.value.addEventListener('seeked', onSeeked);
 
-    // Perform the seek
+    // Perform the seek - video will jump to target position
     videoRef.value.currentTime = targetTime;
 
     // Fallback timeout in case seeked event doesn't fire
@@ -3634,12 +3734,13 @@
 
   /**
    * Called when a segment seek completes.
-   * Resumes playback if needed and emits the time update.
+   * Resumes playback if we were playing before the seek, then hides the transition frame.
    */
   function onSegmentSeekComplete() {
     if (!videoRef.value) {
       isSegmentSeeking.value = false;
       segmentSeekTargetTime.value = null;
+      hideSegmentTransitionFrame();
       return;
     }
 
@@ -3651,17 +3752,136 @@
     // Emit the time update for the new position
     emit('timeUpdate', targetTime);
 
-    // Resume playback if we were playing before
+    // Resume playback if we were playing before the seek
     if (wasPlayingBeforeSegmentSeek.value) {
       videoRef.value.play().catch((err) => {
         console.warn('[ClipEditorPreview] Failed to resume after segment seek:', err);
       });
     }
 
+    // Hide the transition frame after a short delay to ensure the new frame is rendered
+    // This prevents any flash of the old frame or intermediate decode state
+    setTimeout(() => {
+      hideSegmentTransitionFrame();
+    }, 50);
+
     // Clear seeking state
     isSegmentSeeking.value = false;
     segmentSeekTargetTime.value = null;
     wasPlayingBeforeSegmentSeek.value = false;
+  }
+
+  /**
+   * Handle segment boundary transitions for framed/audio videos.
+   * Returns true if a transition was initiated (caller should return early).
+   */
+  function handleFramedSegmentTransition(video: HTMLVideoElement, currentVideoTime: number): boolean {
+    if (isSegmentSeeking.value) return true; // Already seeking
+
+    const segments = sortedSegments.value;
+    
+    // Find which segment contains the current time
+    let foundSegmentIndex = -1;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (currentVideoTime >= seg.start_time && currentVideoTime <= seg.end_time) {
+        foundSegmentIndex = i;
+        break;
+      }
+    }
+
+    if (foundSegmentIndex >= 0) {
+      const seg = segments[foundSegmentIndex];
+      const nextSeg = segments[foundSegmentIndex + 1];
+
+      // If we're approaching the end of this segment and there's a next one,
+      // jump immediately to its start
+      if (nextSeg && currentVideoTime >= seg.end_time - 0.15) {
+        // Mark as seeking
+        isSegmentSeeking.value = true;
+        segmentSeekTargetTime.value = nextSeg.start_time;
+        const wasPlaying = props.isPlaying || !video.paused;
+        wasPlayingBeforeSegmentSeek.value = wasPlaying;
+
+        // Capture frame before pausing to prevent visual glitches
+        captureSegmentTransitionFrame();
+
+        // Pause to prevent showing frames past segment end
+        if (!video.paused) {
+          video.pause();
+        }
+
+        // Seek to next segment
+        const onSeeked = () => {
+          video.removeEventListener('seeked', onSeeked);
+          // Sync all videos
+          syncAllPreviewVideos(true);
+          emit('timeUpdate', nextSeg.start_time);
+          // Resume if was playing
+          if (wasPlaying) {
+            video.play().catch(() => {});
+          }
+          // Hide transition frame after short delay
+          setTimeout(() => {
+            hideSegmentTransitionFrame();
+          }, 50);
+          // Clear state
+          isSegmentSeeking.value = false;
+          segmentSeekTargetTime.value = null;
+          wasPlayingBeforeSegmentSeek.value = false;
+        };
+        video.addEventListener('seeked', onSeeked);
+        video.currentTime = nextSeg.start_time;
+
+        // Fallback timeout
+        setTimeout(() => {
+          if (isSegmentSeeking.value) {
+            video.removeEventListener('seeked', onSeeked);
+            onSeeked();
+          }
+        }, 200);
+
+        return true;
+      }
+    } else {
+      // We're in a gap between segments - find next segment
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        if (currentVideoTime > seg.end_time) {
+          const nextSeg = segments[i + 1];
+          if (nextSeg && currentVideoTime < nextSeg.start_time) {
+            // In the gap - seek to next segment
+            isSegmentSeeking.value = true;
+            const wasPlaying = props.isPlaying || !video.paused;
+            // Capture frame before pausing
+            captureSegmentTransitionFrame();
+            if (!video.paused) video.pause();
+            video.currentTime = nextSeg.start_time;
+            const onSeeked = () => {
+              video.removeEventListener('seeked', onSeeked);
+              syncAllPreviewVideos(true);
+              emit('timeUpdate', nextSeg.start_time);
+              if (wasPlaying) video.play().catch(() => {});
+              // Hide transition frame after short delay
+              setTimeout(() => {
+                hideSegmentTransitionFrame();
+              }, 50);
+              isSegmentSeeking.value = false;
+            };
+            video.addEventListener('seeked', onSeeked);
+            setTimeout(() => {
+              if (isSegmentSeeking.value) {
+                video.removeEventListener('seeked', onSeeked);
+                onSeeked();
+              }
+            }, 200);
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
   }
 
   // Event handlers for framed video (single-region mode)
@@ -3683,13 +3903,29 @@
   function onFramedVideoTimeUpdate() {
     if (framedVideoRef.value && !isDraggingProgress.value && showFramedPreview.value && isSingleRegion.value) {
       const currentVideoTime = framedVideoRef.value.currentTime;
-      updateVideoMuteState(currentVideoTime);
 
       if (props.editorMode) {
+        updateVideoMuteState(currentVideoTime);
         if (activeVideoIndex.value === 0) {
           emit('timeUpdate', currentVideoTime);
         }
         return;
+      }
+
+      // When using segment preview, the video is continuous - no segment jumping needed
+      // Just map the preview time to source time for subtitle/transcript sync
+      if (useSegmentPreview.value) {
+        const sourceTime = mapPreviewTimeToSource(currentVideoTime);
+        updateVideoMuteState(sourceTime);
+        emit('timeUpdate', sourceTime);
+        return;
+      }
+
+      // Fallback: Handle segment boundary transitions for framed video
+      updateVideoMuteState(currentVideoTime);
+      if (sortedSegments.value.length > 1) {
+        const handled = handleFramedSegmentTransition(framedVideoRef.value, currentVideoTime);
+        if (handled) return;
       }
 
       emit('timeUpdate', currentVideoTime);
@@ -3714,13 +3950,29 @@
   function onAudioVideoTimeUpdate() {
     if (audioVideoRef.value && !isDraggingProgress.value && showFramedPreview.value && !isSingleRegion.value) {
       const currentVideoTime = audioVideoRef.value.currentTime;
-      updateVideoMuteState(currentVideoTime);
 
       if (props.editorMode) {
+        updateVideoMuteState(currentVideoTime);
         if (activeVideoIndex.value === 0) {
           emit('timeUpdate', currentVideoTime);
         }
         return;
+      }
+
+      // When using segment preview, the video is continuous - no segment jumping needed
+      // Just map the preview time to source time for subtitle/transcript sync
+      if (useSegmentPreview.value) {
+        const sourceTime = mapPreviewTimeToSource(currentVideoTime);
+        updateVideoMuteState(sourceTime);
+        emit('timeUpdate', sourceTime);
+        return;
+      }
+
+      // Fallback: Handle segment boundary transitions for audio video
+      updateVideoMuteState(currentVideoTime);
+      if (sortedSegments.value.length > 1) {
+        const handled = handleFramedSegmentTransition(audioVideoRef.value, currentVideoTime);
+        if (handled) return;
       }
 
       emit('timeUpdate', currentVideoTime);
@@ -4361,9 +4613,17 @@
   }
 
   function onFullscreenChange() {
+    const wasFullscreen = isFullscreen.value;
     isFullscreen.value = !!document.fullscreenElement;
     // Update container size when fullscreen changes
     updateContainerSize();
+    
+    // Emit fullscreen events for HQ preview rendering
+    if (isFullscreen.value && !wasFullscreen) {
+      emit('fullscreenEnter');
+    } else if (!isFullscreen.value && wasFullscreen) {
+      emit('fullscreenExit');
+    }
   }
 
   function onKeyDown(e: KeyboardEvent) {

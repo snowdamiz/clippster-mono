@@ -67,13 +67,36 @@
                 />
 
                 <div class="flex-1 min-w-0 min-h-0 flex flex-col items-center justify-start overflow-hidden relative">
+                  <!-- New V2 Preview with timeline-driven playback engine -->
+                  <ClipEditorPreviewV2
+                    v-if="editorMode && useNewPlaybackEngine"
+                    ref="previewV2Ref"
+                    :video-server-port="videoServerPort"
+                    :video-sources="videoSources"
+                    :audio-tracks="audioTracks"
+                    :text-overlays="textOverlays"
+                    :stickers="stickers"
+                    :watermarks="watermarks"
+                    :subtitle-settings="subtitleSettings"
+                    :transcript-words="transcriptWords"
+                    :transcript-segments="transcriptSegments"
+                    :preview-aspect-ratio="previewAspectRatio"
+                    :is-video-muted="isVideoMuted"
+                    @time-update="onPreviewTimeUpdateV2"
+                    @play-state-change="onPlayStateChangeV2"
+                    @video-element-ready="onVideoElementReady"
+                    @update-overlay-position="onUpdateOverlayPosition"
+                  />
+
+                  <!-- Legacy Preview (clip mode or when V2 is disabled) -->
                   <ClipEditorPreview
+                    v-else
                     ref="previewRef"
                     :video-src="effectiveVideoSrc"
                     :preload-video-src="preloadVideoSrc"
                     :segment-preview-src="segmentPreviewStreamingUrl"
                     :segment-time-map="segmentTimeMap"
-                    :is-generating-preview="isGeneratingPreview"
+                    :is-generating-preview="isGeneratingPreviewCombined"
                     :current-time="previewTime"
                     :effective-time="effectivePreviewTime"
                     :is-playing="isPlaying"
@@ -124,6 +147,8 @@
                     @watermark-resize-end="onWatermarkScaleChangeComplete"
                     @video-ended="onVideoEnded"
                     @track-item-select="onTrackItemSelect"
+                    @fullscreen-enter="onFullscreenEnter"
+                    @fullscreen-exit="onFullscreenExit"
                   />
 
                   <!-- Transition frame overlay - shows last frame during source switch to avoid black flash (fallback) -->
@@ -505,7 +530,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+  import { ref, computed, watch, onMounted, onUnmounted, nextTick, triggerRef } from 'vue';
   import { Film, X, Loader2, Check } from 'lucide-vue-next';
   import { Separator } from '@/components/ui/separator';
   import {
@@ -623,6 +648,7 @@
     inheritAttrs: false,
   });
   import ClipEditorPreview from './ClipEditorPreview.vue';
+  import ClipEditorPreviewV2 from './ClipEditorPreviewV2.vue';
   import AspectRatioSelector from './AspectRatioSelector.vue';
   import ClipEditorToolbar from './ClipEditorToolbar.vue';
   import MediaTab from './tabs/MediaTab.vue';
@@ -653,6 +679,7 @@
     type IntroOutroWithOrgProps,
   } from '@/composables/useIntroOutroOperations';
   import { useVideoSourceOperations } from '@/composables/useVideoSourceOperations';
+  import { usePreviewCache, type TimelineSegment, type PreviewChunkEditData } from '@/composables/usePreviewCache';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { invoke } from '@tauri-apps/api/core';
 
@@ -828,28 +855,26 @@
     return commandHistory.canRedo();
   });
 
+  // Feature flag for new playback engine (V2)
+  // Uses double-buffered video elements for seamless segment transitions
+  const useNewPlaybackEngine = ref(true);
+
   // Refs
   const dialogRef = ref<HTMLElement | null>(null);
   const previewRef = ref<InstanceType<typeof ClipEditorPreview> | null>(null);
+  const previewV2Ref = ref<InstanceType<typeof ClipEditorPreviewV2> | null>(null);
   const videoElement = ref<HTMLVideoElement | null>(null);
   const videoDimensions = ref({ width: 0, height: 0 });
   const clipEditId = ref<string | null>(null);
   const videoEditorEditId = ref<string | null>(null); // For video editor mode
 
-  // Segment preview state - for seamless playback across segment cuts
+  // Segment preview state - for seamless playback across segment cuts (legacy single-file approach)
   const segmentPreviewPath = ref<string | null>(null);
   const isGeneratingPreview = ref(false);
   const previewGenerationError = ref<string | null>(null);
   let previewGenerationTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Computed: Segment preview streaming URL (converts file path to HTTP streaming URL)
-  const segmentPreviewStreamingUrl = computed(() => {
-    if (!segmentPreviewPath.value || !videoServerPort.value) {
-      return null;
-    }
-    const encodedPath = btoa(unescape(encodeURIComponent(segmentPreviewPath.value)));
-    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
-  });
+  // Computed: Segment preview streaming URL - defined after previewCache initialization below
 
   // Editor state
   const activeTab = ref<ClipEditorTab>('media');
@@ -866,6 +891,11 @@
   const pendingSeekTime = ref<number | null>(null); // Time to seek to after video source changes
   const shouldResumePlayback = ref(false); // Whether to resume playback after seek completes
   const currentVideoSourceId = ref<string | null>(null); // Track which source is loaded
+  const isGapPlayback = ref(false);
+  const gapEndTime = ref<number | null>(null);
+  const gapNextSourceId = ref<string | null>(null);
+  let gapRafId: number | null = null;
+  let lastGapTimestamp = 0;
   const transitionCanvasRef = ref<HTMLCanvasElement | null>(null); // Canvas for transition frame (fallback)
   const showTransitionFrame = ref(false); // Whether to show the transition frame overlay (fallback)
 
@@ -1529,7 +1559,7 @@
       return null;
     }
 
-    const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
+    const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
     const currentIndex = sortedSources.findIndex((s) => s.id === activeVideoSource.value!.id);
 
     if (currentIndex === -1 || currentIndex >= sortedSources.length - 1) {
@@ -1764,6 +1794,127 @@
     return timeMap;
   });
 
+  // Progressive preview cache - converts segmentTimeMap to TimelineSegment format
+  const previewCacheSegments = computed<TimelineSegment[]>(() => {
+    return segmentTimeMap.value.map((seg) => ({
+      sourceStart: seg.sourceStart,
+      sourceEnd: seg.sourceEnd,
+      timelineStart: seg.previewStart,
+      timelineEnd: seg.previewEnd,
+    }));
+  });
+
+  // Preview cache edit data - contains all overlays/effects for rendering
+  const previewCacheEditData = computed<PreviewChunkEditData | null>(() => {
+    // Build edit data from current state
+    const data: PreviewChunkEditData = {
+      textOverlays: textOverlays.value.map((o) => ({
+        id: o.id,
+        text: o.text,
+        startTime: o.startTime,
+        endTime: o.endTime,
+        positionX: o.position.x,
+        positionY: o.position.y,
+        style: o.style as Record<string, unknown>,
+        animation: o.animation || 'none',
+        perRatioConfigs: o.perRatioConfigs as Record<string, unknown> | undefined,
+        previewHeight: undefined, // Will be set by preview component
+      })),
+      stickers: stickers.value.map((s) => ({
+        id: s.id,
+        stickerPath: s.stickerPath,
+        stickerType: s.stickerType,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        positionX: s.position.x,
+        positionY: s.position.y,
+        scale: s.scale,
+        rotation: s.rotation,
+        animation: s.animation || 'none',
+        perRatioConfigs: s.perRatioConfigs as Record<string, unknown> | undefined,
+      })),
+      watermarks: watermarks.value.map((w) => ({
+        id: w.id,
+        watermarkPath: w.filePath,
+        startTime: w.startTime,
+        endTime: w.endTime,
+        positionX: w.position.x,
+        positionY: w.position.y,
+        scale: w.scale,
+        opacity: w.opacity,
+        perRatioConfigs: w.perRatioConfigs as Record<string, unknown> | undefined,
+      })),
+      filterSegments: filterSegments.value.map((f) => ({
+        startTime: f.startTime,
+        endTime: f.endTime,
+        filterType: f.settings.preset || 'custom',
+        settings: f.settings as Record<string, unknown>,
+      })),
+      audioTracks: audioTracks.value
+        .filter((t) => !t.isMuted)
+        .map((t) => ({
+          filePath: t.filePath,
+          startTime: t.startTime,
+          endTime: t.endTime,
+          volume: t.volume,
+          isMuted: t.isMuted,
+        })),
+      videoVolumeDb: originalDb.value,
+    };
+
+    // Only return data if there's something to render
+    const hasOverlays =
+      data.textOverlays.length > 0 ||
+      data.stickers.length > 0 ||
+      data.watermarks.length > 0 ||
+      data.filterSegments.length > 0 ||
+      data.audioTracks.length > 0;
+
+    return hasOverlays ? data : null;
+  });
+
+  // Preview aspect ratio ref
+  const previewAspectRatioRef = computed(() => previewAspectRatio.value);
+
+  // Initialize progressive preview cache composable
+  const clipIdRef = computed(() => props.clipId || `editor_${props.editorProjectId}`);
+  const previewCache = usePreviewCache(
+    clipIdRef,
+    effectiveVideoPath,
+    previewCacheSegments,
+    videoServerPort,
+    previewCacheEditData,
+    previewAspectRatioRef
+  );
+
+  // Combined isGeneratingPreview that includes both legacy and progressive cache
+  const isGeneratingPreviewCombined = computed(() => {
+    return isGeneratingPreview.value || previewCache.isRendering.value;
+  });
+
+  // Computed: Segment preview streaming URL (converts file path to HTTP streaming URL)
+  // Uses progressive preview cache if available, falls back to legacy single-file preview
+  // Only used for multi-segment clips - single segment clips use original source directly
+  const segmentPreviewStreamingUrl = computed(() => {
+    // Only use preview for multi-segment clips
+    if (playbackSegments.value.length <= 1) {
+      return null;
+    }
+    
+    // Use progressive preview cache if available and ready
+    if (previewCache.effectiveManifestUrl.value) {
+      console.log('[ClipEditorDialog] Using progressive preview cache URL:', previewCache.effectiveManifestUrl.value);
+      return previewCache.effectiveManifestUrl.value;
+    }
+    // Fall back to legacy single-file preview
+    if (!segmentPreviewPath.value || !videoServerPort.value) {
+      return null;
+    }
+    const encodedPath = btoa(unescape(encodeURIComponent(segmentPreviewPath.value)));
+    console.log('[ClipEditorDialog] Using legacy preview:', segmentPreviewPath.value);
+    return `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+  });
+
   // Generate a pre-rendered preview video for seamless segment playback
   // This eliminates runtime seeking by creating a single continuous video file
   async function generateSegmentPreview() {
@@ -1805,12 +1956,14 @@
 
     try {
       // Delete previous preview file before generating new one
+      // Also clear the preview path immediately so we don't keep using a stale preview
       if (segmentPreviewPath.value) {
         try {
           await invoke('delete_segment_preview', { previewPath: segmentPreviewPath.value });
         } catch (e) {
           console.warn('[ClipEditorDialog] Failed to delete old preview:', e);
         }
+        segmentPreviewPath.value = null;
       }
 
       // Convert segments to the format expected by the Rust command
@@ -1838,14 +1991,33 @@
   }
 
   // Debounced preview generation to avoid rapid regeneration during quick edits
+  // Now uses progressive preview cache instead of legacy single-file approach
   function triggerPreviewGeneration() {
-    if (previewGenerationTimeout) {
-      clearTimeout(previewGenerationTimeout);
+    // Invalidate the progressive preview cache - it handles debouncing internally
+    previewCache.invalidateCache();
+  }
+
+  // Start preview cache rendering when clip opens (for multi-segment clips)
+  async function startPreviewCacheRender() {
+    const segments = playbackSegments.value;
+    
+    // Only render preview cache for multi-segment clips
+    if (segments.length <= 1) {
+      return;
     }
-    // Wait 500ms after last edit before generating preview
-    previewGenerationTimeout = setTimeout(() => {
-      generateSegmentPreview();
-    }, 500);
+
+    // Ensure video server port is available
+    if (!videoServerPort.value) {
+      try {
+        videoServerPort.value = await invoke<number>('get_video_server_port');
+      } catch (e) {
+        console.error('[ClipEditorDialog] Failed to get video server port:', e);
+        return;
+      }
+    }
+
+    // Start proxy render
+    previewCache.startProxyRender();
   }
 
   // Clean up preview files when component unmounts or clip closes
@@ -1854,6 +2026,11 @@
       clearTimeout(previewGenerationTimeout);
       previewGenerationTimeout = null;
     }
+    
+    // Clean up progressive preview cache
+    await previewCache.cleanup();
+    
+    // Clean up legacy single-file preview
     if (segmentPreviewPath.value) {
       try {
         await invoke('delete_segment_preview', { previewPath: segmentPreviewPath.value });
@@ -2778,7 +2955,7 @@
       currentVideoSourceId.value = incomingSource.id;
     } else {
       // Fallback: find next source by order
-      const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
+      const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
       const currentIdx = sortedSources.findIndex((s) => s.id === currentVideoSourceId.value);
 
       if (currentIdx >= 0 && currentIdx < sortedSources.length - 1) {
@@ -2912,6 +3089,10 @@
       return;
     }
 
+    if (isGapPlayback.value) {
+      return;
+    }
+
     if (editorMode.value) {
       // In editor mode, time is the video element's currentTime (position within source file)
       // We need to track which source this time belongs to
@@ -2980,6 +3161,144 @@
     }
   }
 
+  // V2 Playback Engine event handlers (new timeline-driven system)
+  function onPreviewTimeUpdateV2(time: number) {
+    // V2 engine directly provides timeline time, no mapping needed
+    const oldTime = previewTime.value;
+    previewTime.value = time;
+    
+    // Log every 0.5 seconds
+    if (Math.floor(oldTime * 2) !== Math.floor(time * 2)) {
+      console.log(`[ClipEditorDialog] 📍 previewTime updated: ${oldTime.toFixed(3)}s → ${time.toFixed(3)}s`);
+    }
+  }
+
+  function onPlayStateChangeV2(playing: boolean) {
+    isPlaying.value = playing;
+  }
+
+  // Fullscreen event handlers for HQ preview rendering
+  function onFullscreenEnter() {
+    console.log('[ClipEditorDialog] Fullscreen entered, triggering HQ render');
+    // Trigger HQ preview cache rendering when entering fullscreen
+    previewCache.startHqRender();
+  }
+
+  function onFullscreenExit() {
+    console.log('[ClipEditorDialog] Fullscreen exited');
+    // HQ cache remains available for future fullscreen sessions
+  }
+
+  function stopGapPlayback(clearState = false) {
+    if (gapRafId !== null) {
+      cancelAnimationFrame(gapRafId);
+      gapRafId = null;
+    }
+    lastGapTimestamp = 0;
+    isGapPlayback.value = false;
+    if (clearState) {
+      gapEndTime.value = null;
+      gapNextSourceId.value = null;
+    }
+  }
+
+  function transitionToSource(nextSource: VideoEditorSource) {
+    isSeeking.value = true;
+
+    // Check which video is currently active (main or preload)
+    const isMainActive = previewRef.value?.isMainVideoActive?.() ?? true;
+
+    if (isMainActive) {
+      // Main video is active, try to swap to preloaded video (normal case)
+      const swapSucceeded = previewRef.value?.swapToPreloadedVideo?.(nextSource.trim_start);
+
+      if (swapSucceeded) {
+        // Seamless swap succeeded - update our state to match
+        previewTime.value = nextSource.start_time;
+        currentVideoSourceId.value = nextSource.id;
+
+        // Clear seeking flag after a short delay
+        setTimeout(() => {
+          isSeeking.value = false;
+        }, 50);
+        return;
+      }
+
+      // Fallback: capture frame and switch src the traditional way
+      shouldResumePlayback.value = isPlaying.value;
+      captureTransitionFrame();
+
+      // Update timeline position to trigger the source switch
+      previewTime.value = nextSource.start_time;
+      currentVideoSourceId.value = nextSource.id;
+      pendingSeekTime.value = nextSource.trim_start;
+      return;
+    }
+
+    // Preload video is active (after a previous swap), need to swap back to main
+    previewRef.value?.resetActiveVideo?.();
+    shouldResumePlayback.value = isPlaying.value;
+
+    // Now update state - this will trigger editorVideoSrc to change and load the new source
+    previewTime.value = nextSource.start_time;
+    currentVideoSourceId.value = nextSource.id;
+    pendingSeekTime.value = nextSource.trim_start;
+  }
+
+  function startGapPlayback(nextSource: VideoEditorSource, startTime: number, endTime: number) {
+    stopGapPlayback(false);
+    isGapPlayback.value = true;
+    gapEndTime.value = endTime;
+    gapNextSourceId.value = nextSource.id;
+    currentVideoSourceId.value = null;
+    pendingSeekTime.value = null;
+    previewTime.value = startTime;
+
+    if (videoElement.value && !videoElement.value.paused) {
+      videoElement.value.pause();
+    }
+
+    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
+    if (preloadEl && !preloadEl.paused) {
+      preloadEl.pause();
+    }
+
+    audioElements.value.forEach((audio) => audio.pause());
+    lastGapTimestamp = 0;
+
+    const step = (timestamp: number) => {
+      if (!isGapPlayback.value) {
+        return;
+      }
+
+      if (!isPlaying.value) {
+        gapRafId = requestAnimationFrame(step);
+        return;
+      }
+
+      if (!lastGapTimestamp) {
+        lastGapTimestamp = timestamp;
+      }
+
+      const delta = (timestamp - lastGapTimestamp) / 1000;
+      lastGapTimestamp = timestamp;
+
+      const nextTime = Math.min((previewTime.value ?? startTime) + delta, endTime);
+      previewTime.value = nextTime;
+      syncAudioWithVideo();
+
+      if (nextTime >= endTime - 0.001) {
+        stopGapPlayback(true);
+        transitionToSource(nextSource);
+        return;
+      }
+
+      gapRafId = requestAnimationFrame(step);
+    };
+
+    gapRafId = requestAnimationFrame(step);
+  }
+
   function onVideoEnded() {
     // In clip mode (non-editor), just stop playback when video ends
     if (!editorMode.value) {
@@ -3001,7 +3320,7 @@
       let incomingSource = transitionIncomingSource.value;
       if (!incomingSource) {
         // Fallback: find the next source in order
-        const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
+        const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
         const currentIdx = sortedSources.findIndex((s) => s.id === currentVideoSourceId.value);
         if (currentIdx >= 0 && currentIdx < sortedSources.length - 1) {
           incomingSource = sortedSources[currentIdx + 1];
@@ -3041,53 +3360,20 @@
       return;
     }
 
-    // Sort sources by order_index to find the next source
-    const sortedSources = [...videoSources.value].sort((a, b) => a.order_index - b.order_index);
+    // Sort sources by timeline position to find the next source
+    const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
     const currentIndex = sortedSources.findIndex((s) => s.id === currentSource.id);
     const nextSource = sortedSources[currentIndex + 1];
 
     if (nextSource) {
-      isSeeking.value = true;
+      const gapDuration = nextSource.start_time - currentSource.end_time;
 
-      // Check which video is currently active (main or preload)
-      const isMainActive = previewRef.value?.isMainVideoActive?.() ?? true;
-
-      if (isMainActive) {
-        // Main video is active, try to swap to preloaded video (normal case)
-        const swapSucceeded = previewRef.value?.swapToPreloadedVideo?.(nextSource.trim_start);
-
-        if (swapSucceeded) {
-          // Seamless swap succeeded - update our state to match
-          previewTime.value = nextSource.start_time;
-          currentVideoSourceId.value = nextSource.id;
-
-          // Clear seeking flag after a short delay
-          setTimeout(() => {
-            isSeeking.value = false;
-          }, 50);
-        } else {
-          // Fallback: capture frame and switch src the traditional way
-          captureTransitionFrame();
-
-          // Update timeline position to trigger the source switch
-          previewTime.value = nextSource.start_time;
-          currentVideoSourceId.value = nextSource.id;
-          pendingSeekTime.value = nextSource.trim_start;
-
-          // The video src will change via reactivity, and once loaded, it will seek and play
-          // The transition frame will be hidden in onVideoLoaded
-        }
-      } else {
-        // Preload video is active (after a previous swap), need to swap back to main
-        // IMPORTANT: Reset activeVideoIndex FIRST before changing currentVideoSourceId
-        // This ensures the editorVideoSrc watch doesn't skip loading the new source
-        previewRef.value?.resetActiveVideo?.();
-
-        // Now update state - this will trigger editorVideoSrc to change and load the new source
-        previewTime.value = nextSource.start_time;
-        currentVideoSourceId.value = nextSource.id;
-        pendingSeekTime.value = nextSource.trim_start;
+      if (gapDuration > 0.02) {
+        startGapPlayback(nextSource, currentSource.end_time, nextSource.start_time);
+        return;
       }
+
+      transitionToSource(nextSource);
     } else {
       // No more sources, stop playback and go back to beginning
       isPlaying.value = false;
@@ -3144,11 +3430,34 @@
     }
 
     if (isPlaying.value) {
+      stopGapPlayback(true);
       previewRef.value.pause();
       // Pause all audio tracks
       audioElements.value.forEach((audio) => audio.pause());
       isPlaying.value = false;
     } else {
+      if (editorMode.value && !activeVideoSource.value) {
+        const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
+        const nextSource = sortedSources.find((s) => s.start_time > previewTime.value) || null;
+        if (nextSource) {
+          isPlaying.value = true;
+          startGapPlayback(nextSource, previewTime.value, nextSource.start_time);
+          return;
+        }
+      }
+
+      // For multi-segment clips, wait for preview cache to be ready
+      // This ensures seamless playback without glitches at segment boundaries
+      if (playbackSegments.value.length > 1 && !previewCache.isPreviewReady.value) {
+        // Preview cache is still rendering - start it if not already started
+        if (!previewCache.proxyState.value.isRendering) {
+          startPreviewCacheRender();
+        }
+        console.log('[togglePlay] Waiting for preview cache to be ready...');
+        // Don't block the UI, just return - user can try again
+        return;
+      }
+
       // Check if active video is ready before playing
       const activeVideo = activeVideoElement.value;
       if (activeVideo) {
@@ -3175,20 +3484,35 @@
     }
   }
 
-  function seekTo(time: number) {
+  function seekTo(time: number, options?: { shouldResumePlayback?: boolean }) {
+    console.log(`[ClipEditorDialog] 🎯 seekTo called: ${time.toFixed(3)}s, options:`, options);
+    stopGapPlayback(true);
     if (editorMode.value) {
       // Editor mode: time is already the global timeline position
       isSeeking.value = true;
+      const oldPreviewTime = previewTime.value;
       previewTime.value = time;
+      console.log(`[ClipEditorDialog] 📍 Set previewTime: ${oldPreviewTime.toFixed(3)}s → ${time.toFixed(3)}s`);
+      
+      // CRITICAL: Update playback engine's currentTime so it knows where we are
+      // This ensures when play is pressed, the engine syncs video to the correct position
+      if (useNewPlaybackEngine.value && previewV2Ref.value?.seek) {
+        console.log(`[ClipEditorDialog] 🎯 Calling previewV2Ref.seek(${time.toFixed(3)}s)`);
+        previewV2Ref.value.seek(time);
+      }
 
       // Reset crossfade state when seeking
       crossfadeStarted.value = false;
       lastCrossfadeTransitionId.value = null;
 
-      // IMPORTANT: Reset shouldResumePlayback at start of seek
-      // Only set to true if video was actually playing (prevents auto-play bugs)
-      const actuallyPlaying = videoElement.value ? !videoElement.value.paused : false;
-      shouldResumePlayback.value = isPlaying.value && actuallyPlaying;
+      // IMPORTANT: Use explicit shouldResumePlayback from options if provided (from playhead drag end)
+      // Otherwise, detect if video was actually playing (prevents auto-play bugs)
+      if (options?.shouldResumePlayback !== undefined) {
+        shouldResumePlayback.value = options.shouldResumePlayback;
+      } else {
+        const actuallyPlaying = videoElement.value ? !videoElement.value.paused : false;
+        shouldResumePlayback.value = isPlaying.value && actuallyPlaying;
+      }
 
       // Find the source that contains this time
       // Sort sources to handle overlaps consistently (prefer earlier source)
@@ -3324,11 +3648,6 @@
         const absoluteTime = props.clipStartTime + time;
         videoElement.value.currentTime = absoluteTime;
         previewTime.value = absoluteTime; // Store absolute time
-
-        // Reset clip video state and re-initialize preload for seamless segment transitions
-        if (previewRef.value?.resetClipVideoState) {
-          previewRef.value.resetClipVideoState();
-        }
       }
     }
   }
@@ -5827,11 +6146,15 @@
         selectedSegmentIds.value.add(segmentId);
       }
       lastSelectedSegmentId.value = segmentId;
+      // Trigger reactivity manually
+      triggerRef(selectedSegmentIds);
     } else {
       // Regular click: Select only this segment
       selectedSegmentIds.value.clear();
       selectedSegmentIds.value.add(segmentId);
       lastSelectedSegmentId.value = segmentId;
+      // Trigger reactivity manually
+      triggerRef(selectedSegmentIds);
     }
   }
 
@@ -5849,6 +6172,9 @@
     for (let i = startIndex; i <= endIndex; i++) {
       selectedSegmentIds.value.add(trimSegments.value[i].id);
     }
+    
+    // Trigger reactivity manually
+    triggerRef(selectedSegmentIds);
   }
 
   function clearSelection() {
@@ -6250,10 +6576,10 @@
           // Auto-apply creator watermark if available (from props or video sources)
           await applyCreatorWatermark();
 
-          // Generate segment preview if there are multiple segments
+          // Start progressive preview cache rendering if there are multiple segments
           // This enables seamless playback across segment cuts
           if (trimSegments.value.length > 1) {
-            triggerPreviewGeneration();
+            startPreviewCacheRender();
           }
         } else if (props.clipId) {
           // Clip mode - existing behavior
@@ -6291,10 +6617,10 @@
           // Load video info for aspect tab
           await loadVideoInfo();
 
-          // Generate segment preview if there are multiple segments
+          // Start progressive preview cache rendering if there are multiple segments
           // This enables seamless playback across segment cuts
           if (trimSegments.value.length > 1) {
-            triggerPreviewGeneration();
+            startPreviewCacheRender();
           }
         }
 
