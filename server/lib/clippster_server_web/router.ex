@@ -308,6 +308,7 @@ defmodule ClippsterServerWeb.Router do
     # Organization subscriptions
     get("/organizations/:id/subscription", OrganizationSubscriptionController, :show)
     get("/organizations/:id/subscription/tiers", OrganizationSubscriptionController, :tiers)
+    post("/organizations/:id/subscription/promo/validate", OrganizationSubscriptionController, :validate_promo)
     post("/organizations/:id/subscription/checkout", OrganizationSubscriptionController, :checkout)
     post("/organizations/:id/subscription/addons/checkout", OrganizationSubscriptionController, :addon_checkout)
     post("/organizations/:id/subscription/cancel", OrganizationSubscriptionController, :cancel)

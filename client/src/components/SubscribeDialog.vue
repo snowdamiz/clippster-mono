@@ -63,26 +63,6 @@
                         </div>
                       </div>
 
-                      <div class="subscribe-dialog__feature">
-                        <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <Sparkles :size="18" />
-                        </div>
-                        <div class="subscribe-dialog__feature-content">
-                          <h3 class="subscribe-dialog__feature-title">AI-Powered Detection</h3>
-                          <p class="subscribe-dialog__feature-desc">Find viral moments automatically with advanced AI</p>
-                        </div>
-                      </div>
-
-                      <div class="subscribe-dialog__feature">
-                        <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <Film :size="18" />
-                        </div>
-                        <div class="subscribe-dialog__feature-content">
-                          <h3 class="subscribe-dialog__feature-title">Professional Editor</h3>
-                          <p class="subscribe-dialog__feature-desc">Timeline editing with multi-platform formatting</p>
-                        </div>
-                      </div>
-
                       <div v-if="context === 'organization' && plan.seats" class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
                           <Users :size="18" />
@@ -103,13 +83,63 @@
                         </div>
                       </div>
 
-                      <div class="subscribe-dialog__feature">
+                      <div v-if="context === 'organization'" class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <TrendingUp :size="18" />
+                          <FolderOpen :size="18" />
                         </div>
                         <div class="subscribe-dialog__feature-content">
-                          <h3 class="subscribe-dialog__feature-title">Credits Roll Over</h3>
-                          <p class="subscribe-dialog__feature-desc">Unused credits never expire</p>
+                          <h3 class="subscribe-dialog__feature-title">Shared Assets</h3>
+                          <p class="subscribe-dialog__feature-desc">Team-wide fonts, images, and watermarks</p>
+                        </div>
+                      </div>
+
+                      <div v-if="context === 'organization'" class="subscribe-dialog__feature">
+                        <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
+                          <Calendar :size="18" />
+                        </div>
+                        <div class="subscribe-dialog__feature-content">
+                          <h3 class="subscribe-dialog__feature-title">Content Scheduling</h3>
+                          <p class="subscribe-dialog__feature-desc">Schedule posts across social platforms</p>
+                        </div>
+                      </div>
+
+                      <div v-if="context === 'organization'" class="subscribe-dialog__feature">
+                        <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
+                          <Megaphone :size="18" />
+                        </div>
+                        <div class="subscribe-dialog__feature-content">
+                          <h3 class="subscribe-dialog__feature-title">Campaign Management</h3>
+                          <p class="subscribe-dialog__feature-desc">Run clipping campaigns with your team</p>
+                        </div>
+                      </div>
+
+                      <div v-if="context === 'organization'" class="subscribe-dialog__feature">
+                        <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
+                          <BarChart3 :size="18" />
+                        </div>
+                        <div class="subscribe-dialog__feature-content">
+                          <h3 class="subscribe-dialog__feature-title">Analytics & Insights</h3>
+                          <p class="subscribe-dialog__feature-desc">Track performance across all channels</p>
+                        </div>
+                      </div>
+
+                      <div v-if="context === 'organization'" class="subscribe-dialog__feature">
+                        <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
+                          <Share2 :size="18" />
+                        </div>
+                        <div class="subscribe-dialog__feature-content">
+                          <h3 class="subscribe-dialog__feature-title">Team Collaboration</h3>
+                          <p class="subscribe-dialog__feature-desc">Real-time messaging and clip sharing</p>
+                        </div>
+                      </div>
+
+                      <div class="subscribe-dialog__feature">
+                        <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
+                          <MoreHorizontal :size="18" />
+                        </div>
+                        <div class="subscribe-dialog__feature-content">
+                          <h3 class="subscribe-dialog__feature-title">And More</h3>
+                          <p class="subscribe-dialog__feature-desc">{{ context === 'organization' ? 'Advanced workflows and integrations' : 'Plus many more premium features' }}</p>
                         </div>
                       </div>
                     </div>
@@ -155,62 +185,45 @@
                     </div>
                   </div>
 
-                  <!-- Promo Code Section (User context only) -->
-                  <div v-if="context === 'user'" class="subscribe-dialog__promo">
-                    <button
-                      type="button"
-                      class="subscribe-dialog__promo-toggle"
-                      @click="showPromoCode = !showPromoCode"
-                    >
-                      <Tag :size="16" />
-                      <span>Have a promo code?</span>
-                      <ChevronDown
-                        :size="16"
-                        class="subscribe-dialog__promo-chevron"
-                        :class="{ 'subscribe-dialog__promo-chevron--open': showPromoCode }"
+                  <!-- Promo Code Section -->
+                  <div class="subscribe-dialog__promo">
+                    <label class="subscribe-dialog__promo-label">
+                      <Tag :size="14" />
+                      Promo Code
+                    </label>
+                    <div class="subscribe-dialog__promo-input-group">
+                      <input
+                        v-model="promoCode"
+                        type="text"
+                        placeholder="Enter discount code"
+                        class="subscribe-dialog__promo-input"
+                        :disabled="validatingPromo"
+                        @keyup.enter="validatePromoCode"
                       />
-                    </button>
+                      <button
+                        type="button"
+                        @click="validatePromoCode"
+                        class="subscribe-dialog__promo-btn"
+                        :disabled="validatingPromo || !promoCode.trim()"
+                      >
+                        <Loader2 v-if="validatingPromo" :size="16" class="subscribe-dialog__spinner" />
+                        <span v-else>Apply</span>
+                      </button>
+                    </div>
 
-                    <Transition name="promo-slide">
-                      <div v-if="showPromoCode" class="subscribe-dialog__promo-input-wrapper">
-                        <div class="subscribe-dialog__promo-input-group">
-                          <input
-                            v-model="promoCode"
-                            type="text"
-                            placeholder="Enter code"
-                            class="subscribe-dialog__promo-input"
-                            :disabled="validatingPromo"
-                            @keyup.enter="validatePromoCode"
-                          />
-                          <button
-                            type="button"
-                            @click="validatePromoCode"
-                            class="subscribe-dialog__promo-btn"
-                            :disabled="validatingPromo || !promoCode.trim()"
-                          >
-                            <Loader2 v-if="validatingPromo" :size="16" class="subscribe-dialog__spinner" />
-                            <Check v-else :size="16" />
-                          </button>
-                        </div>
+                    <div v-if="promoError" class="subscribe-dialog__promo-error">
+                      <AlertCircle :size="14" />
+                      <span>{{ promoError }}</span>
+                    </div>
 
-                        <div v-if="promoError" class="subscribe-dialog__promo-error">
-                          <AlertCircle :size="14" />
-                          <span>{{ promoError }}</span>
-                        </div>
-
-                        <div v-if="validatedPromo" class="subscribe-dialog__promo-success">
-                          <Percent :size="14" />
-                          <span>{{ validatedPromo.percent_off }}% discount applied!</span>
-                          <button type="button" @click="clearPromoCode" class="subscribe-dialog__promo-clear">
-                            <X :size="14" />
-                          </button>
-                        </div>
-                      </div>
-                    </Transition>
+                    <div v-if="validatedPromo" class="subscribe-dialog__promo-success">
+                      <Percent :size="14" />
+                      <span>{{ validatedPromo.percent_off }}% discount applied!</span>
+                      <button type="button" @click="clearPromoCode" class="subscribe-dialog__promo-clear">
+                        <X :size="14" />
+                      </button>
+                    </div>
                   </div>
-
-                  <!-- Spacer to push payment section to bottom -->
-                  <div class="subscribe-dialog__spacer"></div>
 
                   <!-- Payment Section -->
                   <div class="subscribe-dialog__payment-wrapper">
@@ -254,16 +267,6 @@
                         </button>
                       </div>
                     </div>
-
-                    <!-- Cancel Button -->
-                    <button
-                      type="button"
-                      class="subscribe-dialog__cancel-btn"
-                      @click="handleClose"
-                      :disabled="processing"
-                    >
-                      Cancel
-                    </button>
                   </div>
                 </div>
               </div>
@@ -340,10 +343,14 @@ import {
   AlertTriangle,
   AlertCircle,
   Tag,
-  ChevronDown,
-  Check,
   Percent,
   RefreshCcw,
+  FolderOpen,
+  Calendar,
+  BarChart3,
+  Share2,
+  Megaphone,
+  MoreHorizontal,
 } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
 import api from '@/services/api';
@@ -386,8 +393,7 @@ const paymentStatus = ref('');
 const errorMessage = ref('');
 const paymentMethod = ref<'stripe' | 'crypto' | null>(null);
 
-// Promo code state (user only)
-const showPromoCode = ref(false);
+// Promo code state
 const promoCode = ref('');
 const validatedPromo = ref<any>(null);
 const validatingPromo = ref(false);
@@ -395,7 +401,7 @@ const promoError = ref('');
 
 const discountedPrice = computed(() => {
   const basePrice = props.plan.price_usd;
-  if (validatedPromo.value && props.context === 'user') {
+  if (validatedPromo.value) {
     const discount = validatedPromo.value.percent_off / 100;
     return (basePrice * (1 - discount)).toFixed(2);
   }
@@ -409,7 +415,19 @@ async function validatePromoCode() {
   promoError.value = '';
 
   try {
-    const response = await promoCodesApi.validatePromoCode(promoCode.value.trim(), props.plan.id);
+    let response;
+    if (props.context === 'organization' && props.organizationId) {
+      // Organization context - use org validation endpoint
+      response = await api.post(`/organizations/${props.organizationId}/subscription/promo/validate`, {
+        code: promoCode.value.trim(),
+        tier: props.plan.id,
+        type: 'subscription'
+      });
+      response = response.data;
+    } else {
+      // User context - use existing user validation
+      response = await promoCodesApi.validatePromoCode(promoCode.value.trim(), props.plan.id);
+    }
 
     if (response.success && response.promo) {
       validatedPromo.value = response.promo;
@@ -420,7 +438,7 @@ async function validatePromoCode() {
     }
   } catch (error: any) {
     validatedPromo.value = null;
-    promoError.value = error.message || 'Failed to validate promo code';
+    promoError.value = error.response?.data?.error || error.message || 'Failed to validate promo code';
   } finally {
     validatingPromo.value = false;
   }
@@ -453,6 +471,11 @@ async function initiateStripePayment() {
       payload = props.type === 'addon'
         ? { addon_tier: props.plan.id }
         : { tier: props.plan.id };
+
+      // Add promo code for organization if validated
+      if (validatedPromo.value && promoCode.value.trim()) {
+        payload.promo_code = promoCode.value.trim();
+      }
     } else {
       endpoint = '/subscription/checkout';
       payload = { tier: props.plan.id };
@@ -521,6 +544,11 @@ async function initiateCryptoPayment() {
         tier: props.plan.id,
         type: props.type || 'base',
       };
+
+      // Add promo code for organization if validated
+      if (validatedPromo.value && promoCode.value.trim()) {
+        quotePayload.promo_code = promoCode.value.trim();
+      }
     } else {
       quoteEndpoint = '/subscription/crypto-quote';
       confirmEndpoint = '/subscription/crypto-confirm';
@@ -552,6 +580,11 @@ async function initiateCryptoPayment() {
             tx_signature: paymentResult.signature,
             from_address: paymentResult.from_address,
           };
+
+          // Add promo code for organization if validated
+          if (validatedPromo.value && promoCode.value.trim()) {
+            confirmPayload.promo_code = promoCode.value.trim();
+          }
         } else {
           confirmPayload = {
             tier: props.plan.id,
@@ -622,7 +655,6 @@ function resetDialog() {
   paymentStatus.value = '';
   errorMessage.value = '';
   paymentMethod.value = null;
-  showPromoCode.value = false;
   promoCode.value = '';
   validatedPromo.value = null;
   promoError.value = '';
@@ -662,6 +694,7 @@ watch(() => props.open, (isOpen) => {
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  margin-top: 30px;
 }
 
 /* ===== Accent Bar ===== */
@@ -850,7 +883,7 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__content {
   display: flex;
   flex-direction: column;
-  padding: 2rem 1.5rem 1.5rem;
+  padding: 2rem 1.5rem 2rem;
   gap: 1.25rem;
   overflow-y: auto;
   min-height: 0;
@@ -860,11 +893,6 @@ watch(() => props.open, (isOpen) => {
   .subscribe-dialog__content {
     padding: 2.5rem 2rem 2rem;
   }
-}
-
-.subscribe-dialog__spacer {
-  flex: 1;
-  min-height: 1rem;
 }
 
 /* ===== Summary Card ===== */
@@ -943,42 +971,22 @@ watch(() => props.open, (isOpen) => {
 
 /* ===== Promo Code Section ===== */
 .subscribe-dialog__promo {
-  padding: 1rem;
+  padding: 1.25rem;
   background-color: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
   border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-.subscribe-dialog__promo-toggle {
+.subscribe-dialog__promo-label {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  width: 100%;
-  padding: 0;
-  background: transparent;
-  border: none;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: 0.8125rem;
+  font-weight: 600;
   color: var(--sidebar-text);
-  cursor: pointer;
-  transition: color 150ms ease;
-}
-
-.subscribe-dialog__promo-toggle:hover {
-  color: var(--sidebar-accent);
-}
-
-.subscribe-dialog__promo-chevron {
-  margin-left: auto;
-  transition: transform 200ms ease;
-}
-
-.subscribe-dialog__promo-chevron--open {
-  transform: rotate(180deg);
-}
-
-.subscribe-dialog__promo-input-wrapper {
-  margin-top: 0.75rem;
 }
 
 .subscribe-dialog__promo-input-group {
@@ -1011,14 +1019,17 @@ watch(() => props.open, (isOpen) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  gap: 0.375rem;
+  padding: 0 1rem;
   background-color: var(--sidebar-accent);
   color: white;
   border: none;
   border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
   cursor: pointer;
   transition: all 150ms ease;
+  white-space: nowrap;
 }
 
 .subscribe-dialog__promo-btn:disabled {
@@ -1034,8 +1045,7 @@ watch(() => props.open, (isOpen) => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.625rem;
-  margin-top: 0.5rem;
+  padding: 0.625rem 0.75rem;
   background-color: rgba(239, 68, 68, 0.1);
   border-radius: 6px;
   font-size: 0.75rem;
@@ -1046,8 +1056,7 @@ watch(() => props.open, (isOpen) => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.625rem;
-  margin-top: 0.5rem;
+  padding: 0.625rem 0.75rem;
   background-color: rgba(16, 185, 129, 0.1);
   border-radius: 6px;
   font-size: 0.75rem;
@@ -1079,7 +1088,7 @@ watch(() => props.open, (isOpen) => {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  margin-top: auto;
+  margin-bottom: 1rem;
 }
 
 /* ===== Payment Section ===== */
@@ -1182,30 +1191,6 @@ watch(() => props.open, (isOpen) => {
   background: linear-gradient(135deg, #6a52d9 0%, #5c45c7 100%);
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(124, 101, 232, 0.4);
-}
-
-.subscribe-dialog__cancel-btn {
-  width: 100%;
-  padding: 0.75rem;
-  background-color: transparent;
-  border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--sidebar-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.subscribe-dialog__cancel-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.subscribe-dialog__cancel-btn:hover:not(:disabled) {
-  background-color: var(--sidebar-hover);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: var(--sidebar-text);
 }
 
 /* ===== Centered States ===== */
@@ -1337,25 +1322,6 @@ watch(() => props.open, (isOpen) => {
 .dialog-leave-to {
   opacity: 0;
   transform: scale(0.98);
-}
-
-.promo-slide-enter-active,
-.promo-slide-leave-active {
-  transition: all 200ms ease;
-}
-
-.promo-slide-enter-from,
-.promo-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-  max-height: 0;
-}
-
-.promo-slide-enter-to,
-.promo-slide-leave-from {
-  opacity: 1;
-  transform: translateY(0);
-  max-height: 200px;
 }
 
 @keyframes spin {

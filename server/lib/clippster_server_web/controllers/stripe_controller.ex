@@ -87,13 +87,27 @@ defmodule ClippsterServerWeb.StripeController do
   @doc """
   Creates a Stripe Checkout session for purchasing credits for an organization.
   Only organization admins can purchase credits for the org pool.
+  Optionally accepts promo_code parameter.
   """
-  def create_org_checkout_session(conn, %{"organization_id" => org_id, "pack_type" => pack_type}) do
+  def create_org_checkout_session(conn, %{"organization_id" => org_id, "pack_type" => pack_type} = params) do
+    promo_code = Map.get(params, "promo_code")
+
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, user} <- get_user(user_id),
          {:ok, _org} <- get_organization(org_id),
          true <- Organizations.is_admin?(org_id, user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type) do
+
+      # Validate promo code if provided
+      validated_promo = if promo_code do
+        case PromoCodes.validate_org_promo(promo_code, pack_type, org_id, :credit_pack) do
+          {:ok, promo} -> promo
+          {:error, _reason} -> nil
+        end
+      else
+        nil
+      end
+
       # Get Stripe configuration
       stripe_config = Application.get_env(:clippster_server, :stripe)
       success_url = stripe_config[:success_url] || "http://localhost:48276/stripe-success"
@@ -130,6 +144,18 @@ defmodule ClippsterServerWeb.StripeController do
         success_url: "#{success_url}?session_id={CHECKOUT_SESSION_ID}&org=#{org_id}",
         cancel_url: "#{cancel_url}?org=#{org_id}"
       }
+
+      # Add promo code to Stripe session if validated
+      session_params = if validated_promo && validated_promo.stripe_promo_code_id do
+        session_params
+        |> Map.put(:discounts, [%{promotion_code: validated_promo.stripe_promo_code_id}])
+        |> update_in([:metadata], &Map.merge(&1, %{
+          promo_code_id: validated_promo.id,
+          promo_code: validated_promo.code
+        }))
+      else
+        session_params
+      end
 
       case Stripe.Checkout.Session.create(session_params) do
         {:ok, session} ->
@@ -259,17 +285,21 @@ defmodule ClippsterServerWeb.StripeController do
       subscription_type == "base" && organization_id && subscription_tier ->
         handle_org_subscription_checkout(
           organization_id,
+          user_id,
           subscription_tier,
           stripe_subscription_id,
-          stripe_customer_id
+          stripe_customer_id,
+          promo_code_id
         )
 
       # Handle organization addon
       subscription_type == "addon" && organization_id && addon_tier ->
         handle_org_addon_checkout(
           organization_id,
+          user_id,
           addon_tier,
-          stripe_subscription_id
+          stripe_subscription_id,
+          promo_code_id
         )
 
       # Handle user subscription checkout
@@ -292,7 +322,8 @@ defmodule ClippsterServerWeb.StripeController do
           amount_usd,
           amount_total,
           session_id,
-          payment_intent
+          payment_intent,
+          promo_code_id
         )
 
       # Handle credit pack purchase for personal use
@@ -664,7 +695,8 @@ defmodule ClippsterServerWeb.StripeController do
          amount_usd,
          amount_total,
          session_id,
-         payment_intent
+         payment_intent,
+         promo_code_id
        ) do
     # Add credits to organization pool with transaction record
     org_id =
@@ -697,6 +729,12 @@ defmodule ClippsterServerWeb.StripeController do
           "[Stripe Webhook] Successfully added #{hours_int} hours to organization #{org_id} with transaction record"
         )
 
+        # Record promo code redemption if present
+        if promo_code_id do
+          PromoCodes.create_org_redemption(promo_code_id, org_id, user_id_int)
+          IO.puts("[Stripe Webhook] Recorded promo code redemption for org #{org_id}")
+        end
+
       {:error, :already_processed} ->
         IO.puts("[Stripe Webhook] Transaction already processed for session #{session_id}")
 
@@ -707,12 +745,16 @@ defmodule ClippsterServerWeb.StripeController do
 
   defp handle_org_subscription_checkout(
          organization_id,
+         user_id,
          subscription_tier,
          stripe_subscription_id,
-         stripe_customer_id
+         stripe_customer_id,
+         promo_code_id
        ) do
     org_id =
       if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+
+    user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
 
     IO.puts(
       "[Stripe Webhook] Creating organization subscription: org #{org_id}, tier: #{subscription_tier}"
@@ -729,6 +771,15 @@ defmodule ClippsterServerWeb.StripeController do
           "[Stripe Webhook] Successfully created org subscription for org #{org_id}"
         )
 
+        # Record promo code redemption if present
+        if promo_code_id do
+          PromoCodes.create_org_redemption(promo_code_id, org_id, user_id_int, %{
+            subscription_id: stripe_subscription_id,
+            customer_id: stripe_customer_id
+          })
+          IO.puts("[Stripe Webhook] Recorded promo code redemption for org #{org_id}")
+        end
+
       {:error, reason} ->
         IO.puts("[Stripe Webhook] Failed to create org subscription: #{inspect(reason)}")
     end
@@ -736,11 +787,15 @@ defmodule ClippsterServerWeb.StripeController do
 
   defp handle_org_addon_checkout(
          organization_id,
+         user_id,
          addon_tier,
-         stripe_subscription_id
+         stripe_subscription_id,
+         promo_code_id
        ) do
     org_id =
       if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+
+    user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
 
     IO.puts("[Stripe Webhook] Adding org addon: org #{org_id}, addon: #{addon_tier}")
 
@@ -751,6 +806,14 @@ defmodule ClippsterServerWeb.StripeController do
          ) do
       {:ok, _result} ->
         IO.puts("[Stripe Webhook] Successfully added addon #{addon_tier} to org #{org_id}")
+
+        # Record promo code redemption if present
+        if promo_code_id do
+          PromoCodes.create_org_redemption(promo_code_id, org_id, user_id_int, %{
+            subscription_id: stripe_subscription_id
+          })
+          IO.puts("[Stripe Webhook] Recorded promo code redemption for org #{org_id}")
+        end
 
       {:error, reason} ->
         IO.puts("[Stripe Webhook] Failed to add org addon: #{inspect(reason)}")

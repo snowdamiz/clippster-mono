@@ -16,6 +16,8 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
     field(:duration_kind, :string, default: "repeating")
     field(:duration_months, :integer)
     field(:allowed_tiers, {:array, :string})
+    field(:allowed_org_tiers, {:array, :string})
+    field(:allowed_credit_packs, {:array, :string})
     field(:max_redemptions, :integer)
     field(:redeem_by, :utc_datetime)
     field(:is_active, :boolean, default: true)
@@ -42,6 +44,8 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
       :duration_kind,
       :duration_months,
       :allowed_tiers,
+      :allowed_org_tiers,
+      :allowed_credit_packs,
       :max_redemptions,
       :redeem_by,
       :is_active,
@@ -54,13 +58,15 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
       :code,
       :percent_off,
       :duration_kind,
-      :allowed_tiers,
       :created_by_admin_id
     ])
     |> validate_inclusion(:percent_off, 1..100)
     |> validate_inclusion(:duration_kind, ["once", "repeating", "forever"])
     |> validate_duration_months()
     |> validate_allowed_tiers()
+    |> validate_allowed_org_tiers()
+    |> validate_allowed_credit_packs()
+    |> validate_at_least_one_tier_or_pack()
     |> unique_constraint(:code)
     |> normalize_code()
   end
@@ -104,6 +110,9 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
       nil ->
         changeset
 
+      [] ->
+        changeset
+
       tiers ->
         valid_tiers = ["starter", "creator", "pro"]
 
@@ -111,6 +120,66 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
           true -> changeset
           false -> add_error(changeset, :allowed_tiers, "contains invalid tier")
         end
+    end
+  end
+
+  defp validate_allowed_org_tiers(changeset) do
+    case get_field(changeset, :allowed_org_tiers) do
+      nil ->
+        changeset
+
+      [] ->
+        changeset
+
+      tiers ->
+        valid_org_tiers = [
+          "enterprise",
+          "enterprise_ai",
+          "addon_5_seats",
+          "addon_5_seats_ai",
+          "addon_10_seats",
+          "addon_10_seats_ai"
+        ]
+
+        case Enum.all?(tiers, fn t -> t in valid_org_tiers end) do
+          true -> changeset
+          false -> add_error(changeset, :allowed_org_tiers, "contains invalid organization tier")
+        end
+    end
+  end
+
+  defp validate_allowed_credit_packs(changeset) do
+    case get_field(changeset, :allowed_credit_packs) do
+      nil ->
+        changeset
+
+      [] ->
+        changeset
+
+      packs ->
+        valid_packs = ["starter", "creator", "pro", "enterprise"]
+
+        case Enum.all?(packs, fn p -> p in valid_packs end) do
+          true -> changeset
+          false -> add_error(changeset, :allowed_credit_packs, "contains invalid credit pack")
+        end
+    end
+  end
+
+  defp validate_at_least_one_tier_or_pack(changeset) do
+    allowed_tiers = get_field(changeset, :allowed_tiers) || []
+    allowed_org_tiers = get_field(changeset, :allowed_org_tiers) || []
+    allowed_credit_packs = get_field(changeset, :allowed_credit_packs) || []
+
+    if Enum.empty?(allowed_tiers) && Enum.empty?(allowed_org_tiers) &&
+         Enum.empty?(allowed_credit_packs) do
+      add_error(
+        changeset,
+        :allowed_tiers,
+        "must specify at least one of: allowed_tiers, allowed_org_tiers, or allowed_credit_packs"
+      )
+    else
+      changeset
     end
   end
 end

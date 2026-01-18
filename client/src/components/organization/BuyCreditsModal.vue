@@ -97,14 +97,59 @@
                     <Zap class="credits-dialog__summary-icon" />
                     <div class="credits-dialog__summary-details">
                       <div class="credits-dialog__summary-credits">{{ selectedPack?.hours }} <span>minutes</span></div>
-                      <div class="credits-dialog__summary-price">${{ selectedPack?.usd.toFixed(2) }}</div>
+                      <div class="credits-dialog__summary-price">${{ discountedPrice }}</div>
                     </div>
+                  </div>
+                  <div v-if="validatedPromo" class="credits-dialog__summary-discount">
+                    <Percent :size="14" />
+                    <span>{{ validatedPromo.percent_off }}% discount applied</span>
                   </div>
                   <div v-if="selectedPack?.solAmount" class="credits-dialog__summary-crypto">
                     <span>~{{ selectedPack.solAmount.toFixed(4) }} SOL</span>
                   </div>
                 </div>
 
+                <!-- Promo Code Section -->
+                <div class="credits-dialog__promo">
+                  <label class="credits-dialog__promo-label">
+                    <Tag :size="14" />
+                    Promo Code
+                  </label>
+                  <div class="credits-dialog__promo-input-group">
+                    <input
+                      v-model="promoCode"
+                      type="text"
+                      placeholder="Enter discount code"
+                      class="credits-dialog__promo-input"
+                      :disabled="validatingPromo"
+                      @keyup.enter="validatePromoCode"
+                    />
+                    <button
+                      type="button"
+                      @click="validatePromoCode"
+                      class="credits-dialog__promo-btn"
+                      :disabled="validatingPromo || !promoCode.trim()"
+                    >
+                      <Loader2 v-if="validatingPromo" :size="16" class="credits-dialog__spinner" />
+                      <span v-else>Apply</span>
+                    </button>
+                  </div>
+
+                  <div v-if="promoError" class="credits-dialog__promo-error">
+                    <AlertCircle :size="14" />
+                    <span>{{ promoError }}</span>
+                  </div>
+
+                  <div v-if="validatedPromo" class="credits-dialog__promo-success">
+                    <Percent :size="14" />
+                    <span>{{ validatedPromo.percent_off }}% discount applied!</span>
+                    <button type="button" @click="clearPromoCode" class="credits-dialog__promo-clear">
+                      <X :size="14" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Payment Section -->
                 <div class="credits-dialog__payment-wrapper">
                   <div class="credits-dialog__payment-section">
                     <label class="credits-dialog__payment-label">Choose Payment Method</label>
@@ -211,7 +256,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch } from 'vue';
+  import { ref, watch, computed } from 'vue';
   import {
     CreditCard,
     Wallet,
@@ -220,13 +265,15 @@
     AlertTriangle,
     AlertCircle,
     X,
-    Check,
     Coins,
     Zap,
     ShoppingCart,
+    Tag,
+    Percent,
   } from 'lucide-vue-next';
   import api from '@/services/api';
   import { useAuthStore } from '@/stores/auth';
+  import { useToast } from '@/composables/useToast';
 
   const props = defineProps<{
     open: boolean;
@@ -240,6 +287,7 @@
   }>();
 
   const authStore = useAuthStore();
+  const { success: showSuccess, error: showError } = useToast();
 
   // State
   const loadingPricing = ref(false);
@@ -253,6 +301,22 @@
   const paymentStatus = ref('');
   const paymentErrorMessage = ref('');
   const paymentMethod = ref<'stripe' | 'crypto' | null>(null);
+
+  // Promo code state
+  const promoCode = ref('');
+  const validatedPromo = ref<any>(null);
+  const validatingPromo = ref(false);
+  const promoError = ref('');
+
+  const discountedPrice = computed(() => {
+    if (!selectedPack.value) return '0.00';
+    const basePrice = selectedPack.value.usd;
+    if (validatedPromo.value) {
+      const discount = validatedPromo.value.percent_off / 100;
+      return (basePrice * (1 - discount)).toFixed(2);
+    }
+    return basePrice.toFixed(2);
+  });
 
   async function fetchPricing() {
     loadingPricing.value = true;
@@ -279,6 +343,40 @@
     };
   }
 
+  async function validatePromoCode() {
+    if (!promoCode.value.trim()) return;
+
+    validatingPromo.value = true;
+    promoError.value = '';
+
+    try {
+      const response = await api.post(`/organizations/${props.organizationId}/subscription/promo/validate`, {
+        code: promoCode.value.trim(),
+        tier: selectedPackKey.value,
+        type: 'credit_pack'
+      });
+
+      if (response.data.success && response.data.promo) {
+        validatedPromo.value = response.data.promo;
+        showSuccess('Promo code applied!', `${response.data.promo.percent_off}% discount`);
+      } else {
+        validatedPromo.value = null;
+        promoError.value = response.data.error || 'Invalid promo code';
+      }
+    } catch (error: any) {
+      validatedPromo.value = null;
+      promoError.value = error.response?.data?.error || error.message || 'Failed to validate promo code';
+    } finally {
+      validatingPromo.value = false;
+    }
+  }
+
+  function clearPromoCode() {
+    promoCode.value = '';
+    validatedPromo.value = null;
+    promoError.value = '';
+  }
+
   function resetModal() {
     selectedPackKey.value = '';
     selectedPack.value = null;
@@ -286,6 +384,9 @@
     paymentErrorMessage.value = '';
     paymentProcessing.value = false;
     paymentStatus.value = '';
+    promoCode.value = '';
+    validatedPromo.value = null;
+    promoError.value = '';
   }
 
   function handleClose() {
@@ -312,9 +413,16 @@
       const { invoke } = await import('@tauri-apps/api/core');
       const { listen } = await import('@tauri-apps/api/event');
 
-      const response = await api.post(`/organizations/${props.organizationId}/payments/stripe/create-session`, {
+      const payload: any = {
         pack_type: selectedPackKey.value,
-      });
+      };
+
+      // Add promo code if validated
+      if (validatedPromo.value && promoCode.value.trim()) {
+        payload.promo_code = promoCode.value.trim();
+      }
+
+      const response = await api.post(`/organizations/${props.organizationId}/payments/stripe/create-session`, payload);
 
       if (!response.data.success) {
         throw new Error(response.data.error || 'Failed to create checkout session');
@@ -355,42 +463,57 @@
     paymentMethod.value = 'crypto';
     paymentProcessing.value = true;
     paymentStep.value = 'processing';
-    paymentStatus.value = 'Opening payment window...';
+    paymentStatus.value = 'Getting payment quote...';
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const { listen } = await import('@tauri-apps/api/event');
+
+      // Get quote with potential promo code discount
+      const quotePayload: any = {
+        organization_id: props.organizationId,
+        pack_type: selectedPackKey.value,
+      };
+
+      if (validatedPromo.value && promoCode.value.trim()) {
+        quotePayload.promo_code = promoCode.value.trim();
+      }
+
+      const quoteResponse = await api.post('/payments/quote', quotePayload);
+
+      if (!quoteResponse.data.success) {
+        throw new Error(quoteResponse.data.error || 'Failed to get quote');
+      }
+
+      const quote = quoteResponse.data.quote;
 
       const unlisten = await listen('wallet-payment-complete', async (event: any) => {
         const paymentResult = event.payload;
 
         paymentStatus.value = 'Verifying payment...';
         try {
-          const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-          const confirmResponse = await fetch(
-            `${API_BASE}/api/organizations/${props.organizationId}/payments/confirm`,
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${authStore.token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                tx_signature: paymentResult.signature,
-                pack_type: paymentResult.pack_key,
-                from_address: paymentResult.from_address,
-              }),
-            }
+          const confirmPayload: any = {
+            tx_signature: paymentResult.signature,
+            pack_type: paymentResult.pack_key,
+            from_address: paymentResult.from_address,
+          };
+
+          // Include promo code in confirmation if validated
+          if (validatedPromo.value && promoCode.value.trim()) {
+            confirmPayload.promo_code = promoCode.value.trim();
+          }
+
+          const confirmResponse = await api.post(
+            `/organizations/${props.organizationId}/payments/confirm`,
+            confirmPayload
           );
 
-          const confirmData = await confirmResponse.json();
-
-          if (confirmData.success) {
+          if (confirmResponse.data.success) {
             paymentStep.value = 'success';
             paymentProcessing.value = false;
             unlisten();
           } else {
-            throw new Error(confirmData.error || 'Payment confirmation failed');
+            throw new Error(confirmResponse.data.error || 'Payment confirmation failed');
           }
         } catch (err: any) {
           paymentErrorMessage.value = err.message || 'Payment verification failed';
@@ -400,14 +523,15 @@
         }
       });
 
+      paymentStatus.value = 'Opening payment window...';
       const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
       await invoke('open_wallet_payment_window', {
         packKey: selectedPackKey.value,
         packName: selectedPackKey.value.charAt(0).toUpperCase() + selectedPackKey.value.slice(1),
         hours: selectedPack.value?.hours,
-        usd: selectedPack.value?.usd,
-        sol: selectedPack.value?.solAmount,
-        companyWallet: companyWallet.value,
+        usd: quote.amount_usd,
+        sol: quote.amount_sol,
+        companyWallet: quote.company_wallet,
         authToken: authStore.token,
         apiBase,
       });
@@ -459,6 +583,7 @@
     flex-direction: column;
     overflow: hidden;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    margin-top: 30px;
   }
 
   /* ===== Accent Bar ===== */
@@ -803,12 +928,24 @@
     text-align: center;
   }
 
+  .credits-dialog__summary-discount {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
+    font-size: 0.75rem;
+    color: #10b981;
+    font-weight: 500;
+  }
+
   /* ===== Payment Wrapper ===== */
   .credits-dialog__payment-wrapper {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    margin-top: auto;
+    margin-bottom: 1rem;
   }
 
   /* ===== Payment Section ===== */
@@ -1058,6 +1195,120 @@
 
   .credits-dialog__spinner {
     animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Promo Code Section ===== */
+  .credits-dialog__promo {
+    padding: 1.25rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .credits-dialog__promo-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .credits-dialog__promo-input-group {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .credits-dialog__promo-input {
+    flex: 1;
+    padding: 0.625rem 0.75rem;
+    background-color: var(--sidebar-bg);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .credits-dialog__promo-input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+  }
+
+  .credits-dialog__promo-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .credits-dialog__promo-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0 1rem;
+    background-color: var(--sidebar-accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .credits-dialog__promo-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .credits-dialog__promo-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .credits-dialog__promo-error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    background-color: rgba(239, 68, 68, 0.1);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: #f87171;
+  }
+
+  .credits-dialog__promo-success {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    background-color: rgba(16, 185, 129, 0.1);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: #10b981;
+    font-weight: 500;
+  }
+
+  .credits-dialog__promo-clear {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    background: transparent;
+    border: none;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 150ms ease;
+  }
+
+  .credits-dialog__promo-clear:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+    color: #f87171;
   }
 
   /* ===== Transitions ===== */

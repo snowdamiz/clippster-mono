@@ -45,6 +45,42 @@ defmodule ClippsterServer.PromoCodes do
     end
   end
 
+  @doc """
+  Validates a promo code for use with an organization.
+  Type can be :subscription (for org subscription tiers) or :credit_pack (for credit packs).
+  Returns {:ok, promo_code} if valid, {:error, reason} if invalid.
+  """
+  def validate_org_promo(code, tier_or_pack, organization_id, type \\ :subscription)
+      when is_binary(code) and type in [:subscription, :credit_pack] do
+    normalized_code = String.upcase(String.trim(code))
+
+    case get_active_code(normalized_code) do
+      nil ->
+        {:error, :invalid_code}
+
+      promo ->
+        cond do
+          !is_active?(promo) ->
+            {:error, :inactive_code}
+
+          is_expired?(promo) ->
+            {:error, :expired_code}
+
+          !org_tier_or_pack_allowed?(promo, tier_or_pack, type) ->
+            {:error, :tier_not_allowed}
+
+          max_redemptions_reached?(promo) ->
+            {:error, :max_redemptions_reached}
+
+          org_already_redeemed?(promo.id, organization_id) ->
+            {:error, :already_redeemed}
+
+          true ->
+            {:ok, promo}
+        end
+    end
+  end
+
   # ============================================================================
   # CRUD Operations
   # ============================================================================
@@ -225,6 +261,27 @@ defmodule ClippsterServer.PromoCodes do
   end
 
   @doc """
+  Creates a redemption record when a promo code is used by an organization.
+  Returns {:ok, redemption} or {:error, changeset}.
+  """
+  def create_org_redemption(promo_code_id, organization_id, user_id, stripe_data \\ %{}) do
+    attrs = %{
+      promo_code_id: promo_code_id,
+      organization_id: organization_id,
+      user_id: user_id,
+      stripe_customer_id: Map.get(stripe_data, :customer_id),
+      stripe_subscription_id: Map.get(stripe_data, :subscription_id),
+      stripe_invoice_id: Map.get(stripe_data, :invoice_id),
+      redeemed_at: DateTime.utc_now() |> DateTime.truncate(:second),
+      status: "active"
+    }
+
+    %PromoRedemption{}
+    |> PromoRedemption.create_changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
   Updates the status of a redemption.
   Returns {:ok, redemption} or {:error, changeset}.
   """
@@ -340,6 +397,16 @@ defmodule ClippsterServer.PromoCodes do
     tier in tiers
   end
 
+  defp org_tier_or_pack_allowed?(%PromoCode{} = promo, tier_or_pack, type) do
+    case type do
+      :subscription ->
+        tier_or_pack in (promo.allowed_org_tiers || [])
+
+      :credit_pack ->
+        tier_or_pack in (promo.allowed_credit_packs || [])
+    end
+  end
+
   defp max_redemptions_reached?(%PromoCode{max_redemptions: nil}), do: false
 
   defp max_redemptions_reached?(%PromoCode{id: id, max_redemptions: max}) do
@@ -355,7 +422,15 @@ defmodule ClippsterServer.PromoCodes do
   defp user_already_redeemed?(promo_code_id, user_id) do
     Repo.exists?(
       from(r in PromoRedemption,
-        where: r.promo_code_id == ^promo_code_id and r.user_id == ^user_id
+        where: r.promo_code_id == ^promo_code_id and r.user_id == ^user_id and is_nil(r.organization_id)
+      )
+    )
+  end
+
+  defp org_already_redeemed?(promo_code_id, organization_id) do
+    Repo.exists?(
+      from(r in PromoRedemption,
+        where: r.promo_code_id == ^promo_code_id and r.organization_id == ^organization_id
       )
     )
   end
