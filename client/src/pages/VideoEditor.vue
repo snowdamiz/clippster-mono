@@ -372,6 +372,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, watch, Transition } from 'vue';
+  import { useRouter } from 'vue-router';
   import { Clapperboard, Plus, Trash2, Search, Check, Play, Edit, Film, Clock } from 'lucide-vue-next';
   import { Input } from '@/components/ui/input';
   import PageLayout from '@/components/PageLayout.vue';
@@ -929,8 +930,20 @@
   }
 
   // Lifecycle
-  onMounted(() => {
-    loadProjects();
+  onMounted(async () => {
+    const router = useRouter();
+    await loadProjects();
+    
+    // Check if we should auto-open a project (from navigation state)
+    const state = history.state as { openProjectId?: string };
+    if (state?.openProjectId && projects.value.length > 0) {
+      const projectToOpen = projects.value.find(p => p.id === state.openProjectId);
+      if (projectToOpen) {
+        openProject(projectToOpen);
+        // Clear the state so it doesn't auto-open again on refresh
+        router.replace({ path: '/video-editor' });
+      }
+    }
   });
 
   // Watch for editor dialog close to refresh projects
