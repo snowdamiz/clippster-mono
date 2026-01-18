@@ -14,23 +14,6 @@
       @submitted="handleBugReportSubmitted"
     />
 
-    <!-- ===== Header Section ===== -->
-    <div
-      v-if="!isNativeEnvironment"
-      class="sidebar-header flex items-center h-14 transition-all duration-200"
-      :class="isCollapsed ? 'justify-center px-0' : 'justify-between p-4'"
-    >
-      <div class="flex items-center gap-2 min-w-0" :class="isCollapsed ? 'justify-center' : ''">
-        <img src="/logo.svg" alt="Clippster" class="w-6 h-6 shrink-0" />
-        <span
-          v-if="!isCollapsed"
-          class="text-base font-semibold text-[var(--sidebar-text)] whitespace-nowrap overflow-hidden text-ellipsis"
-        >
-          Clippster
-        </span>
-      </div>
-    </div>
-
     <!-- ===== Navigation Section ===== -->
     <nav class="flex-1 overflow-hidden">
       <div class="sidebar-nav__scroll h-full overflow-y-auto overflow-x-hidden">
@@ -74,15 +57,50 @@
                         }"
                       />
                       <component v-else :is="item.icon as Component" class="w-[18px] h-[18px]" />
-                      <!-- Unread badge for Messages -->
+                      <!-- Unread badge for Messages (icon badge when collapsed) -->
                       <span
-                        v-if="item.name === 'Messages' && totalUnreadMessages > 0"
-                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[#ef4444] text-white rounded-lg"
+                        v-if="item.name === 'Messages' && totalUnreadMessages > 0 && isCollapsed"
+                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[#ef4444] text-black rounded-lg"
                       >
                         {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
                       </span>
+                      <!-- Live badge for Live (icon badge when collapsed) -->
+                      <span
+                        v-if="item.name === 'Live' && liveCount > 0 && isCollapsed"
+                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-lg"
+                      >
+                        {{ liveCount > 99 ? '99+' : liveCount }}
+                      </span>
+                      <!-- Live badge for Creators (icon badge when collapsed) -->
+                      <span
+                        v-if="item.name === 'Creators' && liveCreatorsCount > 0 && isCollapsed"
+                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-lg"
+                      >
+                        {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
+                      </span>
                     </div>
-                    <span v-if="!isCollapsed" class="whitespace-nowrap overflow-hidden text-ellipsis">{{ item.name }}</span>
+                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">{{ item.name }}</span>
+                    <!-- Unread badge for Messages (right side when expanded) -->
+                    <span
+                      v-if="item.name === 'Messages' && totalUnreadMessages > 0 && !isCollapsed"
+                      class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[#ef4444] text-black rounded-md"
+                    >
+                      {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
+                    </span>
+                    <!-- Live badge for Live (right side when expanded) -->
+                    <span
+                      v-if="item.name === 'Live' && liveCount > 0 && !isCollapsed"
+                      class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-md"
+                    >
+                      {{ liveCount > 99 ? '99+' : liveCount }}
+                    </span>
+                    <!-- Live badge for Creators (right side when expanded) -->
+                    <span
+                      v-if="item.name === 'Creators' && liveCreatorsCount > 0 && !isCollapsed"
+                      class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-md"
+                    >
+                      {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
+                    </span>
                   </router-link>
                 </li>
               </ul>
@@ -196,6 +214,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { useMessagingStore } from '@/stores/messaging';
   import { usePermissionsStore } from '@/stores/permissions';
+  import { useLiveStatusStore } from '@/stores/liveStatus';
   import { useWallet } from '@/composables/useWallet';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
@@ -219,6 +238,7 @@
   const authStore = useAuthStore();
   const messagingStore = useMessagingStore();
   const permissionsStore = usePermissionsStore();
+  const liveStatusStore = useLiveStatusStore();
   const { formatAddress } = useWallet();
   const { isAIAllowed } = useAIPermission();
   const { isLiveClipEnabled, initialize: initFeatureFlags } = useFeatureFlags();
@@ -240,6 +260,8 @@
 
   // ===== Computed Properties =====
   const totalUnreadMessages = computed(() => messagingStore.totalUnread);
+  const liveCount = computed(() => liveStatusStore.liveCount);
+  const liveCreatorsCount = computed(() => liveStatusStore.liveCreatorsCount);
 
   const sortedNavigationGroups = computed(() => getSortedNavigationGroups());
 
@@ -416,6 +438,9 @@
     if (authStore.isAuthenticated) {
       permissionsStore.fetchRestrictions();
     }
+
+    // Start polling for live status (both monitored streamers and creator profiles)
+    liveStatusStore.startPollingAll();
   });
 
   onUnmounted(() => {
@@ -424,6 +449,9 @@
       balanceRefreshInterval = null;
     }
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
+    
+    // Stop polling for live status
+    liveStatusStore.stopPolling();
   });
 </script>
 
