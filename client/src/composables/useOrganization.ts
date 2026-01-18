@@ -45,6 +45,29 @@ export interface OrganizationCredits {
   hoursUsed: string;
 }
 
+export interface OrganizationSubscription {
+  status: string;
+  tier: string | null;
+  tier_name: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  renewal_method: string | null;
+  days_remaining: number;
+  has_subscription: boolean;
+  base_seats: number;
+  base_credits: number;
+  addons: Array<{
+    tier: string;
+    name: string;
+    seats: number;
+    credits: number;
+  }>;
+  total_seats: number | null;
+  total_monthly_credits: number;
+  current_members: number;
+  seats_remaining: number | null;
+}
+
 export interface Organization {
   id: number;
   name: string;
@@ -73,6 +96,8 @@ const stateCache = new Map<
     role: Ref<string>;
     orgLoaded: Ref<boolean>;
     lastFetchTime: Ref<number | null>;
+    subscription: Ref<OrganizationSubscription | null>;
+    subscriptionLoading: Ref<boolean>;
     creatorProfiles: Ref<ServerOrganizationCreatorProfile[]>;
     profilesLoading: Ref<boolean>;
     profilesLoaded: Ref<boolean>;
@@ -100,6 +125,8 @@ function getOrCreateState(orgId: string) {
       role: ref<string>(''),
       orgLoaded: ref(false),
       lastFetchTime: ref<number | null>(null),
+      subscription: ref<OrganizationSubscription | null>(null),
+      subscriptionLoading: ref(false),
       creatorProfiles: ref<ServerOrganizationCreatorProfile[]>([]),
       profilesLoading: ref(false),
       profilesLoaded: ref(false),
@@ -149,6 +176,8 @@ export function useOrganization(orgIdOverride?: string) {
     role,
     orgLoaded,
     lastFetchTime,
+    subscription,
+    subscriptionLoading,
     creatorProfiles,
     profilesLoading,
     profilesLoaded,
@@ -173,6 +202,29 @@ export function useOrganization(orgIdOverride?: string) {
   const totalTransactionPages = computed(() =>
     Math.ceil(transactionsTotal.value / transactionsPerPage)
   );
+
+  const hasActiveSubscription = computed(() => {
+    return subscription.value?.has_subscription || false;
+  });
+
+  const totalSeats = computed(() => {
+    return subscription.value?.total_seats || null;
+  });
+
+  const currentMembers = computed(() => {
+    return subscription.value?.current_members || members.value.length;
+  });
+
+  const seatsRemaining = computed(() => {
+    return subscription.value?.seats_remaining;
+  });
+
+  const canAddMembers = computed(() => {
+    // Legacy orgs (no subscription) have unlimited seats
+    if (!hasActiveSubscription.value) return true;
+    if (seatsRemaining.value === null || seatsRemaining.value === undefined) return true;
+    return seatsRemaining.value > 0;
+  });
 
   // Check if a member's user was created by this organization
   function isOrgCreatedUser(member: OrganizationMember): boolean {
@@ -247,6 +299,9 @@ export function useOrganization(orgIdOverride?: string) {
         myAllocation.value = creditsResult.my_allocation;
       }
 
+      // Load subscription status
+      await loadSubscription();
+
       // Mark as loaded and update fetch time
       orgLoaded.value = true;
       lastFetchTime.value = Date.now();
@@ -254,6 +309,26 @@ export function useOrganization(orgIdOverride?: string) {
       error.value = err.message || 'Failed to load organization';
     } finally {
       loading.value = false;
+    }
+  }
+
+  // Load organization subscription
+  async function loadSubscription() {
+    const orgId = organizationId.value;
+    if (!orgId) return;
+
+    subscriptionLoading.value = true;
+    try {
+      const response = await api.get(`/organizations/${orgId}/subscription`);
+      if (response.data.success) {
+        subscription.value = response.data.subscription;
+      } else {
+        console.error('[useOrganization] Failed to load subscription:', response.data.error);
+      }
+    } catch (err) {
+      console.error('[useOrganization] Failed to load subscription:', err);
+    } finally {
+      subscriptionLoading.value = false;
     }
   }
 
@@ -594,6 +669,10 @@ export function useOrganization(orgIdOverride?: string) {
     organizationId,
     orgLoaded,
 
+    // Subscription
+    subscription,
+    subscriptionLoading,
+
     // Creator profiles
     creatorProfiles,
     profilesLoading,
@@ -617,9 +696,15 @@ export function useOrganization(orgIdOverride?: string) {
     isAdmin,
     isOwner,
     poolBalance,
+    hasActiveSubscription,
+    totalSeats,
+    currentMembers,
+    seatsRemaining,
+    canAddMembers,
 
     // Functions
     loadOrganization,
+    loadSubscription,
     loadCreatorProfiles,
     loadOrgAssets,
     loadTransactions,

@@ -15,10 +15,10 @@
                   <X :size="18" />
                 </button>
                 <div class="credits-dialog__icon">
-                  <CreditCard :size="24" />
+                  <Coins :size="28" />
                 </div>
                 <h2 class="credits-dialog__title">Buy Organization Credits</h2>
-                <p class="credits-dialog__subtitle">Credits go into the organization pool</p>
+                <p class="credits-dialog__subtitle">Add credits to {{ organizationName }}'s pool</p>
               </div>
 
               <!-- Content -->
@@ -29,9 +29,13 @@
                 </div>
 
                 <template v-else>
-                  <p class="credits-dialog__description">
-                    Choose a credit pack to add to your organization's pool for team members to use.
-                  </p>
+                  <div class="credits-dialog__info-box">
+                    <Zap class="credits-dialog__info-icon" />
+                    <div class="credits-dialog__info-text">
+                      <strong>Team Credit Pool</strong>
+                      <span>Credits are shared across all organization members</span>
+                    </div>
+                  </div>
 
                   <div class="credits-dialog__packs">
                     <button
@@ -41,13 +45,13 @@
                       class="credits-dialog__pack"
                       :class="{ 'credits-dialog__pack--selected': selectedPackKey === key }"
                     >
-                      <div class="credits-dialog__pack-header">
-                        <span class="credits-dialog__pack-name">{{ key }}</span>
-                        <div v-if="selectedPackKey === key" class="credits-dialog__pack-check">
-                          <Check :size="14" />
-                        </div>
+                      <div class="credits-dialog__pack-icon">
+                        <Zap :size="20" />
                       </div>
-                      <div class="credits-dialog__pack-value">{{ pack.hours }} min</div>
+                      <div class="credits-dialog__pack-name">{{ key }}</div>
+                      <div class="credits-dialog__pack-value">{{ pack.hours }}</div>
+                      <div class="credits-dialog__pack-unit">minutes</div>
+                      <div class="credits-dialog__pack-divider"></div>
                       <div class="credits-dialog__pack-price">
                         ${{ pack.usd % 1 === 0 ? pack.usd : pack.usd.toFixed(2) }}
                       </div>
@@ -77,7 +81,7 @@
                   <X :size="18" />
                 </button>
                 <div class="credits-dialog__icon credits-dialog__icon--green">
-                  <Wallet :size="24" />
+                  <ShoppingCart :size="28" />
                 </div>
                 <h2 class="credits-dialog__title">Confirm Purchase</h2>
                 <p class="credits-dialog__subtitle">For {{ organizationName }}</p>
@@ -86,121 +90,117 @@
               <!-- Content -->
               <div class="credits-dialog__content">
                 <div class="credits-dialog__summary">
-                  <div class="credits-dialog__summary-row">
-                    <span class="credits-dialog__summary-label">Pack</span>
-                    <span class="credits-dialog__summary-value credits-dialog__summary-value--accent">
-                      {{ selectedPackKey }} Pack
-                    </span>
+                  <div class="credits-dialog__summary-header">
+                    <span class="credits-dialog__summary-pack">{{ selectedPackKey }} Pack</span>
                   </div>
-                  <div class="credits-dialog__summary-row">
-                    <span class="credits-dialog__summary-label">Credits</span>
-                    <span class="credits-dialog__summary-value">{{ selectedPack?.hours }} minutes</span>
+                  <div class="credits-dialog__summary-main">
+                    <Zap class="credits-dialog__summary-icon" />
+                    <div class="credits-dialog__summary-details">
+                      <div class="credits-dialog__summary-credits">{{ selectedPack?.hours }} <span>minutes</span></div>
+                      <div class="credits-dialog__summary-price">${{ selectedPack?.usd.toFixed(2) }}</div>
+                    </div>
                   </div>
-                  <div class="credits-dialog__summary-divider"></div>
-                  <div class="credits-dialog__summary-row credits-dialog__summary-row--total">
-                    <span class="credits-dialog__summary-label">Total</span>
-                    <span class="credits-dialog__summary-value credits-dialog__summary-value--total">
-                      ${{ selectedPack?.usd.toFixed(2) }}
-                    </span>
-                  </div>
-                  <div v-if="selectedPack?.solAmount" class="credits-dialog__summary-row">
-                    <span class="credits-dialog__summary-label">Crypto</span>
-                    <span class="credits-dialog__summary-value credits-dialog__summary-value--muted">
-                      ~{{ selectedPack.solAmount.toFixed(4) }} SOL
-                    </span>
+                  <div v-if="selectedPack?.solAmount" class="credits-dialog__summary-crypto">
+                    <span>~{{ selectedPack.solAmount.toFixed(4) }} SOL</span>
                   </div>
                 </div>
 
-                <label class="credits-dialog__label">Payment Method</label>
-                <div class="credits-dialog__payment-methods">
-                  <button class="credits-dialog__payment-btn" @click="initiateStripePayment">
-                    <CreditCard class="credits-dialog__payment-btn-icon" />
-                    <div class="credits-dialog__payment-btn-info">
-                      <span class="credits-dialog__payment-btn-label">Pay with Card</span>
-                      <span class="credits-dialog__payment-btn-hint">Stripe</span>
+                <div class="credits-dialog__payment-wrapper">
+                  <div class="credits-dialog__payment-section">
+                    <label class="credits-dialog__payment-label">Choose Payment Method</label>
+                    <div class="credits-dialog__payment-buttons">
+                      <button 
+                        class="credits-dialog__payment-btn credits-dialog__payment-btn--stripe" 
+                        @click="initiateStripePayment"
+                        :disabled="paymentProcessing"
+                      >
+                        <div class="credits-dialog__payment-btn-content">
+                          <Loader2 v-if="paymentProcessing && paymentMethod === 'stripe'" :size="24" class="credits-dialog__spinner" />
+                          <svg v-else class="credits-dialog__payment-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M13.3 4.5c-2.2 0-3.6 1.1-3.6 2.8 0 1.9 1.4 2.6 3.3 3.2 2.5.8 3.8 1.7 3.8 3.5 0 2.3-1.8 3.5-4.3 3.5-1.8 0-3.3-.5-4.5-1.3l-.8 2.8c1.1.7 2.8 1.2 4.8 1.2 3.3 0 5.3-1.6 5.3-4 0-1.9-1.2-2.8-3.4-3.5-2.2-.7-3.6-1.4-3.6-3 0-1.3 1.1-2.5 3.3-2.5 1.4 0 2.6.4 3.5.8l.7-2.7c-1-.5-2.3-.8-3.5-.8z" fill="currentColor"/>
+                          </svg>
+                          <div class="credits-dialog__payment-btn-text">
+                            <span class="credits-dialog__payment-btn-label">Pay with Card</span>
+                            <span class="credits-dialog__payment-btn-hint">Powered by Stripe</span>
+                          </div>
+                        </div>
+                      </button>
+
+                      <button 
+                        class="credits-dialog__payment-btn credits-dialog__payment-btn--phantom" 
+                        @click="initiateCryptoPayment"
+                        :disabled="paymentProcessing"
+                      >
+                        <div class="credits-dialog__payment-btn-content">
+                          <Loader2 v-if="paymentProcessing && paymentMethod === 'crypto'" :size="24" class="credits-dialog__spinner" />
+                          <svg v-else class="credits-dialog__payment-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M27 7.5C27 10.5 25 13.5 22 15.5L25 20.5C25.5 21.5 25 23 23.5 23.5C22.5 24 21 23.5 20.5 22L17 16C16.5 16 16 16 15.5 16C14 16 12.5 15.5 11.5 14.5L9 19C8.5 20 7 20.5 6 20C5 19.5 4.5 18 5 17L7.5 12C6 10.5 5 8.5 5 6.5C5 4 6.5 2.5 9 2.5H23C25.5 2.5 27 4 27 7.5ZM10 6.5C10 7.5 10.5 8 11.5 8C12.5 8 13 7.5 13 6.5C13 5.5 12.5 5 11.5 5C10.5 5 10 5.5 10 6.5ZM19 6.5C19 7.5 19.5 8 20.5 8C21.5 8 22 7.5 22 6.5C22 5.5 21.5 5 20.5 5C19.5 5 19 5.5 19 6.5Z" fill="currentColor"/>
+                          </svg>
+                          <div class="credits-dialog__payment-btn-text">
+                            <span class="credits-dialog__payment-btn-label">Pay with Crypto</span>
+                            <span class="credits-dialog__payment-btn-hint">Phantom Wallet</span>
+                          </div>
+                        </div>
+                      </button>
                     </div>
-                    <ChevronRight class="credits-dialog__payment-btn-arrow" />
-                  </button>
-                  <button class="credits-dialog__payment-btn" @click="initiateCryptoPayment">
-                    <Wallet class="credits-dialog__payment-btn-icon" />
-                    <div class="credits-dialog__payment-btn-info">
-                      <span class="credits-dialog__payment-btn-label">Pay with Crypto</span>
-                      <span class="credits-dialog__payment-btn-hint">Solana</span>
-                    </div>
-                    <ChevronRight class="credits-dialog__payment-btn-arrow" />
+                  </div>
+
+                  <!-- Cancel Button -->
+                  <button
+                    type="button"
+                    class="credits-dialog__cancel-btn"
+                    @click="paymentStep = 'select'"
+                    :disabled="paymentProcessing"
+                  >
+                    ← Back to Packs
                   </button>
                 </div>
-              </div>
-
-              <!-- Footer -->
-              <div class="credits-dialog__footer">
-                <button class="credits-dialog__btn credits-dialog__btn--secondary" @click="paymentStep = 'select'">
-                  ← Back
-                </button>
               </div>
             </template>
 
             <!-- Processing Step -->
             <template v-else-if="paymentStep === 'processing'">
-              <div class="credits-dialog__header">
+              <div class="credits-dialog__centered">
                 <div class="credits-dialog__icon credits-dialog__icon--processing">
-                  <Loader2 :size="24" class="credits-dialog__icon-spinner" />
+                  <Loader2 :size="32" class="credits-dialog__icon-spinner" />
                 </div>
-                <h2 class="credits-dialog__title">Processing Payment</h2>
-                <p class="credits-dialog__subtitle">{{ paymentStatus }}</p>
-              </div>
-
-              <div class="credits-dialog__content credits-dialog__content--center">
-                <p class="credits-dialog__processing-hint">Please complete payment in the popup window.</p>
+                <h3 class="credits-dialog__centered-title">Processing Payment</h3>
+                <p class="credits-dialog__centered-subtitle">{{ paymentStatus }}</p>
               </div>
             </template>
 
             <!-- Success Step -->
             <template v-else-if="paymentStep === 'success'">
-              <div class="credits-dialog__header">
+              <div class="credits-dialog__centered">
                 <div class="credits-dialog__icon credits-dialog__icon--success">
-                  <CheckCircle :size="24" />
+                  <CheckCircle :size="32" />
                 </div>
-                <h2 class="credits-dialog__title">Payment Successful!</h2>
-                <p class="credits-dialog__subtitle">{{ selectedPack?.hours }} minutes added to pool</p>
-              </div>
-
-              <div class="credits-dialog__content credits-dialog__content--center">
-                <p class="credits-dialog__success-message">
-                  Your organization's credit pool has been updated. Team members can now use these credits.
+                <h3 class="credits-dialog__centered-title">Credits Added!</h3>
+                <p class="credits-dialog__centered-subtitle">
+                  {{ selectedPack?.hours }} minutes added to {{ organizationName }}'s pool
                 </p>
-              </div>
-
-              <div class="credits-dialog__footer">
-                <button class="credits-dialog__btn credits-dialog__btn--success" @click="handleSuccess">Done</button>
+                <button class="credits-dialog__success-btn" @click="handleSuccess">
+                  Done
+                </button>
               </div>
             </template>
 
             <!-- Error Step -->
             <template v-else-if="paymentStep === 'error'">
-              <div class="credits-dialog__header">
-                <button class="credits-dialog__close" @click="handleClose" title="Close">
-                  <X :size="18" />
-                </button>
+              <div class="credits-dialog__centered">
                 <div class="credits-dialog__icon credits-dialog__icon--error">
-                  <AlertTriangle :size="24" />
+                  <AlertTriangle :size="32" />
                 </div>
-                <h2 class="credits-dialog__title">Payment Failed</h2>
-                <p class="credits-dialog__subtitle">Something went wrong</p>
-              </div>
-
-              <div class="credits-dialog__content credits-dialog__content--center">
-                <div class="credits-dialog__error">
-                  <AlertCircle :size="16" />
-                  <span>{{ paymentErrorMessage }}</span>
+                <h3 class="credits-dialog__centered-title">Payment Failed</h3>
+                <p class="credits-dialog__centered-subtitle">{{ paymentErrorMessage }}</p>
+                <div class="credits-dialog__error-actions">
+                  <button class="credits-dialog__retry-btn" @click="paymentStep = 'confirm'">
+                    Try Again
+                  </button>
+                  <button class="credits-dialog__cancel-btn" @click="handleClose">
+                    Close
+                  </button>
                 </div>
-              </div>
-
-              <div class="credits-dialog__footer">
-                <button class="credits-dialog__btn credits-dialog__btn--secondary" @click="handleClose">Close</button>
-                <button class="credits-dialog__btn credits-dialog__btn--primary" @click="paymentStep = 'confirm'">
-                  Try Again
-                </button>
               </div>
             </template>
           </div>
@@ -221,7 +221,9 @@
     AlertCircle,
     X,
     Check,
-    ChevronRight,
+    Coins,
+    Zap,
+    ShoppingCart,
   } from 'lucide-vue-next';
   import api from '@/services/api';
   import { useAuthStore } from '@/stores/auth';
@@ -250,6 +252,7 @@
   const paymentProcessing = ref(false);
   const paymentStatus = ref('');
   const paymentErrorMessage = ref('');
+  const paymentMethod = ref<'stripe' | 'crypto' | null>(null);
 
   async function fetchPricing() {
     loadingPricing.value = true;
@@ -300,6 +303,7 @@
   async function initiateStripePayment() {
     if (!selectedPackKey.value || !props.organizationId) return;
 
+    paymentMethod.value = 'stripe';
     paymentProcessing.value = true;
     paymentStep.value = 'processing';
     paymentStatus.value = 'Creating checkout session...';
@@ -348,6 +352,7 @@
   async function initiateCryptoPayment() {
     if (!selectedPackKey.value || !props.organizationId) return;
 
+    paymentMethod.value = 'crypto';
     paymentProcessing.value = true;
     paymentStep.value = 'processing';
     paymentStatus.value = 'Opening payment window...';
@@ -433,12 +438,13 @@
   .credits-dialog__overlay {
     position: fixed;
     inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
+    background-color: rgba(0, 0, 0, 0.75);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 9999;
+    padding: 1rem;
   }
 
   /* ===== Dialog Container ===== */
@@ -447,9 +453,8 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     width: 100%;
-    max-width: 440px;
-    margin: 1rem;
-    max-height: 85vh;
+    max-width: 520px;
+    max-height: 90vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -469,7 +474,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
+    padding: 2rem 2rem 1.5rem;
     text-align: center;
   }
 
@@ -488,6 +493,7 @@
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
+    z-index: 10;
   }
 
   .credits-dialog__close:hover:not(:disabled) {
@@ -504,31 +510,36 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
     background-color: rgba(6, 182, 212, 0.15);
+    border: 2px solid rgba(6, 182, 212, 0.25);
     color: var(--sidebar-accent);
-    margin-bottom: 0.875rem;
+    margin-bottom: 1rem;
   }
 
   .credits-dialog__icon--green {
     background-color: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.25);
     color: #34d399;
   }
 
   .credits-dialog__icon--processing {
-    background-color: rgba(6, 182, 212, 0.15);
+    background-color: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.2);
     color: var(--sidebar-accent);
   }
 
   .credits-dialog__icon--success {
-    background-color: rgba(16, 185, 129, 0.15);
+    background-color: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.2);
     color: #34d399;
   }
 
   .credits-dialog__icon--error {
-    background-color: rgba(239, 68, 68, 0.15);
+    background-color: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.2);
     color: #f87171;
   }
 
@@ -537,7 +548,7 @@
   }
 
   .credits-dialog__title {
-    font-size: 1.25rem;
+    font-size: 1.375rem;
     font-weight: 700;
     color: var(--sidebar-text);
     margin: 0;
@@ -545,24 +556,20 @@
   }
 
   .credits-dialog__subtitle {
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
+    margin: 0.375rem 0 0;
   }
 
   /* ===== Content Area ===== */
   .credits-dialog__content {
     flex: 1;
     overflow-y: auto;
-    padding: 1.25rem 1.5rem;
-  }
-
-  .credits-dialog__content--center {
+    padding: 0 2rem 2rem;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
+    gap: 1.25rem;
+    min-height: 0;
   }
 
   .credits-dialog__content::-webkit-scrollbar {
@@ -578,15 +585,44 @@
     border-radius: 3px;
   }
 
-  /* ===== Description ===== */
-  .credits-dialog__description {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.5;
-    margin: 0 0 1rem;
-    padding: 0.75rem;
-    background-color: var(--sidebar-hover);
+  /* ===== Info Box ===== */
+  .credits-dialog__info-box {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 10px;
+  }
+
+  .credits-dialog__info-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 8px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .credits-dialog__info-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .credits-dialog__info-text strong {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .credits-dialog__info-text span {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
   }
 
   /* ===== Loading ===== */
@@ -595,15 +631,15 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 2rem;
+    gap: 1rem;
+    padding: 3rem 2rem;
     color: var(--sidebar-text-muted);
     font-size: 0.875rem;
   }
 
   .credits-dialog__spinner {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     color: var(--sidebar-accent);
     animation: spin 0.8s linear infinite;
   }
@@ -611,221 +647,367 @@
   /* ===== Pack Selection ===== */
   .credits-dialog__packs {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
   }
 
   .credits-dialog__pack {
     position: relative;
-    padding: 1rem;
-    background-color: var(--sidebar-hover);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
     border-radius: 10px;
-    text-align: left;
+    overflow: hidden;
     cursor: pointer;
-    transition: all 150ms ease;
+    transition: all 200ms ease;
   }
 
   .credits-dialog__pack:hover {
     border-color: rgba(6, 182, 212, 0.3);
-    background-color: rgba(6, 182, 212, 0.05);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   }
 
   .credits-dialog__pack--selected {
-    background-color: rgba(6, 182, 212, 0.1);
-    border-color: rgba(6, 182, 212, 0.4);
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 4px 20px rgba(6, 182, 212, 0.2);
   }
 
-  .credits-dialog__pack-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.375rem;
-  }
-
-  .credits-dialog__pack-name {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    text-transform: capitalize;
-  }
-
-  .credits-dialog__pack-check {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background-color: var(--sidebar-accent);
-    color: white;
+  .credits-dialog__pack-icon {
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  .credits-dialog__pack-value {
-    font-size: 1.375rem;
-    font-weight: 700;
-    color: var(--sidebar-accent);
-    line-height: 1.2;
-  }
-
-  .credits-dialog__pack-price {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin-top: 0.25rem;
-  }
-
-  /* ===== Summary ===== */
-  .credits-dialog__summary {
-    padding: 1rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
     border-radius: 10px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
     margin-bottom: 1rem;
   }
 
-  .credits-dialog__summary-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.375rem 0;
-  }
-
-  .credits-dialog__summary-row--total {
-    padding-top: 0.75rem;
-  }
-
-  .credits-dialog__summary-label {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .credits-dialog__summary-value {
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-  }
-
-  .credits-dialog__summary-value--accent {
+  .credits-dialog__pack-name {
+    font-size: 0.6875rem;
     font-weight: 600;
-    text-transform: capitalize;
-    color: var(--sidebar-accent);
-  }
-
-  .credits-dialog__summary-value--total {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-  }
-
-  .credits-dialog__summary-value--muted {
     color: var(--sidebar-text-muted);
-    font-size: 0.8125rem;
-  }
-
-  .credits-dialog__summary-divider {
-    height: 1px;
-    background-color: var(--sidebar-border);
-    margin: 0.5rem 0;
-  }
-
-  /* ===== Label ===== */
-  .credits-dialog__label {
-    display: block;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     margin-bottom: 0.5rem;
   }
 
-  /* ===== Payment Methods ===== */
-  .credits-dialog__payment-methods {
+  .credits-dialog__pack-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    line-height: 1;
+    letter-spacing: -0.03em;
+    margin-bottom: 0.125rem;
+  }
+
+  .credits-dialog__pack-unit {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .credits-dialog__pack-divider {
+    width: 100%;
+    height: 1px;
+    background-color: var(--sidebar-border);
+    margin-bottom: 1rem;
+  }
+
+  .credits-dialog__pack-price {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-accent);
+    letter-spacing: -0.01em;
+  }
+
+  /* ===== Summary Card ===== */
+  .credits-dialog__summary {
+    padding: 1.5rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+  }
+
+  .credits-dialog__summary-header {
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .credits-dialog__summary-pack {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    text-transform: capitalize;
+  }
+
+  .credits-dialog__summary-main {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .credits-dialog__summary-icon {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .credits-dialog__summary-details {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .credits-dialog__summary-credits {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    letter-spacing: -0.02em;
+  }
+
+  .credits-dialog__summary-credits span {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin-left: 0.25rem;
+  }
+
+  .credits-dialog__summary-price {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-accent);
+    letter-spacing: -0.02em;
+  }
+
+  .credits-dialog__summary-crypto {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    text-align: center;
+  }
+
+  /* ===== Payment Wrapper ===== */
+  .credits-dialog__payment-wrapper {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    margin-top: auto;
+  }
+
+  /* ===== Payment Section ===== */
+  .credits-dialog__payment-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.5rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .credits-dialog__payment-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    text-align: center;
+  }
+
+  .credits-dialog__payment-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .credits-dialog__payment-btn {
     display: flex;
     align-items: center;
-    gap: 0.875rem;
-    padding: 0.875rem 1rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 150ms ease;
-    text-align: left;
+    overflow: hidden;
   }
 
-  .credits-dialog__payment-btn:hover {
-    border-color: rgba(6, 182, 212, 0.3);
-    background-color: rgba(6, 182, 212, 0.05);
+  .credits-dialog__payment-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
-  .credits-dialog__payment-btn-icon {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-accent);
+  .credits-dialog__payment-btn-content {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem;
+    width: 100%;
+  }
+
+  .credits-dialog__payment-icon {
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
   }
 
-  .credits-dialog__payment-btn-info {
-    flex: 1;
+  .credits-dialog__payment-btn-text {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+    flex: 1;
   }
 
   .credits-dialog__payment-btn-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    line-height: 1.2;
   }
 
   .credits-dialog__payment-btn-hint {
     font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
+    font-weight: 500;
+    opacity: 0.85;
+    line-height: 1;
   }
 
-  .credits-dialog__payment-btn-arrow {
-    width: 16px;
-    height: 16px;
-    color: var(--sidebar-text-muted);
+  /* Stripe Button */
+  .credits-dialog__payment-btn--stripe {
+    background: linear-gradient(135deg, #635bff 0%, #5851ea 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(99, 91, 255, 0.25);
   }
 
-  /* ===== Processing ===== */
-  .credits-dialog__processing-hint {
+  .credits-dialog__payment-btn--stripe:hover:not(:disabled) {
+    background: linear-gradient(135deg, #5851ea 0%, #4d46d9 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(99, 91, 255, 0.35);
+  }
+
+  /* Phantom Button */
+  .credits-dialog__payment-btn--phantom {
+    background: linear-gradient(135deg, #7c65e8 0%, #6a52d9 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(124, 101, 232, 0.3);
+  }
+
+  .credits-dialog__payment-btn--phantom:hover:not(:disabled) {
+    background: linear-gradient(135deg, #6a52d9 0%, #5c45c7 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(124, 101, 232, 0.4);
+  }
+
+  .credits-dialog__cancel-btn {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
     font-size: 0.875rem;
+    font-weight: 500;
     color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .credits-dialog__cancel-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .credits-dialog__cancel-btn:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Centered States ===== */
+  .credits-dialog__centered {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 3rem 2rem;
+    gap: 1rem;
+  }
+
+  .credits-dialog__centered-title {
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
     margin: 0;
   }
 
-  /* ===== Success ===== */
-  .credits-dialog__success-message {
+  .credits-dialog__centered-subtitle {
     font-size: 0.875rem;
     color: var(--sidebar-text-muted);
     margin: 0;
-    max-width: 280px;
+    max-width: 320px;
     line-height: 1.5;
   }
 
-  /* ===== Error ===== */
-  .credits-dialog__error {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    background-color: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+  .credits-dialog__success-btn {
+    margin-top: 0.5rem;
+    padding: 0.875rem 2rem;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border: none;
     border-radius: 8px;
-    font-size: 0.8125rem;
-    color: #f87171;
-    max-width: 320px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .credits-dialog__success-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  .credits-dialog__error-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  .credits-dialog__retry-btn {
+    padding: 0.875rem 1.5rem;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .credits-dialog__retry-btn:hover {
+    opacity: 0.9;
   }
 
   /* ===== Footer ===== */
   .credits-dialog__footer {
     display: flex;
-    gap: 0.625rem;
-    padding: 1.25rem 1.5rem;
+    gap: 0.75rem;
+    padding: 1.5rem 2rem;
     border-top: 1px solid var(--sidebar-border);
   }
 
@@ -836,7 +1018,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    padding: 0.875rem 1rem;
     font-size: 0.875rem;
     font-weight: 600;
     border-radius: 8px;
@@ -851,32 +1033,31 @@
   }
 
   .credits-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
+    background-color: transparent;
+    color: var(--sidebar-text-muted);
     border: 1px solid var(--sidebar-border);
   }
 
   .credits-dialog__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
+    background-color: var(--sidebar-hover);
     border-color: rgba(255, 255, 255, 0.1);
+    color: var(--sidebar-text);
   }
 
   .credits-dialog__btn--primary {
     background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
+    color: #000;
+    box-shadow: 0 2px 8px rgba(6, 182, 212, 0.25);
   }
 
   .credits-dialog__btn--primary:hover:not(:disabled) {
     opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.35);
   }
 
-  .credits-dialog__btn--success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
-  }
-
-  .credits-dialog__btn--success:hover:not(:disabled) {
-    opacity: 0.9;
+  .credits-dialog__spinner {
+    animation: spin 0.8s linear infinite;
   }
 
   /* ===== Transitions ===== */

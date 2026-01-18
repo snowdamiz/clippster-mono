@@ -462,175 +462,16 @@
       </Transition>
     </Teleport>
 
-    <!-- Payment Modal -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showPaymentModal" class="billing-modal__overlay" @click.self="closePaymentModal">
-          <Transition name="dialog" appear>
-            <div class="billing-modal">
-              <div class="billing-modal__accent-bar"></div>
-
-              <!-- Confirm Step -->
-              <div v-if="paymentStep === 'confirm'" class="billing-modal__content">
-                <div class="billing-modal__header">
-                  <div class="billing-modal__icon">
-                    <Wallet />
-                  </div>
-                  <h2 class="billing-modal__title">
-                    {{ hasActiveSubscription ? 'Change Plan' : 'Subscribe' }}
-                  </h2>
-                  <p class="billing-modal__subtitle">Choose your preferred payment method</p>
-                </div>
-
-                <div class="billing-modal__body">
-                  <!-- Promo Code Section -->
-                  <div class="billing-modal__promo">
-                    <div class="billing-modal__promo-toggle" @click="showPromoCodeInput = !showPromoCodeInput">
-                      <Tag class="billing-modal__promo-icon" />
-                      <span>Have a promo code?</span>
-                    </div>
-                    <Transition name="promo">
-                      <div v-if="showPromoCodeInput" class="billing-modal__promo-input-wrapper">
-                        <div class="billing-modal__promo-input-group">
-                          <input
-                            v-model="promoCodeInput"
-                            type="text"
-                            placeholder="Enter promo code"
-                            class="billing-modal__promo-input"
-                            :disabled="validatingPromoCode"
-                            @keyup.enter="validatePromoCodeInput"
-                          />
-                          <button
-                            @click="validatePromoCodeInput"
-                            class="billing-modal__promo-btn"
-                            :disabled="validatingPromoCode || !promoCodeInput.trim()"
-                          >
-                            <Loader2 v-if="validatingPromoCode" class="billing-modal__promo-btn-spinner" />
-                            <Check v-else class="billing-modal__promo-btn-icon" />
-                          </button>
-                          <button v-if="validatedPromoCode" @click="clearPromoCode" class="billing-modal__promo-clear">
-                            <X class="billing-modal__promo-clear-icon" />
-                          </button>
-                        </div>
-                        <div v-if="promoCodeError" class="billing-modal__promo-error">
-                          <AlertCircle class="billing-modal__promo-error-icon" />
-                          <span>{{ promoCodeError }}</span>
-                        </div>
-                        <div v-if="validatedPromoCode" class="billing-modal__promo-success">
-                          <Percent class="billing-modal__promo-success-icon" />
-                          <span>{{ validatedPromoCode.percent_off }}% discount applied!</span>
-                        </div>
-                      </div>
-                    </Transition>
-                  </div>
-
-                  <div class="billing-modal__summary">
-                    <div class="billing-modal__summary-row">
-                      <span>Plan:</span>
-                      <strong>{{ selectedSubscription?.name }}</strong>
-                    </div>
-                    <div class="billing-modal__summary-row">
-                      <span>Credits/month:</span>
-                      <span>{{ selectedSubscription?.monthly_credits?.toLocaleString() }}</span>
-                    </div>
-                    <div
-                      v-if="validatedPromoCode"
-                      class="billing-modal__summary-row billing-modal__summary-row--discount"
-                    >
-                      <span>Discount:</span>
-                      <span class="billing-modal__summary-discount">-{{ validatedPromoCode.percent_off }}%</span>
-                    </div>
-                    <div class="billing-modal__summary-row billing-modal__summary-row--total">
-                      <span>Total:</span>
-                      <span class="billing-modal__summary-total">${{ discountedPrice.toFixed(2) }}/month</span>
-                    </div>
-                  </div>
-
-                  <div class="billing-modal__actions">
-                    <div class="billing-modal__payment-btns">
-                      <button
-                        class="billing-modal__btn billing-modal__btn--primary"
-                        @click="initiateStripePayment"
-                        :disabled="processing"
-                      >
-                        <Loader2 v-if="processing" class="billing-modal__btn-spinner" />
-                        <CreditCard v-else />
-                        <span>Card</span>
-                      </button>
-                      <button
-                        class="billing-modal__btn billing-modal__btn--primary"
-                        @click="initiateSubscriptionCrypto"
-                        :disabled="processing"
-                      >
-                        <Loader2 v-if="processing" class="billing-modal__btn-spinner" />
-                        <Wallet v-else />
-                        <span>Crypto</span>
-                      </button>
-                    </div>
-                    <button
-                      class="billing-modal__btn billing-modal__btn--secondary"
-                      @click="closePaymentModal"
-                      :disabled="processing"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Processing Step -->
-              <div
-                v-else-if="paymentStep === 'processing'"
-                class="billing-modal__content billing-modal__content--centered"
-              >
-                <div class="billing-modal__icon billing-modal__icon--loading">
-                  <Loader2 class="billing-modal__icon-spinner" />
-                </div>
-                <h3 class="billing-modal__title">Processing Payment</h3>
-                <p class="billing-modal__subtitle">{{ paymentStatus }}</p>
-                <button @click="cancelPaymentProcess" class="billing-modal__btn billing-modal__btn--secondary">
-                  Cancel
-                </button>
-              </div>
-
-              <!-- Success Step -->
-              <div
-                v-else-if="paymentStep === 'success'"
-                class="billing-modal__content billing-modal__content--centered"
-              >
-                <div class="billing-modal__icon billing-modal__icon--success">
-                  <Check />
-                </div>
-                <h3 class="billing-modal__title">Subscription Activated!</h3>
-                <p class="billing-modal__subtitle">
-                  Your
-                  <strong>{{ selectedSubscription?.name }}</strong>
-                  subscription is now active!
-                </p>
-                <button class="billing-modal__btn billing-modal__btn--success" @click="closePaymentModal">Done</button>
-              </div>
-
-              <!-- Error Step -->
-              <div v-else-if="paymentStep === 'error'" class="billing-modal__content billing-modal__content--centered">
-                <div class="billing-modal__icon billing-modal__icon--danger">
-                  <X />
-                </div>
-                <h3 class="billing-modal__title">Payment Failed</h3>
-                <p class="billing-modal__subtitle">{{ errorMessage }}</p>
-                <div class="billing-modal__actions">
-                  <button class="billing-modal__btn billing-modal__btn--primary" @click="paymentStep = 'confirm'">
-                    Try Again
-                  </button>
-                  <button class="billing-modal__btn billing-modal__btn--secondary" @click="closePaymentModal">
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- Subscribe Dialog -->
+    <SubscribeDialog
+      v-if="selectedSubscription"
+      :open="showPaymentModal"
+      :plan="selectedSubscription"
+      context="user"
+      :current-plan="subscriptionStatus?.tier"
+      @update:open="showPaymentModal = $event"
+      @success="handleSubscribeSuccess"
+    />
   </div>
 </template>
 
@@ -639,7 +480,6 @@
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import api from '@/services/api';
-  import * as promoCodesApi from '@/services/promoCodesApi';
   import {
     CreditCard,
     Check,
@@ -660,11 +500,10 @@
     Building,
     Sparkles,
     Star,
-    Percent,
-    Tag,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
+  import SubscribeDialog from '@/components/SubscribeDialog.vue';
 
   const authStore = useAuthStore();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
@@ -689,17 +528,6 @@
   // Payment modal state
   const showPaymentModal = ref(false);
   const selectedSubscription = ref<any>(null);
-  const paymentStep = ref<'confirm' | 'processing' | 'success' | 'error'>('confirm');
-  const processing = ref(false);
-  const paymentStatus = ref('');
-  const errorMessage = ref('');
-
-  // Promo code state
-  const promoCodeInput = ref('');
-  const validatedPromoCode = ref<any>(null);
-  const validatingPromoCode = ref(false);
-  const promoCodeError = ref('');
-  const showPromoCodeInput = ref(false);
 
   // Cancel subscription
   const showCancelConfirm = ref(false);
@@ -731,15 +559,6 @@
     if (status === 'active') return 'billing-indicator__status--active';
     if (status === 'cancelled') return 'billing-indicator__status--warning';
     return '';
-  });
-
-  const discountedPrice = computed(() => {
-    const basePrice = selectedSubscription.value?.price_usd || 0;
-    if (validatedPromoCode.value) {
-      const discount = validatedPromoCode.value.percent_off / 100;
-      return basePrice * (1 - discount);
-    }
-    return basePrice;
   });
 
   function isCurrentTier(tierId: string): boolean {
@@ -865,48 +684,14 @@
     if (isCurrentTier(tier.id)) return;
 
     selectedSubscription.value = tier;
-    validatedPromoCode.value = null;
-    promoCodeInput.value = '';
-    promoCodeError.value = '';
     showPaymentModal.value = true;
-    paymentStep.value = 'confirm';
   }
 
-  async function validatePromoCodeInput() {
-    if (!promoCodeInput.value.trim()) {
-      validatedPromoCode.value = null;
-      promoCodeError.value = '';
-      return;
-    }
-
-    validatingPromoCode.value = true;
-    promoCodeError.value = '';
-
-    try {
-      const response = await promoCodesApi.validatePromoCode(
-        promoCodeInput.value.trim(),
-        selectedSubscription.value.id
-      );
-
-      if (response.success && response.promo) {
-        validatedPromoCode.value = response.promo;
-        showSuccessToast('Promo code applied!', `${response.promo.percent_off}% discount`);
-      } else {
-        validatedPromoCode.value = null;
-        promoCodeError.value = response.error || 'Invalid promo code';
-      }
-    } catch (error: any) {
-      validatedPromoCode.value = null;
-      promoCodeError.value = error.message || 'Failed to validate promo code';
-    } finally {
-      validatingPromoCode.value = false;
-    }
-  }
-
-  function clearPromoCode() {
-    promoCodeInput.value = '';
-    validatedPromoCode.value = null;
-    promoCodeError.value = '';
+  function handleSubscribeSuccess() {
+    showPaymentModal.value = false;
+    selectedSubscription.value = null;
+    fetchBalance();
+    fetchPaymentHistory();
   }
 
   async function cancelSubscription() {
@@ -927,167 +712,6 @@
     }
   }
 
-  async function initiateStripePayment() {
-    processing.value = true;
-    paymentStep.value = 'processing';
-    paymentStatus.value = 'Creating checkout session...';
-
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const { listen } = await import('@tauri-apps/api/event');
-
-      const checkoutData: any = {
-        tier: selectedSubscription.value.id,
-      };
-
-      if (validatedPromoCode.value && promoCodeInput.value.trim()) {
-        checkoutData.promo_code = promoCodeInput.value.trim();
-      }
-
-      const response = await api.post('/subscription/checkout', checkoutData);
-
-      if (!response.data.success) {
-        throw new Error(response.data.error || 'Failed to create checkout session');
-      }
-
-      const { url: checkoutUrl } = response.data;
-
-      const unlisten = await listen('stripe-payment-complete', async (event: any) => {
-        const paymentResult = event.payload;
-
-        if (paymentResult.success) {
-          paymentStep.value = 'success';
-          processing.value = false;
-          showSuccessToast('Payment successful', 'Your subscription has been activated');
-          unlisten();
-
-          setTimeout(async () => {
-            await fetchBalance();
-            await fetchPaymentHistory();
-          }, 2000);
-        } else {
-          unlisten();
-        }
-      });
-
-      paymentStatus.value = 'Opening payment page...';
-      await invoke('open_stripe_payment_window', {
-        checkoutUrl: checkoutUrl,
-        packKey: selectedSubscription.value.id,
-        packHours: selectedSubscription.value.monthly_credits,
-      });
-
-      paymentStatus.value = 'Complete payment in your browser...';
-    } catch (error: any) {
-      errorMessage.value = error.message || 'Failed to create checkout session';
-      paymentStep.value = 'error';
-      processing.value = false;
-      showErrorToast('Payment failed', error.message || 'An error occurred');
-    }
-  }
-
-  async function initiateSubscriptionCrypto() {
-    processing.value = true;
-    paymentStep.value = 'processing';
-    paymentStatus.value = 'Getting payment quote...';
-
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const { listen } = await import('@tauri-apps/api/event');
-
-      const quoteData: any = {
-        tier: selectedSubscription.value.id,
-      };
-
-      // Include promo code if validated
-      if (validatedPromoCode.value && promoCodeInput.value.trim()) {
-        quoteData.promo_code = promoCodeInput.value.trim();
-      }
-
-      const quoteResponse = await api.post('/subscription/crypto-quote', quoteData);
-
-      if (!quoteResponse.data.success) {
-        throw new Error(quoteResponse.data.error || 'Failed to get quote');
-      }
-
-      const quote = quoteResponse.data.quote;
-
-      const unlisten = await listen('wallet-payment-complete', async (event: any) => {
-        const paymentResult = event.payload;
-
-        paymentStatus.value = 'Verifying payment...';
-        try {
-          const confirmData: any = {
-            tier: selectedSubscription.value.id,
-            tx_signature: paymentResult.signature,
-            from_address: paymentResult.from_address,
-          };
-
-          // Include promo code in confirmation if validated
-          if (validatedPromoCode.value && promoCodeInput.value.trim()) {
-            confirmData.promo_code = promoCodeInput.value.trim();
-          }
-
-          const confirmResponse = await api.post('/subscription/crypto-confirm', confirmData);
-
-          if (confirmResponse.data.success) {
-            subscriptionStatus.value = confirmResponse.data.subscription;
-            if (confirmResponse.data.balance) {
-              hoursRemaining.value = confirmResponse.data.balance.hours_remaining;
-              hoursUsed.value = confirmResponse.data.balance.hours_used || 0;
-            }
-            paymentStep.value = 'success';
-            processing.value = false;
-            showSuccessToast('Subscription activated', `${selectedSubscription.value.name} subscription is now active`);
-            unlisten();
-            await fetchPaymentHistory();
-          } else {
-            throw new Error(confirmResponse.data.error || 'Payment confirmation failed');
-          }
-        } catch (error: any) {
-          errorMessage.value = error.message || 'Payment verification failed';
-          paymentStep.value = 'error';
-          processing.value = false;
-          showErrorToast('Payment verification failed', error.message);
-          unlisten();
-        }
-      });
-
-      paymentStatus.value = 'Opening payment window...';
-      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-      await invoke('open_wallet_payment_window', {
-        packKey: `sub_${selectedSubscription.value.id}`,
-        packName: `${selectedSubscription.value.name} Subscription`,
-        hours: selectedSubscription.value.monthly_credits,
-        usd: quote.amount_usd,
-        sol: quote.amount_sol,
-        companyWallet: quote.company_wallet,
-        authToken: authStore.token,
-        apiBase,
-      });
-
-      paymentStatus.value = 'Complete payment in your browser...';
-    } catch (error: any) {
-      errorMessage.value = error.message || 'Failed to process subscription';
-      paymentStep.value = 'error';
-      processing.value = false;
-      showErrorToast('Payment failed', error.message);
-    }
-  }
-
-  function cancelPaymentProcess() {
-    processing.value = false;
-    paymentStep.value = 'confirm';
-    paymentStatus.value = '';
-  }
-
-  function closePaymentModal() {
-    if (!processing.value) {
-      showPaymentModal.value = false;
-      selectedSubscription.value = null;
-      paymentStep.value = 'confirm';
-    }
-  }
 </script>
 
 <style scoped>

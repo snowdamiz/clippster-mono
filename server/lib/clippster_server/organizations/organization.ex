@@ -26,6 +26,17 @@ defmodule ClippsterServer.Organizations.Organization do
       "clips_visible_to_admins" => true
     }
 
+    # Subscription fields
+    field :subscription_status, :string, default: "none"  # none, active, cancelled, expired
+    field :subscription_tier, :string  # enterprise_base, enterprise_ai
+    field :subscription_start_date, :utc_datetime
+    field :subscription_end_date, :utc_datetime
+    field :subscription_renewal_method, :string  # stripe, crypto
+    field :stripe_subscription_id, :string
+    field :stripe_customer_id, :string
+    field :max_seats, :integer  # nil = unlimited (legacy), otherwise seat limit
+    field :monthly_credits, :integer, default: 0  # Credits granted per renewal
+
     belongs_to :owner, ClippsterServer.Accounts.User
     has_many :members, ClippsterServer.Organizations.OrganizationMember
     has_many :invitations, ClippsterServer.Organizations.OrganizationInvitation
@@ -60,6 +71,26 @@ defmodule ClippsterServer.Organizations.Organization do
   end
 
   @doc """
+  Changeset for updating organization subscription.
+  """
+  def subscription_changeset(organization, attrs) do
+    organization
+    |> cast(attrs, [
+      :subscription_status,
+      :subscription_tier,
+      :subscription_start_date,
+      :subscription_end_date,
+      :subscription_renewal_method,
+      :stripe_subscription_id,
+      :stripe_customer_id,
+      :max_seats,
+      :monthly_credits
+    ])
+    |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
+    |> validate_inclusion(:subscription_tier, ["enterprise_base", "enterprise_ai", nil])
+  end
+
+  @doc """
   Changeset for updating restriction defaults.
   """
   def update_restriction_defaults_changeset(organization, attrs) do
@@ -82,7 +113,7 @@ defmodule ClippsterServer.Organizations.Organization do
         # Only regenerate slug if name changed and current slug matches old name pattern
         current_slug = get_field(changeset, :slug)
         new_slug = slugify(name)
-        
+
         # Don't change slug if it was customized
         if String.starts_with?(current_slug || "", slugify(get_field(changeset, :name) || "")) do
           put_change(changeset, :slug, new_slug)
@@ -105,4 +136,3 @@ defmodule ClippsterServer.Organizations.Organization do
     end)
   end
 end
-

@@ -309,8 +309,8 @@
     },
     {
       id: 'billing',
-      title: 'Billing & Credits',
-      description: 'Manage credits and payment history',
+      title: 'Billing',
+      description: 'Billing, Credits, and Subscriptions ',
       icon: CreditCard,
       route: `/organization/${organizationId.value}/billing`,
       color: 'amber',

@@ -305,6 +305,15 @@ defmodule ClippsterServerWeb.Router do
       :confirm_org_payment
     )
 
+    # Organization subscriptions
+    get("/organizations/:id/subscription", OrganizationSubscriptionController, :show)
+    get("/organizations/:id/subscription/tiers", OrganizationSubscriptionController, :tiers)
+    post("/organizations/:id/subscription/checkout", OrganizationSubscriptionController, :checkout)
+    post("/organizations/:id/subscription/addons/checkout", OrganizationSubscriptionController, :addon_checkout)
+    post("/organizations/:id/subscription/cancel", OrganizationSubscriptionController, :cancel)
+    post("/organizations/:id/subscription/crypto-quote", OrganizationSubscriptionController, :crypto_quote)
+    post("/organizations/:id/subscription/crypto-confirm", OrganizationSubscriptionController, :crypto_confirm)
+
     # Organization assets
     get("/organizations/:organization_id/assets", OrganizationAssetController, :index)
     get("/organizations/:organization_id/assets/:id", OrganizationAssetController, :show)
