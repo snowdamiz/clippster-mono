@@ -532,15 +532,15 @@
 
           <div class="org-billing__plans-grid">
             <div
-              v-for="tier in baseTiers"
+              v-for="tier in sortedBaseTiers"
               :key="tier.id"
               class="org-billing__plan-card"
               :class="{ 'org-billing__plan-card--popular': tier.id === 'enterprise_ai' }"
             >
               <div class="org-billing__plan-content">
-                <div v-if="tier.id === 'enterprise_ai'" class="org-billing__plan-corner-badge">
+                <div v-if="tier.monthly_credits > 0" class="org-billing__plan-corner-badge">
                   <Star class="org-billing__plan-corner-badge-icon" />
-                  <span>Includes AI Credits</span>
+                  <span>Includes AI</span>
                 </div>
                 <h3 class="org-billing__plan-name">{{ tier.name }}</h3>
                 <div class="org-billing__plan-price">
@@ -551,7 +551,7 @@
                 <ul class="org-billing__plan-features">
                   <li class="org-billing__plan-feature">
                     <Check class="org-billing__plan-feature-icon" />
-                    <span>{{ tier.seats }} team seats</span>
+                    <span>{{ tier.seats === null ? 'Unlimited team seats' : `${tier.seats} team seats` }}</span>
                   </li>
                   <li v-if="tier.monthly_credits > 0" class="org-billing__plan-feature">
                     <Check class="org-billing__plan-feature-icon" />
@@ -788,6 +788,11 @@
   const showCancelSubscriptionDialog = ref(false);
   const selectedPlan = ref<any>(null);
   const selectedType = ref<'base' | 'addon'>('base');
+
+  const sortedBaseTiers = computed(() => {
+    // Sort base tiers by price (cheapest to most expensive)
+    return [...baseTiers.value].sort((a, b) => a.usd - b.usd);
+  });
 
   const availableAddons = computed(() => {
     if (!subscription.value) return [];
@@ -1942,6 +1947,12 @@
     }
   }
 
+  @media (min-width: 1024px) {
+    .org-billing__plans-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
   .org-billing__plan-card {
     position: relative;
     display: flex;
@@ -1973,25 +1984,25 @@
 
   .org-billing__plan-corner-badge {
     position: absolute;
-    top: 0.875rem;
-    right: 0.875rem;
+    top: 0.75rem;
+    right: 0.75rem;
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
+    gap: 0.25rem;
+    padding: 0.3rem 0.6rem;
     background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.8));
     color: var(--sidebar-bg);
-    font-size: 0.6875rem;
+    font-size: 0.625rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-radius: 6px;
+    letter-spacing: 0.03em;
+    border-radius: 4px;
     box-shadow: 0 2px 8px rgba(6, 182, 212, 0.3);
   }
 
   .org-billing__plan-corner-badge-icon {
-    width: 13px;
-    height: 13px;
+    width: 11px;
+    height: 11px;
   }
 
   .org-billing__plan-name {

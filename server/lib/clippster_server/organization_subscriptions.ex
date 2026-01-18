@@ -32,7 +32,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   # Base subscription tiers
   @org_subscription_tiers %{
     "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 300},
-    "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 500}
+    "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 500},
+    "enterprise_unlimited" => %{name: "Enterprise Unlimited", seats: nil, monthly_credits: 100_000, usd: 1800}
   }
 
   # Add-on tiers (require base subscription)

@@ -282,7 +282,7 @@
                       <div class="org-members__dropdown-toggle-item">
                         <div class="org-members__dropdown-toggle-label">
                           <Lock class="org-members__dropdown-icon" />
-                          <span>Restricteds</span>
+                          <span>Restricted</span>
                         </div>
                         <button
                           type="button"

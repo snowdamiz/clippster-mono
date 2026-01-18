@@ -135,6 +135,7 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
         valid_org_tiers = [
           "enterprise",
           "enterprise_ai",
+          "enterprise_unlimited",
           "addon_5_seats",
           "addon_5_seats_ai",
           "addon_10_seats",

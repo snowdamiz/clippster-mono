@@ -87,7 +87,7 @@ defmodule ClippsterServer.Organizations.Organization do
       :monthly_credits
     ])
     |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
-    |> validate_inclusion(:subscription_tier, ["enterprise_base", "enterprise_ai", nil])
+    |> validate_inclusion(:subscription_tier, ["enterprise_base", "enterprise_ai", "enterprise_unlimited", nil])
   end
 
   @doc """

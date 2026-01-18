@@ -46,7 +46,7 @@
                       :class="{ 'credits-dialog__pack--selected': selectedPackKey === key }"
                     >
                       <div class="credits-dialog__pack-icon">
-                        <Zap :size="20" />
+                        <Zap :size="18" />
                       </div>
                       <div class="credits-dialog__pack-name">{{ key }}</div>
                       <div class="credits-dialog__pack-value">{{ pack.hours }}</div>
@@ -75,125 +75,177 @@
 
             <!-- Confirm/Pay Step -->
             <template v-else-if="paymentStep === 'confirm'">
-              <!-- Header -->
-              <div class="credits-dialog__header">
-                <button class="credits-dialog__close" @click="handleClose" title="Close" :disabled="paymentProcessing">
-                  <X :size="18" />
-                </button>
-                <div class="credits-dialog__icon credits-dialog__icon--green">
-                  <ShoppingCart :size="28" />
-                </div>
-                <h2 class="credits-dialog__title">Confirm Purchase</h2>
-                <p class="credits-dialog__subtitle">For {{ organizationName }}</p>
-              </div>
+              <button class="credits-dialog__close credits-dialog__close--grid" @click="handleClose" title="Close" :disabled="paymentProcessing">
+                <X :size="18" />
+              </button>
+              <div class="credits-dialog__grid">
+                <!-- Left Column - Value Props -->
+                <div class="credits-dialog__branding">
+                  <div class="credits-dialog__branding-content">
+                    <!-- Pack Badge -->
+                    <div class="credits-dialog__plan-badge">
+                      <Zap :size="14" />
+                      <span>{{ selectedPackKey }} Pack</span>
+                    </div>
 
-              <!-- Content -->
-              <div class="credits-dialog__content">
-                <div class="credits-dialog__summary">
-                  <div class="credits-dialog__summary-header">
-                    <span class="credits-dialog__summary-pack">{{ selectedPackKey }} Pack</span>
-                  </div>
-                  <div class="credits-dialog__summary-main">
-                    <Zap class="credits-dialog__summary-icon" />
-                    <div class="credits-dialog__summary-details">
-                      <div class="credits-dialog__summary-credits">{{ selectedPack?.hours }} <span>minutes</span></div>
-                      <div class="credits-dialog__summary-price">${{ discountedPrice }}</div>
+                    <!-- Headline -->
+                    <div class="credits-dialog__headline">
+                      <h2 class="credits-dialog__title">Add Team Credits</h2>
+                      <p class="credits-dialog__subtitle">Power your organization's AI workflows</p>
+                    </div>
+
+                    <!-- Features -->
+                    <div class="credits-dialog__features">
+                      <div class="credits-dialog__feature">
+                        <div class="credits-dialog__feature-icon credits-dialog__feature-icon--primary">
+                          <Zap :size="16" />
+                        </div>
+                        <div class="credits-dialog__feature-content">
+                          <h3 class="credits-dialog__feature-title">{{ selectedPack?.hours }} Processing Minutes</h3>
+                          <p class="credits-dialog__feature-desc">AI-powered clip detection and transcription</p>
+                        </div>
+                      </div>
+
+                      <div class="credits-dialog__feature">
+                        <div class="credits-dialog__feature-icon credits-dialog__feature-icon--secondary">
+                          <Users :size="16" />
+                        </div>
+                        <div class="credits-dialog__feature-content">
+                          <h3 class="credits-dialog__feature-title">Shared Team Pool</h3>
+                          <p class="credits-dialog__feature-desc">All members access organization credits</p>
+                        </div>
+                      </div>
+
+                      <div class="credits-dialog__feature">
+                        <div class="credits-dialog__feature-icon credits-dialog__feature-icon--secondary">
+                          <RefreshCcw :size="16" />
+                        </div>
+                        <div class="credits-dialog__feature-content">
+                          <h3 class="credits-dialog__feature-title">Never Expire</h3>
+                          <p class="credits-dialog__feature-desc">Credits remain until used</p>
+                        </div>
+                      </div>
+
+                      <div class="credits-dialog__feature">
+                        <div class="credits-dialog__feature-icon credits-dialog__feature-icon--secondary">
+                          <Sparkles :size="16" />
+                        </div>
+                        <div class="credits-dialog__feature-content">
+                          <h3 class="credits-dialog__feature-title">Instant Activation</h3>
+                          <p class="credits-dialog__feature-desc">Credits available immediately after purchase</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div v-if="validatedPromo" class="credits-dialog__summary-discount">
-                    <Percent :size="14" />
-                    <span>{{ validatedPromo.percent_off }}% discount applied</span>
-                  </div>
-                  <div v-if="selectedPack?.solAmount" class="credits-dialog__summary-crypto">
-                    <span>~{{ selectedPack.solAmount.toFixed(4) }} SOL</span>
+
+                  <!-- Trust Badge -->
+                  <div class="credits-dialog__trust">
+                    <ShieldCheck :size="14" />
+                    <span>Secured by Stripe & Solana</span>
                   </div>
                 </div>
 
-                <!-- Promo Code Section -->
-                <div class="credits-dialog__promo">
-                  <label class="credits-dialog__promo-label">
-                    <Tag :size="14" />
-                    Promo Code
-                  </label>
-                  <div class="credits-dialog__promo-input-group">
-                    <input
-                      v-model="promoCode"
-                      type="text"
-                      placeholder="Enter discount code"
-                      class="credits-dialog__promo-input"
-                      :disabled="validatingPromo"
-                      @keyup.enter="validatePromoCode"
-                    />
-                    <button
-                      type="button"
-                      @click="validatePromoCode"
-                      class="credits-dialog__promo-btn"
-                      :disabled="validatingPromo || !promoCode.trim()"
-                    >
-                      <Loader2 v-if="validatingPromo" :size="16" class="credits-dialog__spinner" />
-                      <span v-else>Apply</span>
-                    </button>
+                <!-- Right Column - Payment Portal -->
+                <div class="credits-dialog__portal">
+                  <!-- Compact Summary -->
+                  <div class="credits-dialog__summary-compact">
+                    <div class="credits-dialog__summary-row">
+                      <div class="credits-dialog__summary-left">
+                        <Zap class="credits-dialog__summary-icon-compact" />
+                        <div>
+                          <div class="credits-dialog__summary-credits-compact">{{ selectedPack?.hours }} <span>minutes</span></div>
+                          <div class="credits-dialog__summary-pack-name">{{ selectedPackKey }} Pack</div>
+                        </div>
+                      </div>
+                      <div class="credits-dialog__summary-right">
+                        <div class="credits-dialog__summary-price-compact">${{ discountedPrice }}</div>
+                        <div v-if="selectedPack?.solAmount" class="credits-dialog__summary-crypto-compact">
+                          ~{{ selectedPack.solAmount.toFixed(4) }} SOL
+                        </div>
+                      </div>
+                    </div>
+                    <div v-if="validatedPromo" class="credits-dialog__summary-discount-compact">
+                      <Percent :size="12" />
+                      <span>{{ validatedPromo.percent_off }}% discount applied</span>
+                    </div>
                   </div>
 
-                  <div v-if="promoError" class="credits-dialog__promo-error">
-                    <AlertCircle :size="14" />
-                    <span>{{ promoError }}</span>
+                  <!-- Inline Promo Code -->
+                  <div class="credits-dialog__promo-inline">
+                    <div class="credits-dialog__promo-row">
+                      <input
+                        v-model="promoCode"
+                        type="text"
+                        placeholder="Promo code (optional)"
+                        class="credits-dialog__promo-input-inline"
+                        :disabled="validatingPromo"
+                        @keyup.enter="validatePromoCode"
+                      />
+                      <button
+                        type="button"
+                        @click="validatePromoCode"
+                        class="credits-dialog__promo-btn-inline"
+                        :disabled="validatingPromo || !promoCode.trim()"
+                      >
+                        <Loader2 v-if="validatingPromo" :size="14" class="credits-dialog__spinner" />
+                        <span v-else>Apply</span>
+                      </button>
+                    </div>
+
+                    <div v-if="promoError" class="credits-dialog__promo-error-inline">
+                      <AlertCircle :size="12" />
+                      <span>{{ promoError }}</span>
+                    </div>
+
+                    <div v-if="validatedPromo" class="credits-dialog__promo-success-inline">
+                      <Percent :size="12" />
+                      <span>Code applied!</span>
+                      <button type="button" @click="clearPromoCode" class="credits-dialog__promo-clear-inline">
+                        <X :size="12" />
+                      </button>
+                    </div>
                   </div>
 
-                  <div v-if="validatedPromo" class="credits-dialog__promo-success">
-                    <Percent :size="14" />
-                    <span>{{ validatedPromo.percent_off }}% discount applied!</span>
-                    <button type="button" @click="clearPromoCode" class="credits-dialog__promo-clear">
-                      <X :size="14" />
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Payment Section -->
-                <div class="credits-dialog__payment-wrapper">
-                  <div class="credits-dialog__payment-section">
-                    <label class="credits-dialog__payment-label">Choose Payment Method</label>
-                    <div class="credits-dialog__payment-buttons">
+                  <!-- Payment Buttons -->
+                  <div class="credits-dialog__payment-compact">
+                    <label class="credits-dialog__payment-label-compact">Payment Method</label>
+                    <div class="credits-dialog__payment-buttons-compact">
                       <button 
-                        class="credits-dialog__payment-btn credits-dialog__payment-btn--stripe" 
+                        class="credits-dialog__payment-btn-compact credits-dialog__payment-btn--stripe" 
                         @click="initiateStripePayment"
                         :disabled="paymentProcessing"
                       >
-                        <div class="credits-dialog__payment-btn-content">
-                          <Loader2 v-if="paymentProcessing && paymentMethod === 'stripe'" :size="24" class="credits-dialog__spinner" />
-                          <svg v-else class="credits-dialog__payment-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M13.3 4.5c-2.2 0-3.6 1.1-3.6 2.8 0 1.9 1.4 2.6 3.3 3.2 2.5.8 3.8 1.7 3.8 3.5 0 2.3-1.8 3.5-4.3 3.5-1.8 0-3.3-.5-4.5-1.3l-.8 2.8c1.1.7 2.8 1.2 4.8 1.2 3.3 0 5.3-1.6 5.3-4 0-1.9-1.2-2.8-3.4-3.5-2.2-.7-3.6-1.4-3.6-3 0-1.3 1.1-2.5 3.3-2.5 1.4 0 2.6.4 3.5.8l.7-2.7c-1-.5-2.3-.8-3.5-.8z" fill="currentColor"/>
-                          </svg>
-                          <div class="credits-dialog__payment-btn-text">
-                            <span class="credits-dialog__payment-btn-label">Pay with Card</span>
-                            <span class="credits-dialog__payment-btn-hint">Powered by Stripe</span>
-                          </div>
+                        <Loader2 v-if="paymentProcessing && paymentMethod === 'stripe'" :size="20" class="credits-dialog__spinner" />
+                        <svg v-else class="credits-dialog__payment-icon-compact" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M13.3 4.5c-2.2 0-3.6 1.1-3.6 2.8 0 1.9 1.4 2.6 3.3 3.2 2.5.8 3.8 1.7 3.8 3.5 0 2.3-1.8 3.5-4.3 3.5-1.8 0-3.3-.5-4.5-1.3l-.8 2.8c1.1.7 2.8 1.2 4.8 1.2 3.3 0 5.3-1.6 5.3-4 0-1.9-1.2-2.8-3.4-3.5-2.2-.7-3.6-1.4-3.6-3 0-1.3 1.1-2.5 3.3-2.5 1.4 0 2.6.4 3.5.8l.7-2.7c-1-.5-2.3-.8-3.5-.8z" fill="currentColor"/>
+                        </svg>
+                        <div class="credits-dialog__payment-btn-text-compact">
+                          <span class="credits-dialog__payment-btn-label-compact">Pay with Card</span>
+                          <span class="credits-dialog__payment-btn-hint-compact">Powered by Stripe</span>
                         </div>
                       </button>
 
                       <button 
-                        class="credits-dialog__payment-btn credits-dialog__payment-btn--phantom" 
+                        class="credits-dialog__payment-btn-compact credits-dialog__payment-btn--phantom" 
                         @click="initiateCryptoPayment"
                         :disabled="paymentProcessing"
                       >
-                        <div class="credits-dialog__payment-btn-content">
-                          <Loader2 v-if="paymentProcessing && paymentMethod === 'crypto'" :size="24" class="credits-dialog__spinner" />
-                          <svg v-else class="credits-dialog__payment-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M27 7.5C27 10.5 25 13.5 22 15.5L25 20.5C25.5 21.5 25 23 23.5 23.5C22.5 24 21 23.5 20.5 22L17 16C16.5 16 16 16 15.5 16C14 16 12.5 15.5 11.5 14.5L9 19C8.5 20 7 20.5 6 20C5 19.5 4.5 18 5 17L7.5 12C6 10.5 5 8.5 5 6.5C5 4 6.5 2.5 9 2.5H23C25.5 2.5 27 4 27 7.5ZM10 6.5C10 7.5 10.5 8 11.5 8C12.5 8 13 7.5 13 6.5C13 5.5 12.5 5 11.5 5C10.5 5 10 5.5 10 6.5ZM19 6.5C19 7.5 19.5 8 20.5 8C21.5 8 22 7.5 22 6.5C22 5.5 21.5 5 20.5 5C19.5 5 19 5.5 19 6.5Z" fill="currentColor"/>
-                          </svg>
-                          <div class="credits-dialog__payment-btn-text">
-                            <span class="credits-dialog__payment-btn-label">Pay with Crypto</span>
-                            <span class="credits-dialog__payment-btn-hint">Phantom Wallet</span>
-                          </div>
+                        <Loader2 v-if="paymentProcessing && paymentMethod === 'crypto'" :size="20" class="credits-dialog__spinner" />
+                        <svg v-else class="credits-dialog__payment-icon-compact" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M27 7.5C27 10.5 25 13.5 22 15.5L25 20.5C25.5 21.5 25 23 23.5 23.5C22.5 24 21 23.5 20.5 22L17 16C16.5 16 16 16 15.5 16C14 16 12.5 15.5 11.5 14.5L9 19C8.5 20 7 20.5 6 20C5 19.5 4.5 18 5 17L7.5 12C6 10.5 5 8.5 5 6.5C5 4 6.5 2.5 9 2.5H23C25.5 2.5 27 4 27 7.5ZM10 6.5C10 7.5 10.5 8 11.5 8C12.5 8 13 7.5 13 6.5C13 5.5 12.5 5 11.5 5C10.5 5 10 5.5 10 6.5ZM19 6.5C19 7.5 19.5 8 20.5 8C21.5 8 22 7.5 22 6.5C22 5.5 21.5 5 20.5 5C19.5 5 19 5.5 19 6.5Z" fill="currentColor"/>
+                        </svg>
+                        <div class="credits-dialog__payment-btn-text-compact">
+                          <span class="credits-dialog__payment-btn-label-compact">Pay with Crypto</span>
+                          <span class="credits-dialog__payment-btn-hint-compact">Phantom Wallet</span>
                         </div>
                       </button>
                     </div>
                   </div>
 
-                  <!-- Cancel Button -->
+                  <!-- Back Button -->
                   <button
                     type="button"
-                    class="credits-dialog__cancel-btn"
+                    class="credits-dialog__back-btn"
                     @click="paymentStep = 'select'"
                     :disabled="paymentProcessing"
                   >
@@ -270,6 +322,10 @@
     ShoppingCart,
     Tag,
     Percent,
+    Users,
+    RefreshCcw,
+    Sparkles,
+    ShieldCheck,
   } from 'lucide-vue-next';
   import api from '@/services/api';
   import { useAuthStore } from '@/stores/auth';
@@ -577,7 +633,7 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     width: 100%;
-    max-width: 520px;
+    max-width: 640px;
     max-height: 90vh;
     display: flex;
     flex-direction: column;
@@ -599,7 +655,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 2rem 2rem 1.5rem;
+    padding: 1.5rem 2rem 1.25rem;
     text-align: center;
   }
 
@@ -621,6 +677,14 @@
     z-index: 10;
   }
 
+  .credits-dialog__close--grid {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+  }
+
   .credits-dialog__close:hover:not(:disabled) {
     background-color: var(--sidebar-hover);
     color: var(--sidebar-text);
@@ -635,19 +699,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 64px;
-    height: 64px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     background-color: rgba(6, 182, 212, 0.15);
     border: 2px solid rgba(6, 182, 212, 0.25);
     color: var(--sidebar-accent);
     margin-bottom: 1rem;
-  }
-
-  .credits-dialog__icon--green {
-    background-color: rgba(16, 185, 129, 0.15);
-    border-color: rgba(16, 185, 129, 0.25);
-    color: #34d399;
   }
 
   .credits-dialog__icon--processing {
@@ -672,28 +730,28 @@
     animation: spin 0.8s linear infinite;
   }
 
-  .credits-dialog__title {
-    font-size: 1.375rem;
+  .credits-dialog__header .credits-dialog__title {
+    font-size: 1.25rem;
     font-weight: 700;
     color: var(--sidebar-text);
     margin: 0;
     letter-spacing: -0.02em;
   }
 
-  .credits-dialog__subtitle {
-    font-size: 0.875rem;
+  .credits-dialog__header .credits-dialog__subtitle {
+    font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
-    margin: 0.375rem 0 0;
+    margin: 0.25rem 0 0;
   }
 
   /* ===== Content Area ===== */
   .credits-dialog__content {
     flex: 1;
     overflow-y: auto;
-    padding: 0 2rem 2rem;
+    padding: 0 1.5rem 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 1rem;
     min-height: 0;
   }
 
@@ -714,20 +772,20 @@
   .credits-dialog__info-box {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
+    gap: 0.625rem;
+    padding: 0.875rem 1rem;
     background-color: rgba(6, 182, 212, 0.08);
     border: 1px solid rgba(6, 182, 212, 0.2);
-    border-radius: 10px;
+    border-radius: 8px;
   }
 
   .credits-dialog__info-icon {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
+    border-radius: 6px;
     background-color: rgba(6, 182, 212, 0.15);
     color: var(--sidebar-accent);
     flex-shrink: 0;
@@ -740,7 +798,7 @@
   }
 
   .credits-dialog__info-text strong {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--sidebar-text);
   }
@@ -781,7 +839,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 1.5rem 1rem;
+    padding: 1.25rem 0.875rem;
     text-align: center;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
@@ -802,28 +860,28 @@
   }
 
   .credits-dialog__pack-icon {
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 10px;
+    border-radius: 8px;
     background-color: rgba(6, 182, 212, 0.15);
     color: var(--sidebar-accent);
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
   }
 
   .credits-dialog__pack-name {
-    font-size: 0.6875rem;
+    font-size: 0.625rem;
     font-weight: 600;
     color: var(--sidebar-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.375rem;
   }
 
   .credits-dialog__pack-value {
-    font-size: 2.5rem;
+    font-size: 2.25rem;
     font-weight: 700;
     color: var(--sidebar-text);
     line-height: 1;
@@ -832,178 +890,300 @@
   }
 
   .credits-dialog__pack-unit {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 500;
     color: var(--sidebar-text-muted);
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
   }
 
   .credits-dialog__pack-divider {
     width: 100%;
     height: 1px;
     background-color: var(--sidebar-border);
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
   }
 
   .credits-dialog__pack-price {
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     font-weight: 700;
     color: var(--sidebar-accent);
     letter-spacing: -0.01em;
   }
 
-  /* ===== Summary Card ===== */
-  .credits-dialog__summary {
-    padding: 1.5rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
+  /* ===== Two-Column Grid ===== */
+  .credits-dialog__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: 500px;
   }
 
-  .credits-dialog__summary-header {
-    margin-bottom: 1rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .credits-dialog__summary-pack {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    text-transform: capitalize;
-  }
-
-  .credits-dialog__summary-main {
+  /* ===== Left Column - Branding ===== */
+  .credits-dialog__branding {
     display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2rem 1.75rem;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.05) 0%, rgba(6, 182, 212, 0.02) 100%);
+    border-right: 1px solid var(--sidebar-border);
+  }
+
+  .credits-dialog__branding-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .credits-dialog__plan-badge {
+    display: inline-flex;
     align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background-color: rgba(6, 182, 212, 0.15);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    text-transform: capitalize;
+    width: fit-content;
+  }
+
+  .credits-dialog__headline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .credits-dialog__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .credits-dialog__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .credits-dialog__features {
+    display: flex;
+    flex-direction: column;
     gap: 1rem;
   }
 
-  .credits-dialog__summary-icon {
-    width: 48px;
-    height: 48px;
+  .credits-dialog__feature {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .credits-dialog__feature-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 12px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     flex-shrink: 0;
   }
 
-  .credits-dialog__summary-details {
+  .credits-dialog__feature-icon--primary {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .credits-dialog__feature-icon--secondary {
+    background-color: rgba(6, 182, 212, 0.08);
+    color: var(--sidebar-accent);
+  }
+
+  .credits-dialog__feature-content {
     flex: 1;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 0.125rem;
   }
 
-  .credits-dialog__summary-credits {
-    font-size: 1.75rem;
-    font-weight: 700;
+  .credits-dialog__feature-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
     color: var(--sidebar-text);
-    letter-spacing: -0.02em;
+    margin: 0;
   }
 
-  .credits-dialog__summary-credits span {
-    font-size: 0.875rem;
-    font-weight: 500;
+  .credits-dialog__feature-desc {
+    font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
-    margin-left: 0.25rem;
+    margin: 0;
+    line-height: 1.4;
   }
 
-  .credits-dialog__summary-price {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-accent);
-    letter-spacing: -0.02em;
-  }
-
-  .credits-dialog__summary-crypto {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--sidebar-border);
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    text-align: center;
-  }
-
-  .credits-dialog__summary-discount {
+  .credits-dialog__trust {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--sidebar-border);
-    font-size: 0.75rem;
-    color: #10b981;
-    font-weight: 500;
+    padding: 0.625rem 0.875rem;
+    background-color: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 1rem;
   }
 
-  /* ===== Payment Wrapper ===== */
-  .credits-dialog__payment-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-  }
-
-  /* ===== Payment Section ===== */
-  .credits-dialog__payment-section {
+  /* ===== Right Column - Portal ===== */
+  .credits-dialog__portal {
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    padding: 1.5rem;
+    padding: 2rem 1.75rem;
+    overflow-y: auto;
+  }
+
+  .credits-dialog__portal::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .credits-dialog__portal::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .credits-dialog__portal::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Compact Summary ===== */
+  .credits-dialog__summary-compact {
+    padding: 1rem;
     background-color: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
     border-radius: 10px;
   }
 
-  .credits-dialog__payment-label {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    text-align: center;
+  .credits-dialog__summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
   }
 
-  .credits-dialog__payment-buttons {
+  .credits-dialog__summary-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .credits-dialog__summary-icon-compact {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .credits-dialog__summary-credits-compact {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    letter-spacing: -0.02em;
+  }
+
+  .credits-dialog__summary-credits-compact span {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin-left: 0.25rem;
+  }
+
+  .credits-dialog__summary-pack-name {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    text-transform: capitalize;
+  }
+
+  .credits-dialog__summary-right {
+    text-align: right;
+  }
+
+  .credits-dialog__summary-price-compact {
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: var(--sidebar-accent);
+    letter-spacing: -0.02em;
+  }
+
+  .credits-dialog__summary-crypto-compact {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  .credits-dialog__summary-discount-compact {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
+    font-size: 0.6875rem;
+    color: #10b981;
+    font-weight: 500;
+  }
+
+  /* ===== Compact Payment Section ===== */
+  .credits-dialog__payment-compact {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
 
-  .credits-dialog__payment-btn {
+  .credits-dialog__payment-label-compact {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .credits-dialog__payment-buttons-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .credits-dialog__payment-btn-compact {
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 0;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
     border: none;
     border-radius: 8px;
     cursor: pointer;
     transition: all 150ms ease;
-    overflow: hidden;
   }
 
-  .credits-dialog__payment-btn:disabled {
+  .credits-dialog__payment-btn-compact:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .credits-dialog__payment-btn-content {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1rem 1.25rem;
-    width: 100%;
-  }
-
-  .credits-dialog__payment-icon {
-    width: 24px;
-    height: 24px;
+  .credits-dialog__payment-icon-compact {
+    width: 20px;
+    height: 20px;
     flex-shrink: 0;
   }
 
-  .credits-dialog__payment-btn-text {
+  .credits-dialog__payment-btn-text-compact {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -1011,13 +1191,13 @@
     flex: 1;
   }
 
-  .credits-dialog__payment-btn-label {
-    font-size: 0.9375rem;
+  .credits-dialog__payment-btn-label-compact {
+    font-size: 0.875rem;
     font-weight: 600;
     line-height: 1.2;
   }
 
-  .credits-dialog__payment-btn-hint {
+  .credits-dialog__payment-btn-hint-compact {
     font-size: 0.6875rem;
     font-weight: 500;
     opacity: 0.85;
@@ -1050,25 +1230,25 @@
     box-shadow: 0 4px 16px rgba(124, 101, 232, 0.4);
   }
 
-  .credits-dialog__cancel-btn {
+  .credits-dialog__back-btn {
     width: 100%;
-    padding: 0.75rem;
+    padding: 0.625rem;
     background-color: transparent;
     border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    font-size: 0.875rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
     font-weight: 500;
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
   }
 
-  .credits-dialog__cancel-btn:disabled {
+  .credits-dialog__back-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .credits-dialog__cancel-btn:hover:not(:disabled) {
+  .credits-dialog__back-btn:hover:not(:disabled) {
     background-color: var(--sidebar-hover);
     border-color: rgba(255, 255, 255, 0.1);
     color: var(--sidebar-text);
@@ -1144,7 +1324,7 @@
   .credits-dialog__footer {
     display: flex;
     gap: 0.75rem;
-    padding: 1.5rem 2rem;
+    padding: 1rem 1.5rem;
     border-top: 1px solid var(--sidebar-border);
   }
 
@@ -1197,102 +1377,94 @@
     animation: spin 0.8s linear infinite;
   }
 
-  /* ===== Promo Code Section ===== */
-  .credits-dialog__promo {
-    padding: 1.25rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+  /* ===== Inline Promo Code ===== */
+  .credits-dialog__promo-inline {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .credits-dialog__promo-label {
-    display: flex;
-    align-items: center;
     gap: 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
   }
 
-  .credits-dialog__promo-input-group {
+  .credits-dialog__promo-row {
     display: flex;
     gap: 0.5rem;
   }
 
-  .credits-dialog__promo-input {
+  .credits-dialog__promo-input-inline {
     flex: 1;
-    padding: 0.625rem 0.75rem;
-    background-color: var(--sidebar-bg);
+    padding: 0.5rem 0.75rem;
+    background-color: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
     border-radius: 6px;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     color: var(--sidebar-text);
     transition: all 150ms ease;
   }
 
-  .credits-dialog__promo-input:focus {
+  .credits-dialog__promo-input-inline:focus {
     outline: none;
     border-color: var(--sidebar-accent);
   }
 
-  .credits-dialog__promo-input:disabled {
+  .credits-dialog__promo-input-inline:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .credits-dialog__promo-btn {
+  .credits-dialog__promo-input-inline::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .credits-dialog__promo-btn-inline {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
-    padding: 0 1rem;
+    gap: 0.25rem;
+    padding: 0 0.875rem;
     background-color: var(--sidebar-accent);
     color: white;
     border: none;
     border-radius: 6px;
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 150ms ease;
     white-space: nowrap;
   }
 
-  .credits-dialog__promo-btn:disabled {
+  .credits-dialog__promo-btn-inline:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .credits-dialog__promo-btn:hover:not(:disabled) {
+  .credits-dialog__promo-btn-inline:hover:not(:disabled) {
     opacity: 0.9;
   }
 
-  .credits-dialog__promo-error {
+  .credits-dialog__promo-error-inline {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.75rem;
+    gap: 0.375rem;
+    padding: 0.5rem 0.625rem;
     background-color: rgba(239, 68, 68, 0.1);
     border-radius: 6px;
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     color: #f87171;
   }
 
-  .credits-dialog__promo-success {
+  .credits-dialog__promo-success-inline {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.75rem;
+    gap: 0.375rem;
+    padding: 0.5rem 0.625rem;
     background-color: rgba(16, 185, 129, 0.1);
     border-radius: 6px;
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     color: #10b981;
     font-weight: 500;
   }
 
-  .credits-dialog__promo-clear {
+  .credits-dialog__promo-clear-inline {
     margin-left: auto;
     display: flex;
     align-items: center;
@@ -1306,7 +1478,7 @@
     transition: all 150ms ease;
   }
 
-  .credits-dialog__promo-clear:hover {
+  .credits-dialog__promo-clear-inline:hover {
     background-color: rgba(0, 0, 0, 0.1);
     color: #f87171;
   }

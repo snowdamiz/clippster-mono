@@ -37,7 +37,7 @@
                   <div class="subscribe-dialog__branding-content">
                     <!-- Plan Badge -->
                     <div class="subscribe-dialog__plan-badge">
-                      <Crown :size="16" />
+                      <Crown :size="14" />
                       <span>{{ plan.name }} Plan</span>
                     </div>
 
@@ -55,7 +55,7 @@
                     <div class="subscribe-dialog__features">
                       <div class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--primary">
-                          <Zap :size="18" />
+                          <Zap :size="16" />
                         </div>
                         <div class="subscribe-dialog__feature-content">
                           <h3 class="subscribe-dialog__feature-title">{{ plan.monthly_credits.toLocaleString() }} Monthly Credits</h3>
@@ -63,19 +63,19 @@
                         </div>
                       </div>
 
-                      <div v-if="context === 'organization' && plan.seats" class="subscribe-dialog__feature">
+                      <div v-if="context === 'organization'" class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <Users :size="18" />
+                          <Users :size="16" />
                         </div>
                         <div class="subscribe-dialog__feature-content">
-                          <h3 class="subscribe-dialog__feature-title">{{ plan.seats }} Team Seats</h3>
+                          <h3 class="subscribe-dialog__feature-title">{{ plan.seats === null ? 'Unlimited Team Seats' : `${plan.seats} Team Seats` }}</h3>
                           <p class="subscribe-dialog__feature-desc">Collaborate with your team on projects</p>
                         </div>
                       </div>
 
                       <div v-else class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <Infinity :size="18" />
+                          <Infinity :size="16" />
                         </div>
                         <div class="subscribe-dialog__feature-content">
                           <h3 class="subscribe-dialog__feature-title">Unlimited Exports</h3>
@@ -85,7 +85,7 @@
 
                       <div v-if="context === 'organization'" class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <FolderOpen :size="18" />
+                          <FolderOpen :size="16" />
                         </div>
                         <div class="subscribe-dialog__feature-content">
                           <h3 class="subscribe-dialog__feature-title">Shared Assets</h3>
@@ -95,7 +95,7 @@
 
                       <div v-if="context === 'organization'" class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <Calendar :size="18" />
+                          <Calendar :size="16" />
                         </div>
                         <div class="subscribe-dialog__feature-content">
                           <h3 class="subscribe-dialog__feature-title">Content Scheduling</h3>
@@ -105,7 +105,7 @@
 
                       <div v-if="context === 'organization'" class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <Megaphone :size="18" />
+                          <Megaphone :size="16" />
                         </div>
                         <div class="subscribe-dialog__feature-content">
                           <h3 class="subscribe-dialog__feature-title">Campaign Management</h3>
@@ -115,7 +115,7 @@
 
                       <div v-if="context === 'organization'" class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <BarChart3 :size="18" />
+                          <BarChart3 :size="16" />
                         </div>
                         <div class="subscribe-dialog__feature-content">
                           <h3 class="subscribe-dialog__feature-title">Analytics & Insights</h3>
@@ -125,7 +125,7 @@
 
                       <div v-if="context === 'organization'" class="subscribe-dialog__feature">
                         <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <Share2 :size="18" />
+                          <Share2 :size="16" />
                         </div>
                         <div class="subscribe-dialog__feature-content">
                           <h3 class="subscribe-dialog__feature-title">Team Collaboration</h3>
@@ -133,15 +133,6 @@
                         </div>
                       </div>
 
-                      <div class="subscribe-dialog__feature">
-                        <div class="subscribe-dialog__feature-icon subscribe-dialog__feature-icon--secondary">
-                          <MoreHorizontal :size="18" />
-                        </div>
-                        <div class="subscribe-dialog__feature-content">
-                          <h3 class="subscribe-dialog__feature-title">And More</h3>
-                          <p class="subscribe-dialog__feature-desc">{{ context === 'organization' ? 'Advanced workflows and integrations' : 'Plus many more premium features' }}</p>
-                        </div>
-                      </div>
                     </div>
                   </div>
 
@@ -158,9 +149,6 @@
                   <div class="subscribe-dialog__summary-card">
                     <div class="subscribe-dialog__summary-header">
                       <h3 class="subscribe-dialog__summary-title">{{ plan.name }}</h3>
-                      <span v-if="context === 'organization' && organizationName" class="subscribe-dialog__summary-org">
-                        for {{ organizationName }}
-                      </span>
                     </div>
 
                     <div class="subscribe-dialog__price-display">
@@ -174,9 +162,9 @@
                         <Zap class="subscribe-dialog__summary-item-icon" />
                         <span>{{ plan.monthly_credits.toLocaleString() }} credits/month</span>
                       </div>
-                      <div v-if="context === 'organization' && plan.seats" class="subscribe-dialog__summary-item">
+                      <div v-if="context === 'organization'" class="subscribe-dialog__summary-item">
                         <Users class="subscribe-dialog__summary-item-icon" />
-                        <span>{{ plan.seats }} team seats</span>
+                        <span>{{ plan.seats === null ? 'Unlimited team seats' : `${plan.seats} team seats` }}</span>
                       </div>
                       <div class="subscribe-dialog__summary-item">
                         <RefreshCcw class="subscribe-dialog__summary-item-icon" />
@@ -206,21 +194,21 @@
                         class="subscribe-dialog__promo-btn"
                         :disabled="validatingPromo || !promoCode.trim()"
                       >
-                        <Loader2 v-if="validatingPromo" :size="16" class="subscribe-dialog__spinner" />
+                        <Loader2 v-if="validatingPromo" :size="14" class="subscribe-dialog__spinner" />
                         <span v-else>Apply</span>
                       </button>
                     </div>
 
                     <div v-if="promoError" class="subscribe-dialog__promo-error">
-                      <AlertCircle :size="14" />
+                      <AlertCircle :size="12" />
                       <span>{{ promoError }}</span>
                     </div>
 
                     <div v-if="validatedPromo" class="subscribe-dialog__promo-success">
-                      <Percent :size="14" />
+                      <Percent :size="12" />
                       <span>{{ validatedPromo.percent_off }}% discount applied!</span>
                       <button type="button" @click="clearPromoCode" class="subscribe-dialog__promo-clear">
-                        <X :size="14" />
+                        <X :size="12" />
                       </button>
                     </div>
                   </div>
@@ -237,7 +225,7 @@
                           :disabled="processing"
                         >
                           <div class="subscribe-dialog__payment-btn-content">
-                            <Loader2 v-if="processing && paymentMethod === 'stripe'" :size="24" class="subscribe-dialog__spinner" />
+                            <Loader2 v-if="processing && paymentMethod === 'stripe'" :size="20" class="subscribe-dialog__spinner" />
                             <svg v-else class="subscribe-dialog__payment-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                               <path d="M13.3 4.5c-2.2 0-3.6 1.1-3.6 2.8 0 1.9 1.4 2.6 3.3 3.2 2.5.8 3.8 1.7 3.8 3.5 0 2.3-1.8 3.5-4.3 3.5-1.8 0-3.3-.5-4.5-1.3l-.8 2.8c1.1.7 2.8 1.2 4.8 1.2 3.3 0 5.3-1.6 5.3-4 0-1.9-1.2-2.8-3.4-3.5-2.2-.7-3.6-1.4-3.6-3 0-1.3 1.1-2.5 3.3-2.5 1.4 0 2.6.4 3.5.8l.7-2.7c-1-.5-2.3-.8-3.5-.8z" fill="currentColor"/>
                             </svg>
@@ -255,7 +243,7 @@
                           :disabled="processing"
                         >
                           <div class="subscribe-dialog__payment-btn-content">
-                            <Loader2 v-if="processing && paymentMethod === 'crypto'" :size="24" class="subscribe-dialog__spinner" />
+                            <Loader2 v-if="processing && paymentMethod === 'crypto'" :size="20" class="subscribe-dialog__spinner" />
                             <svg v-else class="subscribe-dialog__payment-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
                               <path d="M27 7.5C27 10.5 25 13.5 22 15.5L25 20.5C25.5 21.5 25 23 23.5 23.5C22.5 24 21 23.5 20.5 22L17 16C16.5 16 16 16 15.5 16C14 16 12.5 15.5 11.5 14.5L9 19C8.5 20 7 20.5 6 20C5 19.5 4.5 18 5 17L7.5 12C6 10.5 5 8.5 5 6.5C5 4 6.5 2.5 9 2.5H23C25.5 2.5 27 4 27 7.5ZM10 6.5C10 7.5 10.5 8 11.5 8C12.5 8 13 7.5 13 6.5C13 5.5 12.5 5 11.5 5C10.5 5 10 5.5 10 6.5ZM19 6.5C19 7.5 19.5 8 20.5 8C21.5 8 22 7.5 22 6.5C22 5.5 21.5 5 20.5 5C19.5 5 19 5.5 19 6.5Z" fill="currentColor"/>
                             </svg>
@@ -276,7 +264,7 @@
             <template v-else-if="paymentStep === 'processing'">
               <div class="subscribe-dialog__centered">
                 <div class="subscribe-dialog__icon subscribe-dialog__icon--processing">
-                  <Loader2 :size="32" class="subscribe-dialog__icon-spinner" />
+                  <Loader2 :size="28" class="subscribe-dialog__icon-spinner" />
                 </div>
                 <h3 class="subscribe-dialog__centered-title">Processing Payment</h3>
                 <p class="subscribe-dialog__centered-subtitle">{{ paymentStatus }}</p>
@@ -287,7 +275,7 @@
             <template v-else-if="paymentStep === 'success'">
               <div class="subscribe-dialog__centered">
                 <div class="subscribe-dialog__icon subscribe-dialog__icon--success">
-                  <CheckCircle :size="32" />
+                  <CheckCircle :size="28" />
                 </div>
                 <h3 class="subscribe-dialog__centered-title">Subscription Activated!</h3>
                 <p class="subscribe-dialog__centered-subtitle">
@@ -303,7 +291,7 @@
             <template v-else-if="paymentStep === 'error'">
               <div class="subscribe-dialog__centered">
                 <div class="subscribe-dialog__icon subscribe-dialog__icon--error">
-                  <AlertTriangle :size="32" />
+                  <AlertTriangle :size="28" />
                 </div>
                 <h3 class="subscribe-dialog__centered-title">Payment Failed</h3>
                 <p class="subscribe-dialog__centered-subtitle">{{ errorMessage }}</p>
@@ -350,7 +338,6 @@ import {
   BarChart3,
   Share2,
   Megaphone,
-  MoreHorizontal,
 } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
 import api from '@/services/api';
@@ -688,7 +675,7 @@ watch(() => props.open, (isOpen) => {
   border: 1px solid var(--sidebar-border);
   border-radius: 12px;
   width: 100%;
-  max-width: 900px;
+  max-width: 800px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -707,25 +694,27 @@ watch(() => props.open, (isOpen) => {
 /* ===== Close Button ===== */
 .subscribe-dialog__close {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
-  z-index: 10;
-  width: 32px;
-  height: 32px;
+  top: 0.625rem;
+  right: 0.625rem;
+  z-index: 100;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   color: var(--sidebar-text-muted);
   cursor: pointer;
   transition: all 150ms ease;
+  backdrop-filter: blur(4px);
 }
 
 .subscribe-dialog__close:hover:not(:disabled) {
-  background-color: var(--sidebar-hover);
+  background-color: rgba(0, 0, 0, 0.6);
   color: var(--sidebar-text);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .subscribe-dialog__close:disabled {
@@ -751,14 +740,14 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__branding {
   display: flex;
   flex-direction: column;
-  padding: 2rem 1.5rem 1.5rem;
+  padding: 1.5rem 1.25rem 1.25rem;
   background-color: rgba(6, 182, 212, 0.04);
   border-bottom: 1px solid var(--sidebar-border);
 }
 
 @media (min-width: 768px) {
   .subscribe-dialog__branding {
-    padding: 2.5rem 2rem 2rem;
+    padding: 2rem 1.75rem 1.75rem;
     border-bottom: none;
     border-right: 1px solid var(--sidebar-border);
   }
@@ -767,19 +756,19 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__branding-content {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
   flex: 1;
 }
 
 .subscribe-dialog__plan-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
   background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.8));
   color: white;
   border-radius: 20px;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 600;
   align-self: flex-start;
   box-shadow: 0 2px 8px rgba(6, 182, 212, 0.3);
@@ -788,11 +777,11 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__headline {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 
 .subscribe-dialog__title {
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 700;
   color: var(--sidebar-text);
   margin: 0;
@@ -802,38 +791,38 @@ watch(() => props.open, (isOpen) => {
 
 @media (min-width: 768px) {
   .subscribe-dialog__title {
-    font-size: 1.75rem;
+    font-size: 1.5rem;
   }
 }
 
 .subscribe-dialog__subtitle {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--sidebar-text-muted);
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 /* ===== Features List ===== */
 .subscribe-dialog__features {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 .subscribe-dialog__feature {
   display: flex;
   align-items: flex-start;
-  gap: 0.875rem;
+  gap: 0.75rem;
 }
 
 .subscribe-dialog__feature-icon {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .subscribe-dialog__feature-icon--primary {
@@ -854,14 +843,14 @@ watch(() => props.open, (isOpen) => {
 }
 
 .subscribe-dialog__feature-title {
-  font-size: 0.9375rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--sidebar-text);
-  margin: 0 0 0.25rem;
+  margin: 0 0 0.125rem;
 }
 
 .subscribe-dialog__feature-desc {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: var(--sidebar-text-muted);
   margin: 0;
   line-height: 1.4;
@@ -872,10 +861,10 @@ watch(() => props.open, (isOpen) => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding-top: 1.25rem;
+  padding-top: 1rem;
   margin-top: auto;
   border-top: 1px solid var(--sidebar-border);
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: var(--sidebar-text-muted);
 }
 
@@ -883,59 +872,59 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__content {
   display: flex;
   flex-direction: column;
-  padding: 2rem 1.5rem 2rem;
-  gap: 1.25rem;
+  padding: 1.5rem 1.25rem 1.5rem;
+  gap: 1rem;
   overflow-y: auto;
   min-height: 0;
 }
 
 @media (min-width: 768px) {
   .subscribe-dialog__content {
-    padding: 2.5rem 2rem 2rem;
+    padding: 2rem 1.75rem 1.75rem;
   }
 }
 
 /* ===== Summary Card ===== */
 .subscribe-dialog__summary-card {
-  padding: 1.5rem;
+  padding: 1.125rem;
   background-color: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
+  border-radius: 10px;
 }
 
 .subscribe-dialog__summary-header {
-  margin-bottom: 1rem;
+  margin-bottom: 0.375rem;
 }
 
 .subscribe-dialog__summary-title {
-  font-size: 1.125rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--sidebar-text);
-  margin: 0 0 0.25rem;
+  margin: 0 0 0.125rem;
 }
 
 .subscribe-dialog__summary-org {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: var(--sidebar-text-muted);
 }
 
 .subscribe-dialog__price-display {
   display: flex;
   align-items: baseline;
-  margin-bottom: 1.25rem;
-  padding-bottom: 1.25rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
   border-bottom: 1px solid var(--sidebar-border);
 }
 
 .subscribe-dialog__price-currency {
-  font-size: 1.25rem;
+  font-size: 1.125rem;
   font-weight: 600;
   color: var(--sidebar-text);
   margin-right: 0.125rem;
 }
 
 .subscribe-dialog__price-amount {
-  font-size: 2.5rem;
+  font-size: 2rem;
   font-weight: 700;
   color: var(--sidebar-accent);
   letter-spacing: -0.03em;
@@ -943,7 +932,7 @@ watch(() => props.open, (isOpen) => {
 }
 
 .subscribe-dialog__price-period {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--sidebar-text-muted);
   margin-left: 0.25rem;
 }
@@ -951,40 +940,40 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__summary-items {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.625rem;
 }
 
 .subscribe-dialog__summary-item {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  font-size: 0.8125rem;
+  gap: 0.5rem;
+  font-size: 0.75rem;
   color: var(--sidebar-text-muted);
 }
 
 .subscribe-dialog__summary-item-icon {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   color: var(--sidebar-accent);
   flex-shrink: 0;
 }
 
 /* ===== Promo Code Section ===== */
 .subscribe-dialog__promo {
-  padding: 1.25rem;
+  padding: 1rem;
   background-color: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.625rem;
 }
 
 .subscribe-dialog__promo-label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
+  gap: 0.375rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--sidebar-text);
 }
@@ -996,11 +985,11 @@ watch(() => props.open, (isOpen) => {
 
 .subscribe-dialog__promo-input {
   flex: 1;
-  padding: 0.625rem 0.75rem;
+  padding: 0.5rem 0.625rem;
   background-color: var(--sidebar-bg);
   border: 1px solid var(--sidebar-border);
   border-radius: 6px;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--sidebar-text);
   transition: all 150ms ease;
 }
@@ -1019,13 +1008,13 @@ watch(() => props.open, (isOpen) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.375rem;
-  padding: 0 1rem;
+  gap: 0.25rem;
+  padding: 0 0.875rem;
   background-color: var(--sidebar-accent);
   color: white;
   border: none;
   border-radius: 6px;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 150ms ease;
@@ -1044,22 +1033,22 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__promo-error {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
+  gap: 0.375rem;
+  padding: 0.5rem 0.625rem;
   background-color: rgba(239, 68, 68, 0.1);
   border-radius: 6px;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: #f87171;
 }
 
 .subscribe-dialog__promo-success {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
+  gap: 0.375rem;
+  padding: 0.5rem 0.625rem;
   background-color: rgba(16, 185, 129, 0.1);
   border-radius: 6px;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: #10b981;
   font-weight: 500;
 }
@@ -1087,23 +1076,22 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__payment-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+  gap: 0.625rem;
 }
 
 /* ===== Payment Section ===== */
 .subscribe-dialog__payment-section {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1.5rem;
+  gap: 0.75rem;
+  padding: 1.125rem;
   background-color: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .subscribe-dialog__payment-label {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--sidebar-text);
   text-align: center;
@@ -1112,7 +1100,7 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__payment-buttons {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.625rem;
 }
 
 .subscribe-dialog__payment-btn {
@@ -1135,14 +1123,14 @@ watch(() => props.open, (isOpen) => {
 .subscribe-dialog__payment-btn-content {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
-  padding: 1rem 1.25rem;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
   width: 100%;
 }
 
 .subscribe-dialog__payment-icon {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
 }
 
@@ -1155,7 +1143,7 @@ watch(() => props.open, (isOpen) => {
 }
 
 .subscribe-dialog__payment-btn-label {
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.2;
 }
@@ -1200,18 +1188,18 @@ watch(() => props.open, (isOpen) => {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 3rem 2rem;
-  gap: 1rem;
+  padding: 2.5rem 1.75rem;
+  gap: 0.875rem;
 }
 
 .subscribe-dialog__icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.375rem;
 }
 
 .subscribe-dialog__icon--processing {
@@ -1237,28 +1225,28 @@ watch(() => props.open, (isOpen) => {
 }
 
 .subscribe-dialog__centered-title {
-  font-size: 1.375rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--sidebar-text);
   margin: 0;
 }
 
 .subscribe-dialog__centered-subtitle {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--sidebar-text-muted);
   margin: 0;
-  max-width: 320px;
-  line-height: 1.5;
+  max-width: 300px;
+  line-height: 1.4;
 }
 
 .subscribe-dialog__success-btn {
-  margin-top: 0.5rem;
-  padding: 0.875rem 2rem;
+  margin-top: 0.375rem;
+  padding: 0.75rem 1.75rem;
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 150ms ease;
@@ -1271,17 +1259,17 @@ watch(() => props.open, (isOpen) => {
 
 .subscribe-dialog__error-actions {
   display: flex;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
+  gap: 0.625rem;
+  margin-top: 0.375rem;
 }
 
 .subscribe-dialog__retry-btn {
-  padding: 0.875rem 1.5rem;
+  padding: 0.75rem 1.375rem;
   background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 150ms ease;
@@ -1289,6 +1277,24 @@ watch(() => props.open, (isOpen) => {
 
 .subscribe-dialog__retry-btn:hover {
   opacity: 0.9;
+}
+
+.subscribe-dialog__cancel-btn {
+  padding: 0.75rem 1.375rem;
+  background-color: transparent;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--sidebar-text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.subscribe-dialog__cancel-btn:hover {
+  background-color: var(--sidebar-hover);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--sidebar-text);
 }
 
 .subscribe-dialog__spinner {
