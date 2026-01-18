@@ -3942,7 +3942,8 @@
         folderProject.value = null;
       }
     } catch (err) {
-      error('Failed to delete project', 'An error occurred while deleting the project. Please try again.');
+      console.error('[Projects] Failed to delete project:', err);
+      error('Failed to delete project', `An error occurred while deleting the project: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       deletingProject.value = false;
       projectHasVideos.value = false;
@@ -4019,7 +4020,8 @@
       selectedProjects.value.clear();
       await loadProjects();
     } catch (err) {
-      error('Failed to delete projects', 'An error occurred while deleting the projects.');
+      console.error('[Projects] Failed to delete projects:', err);
+      error('Failed to delete projects', `An error occurred while deleting the projects: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       showBulkDeleteDialog.value = false;
       bulkDeleting.value = false;
@@ -4078,7 +4080,8 @@
         folderProject.value = null;
       }
     } catch (err) {
-      error('Failed to delete segments', 'An error occurred while deleting the segments.');
+      console.error('[Projects] Failed to delete segments:', err);
+      error('Failed to delete segments', `An error occurred while deleting the segments: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       showBulkDeleteFolderChildrenDialog.value = false;
     }
