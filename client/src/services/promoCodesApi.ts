@@ -8,6 +8,8 @@ export interface PromoCode {
   duration_kind: 'once' | 'repeating' | 'forever';
   duration_months: number | null;
   allowed_tiers: string[];
+  allowed_org_tiers?: string[];
+  allowed_credit_packs?: string[];
   max_redemptions: number | null;
   redeem_by: string | null;
   is_active: boolean;
@@ -113,6 +115,31 @@ export async function validatePromoCode(
 }
 
 /**
+ * Validate a promo code for an organization subscription or credit pack
+ */
+export async function validateOrgPromoCode(
+  code: string,
+  organizationId: string,
+  tier: string,
+  type: 'subscription' | 'credit_pack'
+): Promise<ValidatePromoResponse> {
+  try {
+    const response = await api.post(`/organizations/${organizationId}/subscription/promo/validate`, {
+      code,
+      tier,
+      type,
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[PromoCodes] Failed to validate org code:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to validate promo code',
+    };
+  }
+}
+
+/**
  * List all promo codes (admin only)
  */
 export async function listPromoCodes(filters?: {
@@ -162,6 +189,8 @@ export async function createPromoCode(data: {
   duration_kind: 'once' | 'repeating' | 'forever';
   duration_months?: number;
   allowed_tiers: string[];
+  allowed_org_tiers?: string[];
+  allowed_credit_packs?: string[];
   max_redemptions?: number;
   redeem_by?: string;
   notes?: string;
@@ -221,6 +250,7 @@ export async function togglePromoCode(id: string, active: boolean): Promise<Togg
 
 export default {
   validatePromoCode,
+  validateOrgPromoCode,
   listPromoCodes,
   getPromoCode,
   createPromoCode,

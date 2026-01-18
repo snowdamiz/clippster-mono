@@ -134,8 +134,17 @@
                 </td>
                 <td class="admin-promo__td">
                   <div class="admin-promo__tiers">
-                    <span v-for="tier in promo.allowed_tiers" :key="tier" class="admin-promo__tier-badge">
+                    <span v-if="promo.allowed_tiers?.length" class="admin-promo__tier-section">User:</span>
+                    <span v-for="tier in promo.allowed_tiers" :key="`user-${tier}`" class="admin-promo__tier-badge admin-promo__tier-badge--user">
                       {{ tier }}
+                    </span>
+                    <span v-if="promo.allowed_org_tiers?.length" class="admin-promo__tier-section">Org:</span>
+                    <span v-for="tier in promo.allowed_org_tiers" :key="`org-${tier}`" class="admin-promo__tier-badge admin-promo__tier-badge--org">
+                      {{ tier.replace(/_/g, ' ') }}
+                    </span>
+                    <span v-if="promo.allowed_credit_packs?.length" class="admin-promo__tier-section">Packs:</span>
+                    <span v-for="pack in promo.allowed_credit_packs" :key="`pack-${pack}`" class="admin-promo__tier-badge admin-promo__tier-badge--pack">
+                      {{ pack }}
                     </span>
                   </div>
                 </td>
@@ -315,9 +324,12 @@
                     </span>
                   </div>
 
-                  <!-- Allowed Tiers -->
+                  <!-- User Subscription Tiers -->
                   <div class="promo-dialog__field">
-                    <label class="promo-dialog__label">Allowed Tiers *</label>
+                    <label class="promo-dialog__label">
+                      User Subscription Tiers
+                      <span class="promo-dialog__label-hint">(personal accounts)</span>
+                    </label>
                     <div class="promo-dialog__chips">
                       <button
                         v-for="tier in ['starter', 'creator', 'pro']"
@@ -331,9 +343,54 @@
                         {{ tier.charAt(0).toUpperCase() + tier.slice(1) }}
                       </button>
                     </div>
-                    <span v-if="errors.allowed_tiers" class="promo-dialog__error">
-                      {{ errors.allowed_tiers }}
-                    </span>
+                  </div>
+
+                  <!-- Organization Subscription Tiers -->
+                  <div class="promo-dialog__field">
+                    <label class="promo-dialog__label">
+                      Organization Subscription Tiers
+                      <span class="promo-dialog__label-hint">(organization plans)</span>
+                    </label>
+                    <div class="promo-dialog__chips">
+                      <button
+                        v-for="tier in ['enterprise', 'enterprise_ai', 'addon_5_seats', 'addon_5_seats_ai', 'addon_10_seats', 'addon_10_seats_ai']"
+                        :key="tier"
+                        type="button"
+                        class="promo-dialog__chip"
+                        :class="{ 'promo-dialog__chip--active': formData.allowed_org_tiers.includes(tier) }"
+                        @click="toggleOrgTier(tier)"
+                      >
+                        <CheckCircle v-if="formData.allowed_org_tiers.includes(tier)" :size="14" />
+                        {{ tier.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Credit Packs -->
+                  <div class="promo-dialog__field">
+                    <label class="promo-dialog__label">
+                      Credit Packs
+                      <span class="promo-dialog__label-hint">(one-time purchases)</span>
+                    </label>
+                    <div class="promo-dialog__chips">
+                      <button
+                        v-for="pack in ['starter', 'creator', 'pro', 'enterprise']"
+                        :key="pack"
+                        type="button"
+                        class="promo-dialog__chip"
+                        :class="{ 'promo-dialog__chip--active': formData.allowed_credit_packs.includes(pack) }"
+                        @click="toggleCreditPack(pack)"
+                      >
+                        <CheckCircle v-if="formData.allowed_credit_packs.includes(pack)" :size="14" />
+                        {{ pack.charAt(0).toUpperCase() + pack.slice(1) }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Validation Error -->
+                  <div v-if="errors.allowed_tiers" class="promo-dialog__alert promo-dialog__alert--error">
+                    <AlertTriangle :size="16" />
+                    <p class="promo-dialog__alert-text">{{ errors.allowed_tiers }}</p>
                   </div>
 
                   <!-- Two column row -->
@@ -474,11 +531,31 @@
                 </div>
 
                 <!-- Tiers Section -->
-                <div class="promo-dialog__section">
-                  <h3 class="promo-dialog__section-title">Allowed Tiers</h3>
+                <div v-if="viewingPromo.allowed_tiers?.length" class="promo-dialog__section">
+                  <h3 class="promo-dialog__section-title">User Subscription Tiers</h3>
                   <div class="promo-dialog__tier-list">
-                    <span v-for="tier in viewingPromo.allowed_tiers" :key="tier" class="promo-dialog__tier">
+                    <span v-for="tier in viewingPromo.allowed_tiers" :key="tier" class="promo-dialog__tier promo-dialog__tier--user">
                       {{ tier.charAt(0).toUpperCase() + tier.slice(1) }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Organization Tiers Section -->
+                <div v-if="viewingPromo.allowed_org_tiers?.length" class="promo-dialog__section">
+                  <h3 class="promo-dialog__section-title">Organization Subscription Tiers</h3>
+                  <div class="promo-dialog__tier-list">
+                    <span v-for="tier in viewingPromo.allowed_org_tiers" :key="tier" class="promo-dialog__tier promo-dialog__tier--org">
+                      {{ tier.replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Credit Packs Section -->
+                <div v-if="viewingPromo.allowed_credit_packs?.length" class="promo-dialog__section">
+                  <h3 class="promo-dialog__section-title">Credit Packs</h3>
+                  <div class="promo-dialog__tier-list">
+                    <span v-for="pack in viewingPromo.allowed_credit_packs" :key="pack" class="promo-dialog__tier promo-dialog__tier--pack">
+                      {{ pack.charAt(0).toUpperCase() + pack.slice(1) }}
                     </span>
                   </div>
                 </div>
@@ -616,7 +693,9 @@
     percent_off: 10,
     duration_kind: 'repeating' as 'once' | 'repeating' | 'forever',
     duration_months: 3,
-    allowed_tiers: ['starter', 'creator', 'pro'] as string[],
+    allowed_tiers: [] as string[],
+    allowed_org_tiers: [] as string[],
+    allowed_credit_packs: [] as string[],
     max_redemptions: null as number | null,
     redeem_by: '',
     notes: '',
@@ -763,6 +842,24 @@
     }
   }
 
+  function toggleOrgTier(tier: string) {
+    const index = formData.value.allowed_org_tiers.indexOf(tier);
+    if (index === -1) {
+      formData.value.allowed_org_tiers.push(tier);
+    } else {
+      formData.value.allowed_org_tiers.splice(index, 1);
+    }
+  }
+
+  function toggleCreditPack(pack: string) {
+    const index = formData.value.allowed_credit_packs.indexOf(pack);
+    if (index === -1) {
+      formData.value.allowed_credit_packs.push(pack);
+    } else {
+      formData.value.allowed_credit_packs.splice(index, 1);
+    }
+  }
+
   function editPromo(promo: PromoCode) {
     editingPromo.value = promo;
     formData.value = {
@@ -772,6 +869,8 @@
       duration_kind: promo.duration_kind,
       duration_months: promo.duration_months || 3,
       allowed_tiers: [...promo.allowed_tiers],
+      allowed_org_tiers: [...(promo.allowed_org_tiers || [])],
+      allowed_credit_packs: [...(promo.allowed_credit_packs || [])],
       max_redemptions: promo.max_redemptions,
       redeem_by: promo.redeem_by || '',
       notes: promo.notes || '',
@@ -806,8 +905,8 @@
       return;
     }
 
-    if (!formData.value.allowed_tiers.length) {
-      errors.value.allowed_tiers = 'At least one tier must be selected';
+    if (!formData.value.allowed_tiers.length && !formData.value.allowed_org_tiers.length && !formData.value.allowed_credit_packs.length) {
+      errors.value.allowed_tiers = 'At least one tier, organization tier, or credit pack must be selected';
       saving.value = false;
       return;
     }
@@ -829,6 +928,8 @@
           duration_kind: formData.value.duration_kind,
           duration_months: formData.value.duration_kind === 'repeating' ? formData.value.duration_months : undefined,
           allowed_tiers: formData.value.allowed_tiers,
+          allowed_org_tiers: formData.value.allowed_org_tiers,
+          allowed_credit_packs: formData.value.allowed_credit_packs,
           max_redemptions: formData.value.max_redemptions || undefined,
           redeem_by: formData.value.redeem_by || undefined,
           notes: formData.value.notes || undefined,
@@ -877,7 +978,9 @@
       percent_off: 10,
       duration_kind: 'repeating',
       duration_months: 3,
-      allowed_tiers: ['starter', 'creator', 'pro'],
+      allowed_tiers: [],
+      allowed_org_tiers: [],
+      allowed_credit_packs: [],
       max_redemptions: null,
       redeem_by: '',
       notes: '',
@@ -1272,6 +1375,16 @@
     gap: 0.25rem;
   }
 
+  .admin-promo__tier-section {
+    display: inline-block;
+    padding: 0.1875rem 0.375rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
   .admin-promo__tier-badge {
     display: inline-block;
     padding: 0.1875rem 0.5rem;
@@ -1282,6 +1395,24 @@
     font-weight: 500;
     color: var(--sidebar-text-muted);
     text-transform: capitalize;
+  }
+
+  .admin-promo__tier-badge--user {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+  }
+
+  .admin-promo__tier-badge--org {
+    background-color: rgba(168, 85, 247, 0.1);
+    border-color: rgba(168, 85, 247, 0.3);
+    color: #c084fc;
+  }
+
+  .admin-promo__tier-badge--pack {
+    background-color: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #86efac;
   }
 
   .admin-promo__usage--unlimited {
@@ -2044,6 +2175,24 @@
     font-size: 0.75rem;
     font-weight: 500;
     color: #7dd3fc;
+  }
+
+  .promo-dialog__tier--user {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+  }
+
+  .promo-dialog__tier--org {
+    background-color: rgba(168, 85, 247, 0.1);
+    border-color: rgba(168, 85, 247, 0.3);
+    color: #c084fc;
+  }
+
+  .promo-dialog__tier--pack {
+    background-color: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #86efac;
   }
 
   .promo-dialog__info-grid {

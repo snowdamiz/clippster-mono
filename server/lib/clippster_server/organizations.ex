@@ -153,15 +153,23 @@ defmodule ClippsterServer.Organizations do
 
   @doc """
   Adds a user as a member to an organization.
+  Enforces seat limits if organization has an active subscription.
   """
   def add_member(organization_id, user_id, role \\ "member") do
-    %OrganizationMember{}
-    |> OrganizationMember.create_changeset(%{
-      organization_id: organization_id,
-      user_id: user_id,
-      role: role
-    })
-    |> Repo.insert()
+    # Check seat limit
+    case ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id) do
+      {:error, :seat_limit_reached} ->
+        {:error, :seat_limit_reached}
+
+      {:ok, _} ->
+        %OrganizationMember{}
+        |> OrganizationMember.create_changeset(%{
+          organization_id: organization_id,
+          user_id: user_id,
+          role: role
+        })
+        |> Repo.insert()
+    end
   end
 
   @doc """
@@ -267,9 +275,11 @@ defmodule ClippsterServer.Organizations do
   @doc """
   Invites a user to an organization by email.
   Sends invitation email via Resend.
+  Enforces seat limits if organization has an active subscription.
   """
   def invite_member(organization_id, email, role, %User{} = inviter) do
     with {:ok, _} <- verify_admin(organization_id, inviter.id),
+         {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
          organization when not is_nil(organization) <- get_organization(organization_id),
          nil <- Accounts.get_user_by_email(email) |> then(fn user ->
            if user && is_member?(organization_id, user.id), do: :already_member, else: nil
@@ -312,6 +322,7 @@ defmodule ClippsterServer.Organizations do
       nil -> {:error, :organization_not_found}
       :already_member -> {:error, :already_member}
       %OrganizationInvitation{} -> {:error, :invitation_pending}
+      {:error, :seat_limit_reached} -> {:error, :seat_limit_reached}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -481,9 +492,11 @@ defmodule ClippsterServer.Organizations do
   @doc """
   Creates a new account for a member directly (no invitation required).
   Organization admin creates the account with email/password.
+  Enforces seat limits if organization has an active subscription.
   """
   def create_member_account(organization_id, email, password, role, name, %User{} = creator) do
     with {:ok, _} <- verify_admin(organization_id, creator.id),
+         {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
          nil <- Accounts.get_user_by_email(email) do
 
       Repo.transaction(fn ->
@@ -508,6 +521,7 @@ defmodule ClippsterServer.Organizations do
         end
       end)
     else
+      {:error, :seat_limit_reached} -> {:error, :seat_limit_reached}
       {:error, reason} -> {:error, reason}
       _existing_user -> {:error, :email_already_exists}
     end

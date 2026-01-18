@@ -7,10 +7,29 @@
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Team Members' }]"
   >
     <template #actions>
-      <button v-if="isAdmin" class="org-members__action-btn" @click="showInviteDialog = true">
-        <UserPlus class="org-members__action-icon" />
-        Add Member
-      </button>
+      <div v-if="isAdmin" class="org-members__actions-container">
+        <!-- Seat limit warning -->
+        <div v-if="hasActiveSubscription && seatsRemaining !== null" class="org-members__seat-info">
+          <span
+            class="org-members__seat-badge"
+            :class="{
+              'org-members__seat-badge--warning': seatsRemaining <= 2 && seatsRemaining > 0,
+              'org-members__seat-badge--danger': seatsRemaining === 0,
+            }"
+          >
+            {{ seatsRemaining }} {{ seatsRemaining === 1 ? 'seat' : 'seats' }} remaining
+          </span>
+        </div>
+        <button
+          class="org-members__action-btn"
+          @click="handleAddMemberClick"
+          :disabled="!canAddMembers"
+          :title="!canAddMembers ? 'Seat limit reached' : 'Add a new member'"
+        >
+          <UserPlus class="org-members__action-icon" />
+          Add Member
+        </button>
+      </div>
     </template>
 
     <div class="org-members">
@@ -32,7 +51,12 @@
             </div>
             <div class="org-members__stat-text">
               <h3 class="org-members__stat-title">Active Members</h3>
-              <p class="org-members__stat-desc">Currently in organization</p>
+              <p class="org-members__stat-desc">
+                <template v-if="hasActiveSubscription && totalSeats">
+                  {{ members.length }} of {{ totalSeats }} seats used
+                </template>
+                <template v-else>Currently in organization</template>
+              </p>
             </div>
             <div class="org-members__stat-value">{{ members.length }}</div>
           </div>
@@ -258,7 +282,7 @@
                       <div class="org-members__dropdown-toggle-item">
                         <div class="org-members__dropdown-toggle-label">
                           <Lock class="org-members__dropdown-icon" />
-                          <span>Restricteds</span>
+                          <span>Restricted</span>
                         </div>
                         <button
                           type="button"
@@ -310,6 +334,52 @@
       :organization-id="organizationId ?? ''"
       @member-added="() => loadOrganization(true)"
     />
+
+    <!-- Seat Limit Reached Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showSeatLimitDialog" class="org-dialog__overlay" @click.self="showSeatLimitDialog = false">
+          <Transition name="dialog" appear>
+            <div class="org-dialog org-dialog--warning">
+              <div class="org-dialog__accent org-dialog__accent--warning"></div>
+              <div class="org-dialog__header">
+                <button class="org-dialog__close" @click="showSeatLimitDialog = false" title="Close">
+                  <X :size="18" />
+                </button>
+                <div class="org-dialog__icon org-dialog__icon--warning">
+                  <Users :size="24" />
+                </div>
+                <h2 class="org-dialog__title">Seat Limit Reached</h2>
+                <p class="org-dialog__subtitle">Upgrade your subscription to add more members</p>
+              </div>
+
+              <div class="org-dialog__content">
+                <div class="org-dialog__warning">
+                  <p class="org-dialog__warning-text">
+                    Your organization is currently using
+                    <strong>{{ currentMembers }} of {{ totalSeats }}</strong>
+                    available seats. To add more team members, please upgrade your subscription or purchase an add-on.
+                  </p>
+                </div>
+
+                <div class="org-dialog__actions">
+                  <router-link
+                    :to="`/organization/${organizationId}/billing`"
+                    class="org-dialog__btn org-dialog__btn--primary"
+                    @click="showSeatLimitDialog = false"
+                  >
+                    View Subscription Plans
+                  </router-link>
+                  <button class="org-dialog__btn org-dialog__btn--secondary" @click="showSeatLimitDialog = false">
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Change Role Dialog -->
     <Teleport to="body">
@@ -579,6 +649,12 @@
     members,
     invitations,
     isAdmin,
+    subscription,
+    hasActiveSubscription,
+    totalSeats,
+    currentMembers,
+    seatsRemaining,
+    canAddMembers,
     loadOrganization,
     formatDate,
     formatAllocation,
@@ -595,6 +671,7 @@
 
   // Local state
   const showInviteDialog = ref(false);
+  const showSeatLimitDialog = ref(false);
   const failedAvatars = ref<Set<number>>(new Set());
   const resendingInvitationId = ref<number | null>(null);
 
@@ -625,6 +702,14 @@
 
   // Restriction toggle state
   const togglingRestrictionId = ref<number | null>(null);
+
+  function handleAddMemberClick() {
+    if (!canAddMembers.value) {
+      showSeatLimitDialog.value = true;
+    } else {
+      showInviteDialog.value = true;
+    }
+  }
 
   function handleAvatarError(event: Event, userId: number) {
     const img = event.target as HTMLImageElement;
@@ -862,6 +947,40 @@
   .org-members__action-icon {
     width: 14px;
     height: 14px;
+  }
+
+  .org-members__actions-container {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .org-members__seat-info {
+    display: flex;
+    align-items: center;
+  }
+
+  .org-members__seat-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.375rem 0.75rem;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .org-members__seat-badge--warning {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+  }
+
+  .org-members__seat-badge--danger {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
   }
 
   /* ===== Page Heading ===== */
@@ -1683,6 +1802,10 @@
     background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
   }
 
+  .org-dialog__accent--warning {
+    background: linear-gradient(90deg, #f59e0b, rgba(245, 158, 11, 0.5));
+  }
+
   .org-dialog__accent--red {
     background: linear-gradient(90deg, #ef4444, rgba(239, 68, 68, 0.5));
   }
@@ -1737,6 +1860,11 @@
   .org-dialog__icon--cyan {
     background-color: rgba(6, 182, 212, 0.15);
     color: var(--sidebar-accent);
+  }
+
+  .org-dialog__icon--warning {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
   }
 
   .org-dialog__icon--red {

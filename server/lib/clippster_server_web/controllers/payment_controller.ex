@@ -319,9 +319,13 @@ defmodule ClippsterServerWeb.PaymentController do
   @doc """
   Generate a payment quote for organization credit purchase.
   Only organization admins can request quotes for org purchases.
+  Optionally accepts promo_code parameter.
   """
-  def get_org_quote(conn, %{"organization_id" => org_id, "pack_type" => pack_type}) do
+  def get_org_quote(conn, %{"organization_id" => org_id, "pack_type" => pack_type} = params) do
     alias ClippsterServer.Organizations
+    alias ClippsterServer.PromoCodes
+
+    promo_code = Map.get(params, "promo_code")
 
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, org} <- get_organization(org_id),
@@ -329,15 +333,36 @@ defmodule ClippsterServerWeb.PaymentController do
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
 
+      # Calculate base price
+      base_usd = pack_info.usd
+
+      # Apply promo code discount if provided and valid
+      {final_usd, promo_info} = if promo_code do
+        case PromoCodes.validate_org_promo(promo_code, pack_type, org.id, :credit_pack) do
+          {:ok, promo} ->
+            discount = promo.percent_off / 100
+            discounted_usd = base_usd * (1 - discount)
+            {discounted_usd, %{
+              code: promo.code,
+              percent_off: promo.percent_off,
+              original_usd: base_usd
+            }}
+          {:error, _reason} ->
+            {base_usd, nil}
+        end
+      else
+        {base_usd, nil}
+      end
+
       # Server calculates exact SOL amount
-      sol_amount = pack_info.usd / sol_usd_rate
+      sol_amount = final_usd / sol_usd_rate
       company_wallet = Credits.get_company_wallet_address()
 
       # Generate quote with 5 minute expiry
       quote = %{
         pack_type: pack_type,
         hours: pack_info.hours,
-        amount_usd: pack_info.usd,
+        amount_usd: final_usd,
         amount_sol: sol_amount,
         sol_usd_rate: sol_usd_rate,
         company_wallet: company_wallet,
@@ -346,6 +371,13 @@ defmodule ClippsterServerWeb.PaymentController do
         expires_at: DateTime.utc_now() |> DateTime.add(300, :second) |> DateTime.to_iso8601(),
         quote_id: generate_quote_id()
       }
+
+      # Add promo info if applied
+      quote = if promo_info do
+        Map.put(quote, :promo_applied, promo_info)
+      else
+        quote
+      end
 
       json(conn, %{
         success: true,
@@ -382,14 +414,18 @@ defmodule ClippsterServerWeb.PaymentController do
   @doc """
   Confirm organization crypto payment - verifies on-chain transaction and adds to org pool.
   SERVER validates all pricing - frontend values are ignored.
+  Optionally accepts promo_code parameter.
   """
   def confirm_org_payment(conn, %{
         "organization_id" => org_id,
         "tx_signature" => tx_signature,
         "pack_type" => pack_type,
         "from_address" => from_address
-      }) do
+      } = params) do
     alias ClippsterServer.Organizations
+    alias ClippsterServer.PromoCodes
+
+    promo_code = Map.get(params, "promo_code")
 
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, org} <- get_organization(org_id),
@@ -397,13 +433,27 @@ defmodule ClippsterServerWeb.PaymentController do
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
 
+      # Validate promo code if provided and calculate final price
+      {expected_usd, validated_promo} = if promo_code do
+        case PromoCodes.validate_org_promo(promo_code, pack_type, org.id, :credit_pack) do
+          {:ok, promo} ->
+            discount = promo.percent_off / 100
+            discounted_usd = pack_info.usd * (1 - discount)
+            {discounted_usd, promo}
+          {:error, _reason} ->
+            {pack_info.usd, nil}
+        end
+      else
+        {pack_info.usd, nil}
+      end
+
       # SERVER calculates expected SOL amount - cannot be manipulated by frontend
-      expected_sol_amount = pack_info.usd / sol_usd_rate
+      expected_sol_amount = expected_usd / sol_usd_rate
 
       # Verify the on-chain transaction
       case verify_transaction(tx_signature, from_address, expected_sol_amount) do
         {:ok, :verified} ->
-          process_confirmed_org_payment(conn, org, pack_type, pack_info, tx_signature, expected_sol_amount, sol_usd_rate, user_id)
+          process_confirmed_org_payment_with_promo(conn, org, pack_type, pack_info, tx_signature, expected_sol_amount, sol_usd_rate, user_id, validated_promo)
 
         {:error, reason} ->
           conn
@@ -438,8 +488,9 @@ defmodule ClippsterServerWeb.PaymentController do
     end
   end
 
-  defp process_confirmed_org_payment(conn, org, pack_type, pack_info, tx_signature, sol_amount, sol_usd_rate, user_id) do
+  defp process_confirmed_org_payment_with_promo(conn, org, pack_type, pack_info, tx_signature, sol_amount, sol_usd_rate, user_id, validated_promo) do
     alias ClippsterServer.Organizations
+    alias ClippsterServer.PromoCodes
 
     # Record the transaction and add credits to organization pool
     case Organizations.create_org_credit_transaction_and_add_credits(
@@ -454,6 +505,11 @@ defmodule ClippsterServerWeb.PaymentController do
       "solana"
     ) do
       {:ok, %{org_credit: org_credit, transaction: transaction}} ->
+        # Record promo code redemption if validated
+        if validated_promo do
+          PromoCodes.create_org_redemption(validated_promo.id, org.id, user_id)
+        end
+
         json(conn, %{
           success: true,
           message: "#{pack_info.hours} hours added to organization pool",

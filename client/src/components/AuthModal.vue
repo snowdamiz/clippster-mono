@@ -679,7 +679,7 @@
     display: flex;
     flex-direction: column;
     padding: 1.5rem;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(6, 182, 212, 0.02) 100%);
+    background-color: rgba(6, 182, 212, 0.04);
     border-bottom: 1px solid var(--sidebar-border);
   }
 

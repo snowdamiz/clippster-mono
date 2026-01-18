@@ -1,0 +1,658 @@
+defmodule ClippsterServer.OrganizationSubscriptions do
+  @moduledoc """
+  The OrganizationSubscriptions context - manages organization subscriptions, add-ons, and seat limits.
+
+  Base Subscription Tiers:
+  - Enterprise Base: $300/month, 5 seats
+  - Enterprise AI: $500/month, 5 seats + 20,000 credits
+
+  Add-ons (require base subscription):
+  - With AI: 5/10/20 seats + credits
+  - Without AI: 5/10/20 seats only
+
+  Business Rules:
+  - Organizations must have a base subscription before purchasing add-ons
+  - Add-ons stack on top of base subscriptions
+  - Credits are granted on subscription start and each renewal
+  - Legacy organizations (created before subscriptions) have unlimited seats
+  """
+
+  import Ecto.Query, warn: false
+  alias ClippsterServer.Repo
+  alias ClippsterServer.Organizations
+  alias ClippsterServer.Organizations.Organization
+  alias ClippsterServer.OrganizationSubscriptions.{
+    OrganizationSubscription,
+    OrganizationSubscriptionAddon
+  }
+
+  # Subscription duration: 30 days
+  @subscription_days 30
+
+  # Base subscription tiers
+  @org_subscription_tiers %{
+    "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 300},
+    "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 500},
+    "enterprise_unlimited" => %{name: "Enterprise Unlimited", seats: nil, monthly_credits: 100_000, usd: 1800}
+  }
+
+  # Add-on tiers (require base subscription)
+  @org_addon_tiers %{
+    # With AI
+    "seats_5_ai" => %{name: "5 Seats + AI", seats: 5, monthly_credits: 10_000, usd: 250, requires_ai: true},
+    "seats_10_ai" => %{name: "10 Seats + AI", seats: 10, monthly_credits: 20_000, usd: 400, requires_ai: true},
+    "seats_20_ai" => %{name: "20 Seats + AI", seats: 20, monthly_credits: 40_000, usd: 575, requires_ai: true},
+    # Without AI
+    "seats_5" => %{name: "5 Seats", seats: 5, monthly_credits: 0, usd: 150, requires_ai: false},
+    "seats_10" => %{name: "10 Seats", seats: 10, monthly_credits: 0, usd: 200, requires_ai: false},
+    "seats_20" => %{name: "20 Seats", seats: 20, monthly_credits: 0, usd: 350, requires_ai: false}
+  }
+
+  @doc """
+  Gets the base subscription tier configurations.
+  """
+  def get_subscription_tiers, do: @org_subscription_tiers
+
+  @doc """
+  Gets the add-on tier configurations.
+  """
+  def get_addon_tiers, do: @org_addon_tiers
+
+  @doc """
+  Gets info for a specific base subscription tier.
+  """
+  def get_tier_info(tier) when is_binary(tier) do
+    Map.get(@org_subscription_tiers, tier)
+  end
+
+  @doc """
+  Gets info for a specific add-on tier.
+  """
+  def get_addon_info(tier) when is_binary(tier) do
+    Map.get(@org_addon_tiers, tier)
+  end
+
+  @doc """
+  Gets the subscription days duration.
+  """
+  def get_subscription_days, do: @subscription_days
+
+  # ============================================================================
+  # Base Subscription Creation
+  # ============================================================================
+
+  @doc """
+  Creates a new base subscription for an organization via Stripe.
+  Grants the tier's monthly credits and activates subscription.
+  """
+  def create_stripe_subscription(organization_id, tier, stripe_subscription_id, stripe_customer_id \\ nil) do
+    tier_info = get_tier_info(tier)
+
+    unless tier_info do
+      {:error, :invalid_tier}
+    else
+      Repo.transaction(fn ->
+        org = Repo.get!(Organization, organization_id)
+
+        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+        end_date = DateTime.add(start_date, @subscription_days, :day)
+
+        # Update organization subscription fields
+        {:ok, updated_org} = org
+          |> Organization.subscription_changeset(%{
+            subscription_status: "active",
+            subscription_tier: tier,
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: "stripe",
+            stripe_subscription_id: stripe_subscription_id,
+            stripe_customer_id: stripe_customer_id || org.stripe_customer_id,
+            max_seats: tier_info.seats,
+            monthly_credits: tier_info.monthly_credits
+          })
+          |> Repo.update()
+
+        # Create subscription history record
+        {:ok, subscription} = %OrganizationSubscription{}
+          |> OrganizationSubscription.create_changeset(%{
+            organization_id: organization_id,
+            subscription_type: "base",
+            tier: tier,
+            status: "active",
+            start_date: start_date,
+            end_date: end_date,
+            seats: tier_info.seats,
+            credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+            payment_method: "stripe",
+            stripe_subscription_id: stripe_subscription_id,
+            amount_usd: Decimal.new(to_string(tier_info.usd))
+          })
+          |> Repo.insert()
+
+        # Grant monthly credits to organization pool
+        if tier_info.monthly_credits > 0 do
+          {:ok, _} = Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
+        end
+
+        IO.puts("[OrgSubscriptions] Created #{tier} subscription for org #{organization_id}, granted #{tier_info.monthly_credits} credits")
+
+        %{organization: updated_org, subscription: subscription}
+      end)
+    end
+  end
+
+  @doc """
+  Creates a base subscription via crypto payment.
+  """
+  def create_crypto_subscription(organization_id, tier, tx_signature) do
+    tier_info = get_tier_info(tier)
+
+    unless tier_info do
+      {:error, :invalid_tier}
+    else
+      Repo.transaction(fn ->
+        org = Repo.get!(Organization, organization_id)
+
+        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+        end_date = DateTime.add(start_date, @subscription_days, :day)
+
+        # Update organization subscription fields
+        {:ok, updated_org} = org
+          |> Organization.subscription_changeset(%{
+            subscription_status: "active",
+            subscription_tier: tier,
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: "crypto",
+            max_seats: tier_info.seats,
+            monthly_credits: tier_info.monthly_credits
+          })
+          |> Repo.update()
+
+        # Create subscription history record
+        {:ok, subscription} = %OrganizationSubscription{}
+          |> OrganizationSubscription.create_changeset(%{
+            organization_id: organization_id,
+            subscription_type: "base",
+            tier: tier,
+            status: "active",
+            start_date: start_date,
+            end_date: end_date,
+            seats: tier_info.seats,
+            credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+            payment_method: "crypto",
+            stripe_subscription_id: "crypto_#{tx_signature}",
+            amount_usd: Decimal.new(to_string(tier_info.usd))
+          })
+          |> Repo.insert()
+
+        # Grant monthly credits
+        if tier_info.monthly_credits > 0 do
+          {:ok, _} = Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
+        end
+
+        IO.puts("[OrgSubscriptions] Created #{tier} crypto subscription for org #{organization_id}")
+
+        %{organization: updated_org, subscription: subscription}
+      end)
+    end
+  end
+
+  # ============================================================================
+  # Add-on Management
+  # ============================================================================
+
+  @doc """
+  Adds an add-on subscription to an organization.
+  Requires an active base subscription.
+  """
+  def add_addon_stripe(organization_id, addon_tier, stripe_subscription_id) do
+    addon_info = get_addon_info(addon_tier)
+    org = Repo.get!(Organization, organization_id)
+
+    cond do
+      is_nil(addon_info) ->
+        {:error, :invalid_addon_tier}
+
+      org.subscription_status != "active" ->
+        {:error, :no_active_base_subscription}
+
+      true ->
+        Repo.transaction(fn ->
+          start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+          end_date = org.subscription_end_date  # Align with base subscription
+
+          # Create addon record
+          {:ok, addon} = %OrganizationSubscriptionAddon{}
+            |> OrganizationSubscriptionAddon.create_changeset(%{
+              organization_id: organization_id,
+              addon_tier: addon_tier,
+              status: "active",
+              stripe_subscription_id: stripe_subscription_id,
+              start_date: start_date,
+              end_date: end_date,
+              seats: addon_info.seats,
+              monthly_credits: addon_info.monthly_credits
+            })
+            |> Repo.insert()
+
+          # Update organization's max_seats and monthly_credits
+          new_max_seats = (org.max_seats || 0) + addon_info.seats
+          new_monthly_credits = (org.monthly_credits || 0) + addon_info.monthly_credits
+
+          {:ok, updated_org} = org
+            |> Organization.subscription_changeset(%{
+              max_seats: new_max_seats,
+              monthly_credits: new_monthly_credits
+            })
+            |> Repo.update()
+
+          # Create history record
+          {:ok, history} = %OrganizationSubscription{}
+            |> OrganizationSubscription.create_changeset(%{
+              organization_id: organization_id,
+              subscription_type: "addon",
+              tier: addon_tier,
+              status: "active",
+              start_date: start_date,
+              end_date: end_date,
+              seats: addon_info.seats,
+              credits_granted: Decimal.new(to_string(addon_info.monthly_credits)),
+              payment_method: "stripe",
+              stripe_subscription_id: stripe_subscription_id,
+              amount_usd: Decimal.new(to_string(addon_info.usd))
+            })
+            |> Repo.insert()
+
+          # Grant credits immediately
+          if addon_info.monthly_credits > 0 do
+            {:ok, _} = Organizations.add_organization_credits(organization_id, addon_info.monthly_credits)
+          end
+
+          IO.puts("[OrgSubscriptions] Added #{addon_tier} addon for org #{organization_id}")
+
+          %{addon: addon, organization: updated_org, history: history}
+        end)
+    end
+  end
+
+  @doc """
+  Adds an add-on via crypto payment.
+  """
+  def add_addon_crypto(organization_id, addon_tier, tx_signature) do
+    addon_info = get_addon_info(addon_tier)
+    org = Repo.get!(Organization, organization_id)
+
+    cond do
+      is_nil(addon_info) ->
+        {:error, :invalid_addon_tier}
+
+      org.subscription_status != "active" ->
+        {:error, :no_active_base_subscription}
+
+      true ->
+        Repo.transaction(fn ->
+          start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+          end_date = org.subscription_end_date
+
+          # Create addon record
+          {:ok, addon} = %OrganizationSubscriptionAddon{}
+            |> OrganizationSubscriptionAddon.create_changeset(%{
+              organization_id: organization_id,
+              addon_tier: addon_tier,
+              status: "active",
+              start_date: start_date,
+              end_date: end_date,
+              seats: addon_info.seats,
+              monthly_credits: addon_info.monthly_credits
+            })
+            |> Repo.insert()
+
+          # Update totals
+          new_max_seats = (org.max_seats || 0) + addon_info.seats
+          new_monthly_credits = (org.monthly_credits || 0) + addon_info.monthly_credits
+
+          {:ok, updated_org} = org
+            |> Organization.subscription_changeset(%{
+              max_seats: new_max_seats,
+              monthly_credits: new_monthly_credits
+            })
+            |> Repo.update()
+
+          # Create history
+          {:ok, history} = %OrganizationSubscription{}
+            |> OrganizationSubscription.create_changeset(%{
+              organization_id: organization_id,
+              subscription_type: "addon",
+              tier: addon_tier,
+              status: "active",
+              start_date: start_date,
+              end_date: end_date,
+              seats: addon_info.seats,
+              credits_granted: Decimal.new(to_string(addon_info.monthly_credits)),
+              payment_method: "crypto",
+              stripe_subscription_id: "crypto_#{tx_signature}",
+              amount_usd: Decimal.new(to_string(addon_info.usd))
+            })
+            |> Repo.insert()
+
+          # Grant credits
+          if addon_info.monthly_credits > 0 do
+            {:ok, _} = Organizations.add_organization_credits(organization_id, addon_info.monthly_credits)
+          end
+
+          %{addon: addon, organization: updated_org, history: history}
+        end)
+    end
+  end
+
+  # ============================================================================
+  # Subscription Renewal
+  # ============================================================================
+
+  @doc """
+  Renews organization subscription (called from Stripe webhook).
+  Extends end_date and grants monthly credits for base + addons.
+  """
+  def renew_subscription(organization_id) do
+    Repo.transaction(fn ->
+      org = Repo.get!(Organization, organization_id) |> Repo.preload(:members)
+      tier = org.subscription_tier
+      tier_info = get_tier_info(tier)
+
+      unless tier_info do
+        Repo.rollback(:invalid_tier)
+      end
+
+      # Calculate new end date
+      current_end = org.subscription_end_date || DateTime.utc_now()
+      new_start = if DateTime.compare(DateTime.utc_now(), current_end) == :gt do
+        DateTime.utc_now() |> DateTime.truncate(:second)
+      else
+        current_end
+      end
+      new_end = DateTime.add(new_start, @subscription_days, :day)
+
+      # Update organization
+      {:ok, updated_org} = org
+        |> Organization.subscription_changeset(%{
+          subscription_status: "active",
+          subscription_end_date: new_end
+        })
+        |> Repo.update()
+
+      # Create history for base subscription renewal
+      {:ok, _subscription} = %OrganizationSubscription{}
+        |> OrganizationSubscription.create_changeset(%{
+          organization_id: organization_id,
+          subscription_type: "base",
+          tier: tier,
+          status: "active",
+          start_date: new_start,
+          end_date: new_end,
+          seats: tier_info.seats,
+          credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+          payment_method: org.subscription_renewal_method || "stripe",
+          stripe_subscription_id: org.stripe_subscription_id,
+          amount_usd: Decimal.new(to_string(tier_info.usd))
+        })
+        |> Repo.insert()
+
+      # Grant base subscription credits
+      total_credits = tier_info.monthly_credits
+
+      # Renew and grant credits for active addons
+      active_addons = OrganizationSubscriptionAddon
+        |> where([a], a.organization_id == ^organization_id and a.status == "active")
+        |> Repo.all()
+
+      total_credits = Enum.reduce(active_addons, total_credits, fn addon, acc ->
+        addon_info = get_addon_info(addon.addon_tier)
+
+        if addon_info do
+          # Update addon end date
+          addon
+          |> OrganizationSubscriptionAddon.update_status_changeset(%{end_date: new_end})
+          |> Repo.update()
+
+          # Create history
+          %OrganizationSubscription{}
+          |> OrganizationSubscription.create_changeset(%{
+            organization_id: organization_id,
+            subscription_type: "addon",
+            tier: addon.addon_tier,
+            status: "active",
+            start_date: new_start,
+            end_date: new_end,
+            seats: addon_info.seats,
+            credits_granted: Decimal.new(to_string(addon_info.monthly_credits)),
+            payment_method: org.subscription_renewal_method || "stripe",
+            stripe_subscription_id: addon.stripe_subscription_id,
+            amount_usd: Decimal.new(to_string(addon_info.usd))
+          })
+          |> Repo.insert()
+
+          acc + addon_info.monthly_credits
+        else
+          acc
+        end
+      end)
+
+      # Grant total credits to org pool
+      if total_credits > 0 do
+        {:ok, _} = Organizations.add_organization_credits(organization_id, total_credits)
+      end
+
+      IO.puts("[OrgSubscriptions] Renewed subscription for org #{organization_id}, granted #{total_credits} credits")
+
+      updated_org
+    end)
+  end
+
+  # ============================================================================
+  # Subscription Cancellation & Expiration
+  # ============================================================================
+
+  @doc """
+  Cancels organization subscription. Access continues until end_date.
+  """
+  def cancel_subscription(organization_id) do
+    Repo.transaction(fn ->
+      org = Repo.get!(Organization, organization_id)
+
+      unless org.subscription_status in ["active"] do
+        Repo.rollback(:not_active)
+      end
+
+      # Update status to cancelled
+      {:ok, updated_org} = org
+        |> Organization.subscription_changeset(%{
+          subscription_status: "cancelled"
+        })
+        |> Repo.update()
+
+      # Cancel active addons
+      OrganizationSubscriptionAddon
+      |> where([a], a.organization_id == ^organization_id and a.status == "active")
+      |> Repo.update_all(set: [status: "cancelled"])
+
+      IO.puts("[OrgSubscriptions] Cancelled subscription for org #{organization_id}")
+
+      updated_org
+    end)
+  end
+
+  @doc """
+  Expires organization subscription (called when end_date passes).
+  """
+  def expire_subscription(organization_id) do
+    Repo.transaction(fn ->
+      org = Repo.get!(Organization, organization_id)
+
+      {:ok, updated_org} = org
+        |> Organization.subscription_changeset(%{
+          subscription_status: "expired"
+        })
+        |> Repo.update()
+
+      # Expire addons
+      OrganizationSubscriptionAddon
+      |> where([a], a.organization_id == ^organization_id and a.status in ["active", "cancelled"])
+      |> Repo.update_all(set: [status: "expired"])
+
+      IO.puts("[OrgSubscriptions] Expired subscription for org #{organization_id}")
+
+      updated_org
+    end)
+  end
+
+  # ============================================================================
+  # Subscription Status & Calculations
+  # ============================================================================
+
+  @doc """
+  Gets the subscription status for an organization.
+  Returns comprehensive info including totals from base + addons.
+  """
+  def get_subscription_status(organization_id) do
+    org = Repo.get(Organization, organization_id)
+
+    case org do
+      nil ->
+        %{
+          status: "none",
+          tier: nil,
+          tier_name: nil,
+          has_subscription: false
+        }
+
+      org ->
+        # Check if expired
+        if org.subscription_status in ["active", "cancelled"] and org.subscription_end_date do
+          if DateTime.compare(DateTime.utc_now(), org.subscription_end_date) == :gt do
+            case expire_subscription(organization_id) do
+              {:ok, updated_org} -> build_status_response(updated_org)
+              {:error, _} -> build_status_response(org)
+            end
+          else
+            build_status_response(org)
+          end
+        else
+          build_status_response(org)
+        end
+    end
+  end
+
+  defp build_status_response(org) do
+    tier_info = if org.subscription_tier, do: get_tier_info(org.subscription_tier), else: nil
+
+    # Get active addons
+    active_addons = if org.subscription_status == "active" do
+      OrganizationSubscriptionAddon
+      |> where([a], a.organization_id == ^org.id and a.status == "active")
+      |> Repo.all()
+      |> Enum.map(fn addon ->
+        addon_info = get_addon_info(addon.addon_tier)
+        %{
+          tier: addon.addon_tier,
+          name: addon_info.name,
+          seats: addon_info.seats,
+          credits: addon_info.monthly_credits
+        }
+      end)
+    else
+      []
+    end
+
+    # Calculate totals
+    base_seats = if tier_info, do: tier_info.seats, else: 0
+    base_credits = if tier_info, do: tier_info.monthly_credits, else: 0
+
+    total_seats = org.max_seats  # This is kept in sync
+    total_monthly_credits = org.monthly_credits  # This is kept in sync
+
+    # Count current members
+    current_members = Organizations.count_members(org.id)
+    seats_remaining = if total_seats, do: max(0, total_seats - current_members), else: nil
+
+    %{
+      status: org.subscription_status || "none",
+      tier: org.subscription_tier,
+      tier_name: if(tier_info, do: tier_info.name, else: nil),
+      start_date: org.subscription_start_date,
+      end_date: org.subscription_end_date,
+      renewal_method: org.subscription_renewal_method,
+      days_remaining: calculate_days_remaining(org.subscription_end_date),
+      has_subscription: org.subscription_status in ["active", "cancelled"],
+      base_seats: base_seats,
+      base_credits: base_credits,
+      addons: active_addons,
+      total_seats: total_seats,
+      total_monthly_credits: total_monthly_credits,
+      current_members: current_members,
+      seats_remaining: seats_remaining
+    }
+  end
+
+  defp calculate_days_remaining(nil), do: 0
+  defp calculate_days_remaining(end_date) do
+    diff = DateTime.diff(end_date, DateTime.utc_now(), :day)
+    max(0, diff)
+  end
+
+  @doc """
+  Gets total seats available for an organization.
+  Returns nil for legacy orgs (unlimited).
+  """
+  def get_total_seats(organization_id) do
+    org = Repo.get(Organization, organization_id)
+    org.max_seats  # nil = unlimited (legacy)
+  end
+
+  @doc """
+  Checks if organization can add a new member.
+  Returns {:ok, seats_remaining} or {:error, :seat_limit_reached}.
+  """
+  def can_add_member?(organization_id) do
+    org = Repo.get(Organization, organization_id)
+
+    case org.max_seats do
+      nil ->
+        # Legacy org, unlimited seats
+        {:ok, nil}
+
+      max_seats ->
+        current_count = Organizations.count_members(organization_id)
+
+        if current_count < max_seats do
+          {:ok, max_seats - current_count}
+        else
+          {:error, :seat_limit_reached}
+        end
+    end
+  end
+
+  @doc """
+  Lists subscription history for an organization.
+  """
+  def list_subscription_history(organization_id) do
+    OrganizationSubscription
+    |> where([s], s.organization_id == ^organization_id)
+    |> order_by([s], desc: s.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets subscription by Stripe subscription ID.
+  """
+  def get_by_stripe_subscription(stripe_subscription_id) do
+    Repo.get_by(Organization, stripe_subscription_id: stripe_subscription_id)
+  end
+
+  @doc """
+  Gets subscription by Stripe customer ID.
+  """
+  def get_by_stripe_customer(stripe_customer_id) do
+    Repo.get_by(Organization, stripe_customer_id: stripe_customer_id)
+  end
+end
