@@ -244,10 +244,23 @@ export async function deleteProjectWithRetention(
 
   // Delete unbuilt/unopened clips
   for (const clip of clipsToDelete) {
-    // Delete clip segments first (foreign key constraint)
-    await db.execute('DELETE FROM clip_segments WHERE clip_id = ?', [clip.id]);
+    // Get all version IDs for this clip
+    const versions = await db.select<{ id: string }[]>(
+      'SELECT id FROM clip_versions WHERE clip_id = ?',
+      [clip.id]
+    );
+    
+    // Delete clip segments for each version (foreign key constraint)
+    for (const version of versions) {
+      await db.execute('DELETE FROM clip_segments WHERE clip_version_id = ?', [version.id]);
+    }
+    
+    // Delete clip versions
+    await db.execute('DELETE FROM clip_versions WHERE clip_id = ?', [clip.id]);
+    
     // Delete clip edits
     await db.execute('DELETE FROM clip_edits WHERE clip_id = ?', [clip.id]);
+    
     // Delete the clip record
     await db.execute('DELETE FROM clips WHERE id = ?', [clip.id]);
   }
