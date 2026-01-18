@@ -82,132 +82,104 @@
                     'monitor-card--live': !streamer.isDetecting && streamer.isLive,
                   }"
                 >
-                  <div class="monitor-card__content">
-                    <!-- Header: Avatar + Info + Status -->
-                    <div class="monitor-card__header">
-                      <div class="monitor-card__avatar">
+                  <!-- Card Header -->
+                  <div class="monitor-card__header">
+                    <div class="monitor-card__avatar">
+                      <img
+                        v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
+                        :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
+                        class="monitor-card__avatar-img"
+                      />
+                      <div
+                        v-else
+                        class="monitor-card__avatar-fallback"
+                        :class="getPlatformBgClass(streamer.platform)"
+                      >
                         <img
-                          v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
-                          :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
-                          class="monitor-card__avatar-img"
+                          :src="getPlatformIcon(streamer.platform)"
+                          class="monitor-card__avatar-icon"
+                          :class="getPlatformIconClasses(streamer.platform)"
                         />
-                        <div
-                          v-else
-                          class="monitor-card__avatar-fallback"
-                          :class="getPlatformBgClass(streamer.platform)"
-                        >
-                          <img
-                            :src="getPlatformIcon(streamer.platform)"
-                            class="monitor-card__avatar-icon"
-                            :class="getPlatformIconClasses(streamer.platform)"
-                          />
-                        </div>
-                      </div>
-
-                      <div class="monitor-card__info">
-                        <h3 class="monitor-card__name">{{ streamer.displayName }}</h3>
-                        <div class="monitor-card__meta">
-                          <span class="monitor-card__platform" :class="getPlatformTextClass(streamer.platform)">
-                            {{ streamer.platform }}
-                          </span>
-                          <span class="monitor-card__divider"></span>
-                          <!-- Status Badge -->
-                          <div v-if="streamer.isDetecting" class="monitor-status monitor-status--active">
-                            <span class="monitor-status__dot"></span>
-                            {{ getStatusLabel(streamer) }}
-                          </div>
-                          <template v-else>
-                            <div v-if="streamer.isCheckingLive" class="monitor-status monitor-status--checking">
-                              <Loader2 class="monitor-status__spinner" />
-                            </div>
-                            <div v-else-if="streamer.isLive" class="monitor-status monitor-status--live">
-                              <span class="monitor-status__dot"></span>
-                              LIVE
-                              <span v-if="streamer.viewerCount" class="monitor-status__viewers">
-                                {{ formatViewerCount(streamer.viewerCount) }}
-                              </span>
-                              <span v-if="streamer.hasTempRecording" class="monitor-status__dvr">DVR</span>
-                            </div>
-                            <div v-else class="monitor-status monitor-status--offline">
-                              <span class="monitor-status__dot"></span>
-                              Offline
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-
-                      <!-- Quick Actions (top right) -->
-                      <div class="monitor-card__quick-actions">
-                        <button
-                          v-if="!streamer.isDetecting"
-                          @click.stop="refreshLiveStatus(streamer)"
-                          class="monitor-card__icon-btn"
-                          :class="{ 'monitor-card__icon-btn--spinning': streamer.isCheckingLive }"
-                          :disabled="streamer.isCheckingLive"
-                          title="Refresh status"
-                        >
-                          <RefreshCw class="monitor-card__icon-btn-icon" />
-                        </button>
-                        <button
-                          v-if="!streamer.isDetecting"
-                          @click.stop="confirmRemoveStreamer(streamer)"
-                          class="monitor-card__icon-btn monitor-card__icon-btn--danger"
-                          title="Remove"
-                        >
-                          <Trash2 class="monitor-card__icon-btn-icon" />
-                        </button>
                       </div>
                     </div>
 
-                    <!-- Controls Row -->
-                    <div class="monitor-card__controls">
-                      <!-- Left: Settings -->
-                      <div class="monitor-card__settings">
-                        <button
-                          @click="updateAutoDvr(streamer, !streamer.autoDvr)"
-                          :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
-                          class="monitor-setting__toggle"
-                          :class="{ 'monitor-setting__toggle--on': streamer.autoDvr }"
-                          title="Auto DVR"
-                        >
-                          <Video class="monitor-setting__toggle-icon" />
-                          DVR
-                        </button>
+                    <div class="monitor-card__info">
+                      <h3 class="monitor-card__name">{{ streamer.displayName }}</h3>
+                      <div class="monitor-card__platform" :class="getPlatformTextClass(streamer.platform)">
+                        {{ streamer.platform }}
                       </div>
+                    </div>
 
-                      <!-- Right: Action Buttons -->
-                      <div class="monitor-card__actions">
-                        <template v-if="!streamer.isDetecting">
-                          <div v-if="streamer.status === 'STOPPING'" class="monitor-action monitor-action--stopping">
-                            <Loader2 class="monitor-action__spinner" />
-                            Stopping...
-                          </div>
-                          <template v-else>
-                            <button
-                              v-if="streamer.isLive"
-                              @click="openWatchDialog(streamer)"
-                              class="monitor-action monitor-action--watch"
-                            >
-                              <Eye class="monitor-action__icon" />
-                              Watch
-                            </button>
-                            <div class="monitor-action-group">
-                              <button @click="startStreamer(streamer, false)" class="monitor-action-group__btn">
-                                <Video class="monitor-action__icon" />
-                                Rec
-                              </button>
-                              <button
-                                @click="startStreamer(streamer, true)"
-                                class="monitor-action-group__btn monitor-action-group__btn--primary"
-                              >
-                                <Sparkles class="monitor-action__icon" />
-                                Auto
-                              </button>
-                            </div>
-                          </template>
-                        </template>
+                    <!-- Quick Actions (top right) -->
+                    <div class="monitor-card__quick-actions">
+                      <button
+                        v-if="!streamer.isDetecting"
+                        @click.stop="refreshLiveStatus(streamer)"
+                        class="monitor-card__icon-btn"
+                        :class="{ 'monitor-card__icon-btn--spinning': streamer.isCheckingLive }"
+                        :disabled="streamer.isCheckingLive"
+                        title="Refresh status"
+                      >
+                        <RefreshCw class="monitor-card__icon-btn-icon" />
+                      </button>
+                      <button
+                        v-if="!streamer.isDetecting"
+                        @click.stop="confirmRemoveStreamer(streamer)"
+                        class="monitor-card__icon-btn monitor-card__icon-btn--danger"
+                        title="Remove"
+                      >
+                        <Trash2 class="monitor-card__icon-btn-icon" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Footer: Status + Settings + Actions -->
+                  <div class="monitor-card__footer">
+                    <!-- Left: Status -->
+                    <div class="monitor-card__status">
+                      <div v-if="streamer.isDetecting" class="monitor-status monitor-status--active">
+                        <span class="monitor-status__dot"></span>
+                        {{ getStatusLabel(streamer) }}
+                      </div>
+                      <template v-else>
+                        <div v-if="streamer.isCheckingLive" class="monitor-status monitor-status--checking">
+                          <Loader2 class="monitor-status__spinner" />
+                          Checking...
+                        </div>
+                        <div v-else-if="streamer.isLive" class="monitor-status monitor-status--live">
+                          <span class="monitor-status__dot"></span>
+                          LIVE
+                          <span v-if="streamer.viewerCount" class="monitor-status__viewers">
+                            {{ formatViewerCount(streamer.viewerCount) }}
+                          </span>
+                          <span v-if="streamer.hasTempRecording" class="monitor-status__dvr">DVR</span>
+                        </div>
+                        <div v-else class="monitor-status monitor-status--offline">
+                          <span class="monitor-status__dot"></span>
+                          Offline
+                        </div>
+                      </template>
+                    </div>
+
+                    <!-- Right: Settings + Actions -->
+                    <div class="monitor-card__controls">
+                      <button
+                        @click="updateAutoDvr(streamer, !streamer.autoDvr)"
+                        :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
+                        class="monitor-action monitor-action--dvr"
+                        :class="{ 'monitor-action--dvr-on': streamer.autoDvr }"
+                        title="Auto DVR"
+                      >
+                        <Video class="monitor-action__icon" />
+                        Auto DVR
+                      </button>
+
+                      <template v-if="!streamer.isDetecting">
+                        <div v-if="streamer.status === 'STOPPING'" class="monitor-action monitor-action--stopping">
+                          <Loader2 class="monitor-action__spinner" />
+                          Stopping...
+                        </div>
                         <template v-else>
-                          <!-- Watch button available even while detecting/recording -->
                           <button
                             v-if="streamer.isLive"
                             @click="openWatchDialog(streamer)"
@@ -216,12 +188,35 @@
                             <Eye class="monitor-action__icon" />
                             Watch
                           </button>
-                          <button class="monitor-action monitor-action--stop" @click="stopStreamer(streamer)">
-                            <Square class="monitor-action__icon" />
-                            Stop
-                          </button>
+                          <div class="monitor-action-group">
+                            <button @click="startStreamer(streamer, false)" class="monitor-action-group__btn">
+                              <Video class="monitor-action__icon" />
+                              Rec
+                            </button>
+                            <button
+                              @click="startStreamer(streamer, true)"
+                              class="monitor-action-group__btn monitor-action-group__btn--primary"
+                            >
+                              <Sparkles class="monitor-action__icon" />
+                              Auto
+                            </button>
+                          </div>
                         </template>
-                      </div>
+                      </template>
+                      <template v-else>
+                        <button
+                          v-if="streamer.isLive"
+                          @click="openWatchDialog(streamer)"
+                          class="monitor-action monitor-action--watch"
+                        >
+                          <Eye class="monitor-action__icon" />
+                          Watch
+                        </button>
+                        <button class="monitor-action monitor-action--stop" @click="stopStreamer(streamer)">
+                          <Square class="monitor-action__icon" />
+                          Stop
+                        </button>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -1880,18 +1875,19 @@
 
   /* ===== Monitor Card ===== */
   .monitor-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
     background-color: var(--sidebar-surface);
-    border-radius: 12px;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
     overflow: hidden;
-    transition: all 200ms ease;
+    transition: all 150ms ease;
   }
 
   .monitor-card:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  }
-
-  .monitor-card__content {
-    padding: 1rem 1.25rem;
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   }
 
   /* Card Header */
@@ -1899,7 +1895,7 @@
     display: flex;
     align-items: center;
     gap: 0.875rem;
-    margin-bottom: 1rem;
+    padding: 1rem;
   }
 
   .monitor-card__avatar {
@@ -1908,6 +1904,8 @@
     border-radius: 10px;
     overflow: hidden;
     flex-shrink: 0;
+    border: 2px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
   }
 
   .monitor-card__avatar-img {
@@ -1938,8 +1936,8 @@
   }
 
   .monitor-card__avatar-icon {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
   }
 
   .monitor-card__info {
@@ -1948,24 +1946,18 @@
   }
 
   .monitor-card__name {
-    font-size: 0.9375rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0 0 0.25rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .monitor-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
+    line-height: 1.3;
   }
 
   .monitor-card__platform {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     font-weight: 500;
   }
 
@@ -1982,17 +1974,10 @@
     color: #34d399;
   }
 
-  .monitor-card__divider {
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background-color: var(--sidebar-text-muted);
-    opacity: 0.4;
-  }
-
   .monitor-card__quick-actions {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.375rem;
+    flex-shrink: 0;
   }
 
   .monitor-card__icon-btn {
@@ -2003,14 +1988,16 @@
     justify-content: center;
     border-radius: 6px;
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
+    flex-shrink: 0;
   }
 
   .monitor-card__icon-btn:hover:not(:disabled) {
     background-color: var(--sidebar-hover);
+    border-color: var(--sidebar-border);
     color: var(--sidebar-text);
   }
 
@@ -2024,15 +2011,18 @@
   }
 
   .monitor-card__icon-btn-icon {
-    width: 14px;
-    height: 14px;
+    width: 18px;
+    height: 18px;
   }
+
 
   /* Status Badges */
   .monitor-status {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 5px;
     font-size: 0.6875rem;
     font-weight: 600;
   }
@@ -2051,6 +2041,7 @@
   }
 
   .monitor-status--active {
+    background-color: rgba(16, 185, 129, 0.15);
     color: #34d399;
   }
 
@@ -2059,6 +2050,7 @@
   }
 
   .monitor-status--live {
+    background-color: rgba(239, 68, 68, 0.15);
     color: #f87171;
   }
 
@@ -2081,111 +2073,40 @@
   }
 
   .monitor-status--offline {
+    background-color: transparent;
     color: var(--sidebar-text-muted);
-    opacity: 0.6;
+    padding: 0.375rem 0;
+    opacity: 0.7;
   }
 
   .monitor-status--offline .monitor-status__dot {
     background-color: var(--sidebar-text-muted);
+    opacity: 0.4;
     animation: none;
   }
 
   .monitor-status--checking {
+    background-color: var(--sidebar-hover);
     color: var(--sidebar-text-muted);
   }
 
-  /* Card Controls */
-  .monitor-card__controls {
+  /* Card Footer */
+  .monitor-card__footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-top: 0.875rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    gap: 0.75rem;
+    gap: 0.625rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--sidebar-border);
   }
 
-  .monitor-card__settings {
+  .monitor-card__status {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    flex-shrink: 0;
   }
 
-  .monitor-setting__dropdown-trigger {
-    height: 30px;
-    padding: 0 0.5rem 0 0.625rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    background-color: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .monitor-setting__dropdown-trigger:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.12);
-    color: var(--sidebar-text);
-  }
-
-  .monitor-setting__dropdown-trigger--disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .monitor-setting__dropdown-chevron {
-    width: 12px;
-    height: 12px;
-    opacity: 0.6;
-  }
-
-  .monitor-setting__toggle {
-    height: 30px;
-    padding: 0 0.625rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background-color: rgba(255, 255, 255, 0.04);
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .monitor-setting__toggle:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-
-  .monitor-setting__toggle--on {
-    background-color: rgba(16, 185, 129, 0.12);
-    border-color: rgba(16, 185, 129, 0.25);
-    color: #34d399;
-  }
-
-  .monitor-setting__toggle--on:hover:not(:disabled) {
-    background-color: rgba(16, 185, 129, 0.18);
-  }
-
-  .monitor-setting__toggle-icon {
-    width: 12px;
-    height: 12px;
-    opacity: 0.7;
-  }
-
-  .monitor-setting__toggle--on .monitor-setting__toggle-icon {
-    opacity: 1;
-  }
-
-  /* Card Actions */
-  .monitor-card__actions {
+  .monitor-card__controls {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -2203,7 +2124,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
+    padding: 0.5rem 0.625rem;
+    height: 32px;
     font-size: 0.6875rem;
     font-weight: 500;
     background-color: rgba(255, 255, 255, 0.04);
@@ -2237,7 +2159,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
+    padding: 0.5rem 0.625rem;
+    height: 32px;
     border-radius: 6px;
     font-size: 0.6875rem;
     font-weight: 500;
@@ -2283,6 +2206,28 @@
   .monitor-action--stop:hover {
     background-color: rgba(239, 68, 68, 0.2);
     color: #fca5a5;
+  }
+
+  .monitor-action--dvr {
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--sidebar-text-muted);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .monitor-action--dvr:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+  }
+
+  .monitor-action--dvr-on {
+    background-color: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.25);
+    color: #34d399;
+  }
+
+  .monitor-action--dvr-on:hover:not(:disabled) {
+    background-color: rgba(16, 185, 129, 0.18);
+    color: #34d399;
   }
 
   /* ===== Activity Log ===== */

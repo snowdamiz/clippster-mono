@@ -3415,35 +3415,35 @@
   .clips-card__badge {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    backdrop-filter: blur(4px);
+    gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(8px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .clips-card__badge--count {
-    background-color: rgba(37, 99, 235, 0.9);
-    color: white;
+    background-color: rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
   }
 
   .clips-card__badge--untranscribed {
-    background-color: rgba(0, 0, 0, 0.6);
-    color: rgba(251, 191, 36, 0.9);
-    border: 1px solid rgba(251, 191, 36, 0.3);
-    padding: 0.25rem 0.375rem;
+    background-color: rgba(245, 158, 11, 0.3);
+    color: #fcd34d;
   }
 
   .clips-card__badge-icon {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
   }
 
   .clips-card__badge-icon-sm {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
   }
 
   /* Thumbnail */

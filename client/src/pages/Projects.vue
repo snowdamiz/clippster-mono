@@ -4915,28 +4915,30 @@
     z-index: 20;
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    backdrop-filter: blur(4px);
+    gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(8px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .project-card__badge--detecting {
-    background-color: rgba(147, 51, 234, 0.9);
-    color: white;
+    background-color: rgba(147, 51, 234, 0.3);
+    color: #c4b5fd;
   }
 
   .project-card__badge--folder {
-    background-color: rgba(37, 99, 235, 0.9);
-    color: white;
+    background-color: rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
   }
 
   .project-card__badge-icon {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
   }
 
   .project-card__badge-icon--spin {

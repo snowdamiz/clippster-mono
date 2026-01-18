@@ -1986,17 +1986,11 @@
 
   .creators__list-inner {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
   }
 
-  @media (max-width: 1024px) {
-    .creators__list-inner {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (max-width: 640px) {
+  @media (max-width: 768px) {
     .creators__list-inner {
       grid-template-columns: 1fr;
     }
@@ -2023,13 +2017,13 @@
   .creator-card__header {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
+    gap: 0.875rem;
+    padding: 1rem;
   }
 
   .creator-card__avatar {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     border-radius: 10px;
     flex-shrink: 0;
     overflow: hidden;
@@ -2053,8 +2047,8 @@
   }
 
   .creator-card__avatar-icon {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     color: var(--sidebar-text-muted);
     opacity: 0.6;
   }
@@ -2072,7 +2066,7 @@
   }
 
   .creator-card__name {
-    font-size: 0.875rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--sidebar-text);
     white-space: nowrap;
@@ -2085,26 +2079,26 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.125rem 0.375rem;
+    padding: 0.1875rem 0.5rem;
     background-color: rgba(139, 92, 246, 0.15);
     color: #a78bfa;
-    font-size: 0.5625rem;
+    font-size: 0.625rem;
     font-weight: 600;
     border-radius: 4px;
   }
 
   .creator-card__org-badge-icon {
-    width: 10px;
-    height: 10px;
+    width: 11px;
+    height: 11px;
   }
 
   .creator-card__desc {
-    font-size: 0.6875rem;
+    font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 0.125rem;
+    margin-top: 0.25rem;
   }
 
   /* Menu Button */
@@ -2112,8 +2106,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 6px;
@@ -2130,23 +2124,23 @@
   }
 
   .creator-card__menu-icon {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   /* Stats Row */
   .creator-card__stats-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    gap: 0.625rem;
+    padding: 0.625rem 1rem;
     border-top: 1px solid var(--sidebar-border);
     background-color: rgba(0, 0, 0, 0.1);
   }
 
   .creator-card__divider {
     width: 1px;
-    height: 20px;
+    height: 22px;
     background-color: var(--sidebar-border);
   }
 
@@ -2154,12 +2148,12 @@
   .creator-card__platforms {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.375rem;
   }
 
   .creator-card__platform-icon-wrapper {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2173,12 +2167,12 @@
   }
 
   .creator-card__platform-icon {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
 
   .creator-card__more-badge {
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     font-weight: 600;
     color: var(--sidebar-text-muted);
     padding: 0 0.25rem;
@@ -2201,12 +2195,12 @@
   .creator-card__branding {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.375rem;
   }
 
   .creator-card__branding-icon {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2218,8 +2212,8 @@
   }
 
   .creator-card__branding-icon svg {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
   }
 
   .creator-card__branding-icon--active {
@@ -2236,8 +2230,8 @@
   }
 
   .creator-card__status-dot {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background-color: var(--sidebar-border);
   }
@@ -2273,8 +2267,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    gap: 0.625rem;
+    padding: 0.75rem 1rem;
     border-top: 1px solid var(--sidebar-border);
   }
 
@@ -2284,7 +2278,7 @@
   }
 
   .creator-card__platform-count {
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
     opacity: 0.7;
   }
@@ -2293,23 +2287,23 @@
   .creator-status {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
     border-radius: 5px;
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     font-weight: 600;
   }
 
   .creator-status__dot {
-    width: 5px;
-    height: 5px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     animation: pulse 2s ease-in-out infinite;
   }
 
   .creator-status__spinner {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     animation: spin 0.8s linear infinite;
   }
 
@@ -2353,13 +2347,13 @@
   .creator-card__actions {
     display: flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0.5rem;
   }
 
   /* Segmented Button Group */
   .creator-action-group {
     display: flex;
-    border-radius: 5px;
+    border-radius: 6px;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
@@ -2367,10 +2361,10 @@
   .creator-action-group__btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.375rem 0.5rem;
-    height: 28px;
-    font-size: 0.625rem;
+    gap: 0.375rem;
+    padding: 0.5rem 0.625rem;
+    height: 32px;
+    font-size: 0.6875rem;
     font-weight: 500;
     background-color: rgba(255, 255, 255, 0.04);
     color: var(--sidebar-text-muted);
@@ -2399,8 +2393,8 @@
   }
 
   .creator-action-group__rec-dot {
-    width: 5px;
-    height: 5px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background-color: #ef4444;
   }
@@ -2409,11 +2403,11 @@
   .creator-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.375rem 0.5rem;
-    height: 28px;
-    border-radius: 5px;
-    font-size: 0.625rem;
+    gap: 0.375rem;
+    padding: 0.5rem 0.625rem;
+    height: 32px;
+    border-radius: 6px;
+    font-size: 0.6875rem;
     font-weight: 500;
     border: 1px solid transparent;
     cursor: pointer;
@@ -2421,8 +2415,8 @@
   }
 
   .creator-btn__icon {
-    width: 11px;
-    height: 11px;
+    width: 13px;
+    height: 13px;
   }
 
   .creator-btn--stop {
@@ -2489,17 +2483,11 @@
   /* ===== Loading Skeleton ===== */
   .creators__loading {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
   }
 
-  @media (max-width: 1024px) {
-    .creators__loading {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (max-width: 640px) {
+  @media (max-width: 768px) {
     .creators__loading {
       grid-template-columns: 1fr;
     }
@@ -2517,13 +2505,13 @@
   .creator-skeleton__header {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
+    gap: 0.875rem;
+    padding: 1rem;
   }
 
   .creator-skeleton__avatar {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     border-radius: 10px;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
@@ -2546,18 +2534,18 @@
   }
 
   .creator-skeleton__line--name {
-    height: 14px;
-    width: 80px;
+    height: 16px;
+    width: 90px;
   }
 
   .creator-skeleton__line--desc {
-    height: 11px;
-    width: 120px;
+    height: 13px;
+    width: 130px;
   }
 
   .creator-skeleton__menu {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     border-radius: 6px;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
@@ -2568,20 +2556,20 @@
   .creator-skeleton__stats-row {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    gap: 0.625rem;
+    padding: 0.625rem 1rem;
     border-top: 1px solid var(--sidebar-border);
     background-color: rgba(0, 0, 0, 0.1);
   }
 
   .creator-skeleton__icons {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.375rem;
   }
 
   .creator-skeleton__icon {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     border-radius: 5px;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
@@ -2590,13 +2578,13 @@
 
   .creator-skeleton__divider {
     width: 1px;
-    height: 20px;
+    height: 22px;
     background-color: var(--sidebar-border);
   }
 
   .creator-skeleton__dot {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     margin-left: auto;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
@@ -2608,13 +2596,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.5rem 0.75rem;
+    padding: 0.75rem 1rem;
     border-top: 1px solid var(--sidebar-border);
   }
 
   .creator-skeleton__status {
-    height: 22px;
-    width: 50px;
+    height: 24px;
+    width: 55px;
     border-radius: 5px;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
@@ -2623,13 +2611,13 @@
 
   .creator-skeleton__actions {
     display: flex;
-    gap: 0.375rem;
+    gap: 0.5rem;
   }
 
   .creator-skeleton__btn {
-    height: 28px;
-    width: 50px;
-    border-radius: 5px;
+    height: 32px;
+    width: 55px;
+    border-radius: 6px;
     background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;

@@ -108,9 +108,9 @@
                 <div
                   v-if="isClipBasedProject(project.id)"
                   class="videoeditor-card__badge videoeditor-card__badge--clip"
-                  style="background: rgba(139, 92, 246, 0.9);"
                 >
                   <Film class="videoeditor-card__badge-icon" />
+                  <span>Clip Project</span>
                 </div>
 
                 <!-- Source Count Badge (only show if not a clip project or has multiple sources) -->
@@ -126,7 +126,6 @@
                 <div
                   v-if="hasInEditorClips(project.id)"
                   class="videoeditor-card__badge videoeditor-card__badge--in-editor"
-                  style="top: auto; bottom: 52px; background: rgba(59, 130, 246, 0.9);"
                 >
                   <Edit class="videoeditor-card__badge-icon" />
                   <span>{{ getInEditorClipCount(project.id) }} In Editor</span>
@@ -1398,23 +1397,37 @@
     z-index: 20;
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.38rem 0.5rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    backdrop-filter: blur(4px);
+    gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(8px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .videoeditor-card__badge--sources {
-    background-color: rgba(139, 92, 246, 0.9);
-    color: white;
+    background-color: rgba(139, 92, 246, 0.3);
+    color: #c4b5fd;
+  }
+
+  .videoeditor-card__badge--clip {
+    background-color: rgba(139, 92, 246, 0.3);
+    color: #c4b5fd;
+  }
+
+  .videoeditor-card__badge--in-editor {
+    top: auto;
+    bottom: 52px;
+    background-color: rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
   }
 
   .videoeditor-card__badge-icon {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
   }
 
   /* Thumbnail */
