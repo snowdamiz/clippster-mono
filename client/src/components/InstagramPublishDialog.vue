@@ -66,7 +66,7 @@
                     <ChevronDown class="instagram-dialog__select-icon" :size="16" />
                   </div>
                   <p v-if="allAccounts.length === 0 && !loadingAccounts" class="instagram-dialog__field-hint instagram-dialog__field-hint--warning">
-                    No Instagram accounts available. Ask an admin to assign you an account.
+                    No Instagram accounts available. Connect a personal account or ask an admin to assign you an organization account.
                   </p>
                 </div>
 

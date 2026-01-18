@@ -582,6 +582,7 @@ defmodule ClippsterServerWeb.Router do
     delete("/user/payment-methods/:id", ClipperProfileController, :delete_payment_method)
 
     # User Instagram posts (personal posting, not campaigns)
+    post("/user/posts/upload-media", UserPostsController, :upload_media)
     post("/user/instagram/publish", UserPostsController, :publish)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/:id", UserPostsController, :show)

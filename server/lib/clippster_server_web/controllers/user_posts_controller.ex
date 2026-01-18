@@ -163,6 +163,75 @@ defmodule ClippsterServerWeb.UserPostsController do
     end
   end
 
+  @doc """
+  Upload media for user post publishing.
+  Uploads the video/image to R2 storage and returns the public URL.
+
+  POST /api/user/posts/upload-media
+  """
+  def upload_media(conn, params) do
+    user = conn.assigns.current_user
+
+    case params do
+      %{"file" => %Plug.Upload{} = upload} ->
+        # Generate unique key for the file
+        ext = Path.extname(upload.filename) |> String.downcase()
+        timestamp = DateTime.utc_now() |> DateTime.to_unix()
+        unique_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+        key = "social-media/users/#{user.id}/#{timestamp}_#{unique_id}#{ext}"
+
+        # Determine content type
+        content_type = case ext do
+          ".mp4" -> "video/mp4"
+          ".mov" -> "video/quicktime"
+          ".webm" -> "video/webm"
+          ".jpg" -> "image/jpeg"
+          ".jpeg" -> "image/jpeg"
+          ".png" -> "image/png"
+          ".gif" -> "image/gif"
+          _ -> "application/octet-stream"
+        end
+
+        case ClippsterServer.Storage.upload_file_from_path(upload.path, key, content_type: content_type) do
+          {:ok, url} ->
+            # Handle optional thumbnail upload
+            thumbnail_url = case params["thumbnail"] do
+              %Plug.Upload{} = thumb ->
+                thumb_ext = Path.extname(thumb.filename) |> String.downcase()
+                thumb_key = "social-media/users/#{user.id}/#{timestamp}_#{unique_id}_thumb#{thumb_ext}"
+                thumb_content_type = case thumb_ext do
+                  ".jpg" -> "image/jpeg"
+                  ".jpeg" -> "image/jpeg"
+                  ".png" -> "image/png"
+                  _ -> "image/jpeg"
+                end
+
+                case ClippsterServer.Storage.upload_file_from_path(thumb.path, thumb_key, content_type: thumb_content_type) do
+                  {:ok, thumb_url} -> thumb_url
+                  {:error, _} -> nil
+                end
+              _ -> nil
+            end
+
+            json(conn, %{
+              success: true,
+              media_url: url,
+              thumbnail_url: thumbnail_url
+            })
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to upload media: #{inspect(reason)}"})
+        end
+
+      _ ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "No file provided"})
+    end
+  end
+
   # Private functions
 
   defp get_required_param(params, key) do

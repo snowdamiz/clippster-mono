@@ -51,6 +51,13 @@ export interface PublishPostData {
   media_type?: 'image' | 'video' | 'reel';
 }
 
+export interface UploadMediaResponse {
+  success: boolean;
+  media_url?: string;
+  thumbnail_url?: string;
+  error?: string;
+}
+
 // Response types
 export interface ListAccountsResponse {
   success: boolean;
@@ -169,6 +176,40 @@ export async function refreshUserAccountToken(accountId: number): Promise<Accoun
 // ============================================
 // Publishing API
 // ============================================
+
+/**
+ * Upload media for user post publishing.
+ * Uploads the video/image to R2 storage and returns the public URL.
+ */
+export async function uploadUserMediaForPost(
+  file: File,
+  thumbnail?: File
+): Promise<UploadMediaResponse> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (thumbnail) {
+      formData.append('thumbnail', thumbnail);
+    }
+
+    const response = await api.post<UploadMediaResponse>(
+      '/user/posts/upload-media',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[UserInstagramApi] Failed to upload media:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to upload media',
+    };
+  }
+}
 
 /**
  * Publish a post to user's Instagram account

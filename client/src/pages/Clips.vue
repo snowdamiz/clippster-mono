@@ -657,11 +657,12 @@
       @confirm="bulkDeleteFolderDialogBuildsConfirmed"
     />
 
-    <!-- Organization Select Dialog for Publishing -->
-    <OrganizationSelectDialog
+    <!-- Publish Destination Dialog -->
+    <PublishDestinationDialog
       :open="showOrgSelectDialog"
       @close="showOrgSelectDialog = false"
-      @select="onOrganizationSelected"
+      @selectPersonal="onPersonalAccountSelected"
+      @selectOrganization="onOrganizationSelected"
     />
 
     <!-- Publish to Instagram Dialog -->
@@ -924,7 +925,7 @@
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import BuildCard from '@/components/BuildCard.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
-  import OrganizationSelectDialog from '@/components/OrganizationSelectDialog.vue';
+  import PublishDestinationDialog from '@/components/PublishDestinationDialog.vue';
   import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
@@ -934,6 +935,7 @@
     getMyAssignedCreatorProfiles,
     type AssignedCreatorProfile,
   } from '@/services/socialAccountsApi';
+  import { uploadUserMediaForPost } from '@/services/userInstagramApi';
 
   type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
@@ -2581,6 +2583,65 @@
     }
 
     return new File([bytes], fileName, { type: mimeType });
+  }
+
+  /**
+   * Handle personal account selection from the dialog
+   */
+  async function onPersonalAccountSelected() {
+    showOrgSelectDialog.value = false;
+    selectedOrganization.value = null;
+
+    if (!publishingBuild.value) return;
+
+    // Show loading state
+    isUploadingMedia.value = true;
+
+    try {
+      // 1. Read the video file from disk as data URL
+      const { filePath, thumbnailUrl } = publishingBuild.value;
+      const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath });
+      const fileName = filePath.split(/[/\\]/).pop() || 'video.mp4';
+      const videoFile = dataUrlToFile(videoDataUrl, fileName);
+
+      // 2. Optionally read thumbnail
+      let thumbnailFile: File | undefined;
+      if (thumbnailUrl) {
+        try {
+          // Try to load thumbnail from local path
+          const thumbPath = thumbnailUrl.startsWith('file://') ? thumbnailUrl.replace('file://', '') : thumbnailUrl;
+
+          // Check if it's a local path (not a data URL or http)
+          if (!thumbPath.startsWith('data:') && !thumbPath.startsWith('http')) {
+            const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
+            thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
+          }
+        } catch (thumbError) {
+          console.warn('Could not read thumbnail:', thumbError);
+        }
+      }
+
+      // 3. Upload to user storage (not organization)
+      const uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
+
+      if (!uploadResult.success || !uploadResult.media_url) {
+        throw new Error(uploadResult.error || 'Failed to upload media');
+      }
+
+      publishMediaUrl.value = uploadResult.media_url;
+      publishThumbnailUrl.value = uploadResult.thumbnail_url || thumbnailUrl || '';
+
+      // 4. No creator profiles for personal publishing
+      publishCreatorProfiles.value = [];
+
+      // 5. Open the publish dialog without organization context
+      showPublishDialog.value = true;
+    } catch (error) {
+      console.error('Failed to prepare for publishing:', error);
+      showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
+    } finally {
+      isUploadingMedia.value = false;
+    }
   }
 
   /**
