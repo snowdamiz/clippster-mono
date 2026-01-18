@@ -264,9 +264,9 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
 
     isPolling.value = true;
 
-    // Initial fetch for both
-    fetchLiveCount();
-    fetchLiveCreatorsCount();
+    // Initial fetch for both - use refresh to bypass throttle and ensure immediate fetch
+    refresh();
+    refreshCreators();
 
     // Poll every 60 seconds
     pollingInterval = setInterval(() => {

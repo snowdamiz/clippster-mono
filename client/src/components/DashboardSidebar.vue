@@ -410,6 +410,8 @@
       if (isAuth) {
         loadUserOrganizations();
         permissionsStore.fetchRestrictions();
+        // Refresh live counts now that we're authenticated (to get org profiles)
+        liveStatusStore.refreshCreators();
       } else {
         userOrganizations.value = [];
         permissionsStore.reset();
