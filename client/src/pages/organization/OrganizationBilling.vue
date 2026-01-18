@@ -16,7 +16,7 @@
     <div class="org-billing">
       <!-- Page Heading -->
       <div class="org-billing__heading">
-        <h1 class="org-billing__title">Manage Organization Credits</h1>
+        <h1 class="org-billing__title">Billing, credits, and subscriptions</h1>
         <p class="org-billing__subtitle">
           Monitor your credit pool, allocate to team members, and track payment history
         </p>
@@ -95,8 +95,22 @@
         </div>
       </div>
 
+      <!-- Tab Navigation (Admin Only) -->
+      <nav v-if="isAdmin" class="org-billing__tabs">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          class="org-billing__tab"
+          :class="{ 'org-billing__tab--active': activeTab === tab.id }"
+          @click="activeTab = tab.id"
+        >
+          <component :is="tab.icon" class="org-billing__tab-icon" />
+          {{ tab.label }}
+        </button>
+      </nav>
+
       <!-- Member Allocations Section (Admin Only) -->
-      <section v-if="isAdmin" class="org-billing__section">
+      <section v-if="isAdmin && activeTab === 'allocations'" class="org-billing__section">
         <div class="org-billing__section-header">
           <div class="org-billing__section-title-group">
             <div class="org-billing__section-icon">
@@ -206,7 +220,7 @@
       </section>
 
       <!-- Payment History Section (Admin Only) -->
-      <section v-if="isAdmin" class="org-billing__section">
+      <section v-if="isAdmin && activeTab === 'history'" class="org-billing__section">
         <div class="org-billing__section-header">
           <div class="org-billing__section-title-group">
             <div class="org-billing__section-icon">
@@ -362,7 +376,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue';
+  import { ref, markRaw } from 'vue';
   import {
     Wallet,
     Coins,
@@ -409,6 +423,12 @@
     getPackLabel,
   } = useOrganization();
 
+  const tabs = [
+    { id: 'allocations', label: 'Allocations', icon: markRaw(Users) },
+    { id: 'history', label: 'History', icon: markRaw(History) },
+  ];
+
+  const activeTab = ref('allocations');
   const showBuyCreditsModal = ref(false);
   const allocations = ref<Record<number, number>>({});
   const avatarFailed = ref<Record<number, boolean>>({});
@@ -618,6 +638,43 @@
     font-size: 0.875rem;
     color: var(--sidebar-text-muted);
     font-weight: 500;
+  }
+
+  /* ===== Tabs ===== */
+  .org-billing__tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .org-billing__tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4375rem;
+    padding: 0.625rem 0.875rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-billing__tab:hover {
+    color: var(--sidebar-text);
+  }
+
+  .org-billing__tab--active {
+    color: var(--sidebar-text);
+    border-bottom-color: var(--sidebar-accent);
+  }
+
+  .org-billing__tab-icon {
+    width: 15px;
+    height: 15px;
   }
 
   /* ===== Section Styles ===== */
