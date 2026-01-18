@@ -1,49 +1,54 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div
-        v-if="open"
-        class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]"
-        @click.self="$emit('close')"
-      >
+      <div v-if="open" class="instagram-dialog__overlay" @click.self="$emit('close')">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md sm:max-w-lg w-full mx-3 sm:mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
-          >
-            <div class="h-1 w-full bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 flex-shrink-0" />
+          <div v-if="open" class="instagram-dialog" role="dialog" aria-modal="true">
+            <!-- Accent bar -->
+            <div class="instagram-dialog__accent"></div>
 
-            <div class="p-5 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar">
-              <div class="mb-4 sm:mb-6 text-center">
-                <div
-                  class="inline-flex items-center justify-center w-11 h-11 sm:w-12 sm:h-12 lg:w-14 lg:h-14 rounded-xl lg:rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-pink-500/30 mb-3 sm:mb-4"
-                >
-                  <Instagram class="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-pink-400" />
-                </div>
-                <h2 class="text-lg sm:text-xl lg:text-2xl font-bold text-white tracking-tight">Publish to Instagram</h2>
-                <p class="text-zinc-400 text-xs sm:text-sm mt-1">Share this clip to your connected Instagram account</p>
+            <!-- Header -->
+            <div class="instagram-dialog__header">
+              <button
+                class="instagram-dialog__close"
+                @click="$emit('close')"
+                :disabled="publishing"
+                title="Close"
+              >
+                <X :size="18" />
+              </button>
+              <div class="instagram-dialog__icon">
+                <Instagram :size="24" />
               </div>
+              <h2 class="instagram-dialog__title">Publish to Instagram</h2>
+              <p class="instagram-dialog__subtitle">Share this clip to your connected Instagram account</p>
+            </div>
 
-              <form @submit.prevent="publish" class="space-y-4 sm:space-y-5">
-                <div class="space-y-1.5 sm:space-y-2">
-                  <label class="block text-xs sm:text-sm font-medium text-zinc-300">Media Preview</label>
-                  <div class="relative aspect-video rounded-lg sm:rounded-xl overflow-hidden bg-zinc-800/50 border border-zinc-700/50">
-                    <img v-if="thumbnailUrl" :src="thumbnailUrl" alt="Media preview" class="w-full h-full object-cover" />
-                    <div v-else class="w-full h-full flex items-center justify-center">
-                      <FileVideo class="h-10 w-10 sm:h-12 sm:w-12 text-zinc-500" />
+            <!-- Content -->
+            <div class="instagram-dialog__content">
+              <form @submit.prevent="publish" class="instagram-dialog__form">
+                <!-- Media Preview -->
+                <div class="instagram-dialog__field">
+                  <label class="instagram-dialog__label">Media Preview</label>
+                  <div class="instagram-dialog__preview">
+                    <img v-if="thumbnailUrl" :src="thumbnailUrl" alt="Media preview" class="instagram-dialog__preview-img" />
+                    <div v-else class="instagram-dialog__preview-empty">
+                      <FileVideo :size="32" />
                     </div>
-                    <div class="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md text-xs text-white font-medium">
+                    <div class="instagram-dialog__preview-badge">
                       {{ mediaType || 'Video' }}
                     </div>
                   </div>
                 </div>
 
-                <div class="space-y-1.5 sm:space-y-2">
-                  <label for="account" class="block text-xs sm:text-sm font-medium text-zinc-300">Instagram Account *</label>
-                  <div class="relative">
+                <!-- Instagram Account -->
+                <div class="instagram-dialog__field">
+                  <label for="account" class="instagram-dialog__label">Instagram Account *</label>
+                  <div class="instagram-dialog__select-wrapper">
                     <select
                       id="account"
                       v-model="selectedAccountValue"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all pr-10"
+                      class="instagram-dialog__select"
                       :disabled="publishing || loadingAccounts"
                     >
                       <option value="" disabled>Select an account</option>
@@ -58,100 +63,133 @@
                         </option>
                       </optgroup>
                     </select>
-                    <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
+                    <ChevronDown class="instagram-dialog__select-icon" :size="16" />
                   </div>
-                  <p v-if="allAccounts.length === 0 && !loadingAccounts" class="text-xs text-amber-400/80">
+                  <p v-if="allAccounts.length === 0 && !loadingAccounts" class="instagram-dialog__field-hint instagram-dialog__field-hint--warning">
                     No Instagram accounts available. Ask an admin to assign you an account.
                   </p>
                 </div>
 
-                <div v-if="creatorProfiles.length > 0" class="space-y-1.5 sm:space-y-2">
-                  <label for="creator" class="block text-xs sm:text-sm font-medium text-zinc-300">Creator Profile (Optional)</label>
-                  <div class="relative">
+                <!-- Creator Profile -->
+                <div v-if="creatorProfiles.length > 0" class="instagram-dialog__field">
+                  <label for="creator" class="instagram-dialog__label">
+                    Creator Profile
+                    <span class="instagram-dialog__label-hint">(optional)</span>
+                  </label>
+                  <div class="instagram-dialog__select-wrapper">
                     <select
                       id="creator"
                       v-model="selectedCreatorProfileId"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all pr-10"
+                      class="instagram-dialog__select"
                       :disabled="publishing"
                     >
                       <option value="">None</option>
-                      <option v-for="profile in creatorProfiles" :key="profile.id" :value="String(profile.id)">{{ profile.name }}</option>
+                      <option v-for="profile in creatorProfiles" :key="profile.id" :value="String(profile.id)">
+                        {{ profile.name }}
+                      </option>
                     </select>
-                    <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
+                    <ChevronDown class="instagram-dialog__select-icon" :size="16" />
                   </div>
-                  <p class="text-xs text-zinc-500">Associate this post with a creator profile for tracking</p>
+                  <p class="instagram-dialog__field-hint">Associate this post with a creator profile for tracking</p>
                 </div>
 
-                <div class="space-y-1.5 sm:space-y-2">
-                  <label for="caption" class="block text-xs sm:text-sm font-medium text-zinc-300">Caption</label>
+                <!-- Caption -->
+                <div class="instagram-dialog__field">
+                  <label for="caption" class="instagram-dialog__label">Caption</label>
                   <textarea
                     id="caption"
                     v-model="caption"
                     :disabled="publishing"
                     rows="4"
                     maxlength="2200"
-                    class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all resize-y min-h-[100px]"
                     placeholder="Write a caption for your post..."
+                    class="instagram-dialog__input instagram-dialog__textarea"
                   ></textarea>
-                  <div class="flex items-center justify-between">
-                    <p v-if="hashtagCount > 30" class="text-xs text-red-400">Too many hashtags ({{ hashtagCount }}/30)</p>
-                    <p class="text-xs text-zinc-500 text-right ml-auto">{{ caption.length }} / 2,200</p>
+                  <div class="instagram-dialog__caption-info">
+                    <p v-if="hashtagCount > 30" class="instagram-dialog__field-hint instagram-dialog__field-hint--error">
+                      Too many hashtags ({{ hashtagCount }}/30)
+                    </p>
+                    <p class="instagram-dialog__field-hint" style="margin-left: auto">
+                      {{ caption.length }} / 2,200
+                    </p>
                   </div>
                 </div>
 
-                <div v-if="schedulingEnabled" class="space-y-3">
-                  <div class="flex items-center justify-between">
-                    <label class="block text-xs sm:text-sm font-medium text-zinc-300">Schedule for later</label>
+                <!-- Scheduling -->
+                <div v-if="schedulingEnabled" class="instagram-dialog__field">
+                  <div class="instagram-dialog__toggle-row">
+                    <label class="instagram-dialog__label">Schedule for later</label>
                     <button
                       type="button"
                       @click="isScheduled = !isScheduled"
-                      :class="['relative inline-flex h-6 w-11 items-center rounded-full transition-colors', isScheduled ? 'bg-pink-600' : 'bg-zinc-700']"
+                      :class="['instagram-dialog__toggle', { 'instagram-dialog__toggle--active': isScheduled }]"
                       :disabled="publishing"
                     >
-                      <span :class="['inline-block h-4 w-4 transform rounded-full bg-white transition-transform', isScheduled ? 'translate-x-6' : 'translate-x-1']" />
+                      <span :class="['instagram-dialog__toggle-thumb', { 'instagram-dialog__toggle-thumb--active': isScheduled }]" />
                     </button>
                   </div>
-                  <div v-if="isScheduled" class="space-y-3">
-                    <div class="grid grid-cols-2 gap-3">
-                      <div class="space-y-1.5">
-                        <label for="scheduleDate" class="block text-xs font-medium text-zinc-400">Date</label>
-                        <input id="scheduleDate" type="date" v-model="scheduleDate" :min="minDate" :disabled="publishing" class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all" />
+
+                  <div v-if="isScheduled" class="instagram-dialog__schedule-fields">
+                    <div class="instagram-dialog__schedule-row">
+                      <div class="instagram-dialog__field" style="flex: 1">
+                        <label for="scheduleDate" class="instagram-dialog__label-sm">Date</label>
+                        <input
+                          id="scheduleDate"
+                          type="date"
+                          v-model="scheduleDate"
+                          :min="minDate"
+                          :disabled="publishing"
+                          class="instagram-dialog__input"
+                        />
                       </div>
-                      <div class="space-y-1.5">
-                        <label for="scheduleTime" class="block text-xs font-medium text-zinc-400">Time</label>
-                        <input id="scheduleTime" type="time" v-model="scheduleTime" :disabled="publishing" class="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all" />
+                      <div class="instagram-dialog__field" style="flex: 1">
+                        <label for="scheduleTime" class="instagram-dialog__label-sm">Time</label>
+                        <input
+                          id="scheduleTime"
+                          type="time"
+                          v-model="scheduleTime"
+                          :disabled="publishing"
+                          class="instagram-dialog__input"
+                        />
                       </div>
                     </div>
-                    <p v-if="scheduledDateTime" class="text-xs text-zinc-400 flex items-center gap-1.5">
-                      <Calendar class="h-3.5 w-3.5" />
+                    <p v-if="scheduledDateTime" class="instagram-dialog__field-hint" style="display: flex; align-items: center; gap: 0.375rem">
+                      <Calendar :size="14" />
                       Will be published {{ formatScheduleTime(scheduledDateTime) }}
                     </p>
-                    <p v-if="scheduleError" class="text-xs text-red-400">{{ scheduleError }}</p>
+                    <p v-if="scheduleError" class="instagram-dialog__field-hint instagram-dialog__field-hint--error">
+                      {{ scheduleError }}
+                    </p>
                   </div>
                 </div>
 
-                <div v-if="error" class="p-3 sm:p-4 rounded-lg sm:rounded-xl bg-red-500/10 border border-red-500/30">
-                  <p class="text-red-400 text-xs sm:text-sm">{{ error }}</p>
-                </div>
-
-                <div class="flex gap-2 sm:gap-3 pt-3 sm:pt-4">
-                  <button type="button" @click="$emit('close')" :disabled="publishing" class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg sm:rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                    Cancel
-                  </button>
-                  <button type="submit" :disabled="!canPublish || publishing" class="flex-1 px-4 sm:px-5 py-2.5 sm:py-3 bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white rounded-lg sm:rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                    <span v-if="publishing" class="relative flex items-center justify-center">
-                      <Loader2 class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2 animate-spin" />
-                      {{ isScheduled ? 'Scheduling...' : 'Publishing...' }}
-                    </span>
-                    <span v-else class="relative flex items-center justify-center">
-                      <Calendar v-if="isScheduled" class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
-                      <Instagram v-else class="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
-                      {{ isScheduled ? 'Schedule' : 'Publish Now' }}
-                    </span>
-                  </button>
+                <!-- Error Display -->
+                <div v-if="error" class="instagram-dialog__alert instagram-dialog__alert--error">
+                  <AlertCircle :size="16" />
+                  <p class="instagram-dialog__alert-text">{{ error }}</p>
                 </div>
               </form>
+            </div>
+
+            <!-- Footer -->
+            <div class="instagram-dialog__footer">
+              <button
+                @click="$emit('close')"
+                :disabled="publishing"
+                class="instagram-dialog__btn instagram-dialog__btn--secondary"
+              >
+                Cancel
+              </button>
+              <button
+                @click="publish"
+                :disabled="!canPublish || publishing"
+                class="instagram-dialog__btn instagram-dialog__btn--primary"
+              >
+                <Loader2 v-if="publishing" :size="16" class="instagram-dialog__spinner" />
+                <Calendar v-else-if="isScheduled" :size="16" />
+                <Instagram v-else :size="16" />
+                {{ publishing ? (isScheduled ? 'Scheduling...' : 'Publishing...') : (isScheduled ? 'Schedule' : 'Publish Now') }}
+              </button>
             </div>
           </div>
         </Transition>
@@ -162,14 +200,17 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, FileVideo, Loader2, ChevronDown, Calendar } from 'lucide-vue-next';
+  import { Instagram, FileVideo, Loader2, ChevronDown, Calendar, X, AlertCircle } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import { getMyAssignedAccounts, listSocialAccounts, publishPost, type SocialAccount } from '@/services/socialAccountsApi';
   import { listUserInstagramAccounts, publishToUserInstagram, type UserInstagramAccount } from '@/services/userInstagramApi';
   import { schedulePost } from '@/services/schedulingApi';
   import api from '@/services/api';
 
-  interface CreatorProfile { id: number; name: string; }
+  interface CreatorProfile {
+    id: number;
+    name: string;
+  }
 
   const props = withDefaults(
     defineProps<{
@@ -188,7 +229,11 @@
     { isAdmin: false, schedulingEnabled: true, creatorProfiles: () => [] }
   );
 
-  const emit = defineEmits<{ (e: 'close'): void; (e: 'published', post: any): void; }>();
+  const emit = defineEmits<{
+    (e: 'close'): void;
+    (e: 'published', post: any): void;
+  }>();
+
   const { showToast } = useToast();
 
   const loadingAccounts = ref(true);
@@ -208,8 +253,8 @@
   const currentOrgName = computed(() => props.organizationName || 'Organization');
   const showPersonalAccounts = computed(() => !props.organizationId || allowPersonalInstagram.value);
   const allAccounts = computed(() => [...orgAccounts.value, ...(showPersonalAccounts.value ? personalAccounts.value : [])]);
-  const selectedAccountType = computed(() => selectedAccountValue.value ? selectedAccountValue.value.split(':')[0] as 'org' | 'user' : null);
-  const selectedAccountId = computed(() => selectedAccountValue.value ? parseInt(selectedAccountValue.value.split(':')[1]) : null);
+  const selectedAccountType = computed(() => (selectedAccountValue.value ? (selectedAccountValue.value.split(':')[0] as 'org' | 'user') : null));
+  const selectedAccountId = computed(() => (selectedAccountValue.value ? parseInt(selectedAccountValue.value.split(':')[1]) : null));
   const hashtagCount = computed(() => (caption.value.match(/#\w+/g) || []).length);
   const minDate = computed(() => new Date().toISOString().split('T')[0]);
   const scheduledDateTime = computed(() => {
@@ -217,10 +262,19 @@
     const dt = new Date(`${scheduleDate.value}T${scheduleTime.value}`);
     return isNaN(dt.getTime()) ? null : dt;
   });
-  const canPublish = computed(() => !!selectedAccountValue.value && !!props.mediaUrl && hashtagCount.value <= 30 && (!isScheduled.value || (scheduledDateTime.value && !scheduleError.value)));
+  const canPublish = computed(
+    () =>
+      !!selectedAccountValue.value &&
+      !!props.mediaUrl &&
+      hashtagCount.value <= 30 &&
+      (!isScheduled.value || (scheduledDateTime.value && !scheduleError.value))
+  );
 
   watch([scheduleDate, scheduleTime], () => {
-    if (!isScheduled.value || !scheduledDateTime.value) { scheduleError.value = null; return; }
+    if (!isScheduled.value || !scheduledDateTime.value) {
+      scheduleError.value = null;
+      return;
+    }
     const minTime = new Date(Date.now() + 5 * 60 * 1000);
     scheduleError.value = scheduledDateTime.value < minTime ? 'Schedule time must be at least 5 minutes in the future' : null;
   });
@@ -234,9 +288,16 @@
     return `${relative} (${date.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})`;
   }
 
-  watch(() => props.open, async (isOpen) => {
-    if (isOpen) { await loadAccounts(); error.value = null; }
-  }, { immediate: true });
+  watch(
+    () => props.open,
+    async (isOpen) => {
+      if (isOpen) {
+        await loadAccounts();
+        error.value = null;
+      }
+    },
+    { immediate: true }
+  );
 
   async function loadAccounts() {
     loadingAccounts.value = true;
@@ -244,16 +305,27 @@
       if (props.organizationId) {
         try {
           const orgRes = await api.get(`/organizations/${props.organizationId}`);
-          if (orgRes.data.success) allowPersonalInstagram.value = orgRes.data.organization.allow_personal_instagram ?? true;
+          if (orgRes.data.success) {
+            allowPersonalInstagram.value = orgRes.data.organization.allow_personal_instagram ?? true;
+          }
         } catch {}
         const res = props.isAdmin ? await listSocialAccounts(props.organizationId) : await getMyAssignedAccounts(props.organizationId);
-        if (res.success) orgAccounts.value = res.accounts.filter(a => a.is_active && a.platform === 'instagram');
+        if (res.success) {
+          orgAccounts.value = res.accounts.filter((a) => a.is_active && a.platform === 'instagram');
+        }
       }
       const pRes = await listUserInstagramAccounts();
-      if (pRes.success) personalAccounts.value = pRes.accounts.filter(a => a.is_active);
-      if (orgAccounts.value.length > 0) selectedAccountValue.value = `org:${orgAccounts.value[0].id}`;
-      else if (showPersonalAccounts.value && personalAccounts.value.length > 0) selectedAccountValue.value = `user:${personalAccounts.value[0].id}`;
-    } finally { loadingAccounts.value = false; }
+      if (pRes.success) {
+        personalAccounts.value = pRes.accounts.filter((a) => a.is_active);
+      }
+      if (orgAccounts.value.length > 0) {
+        selectedAccountValue.value = `org:${orgAccounts.value[0].id}`;
+      } else if (showPersonalAccounts.value && personalAccounts.value.length > 0) {
+        selectedAccountValue.value = `user:${personalAccounts.value[0].id}`;
+      }
+    } finally {
+      loadingAccounts.value = false;
+    }
   }
 
   async function publish() {
@@ -263,42 +335,536 @@
     try {
       let response;
       if (isScheduled.value && scheduledDateTime.value) {
-        const data: any = { platform: 'instagram', media_url: props.mediaUrl, caption: caption.value, media_type: props.mediaType || 'reel', thumbnail_url: props.thumbnailUrl, scheduled_at: scheduledDateTime.value.toISOString(), clip_id: props.clipId };
+        const data: any = {
+          platform: 'instagram',
+          media_url: props.mediaUrl,
+          caption: caption.value,
+          media_type: props.mediaType || 'reel',
+          thumbnail_url: props.thumbnailUrl,
+          scheduled_at: scheduledDateTime.value.toISOString(),
+          clip_id: props.clipId,
+        };
         if (selectedAccountType.value === 'org' && props.organizationId) {
           data.organization_id = Number(props.organizationId);
           data.social_account_id = selectedAccountId.value;
           data.creator_profile_id = selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined;
           data.campaign_id = props.campaignId;
-        } else { data.user_social_account_id = selectedAccountId.value; }
+        } else {
+          data.user_social_account_id = selectedAccountId.value;
+        }
         response = await schedulePost(data);
-        if (response.success) { showToast(`Post scheduled for ${formatScheduleTime(scheduledDateTime.value)}`, 'success'); emit('published', response.post); emit('close'); resetForm(); }
-        else { error.value = response.error || 'Failed to schedule'; showToast(response.error || 'Failed to schedule', 'error'); }
+        if (response.success) {
+          showToast(`Post scheduled for ${formatScheduleTime(scheduledDateTime.value)}`, 'success');
+          emit('published', response.post);
+          emit('close');
+          resetForm();
+        } else {
+          error.value = response.error || 'Failed to schedule';
+          showToast(response.error || 'Failed to schedule', 'error');
+        }
       } else {
         if (selectedAccountType.value === 'org' && props.organizationId) {
-          response = await publishPost(props.organizationId, { social_account_id: selectedAccountId.value, creator_profile_id: selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined, media_url: props.mediaUrl, caption: caption.value, media_type: props.mediaType || 'reel', thumbnail_url: props.thumbnailUrl });
+          response = await publishPost(props.organizationId, {
+            social_account_id: selectedAccountId.value,
+            creator_profile_id: selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined,
+            media_url: props.mediaUrl,
+            caption: caption.value,
+            media_type: props.mediaType || 'reel',
+            thumbnail_url: props.thumbnailUrl,
+          });
         } else {
-          response = await publishToUserInstagram({ account_id: selectedAccountId.value, media_url: props.mediaUrl, caption: caption.value, media_type: props.mediaType || 'reel', thumbnail_url: props.thumbnailUrl });
+          response = await publishToUserInstagram({
+            account_id: selectedAccountId.value,
+            media_url: props.mediaUrl,
+            caption: caption.value,
+            media_type: props.mediaType || 'reel',
+            thumbnail_url: props.thumbnailUrl,
+          });
         }
-        if (response.success) { showToast('Post is being published to Instagram', 'success'); emit('published', response.post); emit('close'); resetForm(); }
-        else { error.value = response.error || 'Failed to publish'; showToast(response.error || 'Failed to publish', 'error'); }
+        if (response.success) {
+          showToast('Post is being published to Instagram', 'success');
+          emit('published', response.post);
+          emit('close');
+          resetForm();
+        } else {
+          error.value = response.error || 'Failed to publish';
+          showToast(response.error || 'Failed to publish', 'error');
+        }
       }
-    } catch (err) { console.error('Failed to publish:', err); error.value = 'Failed to publish post. Please try again.'; showToast('Failed to publish', 'error'); }
-    finally { publishing.value = false; }
+    } catch (err) {
+      console.error('Failed to publish:', err);
+      error.value = 'Failed to publish post. Please try again.';
+      showToast('Failed to publish', 'error');
+    } finally {
+      publishing.value = false;
+    }
   }
 
-  function resetForm() { selectedAccountValue.value = ''; selectedCreatorProfileId.value = ''; caption.value = ''; isScheduled.value = false; scheduleDate.value = ''; scheduleTime.value = ''; scheduleError.value = null; }
+  function resetForm() {
+    selectedAccountValue.value = '';
+    selectedCreatorProfileId.value = '';
+    caption.value = '';
+    isScheduled.value = false;
+    scheduleDate.value = '';
+    scheduleTime.value = '';
+    scheduleError.value = null;
+  }
 </script>
 
 <style scoped>
-  .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
-  .modal-enter-from, .modal-leave-to { opacity: 0; }
-  .dialog-enter-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-  .dialog-leave-active { transition: all 0.2s ease-in; }
-  .dialog-enter-from { opacity: 0; transform: scale(0.95) translateY(10px); }
-  .dialog-leave-to { opacity: 0; transform: scale(0.98); }
-  .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-  .custom-scrollbar::-webkit-scrollbar-thumb { background: rgb(63 63 70); border-radius: 3px; }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgb(82 82 91); }
-  select option { background: rgb(24 24 27); color: white; padding: 8px; }
+  /* ===== Overlay ===== */
+  .instagram-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  /* ===== Dialog Container ===== */
+  .instagram-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 520px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ===== Accent Bar ===== */
+  .instagram-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .instagram-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .instagram-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .instagram-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .instagram-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .instagram-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .instagram-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .instagram-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content Area ===== */
+  .instagram-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .instagram-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .instagram-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .instagram-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Form ===== */
+  .instagram-dialog__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* ===== Form Field ===== */
+  .instagram-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .instagram-dialog__label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .instagram-dialog__label-sm {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+  }
+
+  .instagram-dialog__label-hint {
+    color: var(--sidebar-text-muted);
+    font-weight: 400;
+    font-size: 0.8125rem;
+  }
+
+  .instagram-dialog__field-hint {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.8;
+  }
+
+  .instagram-dialog__field-hint--warning {
+    color: #fbbf24;
+    opacity: 1;
+  }
+
+  .instagram-dialog__field-hint--error {
+    color: #f87171;
+    opacity: 1;
+  }
+
+  .instagram-dialog__input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .instagram-dialog__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .instagram-dialog__input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .instagram-dialog__textarea {
+    resize: none;
+    min-height: 100px;
+  }
+
+  /* ===== Preview ===== */
+  .instagram-dialog__preview {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .instagram-dialog__preview-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .instagram-dialog__preview-empty {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+    opacity: 0.3;
+  }
+
+  .instagram-dialog__preview-badge {
+    position: absolute;
+    bottom: 0.5rem;
+    right: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: white;
+  }
+
+  /* ===== Select ===== */
+  .instagram-dialog__select-wrapper {
+    position: relative;
+  }
+
+  .instagram-dialog__select {
+    width: 100%;
+    padding: 0.75rem 2.5rem 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+    appearance: none;
+  }
+
+  .instagram-dialog__select:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .instagram-dialog__select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .instagram-dialog__select option {
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text);
+  }
+
+  .instagram-dialog__select-icon {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--sidebar-text-muted);
+    pointer-events: none;
+  }
+
+  /* ===== Caption Info ===== */
+  .instagram-dialog__caption-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  /* ===== Toggle ===== */
+  .instagram-dialog__toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .instagram-dialog__toggle {
+    position: relative;
+    display: inline-flex;
+    height: 24px;
+    width: 44px;
+    align-items: center;
+    border-radius: 9999px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--sidebar-border);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .instagram-dialog__toggle:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .instagram-dialog__toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .instagram-dialog__toggle--active {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .instagram-dialog__toggle-thumb {
+    display: inline-block;
+    height: 16px;
+    width: 16px;
+    border-radius: 9999px;
+    background-color: white;
+    transform: translateX(4px);
+    transition: transform 150ms ease;
+  }
+
+  .instagram-dialog__toggle-thumb--active {
+    transform: translateX(24px);
+  }
+
+  /* ===== Schedule Fields ===== */
+  .instagram-dialog__schedule-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-top: 0.5rem;
+  }
+
+  .instagram-dialog__schedule-row {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  /* ===== Alert Box ===== */
+  .instagram-dialog__alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    border-radius: 8px;
+  }
+
+  .instagram-dialog__alert--error {
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #f87171;
+  }
+
+  .instagram-dialog__alert-text {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ===== Footer ===== */
+  .instagram-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
+  .instagram-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .instagram-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .instagram-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .instagram-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .instagram-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
+  }
+
+  .instagram-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .instagram-dialog__spinner {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 150ms ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 </style>

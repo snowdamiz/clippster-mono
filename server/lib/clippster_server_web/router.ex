@@ -199,6 +199,8 @@ defmodule ClippsterServerWeb.Router do
       only: [:index, :create, :show, :update, :delete]
     )
 
+    post("/organizations/:id/logo", OrganizationController, :upload_logo)
+
     # Organization members
     get("/organizations/:organization_id/members", OrganizationController, :list_members)
 

@@ -607,6 +607,7 @@
       :video="clipToPlay"
       :show-video-player="showVideoPlayer"
       :watermark-settings="playerWatermarkSettings"
+      :z-index="10000"
       @close="showVideoPlayer = false"
     />
 

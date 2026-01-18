@@ -11,6 +11,7 @@ import {
   listOrganizationAssets,
   type ServerOrganizationAsset,
 } from '@/services/organizationAssetsApi';
+import { uploadOrganizationLogo } from '@/services/organizationsApi';
 
 export interface OrganizationMember {
   id: number;
@@ -48,6 +49,7 @@ export interface Organization {
   id: number;
   name: string;
   description?: string;
+  logo_url?: string;
   settings?: {
     allow_ai?: boolean;
   };
@@ -483,6 +485,29 @@ export function useOrganization(orgIdOverride?: string) {
     }
   }
 
+  // Upload organization logo
+  async function uploadLogo(file: File) {
+    const orgId = organizationId.value;
+    if (!orgId) return { success: false, error: 'No organization ID' };
+
+    try {
+      const result = await uploadOrganizationLogo(orgId, file);
+      if (result.success && result.logo_url) {
+        // Update local state with the presigned URL
+        if (organization.value) {
+          organization.value.logo_url = result.logo_url;
+        }
+        showSuccess('Logo uploaded', 'Organization logo updated successfully');
+      } else {
+        showError('Upload failed', result.error || 'Failed to upload logo');
+      }
+      return result;
+    } catch (err: any) {
+      showError('Upload failed', err.message || 'Failed to upload logo');
+      return { success: false, error: err.message };
+    }
+  }
+
   // Fetch pricing for buy credits modal
   async function fetchPricing() {
     try {
@@ -606,6 +631,7 @@ export function useOrganization(orgIdOverride?: string) {
     updateMemberAccount,
     allocateCredits,
     deleteOrganization,
+    uploadLogo,
     fetchPricing,
     isOrgCreatedUser,
 

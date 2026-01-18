@@ -4,6 +4,7 @@ defmodule ClippsterServerWeb.OrganizationController do
   alias ClippsterServer.Organizations
   alias ClippsterServer.Accounts
   alias ClippsterServer.Repo
+  alias ClippsterServer.Storage
 
   plug ClippsterServerWeb.AuthPlug
 
@@ -95,7 +96,7 @@ defmodule ClippsterServerWeb.OrganizationController do
 
       organization ->
         attrs = Map.take(params, ["name", "description", "logo_url", "settings", "restriction_defaults"])
-        
+
         case Organizations.update_organization(organization, attrs, user) do
           {:ok, updated_org} ->
             json(conn, %{
@@ -138,6 +139,65 @@ defmodule ClippsterServerWeb.OrganizationController do
             |> put_status(403)
             |> json(%{success: false, error: "Only the owner can delete the organization"})
         end
+    end
+  end
+
+  @doc """
+  Upload logo for organization.
+  """
+  def upload_logo(conn, %{"id" => id} = params) do
+    user = conn.assigns.current_user
+
+    with organization when not is_nil(organization) <- Organizations.get_organization(id),
+         true <- Organizations.is_admin?(organization.id, user.id),
+         %Plug.Upload{path: temp_path, filename: filename} <- params["file"] do
+
+      # Read file contents
+      {:ok, file_binary} = File.read(temp_path)
+
+      # Generate storage key
+      key = "organizations/#{id}/logo-#{System.unique_integer([:positive])}-#{filename}"
+
+      # Determine content type
+      content_type = MIME.from_path(filename)
+
+      # Upload to R2
+      case Storage.upload_file(file_binary, key, content_type: content_type) do
+        {:ok, url} ->
+          # Update organization with logo URL (store raw URL)
+          case Organizations.update_organization(organization, %{"logo_url" => url}, user) do
+            {:ok, _updated_org} ->
+              json(conn, %{
+                success: true,
+                logo_url: maybe_presign_url(url)
+              })
+
+            {:error, _} ->
+              conn
+              |> put_status(500)
+              |> json(%{success: false, error: "Failed to save logo URL"})
+          end
+
+        {:error, reason} ->
+          conn
+          |> put_status(500)
+          |> json(%{success: false, error: "Failed to upload logo: #{inspect(reason)}"})
+      end
+    else
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Organization not found or no file provided"})
+
+      false ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Only admins can upload organization logo"})
+
+      _ ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid request"})
     end
   end
 
@@ -650,7 +710,7 @@ defmodule ClippsterServerWeb.OrganizationController do
       limit = Map.get(params, "limit", "50") |> parse_int(50)
       offset = Map.get(params, "offset", "0") |> parse_int(0)
 
-      {:ok, %{transactions: transactions, total: total}} = 
+      {:ok, %{transactions: transactions, total: total}} =
         Organizations.list_organization_transactions(org_id, limit: limit, offset: offset)
 
       json(conn, %{
@@ -708,10 +768,11 @@ defmodule ClippsterServerWeb.OrganizationController do
       name: org.name,
       slug: org.slug,
       description: org.description,
-      logo_url: org.logo_url,
+      logo_url: maybe_presign_url(org.logo_url),
       owner_id: org.owner_id,
       created_at: org.inserted_at,
-      settings: org.settings || %{}
+      settings: org.settings || %{},
+      restriction_defaults: org.restriction_defaults || %{}
     }
   end
 
@@ -796,5 +857,25 @@ defmodule ClippsterServerWeb.OrganizationController do
 
   defp format_errors(error) when is_atom(error), do: to_string(error)
   defp format_errors(error), do: inspect(error)
-end
 
+  # Presign a URL only if it's from R2 storage (not external URLs)
+  defp maybe_presign_url(nil), do: nil
+  defp maybe_presign_url(url) when is_binary(url) do
+    if is_r2_storage_url?(url) do
+      Storage.presigned_url!(url)
+    else
+      url
+    end
+  end
+
+  # Check if a URL is from R2 storage
+  defp is_r2_storage_url?(url) do
+    base = Storage.public_url_base()
+    cond do
+      base && String.starts_with?(url, base) -> true
+      String.contains?(url, ".r2.cloudflarestorage.com/") -> true
+      String.starts_with?(url, "organizations/") -> true
+      true -> false
+    end
+  end
+end
