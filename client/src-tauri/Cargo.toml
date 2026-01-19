@@ -51,6 +51,14 @@ log = "0.4"
 # Text-to-image rendering for advanced text overlays (chat bubbles, gradients, glows)
 resvg = "0.44"
 
+# Native GPU video renderer dependencies
+wgpu = "0.19"
+ffmpeg-next = "8.0"
+lru = "0.12"
+parking_lot = "0.12"
+image = "0.24"
+pollster = "0.3"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 objc = "0.2"

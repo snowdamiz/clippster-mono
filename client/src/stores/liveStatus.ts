@@ -51,7 +51,7 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
           const kickStatus = await checkKickLivestream(platformId);
           return {
             isLive: kickStatus.isLive,
-            streamId: kickStatus.channelId,
+            streamId: kickStatus.channelId?.toString(),
             streamStartTimestamp: kickStatus.startedAt
               ? new Date(kickStatus.startedAt).getTime()
               : undefined,
@@ -185,7 +185,7 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
       
       // Load local profiles
       const localProfiles = await getAllCreatorProfiles();
-      const allProfiles: CreatorProfile[] = localProfiles.map(p => ({
+      const allProfiles: any[] = localProfiles.map(p => ({
         id: p.id,
         name: p.name,
         platform_links: p.platform_links
@@ -196,14 +196,14 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
         try {
           const orgResponse = await getUserAssignedCreatorProfiles();
           if (orgResponse.success && orgResponse.profiles.length > 0) {
-            const orgProfiles = orgResponse.profiles.map(p => ({
+            const orgProfiles = orgResponse.profiles.map((p: any) => ({
               id: `org-${p.id}`,
               name: p.name,
-              platform_links: p.platform_links.map(link => ({
+              platform_links: p.platform_links.map((link: any) => ({
                 id: `org-link-${link.id}`,
                 platform: link.platform,
                 platform_id: link.platform_id,
-                display_name: link.display_name
+                display_name: link.display_name ?? undefined
               }))
             }));
             allProfiles.push(...orgProfiles);
@@ -224,7 +224,7 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
         allProfiles.map(async (creator) => {
           // Check if any of the creator's platform links are live
           const linkChecks = await Promise.all(
-            creator.platform_links.map(async (link) => {
+            creator.platform_links.map(async (link: any) => {
               const platform = link.platform.toLowerCase() as 'pumpfun' | 'kick' | 'twitch';
               const platformType: SupportedLivestreamPlatform = 
                 platform === 'kick' ? 'Kick' : 

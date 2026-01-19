@@ -1565,11 +1565,13 @@ export function useLivestreamMonitoring() {
               displayName: streamer.display_name,
               platform: (streamer.platform as SupportedLivestreamPlatform) || 'PumpFun',
               profileImageUrl: streamer.profile_image_url || undefined,
-              projectId: session.project_id || undefined,
-              streamThumbnailUrl: undefined,
-              isDetecting: true,
+              projectId: session.project_id || '',
               isStopping: false,
               startedAt: new Date(session.stream_start_time).getTime(),
+              streamStartTime: new Date(session.stream_start_time).getTime(),
+              totalSegments: 0,
+              processedSegments: 0,
+              isRecording: true,
             });
           });
 
@@ -1585,6 +1587,11 @@ export function useLivestreamMonitoring() {
                   profileImageUrl: streamer.profile_image_url || undefined,
                   autoDvr: Boolean(streamer.auto_dvr),
                   segmentDurationMinutes: streamer.segment_duration_minutes || 5,
+                  lastCheckTimestamp: null,
+                  isCurrentlyLive: true,
+                  currentSessionId: session.id,
+                  selected: false,
+                  isDetecting: true,
                 },
                 options: {
                   detectClips: true, // Assume clip detection was enabled

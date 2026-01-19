@@ -13,7 +13,7 @@
           <span
             class="org-members__seat-badge"
             :class="{
-              'org-members__seat-badge--warning': seatsRemaining <= 2 && seatsRemaining > 0,
+              'org-members__seat-badge--warning': seatsRemaining !== undefined && seatsRemaining <= 2 && seatsRemaining > 0,
               'org-members__seat-badge--danger': seatsRemaining === 0,
             }"
           >

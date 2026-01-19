@@ -1,2 +1,9 @@
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+[env]
+LIBCLANG_PATH = "C:\\Program Files\\LLVM\\bin"
+VCPKG_DEFAULT_TRIPLET = "x64-windows"
+# Override pkg-config to only use vcpkg (prevents Scoop FFmpeg detection)
+PKG_CONFIG_LIBDIR = "C:\\vcpkg\\installed\\x64-windows\\lib\\pkgconfig"
+PKG_CONFIG_PATH = "C:\\vcpkg\\installed\\x64-windows\\lib\\pkgconfig"

@@ -485,7 +485,7 @@
     (org) => {
       if (org) {
         const orgSettings = org.settings || {};
-        const restrictionDefaults = org.restriction_defaults || {};
+        const restrictionDefaults = (org as any).restriction_defaults || {};
         editData.value = {
           name: org.name,
           description: org.description || '',
@@ -515,7 +515,7 @@
     const currentAllowAi = orgSettings.allow_ai !== false;
     
     // Check restriction defaults changes
-    const orgRestrictionDefaults = organization.value.restriction_defaults || {};
+    const orgRestrictionDefaults = (organization.value as any).restriction_defaults || {};
     const restrictionsChanged = 
       editData.value.restriction_defaults.allow_ai !== (orgRestrictionDefaults.allow_ai !== false) ||
       editData.value.restriction_defaults.allow_asset_uploads !== (orgRestrictionDefaults.allow_asset_uploads === true) ||
@@ -567,7 +567,7 @@
 
   function toggleRestriction(key: string) {
     if (editData.value.restriction_defaults) {
-      editData.value.restriction_defaults[key] = !editData.value.restriction_defaults[key];
+      (editData.value.restriction_defaults as any)[key] = !(editData.value.restriction_defaults as any)[key];
     }
   }
 

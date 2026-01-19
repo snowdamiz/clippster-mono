@@ -18,6 +18,7 @@ mod focal_detection;
 mod commands;
 mod dvr;
 mod hls;
+mod video_renderer;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -551,6 +552,7 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(Mutex::new(video_renderer::VideoRendererState::new()))
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -758,18 +760,19 @@ pub fn run() {
             dvr::read_all_dvr_chunks,
             dvr::read_dvr_chunk,
             dvr::read_dvr_init_segment,
-            dvr::read_dvr_cluster,
-            dvr::build_vod_from_dvr,
-            dvr::build_segment_from_dvr_chunks,
-            dvr::convert_dvr_chunk_to_hls,
             
-            // HLS commands
-            hls::start_hls_recording,
-            hls::stop_hls_recording,
-            hls::cleanup_hls_recordings,
-            hls::get_recording_output_dir,
-            hls::get_hls_segments,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
+    // HLS commands
+    hls::start_hls_recording,
+    hls::stop_hls_recording,
+    hls::cleanup_hls_recordings,
+    hls::get_recording_output_dir,
+    hls::get_hls_segments,
+            
+    // Video renderer commands
+    video_renderer::commands::get_video_frame,
+    video_renderer::commands::get_video_dimensions,
+    video_renderer::commands::clear_frame_cache,
+    video_renderer::commands::get_frame_cache_stats,
+])
+.run(tauri::generate_context!())
+.expect("error while running tauri application");
