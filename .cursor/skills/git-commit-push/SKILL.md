@@ -12,6 +12,15 @@ description: Git add, commit with AI-generated message, and push changes to remo
 - User says "commit and push"
 - User requests creating a pull request (commit first if needed)
 
+## Operating System Detection
+
+**IMPORTANT**: Before executing commands, check the user's OS from the system information provided in the conversation context. Look for the `OS Version` field:
+- If it contains `darwin` → **macOS** (use bash/zsh syntax)
+- If it contains `windows` or `win32` → **Windows** (use PowerShell syntax)
+- If it contains `linux` → **Linux** (use bash syntax)
+
+This affects how multi-line commit messages are formatted.
+
 ## Instructions
 
 ### 1. Pre-flight Checks (run in parallel)
@@ -52,7 +61,9 @@ Stage relevant files:
 git add <files>
 ```
 
-Commit using HEREDOC format for proper message formatting:
+Commit with proper message formatting based on OS:
+
+**macOS/Linux (bash/zsh)**:
 ```bash
 git commit -m "$(cat <<'EOF'
 Your commit message here.
@@ -60,6 +71,22 @@ Your commit message here.
 Optional extended description if needed.
 EOF
 )"
+```
+
+**Windows (PowerShell)**:
+```powershell
+git commit -m "Your commit message here.`n`nOptional extended description if needed."
+```
+
+Or for complex messages on Windows, create a temporary file:
+```powershell
+@"
+Your commit message here.
+
+Optional extended description if needed.
+"@ | Out-File -FilePath .git/COMMIT_MSG -Encoding utf8
+git commit -F .git/COMMIT_MSG
+Remove-Item .git/COMMIT_MSG
 ```
 
 Verify success:

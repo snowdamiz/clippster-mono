@@ -12,6 +12,15 @@ description: Create new Agent Skills following the official specification. Use w
 - User asks to add a new capability/skill to the agent
 - User wants to package instructions for reuse
 
+## Operating System Detection
+
+**IMPORTANT**: Before executing shell commands, check the user's OS from the system information provided in the conversation context. Look for the `OS Version` field:
+- If it contains `darwin` → **macOS** (use bash/zsh syntax)
+- If it contains `windows` or `win32` → **Windows** (use PowerShell syntax)
+- If it contains `linux` → **Linux** (use bash syntax)
+
+This affects directory creation commands.
+
 ## Reference Documentation
 
 Before creating a skill, read the official Agent Skills documentation for the most current specification and best practices:
@@ -121,8 +130,19 @@ After the frontmatter, write the Markdown body with clear instructions. Recommen
 
 ### 3. Create Directory Structure
 
+**macOS/Linux (bash/zsh)**:
 ```bash
 mkdir -p .cursor/skills/skill-name
+```
+
+**Windows (PowerShell)**:
+```powershell
+New-Item -ItemType Directory -Force -Path ".cursor/skills/skill-name"
+```
+
+**Windows (Command Prompt)**:
+```cmd
+mkdir ".cursor\skills\skill-name"
 ```
 
 ### 4. Write SKILL.md
