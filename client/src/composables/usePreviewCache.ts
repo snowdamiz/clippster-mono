@@ -150,6 +150,7 @@ const CHUNK_DURATION = 3.0; // 3 seconds per chunk
  * @param videoServerPort - Video server port for streaming URLs
  * @param editData - Optional reactive ref to edit data (overlays, effects, audio)
  * @param aspectRatio - Optional aspect ratio for rendering
+ * @param isPlaying - Optional ref to playback state (prevents rendering during playback)
  */
 export function usePreviewCache(
   clipId: Ref<string>,
@@ -157,7 +158,8 @@ export function usePreviewCache(
   segments: ComputedRef<TimelineSegment[]>,
   videoServerPort: Ref<number | null>,
   editData?: Ref<PreviewChunkEditData | null>,
-  aspectRatio?: Ref<string>
+  aspectRatio?: Ref<string>,
+  isPlaying?: Ref<boolean>
 ) {
   // Proxy cache state (720p)
   const proxyState = ref<PreviewCacheState>({
@@ -456,6 +458,11 @@ export function usePreviewCache(
    * Start proxy cache rendering
    */
   async function startProxyRender(): Promise<void> {
+    // Don't render during playback to avoid decoder contention
+    if (isPlaying?.value) {
+      console.log('[usePreviewCache] Skipping proxy render - playback active');
+      return;
+    }
     console.log('[usePreviewCache] Starting proxy render');
     await renderTier('proxy');
   }
@@ -464,6 +471,11 @@ export function usePreviewCache(
    * Start HQ cache rendering (triggered by fullscreen)
    */
   async function startHqRender(): Promise<void> {
+    // Don't render during playback to avoid decoder contention
+    if (isPlaying?.value) {
+      console.log('[usePreviewCache] Skipping HQ render - playback active');
+      return;
+    }
     if (hqState.value.isReady || hqState.value.isRendering) {
       console.log('[usePreviewCache] HQ already ready or rendering, skipping');
       return;

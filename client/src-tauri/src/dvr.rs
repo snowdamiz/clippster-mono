@@ -626,6 +626,7 @@ pub async fn build_vod_from_dvr(
 }
 
 /// Sanitize filename to remove invalid characters
+#[allow(dead_code)]
 fn sanitize_filename(name: &str) -> String {
     let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
     let mut result = name.to_string();

@@ -58,6 +58,8 @@ lru = "0.12"
 parking_lot = "0.12"
 image = "0.24"
 pollster = "0.3"
+crossbeam = "0.8"
+cpal = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"

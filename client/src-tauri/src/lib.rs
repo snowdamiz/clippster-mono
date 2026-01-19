@@ -760,6 +760,10 @@ pub fn run() {
             dvr::read_all_dvr_chunks,
             dvr::read_dvr_chunk,
             dvr::read_dvr_init_segment,
+            dvr::read_dvr_cluster,
+            dvr::build_vod_from_dvr,
+            dvr::convert_dvr_chunk_to_hls,
+            dvr::build_segment_from_dvr_chunks,
             
     // HLS commands
     hls::start_hls_recording,
@@ -772,7 +776,25 @@ pub fn run() {
     video_renderer::commands::get_video_frame,
     video_renderer::commands::get_video_dimensions,
     video_renderer::commands::clear_frame_cache,
+    video_renderer::commands::invalidate_cache_range,
+    video_renderer::commands::invalidate_cache_path,
     video_renderer::commands::get_frame_cache_stats,
+    
+    // Proxy generation commands (Step 6)
+    video_renderer::commands::generate_video_proxy,
+    video_renderer::commands::get_video_proxy_path,
+    video_renderer::commands::generate_video_proxies,
+    video_renderer::commands::get_video_proxy_paths,
+    
+    // Playback engine commands (Steps 1-5)
+    video_renderer::commands::start_playback,
+    video_renderer::commands::pause_playback,
+    video_renderer::commands::resume_playback,
+    video_renderer::commands::seek_playback,
+    video_renderer::commands::stop_playback,
+    video_renderer::commands::read_frame_slot,
+    video_renderer::commands::get_playback_state,
 ])
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
+}

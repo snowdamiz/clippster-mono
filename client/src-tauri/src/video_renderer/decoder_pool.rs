@@ -32,9 +32,9 @@ impl DecoderPool {
             VideoDecoder::new(path).expect("Failed to create decoder")
         });
         
-        // Seek and decode
+        // Seek to keyframe before target, then decode forward to target frame
         decoder.seek_to_timestamp(timestamp)?;
-        decoder.decode_frame()
+        decoder.decode_frame_at(timestamp)
     }
     
     pub fn get_video_dimensions(&self, path: &PathBuf) -> Result<(u32, u32), String> {
@@ -47,6 +47,17 @@ impl DecoderPool {
         Ok((decoder.width(), decoder.height()))
     }
     
+    pub fn get_video_duration(&self, path: &PathBuf) -> Result<f64, String> {
+        let mut decoders = self.decoders.lock();
+        
+        let decoder = decoders.entry(path.clone()).or_insert_with(|| {
+            VideoDecoder::new(path).expect("Failed to create decoder")
+        });
+        
+        Ok(decoder.duration())
+    }
+    
+    #[allow(dead_code)]
     pub fn clear(&self) {
         self.decoders.lock().clear();
     }

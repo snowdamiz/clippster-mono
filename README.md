@@ -4,7 +4,14 @@ A desktop application for automated long-form to short-form video clip generatio
 
 ## Overview
 
-**Clippster** transforms how creators produce short-form content by automating clip detection from long-form videos, VODs, and livestreams. With a professional timeline editor, AI-powered transcription and analysis, and seamless social media integration, Clippster accelerates content creation workflows for individual creators and teams.
+**Clippster** transforms how creators produce short-form content by automating clip detection from long-form videos, VODs, and livestreams. With a professional timeline editor featuring frame-accurate playback, AI-powered transcription and analysis, and seamless social media integration, Clippster accelerates content creation workflows for individual creators and teams.
+
+**Key Capabilities:**
+- Frame-accurate video playback engine with Rust-based decoding
+- Multi-participant livestream recording with audio mixing
+- Organization-based team collaboration with campaigns
+- Professional clipper profiles and leaderboards
+- Real-time messaging and clip distribution
 
 ## Architecture
 
@@ -12,7 +19,7 @@ This monorepo contains three main applications:
 
 - **`client/`** - Tauri + Vue 3 desktop application (frontend)
 - **`server/`** - Phoenix API backend (Elixir/Erlang)
-- **`landing/`** - Vue 3 marketing landing page
+- **`landing/`** - React + TypeScript marketing landing page
 
 ### Technology Stack
 
@@ -40,15 +47,16 @@ This monorepo contains three main applications:
 - Instagram/Twitter APIs - Social media integration
 
 **Desktop Runtime:**
-- Rust (Tauri backend) - Native system integration
+- Rust (Tauri backend) - Native system integration with WGPU video renderer
 - SQLite - Local storage via Tauri SQL plugin (clippster_v25.db)
-- FFmpeg - Bundled binary for video/audio processing
+- FFmpeg - Bundled binary for video/audio processing (see `docs/FFMPEG_SETUP_WINDOWS.md`)
 - LiveKit Client - Multi-participant livestream support
+- Frame Decoder - Rust-based frame-accurate video decoding with LRU cache
 
 **Landing Page:**
-- Vue 3 + TypeScript
+- React + TypeScript
 - Vite + Tailwind CSS v4
-- Radix Vue components
+- React Compiler enabled
 
 ## Quick Start
 
@@ -116,7 +124,7 @@ clippster/
 │   ├── config/               # Configuration files
 │   ├── priv/repo/            # Database migrations
 │   └── README.md             # Server-specific documentation
-├── landing/                   # Vue marketing landing page
+├── landing/                   # React + TypeScript marketing landing page
 │   ├── src/                  # Landing page source
 │   ├── package.json          # Landing page dependencies
 │   └── README.md             # Landing page documentation
@@ -179,14 +187,17 @@ Optional:
 - **Multi-Platform Import**: YouTube, Twitch, Kick URLs or local video files
 - **AI Clip Detection**: Automated highlight detection using OpenRouter API with chunked processing for long videos
 - **Whisper Transcription**: Accurate speech-to-text with word-level timestamps
-- **Professional Timeline Editor**: 2,300+ line Vue component with multi-track editing, drag-and-drop, cut tool, keyboard shortcuts, and collision detection
+- **Professional Timeline Editor**: Multi-track editing with drag-and-drop, cut tool, keyboard shortcuts, collision detection, and undo/redo system
+- **Frame-Accurate Playback**: Rust-based frame decoder with LRU cache (200 frames), predictive prefetching, and canvas rendering for seamless playback
+- **Unified Track Rendering**: Text, stickers, watermarks, audio, and effects rendered via unified track system with keyframe animation
 - **Export for Social**: Multiple format presets optimized for TikTok, Instagram, YouTube Shorts
 
 ### Livestream Features
-- **DVR Recording**: Capture livestreams from Kick, Twitch, YouTube with HLS segmentation
+- **DVR Recording**: Capture livestreams from Kick, Twitch, YouTube with HLS segmentation and atomic segment writes
 - **Real-time Monitoring**: Track multiple streams simultaneously with auto-recording
 - **Live Clip Detection**: AI-powered highlight detection during active streams
-- **LiveKit Integration**: Multi-participant stream support with audio mixing
+- **LiveKit Integration**: Multi-participant stream support with audio mixing for all tracks
+- **Guest Handling**: Automatic main broadcaster detection and multi-track audio capture for PumpFun streams with guests
 
 ### Organizations & Team Collaboration
 - **Shared Workspaces**: Team-based content creation with member roles and permissions
@@ -330,10 +341,13 @@ For detailed documentation, see [docs/completed/OTA-UPDATES.md](docs/completed/O
 ## Documentation Index
 
 ### Component Documentation
-- **[AGENTS.md](AGENTS.md)** - Comprehensive guide for AI agents and developers working with the codebase
+- **[AGENTS.md](AGENTS.md)** - Comprehensive guide for AI agents and developers (v0.1.46, updated Jan 2026)
 - **[Client README](client/README.md)** - Tauri + Vue 3 desktop application documentation
 - **[Server README](server/README.md)** - Phoenix API backend documentation
-- **[Landing README](landing/README.md)** - Marketing landing page documentation
+- **[Landing README](landing/README.md)** - React + TypeScript landing page
+
+### Setup Guides
+- **[FFmpeg Setup (Windows)](docs/FFMPEG_SETUP_WINDOWS.md)** - Windows development environment setup for video rendering
 
 ### Completed Features
 - **[OTA Updates](docs/completed/OTA-UPDATES.md)** - Over-the-air update system implementation
@@ -349,10 +363,9 @@ For detailed documentation, see [docs/completed/OTA-UPDATES.md](docs/completed/O
 - **[Undo/Redo System](docs/completed/Undo_Redo_Implementation_Plan.md)** - Command pattern implementation
 
 ### Future Plans
-- **[Parti Streams](docs/future/PARTI_STREAMS_IMPLEMENTATION_PLAN.md)** - Add Parti platform support
+- **[Video Editor Playback Optimization](docs/future/Video_Editor_Playback_Optimization_Plan.md)** - Tiered optimization plan (proxy videos, WebGL canvas, WebCodecs API)
 - **[GPU Pipeline Optimization](docs/future/GPU_PIPELINE_OPTIMIZATION.md)** - Hardware-accelerated video processing
-- **[CapCut-Style Thumbnails](docs/future/CAPCUT_STYLE_VIDEO_THUMBNAILS_PLAN.md)** - Enhanced timeline thumbnails
-- **[Multi-Participant Streams](docs/future/Multiple_Participants_in_Live_Stream.md)** - Guest support in livestreams
+- **[CapCut-Style Thumbnails](docs/future/CAPCUT_STYLE_VIDEO_THUMBNAILS_PLAN.md)** - Enhanced timeline thumbnails with sprite sheets
 
 ## Contributing
 

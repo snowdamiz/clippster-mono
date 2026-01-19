@@ -67,88 +67,26 @@
                 />
 
                 <div class="flex-1 min-w-0 min-h-0 flex flex-col items-center justify-start overflow-hidden relative">
-                  <!-- New V2 Preview with timeline-driven playback engine -->
-                  <ClipEditorPreviewV2
-                    v-if="editorMode && useNewPlaybackEngine"
-                    ref="previewV2Ref"
-                    :video-server-port="videoServerPort"
+                  <!-- Rust-based Video Renderer (Performance Fixed) -->
+                  <ClipEditorPreviewNative
+                    ref="previewNativeRef"
                     :video-sources="videoSources"
-                    :audio-tracks="audioTracks"
-                    :text-overlays="textOverlays"
-                    :stickers="stickers"
-                    :watermarks="watermarks"
-                    :subtitle-settings="subtitleSettings"
-                    :transcript-words="transcriptWords"
-                    :transcript-segments="transcriptSegments"
-                    :preview-aspect-ratio="previewAspectRatio"
-                    :is-video-muted="isVideoMuted"
-                    @time-update="onPreviewTimeUpdateV2"
-                    @play-state-change="onPlayStateChangeV2"
-                    @video-element-ready="onVideoElementReady"
-                    @update-overlay-position="onUpdateOverlayPosition"
-                  />
-
-                  <!-- Legacy Preview (clip mode or when V2 is disabled) -->
-                  <ClipEditorPreview
-                    v-else
-                    ref="previewRef"
-                    :video-src="effectiveVideoSrc"
-                    :preload-video-src="preloadVideoSrc"
-                    :segment-preview-src="segmentPreviewStreamingUrl"
-                    :segment-time-map="segmentTimeMap"
-                    :is-generating-preview="isGeneratingPreviewCombined"
                     :current-time="previewTime"
-                    :effective-time="effectivePreviewTime"
                     :is-playing="isPlaying"
-                    :clip-start="clipStartTime"
-                    :clip-end="clipEndTime"
+                    :preview-aspect-ratio="previewAspectRatio"
                     :text-overlays="textOverlays"
                     :stickers="stickers"
                     :watermarks="watermarks"
-                    :creator-profile-watermark-settings="computedCreatorProfileWatermarkSettings"
-                    :filter-settings="activeFilterSettings"
-                    :segments="playbackSegments"
-                    :preview-aspect-ratio="previewAspectRatio"
-                    :selected-aspect-ratios="selectedAspectRatios"
-                    :framing-configs="effectiveFramingConfigs"
-                    :subtitle-settings="subtitleSettings"
-                    :transcript-words="transcriptWords"
-                    :transcript-segments="transcriptSegments"
-                    :subtitle-source-time="subtitleSourceTime"
+                    :audio-tracks="audioTracks"
+                    :tracks="timelineTracks"
+                    :selected-item-ids="Array.from(selectedItemIds)"
                     :editor-mode="editorMode"
                     :editor-total-duration="editorContentDuration"
-                    :active-transition="activeTransition"
-                    :video-sources="videoSources"
-                    :tracks="timelineTracks"
-                    :is-video-muted="isVideoMuted"
-                    :audio-tracks="audioTracks"
-                    :audio-effects="audioEffects"
-                    :selected-item-ids="selectedItemIds"
                     @time-update="onPreviewTimeUpdate"
                     @toggle-play="togglePlay"
-                    @video-element-ready="onVideoElementReady"
-                    @video-swapped="onVideoSwapped"
-                    @crossfade-completed="onCrossfadeCompleted"
-                    @update-overlay-position="onUpdateOverlayPosition"
-                    @update-overlay-width="onUpdateOverlayWidth"
-                    @update-overlay-rotation="onUpdateOverlayRotation"
-                    @update-overlay-scale="onUpdateOverlayScale"
-                    @update-sticker-scale="onUpdateStickerScale"
-                    @update-sticker-rotation="onUpdateStickerRotation"
-                    @update-watermark-scale="onUpdateWatermarkScale"
-                    @update-subtitle-position="onUpdateSubtitlePosition"
-                    @update-subtitle-max-width="onUpdateSubtitleMaxWidth"
-                    @overlay-drag-end="onOverlayPositionChangeComplete"
-                    @overlay-resize-end="onOverlayWidthChangeComplete"
-                    @overlay-rotate-end="onOverlayRotationChangeComplete"
-                    @overlay-scale-end="onOverlayScaleChangeComplete"
-                    @sticker-resize-end="onStickerScaleChangeComplete"
-                    @sticker-rotate-end="onStickerRotationChangeComplete"
-                    @watermark-resize-end="onWatermarkScaleChangeComplete"
-                    @video-ended="onVideoEnded"
-                    @track-item-select="onTrackItemSelect"
-                    @fullscreen-enter="onFullscreenEnter"
-                    @fullscreen-exit="onFullscreenExit"
+                    @track-item-select="(itemId: string) => onTrackItemSelect(itemId, 'unknown')"
+                    @update-overlay-position="(data: any) => onUpdateOverlayPosition(data.type, data.id, data.position)"
+                    @video-element-ready="() => onVideoElementReady(null as any)"
                   />
 
                   <!-- Transition frame overlay - shows last frame during source switch to avoid black flash (fallback) -->
@@ -647,8 +585,7 @@
   defineOptions({
     inheritAttrs: false,
   });
-  import ClipEditorPreview from './ClipEditorPreview.vue';
-  import ClipEditorPreviewV2 from './ClipEditorPreviewV2.vue';
+  import ClipEditorPreviewNative from './ClipEditorPreviewNative.vue';
   import AspectRatioSelector from './AspectRatioSelector.vue';
   import ClipEditorToolbar from './ClipEditorToolbar.vue';
   import MediaTab from './tabs/MediaTab.vue';
@@ -861,8 +798,7 @@
 
   // Refs
   const dialogRef = ref<HTMLElement | null>(null);
-  const previewRef = ref<InstanceType<typeof ClipEditorPreview> | null>(null);
-  const previewV2Ref = ref<InstanceType<typeof ClipEditorPreviewV2> | null>(null);
+  const previewNativeRef = ref<InstanceType<typeof ClipEditorPreviewNative> | null>(null);
   const videoElement = ref<HTMLVideoElement | null>(null);
   const videoDimensions = ref({ width: 0, height: 0 });
   const clipEditId = ref<string | null>(null);
@@ -912,27 +848,7 @@
    * Falls back to the stored videoElement ref if preview component isn't available.
    */
   const activeVideoElement = computed<HTMLVideoElement | null>(() => {
-    // First, try to get the active element from the preview component
-    // which knows about all the internal video state
-    if (previewRef.value?.getActiveVideoElement) {
-      const activeEl = previewRef.value.getActiveVideoElement();
-      if (activeEl) {
-        return activeEl;
-      }
-    }
-
-    // In editor mode, check if preload video is active (after crossfade)
-    if (editorMode.value && previewRef.value) {
-      const activePreloadIndex = previewRef.value.activeVideoIndex;
-      if (activePreloadIndex === 1) {
-        const preloadEl = previewRef.value.getPreloadVideoElement?.();
-        if (preloadEl) {
-          return preloadEl;
-        }
-      }
-    }
-
-    // Fall back to the stored video element
+    // Native renderer doesn't use video elements
     return videoElement.value;
   });
 
@@ -1452,7 +1368,7 @@
     watermarks,
     effectivePreviewTime,
     totalSegmentDuration,
-    getOverlayContainerHeight: () => previewRef.value?.getOverlayContainerHeight(),
+    getOverlayContainerHeight: () => 1080, // Native renderer uses fixed dimensions
   });
 
   // Video source operations composable (add, update, delete, split video sources)
@@ -1884,7 +1800,8 @@
     previewCacheSegments,
     videoServerPort,
     previewCacheEditData,
-    previewAspectRatioRef
+    previewAspectRatioRef,
+    isPlaying  // Pass isPlaying to prevent rendering during playback
   );
 
   // Combined isGeneratingPreview that includes both legacy and progressive cache
@@ -2911,7 +2828,14 @@
     }
   }
 
-  function onVideoElementReady(element: HTMLVideoElement) {
+  function onVideoElementReady(element: HTMLVideoElement | null) {
+    // Native renderer doesn't have a video element, it uses canvas
+    if (!element) {
+      // Dimensions are handled by the native renderer
+      videoDimensions.value = { width: 1920, height: 1080 };
+      return;
+    }
+
     videoElement.value = element;
 
     const updateDimensions = () => {
@@ -2937,12 +2861,8 @@
 
   // Called when the preview component successfully swapped to the preloaded video
   function onVideoSwapped() {
-    // CRITICAL: Update videoElement to point to the now-active preload video
-    // This ensures play/pause controls work after crossfade
-    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
-    if (preloadEl) {
-      videoElement.value = preloadEl;
-    }
+    // Native renderer doesn't use video swapping
+    return;
 
     // The preload video is now the main video
     // Reset the preview component's active video index for the next swap cycle
@@ -2974,12 +2894,8 @@
   // Called when crossfade completes early (e.g., main video media ended before transition zone end)
   // This syncs the timeline playhead with the visual state
   function onCrossfadeCompleted(transitionEndTime: number) {
-    // CRITICAL: Update videoElement to point to the now-active preload video
-    // This ensures play/pause controls work after crossfade
-    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
-    if (preloadEl) {
-      videoElement.value = preloadEl;
-    }
+    // Native renderer doesn't support crossfades yet
+    return;
 
     // Update preview time to the end of the transition
     // This ensures the timeline playhead matches the visual state
@@ -3004,18 +2920,15 @@
 
     // Apply opacity as volume to outgoing source video (main video)
     // Note: The main video is still the current activeVideoSource
-    videoElement.value.volume = opacityA;
-
-    // Apply opacity as volume to incoming source video (preload video)
-    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
-    if (preloadEl) {
-      preloadEl.volume = opacityB;
-    }
+    // Native renderer doesn't support crossfade audio mixing yet
+    return;
   }
 
   // Start crossfade when entering a transition zone
   function manageCrossfade() {
-    if (!editorMode.value || !previewRef.value || !isPlaying.value) return;
+    // Native renderer doesn't support crossfades yet
+    return;
+    if (!editorMode.value || !isPlaying.value) return;
 
     const transition = activeTransition.value;
 
@@ -3031,8 +2944,8 @@
           const timeIntoTransition = previewTime.value - transition.startTime;
           const seekTime = incomingSource.trim_start + timeIntoTransition;
 
-          // Try to start crossfade (will work even if preload isn't fully ready)
-          if (previewRef.value.startCrossfade?.(seekTime)) {
+          // Native renderer doesn't support crossfades
+          if (false) {
             crossfadeStarted.value = true;
             lastCrossfadeTransitionId.value = transition.id;
           } else {
@@ -3050,10 +2963,8 @@
       // Update audio levels during crossfade
       updateCrossfadeAudio();
     } else if (crossfadeStarted.value) {
-      // We've exited the transition zone - complete the crossfade
-      if (previewRef.value.completeCrossfade) {
-        previewRef.value.completeCrossfade();
-      }
+      // Native renderer doesn't support crossfades
+      return;
 
       // Update state to reflect we're now on the incoming source
       // Find the source that contains the current time (should be source B now)
@@ -3064,11 +2975,7 @@
         currentVideoSourceId.value = newActiveSource.id;
       }
 
-      // Update videoElement to point to the new active video (preload video)
-      const preloadEl = previewRef.value?.getPreloadVideoElement?.();
-      if (preloadEl) {
-        videoElement.value = preloadEl;
-      }
+      // Native renderer doesn't use video elements
 
       crossfadeStarted.value = false;
       // IMPORTANT: Keep lastCrossfadeTransitionId set so we don't restart the same transition
@@ -3173,9 +3080,7 @@
     }
   }
 
-  function onPlayStateChangeV2(playing: boolean) {
-    isPlaying.value = playing;
-  }
+  // Removed: onPlayStateChangeV2 - Rust playback engine handles state internally
 
   // Fullscreen event handlers for HQ preview rendering
   function onFullscreenEnter() {
@@ -3205,12 +3110,12 @@
   function transitionToSource(nextSource: VideoEditorSource) {
     isSeeking.value = true;
 
-    // Check which video is currently active (main or preload)
-    const isMainActive = previewRef.value?.isMainVideoActive?.() ?? true;
+    // Native renderer doesn't use video swapping
+    const isMainActive = true;
 
     if (isMainActive) {
-      // Main video is active, try to swap to preloaded video (normal case)
-      const swapSucceeded = previewRef.value?.swapToPreloadedVideo?.(nextSource.trim_start);
+      // Native renderer handles source changes via props
+      const swapSucceeded = false;
 
       if (swapSucceeded) {
         // Seamless swap succeeded - update our state to match
@@ -3235,8 +3140,7 @@
       return;
     }
 
-    // Preload video is active (after a previous swap), need to swap back to main
-    previewRef.value?.resetActiveVideo?.();
+    // Native renderer doesn't need video reset
     shouldResumePlayback.value = isPlaying.value;
 
     // Now update state - this will trigger editorVideoSrc to change and load the new source
@@ -3258,10 +3162,7 @@
       videoElement.value.pause();
     }
 
-    const preloadEl = previewRef.value?.getPreloadVideoElement?.();
-    if (preloadEl && !preloadEl.paused) {
-      preloadEl.pause();
-    }
+    // Native renderer doesn't use preload video
 
     audioElements.value.forEach((audio) => audio.pause());
     lastGapTimestamp = 0;
@@ -3310,10 +3211,7 @@
     // The outgoing video has reached its end during the crossfade
     // Check crossfadeStarted OR if we're in/near a transition zone
     if (crossfadeStarted.value || activeTransition.value) {
-      // Complete the crossfade transition
-      if (previewRef.value?.completeCrossfade) {
-        previewRef.value.completeCrossfade();
-      }
+      // Native renderer doesn't support crossfades
 
       // Update state to reflect we're now on the incoming source
       // Find the incoming source - either from the transition or the next source by order
@@ -3329,10 +3227,9 @@
 
       if (incomingSource) {
         currentVideoSourceId.value = incomingSource.id;
-        // Update videoElement to the new active element (preload video)
-        const preloadEl = previewRef.value?.getPreloadVideoElement?.();
-        if (preloadEl) {
-          videoElement.value = preloadEl;
+        // Native renderer doesn't use video elements
+        if (false) {
+          videoElement.value = null;
           // Ensure the preload video is playing
           if (preloadEl.paused && isPlaying.value) {
             preloadEl.play().catch(() => {});
@@ -3382,21 +3279,14 @@
       if (videoElement.value) {
         videoElement.value.pause();
       }
-      // Also pause any preload video that might be active
-      const preloadEl = previewRef.value?.getPreloadVideoElement?.();
-      if (preloadEl) {
-        preloadEl.pause();
-      }
+      // Native renderer doesn't use preload video
       // Pause audio tracks
       audioElements.value.forEach((audio) => audio.pause());
 
       // Set seeking flag to prevent time update interference during reset
       isSeeking.value = true;
 
-      // Reset to main video if preload was active
-      if (!previewRef.value?.isMainVideoActive?.()) {
-        previewRef.value?.resetActiveVideo?.();
-      }
+      // Native renderer doesn't need video reset
 
       if (sortedSources.length > 0) {
         const firstSource = sortedSources[0];
@@ -3423,95 +3313,26 @@
   }
 
   async function togglePlay() {
-    // Use the preview component's unified play/pause methods
-    // This ensures all video elements (framed, region, audio, preload) are properly controlled
-    if (!previewRef.value) {
-      return;
-    }
-
-    if (isPlaying.value) {
-      stopGapPlayback(true);
-      previewRef.value.pause();
-      // Pause all audio tracks
-      audioElements.value.forEach((audio) => audio.pause());
-      isPlaying.value = false;
-    } else {
-      if (editorMode.value && !activeVideoSource.value) {
-        const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
-        const nextSource = sortedSources.find((s) => s.start_time > previewTime.value) || null;
-        if (nextSource) {
-          isPlaying.value = true;
-          startGapPlayback(nextSource, previewTime.value, nextSource.start_time);
-          return;
-        }
-      }
-
-      // For multi-segment clips, wait for preview cache to be ready
-      // This ensures seamless playback without glitches at segment boundaries
-      if (playbackSegments.value.length > 1 && !previewCache.isPreviewReady.value) {
-        // Preview cache is still rendering - start it if not already started
-        if (!previewCache.proxyState.value.isRendering) {
-          startPreviewCacheRender();
-        }
-        console.log('[togglePlay] Waiting for preview cache to be ready...');
-        // Don't block the UI, just return - user can try again
-        return;
-      }
-
-      // Check if active video is ready before playing
-      const activeVideo = activeVideoElement.value;
-      if (activeVideo) {
-        const hasValidSource = activeVideo.src && activeVideo.src !== '' && !activeVideo.src.endsWith('/video-editor');
-        const isReady = activeVideo.readyState >= 1; // HAVE_METADATA or better
-
-        if (!hasValidSource || !isReady) {
-          return;
-        }
-      }
-
-      const playStarted = await previewRef.value.play();
-      if (playStarted) {
-        isPlaying.value = true;
-        // Resume audio context if suspended
-        if (audioContext.value?.state === 'suspended') {
-          audioContext.value.resume();
-        }
-        // Start audio tracks playback
-        syncAudioWithVideo();
-      } else {
-        console.error('[togglePlay] Play failed to start');
-      }
-    }
+    // Native preview component handles actual play/pause via isPlaying prop
+    const newValue = !isPlaying.value;
+    console.log('[ClipEditorDialog] togglePlay:', isPlaying.value, '->', newValue);
+    isPlaying.value = newValue;
   }
 
   function seekTo(time: number, options?: { shouldResumePlayback?: boolean }) {
-    console.log(`[ClipEditorDialog] 🎯 seekTo called: ${time.toFixed(3)}s, options:`, options);
-    stopGapPlayback(true);
+    // Native preview component handles seeking via currentTime prop
+    previewTime.value = time;
+    
     if (editorMode.value) {
-      // Editor mode: time is already the global timeline position
       isSeeking.value = true;
-      const oldPreviewTime = previewTime.value;
-      previewTime.value = time;
-      console.log(`[ClipEditorDialog] 📍 Set previewTime: ${oldPreviewTime.toFixed(3)}s → ${time.toFixed(3)}s`);
       
-      // CRITICAL: Update playback engine's currentTime so it knows where we are
-      // This ensures when play is pressed, the engine syncs video to the correct position
-      if (useNewPlaybackEngine.value && previewV2Ref.value?.seek) {
-        console.log(`[ClipEditorDialog] 🎯 Calling previewV2Ref.seek(${time.toFixed(3)}s)`);
-        previewV2Ref.value.seek(time);
-      }
-
       // Reset crossfade state when seeking
       crossfadeStarted.value = false;
       lastCrossfadeTransitionId.value = null;
 
-      // IMPORTANT: Use explicit shouldResumePlayback from options if provided (from playhead drag end)
-      // Otherwise, detect if video was actually playing (prevents auto-play bugs)
+      // Handle resume playback
       if (options?.shouldResumePlayback !== undefined) {
         shouldResumePlayback.value = options.shouldResumePlayback;
-      } else {
-        const actuallyPlaying = videoElement.value ? !videoElement.value.paused : false;
-        shouldResumePlayback.value = isPlaying.value && actuallyPlaying;
       }
 
       // Find the source that contains this time
@@ -3541,10 +3362,7 @@
           currentVideoSourceId.value = targetSource.id;
           pendingSeekTime.value = timeInSource;
 
-          // Reset preview component to use main video (in case we were using preload after crossfade)
-          if (previewRef.value?.resetActiveVideo) {
-            previewRef.value.resetActiveVideo();
-          }
+          // Native renderer doesn't need video reset
 
           // Check if both sources use the same video file
           // If so, the editorVideoSrc won't change and the watch won't fire
@@ -3683,10 +3501,7 @@
       videoElement.value.currentTime = time;
       previewTime.value = time;
 
-      // Reset clip video state and re-initialize preload for seamless segment transitions
-      if (previewRef.value?.resetClipVideoState) {
-        previewRef.value.resetClipVideoState();
-      }
+      // Native renderer doesn't need state reset
     }
   }
 
@@ -6454,12 +6269,8 @@
     () => editorVideoSrc.value,
     async (newSrc, oldSrc) => {
       if (editorMode.value && newSrc && newSrc !== oldSrc && videoElement.value) {
-        // Skip processing if the preload video is the active one
-        // This happens after crossfade completes - the main video's src changes
-        // but we're already playing the preload video, so no action needed
-        const preloadEl = previewRef.value?.getPreloadVideoElement?.();
-        if (preloadEl && videoElement.value === preloadEl) {
-          // We're using the preload video as active - don't reload/seek main video
+        // Native renderer doesn't use preload video
+        if (false) {
           return;
         }
 
