@@ -1,10 +1,10 @@
 # Clippster
 
-A modern desktop application built as a Tauri + Phoenix monorepo that provides wallet-authenticated content management and AI tool platform. Users can manage AI-generated content including clips, projects, and prompts using Solana wallet-based authentication.
+A desktop application for automated long-form to short-form video clip generation and editing. Built as a Tauri + Phoenix monorepo, Clippster combines AI-powered video processing with professional timeline editing, multi-platform authentication, and team collaboration features for content creators and organizations.
 
 ## Overview
 
-**Clippster** is a comprehensive content creation platform that combines the power of desktop application performance with modern web technologies. It features AI-powered content generation, wallet-based authentication, and a rich user interface for managing creative projects.
+**Clippster** transforms how creators produce short-form content by automating clip detection from long-form videos, VODs, and livestreams. With a professional timeline editor, AI-powered transcription and analysis, and seamless social media integration, Clippster accelerates content creation workflows for individual creators and teams.
 
 ## Architecture
 
@@ -18,20 +18,32 @@ This monorepo contains three main applications:
 
 **Frontend (Client):**
 - Tauri 2.x - Desktop application framework
-- Vue 3 + TypeScript - Modern UI framework
+- Vue 3 + TypeScript - Modern UI framework with Composition API
 - Vite - Fast build tool and dev server
 - Tailwind CSS v4 - Utility-first styling
 - Pinia - State management
-- Radix Vue + Reka UI - Headless components
+- Radix Vue + Reka UI - Headless component libraries
 - Solana Web3.js - Wallet authentication
+- Phoenix Channels - WebSocket real-time communication
+- HLS.js - Livestream video playback
 
 **Backend (Server):**
-- Phoenix 1.8 - Modern web framework
-- Ecto 3.13 - Database ORM
-- PostgreSQL - Primary database
+- Phoenix 1.8 - Modern Elixir web framework
+- Ecto 3.13 - Database ORM and query layer
+- PostgreSQL - Primary database (50+ migrations)
 - Bandit 1.5 - High-performance HTTP server
 - JWT (Joken) - Token-based authentication
 - ED25519 - Solana wallet signature verification
+- Stripe - Payment processing and subscriptions
+- ExAws S3 - Cloudflare R2 storage integration
+- OAuth (Google) - Third-party authentication
+- Instagram/Twitter APIs - Social media integration
+
+**Desktop Runtime:**
+- Rust (Tauri backend) - Native system integration
+- SQLite - Local storage via Tauri SQL plugin (clippster_v25.db)
+- FFmpeg - Bundled binary for video/audio processing
+- LiveKit Client - Multi-participant livestream support
 
 **Landing Page:**
 - Vue 3 + TypeScript
@@ -163,112 +175,110 @@ Optional:
 
 ## Key Features
 
-### Wallet Authentication
-- **Solana Integration**: ED25519 signature verification
-- **Challenge-Response**: Prevents replay attacks
-- **JWT Tokens**: 7-day expiration for authenticated sessions
-- **Auto-Admin**: First registered user becomes admin
+### Video Processing & AI
+- **Multi-Platform Import**: YouTube, Twitch, Kick URLs or local video files
+- **AI Clip Detection**: Automated highlight detection using OpenRouter API with chunked processing for long videos
+- **Whisper Transcription**: Accurate speech-to-text with word-level timestamps
+- **Professional Timeline Editor**: 2,300+ line Vue component with multi-track editing, drag-and-drop, cut tool, keyboard shortcuts, and collision detection
+- **Export for Social**: Multiple format presets optimized for TikTok, Instagram, YouTube Shorts
 
-### Content Management
-- **AI-Powered Clips**: Automated content generation
-- **Project Organization**: Hierarchical content management
-- **Version Control**: Track content changes and history
-- **Asset Management**: File upload and media processing
+### Livestream Features
+- **DVR Recording**: Capture livestreams from Kick, Twitch, YouTube with HLS segmentation
+- **Real-time Monitoring**: Track multiple streams simultaneously with auto-recording
+- **Live Clip Detection**: AI-powered highlight detection during active streams
+- **LiveKit Integration**: Multi-participant stream support with audio mixing
 
-### Desktop Integration
-- **Native Performance**: Tauri's lightweight runtime
-- **File System Access**: Native file operations
-- **Custom Windowing**: Transparent, frameless design
-- **Media Processing**: FFmpeg integration for video/audio
+### Organizations & Team Collaboration
+- **Shared Workspaces**: Team-based content creation with member roles and permissions
+- **Organization Assets**: Shared fonts, images, audio, watermarks accessible to all members
+- **Clip Distribution**: Share clips with team members via real-time messaging
+- **Credit Pools**: Organization-level credits with member allocations
+- **Public Applications**: Recruit team members through public application system
 
-### Over-the-Air Updates
-- **Mandatory Updates**: Users must install updates before using the app
-- **Automatic Detection**: Checks for updates on every app launch
-- **Signed Artifacts**: Cryptographically signed for security
-- **Cross-Platform**: Works on Windows and macOS
+### Clipping Campaigns
+- **Campaign Management**: Organizations create campaigns with budgets, deadlines, and creator profiles
+- **Clipper Competition**: Submit clips for review with CPM/CPC performance-based payments
+- **Leaderboard System**: Track top performers with achievement badges and endorsements
+- **Analytics Dashboard**: View submission metrics, views, clicks, and engagement
 
-### Real-time Features
-- **Live Updates**: Phoenix channels for real-time sync
-- **Progress Tracking**: Async operation monitoring
-- **Credit System**: Usage-based billing integration
+### Clipper Profiles
+- **Professional Portfolios**: Showcase best clips with thumbnails and performance metrics
+- **Social Integration**: Link Kick, Twitch, YouTube, Twitter, Instagram profiles
+- **Performance Tracking**: Leaderboard rankings, total views, response time statistics
+- **Campaign Discovery**: Browse and join available campaigns
+
+### Social Media Integration
+- **Instagram OAuth**: Complete flow with post scheduling and analytics sync
+- **Twitter API**: Automated posting and content scheduling
+- **Account Management**: Encrypted token storage with auto-refresh
+- **Scheduled Posts**: Queue content for future publishing across platforms
+
+### Authentication System
+- **Multiple Methods**: Solana wallet (ED25519), Google OAuth, or email/password
+- **Challenge-Response**: Cryptographic challenges prevent replay attacks
+- **JWT Tokens**: 7-day expiration with secure session management
+- **Account Types**: Personal accounts, organization owners, or organization members
+
+### Real-time Messaging
+- **Team Communication**: Organization-scoped conversations via Phoenix channels
+- **Multi-User Support**: Group conversations with read status tracking
+- **Clip Sharing**: Share clips directly in conversations
+- **WebSocket Delivery**: Instant message delivery and presence updates
+
+### Credits & Billing
+- **Stripe Integration**: Subscription plans (Starter, Creator, Pro)
+- **Pay-Per-Use Credits**: Usage-based billing for AI processing
+- **Discount Codes**: Promotional codes with usage limits
+- **Transaction History**: Detailed credit usage logs and analytics
 
 ## Development Workflow
 
-### Setting Up Development Environment
-
-1. **Install Prerequisites**
-   ```bash
-   # Install Elixir/Erlang
-   # Install PostgreSQL and create database
-   # Install Node.js and Yarn
-   # Install Rust (for Tauri)
-   ```
-
-2. **Clone and Setup**
-   ```bash
-   git clone <repository-url>
-   cd clippster
-   yarn install:all
-   ```
-
-3. **Database Setup**
-   ```bash
-   cd server
-   mix ecto.create
-   mix ecto.migrate
-   ```
-
-4. **Start Development**
-   ```bash
-   # Root level - starts both server and client
-   yarn dev
-   ```
-
-### Code Quality Tools
-
-- **Pre-commit Hooks**: Husky + lint-staged for automatic formatting
-- **Prettier**: Code formatting for Vue/TypeScript files
-- **TypeScript**: Static type checking
-- **Mix Format**: Elixir code formatting
-
-### Testing
+### Code Quality & Testing
 
 ```bash
-# Backend tests
-cd server && mix test
+# Backend
+cd server
+mix test                 # Run tests
+mix precommit            # Format, compile, test
+mix format               # Format code
 
-# Frontend type checking
-cd client && vue-tsc --noEmit
-
-# Frontend format checking
-cd client && yarn format:check
+# Frontend
+cd client
+yarn type-check          # TypeScript validation
+yarn format              # Format code
+yarn format:check        # Check formatting
 ```
+
+**Code Quality Tools:**
+- Pre-commit hooks (Husky + lint-staged)
+- Prettier (Vue/TypeScript)
+- Mix Format (Elixir)
+- TypeScript static type checking
 
 ## Security
 
-- **CORS Configuration**: Properly configured for Tauri and development
-- **Input Validation**: Comprehensive parameter validation
-- **Authentication Guards**: JWT-based route protection
-- **Rate Limiting**: Challenge-based authentication prevents abuse
-- **Asset Scoping**: Secure file system access via Tauri
+- **Authentication**: JWT tokens, ED25519 signatures, OAuth verification, challenge-response flow
+- **CORS**: Configured for Tauri origins (`tauri://`, `https://tauri.localhost`)
+- **Input Validation**: Ecto changesets validate all inputs
+- **Token Encryption**: Social account tokens encrypted at rest
+- **Asset Scoping**: File access restricted to app data directory
 
 ## Build and Deployment
 
-### Development Build
 ```bash
-# Development (hot reload)
+# Development
 yarn dev
 
-# Production build
-cd client && yarn tauri build
-```
+# Production builds
+cd client && yarn tauri build    # Desktop app
+cd server && MIX_ENV=prod mix release    # Server
 
-### Production Considerations
-- Use environment variables for all secrets
-- Configure production database connection
-- Set up proper JWT secrets
-- Use reverse proxy for SSL termination
-- Configure proper logging and monitoring
+# Production setup
+# - Use environment variables for secrets
+# - Configure production database
+# - Set JWT_SECRET and Stripe keys
+# - Use reverse proxy for SSL
+```
 
 ## OTA Updates
 
@@ -315,7 +325,34 @@ npx tauri signer generate -w ~/.tauri/clippster.key
 # Set private key as TAURI_SIGNING_PRIVATE_KEY secret
 ```
 
-For detailed documentation, see [docs/OTA-UPDATES.md](docs/OTA-UPDATES.md).
+For detailed documentation, see [docs/completed/OTA-UPDATES.md](docs/completed/OTA-UPDATES.md).
+
+## Documentation Index
+
+### Component Documentation
+- **[AGENTS.md](AGENTS.md)** - Comprehensive guide for AI agents and developers working with the codebase
+- **[Client README](client/README.md)** - Tauri + Vue 3 desktop application documentation
+- **[Server README](server/README.md)** - Phoenix API backend documentation
+- **[Landing README](landing/README.md)** - Marketing landing page documentation
+
+### Completed Features
+- **[OTA Updates](docs/completed/OTA-UPDATES.md)** - Over-the-air update system implementation
+- **[Clipper Profiles](docs/completed/Clipper_Profiles_Implementation.md)** - Professional clipper profile system
+- **[Clipping Campaigns](docs/completed/Clipping_Campaigns_System_Implementation.md)** - Campaign system for organizations
+- **[Organization Features](docs/completed/organization-d0862a25.plan.md)** - Team collaboration implementation
+- **[Instagram Integration](docs/completed/INSTAGRAM_COMPLETE_FLOW_CHART.md)** - OAuth flow and post scheduling
+- **[Twitter Integration](docs/completed/Twitter_Integration_Plan.md)** - Twitter API integration
+- **[Messaging System](docs/completed/ORG_CLIP_DISTRIBUTION_AND_CHAT_PLAN.md)** - Real-time team communication
+- **[Livestream Features](docs/completed/LIVESTREAM_WATCH_PLAN.md)** - DVR recording and monitoring
+- **[Subscription System](docs/completed/SUBSCRIPTION_PLAN.md)** - Stripe integration and billing
+- **[Video Editor Enhancements](docs/completed/Video_Editor_Enhancements.md)** - Timeline editor features
+- **[Undo/Redo System](docs/completed/Undo_Redo_Implementation_Plan.md)** - Command pattern implementation
+
+### Future Plans
+- **[Parti Streams](docs/future/PARTI_STREAMS_IMPLEMENTATION_PLAN.md)** - Add Parti platform support
+- **[GPU Pipeline Optimization](docs/future/GPU_PIPELINE_OPTIMIZATION.md)** - Hardware-accelerated video processing
+- **[CapCut-Style Thumbnails](docs/future/CAPCUT_STYLE_VIDEO_THUMBNAILS_PLAN.md)** - Enhanced timeline thumbnails
+- **[Multi-Participant Streams](docs/future/Multiple_Participants_in_Live_Stream.md)** - Guest support in livestreams
 
 ## Contributing
 
@@ -333,10 +370,9 @@ For detailed documentation, see [docs/OTA-UPDATES.md](docs/OTA-UPDATES.md).
 
 ## Support
 
-- **Client Documentation**: See `client/README.md`
-- **Server Documentation**: See `server/README.md`
-- **Landing Page**: See `landing/README.md`
-- **OTA Updates**: See `docs/OTA-UPDATES.md`
+- **Quick Reference**: See [AGENTS.md](AGENTS.md) for comprehensive development guide
+- **Documentation**: See [Documentation Index](#documentation-index) above for detailed feature docs
+- **Component Docs**: See [client/README.md](client/README.md), [server/README.md](server/README.md), [landing/README.md](landing/README.md)
 - **Issues**: Report bugs and feature requests via GitHub issues
 
 ## License
