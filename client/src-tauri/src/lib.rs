@@ -791,6 +791,7 @@ pub fn run() {
     video_renderer::commands::pause_playback,
     video_renderer::commands::resume_playback,
     video_renderer::commands::seek_playback,
+    video_renderer::commands::set_playback_volume,
     video_renderer::commands::stop_playback,
     video_renderer::commands::read_frame_slot,
     video_renderer::commands::get_playback_state,

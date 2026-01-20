@@ -1,6 +1,97 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Minimum valid proxy file size (1MB) - files smaller than this are likely corrupted
+const MIN_PROXY_SIZE_BYTES: u64 = 1_000_000;
+
+/// Validate that a video file is playable by checking with ffprobe
+fn validate_video_file(path: &Path) -> bool {
+    if !path.exists() {
+        return false;
+    }
+    
+    // Check minimum file size
+    if let Ok(metadata) = std::fs::metadata(path) {
+        if metadata.len() < MIN_PROXY_SIZE_BYTES {
+            eprintln!("[proxy] File too small ({} bytes), likely corrupted: {:?}", metadata.len(), path);
+            return false;
+        }
+    }
+    
+    // Use ffprobe to validate the file can be read
+    let ffprobe_path = match resolve_ffprobe_binary() {
+        Ok(p) => p,
+        Err(_) => return true, // If ffprobe not available, assume valid
+    };
+    
+    let result = Command::new(&ffprobe_path)
+        .args(&[
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=codec_type",
+            "-of", "csv=p=0",
+            path.to_str().unwrap_or("")
+        ])
+        .output();
+    
+    match result {
+        Ok(output) => {
+            let is_valid = output.status.success() && !output.stdout.is_empty();
+            if !is_valid {
+                eprintln!("[proxy] Invalid video file detected: {:?}", path);
+            }
+            is_valid
+        }
+        Err(e) => {
+            eprintln!("[proxy] Failed to validate video: {}", e);
+            true // Assume valid if we can't check
+        }
+    }
+}
+
+/// Resolve FFprobe binary path
+fn resolve_ffprobe_binary() -> Result<String, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+    
+    let exe_dir = exe_path
+        .parent()
+        .ok_or("Failed to get parent directory")?;
+
+    let target_triple = get_target_triple();
+    
+    #[cfg(target_os = "windows")]
+    let binary_name = format!("ffprobe-{}.exe", target_triple);
+    
+    #[cfg(not(target_os = "windows"))]
+    let binary_name = format!("ffprobe-{}", target_triple);
+
+    // Production: sidecar is next to the executable
+    let prod_path = exe_dir.join(&binary_name);
+    if prod_path.exists() {
+        return Ok(prod_path.to_string_lossy().to_string());
+    }
+
+    // Development mode: check src-tauri/binaries/
+    if let Some(target_dir) = exe_dir.parent() {
+        if let Some(target_parent) = target_dir.parent() {
+            let dev_path = target_parent.join("binaries").join(&binary_name);
+            if dev_path.exists() {
+                return Ok(dev_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Fallback to system PATH
+    #[cfg(target_os = "windows")]
+    let fallback = "ffprobe.exe".to_string();
+    
+    #[cfg(not(target_os = "windows"))]
+    let fallback = "ffprobe".to_string();
+    
+    Ok(fallback)
+}
+
 /// Get the target triple for the current platform
 fn get_target_triple() -> &'static str {
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
@@ -97,9 +188,18 @@ pub fn generate_playback_proxy(
     
     let proxy_path = proxy_dir.join(format!("{}_proxy_{}.mp4", filename, suffix));
     
-    // Skip if proxy already exists
+    // Check if proxy already exists and is valid
     if proxy_path.exists() {
-        return Ok(proxy_path);
+        if validate_video_file(&proxy_path) {
+            println!("[proxy] Using existing valid proxy: {:?}", proxy_path);
+            return Ok(proxy_path);
+        } else {
+            // Proxy exists but is corrupted - delete and regenerate
+            eprintln!("[proxy] Deleting corrupted proxy: {:?}", proxy_path);
+            if let Err(e) = std::fs::remove_file(&proxy_path) {
+                eprintln!("[proxy] Failed to delete corrupted proxy: {}", e);
+            }
+        }
     }
     
     let scale = match resolution {
@@ -151,7 +251,7 @@ pub fn generate_dual_proxies(
     Ok((proxy_720, proxy_1080))
 }
 
-/// Get proxy path if it exists
+/// Get proxy path if it exists and is valid
 pub fn get_playback_proxy_path(input_path: &Path, resolution: ProxyResolution) -> Option<PathBuf> {
     let proxy_dir = input_path.parent()?.join(".proxies");
     let filename = input_path.file_stem()?.to_string_lossy();
@@ -164,7 +264,15 @@ pub fn get_playback_proxy_path(input_path: &Path, resolution: ProxyResolution) -
     let proxy_path = proxy_dir.join(format!("{}_proxy_{}.mp4", filename, suffix));
     
     if proxy_path.exists() {
-        Some(proxy_path)
+        // Validate the proxy file before returning it
+        if validate_video_file(&proxy_path) {
+            Some(proxy_path)
+        } else {
+            // Corrupted proxy - delete it so it gets regenerated
+            eprintln!("[proxy] get_playback_proxy_path: Deleting corrupted proxy: {:?}", proxy_path);
+            let _ = std::fs::remove_file(&proxy_path);
+            None
+        }
     } else {
         None
     }

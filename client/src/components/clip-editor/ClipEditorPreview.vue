@@ -115,27 +115,6 @@
         @pause="onPause"
       />
 
-      <!-- Clip mode preload video for seamless segment transitions (same source, pre-seeked to next segment) -->
-      <!-- DISABLED: This dual-video approach causes visual glitches where both videos can be seen -->
-      <!-- Instead, we now use pre-rendered segment preview for seamless playback -->
-      <!-- Fallback: simple seeking with slight latency but no visual issues -->
-      <!-- 
-      <video
-        v-if="!editorMode && segments && segments.length > 1 && !showFramedPreview && !useSegmentPreview && !isGeneratingPreview"
-        ref="clipPreloadVideoRef"
-        :src="videoSrc || ''"
-        class="max-w-full max-h-full object-contain absolute inset-0 m-auto pointer-events-none"
-        :style="getClipPreloadVideoStyle()"
-        preload="auto"
-        @canplaythrough="onClipPreloadCanPlay"
-        @seeked="onClipPreloadSeeked"
-        @playing="onClipPreloadPlaying"
-        @timeupdate="onClipPreloadTimeUpdate"
-        @ended="onEnded"
-        @play="onPlay"
-        @pause="onPause"
-      />
-      -->
 
       <!-- Black screen overlay when playhead is in a gap with no video source (editor mode) -->
       <div v-if="showBlackScreen" class="absolute inset-0 bg-black z-[5]" />
@@ -618,7 +597,6 @@
   const framedVideoRef = ref<HTMLVideoElement | null>(null); // Video for framed single-region mode
   const audioVideoRef = ref<HTMLVideoElement | null>(null); // Audio-only video for multi-region mode
   const preloadVideoRef = ref<HTMLVideoElement | null>(null); // Second video for seamless transitions (editor mode)
-  const clipPreloadVideoRef = ref<HTMLVideoElement | null>(null); // Preload video for clip mode segment transitions
 
   // Audio effects preview using Web Audio API
   const audioEffectsRef = computed(() => props.audioEffects || []);
@@ -642,13 +620,6 @@
   const activeVideoIndex = ref<0 | 1>(0); // 0 = main video, 1 = preload video
   const preloadVideoReady = ref(false); // Whether preload video is ready to play
   const lastPreloadSrc = ref<string | null>(null); // Track last loaded preload src to keep it alive
-
-  // Double-buffer state for seamless segment transitions (clip mode)
-  // Note: The dual-video approach is currently disabled (video element commented out)
-  const clipActiveVideoIndex = ref<0 | 1>(0); // 0 = main video, 1 = clip preload video
-  const clipPreloadReady = ref(false); // Whether clip preload video is seeked and ready
-  const clipPreloadTargetSegmentIndex = ref<number>(-1); // Which segment the preload is seeked to
-  const lastClipPreloadSeekTime = ref<number>(-1); // Last time we seeked the clip preload to
 
   // Segment transition state (for direct seeking fallback)
   const isSegmentSeeking = ref(false); // Whether we're currently seeking to a new segment
@@ -802,23 +773,7 @@
     if (el) el.playbackRate = playbackRate.value;
   });
 
-  // Ensure clip preload video has correct playback rate
-  watch(clipPreloadVideoRef, (el) => {
-    if (el) el.playbackRate = playbackRate.value;
-  });
-
-  // Watch for segments changes to reset video state
-  watch(
-    () => props.segments,
-    () => {
-      if (props.segments && props.segments.length > 1) {
-        resetClipVideoState();
-      }
-    },
-    { deep: true }
-  );
-
-  // Watch for segment preview availability - reset video state when preview is ready
+  // Watch for segment preview availability
   // This ensures clean transition to single preview video
   watch(
     () => props.segmentPreviewSrc,
@@ -826,7 +781,6 @@
       // Only act when we have a new valid source (not when it becomes null)
       if (newSrc && newSrc !== oldSrc) {
         console.log('[ClipEditorPreview] Segment preview now available:', newSrc);
-        resetClipVideoState();
         
         // Setup HLS for segment preview if it's an HLS manifest
         if (isHlsUrl(newSrc)) {
@@ -1546,267 +1500,6 @@
     }
     return -1;
   });
-
-  // Pre-seek the clip preload video to the next segment's start time
-  // This should be called when entering a new segment to prepare for seamless transition
-  function preSeekNextSegment() {
-    if (props.editorMode || !clipPreloadVideoRef.value) return;
-
-    const nextIdx = nextSegmentIndex.value;
-    if (nextIdx === -1) {
-      // No next segment to preload
-      clipPreloadReady.value = false;
-      clipPreloadTargetSegmentIndex.value = -1;
-      return;
-    }
-
-    const nextSeg = sortedSegments.value[nextIdx];
-    const targetTime = nextSeg.start_time;
-
-    // Don't re-seek if we're already seeked to this position and ready
-    if (
-      clipPreloadReady.value &&
-      clipPreloadTargetSegmentIndex.value === nextIdx &&
-      Math.abs(lastClipPreloadSeekTime.value - targetTime) < 0.1
-    ) {
-      return;
-    }
-
-    console.log(
-      '[ClipEditorPreview.preSeekNextSegment] Pre-seeking clip preload to segment',
-      nextIdx,
-      'at time:',
-      targetTime.toFixed(3)
-    );
-
-    // Pause preload if it's playing (from a previous swap)
-    if (!clipPreloadVideoRef.value.paused) {
-      clipPreloadVideoRef.value.pause();
-    }
-
-    // Mark as not ready until seek completes
-    clipPreloadReady.value = false;
-    clipPreloadTargetSegmentIndex.value = nextIdx;
-    lastClipPreloadSeekTime.value = targetTime;
-
-    // Sync playback rate before seeking
-    if (videoRef.value) {
-      clipPreloadVideoRef.value.playbackRate = videoRef.value.playbackRate;
-    }
-
-    // Perform the seek
-    clipPreloadVideoRef.value.currentTime = targetTime;
-  }
-
-  // Pre-seek the main video when clip preload is active (for the segment after next)
-  function preSeekMainVideoForNextSegment() {
-    if (props.editorMode || !videoRef.value || clipActiveVideoIndex.value !== 1) return;
-
-    // When preload is playing, we need to pre-seek main video to the next segment
-    const currentTime = clipPreloadVideoRef.value?.currentTime ?? props.currentTime;
-    const segments = sortedSegments.value;
-
-    // Find current segment index based on preload video time
-    let currentIdx = -1;
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      if (currentTime >= seg.start_time && currentTime <= seg.end_time) {
-        currentIdx = i;
-        break;
-      }
-    }
-
-    if (currentIdx >= 0 && currentIdx < segments.length - 1) {
-      const nextSeg = segments[currentIdx + 1];
-      videoRef.value.currentTime = nextSeg.start_time;
-      console.log(
-        '[ClipEditorPreview.preSeekMainVideoForNextSegment] Pre-seeking main video to:',
-        nextSeg.start_time.toFixed(3)
-      );
-    }
-  }
-
-  // ============================================
-  // Clip mode video swap functions for seamless segment transitions
-  // ============================================
-
-  /**
-   * Swap from main video to clip preload video at a segment boundary.
-   * The preload should already be seeked to the correct position.
-   * Returns true if swap was initiated successfully.
-   */
-  function swapToClipPreload(): boolean {
-    if (props.editorMode || !clipPreloadVideoRef.value || !videoRef.value) {
-      console.log('[ClipEditorPreview.swapToClipPreload] Missing refs, returning false');
-      return false;
-    }
-
-    if (!clipPreloadReady.value) {
-      console.log('[ClipEditorPreview.swapToClipPreload] Preload not ready, returning false');
-      return false;
-    }
-
-    const preload = clipPreloadVideoRef.value;
-    const main = videoRef.value;
-
-    // Get the target segment to ensure we're at the right position
-    const targetSegmentIdx = clipPreloadTargetSegmentIndex.value;
-    const targetSegment = targetSegmentIdx >= 0 ? sortedSegments.value[targetSegmentIdx] : null;
-
-    console.log(
-      '[ClipEditorPreview.swapToClipPreload] Swapping to clip preload.',
-      'main.currentTime:',
-      main.currentTime.toFixed(3),
-      'preload.currentTime:',
-      preload.currentTime.toFixed(3),
-      'targetSegment.start_time:',
-      targetSegment?.start_time.toFixed(3),
-      'preload.readyState:',
-      preload.readyState,
-      'preload.paused:',
-      preload.paused
-    );
-
-    // Ensure preload is at exact target position
-    if (targetSegment) {
-      preload.currentTime = targetSegment.start_time;
-    }
-
-    // Transfer playback state
-    preload.playbackRate = main.playbackRate;
-    preload.volume = main.volume;
-    preload.muted = main.muted;
-
-    // Mark swap as in progress - reset ready state
-    clipPreloadReady.value = false;
-    clipPreloadTargetSegmentIndex.value = -1;
-
-    const wasMainPlaying = !main.paused || props.isPlaying;
-
-    // IMPORTANT: Swap visibility FIRST (while both are at correct positions)
-    // Then start/stop playback. This ensures we never show a stale frame.
-
-    // 1. Swap visibility immediately
-    clipActiveVideoIndex.value = 1;
-
-    // 2. Pause main
-    main.pause();
-
-    // 3. Start preload if main was playing
-    if (wasMainPlaying) {
-      preload.play().catch((err) => {
-        console.warn('[ClipEditorPreview.swapToClipPreload] Failed to play preload:', err);
-      });
-    }
-
-    // 4. Emit time update for the new position
-    emit('timeUpdate', preload.currentTime);
-
-    // 5. Sync other preview videos
-    syncAllPreviewVideos(true);
-
-    // 6. Queue pre-seek of main video for the next segment
-    nextTick(() => {
-      preSeekMainVideoForNextSegment();
-    });
-
-    console.log(
-      '[ClipEditorPreview.swapToClipPreload] Swap complete, preload.currentTime:',
-      preload.currentTime.toFixed(3)
-    );
-    return true;
-  }
-
-  /**
-   * Swap from clip preload video back to main video.
-   * Used when the preload is playing and we need to transition to the next segment.
-   * Returns true if swap was successful.
-   */
-  function swapToClipMain(seekTime?: number): boolean {
-    if (props.editorMode || !videoRef.value || clipActiveVideoIndex.value !== 1) {
-      console.log('[ClipEditorPreview.swapToClipMain] Not in clip preload mode, returning false');
-      return false;
-    }
-
-    const main = videoRef.value;
-    const preload = clipPreloadVideoRef.value;
-
-    if (!preload) {
-      console.log('[ClipEditorPreview.swapToClipMain] Missing preload ref, returning false');
-      return false;
-    }
-
-    console.log(
-      '[ClipEditorPreview.swapToClipMain] Swapping back to main video.',
-      'seekTime:',
-      seekTime?.toFixed(3) ?? 'none',
-      'main.currentTime:',
-      main.currentTime.toFixed(3)
-    );
-
-    // If seekTime provided, ensure main video is at correct position
-    if (seekTime !== undefined) {
-      main.currentTime = seekTime;
-    }
-
-    // Transfer playback state
-    main.playbackRate = preload.playbackRate;
-    main.volume = preload.volume;
-    main.muted = preload.muted;
-
-    // Reset preload ready state
-    clipPreloadReady.value = false;
-    clipPreloadTargetSegmentIndex.value = -1;
-
-    const wasPlaying = !preload.paused;
-
-    // 1. Swap visibility immediately
-    clipActiveVideoIndex.value = 0;
-
-    // 2. Pause preload
-    preload.pause();
-
-    // 3. Start main if preload was playing
-    if (wasPlaying) {
-      main.play().catch((err) => {
-        console.warn('[ClipEditorPreview.swapToClipMain] Failed to play main:', err);
-      });
-    }
-
-    // 4. Emit time update
-    emit('timeUpdate', main.currentTime);
-
-    // 5. Sync other preview videos
-    syncAllPreviewVideos(true);
-
-    // 6. Queue pre-seek of preload video for the next segment
-    nextTick(() => {
-      preSeekNextSegment();
-    });
-
-    console.log('[ClipEditorPreview.swapToClipMain] Swap complete');
-    return true;
-  }
-
-  /**
-   * Reset clip mode video state to main video.
-   * Called when user seeks manually or other state resets are needed.
-   * Note: The clip preload video element is currently disabled, so this mainly resets state flags.
-   */
-  function resetClipVideoState() {
-    if (props.editorMode) return;
-
-    // Reset state flags to main video mode
-    clipActiveVideoIndex.value = 0;
-    clipPreloadReady.value = false;
-    clipPreloadTargetSegmentIndex.value = -1;
-    lastClipPreloadSeekTime.value = -1;
-
-    // Pause preload if it exists and is playing (safety check)
-    if (clipPreloadVideoRef.value && !clipPreloadVideoRef.value.paused) {
-      clipPreloadVideoRef.value.pause();
-    }
-  }
 
   // Creator profile watermark support
   const creatorWatermarkDataUrl = ref<string | null>(null);
@@ -3473,10 +3166,6 @@
       preloadVideoRef.value.muted = shouldMute;
     }
 
-    // Also update clip preload video if it exists (clip mode)
-    if (clipPreloadVideoRef.value) {
-      clipPreloadVideoRef.value.muted = shouldMute;
-    }
   }
 
   function goToBeginning() {
@@ -3494,11 +3183,6 @@
         emit('timeUpdate', videoRef.value.currentTime);
       }
       syncAllPreviewVideos(true);
-
-      // Reset clip video state when going to beginning
-      if (!props.editorMode) {
-        resetClipVideoState();
-      }
     }
   }
 
@@ -4098,134 +3782,6 @@
     }
   }
 
-  // ============================================
-  // Clip mode preload handlers for seamless segment transitions
-  // ============================================
-
-  // Called when clip preload video is ready to play through
-  function onClipPreloadCanPlay() {
-    if (props.editorMode || !clipPreloadVideoRef.value) return;
-    // Mark as ready only if we've seeked to a valid position
-    if (clipPreloadTargetSegmentIndex.value >= 0) {
-      clipPreloadReady.value = true;
-      console.log(
-        '[ClipEditorPreview.onClipPreloadCanPlay] Clip preload ready at time:',
-        clipPreloadVideoRef.value.currentTime.toFixed(3),
-        'for segment index:',
-        clipPreloadTargetSegmentIndex.value
-      );
-    }
-  }
-
-  // Called when clip preload video seek completes
-  function onClipPreloadSeeked() {
-    if (props.editorMode || !clipPreloadVideoRef.value) return;
-
-    // After seek completes, mark as ready (keep video paused to avoid drift)
-    if (clipPreloadTargetSegmentIndex.value >= 0 && clipActiveVideoIndex.value === 0) {
-      const preload = clipPreloadVideoRef.value;
-
-      console.log(
-        '[ClipEditorPreview.onClipPreloadSeeked] Clip preload seeked to:',
-        preload.currentTime.toFixed(3),
-        'for segment index:',
-        clipPreloadTargetSegmentIndex.value,
-        'readyState:',
-        preload.readyState
-      );
-
-      // Keep preload paused and ready - we'll start playing on swap
-      // This avoids drift issues
-      clipPreloadReady.value = true;
-    }
-  }
-
-  // Called when clip preload video actually starts playing
-  function onClipPreloadPlaying() {
-    if (props.editorMode || !clipPreloadVideoRef.value) return;
-
-    console.log(
-      '[ClipEditorPreview.onClipPreloadPlaying] Clip preload playing at:',
-      clipPreloadVideoRef.value.currentTime.toFixed(3),
-      'clipActiveVideoIndex:',
-      clipActiveVideoIndex.value
-    );
-  }
-
-  // Time update handler for clip preload video (when it's the active video after swap)
-  function onClipPreloadTimeUpdate() {
-    if (props.editorMode || !clipPreloadVideoRef.value) return;
-
-    // Only emit time updates when clip preload is the active video
-    if (clipActiveVideoIndex.value === 1) {
-      const currentVideoTime = clipPreloadVideoRef.value.currentTime;
-
-      // Check if video should be muted
-      updateVideoMuteState(currentVideoTime);
-
-      // Clip mode: segment-based time management (same as main video)
-      const segments = sortedSegments.value;
-
-      let currentSegmentIndex = -1;
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        if (currentVideoTime >= seg.start_time && currentVideoTime <= seg.end_time) {
-          currentSegmentIndex = i;
-          break;
-        }
-      }
-
-      if (currentSegmentIndex >= 0) {
-        emit('timeUpdate', currentVideoTime);
-        return;
-      }
-
-      // Handle segment boundary - need to jump to next segment or swap back
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-
-        if (currentVideoTime > seg.end_time) {
-          const nextSegment = segments[i + 1];
-
-          if (nextSegment) {
-            if (currentVideoTime < nextSegment.start_time) {
-              // We're in a gap - try to swap to main video (which should be pre-seeked)
-              if (swapToClipMain(nextSegment.start_time)) {
-                return;
-              }
-              // Fallback: seek directly
-              clipPreloadVideoRef.value.currentTime = nextSegment.start_time;
-              emit('timeUpdate', nextSegment.start_time);
-              return;
-            }
-          } else {
-            // No more segments - loop back to start
-            if (swapToClipMain(segments[0].start_time)) {
-              const mainVideo = videoRef.value;
-              if (mainVideo) mainVideo.pause();
-            } else {
-              clipPreloadVideoRef.value.currentTime = segments[0].start_time;
-              clipPreloadVideoRef.value.pause();
-            }
-            emit('timeUpdate', segments[0].start_time);
-            return;
-          }
-        }
-      }
-
-      if (currentVideoTime < segments[0].start_time) {
-        if (swapToClipMain(segments[0].start_time)) {
-          return;
-        }
-        clipPreloadVideoRef.value.currentTime = segments[0].start_time;
-        emit('timeUpdate', segments[0].start_time);
-        return;
-      }
-
-      emit('timeUpdate', currentVideoTime);
-    }
-  }
-
   // Start crossfade playback (both videos play simultaneously during transition)
   // Called when entering a transition zone
   function startCrossfade(preloadSeekTime: number): boolean {
@@ -4488,11 +4044,6 @@
     // Pause region videos when main video pauses (only for multi-region mode)
     if (showFramedPreview.value && !isSingleRegion.value) {
       syncRegionVideos(false);
-    }
-
-    // In clip mode, also pause the preload video if it's somehow playing
-    if (!props.editorMode && clipPreloadVideoRef.value && !clipPreloadVideoRef.value.paused) {
-      clipPreloadVideoRef.value.pause();
     }
   }
 
@@ -5347,20 +4898,8 @@
       } else if (showFramedPreview.value && !isSingleRegion.value) {
         return audioVideoRef.value;
       }
-      // In clip mode, return the active video based on clipActiveVideoIndex
-      if (clipActiveVideoIndex.value === 1 && clipPreloadVideoRef.value) {
-        return clipPreloadVideoRef.value;
-      }
       return videoRef.value;
     },
-    // Clip mode seamless segment transition methods
-    resetClipVideoState,
-    get clipActiveVideoIndex() {
-      return clipActiveVideoIndex.value;
-    },
-    getClipPreloadVideoElement: () => clipPreloadVideoRef.value,
-    // Manually trigger pre-seek for next segment (e.g., after external seek)
-    preSeekNextSegment,
     // Unified play/pause methods that handle all video element modes
     play,
     pause,

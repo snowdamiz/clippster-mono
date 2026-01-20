@@ -3856,8 +3856,6 @@ fn build_preview_filter_complex(
         let final_part = last_part.replace(&format!("[{}]", current_label), "[vout]");
         filter_parts.push(final_part.replace(&format!("'[{}]", current_label), "'[vout]"));
         
-        // Fix: the replacement above might not work correctly, let's just add a null filter
-        filter_parts.push(format!("[{}]null[vout]", current_label));
         filter_parts.join(";")
     };
     

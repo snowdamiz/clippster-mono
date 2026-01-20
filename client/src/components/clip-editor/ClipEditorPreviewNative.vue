@@ -40,6 +40,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { useNativeVideoRenderer } from '@/composables/useNativeVideoRenderer'
 import TrackRenderer from './TrackRenderer.vue'
 import type { Track } from '@/types/timeline-model'
@@ -190,21 +191,23 @@ const currentVideoSource = computed(() => {
   if (!props.videoSources.length) return null
   
   const currentTime = typeof props.currentTime === 'string' ? parseFloat(props.currentTime) : props.currentTime
-  let accumulatedTime = 0
   
+  // Sources have explicit start_time and end_time on the timeline
+  // Find which source contains the current timeline position
   for (const source of props.videoSources) {
-    const trimStart = source.trim_start ?? 0
-    const trimEnd = source.trim_end ?? source.duration ?? 0
-    const sourceDuration = trimEnd - trimStart
-    
-    if (currentTime >= accumulatedTime && currentTime < accumulatedTime + sourceDuration) {
+    if (currentTime >= source.start_time && currentTime < source.end_time) {
+      // Calculate position within this source's timeline range
+      const relativeTime = currentTime - source.start_time
+      // Map to position in the source video file
+      const trimStart = source.trim_start ?? 0
+      const localTime = trimStart + relativeTime
+      
       return {
         ...source,
-        timelineStart: accumulatedTime,
-        localTime: currentTime - accumulatedTime + trimStart
+        timelineStart: source.start_time,
+        localTime
       }
     }
-    accumulatedTime += sourceDuration
   }
   
   // Return last source if we're past the end
@@ -214,7 +217,7 @@ const currentVideoSource = computed(() => {
   
   return {
     ...lastSource,
-    timelineStart: accumulatedTime - (trimEnd - trimStart),
+    timelineStart: lastSource.start_time,
     localTime: trimEnd
   }
 })
@@ -258,6 +261,28 @@ watch(() => currentVideoSource.value, async (newSource, oldSource) => {
   }
 }, { immediate: true })
 
+// Check if current video source has extracted audio
+const currentSourceHasExtractedAudio = computed(() => {
+  const source = currentVideoSource.value
+  if (!source) return false
+  
+  const audioExtractedFlag = (source as any).audio_extracted ?? (source as any).audioExtracted
+  return audioExtractedFlag === true || audioExtractedFlag === 1 || audioExtractedFlag === '1'
+})
+
+// Watch for changes in extracted audio status and adjust Rust backend volume
+watch(currentSourceHasExtractedAudio, async (hasExtractedAudio) => {
+  try {
+    // If current segment has extracted audio, mute Rust backend (volume = 0)
+    // Otherwise, enable Rust backend audio (volume = 100)
+    const volume = hasExtractedAudio ? 0 : 100
+    console.log('[ClipEditorPreviewNative] Setting Rust audio volume to:', volume)
+    await invoke('set_playback_volume', { volume })
+  } catch (error) {
+    console.error('[ClipEditorPreviewNative] Failed to set playback volume:', error)
+  }
+}, { immediate: true })
+
 // Sync playback state with Rust engine
 watch(() => props.isPlaying, (playing) => {
   console.log('[ClipEditorPreviewNative] isPlaying changed:', playing)
@@ -268,13 +293,19 @@ watch(() => props.isPlaying, (playing) => {
   }
 })
 
-// Sync current time (seek when timeline changes)
-watch(() => props.currentTime, async (newTime) => {
+// Watch for currentTime changes and seek the Rust engine
+watch(() => props.currentTime, () => {
   // Rust engine handles time updates during playback
-  if (props.isPlaying) return
+  if (props.isPlaying) {
+    return;
+  }
   
-  const time = typeof newTime === 'string' ? parseFloat(newTime) : newTime
-  await seek(time)
+  // Convert timeline time to source video position (localTime)
+  // The Rust engine plays the source video file, not timeline time
+  const source = currentVideoSource.value
+  if (source) {
+    seek(source.localTime)
+  }
 })
 
 // Emit time updates from Rust engine

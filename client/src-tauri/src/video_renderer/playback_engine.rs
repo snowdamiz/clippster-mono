@@ -106,6 +106,7 @@ pub enum PlaybackCommand {
     Seek(f64),
     #[allow(dead_code)]
     SetPlaybackRate(f64),
+    SetVolume(f32),  // Volume 0-100
     Stop,
 }
 
@@ -150,7 +151,7 @@ impl PlaybackEngine {
     }
     
     /// Start the playback thread
-    pub fn start(&mut self, video_path: String, app_handle: tauri::AppHandle) {
+    pub fn start(&mut self, video_path: String, app_handle: tauri::AppHandle, enable_audio: bool) {
         let frame_ring = Arc::clone(&self.frame_ring);
         let is_playing = Arc::clone(&self.is_playing);
         let playback_time = Arc::clone(&self.playback_time);
@@ -172,6 +173,7 @@ impl PlaybackEngine {
                 app_handle,
                 sequence_counter,
                 generation,
+                enable_audio,
             );
         });
         
@@ -219,6 +221,7 @@ fn playback_thread(
     app_handle: tauri::AppHandle,
     sequence_counter: Arc<AtomicU64>,
     generation: Arc<AtomicU32>,
+    enable_audio: bool,
 ) {
     let path = PathBuf::from(&video_path);
     
@@ -239,14 +242,18 @@ fn playback_thread(
     let video_duration = playback_decoder.duration();
     println!("[PlaybackThread] Video duration: {:.2}s", video_duration);
     
-    // Audio engine is the master clock AND plays actual audio
+    // Audio engine is the master clock AND optionally plays actual audio
     let mut audio_engine = match AudioEngine::new() {
         Ok(mut engine) => {
-            // Load audio from the video file
-            if let Err(e) = engine.load_video(path.clone()) {
-                eprintln!("[PlaybackThread] Failed to load audio from video: {} (continuing without audio)", e);
+            // Only load audio if enabled
+            if enable_audio {
+                if let Err(e) = engine.load_video(path.clone()) {
+                    eprintln!("[PlaybackThread] Failed to load audio from video: {} (continuing without audio)", e);
+                } else {
+                    println!("[PlaybackThread] Audio loaded from video successfully");
+                }
             } else {
-                println!("[PlaybackThread] Audio loaded from video successfully");
+                println!("[PlaybackThread] Audio playback disabled (separate audio tracks present)");
             }
             println!("[PlaybackThread] Audio engine created successfully");
             engine
@@ -271,6 +278,18 @@ fn playback_thread(
             match command {
                 PlaybackCommand::Play => {
                     println!("[PlaybackThread] Received Play command");
+                    
+                    // IMPORTANT: Complete pending video seek BEFORE starting audio
+                    // This ensures audio and video start from the exact same position
+                    if needs_seek {
+                        println!("[PlaybackThread] Completing pending seek to {:.2}s before starting audio", seek_target);
+                        if let Err(e) = playback_decoder.seek_to_timestamp(seek_target) {
+                            eprintln!("[PlaybackThread] Seek failed: {}", e);
+                        }
+                        last_frame_time = seek_target;
+                        needs_seek = false;
+                    }
+                    
                     is_playing.store(true, Ordering::Relaxed);
                     *state.write() = PlaybackState::Playing;
                     
@@ -302,6 +321,9 @@ fn playback_thread(
                 PlaybackCommand::SetPlaybackRate(rate) => {
                     *playback_rate.write() = rate;
                     // Note: playback rate not yet supported in audio engine
+                }
+                PlaybackCommand::SetVolume(volume) => {
+                    audio_engine.set_volume(volume);
                 }
                 PlaybackCommand::Stop => {
                     *state.write() = PlaybackState::Stopped;

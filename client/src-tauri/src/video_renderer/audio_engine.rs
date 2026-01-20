@@ -16,8 +16,10 @@ pub struct AudioEngine {
     channels: u16,
     is_playing: Arc<AtomicBool>,
     samples_played: Arc<AtomicU64>,
+    samples_offset: Arc<AtomicU64>,  // Offset to add to samples_played for seek support
     audio_decoder: Arc<Mutex<Option<AudioDecoder>>>,
     video_path: Option<PathBuf>,
+    volume: Arc<AtomicU64>,  // Volume as u64 (0-100), stored as percentage * 100
 }
 
 impl AudioEngine {
@@ -39,8 +41,10 @@ impl AudioEngine {
             channels,
             is_playing: Arc::new(AtomicBool::new(false)),
             samples_played: Arc::new(AtomicU64::new(0)),
+            samples_offset: Arc::new(AtomicU64::new(0)),
             audio_decoder: Arc::new(Mutex::new(None)),
             video_path: None,
+            volume: Arc::new(AtomicU64::new(10000)),  // 100.00% volume (stored as percentage * 100)
         })
     }
     
@@ -59,7 +63,10 @@ impl AudioEngine {
     
     /// Start audio playback with actual audio from the loaded video
     pub fn start(&mut self) -> Result<(), String> {
+        // Always set is_playing to true, even if stream already exists
+        // This ensures audio resumes after pause->seek->play
         if self.stream.is_some() {
+            self.is_playing.store(true, Ordering::Relaxed);
             return Ok(());
         }
         
@@ -75,8 +82,10 @@ impl AudioEngine {
         
         let playback_time_us = Arc::clone(&self.playback_time_us);
         let samples_played = Arc::clone(&self.samples_played);
+        let samples_offset = Arc::clone(&self.samples_offset);
         let is_playing = Arc::clone(&self.is_playing);
         let audio_decoder = Arc::clone(&self.audio_decoder);
+        let volume = Arc::clone(&self.volume);
         
         // We always decode to stereo (2 channels), need to map to device channels
         let decode_channels = 2usize;
@@ -106,11 +115,15 @@ impl AudioEngine {
                         }
                         drop(decoder_guard);
                         
+                        // Get current volume (stored as percentage * 100, e.g., 10000 = 100%)
+                        let volume_raw = volume.load(Ordering::Relaxed);
+                        let volume_multiplier = (volume_raw as f32) / 10000.0;
+                        
                         // Map stereo to device channels (e.g., 8 channels)
                         // Put left on channel 0, right on channel 1, silence on others
                         for frame in 0..device_frames {
-                            let left = stereo_buffer[frame * 2];
-                            let right = stereo_buffer[frame * 2 + 1];
+                            let left = stereo_buffer[frame * 2] * volume_multiplier;
+                            let right = stereo_buffer[frame * 2 + 1] * volume_multiplier;
                             
                             for ch in 0..channels {
                                 let sample_idx = frame * channels + ch;
@@ -123,7 +136,9 @@ impl AudioEngine {
                         }
                         
                         // Update samples played counter (count stereo frames, not device frames)
-                        let total_samples = samples_played.fetch_add(device_frames as u64, Ordering::Relaxed) + device_frames as u64;
+                        let played = samples_played.fetch_add(device_frames as u64, Ordering::Relaxed) + device_frames as u64;
+                        let offset = samples_offset.load(Ordering::Relaxed);
+                        let total_samples = played + offset;
                         
                         // Calculate playback time from samples
                         let time_us = (total_samples * 1_000_000) / sample_rate as u64;
@@ -172,7 +187,9 @@ impl AudioEngine {
                             }
                         }
                         
-                        let total_samples = samples_played.fetch_add(device_frames as u64, Ordering::Relaxed) + device_frames as u64;
+                        let played = samples_played.fetch_add(device_frames as u64, Ordering::Relaxed) + device_frames as u64;
+                        let offset = samples_offset.load(Ordering::Relaxed);
+                        let total_samples = played + offset;
                         let time_us = (total_samples * 1_000_000) / sample_rate as u64;
                         playback_time_us.store(time_us, Ordering::Relaxed);
                     },
@@ -219,7 +236,9 @@ impl AudioEngine {
                             }
                         }
                         
-                        let total_samples = samples_played.fetch_add(device_frames as u64, Ordering::Relaxed) + device_frames as u64;
+                        let played = samples_played.fetch_add(device_frames as u64, Ordering::Relaxed) + device_frames as u64;
+                        let offset = samples_offset.load(Ordering::Relaxed);
+                        let total_samples = played + offset;
                         let time_us = (total_samples * 1_000_000) / sample_rate as u64;
                         playback_time_us.store(time_us, Ordering::Relaxed);
                     },
@@ -259,9 +278,13 @@ impl AudioEngine {
         let time_us = (time * 1_000_000.0) as u64;
         self.playback_time_us.store(time_us, Ordering::Relaxed);
         
-        // Reset samples played to match the new time
-        let samples = (time * self.sample_rate as f64) as u64;
-        self.samples_played.store(samples, Ordering::Relaxed);
+        // Reset samples_played to 0 and set offset to the seek position
+        // This way the audio callback adds from 0, and we add offset to get correct time
+        let target_samples = (time * self.sample_rate as f64) as u64;
+        self.samples_played.store(0, Ordering::Relaxed);
+        self.samples_offset.store(target_samples, Ordering::Relaxed);
+        
+        println!("[AudioEngine] Seek to {:.3}s: samples_offset={}, samples_played=0", time, target_samples);
         
         // Seek the audio decoder
         if let Some(decoder) = self.audio_decoder.lock().as_mut() {
@@ -277,12 +300,21 @@ impl AudioEngine {
         self.stream = None;
         self.playback_time_us.store(0, Ordering::Relaxed);
         self.samples_played.store(0, Ordering::Relaxed);
+        self.samples_offset.store(0, Ordering::Relaxed);
     }
     
     /// Get sample rate
     #[allow(dead_code)]
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+    
+    /// Set volume (0-100)
+    pub fn set_volume(&self, volume_percent: f32) {
+        let clamped = volume_percent.clamp(0.0, 100.0);
+        let volume_value = (clamped * 100.0) as u64; // Store as percentage * 100
+        self.volume.store(volume_value, Ordering::Relaxed);
+        println!("[AudioEngine] Volume set to {:.2}%", clamped);
     }
 }
 

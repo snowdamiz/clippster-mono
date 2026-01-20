@@ -24,7 +24,7 @@ pub async fn get_video_frame(
     state: tauri::State<'_, Mutex<VideoRendererState>>,
     video_path: String,
     timestamp: f64,
-) -> Result<Vec<u8>, String> {
+) -> Result<tauri::ipc::Response, String> {
     // Don't decode during playback - return cached frame or error
     if super::is_playback_active() {
         let state = state
@@ -38,7 +38,8 @@ pub async fn get_video_frame(
         };
         
         if let Some(cached_data) = state.frame_cache.get(&cache_key) {
-            return Ok(cached_data);
+            // Return raw binary data directly - bypasses JSON serialization
+            return Ok(tauri::ipc::Response::new(cached_data));
         }
         
         // During playback, don't decode - just return empty to avoid contention
@@ -56,7 +57,8 @@ pub async fn get_video_frame(
     };
     
     if let Some(cached_data) = state.frame_cache.get(&cache_key) {
-        return Ok(cached_data);
+        // Return raw binary data directly - bypasses JSON serialization
+        return Ok(tauri::ipc::Response::new(cached_data));
     }
     
     // Decode from video
@@ -66,7 +68,8 @@ pub async fn get_video_frame(
     // Cache the frame
     state.frame_cache.put(cache_key, frame.data.clone());
     
-    Ok(frame.data)
+    // Return raw binary data directly - bypasses JSON serialization
+    Ok(tauri::ipc::Response::new(frame.data))
 }
 
 #[tauri::command]
@@ -177,6 +180,8 @@ pub async fn start_playback(
     app: tauri::AppHandle,
     video_path: String,
     use_proxy: Option<String>,  // "720p", "1080p", or None for original
+    enable_audio: Option<bool>,  // Whether to enable audio from the video file
+    initial_time: Option<f64>,  // Initial seek position before starting playback
 ) -> Result<(), String> {
     use super::proxy::{ProxyResolution, get_playback_proxy_path};
     use std::path::Path;
@@ -206,12 +211,19 @@ pub async fn start_playback(
         _ => video_path.clone(),
     };
     
-    println!("[start_playback] Using video: {} (proxy: {:?})", playback_path, use_proxy);
+    let audio_enabled = enable_audio.unwrap_or(true);
+    println!("[start_playback] Using video: {} (proxy: {:?}, audio: {})", playback_path, use_proxy, audio_enabled);
     
     let mut engine = PlaybackEngine::new();
-    engine.start(playback_path, app);
+    engine.start(playback_path, app, audio_enabled);
     
-    // Send play command
+    // Seek to initial position BEFORE starting playback to avoid frame 0 glitch
+    if let Some(time) = initial_time {
+        println!("[start_playback] Seeking to initial position: {:.3}s", time);
+        engine.send_command(super::playback_engine::PlaybackCommand::Seek(time))?;
+    }
+    
+    // Now send play command
     engine.send_command(super::playback_engine::PlaybackCommand::Play)?;
     
     state.playback_engine = Some(engine);
@@ -265,6 +277,22 @@ pub async fn seek_playback(
 }
 
 #[tauri::command]
+pub async fn set_playback_volume(
+    state: tauri::State<'_, Mutex<VideoRendererState>>,
+    volume: f32,
+) -> Result<(), String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Video renderer state lock poisoned".to_string())?;
+    
+    if let Some(engine) = &state.playback_engine {
+        engine.send_command(super::playback_engine::PlaybackCommand::SetVolume(volume))?;
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn stop_playback(
     state: tauri::State<'_, Mutex<VideoRendererState>>,
 ) -> Result<(), String> {
@@ -284,14 +312,16 @@ pub async fn stop_playback(
 pub async fn read_frame_slot(
     state: tauri::State<'_, Mutex<VideoRendererState>>,
     slot_id: u32,
-) -> Result<Vec<u8>, String> {
+) -> Result<tauri::ipc::Response, String> {
     let state = state
         .lock()
         .map_err(|_| "Video renderer state lock poisoned".to_string())?;
     
     if let Some(engine) = &state.playback_engine {
         if let Some(slot) = engine.read_slot(slot_id) {
-            return Ok(slot.pixels);
+            // Return raw binary data directly - bypasses JSON serialization
+            // Frontend receives ArrayBuffer instead of number[]
+            return Ok(tauri::ipc::Response::new(slot.pixels));
         }
     }
     

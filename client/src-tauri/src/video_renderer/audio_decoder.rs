@@ -72,12 +72,12 @@ impl AudioDecoder {
     
     /// Seek to a specific time in seconds
     pub fn seek(&mut self, time: f64) -> Result<(), String> {
-        let stream = self.input_context
-            .stream(self.audio_stream_index)
-            .ok_or("Audio stream not found")?;
+        // Convert timestamp to AV_TIME_BASE (microseconds)
+        // input_context.seek() expects timestamps in AV_TIME_BASE, not stream time base
+        const AV_TIME_BASE: i64 = 1_000_000;
+        let ts = (time * AV_TIME_BASE as f64) as i64;
         
-        let time_base = stream.time_base();
-        let ts = (time / f64::from(time_base)) as i64;
+        println!("[AudioDecoder] seek: target={:.3}s, ts_usec={}", time, ts);
         
         self.input_context
             .seek(ts, ..ts)

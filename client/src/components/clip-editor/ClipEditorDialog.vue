@@ -579,7 +579,6 @@
     ClipEffect,
     AudioTrackEffect,
   } from '@/types';
-  import { calculateCrossfadeOpacity } from '@/types';
 
   // Disable attribute inheritance since this component renders a Teleport root
   defineOptions({
@@ -2860,50 +2859,15 @@
   }
 
   // Called when the preview component successfully swapped to the preloaded video
+  // Note: Native renderer doesn't use video swapping - this is a no-op placeholder
   function onVideoSwapped() {
     // Native renderer doesn't use video swapping
-    return;
-
-    // The preload video is now the main video
-    // Reset the preview component's active video index for the next swap cycle
-    // This will happen when the user finishes with this source and moves to the next
-    hideTransitionFrame();
-
-    // Update source tracking to the incoming source (source B)
-    const incomingSource = transitionIncomingSource.value;
-    if (incomingSource) {
-      currentVideoSourceId.value = incomingSource.id;
-    } else {
-      // Fallback: find next source by order
-      const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
-      const currentIdx = sortedSources.findIndex((s) => s.id === currentVideoSourceId.value);
-
-      if (currentIdx >= 0 && currentIdx < sortedSources.length - 1) {
-        const nextSource = sortedSources[currentIdx + 1];
-        currentVideoSourceId.value = nextSource.id;
-      }
-    }
-
-    // IMPORTANT: Keep crossfadeStarted and lastCrossfadeTransitionId set
-    // so manageCrossfade doesn't try to re-start the crossfade
-    // They will be reset when we exit the transition zone naturally
-    // crossfadeStarted.value = false;
-    // lastCrossfadeTransitionId.value = null;
   }
 
-  // Called when crossfade completes early (e.g., main video media ended before transition zone end)
-  // This syncs the timeline playhead with the visual state
-  function onCrossfadeCompleted(transitionEndTime: number) {
+  // Called when crossfade completes early
+  // Note: Native renderer doesn't support crossfades yet - this is a no-op placeholder
+  function onCrossfadeCompleted(_transitionEndTime: number) {
     // Native renderer doesn't support crossfades yet
-    return;
-
-    // Update preview time to the end of the transition
-    // This ensures the timeline playhead matches the visual state
-    previewTime.value = transitionEndTime;
-
-    // Clear crossfade state
-    crossfadeStarted.value = false;
-    // Don't clear lastCrossfadeTransitionId - keep it so we don't re-enter this transition
   }
 
   // Handle transitions detected from the timeline
@@ -2912,82 +2876,16 @@
   }
 
   // Manage crossfade audio (fade volumes during transition)
+  // Note: Native renderer doesn't support crossfade audio mixing yet - this is a no-op placeholder
   function updateCrossfadeAudio() {
-    if (!editorMode.value || !activeTransition.value || !videoElement.value) return;
-
-    const transition = activeTransition.value;
-    const { opacityA, opacityB } = calculateCrossfadeOpacity(previewTime.value, transition);
-
-    // Apply opacity as volume to outgoing source video (main video)
-    // Note: The main video is still the current activeVideoSource
     // Native renderer doesn't support crossfade audio mixing yet
-    return;
   }
 
   // Start crossfade when entering a transition zone
+  // Note: Native renderer doesn't support crossfades yet - this is a placeholder
   function manageCrossfade() {
     // Native renderer doesn't support crossfades yet
     return;
-    if (!editorMode.value || !isPlaying.value) return;
-
-    const transition = activeTransition.value;
-
-    if (transition) {
-      // We're in a transition zone
-      // Only start if crossfade is not already in progress AND we haven't already completed this transition
-      // Using AND (&&) instead of OR (||) prevents restarting after completion when time maps back into zone
-      if (!crossfadeStarted.value && lastCrossfadeTransitionId.value !== transition.id) {
-        // Start the crossfade - both videos need to play
-        const incomingSource = transitionIncomingSource.value;
-        if (incomingSource) {
-          // Calculate the seek time in the incoming source
-          const timeIntoTransition = previewTime.value - transition.startTime;
-          const seekTime = incomingSource.trim_start + timeIntoTransition;
-
-          // Native renderer doesn't support crossfades
-          if (false) {
-            crossfadeStarted.value = true;
-            lastCrossfadeTransitionId.value = transition.id;
-          } else {
-            console.log('[manageCrossfade] startCrossfade returned false');
-          }
-        }
-      } else if (crossfadeStarted.value) {
-        console.log('[manageCrossfade] Crossfade already in progress, updating audio');
-      } else {
-        // lastCrossfadeTransitionId matches - we've already completed this transition
-        // Don't restart, just skip
-        console.log('[manageCrossfade] Transition already completed, skipping');
-      }
-
-      // Update audio levels during crossfade
-      updateCrossfadeAudio();
-    } else if (crossfadeStarted.value) {
-      // Native renderer doesn't support crossfades
-      return;
-
-      // Update state to reflect we're now on the incoming source
-      // Find the source that contains the current time (should be source B now)
-      const newActiveSource = videoSources.value.find(
-        (s) => previewTime.value >= s.start_time && previewTime.value < s.end_time
-      );
-      if (newActiveSource) {
-        currentVideoSourceId.value = newActiveSource.id;
-      }
-
-      // Native renderer doesn't use video elements
-
-      crossfadeStarted.value = false;
-      // IMPORTANT: Keep lastCrossfadeTransitionId set so we don't restart the same transition
-      // when preload video's time maps back into the transition zone
-      // It will be reset when user seeks or when a different transition starts
-      // lastCrossfadeTransitionId.value = null;
-
-      // Reset video volume to normal on the new active video
-      if (videoElement.value) {
-        videoElement.value.volume = 1;
-      }
-    }
   }
 
   function onPreviewTimeUpdate(time: number) {
@@ -3001,63 +2899,55 @@
     }
 
     if (editorMode.value) {
-      // In editor mode, time is the video element's currentTime (position within source file)
-      // We need to track which source this time belongs to
-
-      // Determine which source the time update is coming from
-      // During/after crossfade, videoElement might point to the preload video (source B)
-      // So we need to use currentVideoSourceId as the source of truth
-      let source = currentVideoSourceId.value
-        ? videoSources.value.find((s) => s.id === currentVideoSourceId.value)
-        : null;
-
-      // If no tracked source or during transition, figure out the source from time
-      if (!source) {
-        const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
-        source =
-          sortedSources.find((s) => {
-            const effectiveEnd = s.trim_end ?? s.trim_start + (s.end_time - s.start_time);
-            return time >= s.trim_start && time < effectiveEnd;
-          }) || null;
-      }
+      // For native renderer: time is the continuous source video position
+      // We need to find which segment this time belongs to based on trim ranges
+      const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
+      
+      // Find the segment that contains this source video time
+      const source = sortedSources.find((s) => {
+        const effectiveEnd = s.trim_end ?? s.trim_start + (s.end_time - s.start_time);
+        return time >= s.trim_start && time < effectiveEnd;
+      });
 
       if (source) {
-        // Map video time back to global timeline position
-        // The video position includes trim_start, so subtract it to get relative position
+        // Map source video time to timeline position
         const relativeInSource = time - source.trim_start;
-        // Add the source's start time to get global timeline position
         const newTime = source.start_time + relativeInSource;
 
-        // Update current source tracking - but NOT during active crossfade
-        // During crossfade, source tracking is managed by manageCrossfade and onVideoSwapped
-        if (currentVideoSourceId.value !== source.id && !crossfadeStarted.value && !activeTransition.value) {
+        // Auto-update current source if we've moved into a different segment
+        if (currentVideoSourceId.value !== source.id) {
+          console.log('[onPreviewTimeUpdate] Auto-transitioning to segment:', source.id);
+          
+          // Proactively set Rust audio volume based on new segment's extracted audio status
+          // This prevents echo during transition by setting volume BEFORE the segment changes
+          const audioExtractedFlag = (source as any).audio_extracted ?? (source as any).audioExtracted;
+          const hasExtractedAudio = audioExtractedFlag === true || audioExtractedFlag === 1 || audioExtractedFlag === '1';
+          const volume = hasExtractedAudio ? 0 : 100;
+          
+          invoke('set_playback_volume', { volume }).catch((error: any) => {
+            console.error('[onPreviewTimeUpdate] Failed to set playback volume:', error);
+          });
+          
           currentVideoSourceId.value = source.id;
         }
 
-        // Check if we've reached the trim_end of this source
-        // Only trigger end if we're NOT in an active crossfade transition
-        // trim_end is the position in the source video where we should stop
-        // If trim_end is null, calculate effective end from timeline duration
-        const effectiveTrimEnd = source.trim_end ?? source.trim_start + (source.end_time - source.start_time);
-
-        if (time >= effectiveTrimEnd && isPlaying.value && !activeTransition.value && !crossfadeStarted.value) {
-          // We've reached the end of this source's trimmed region
-          // Trigger transition to next source
-          onVideoEnded();
-          return;
-        }
-
-        // Only update if the difference is significant (prevents tiny fluctuations)
+        // Update timeline position
         if (Math.abs(newTime - previewTime.value) > 0.05) {
           previewTime.value = newTime;
         }
-
-        // Manage crossfade transitions during playback (only if still in crossfade mode)
-        if (crossfadeStarted.value || activeTransition.value) {
-          manageCrossfade();
-        }
       } else {
-        console.log('[onPreviewTimeUpdate] No source found for time:', time);
+        // Time is outside all segments - check if we've reached the end of the timeline
+        const lastSource = sortedSources[sortedSources.length - 1];
+        if (lastSource) {
+          const lastEffectiveEnd = lastSource.trim_end ?? lastSource.trim_start + (lastSource.end_time - lastSource.start_time);
+          
+          if (time >= lastEffectiveEnd && isPlaying.value) {
+            // Reached the end of the timeline
+            console.log('[onPreviewTimeUpdate] Reached end of timeline');
+            isPlaying.value = false;
+            previewTime.value = editorContentDuration.value;
+          }
+        }
       }
     } else {
       previewTime.value = time;
@@ -3108,9 +2998,33 @@
   }
 
   function transitionToSource(nextSource: VideoEditorSource) {
+    console.log('[transitionToSource] Transitioning to source:', {
+      id: nextSource.id,
+      start_time: nextSource.start_time,
+      end_time: nextSource.end_time,
+      trim_start: nextSource.trim_start,
+      trim_end: nextSource.trim_end,
+      wasPlaying: isPlaying.value
+    });
+    
     isSeeking.value = true;
 
-    // Native renderer doesn't use video swapping
+    // Update source ID first
+    currentVideoSourceId.value = nextSource.id;
+    
+    // For native renderer: just update the timeline position
+    // The Rust playback engine is already playing through the video file
+    // We only need to update our timeline tracking, not seek the video
+    console.log('[transitionToSource] Updating previewTime to:', nextSource.start_time);
+    previewTime.value = nextSource.start_time;
+    
+    nextTick(() => {
+      isSeeking.value = false;
+    });
+    
+    return;
+
+    // Legacy HTML5 video code path (unreachable with native renderer)
     const isMainActive = true;
 
     if (isMainActive) {
@@ -3201,6 +3115,8 @@
   }
 
   function onVideoEnded() {
+    console.log('[onVideoEnded] Called, currentVideoSourceId:', currentVideoSourceId.value);
+    
     // In clip mode (non-editor), just stop playback when video ends
     if (!editorMode.value) {
       isPlaying.value = false;
@@ -3227,14 +3143,6 @@
 
       if (incomingSource) {
         currentVideoSourceId.value = incomingSource.id;
-        // Native renderer doesn't use video elements
-        if (false) {
-          videoElement.value = null;
-          // Ensure the preload video is playing
-          if (preloadEl.paused && isPlaying.value) {
-            preloadEl.play().catch(() => {});
-          }
-        }
       }
 
       // IMPORTANT: Keep crossfadeStarted and lastCrossfadeTransitionId set
@@ -3250,12 +3158,20 @@
       return;
     }
 
-    // Find the current source and the next one
-    const currentSource = activeVideoSource.value;
+    // Find the current source using currentVideoSourceId (not activeVideoSource)
+    // activeVideoSource uses previewTime which may have advanced past the source's end_time
+    const currentSource = videoSources.value.find(s => s.id === currentVideoSourceId.value);
     if (!currentSource) {
+      console.log('[onVideoEnded] No current source found, stopping playback');
       isPlaying.value = false;
       return;
     }
+    
+    console.log('[onVideoEnded] Current source:', {
+      id: currentSource.id,
+      start_time: currentSource.start_time,
+      end_time: currentSource.end_time
+    });
 
     // Sort sources by timeline position to find the next source
     const sortedSources = [...videoSources.value].sort((a, b) => a.start_time - b.start_time);
@@ -3559,35 +3475,6 @@
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to split segment:', error);
       alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  // Legacy code path removed - all splits now use command pattern
-  async function splitTrimSegmentLegacy(segmentId: string, cutTime: number) {
-    const segmentIndex = trimSegments.value.findIndex((s) => s.id === segmentId);
-    if (segmentIndex === -1) return;
-
-    const segment = trimSegments.value[segmentIndex];
-
-    // This is the old editor mode path - kept for reference but should not be used
-    if (editorMode.value) {
-      // Editor mode - just update local state (for video editor projects)
-      const leftSegment: TrimSegment = {
-        id: `segment-${Date.now()}-left`,
-        startTime: segment.startTime,
-        endTime: cutTime,
-        isDeleted: false,
-      };
-
-      const rightSegment: TrimSegment = {
-        id: `segment-${Date.now()}-right`,
-        startTime: cutTime,
-        endTime: segment.endTime,
-        isDeleted: false,
-      };
-
-      // Replace the original segment with the two new segments
-      trimSegments.value.splice(segmentIndex, 1, leftSegment, rightSegment);
     }
   }
 
@@ -6366,6 +6253,11 @@
     }
   );
 
+  // Watch isPlaying to immediately sync audio tracks when pausing/playing
+  watch(isPlaying, () => {
+    syncAudioWithVideo();
+  });
+
   // Lifecycle
   watch(
     () => props.modelValue,
@@ -6381,7 +6273,6 @@
           // Editor mode - load video sources
           await loadEditorProject();
           await loadProjectId(); // Load project ID for transcript/subtitles
-          previewTime.value = 0;
           activeEditorTab.value = 'media';
 
           // Auto-apply creator watermark if available (from props or video sources)

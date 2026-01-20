@@ -1,6 +1,31 @@
 use ffmpeg_next as ffmpeg;
 use std::path::Path;
 
+/// Extract tightly packed RGBA data from an FFmpeg frame, handling stride padding.
+/// FFmpeg frames often have stride (linesize) > width * 4 for alignment.
+/// WebGL expects tightly packed data with no padding.
+fn extract_tightly_packed_rgba(frame: &ffmpeg::util::frame::Video, width: u32, height: u32) -> Vec<u8> {
+    let stride = frame.stride(0) as usize;
+    let row_bytes = (width * 4) as usize;
+    let frame_data = frame.data(0);
+    
+    // Fast path: no padding needed
+    if stride == row_bytes {
+        return frame_data.to_vec();
+    }
+    
+    // Slow path: copy row by row, removing stride padding
+    let mut output = Vec::with_capacity(row_bytes * height as usize);
+    for y in 0..height as usize {
+        let row_start = y * stride;
+        let row_end = row_start + row_bytes;
+        if row_end <= frame_data.len() {
+            output.extend_from_slice(&frame_data[row_start..row_end]);
+        }
+    }
+    output
+}
+
 pub struct VideoDecoder {
     input_context: ffmpeg::format::context::Input,
     video_stream_index: usize,
@@ -91,12 +116,12 @@ impl VideoDecoder {
     }
     
     pub fn seek_to_timestamp(&mut self, timestamp: f64) -> Result<(), String> {
-        let stream = self.input_context
-            .stream(self.video_stream_index)
-            .ok_or("Stream not found")?;
+        // Convert timestamp to AV_TIME_BASE (microseconds)
+        // input_context.seek() expects timestamps in AV_TIME_BASE, not stream time base
+        const AV_TIME_BASE: i64 = 1_000_000;
+        let ts = (timestamp * AV_TIME_BASE as f64) as i64;
         
-        let time_base = stream.time_base();
-        let ts = (timestamp / f64::from(time_base)) as i64;
+        println!("[Decoder] seek_to_timestamp: target={:.3}s, ts_usec={}", timestamp, ts);
         
         // Seek backward to nearest keyframe before the target timestamp
         self.input_context
@@ -104,6 +129,34 @@ impl VideoDecoder {
             .map_err(|e| format!("Seek failed: {}", e))?;
         
         self.decoder.flush();
+        
+        // Decode forward to the exact target timestamp
+        // This ensures video and audio start at the same position
+        let video_stream_index = self.video_stream_index;
+        let time_base = self.input_context.stream(video_stream_index)
+            .ok_or("Stream not found")?
+            .time_base();
+        
+        let mut decoded = ffmpeg::util::frame::Video::empty();
+        let mut packets = self.input_context.packets();
+        
+        while let Some((stream, packet)) = packets.next() {
+            if stream.index() == video_stream_index {
+                self.decoder.send_packet(&packet).ok();
+                
+                while self.decoder.receive_frame(&mut decoded).is_ok() {
+                    let pts = decoded.pts().unwrap_or(0);
+                    let frame_time = pts as f64 * f64::from(time_base);
+                    
+                    // Stop when we reach or pass the target timestamp
+                    if frame_time >= timestamp {
+                        println!("[Decoder] seek_to_timestamp: decoded to {:.3}s (target={:.3}s)", frame_time, timestamp);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        
         Ok(())
     }
     
@@ -141,7 +194,7 @@ impl VideoDecoder {
                         .map_err(|e| e.to_string())?;
                     
                     let frame = DecodedFrame {
-                        data: rgba_frame.data(0).to_vec(),
+                        data: extract_tightly_packed_rgba(&rgba_frame, self.width, self.height),
                         width: self.width,
                         height: self.height,
                         timestamp: frame_ts,
@@ -202,7 +255,8 @@ impl VideoDecoder {
             self.scaler.run(&decoded, &mut rgba_frame)
                 .map_err(|e| e.to_string())?;
             
-            let data = rgba_frame.data(0).to_vec();
+            // Extract pixel data with proper stride handling
+            let data = extract_tightly_packed_rgba(&rgba_frame, self.width, self.height);
             
             // Debug: compute checksum from different parts of frame
             let checksum_start: u32 = data.iter().take(100).map(|&b| b as u32).sum();
@@ -247,7 +301,9 @@ impl VideoDecoder {
                 self.scaler.run(&decoded, &mut rgba_frame)
                     .map_err(|e| e.to_string())?;
                 
-                let data = rgba_frame.data(0).to_vec();
+                // Extract pixel data with proper stride handling
+                // FFmpeg frames may have stride padding that WebGL doesn't expect
+                let data = extract_tightly_packed_rgba(&rgba_frame, self.width, self.height);
                 
                 // Debug: compute checksum from different parts of frame
                 let checksum_start: u32 = data.iter().take(100).map(|&b| b as u32).sum();
@@ -278,7 +334,7 @@ impl VideoDecoder {
                 .map_err(|e| e.to_string())?;
             
             return Ok(DecodedFrame {
-                data: rgba_frame.data(0).to_vec(),
+                data: extract_tightly_packed_rgba(&rgba_frame, self.width, self.height),
                 width: self.width,
                 height: self.height,
                 timestamp: frame_ts,
@@ -306,7 +362,7 @@ impl VideoDecoder {
                     let timestamp = decoded.timestamp().unwrap_or(0) as f64 * f64::from(stream.time_base());
                     
                     return Ok(DecodedFrame {
-                        data: rgba_frame.data(0).to_vec(),
+                        data: extract_tightly_packed_rgba(&rgba_frame, self.width, self.height),
                         width: self.width,
                         height: self.height,
                         timestamp,

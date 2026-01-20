@@ -14,7 +14,14 @@ interface ProxyPaths {
   proxy_1080p: string
 }
 
-export function useNativeVideoRenderer(canvasRef: Ref<HTMLCanvasElement | null>) {
+interface UseNativeVideoRendererOptions {
+  currentSourceHasExtractedAudio?: Ref<boolean>
+}
+
+export function useNativeVideoRenderer(
+  canvasRef: Ref<HTMLCanvasElement | null>,
+  options?: UseNativeVideoRendererOptions
+) {
   const isPlaying = ref(false)
   const currentTime = ref(0)
   const duration = ref(0)
@@ -33,6 +40,7 @@ export function useNativeVideoRenderer(canvasRef: Ref<HTMLCanvasElement | null>)
   let texCoordLoc: number = -1
   let playbackEngineStarted = false // Track if playback engine is running
   let pendingFrameRender: number | null = null // For canceling pending RAF
+  let activePlaybackPath: string | null = null // Track the actual path being used (proxy or original)
 
   function initWebGL() {
     if (!canvasRef.value) {
@@ -202,16 +210,32 @@ export function useNativeVideoRenderer(canvasRef: Ref<HTMLCanvasElement | null>)
       console.log('[useNativeVideoRenderer] Starting Rust playback engine for:', videoPath.value)
       
       // Determine which proxy to use based on fullscreen state
+      // Rust backend now validates proxies and regenerates if corrupted
       const useProxy = proxiesReady.value 
         ? (isFullscreen.value ? '1080p' : '720p')
         : null
       
       console.log(`[useNativeVideoRenderer] Using proxy: ${useProxy || 'none (original)'}`)
       
+      // Track the actual path being used for playback (for seek operations)
+      if (useProxy === '720p' && proxyPaths.value?.proxy_720p) {
+        activePlaybackPath = proxyPaths.value.proxy_720p
+      } else if (useProxy === '1080p' && proxyPaths.value?.proxy_1080p) {
+        activePlaybackPath = proxyPaths.value.proxy_1080p
+      } else {
+        activePlaybackPath = videoPath.value
+      }
+      
+      // Always enable audio at startup - volume will be controlled dynamically
+      const enableAudio = true
+      
       // Start Rust playback engine (spawns background thread with audio clock)
+      // Pass initialTime to seek BEFORE starting playback to avoid frame 0 glitch
       await invoke('start_playback', {
         videoPath: videoPath.value,
-        useProxy
+        useProxy,
+        enableAudio,
+        initialTime: currentTime.value > 0 ? currentTime.value : null
       })
       
       playbackEngineStarted = true
@@ -231,9 +255,10 @@ export function useNativeVideoRenderer(canvasRef: Ref<HTMLCanvasElement | null>)
           const slotToRender = latestSlot
           
           try {
-            const pixels = await invoke<number[]>('read_frame_slot', { slotId: slotToRender })
-            if (pixels && pixels.length > 0) {
-              const pixelData = new Uint8Array(pixels)
+            // Response returns ArrayBuffer directly (raw binary, no JSON serialization)
+            const buffer = await invoke<ArrayBuffer>('read_frame_slot', { slotId: slotToRender })
+            if (buffer && buffer.byteLength > 0) {
+              const pixelData = new Uint8Array(buffer)
               uploadAndRender(pixelData)
             }
           } catch (error) {
@@ -306,6 +331,15 @@ export function useNativeVideoRenderer(canvasRef: Ref<HTMLCanvasElement | null>)
     }
 
     const { width, height } = dimensions.value
+    
+    // Validate pixel buffer size matches expected dimensions (RGBA = 4 bytes per pixel)
+    const expectedSize = width * height * 4
+    if (pixels.length !== expectedSize) {
+      // Buffer size mismatch - skip this frame to prevent corruption
+      // This can happen during dimension changes between events
+      console.warn(`[useNativeVideoRenderer] Buffer size mismatch: got ${pixels.length}, expected ${expectedSize} (${width}x${height}x4)`)
+      return
+    }
     
     renderCount++
     
@@ -408,15 +442,19 @@ export function useNativeVideoRenderer(canvasRef: Ref<HTMLCanvasElement | null>)
     }
     
     // Fetch and render the frame at the seek position using get_video_frame (for scrubbing)
-    if (videoPath.value && dimensions.value) {
+    // Always use original video file for frame fetching (proxies may be corrupted)
+    const seekPath = videoPath.value
+    if (seekPath && dimensions.value) {
       try {
-        const pixels = await invoke<number[]>('get_video_frame', {
-          videoPath: videoPath.value,
+        console.log(`[useNativeVideoRenderer] Fetching frame at ${time.toFixed(2)}s from: ${seekPath}`)
+        // Response returns ArrayBuffer directly (raw binary, no JSON serialization)
+        const buffer = await invoke<ArrayBuffer>('get_video_frame', {
+          videoPath: seekPath,
           timestamp: time
         })
         
-        if (pixels && pixels.length > 0) {
-          const pixelData = new Uint8Array(pixels)
+        if (buffer && buffer.byteLength > 0) {
+          const pixelData = new Uint8Array(buffer)
           uploadAndRender(pixelData)
         }
       } catch (error) {
