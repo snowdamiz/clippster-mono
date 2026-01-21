@@ -91,8 +91,8 @@ function formatTime(seconds: number): string {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  background-color: rgba(0, 0, 0, 0.4);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, var(--editor-surface) 0%, var(--editor-bg) 100%);
+  border-bottom: 1px solid var(--editor-border);
   flex-shrink: 0;
   height: 48px;
 }
@@ -109,15 +109,15 @@ function formatTime(seconds: number): string {
   align-items: center;
   gap: 0.5rem;
   padding: 0.25rem 0.5rem;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--editor-surface-elevated);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--editor-border);
 }
 
 .editor-toolbar__zoom-label {
   font-size: 0.8125rem;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--editor-text);
   min-width: 48px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -126,12 +126,12 @@ function formatTime(seconds: number): string {
 .editor-toolbar__time {
   font-size: 0.875rem;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--editor-text);
   font-variant-numeric: tabular-nums;
   padding: 0.375rem 0.75rem;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--editor-surface-elevated);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--editor-border);
 }
 
 .editor-toolbar__button {
@@ -142,8 +142,8 @@ function formatTime(seconds: number): string {
   padding: 0.5rem 0.75rem;
   background: transparent;
   border: none;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+  color: var(--editor-text-muted);
   cursor: pointer;
   transition: all 150ms ease;
   font-size: 0.8125rem;
@@ -151,8 +151,8 @@ function formatTime(seconds: number): string {
 }
 
 .editor-toolbar__button:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.95);
+  background-color: rgba(14, 165, 233, 0.15);
+  color: var(--editor-accent);
 }
 </style>
 

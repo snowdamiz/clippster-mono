@@ -220,6 +220,16 @@
   --page-text-muted: #71717a;
   --page-icon-bg: rgba(14, 165, 233, 0.1);
   --page-icon-border: rgba(14, 165, 233, 0.2);
+
+  /* Video Editor theme variables */
+  --editor-bg: #0a0a0b;
+  --editor-surface: #111113;
+  --editor-surface-elevated: #18181b;
+  --editor-border: rgba(255, 255, 255, 0.08);
+  --editor-accent: #0ea5e9;
+  --editor-accent-hover: #38bdf8;
+  --editor-text: #fafafa;
+  --editor-text-muted: #71717a;
 }
 
 @layer base {

@@ -183,9 +183,9 @@ function handleOpenFramingEditor() {
 }
 
 .framing-panel__ratio-card--active {
-  background-color: rgba(139, 92, 246, 0.15);
-  border-color: rgba(139, 92, 246, 0.4);
-  color: #a78bfa;
+  background-color: rgba(14, 165, 233, 0.15);
+  border-color: rgba(14, 165, 233, 0.4);
+  color: var(--editor-accent);
 }
 
 .framing-panel__ratio-check {
@@ -216,8 +216,8 @@ function handleOpenFramingEditor() {
 }
 
 .framing-panel__mode-option--active {
-  background-color: rgba(139, 92, 246, 0.15);
-  border-color: rgba(139, 92, 246, 0.4);
+  background-color: rgba(14, 165, 233, 0.15);
+  border-color: rgba(14, 165, 233, 0.4);
 }
 
 .framing-panel__radio {
@@ -255,10 +255,10 @@ function handleOpenFramingEditor() {
   justify-content: center;
   gap: 0.5rem;
   padding: 0.75rem;
-  background-color: rgba(139, 92, 246, 0.15);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background-color: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(14, 165, 233, 0.3);
   border-radius: 6px;
-  color: #a78bfa;
+  color: var(--editor-accent);
   cursor: pointer;
   transition: all 150ms ease;
   font-size: 0.875rem;
@@ -266,8 +266,8 @@ function handleOpenFramingEditor() {
 }
 
 .framing-panel__edit-button:hover {
-  background-color: rgba(139, 92, 246, 0.25);
-  border-color: rgba(139, 92, 246, 0.5);
+  background-color: rgba(14, 165, 233, 0.25);
+  border-color: rgba(14, 165, 233, 0.5);
 }
 
 .framing-panel__hint {

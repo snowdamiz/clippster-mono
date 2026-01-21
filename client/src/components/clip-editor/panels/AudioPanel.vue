@@ -450,7 +450,7 @@ if (props.editId) {
 }
 
 .audio-panel__track-name:focus {
-  border-bottom-color: rgba(139, 92, 246, 0.5);
+  border-bottom-color: rgba(14, 165, 233, 0.5);
 }
 
 .audio-panel__track-controls {
@@ -588,7 +588,7 @@ if (props.editId) {
 }
 
 .audio-panel__fade-input:focus {
-  border-color: rgba(139, 92, 246, 0.5);
+  border-color: rgba(14, 165, 233, 0.5);
   background-color: rgba(255, 255, 255, 0.08);
 }
 

@@ -14,7 +14,7 @@
       </button>
     </div>
 
-    <div class="editor-sidebar__content">
+    <div v-if="activePanel" class="editor-sidebar__content">
       <!-- Panel content will be rendered here based on activePanel -->
       <div class="editor-sidebar__panel">
         <!-- Audio Panel -->
@@ -112,6 +112,7 @@ const props = defineProps<{
   creatorWatermarkSettings?: any;
   creatorDefaultIntro?: IntroOutroRef | null;
   creatorDefaultOutro?: IntroOutroRef | null;
+  hasInspector?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -153,66 +154,78 @@ const currentPanelLabel = computed(() => {
 });
 
 function selectPanel(panelId: string) {
-  emit('update:activePanel', panelId);
-  emit('panelChange', panelId);
+  // If inspector is active and clicking the same tab, close the panel
+  if (props.hasInspector && props.activePanel === panelId) {
+    emit('update:activePanel', '');
+    emit('panelChange', '');
+  } else {
+    emit('update:activePanel', panelId);
+    emit('panelChange', panelId);
+  }
 }
 </script>
 
 <style scoped>
 .editor-sidebar {
-  width: 280px;
+  width: 56px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background-color: #0d0d0d;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: var(--editor-surface);
+  border-right: 1px solid var(--editor-border);
 }
 
 .editor-sidebar__tabs {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 0.25rem;
   padding: 0.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  max-height: 50%;
+  flex: 1;
   overflow-y: auto;
 }
 
 .editor-sidebar__tab {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 0.75rem;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   background: transparent;
   border: none;
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  color: var(--editor-text-muted);
   cursor: pointer;
   transition: all 150ms ease;
-  font-size: 0.875rem;
-  font-weight: 500;
-  text-align: left;
 }
 
 .editor-sidebar__tab:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.9);
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--editor-text);
 }
 
 .editor-sidebar__tab--active {
-  background-color: rgba(139, 92, 246, 0.15);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  color: #a78bfa;
+  background-color: rgba(14, 165, 233, 0.15);
+  color: var(--editor-accent);
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.3);
 }
 
 .editor-sidebar__tab-label {
-  flex: 1;
+  display: none;
 }
 
 .editor-sidebar__content {
-  flex: 1;
+  position: absolute;
+  left: 56px;
+  top: 48px;
+  bottom: 280px;
+  width: 280px;
+  background-color: var(--editor-surface-elevated);
+  border-right: 1px solid var(--editor-border);
   overflow-y: auto;
   padding: 1rem;
+  z-index: 100;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
 }
 
 .editor-sidebar__panel {
@@ -224,7 +237,7 @@ function selectPanel(panelId: string) {
 .editor-sidebar__panel-title {
   font-size: 1rem;
   font-weight: 600;
-  color: #f4f4f5;
+  color: var(--editor-text);
   margin: 0;
 }
 
@@ -235,7 +248,7 @@ function selectPanel(panelId: string) {
 }
 
 .editor-sidebar__placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--editor-text-muted);
   font-size: 0.875rem;
   text-align: center;
   padding: 2rem 1rem;

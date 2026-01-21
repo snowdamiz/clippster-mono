@@ -28,6 +28,7 @@
               :creator-watermark-settings="watermarkSettings"
               :creator-default-intro="introRef"
               :creator-default-outro="outroRef"
+              :has-inspector="!!selectedItem"
               @panelChange="onPanelChange"
               @detachAudio="handleDetachAudio"
               @tracksUpdated="handleTracksUpdated"
@@ -554,6 +555,14 @@ function onPanelChange(panel: string) {
   console.log('[ClipEditorDialog] Panel changed to:', panel);
 }
 
+// Ensure sidebar panel is always active when no inspector
+watch(selectedItem, (newItem) => {
+  if (!newItem && !activePanel.value) {
+    // No inspector and no panel selected - default to media
+    activePanel.value = 'media';
+  }
+});
+
 // ===== Undo/Redo =====
 async function handleUndo() {
   try {
@@ -713,18 +722,13 @@ onUnmounted(() => {
 .clip-editor-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.95);
-  backdrop-filter: blur(12px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.98);
+  backdrop-filter: blur(16px);
   z-index: 10000;
 }
 
 .clip-editor {
-  background-color: #0a0a0a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  background-color: var(--editor-bg);
   width: 100%;
   height: 100%;
   max-width: 100vw;
@@ -732,9 +736,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 
-    0 25px 80px rgba(0, 0, 0, 0.8),
-    0 0 1px rgba(255, 255, 255, 0.15);
 }
 
 .clip-editor__content {
@@ -749,14 +750,14 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background-color: #000;
+  background: linear-gradient(135deg, #0a0a0b 0%, #0d0d0e 100%);
 }
 
 .clip-editor__timeline-wrapper {
   flex-shrink: 0;
   height: 280px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  background-color: #0d0d0d;
+  border-top: 1px solid var(--editor-border);
+  background-color: var(--editor-surface);
   display: flex;
   flex-direction: column;
 }

@@ -77,12 +77,12 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background-color: rgba(0, 0, 0, 0.6);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 1rem;
+  background: linear-gradient(180deg, var(--editor-surface) 0%, var(--editor-bg) 100%);
+  border-bottom: 1px solid var(--editor-border);
   flex-shrink: 0;
-  height: 56px;
-  backdrop-filter: blur(8px);
+  min-height: 48px;
+  backdrop-filter: blur(12px);
 }
 
 .editor-header__left {
@@ -103,9 +103,9 @@ defineEmits<{
   align-items: center;
   gap: 0.25rem;
   padding: 0.25rem;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--editor-surface-elevated);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--editor-border);
 }
 
 .editor-header__button {
@@ -117,7 +117,7 @@ defineEmits<{
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--editor-text);
   cursor: pointer;
   transition: all 150ms ease;
   font-size: 0.875rem;
@@ -125,7 +125,7 @@ defineEmits<{
 }
 
 .editor-header__button:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
 
@@ -135,16 +135,16 @@ defineEmits<{
 }
 
 .editor-header__button--export {
-  background-color: rgba(139, 92, 246, 0.15);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  color: #a78bfa;
+  background-color: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  color: var(--editor-accent);
   padding: 0.5rem 1rem;
 }
 
 .editor-header__button--export:hover {
-  background-color: rgba(139, 92, 246, 0.25);
-  border-color: rgba(139, 92, 246, 0.5);
-  color: #c4b5fd;
+  background-color: rgba(14, 165, 233, 0.25);
+  border-color: rgba(14, 165, 233, 0.5);
+  color: var(--editor-accent-hover);
 }
 
 .editor-header__button--close {
@@ -166,13 +166,13 @@ defineEmits<{
 
 .editor-header__icon {
   flex-shrink: 0;
-  color: #a78bfa;
+  color: var(--editor-accent);
 }
 
 .editor-header__title {
   font-size: 0.9375rem;
   font-weight: 600;
-  color: #f4f4f5;
+  color: var(--editor-text);
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;

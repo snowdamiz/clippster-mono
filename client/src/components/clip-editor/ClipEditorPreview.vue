@@ -326,7 +326,9 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background-color: #000;
+  background: 
+    repeating-conic-gradient(#0a0a0b 0% 25%, #111113 0% 50%) 
+    50% / 20px 20px;
 }
 
 .editor-preview__video-wrapper {
@@ -344,9 +346,11 @@ onUnmounted(() => {
   max-width: 100%;
   max-height: 100%;
   background-color: #000;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(14, 165, 233, 0.1);
 }
 
 .editor-preview__video {
@@ -380,7 +384,7 @@ onUnmounted(() => {
 
 .editor-preview__crop-region {
   position: absolute;
-  border: 2px dashed rgba(139, 92, 246, 0.8);
+  border: 2px dashed rgba(14, 165, 233, 0.8);
   box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.4);
 }
 
@@ -417,9 +421,9 @@ onUnmounted(() => {
   align-items: center;
   gap: 1rem;
   padding: 1rem 1.5rem;
-  background-color: rgba(0, 0, 0, 0.6);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(8px);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%);
+  border-top: 1px solid var(--editor-border);
+  backdrop-filter: blur(12px);
 }
 
 .editor-preview__control-button {
@@ -428,25 +432,29 @@ onUnmounted(() => {
   justify-content: center;
   width: 40px;
   height: 40px;
-  background-color: rgba(139, 92, 246, 0.2);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background-color: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(14, 165, 233, 0.3);
   border-radius: 8px;
-  color: #a78bfa;
+  color: var(--editor-accent);
   cursor: pointer;
   transition: all 150ms ease;
 }
 
 .editor-preview__control-button:hover {
-  background-color: rgba(139, 92, 246, 0.3);
-  border-color: rgba(139, 92, 246, 0.5);
-  color: #c4b5fd;
+  background-color: rgba(14, 165, 233, 0.25);
+  border-color: rgba(14, 165, 233, 0.5);
+  color: var(--editor-accent-hover);
 }
 
 .editor-preview__time {
   font-size: 0.875rem;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--editor-text);
   font-variant-numeric: tabular-nums;
+  padding: 0.375rem 0.75rem;
+  background-color: var(--editor-surface-elevated);
+  border-radius: 6px;
+  border: 1px solid var(--editor-border);
 }
 
 .editor-preview__spacer {
@@ -457,9 +465,9 @@ onUnmounted(() => {
   display: flex;
   gap: 0.25rem;
   padding: 0.25rem;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--editor-surface-elevated);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--editor-border);
 }
 
 .editor-preview__aspect-button {
@@ -467,7 +475,7 @@ onUnmounted(() => {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--editor-text-muted);
   cursor: pointer;
   transition: all 150ms ease;
   font-size: 0.8125rem;
@@ -476,13 +484,13 @@ onUnmounted(() => {
 
 .editor-preview__aspect-button:hover {
   background-color: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--editor-text);
 }
 
 .editor-preview__aspect-button--active {
-  background-color: rgba(139, 92, 246, 0.2);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  color: #a78bfa;
+  background-color: rgba(14, 165, 233, 0.15);
+  color: var(--editor-accent);
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.3);
 }
 </style>
 

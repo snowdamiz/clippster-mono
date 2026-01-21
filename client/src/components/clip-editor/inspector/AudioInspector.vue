@@ -217,7 +217,7 @@ function updateProperty(property: string, value: any) {
 }
 
 .audio-inspector__input:focus {
-  border-color: rgba(139, 92, 246, 0.5);
+  border-color: rgba(14, 165, 233, 0.5);
   background-color: rgba(255, 255, 255, 0.08);
 }
 
@@ -288,9 +288,9 @@ function updateProperty(property: string, value: any) {
 }
 
 .audio-inspector__toggle--active {
-  background-color: rgba(139, 92, 246, 0.2);
-  border-color: rgba(139, 92, 246, 0.4);
-  color: #a78bfa;
+  background-color: rgba(14, 165, 233, 0.2);
+  border-color: rgba(14, 165, 233, 0.4);
+  color: var(--editor-accent);
 }
 
 .audio-inspector__delete-button {

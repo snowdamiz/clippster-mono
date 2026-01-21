@@ -538,7 +538,7 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
   flex: 1;
   display: flex;
   flex-direction: column;
-  background-color: #0a0a0a;
+  background-color: var(--editor-bg);
   position: relative;
   overflow: hidden;
 }
@@ -547,8 +547,8 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
 .editor-timeline__ruler {
   display: flex;
   height: 28px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background-color: #0d0d0d;
+  border-bottom: 1px solid var(--editor-border);
+  background-color: var(--editor-surface);
   flex-shrink: 0;
   position: relative;
   z-index: 3;
@@ -557,8 +557,8 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
 .editor-timeline__ruler-spacer {
   width: 60px;
   flex-shrink: 0;
-  background-color: rgba(0, 0, 0, 0.4);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background-color: var(--editor-surface-elevated);
+  border-right: 1px solid var(--editor-border);
 }
 
 .editor-timeline__ruler-content {
@@ -570,13 +570,13 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
   position: absolute;
   top: 0;
   height: 100%;
-  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  border-left: 1px solid rgba(14, 165, 233, 0.2);
   padding-left: 0.25rem;
 }
 
 .editor-timeline__time-label {
   font-size: 0.625rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--editor-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -593,8 +593,8 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
 .editor-timeline__playhead-line {
   width: 100%;
   height: 100%;
-  background-color: #ef4444;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  background-color: var(--editor-accent);
+  box-shadow: 0 0 8px rgba(14, 165, 233, 0.6);
 }
 
 .editor-timeline__playhead-handle {
@@ -604,7 +604,7 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
   transform: translateX(-50%);
   width: 12px;
   height: 12px;
-  background-color: #ef4444;
+  background-color: var(--editor-accent);
   border: 2px solid #fff;
   border-radius: 50%;
   cursor: ew-resize;
@@ -637,7 +637,7 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
 
 .editor-timeline__track {
   display: flex;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--editor-border);
   min-height: 48px;
   position: relative;
 }
@@ -654,9 +654,9 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
   gap: 0.5rem;
   width: 60px;
   padding: 0 0.75rem;
-  background-color: rgba(0, 0, 0, 0.95);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
+  background-color: var(--editor-surface-elevated);
+  border-right: 1px solid var(--editor-border);
+  color: var(--editor-text-muted);
   font-size: 0.8125rem;
   font-weight: 600;
   flex-shrink: 0;
@@ -698,7 +698,7 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
   border-color: rgba(255, 255, 255, 0.8);
   border-width: 2px;
   z-index: 2;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.4);
 }
 
 .editor-timeline__segment--intro,
@@ -708,13 +708,13 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
 }
 
 .editor-timeline__segment--video {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(139, 92, 246, 0.2) 100%);
-  border-color: rgba(139, 92, 246, 0.4);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(14, 165, 233, 0.2) 100%);
+  border-color: rgba(14, 165, 233, 0.4);
 }
 
 .editor-timeline__segment--audio {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.3) 0%, rgba(34, 197, 94, 0.2) 100%);
-  border-color: rgba(34, 197, 94, 0.4);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(16, 185, 129, 0.2) 100%);
+  border-color: rgba(16, 185, 129, 0.4);
 }
 
 .editor-timeline__segment--text {
