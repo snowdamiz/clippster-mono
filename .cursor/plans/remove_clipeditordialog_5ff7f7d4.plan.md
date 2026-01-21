@@ -4,52 +4,52 @@ overview: Systematically remove the ClipEditorDialog component (6,700 lines) and
 todos:
   - id: create-placeholder
     content: Create ClipEditorDialogPlaceholder.vue with minimal props/emits interface
-    status: pending
+    status: completed
   - id: update-videoeditor
     content: Update VideoEditor.vue to import placeholder instead of ClipEditorDialog
-    status: pending
+    status: completed
     dependencies:
       - create-placeholder
   - id: update-projects
     content: Update Projects.vue to import placeholder instead of ClipEditorDialog
-    status: pending
+    status: completed
     dependencies:
       - create-placeholder
   - id: update-workspace
     content: Update ProjectWorkspaceDialog.vue to import placeholder
-    status: pending
+    status: completed
     dependencies:
       - create-placeholder
   - id: delete-tabs
     content: Delete entire clip-editor/tabs/ directory (16 files)
-    status: pending
+    status: completed
     dependencies:
       - update-videoeditor
       - update-projects
       - update-workspace
   - id: delete-subcomponents
     content: Delete 17 sub-component files in clip-editor/ folder
-    status: pending
+    status: completed
     dependencies:
       - delete-tabs
   - id: delete-main
     content: Delete ClipEditorDialog.vue (6700 lines)
-    status: pending
+    status: completed
     dependencies:
       - delete-subcomponents
   - id: delete-commands
     content: Delete ClipEditorCommands.ts service
-    status: pending
+    status: completed
     dependencies:
       - delete-main
   - id: cleanup-types
     content: Remove ClipEditorDialogProps and related types from types/index.ts
-    status: pending
+    status: completed
     dependencies:
       - delete-main
   - id: verify-build
     content: Run type-check and verify application loads without errors
-    status: pending
+    status: completed
     dependencies:
       - cleanup-types
       - delete-commands
@@ -304,5 +304,3 @@ Once verified, optionally rename placeholder back to `ClipEditorDialog.vue` to s
 | Category | Files | Est. Lines ||----------|-------|------------|| Main component | 1 | 6,700 || Tab components | 16 | ~4,000 || Sub-components | 17 | ~7,300 || Services | 1-3 | ~2,500 || Types | N/A | ~50 || **Total** | **35-37** | **~20,500** |
 
 ## Preserved Files
-
-- `ExistingProjectDialog.vue` - Used independently for project selection

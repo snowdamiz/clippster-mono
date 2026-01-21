@@ -231,7 +231,7 @@
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
-  import ClipEditorDialog from './clip-editor/ClipEditorDialog.vue';
+  import ClipEditorDialog from './clip-editor/ClipEditorDialogPlaceholder.vue';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
   import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
   import { useInEditorClips } from '@/stores/useInEditorClips';

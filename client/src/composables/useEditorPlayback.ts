@@ -72,9 +72,6 @@ export interface EditorPlaybackReturn {
  * 
  * Combines PlaybackEngine, TimelineRenderer, and AudioMixer into a single
  * easy-to-use interface for the video editor.
- * 
- * This is the main integration point between the new playback architecture
- * and the existing ClipEditorDialog/ClipEditorPreview components.
  */
 export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybackReturn {
   const {

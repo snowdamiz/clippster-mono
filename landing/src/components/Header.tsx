@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Menu, X, Apple, Monitor, Loader2, Clock } from 'lucide-react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 import { useDownloadContext } from '../context/DownloadContext'
 
@@ -18,6 +18,7 @@ export function Header() {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
   const { downloadsEnabled, openWaitlistModal } = useDownloadContext()
   const location = useLocation()
+  const navigate = useNavigate()
   
   const secondaryDownload = otherDownloads[0]
 
@@ -35,7 +36,8 @@ export function Header() {
     
     // If we're on a different page, navigate to home with hash
     if (location.pathname !== '/') {
-      window.location.href = '/' + href
+      // Use navigate for internal routing or direct navigation for hash
+      navigate('/' + href)
       return
     }
     

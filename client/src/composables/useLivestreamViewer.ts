@@ -1209,7 +1209,7 @@ export function useLivestreamViewer() {
     const session = activeSessions.value.get(streamerId);
     if (session) {
       state.value.sessionId = session.sessionId;
-      state.value.projectId = session.projectId;
+      state.value.projectId = session.projectId ?? null;
       state.value.isTempRecording = false;
 
       // Try to get the output directory for HLS playback
@@ -1675,7 +1675,7 @@ export function useLivestreamViewer() {
         const session = activeSessions.value.get(state.value.streamerId);
         if (session) {
           state.value.sessionId = session.sessionId;
-          state.value.projectId = session.projectId;
+          state.value.projectId = session.projectId ?? null;
           state.value.isTempRecording = false;
         }
       }
@@ -2062,7 +2062,7 @@ export function useLivestreamViewer() {
     async (session) => {
       if (session) {
         state.value.sessionId = session.sessionId;
-        state.value.projectId = session.projectId;
+        state.value.projectId = session.projectId ?? null;
 
         // Get the output directory for HLS playback if available
         try {

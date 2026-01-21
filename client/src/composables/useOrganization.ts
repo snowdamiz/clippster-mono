@@ -68,6 +68,18 @@ export interface OrganizationSubscription {
   seats_remaining: number | null;
 }
 
+export interface OrganizationRestrictionDefaults {
+  allow_ai?: boolean;
+  allow_asset_uploads?: boolean;
+  allow_custom_prompts?: boolean;
+  allow_clipper_profile?: boolean;
+  allow_personal_social?: boolean;
+  allow_clip_deletion?: boolean;
+  force_org_watermark?: boolean;
+  require_clip_approval?: boolean;
+  clips_visible_to_admins?: boolean;
+}
+
 export interface Organization {
   id: number;
   name: string;
@@ -76,6 +88,7 @@ export interface Organization {
   settings?: {
     allow_ai?: boolean;
   };
+  restriction_defaults?: OrganizationRestrictionDefaults;
 }
 
 // Cache duration: 2 minutes before background refresh

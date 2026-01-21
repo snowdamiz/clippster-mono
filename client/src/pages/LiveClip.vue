@@ -329,7 +329,7 @@
         :show="showDeleteStreamerDialog"
         title="Remove Streamer"
         message="Are you sure you want to remove"
-        :item-name="streamerToDelete?.displayName || streamerToDelete?.username"
+        :item-name="streamerToDelete?.displayName"
         suffix="from monitoring?"
         confirm-text="Remove"
         variant="destructive"

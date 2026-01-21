@@ -24,7 +24,7 @@ interface CreatorProfile {
     id: string;
     platform: string;
     platform_id: string;
-    display_name?: string;
+    display_name?: string | null;
   }>;
 }
 
@@ -51,7 +51,7 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
           const kickStatus = await checkKickLivestream(platformId);
           return {
             isLive: kickStatus.isLive,
-            streamId: kickStatus.channelId,
+            streamId: kickStatus.channelId?.toString(),
             streamStartTimestamp: kickStatus.startedAt
               ? new Date(kickStatus.startedAt).getTime()
               : undefined,

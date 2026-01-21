@@ -218,7 +218,7 @@
     <!-- Create/Edit Dialog -->
     <VideoEditorProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
 
-    <!-- Video Editor Dialog (using ClipEditorDialog in editor mode) -->
+    <!-- Video Editor Dialog (placeholder during rebuild) -->
     <ClipEditorDialog
       v-model="showEditorDialog"
       :editor-mode="true"
@@ -378,7 +378,7 @@
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import VideoEditorProjectDialog from '@/components/video-editor/VideoEditorProjectDialog.vue';
-  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
+  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialogPlaceholder.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
   import AuthModal from '@/components/AuthModal.vue';
   import { useAuthStore } from '@/stores/auth';

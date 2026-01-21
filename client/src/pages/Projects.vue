@@ -1244,7 +1244,7 @@
     type IntroOutroItem,
   } from '@/components/ClipBuildSettingsDialog.vue';
   import ClipsTab from '@/components/ClipsTab.vue';
-  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
+  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialogPlaceholder.vue';
   import ExistingProjectDialog from '@/components/clip-editor/ExistingProjectDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';

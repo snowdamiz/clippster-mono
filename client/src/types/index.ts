@@ -1114,58 +1114,8 @@ export type FilterPreset =
   | 'retro'
   | 'noir';
 
-// Clip Editor Dialog Props
-export interface ClipEditorDialogProps {
-  modelValue: boolean;
-  clipId: string;
-  videoSrc: string | null;
-  clipStartTime: number;
-  clipEndTime: number;
-  clipTitle: string;
-}
-
-// Editor tab types
-export type ClipEditorTab =
-  | 'media'
-  | 'audio'
-  | 'overlays'
-  | 'watermark'
-  | 'captions'
-  | 'aspect'
-  | 'effects'
-  | 'export';
-
-// Timeline track types for clip editor
-export interface EditorTimelineTrack {
-  id: string;
-  type: 'video' | 'audio' | 'text' | 'sticker' | 'effect';
-  name: string;
-  items: EditorTimelineItem[];
-  isLocked: boolean;
-  isVisible: boolean;
-  isMuted?: boolean;
-}
-
-export interface EditorTimelineItem {
-  id: string;
-  trackId: string;
-  type: 'video-segment' | 'audio-clip' | 'text-overlay' | 'sticker' | 'effect';
-  startTime: number;
-  endTime: number;
-  data: AudioTrack | TextOverlay | Sticker | Effect | TrimSegment;
-}
-
-// Editor preview state
-export interface EditorPreviewState {
-  isPlaying: boolean;
-  currentTime: number;
-  duration: number;
-  activeOverlays: (TextOverlay | Sticker)[];
-  activeEffects: Effect[];
-}
-
 // ==========================================
-// Clip Subtitle Types (for Clip Editor)
+// Clip Subtitle Types
 // ==========================================
 
 // Per-aspect-ratio configuration for subtitles (position, size, and width overrides)
