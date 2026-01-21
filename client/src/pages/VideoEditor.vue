@@ -378,7 +378,7 @@
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import VideoEditorProjectDialog from '@/components/video-editor/VideoEditorProjectDialog.vue';
-  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialogPlaceholder.vue';
+  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
   import AuthModal from '@/components/AuthModal.vue';
   import { useAuthStore } from '@/stores/auth';

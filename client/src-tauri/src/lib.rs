@@ -681,6 +681,7 @@ pub fn run() {
             audio::extract_audio_from_video,
             audio::extract_and_chunk_audio,
             audio::extract_audio_to_file,
+            audio::get_audio_duration,
 
             // Waveform commands
             waveform::extract_audio_waveform,

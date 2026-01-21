@@ -587,3 +587,33 @@ pub async fn extract_audio_to_file(
         duration,
     })
 }
+
+/// Get the duration of an audio file
+#[tauri::command]
+pub async fn get_audio_duration(
+    app: tauri::AppHandle,
+    file_path: String,
+) -> Result<f64, String> {
+    use tauri_plugin_shell::ShellExt;
+
+    println!("[Rust] get_audio_duration called with file_path: {}", file_path);
+
+    let shell = app.shell();
+    let duration_output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", &file_path,
+            "-f", "null",
+            "-"
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg for duration: {}", e))?;
+
+    let stderr = String::from_utf8_lossy(&duration_output.stderr);
+    let duration = parse_duration_from_ffmpeg_output(&stderr)
+        .map_err(|e| format!("Failed to parse audio duration: {}", e))?;
+
+    println!("[Rust] Audio duration: {:.2} seconds", duration);
+    Ok(duration)
+}
