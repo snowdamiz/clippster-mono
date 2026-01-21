@@ -45,7 +45,7 @@
             <!-- Center: Video Preview -->
             <div class="clip-editor__preview-wrapper">
               <ClipEditorPreview
-                :video-src="videoSrc"
+                :video-src="activeVideoUrl"
                 :current-time="currentTime"
                 :is-playing="isPlaying"
                 :aspect-ratio="selectedAspectRatio"
@@ -89,6 +89,8 @@
                 :selected-item="selectedItem"
                 :intro-ref="introRef"
                 :outro-ref="outroRef"
+                :video-source-path="videoSourcePath"
+                :video-sources="videoSources"
                 @seek="handleSeek"
                 @selectItem="handleSelectItem"
                 @updateItem="handleUpdateItem"
@@ -163,6 +165,19 @@ const activePanel = ref<string>('media');
 const selectedItem = ref<any>(null);
 const selectedItemType = ref<string | null>(null);
 
+// ===== Video Server Port =====
+const videoServerPort = ref<number | null>(null);
+
+// Get video server port
+async function initVideoServer() {
+  try {
+    videoServerPort.value = await invoke<number>('get_video_server_port');
+    console.log('[ClipEditorDialog] Video server port:', videoServerPort.value);
+  } catch (error) {
+    console.error('[ClipEditorDialog] Failed to get video server port:', error);
+  }
+}
+
 // ===== Playback Engine (Master Clock) =====
 const playbackEngine = usePlaybackEngine({
   onTimeUpdate: (time) => {
@@ -176,14 +191,58 @@ const playbackEngine = usePlaybackEngine({
 // Use playback engine state directly
 const currentTime = playbackEngine.currentTime;
 const isPlaying = playbackEngine.isPlaying;
-const duration = computed(() => {
-  const engineDuration = playbackEngine.duration.value;
-  if (engineDuration > 0) return engineDuration;
+const duration = playbackEngine.duration;
+
+// Active video URL from timeline
+const activeVideoUrl = computed(() => {
+  const timeline = playbackEngine.getTimeline();
   
-  // Fallback to clip data
-  if (!clipEdit.value) return 0;
-  const editData = JSON.parse(clipEdit.value.edit.edit_data || '{}');
-  return editData.duration || props.clipEndTime || 0;
+  if (!videoServerPort.value) {
+    console.log('[ClipEditorDialog] No video server port yet');
+    return null;
+  }
+  
+  if (!timeline || timeline.videoSources.length === 0) {
+    console.log('[ClipEditorDialog] No video sources in timeline');
+    return null;
+  }
+  
+  // Always use the first source for now (single-source clips)
+  const firstSource = timeline.videoSources[0];
+  if (!firstSource || !firstSource.file_path) {
+    console.log('[ClipEditorDialog] First source has no file path');
+    return null;
+  }
+  
+  const encodedPath = btoa(unescape(encodeURIComponent(firstSource.file_path)));
+  
+  // Check if this is a .ts file (MPEG-TS stream) - needs HLS wrapper
+  const isTsFile = firstSource.file_path.toLowerCase().endsWith('.ts');
+  
+  const url = isTsFile
+    ? `http://localhost:${videoServerPort.value}/ts-hls/${encodedPath}/playlist.m3u8`
+    : `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
+  
+  console.log('[ClipEditorDialog] Active video URL:', url, isTsFile ? '(HLS)' : '(Direct)');
+  return url;
+});
+
+// Video source path for waveform (local file path, not HTTP URL)
+const videoSourcePath = computed(() => {
+  const timeline = playbackEngine.getTimeline();
+  
+  if (!timeline || timeline.videoSources.length === 0) {
+    return null;
+  }
+  
+  const firstSource = timeline.videoSources[0];
+  return firstSource?.file_path || null;
+});
+
+// Video sources for timeline rendering
+const videoSources = computed(() => {
+  const timeline = playbackEngine.getTimeline();
+  return timeline?.videoSources || [];
 });
 
 // ===== View State =====
@@ -215,7 +274,7 @@ const redoDescription = computed(() => commandHistory.getNextRedoDescription());
 // ===== Data Loading =====
 async function loadEditorData() {
   if (!props.editorProjectId) {
-    console.warn('[ClipEditorDialog] No project ID provided');
+    console.log('[ClipEditorDialog] No project ID provided - dialog not active or project not selected');
     return;
   }
 
@@ -282,9 +341,69 @@ function handleTimeUpdate(time: number) {
 }
 
 // ===== Timeline Controls =====
-function handleSplit() {
-  console.log('[ClipEditorDialog] Split at:', currentTime.value);
-  // TODO: Implement split command
+async function handleSplit() {
+  if (!projectId.value) {
+    console.warn('[ClipEditorDialog] Cannot split: no project ID');
+    return;
+  }
+
+  const splitTime = currentTime.value;
+  console.log('[ClipEditorDialog] Split at:', splitTime);
+
+  try {
+    // Get project sources to find which source contains the current time
+    const projectData = await getVideoEditorProjectWithSources(projectId.value);
+    if (!projectData || projectData.sources.length === 0) {
+      console.warn('[ClipEditorDialog] No sources to split');
+      return;
+    }
+
+    // Find the source that contains the current time
+    let sourceIndexToSplit = -1;
+    for (let i = 0; i < projectData.sources.length; i++) {
+      const source = projectData.sources[i];
+      if (splitTime >= source.start_time && splitTime < source.end_time) {
+        sourceIndexToSplit = i;
+        break;
+      }
+    }
+
+    if (sourceIndexToSplit === -1) {
+      console.warn('[ClipEditorDialog] Current time is not within any source');
+      return;
+    }
+
+    // Create and execute split command
+    const { SplitSourceCommand } = await import('@/services/commands/SplitSourceCommand');
+    const command = new SplitSourceCommand(projectId.value, sourceIndexToSplit, splitTime);
+    
+    await commandHistory.executeCommand(command);
+    
+    console.log('[ClipEditorDialog] Split executed successfully');
+    
+    // Reload editor data to show the split
+    await loadEditorData();
+    
+    // Reload timeline to show new sources
+    const updatedProjectData = await getVideoEditorProjectWithSources(projectId.value);
+    if (updatedProjectData) {
+      playbackEngine.setTimeline({
+        duration: updatedProjectData.total_duration,
+        videoSources: updatedProjectData.sources.map(s => ({
+          id: s.id,
+          file_path: s.source_path,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          trim_start: s.trim_start,
+          trim_end: s.trim_end,
+          original_duration: s.source_duration || (s.end_time - s.start_time),
+        })),
+        audioTracks: [],
+      });
+    }
+  } catch (error) {
+    console.error('[ClipEditorDialog] Failed to split:', error);
+  }
 }
 
 function handleDelete() {
@@ -294,27 +413,37 @@ function handleDelete() {
 }
 
 async function handleDetachAudio() {
-  if (!props.videoSrc || !clipEditId.value) return;
+  if (!projectId.value || !editId.value) return;
   
-  console.log('[ClipEditorDialog] Detaching audio from video');
+  console.log('[ClipEditorDialog] Detaching audio from video sources');
   
   try {
-    // Extract audio to file
+    // Get project sources to find the video to extract from
+    const projectData = await getVideoEditorProjectWithSources(projectId.value);
+    if (!projectData || projectData.sources.length === 0) {
+      console.warn('[ClipEditorDialog] No video sources found');
+      return;
+    }
+
+    // Extract audio from first source
+    const firstSource = projectData.sources[0];
     const result = await invoke<{ file_path: string; filename: string; duration: number }>(
       'extract_audio_to_file',
       {
-        videoPath: props.videoSrc,
-        sourceId: 'main',
-        trimStart: props.clipStartTime || 0,
-        trimDuration: (props.clipEndTime || 0) - (props.clipStartTime || 0),
+        videoPath: firstSource.source_path,
+        sourceId: firstSource.id,
+        trimStart: firstSource.trim_start,
+        trimDuration: firstSource.trim_end 
+          ? firstSource.trim_end - firstSource.trim_start 
+          : firstSource.source_duration || (firstSource.end_time - firstSource.start_time),
       }
     );
 
     console.log('[ClipEditorDialog] Audio extracted:', result);
 
     // Create audio track in database
-    const { createAudioTrack } = await import('@/services/database/clip-edits');
-    await createAudioTrack(clipEditId.value, {
+    const { createVideoEditorAudioTrack } = await import('@/services/database/video-editor-edits');
+    await createVideoEditorAudioTrack(editId.value, {
       file_path: result.file_path,
       name: 'Extracted Audio',
       start_time: 0,
@@ -326,11 +455,11 @@ async function handleDetachAudio() {
       track_order: 0,
       is_muted: 0,
       is_solo: 0,
-      source_id: 'main',
+      source_id: firstSource.id,
     });
 
-    // Reload clip edit to show new audio track
-    await loadClipEdit();
+    // Reload editor data to show new audio track
+    await loadEditorData();
     
     console.log('[ClipEditorDialog] Audio detached successfully');
   } catch (error) {
@@ -339,8 +468,8 @@ async function handleDetachAudio() {
 }
 
 async function handleTracksUpdated() {
-  // Reload clip edit to refresh audio tracks
-  await loadClipEdit();
+  // Reload editor data to refresh tracks
+  await loadEditorData();
 }
 
 // Handle text added
@@ -444,7 +573,7 @@ async function handleRedo() {
 
 // ===== Export =====
 function handleExport() {
-  console.log('[ClipEditorDialog] Export clip with edit data:', clipEdit.value);
+  console.log('[ClipEditorDialog] Export project with edit data:', editorEdit.value);
   
   // Close this dialog and trigger export flow
   handleClose();
@@ -508,6 +637,20 @@ function handleKeyDown(event: KeyboardEvent) {
     return;
   }
 
+  // S - Split at playhead
+  if (event.key === 's' && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+    event.preventDefault();
+    handleSplit();
+    return;
+  }
+
+  // Delete/Backspace - Delete selected item
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    event.preventDefault();
+    handleDelete();
+    return;
+  }
+
   // Esc - Close
   if (event.key === 'Escape') {
     event.preventDefault();
@@ -516,17 +659,14 @@ function handleKeyDown(event: KeyboardEvent) {
   }
 }
 
-// ===== Lifecycle =====
-onMounted(async () => {
-  console.log('[ClipEditorDialog] Mounted with props:', props);
-  
-  // Load editor data
-  await loadEditorData();
-  
-  // Initialize playback engine timeline from video editor project
-  if (props.editorProjectId) {
-    const projectData = await getVideoEditorProjectWithSources(props.editorProjectId);
+// Watch for dialog open and project ID changes
+watch(() => [props.modelValue, props.editorProjectId], async ([isOpen, projectId]) => {
+  if (isOpen && projectId) {
+    console.log('[ClipEditorDialog] Dialog opened with project:', projectId);
+    await loadEditorData();
     
+    // Load project sources and initialize timeline
+    const projectData = await getVideoEditorProjectWithSources(projectId);
     if (projectData) {
       playbackEngine.setTimeline({
         duration: projectData.total_duration,
@@ -541,16 +681,17 @@ onMounted(async () => {
         })),
         audioTracks: [],
       });
-      console.log('[ClipEditorDialog] Loaded project with', projectData.sources.length, 'video sources');
+      console.log('[ClipEditorDialog] Timeline initialized with', projectData.sources.length, 'video sources');
     }
-  } else {
-    // No project yet - empty timeline
-    playbackEngine.setTimeline({
-      duration: 0,
-      videoSources: [],
-      audioTracks: [],
-    });
   }
+}, { immediate: true });
+
+// ===== Lifecycle =====
+onMounted(async () => {
+  console.log('[ClipEditorDialog] Mounted with props:', props);
+
+  // Initialize video server
+  await initVideoServer();
 
   // Register keyboard shortcuts
   window.addEventListener('keydown', handleKeyDown);

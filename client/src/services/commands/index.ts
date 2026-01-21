@@ -7,3 +7,4 @@
 export type { ICommand } from './Command';
 export { BaseCommand } from './Command';
 export { CommandHistory, commandHistory } from './CommandHistory';
+export { SplitSourceCommand } from './SplitSourceCommand';

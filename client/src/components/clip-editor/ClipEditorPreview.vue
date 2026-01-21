@@ -282,6 +282,15 @@ function handleOverlayClick(event: MouseEvent) {
   // This will be used for click-to-place mode in future steps
 }
 
+// Watch for video source changes
+watch(() => props.videoSrc, (newSrc) => {
+  console.log('[ClipEditorPreview] Video src changed to:', newSrc);
+  if (videoRef.value && newSrc) {
+    videoRef.value.src = newSrc;
+    videoRef.value.load();
+  }
+}, { immediate: true });
+
 // Sync video element with props
 watch(() => props.currentTime, (newTime) => {
   if (videoRef.value && Math.abs(videoRef.value.currentTime - newTime) > 0.1) {
