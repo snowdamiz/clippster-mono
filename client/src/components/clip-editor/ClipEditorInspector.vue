@@ -3,6 +3,9 @@
     <div v-if="selectedItem" class="editor-inspector">
       <div class="editor-inspector__header">
         <h3 class="editor-inspector__title">Inspector</h3>
+        <button class="editor-inspector__close-button" @click="$emit('close')" title="Close inspector">
+          <X :size="16" />
+        </button>
       </div>
 
       <div class="editor-inspector__content">
@@ -48,7 +51,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Info } from 'lucide-vue-next';
+import { Info, X } from 'lucide-vue-next';
 import AudioInspector from './inspector/AudioInspector.vue';
 import TextInspector from './inspector/TextInspector.vue';
 import StickerInspector from './inspector/StickerInspector.vue';
@@ -68,8 +71,9 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'update', updates: any): void;
+  (e: 'update', data: any): void;
   (e: 'itemDeleted'): void;
+  (e: 'close'): void;
 }>();
 
 // Handle property updates
@@ -138,6 +142,9 @@ const selectedItemTypeLabel = computed(() => {
 }
 
 .editor-inspector__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 1rem;
   border-bottom: 1px solid var(--editor-border);
   background: linear-gradient(180deg, var(--editor-surface-elevated) 0%, var(--editor-surface) 100%);
@@ -150,6 +157,25 @@ const selectedItemTypeLabel = computed(() => {
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.editor-inspector__close-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--editor-text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.editor-inspector__close-button:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--editor-text);
 }
 
 .editor-inspector__content {

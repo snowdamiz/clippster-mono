@@ -6,15 +6,10 @@
           <div v-if="modelValue" class="clip-editor" role="dialog" aria-modal="true">
             <!-- Header -->
             <ClipEditorHeader
-              :title="clipTitle || 'Untitled Clip'"
-              :can-undo="canUndo"
-              :can-redo="canRedo"
-              :undo-description="undoDescription"
-              :redo-description="redoDescription"
-              @undo="handleUndo"
-              @redo="handleRedo"
+              :title="editorTitle"
               @export="handleExport"
               @close="handleClose"
+              @titleUpdate="handleTitleUpdate"
             />
 
             <!-- Main Content Area -->
@@ -23,6 +18,7 @@
             <ClipEditorSidebar
               v-model:active-panel="activePanel"
               :edit-id="editId"
+              :project-id="projectId"
               :current-time="currentTime"
               :creator-watermark-id="props.creatorWatermarkId"
               :creator-watermark-settings="watermarkSettings"
@@ -30,6 +26,8 @@
               :creator-default-outro="outroRef"
               :has-inspector="!!selectedItem"
               @panelChange="onPanelChange"
+              @mediaAdded="handleMediaAdded"
+              @mediaUpdated="handleMediaUpdated"
               @detachAudio="handleDetachAudio"
               @tracksUpdated="handleTracksUpdated"
               @textAdded="handleTextAdded"
@@ -52,6 +50,8 @@
                 :aspect-ratio="selectedAspectRatio"
                 :editor-edit="editorEdit"
                 :watermark-settings="watermarkSettings"
+                :duration="duration"
+                :video-content-duration="videoContentDuration"
                 @play="handlePlay"
                 @pause="handlePause"
                 @seek="handleSeek"
@@ -66,6 +66,7 @@
                 :edit-id="editId"
                 @update="handleInspectorUpdate"
                 @itemDeleted="handleItemDeleted"
+                @close="handleInspectorClose"
               />
             </div>
 
@@ -75,11 +76,17 @@
                 :zoom-level="zoomLevel"
                 :current-time="currentTime"
                 :duration="duration"
+                :can-undo="canUndo"
+                :can-redo="canRedo"
+                :undo-description="undoDescription"
+                :redo-description="redoDescription"
                 @split="handleSplit"
                 @delete="handleDelete"
                 @detachAudio="handleDetachAudio"
                 @zoomIn="handleZoomIn"
                 @zoomOut="handleZoomOut"
+                @undo="handleUndo"
+                @redo="handleRedo"
               />
               
               <ClipEditorTimeline
@@ -95,6 +102,7 @@
                 @seek="handleSeek"
                 @selectItem="handleSelectItem"
                 @updateItem="handleUpdateItem"
+                @itemDeselected="handleInspectorClose"
               />
             </div>
           </div>
@@ -120,6 +128,7 @@ import {
 } from '@/services/database/video-editor-projects';
 import type { IntroOutroRef } from '@/types';
 import { usePlaybackEngine } from '@/composables/usePlaybackEngine';
+import { getProject, updateProject } from '@/services/database/projects';
 
 import { Film } from 'lucide-vue-next';
 import ClipEditorHeader from './ClipEditorHeader.vue';
@@ -162,6 +171,7 @@ const emit = defineEmits<{
 const editId = ref<string | null>(null);
 const editorEdit = ref<FullVideoEditorEdit | null>(null);
 const projectId = ref<string | null>(null);
+const editorTitle = ref<string>('Untitled Clip');
 const activePanel = ref<string>('media');
 const selectedItem = ref<any>(null);
 const selectedItemType = ref<string | null>(null);
@@ -246,9 +256,21 @@ const videoSources = computed(() => {
   return timeline?.videoSources || [];
 });
 
+// Calculate the actual video content duration (max end time of video sources)
+const videoContentDuration = computed(() => {
+  const timeline = playbackEngine.getTimeline();
+  if (!timeline || timeline.videoSources.length === 0) {
+    return 0;
+  }
+  
+  // Get the maximum end time of all video sources
+  const maxEndTime = Math.max(...timeline.videoSources.map(s => s.end_time));
+  return maxEndTime;
+});
+
 // ===== View State =====
 const selectedAspectRatio = ref<string>('16:9');
-const zoomLevel = ref(1);
+const zoomLevel = ref(0.1); // Start zoomed out to show full timeline
 
 // ===== Creator Profile Props =====
 const watermarkSettings = computed(() => {
@@ -283,6 +305,18 @@ async function loadEditorData() {
     console.log(`[ClipEditorDialog] Loading video editor project: ${props.editorProjectId}`);
     
     projectId.value = props.editorProjectId;
+    
+    // Load project to get the name/title (always use database as source of truth)
+    const project = await getProject(props.editorProjectId);
+    if (project && project.name) {
+      editorTitle.value = project.name;
+    } else if (props.clipTitle) {
+      editorTitle.value = props.clipTitle;
+    } else if (props.editorProjectName) {
+      editorTitle.value = props.editorProjectName;
+    } else {
+      editorTitle.value = 'Untitled Clip';
+    }
     
     // Get or create video editor edit
     const editRecord = await getOrCreateVideoEditorEdit(props.editorProjectId);
@@ -349,68 +383,258 @@ async function handleSplit() {
   }
 
   const splitTime = currentTime.value;
-  console.log('[ClipEditorDialog] Split at:', splitTime);
+  console.log('[ClipEditorDialog] Split at:', splitTime, 'Selected:', selectedItemType.value);
 
   try {
-    // Get project sources to find which source contains the current time
-    const projectData = await getVideoEditorProjectWithSources(projectId.value);
-    if (!projectData || projectData.sources.length === 0) {
-      console.warn('[ClipEditorDialog] No sources to split');
-      return;
+    // If an item is selected, split that specific item
+    if (selectedItem.value && selectedItemType.value) {
+      await splitSelectedItem(splitTime);
+    } else {
+      // Otherwise, split video source at playhead (legacy behavior)
+      await splitVideoSource(splitTime);
     }
-
-    // Find the source that contains the current time
-    let sourceIndexToSplit = -1;
-    for (let i = 0; i < projectData.sources.length; i++) {
-      const source = projectData.sources[i];
-      if (splitTime >= source.start_time && splitTime < source.end_time) {
-        sourceIndexToSplit = i;
-        break;
-      }
-    }
-
-    if (sourceIndexToSplit === -1) {
-      console.warn('[ClipEditorDialog] Current time is not within any source');
-      return;
-    }
-
-    // Create and execute split command
-    const { SplitSourceCommand } = await import('@/services/commands/SplitSourceCommand');
-    const command = new SplitSourceCommand(projectId.value, sourceIndexToSplit, splitTime);
     
-    await commandHistory.executeCommand(command);
-    
-    console.log('[ClipEditorDialog] Split executed successfully');
-    
-    // Reload editor data to show the split
+    // Reload editor data and timeline
     await loadEditorData();
-    
-    // Reload timeline to show new sources
-    const updatedProjectData = await getVideoEditorProjectWithSources(projectId.value);
-    if (updatedProjectData) {
-      playbackEngine.setTimeline({
-        duration: updatedProjectData.total_duration,
-        videoSources: updatedProjectData.sources.map(s => ({
-          id: s.id,
-          file_path: s.source_path,
-          start_time: s.start_time,
-          end_time: s.end_time,
-          trim_start: s.trim_start,
-          trim_end: s.trim_end,
-          original_duration: s.source_duration || (s.end_time - s.start_time),
-        })),
-        audioTracks: [],
-      });
-    }
+    await reloadTimeline();
   } catch (error) {
     console.error('[ClipEditorDialog] Failed to split:', error);
   }
 }
 
-function handleDelete() {
-  if (!selectedItem.value) return;
+async function splitSelectedItem(splitTime: number) {
+  const item = selectedItem.value;
+  const type = selectedItemType.value;
+  
+  // Check if split time is within the item's range
+  if (splitTime <= item.start_time || splitTime >= item.end_time) {
+    console.warn('[ClipEditorDialog] Split time is not within item range');
+    return;
+  }
+  
+  console.log(`[ClipEditorDialog] Splitting ${type} at ${splitTime}`);
+  
+  if (type === 'audio') {
+    const { updateVideoEditorAudioTrack, createVideoEditorAudioTrack } = await import('@/services/database/video-editor-edits');
+    
+    // Update original track to end at split time
+    await updateVideoEditorAudioTrack(item.id, { end_time: splitTime });
+    
+    // Create new track from split time to original end
+    await createVideoEditorAudioTrack(editId.value!, {
+      file_path: item.file_path,
+      name: item.name,
+      start_time: splitTime,
+      end_time: item.end_time,
+      volume: item.volume,
+      pan: item.pan || 0,
+      fade_in: item.fade_in || 0,
+      fade_out: item.fade_out || 0,
+      track_order: item.track_order,
+      is_muted: item.is_muted,
+      is_solo: item.is_solo || 0,
+      source_id: item.source_id,
+    });
+  } else if (type === 'text') {
+    const { updateVideoEditorTextOverlay, createVideoEditorTextOverlay } = await import('@/services/database/video-editor-edits');
+    
+    await updateVideoEditorTextOverlay(item.id, { end_time: splitTime });
+    
+    await createVideoEditorTextOverlay(editId.value!, {
+      text: item.text,
+      start_time: splitTime,
+      end_time: item.end_time,
+      position_x: item.position_x,
+      position_y: item.position_y,
+      style_data: item.style_data,
+      animation: item.animation,
+      layer: item.layer,
+      per_ratio_configs_data: item.per_ratio_configs_data,
+      preview_height: item.preview_height,
+    });
+  } else if (type === 'sticker') {
+    const { updateVideoEditorSticker, createVideoEditorSticker } = await import('@/services/database/video-editor-edits');
+    
+    await updateVideoEditorSticker(item.id, { end_time: splitTime });
+    
+    await createVideoEditorSticker(editId.value!, {
+      sticker_path: item.sticker_path,
+      sticker_type: item.sticker_type,
+      start_time: splitTime,
+      end_time: item.end_time,
+      position_x: item.position_x,
+      position_y: item.position_y,
+      scale: item.scale,
+      rotation: item.rotation || 0,
+      animation: item.animation,
+      layer: item.layer,
+      per_ratio_configs_data: item.per_ratio_configs_data,
+    });
+  } else if (type === 'watermark') {
+    const { updateVideoEditorWatermark, createVideoEditorWatermark } = await import('@/services/database/video-editor-edits');
+    
+    await updateVideoEditorWatermark(item.id, { end_time: splitTime });
+    
+    await createVideoEditorWatermark(editId.value!, {
+      watermark_id: item.watermark_id,
+      watermark_path: item.watermark_path,
+      preview_url: item.preview_url,
+      start_time: splitTime,
+      end_time: item.end_time,
+      position_x: item.position_x,
+      position_y: item.position_y,
+      scale: item.scale,
+      opacity: item.opacity || 1,
+      layer: item.layer,
+    });
+  }
+  
+  console.log(`[ClipEditorDialog] ${type} split successfully`);
+}
+
+async function splitVideoSource(splitTime: number) {
+  // Get project sources to find which source contains the current time
+  const projectData = await getVideoEditorProjectWithSources(projectId.value!);
+  if (!projectData || projectData.sources.length === 0) {
+    console.warn('[ClipEditorDialog] No sources to split');
+    return;
+  }
+
+  // Find the source that contains the current time
+  let sourceIndexToSplit = -1;
+  for (let i = 0; i < projectData.sources.length; i++) {
+    const source = projectData.sources[i];
+    if (splitTime >= source.start_time && splitTime < source.end_time) {
+      sourceIndexToSplit = i;
+      break;
+    }
+  }
+
+  if (sourceIndexToSplit === -1) {
+    console.warn('[ClipEditorDialog] Current time is not within any source');
+    return;
+  }
+
+  // Create and execute split command
+  const { SplitSourceCommand } = await import('@/services/commands/SplitSourceCommand');
+  const command = new SplitSourceCommand(projectId.value!, sourceIndexToSplit, splitTime);
+  
+  await commandHistory.executeCommand(command);
+  
+  console.log('[ClipEditorDialog] Video source split successfully');
+}
+
+async function reloadTimeline() {
+  const updatedProjectData = await getVideoEditorProjectWithSources(projectId.value!);
+  if (updatedProjectData) {
+    const audioTracksData = editorEdit.value?.audioTracks || [];
+    
+    // Calculate actual duration based on all tracks
+    const maxDuration = calculateMaxDuration(updatedProjectData, audioTracksData);
+    
+    playbackEngine.setTimeline({
+      duration: maxDuration,
+      videoSources: updatedProjectData.sources.map(s => ({
+        id: s.id,
+        file_path: s.source_path,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        trim_start: s.trim_start,
+        trim_end: s.trim_end,
+        original_duration: s.source_duration || (s.end_time - s.start_time),
+      })),
+      audioTracks: audioTracksData.map(track => ({
+        id: track.id,
+        filePath: track.file_path,
+        startTime: track.start_time,
+        endTime: track.end_time,
+        volume: track.volume,
+        isMuted: track.is_muted === 1,
+        fadeInDuration: track.fade_in,
+        fadeOutDuration: track.fade_out,
+      })),
+    });
+  }
+}
+
+function calculateMaxDuration(projectData: any, audioTracks: any[]): number {
+  let maxDuration = 0;
+  
+  // Check video sources
+  if (projectData.sources && projectData.sources.length > 0) {
+    const videoEnd = Math.max(...projectData.sources.map((s: any) => s.end_time));
+    maxDuration = Math.max(maxDuration, videoEnd);
+  }
+  
+  // Check audio tracks
+  if (audioTracks && audioTracks.length > 0) {
+    const audioEnd = Math.max(...audioTracks.map((t: any) => t.end_time));
+    maxDuration = Math.max(maxDuration, audioEnd);
+  }
+  
+  // Check text overlays
+  if (editorEdit.value?.textOverlays && editorEdit.value.textOverlays.length > 0) {
+    const textEnd = Math.max(...editorEdit.value.textOverlays.map((t: any) => t.end_time));
+    maxDuration = Math.max(maxDuration, textEnd);
+  }
+  
+  // Check stickers
+  if (editorEdit.value?.stickers && editorEdit.value.stickers.length > 0) {
+    const stickerEnd = Math.max(...editorEdit.value.stickers.map((s: any) => s.end_time));
+    maxDuration = Math.max(maxDuration, stickerEnd);
+  }
+  
+  // Check watermarks
+  if (editorEdit.value?.watermarks && editorEdit.value.watermarks.length > 0) {
+    const watermarkEnd = Math.max(...editorEdit.value.watermarks.map((w: any) => w.end_time));
+    maxDuration = Math.max(maxDuration, watermarkEnd);
+  }
+  
+  return maxDuration;
+}
+
+async function handleDelete() {
+  if (!selectedItem.value || !selectedItemType.value) return;
+  
   console.log('[ClipEditorDialog] Delete:', selectedItemType.value, selectedItem.value);
-  // TODO: Implement delete command
+  
+  try {
+    const itemId = selectedItem.value.id;
+    
+    // Import the appropriate delete function based on item type
+    if (selectedItemType.value === 'audio') {
+      const { deleteVideoEditorAudioTrack } = await import('@/services/database/video-editor-edits');
+      await deleteVideoEditorAudioTrack(itemId);
+      console.log('[ClipEditorDialog] Audio track deleted');
+    } else if (selectedItemType.value === 'text') {
+      const { deleteVideoEditorTextOverlay } = await import('@/services/database/video-editor-edits');
+      await deleteVideoEditorTextOverlay(itemId);
+      console.log('[ClipEditorDialog] Text overlay deleted');
+    } else if (selectedItemType.value === 'sticker') {
+      const { deleteVideoEditorSticker } = await import('@/services/database/video-editor-edits');
+      await deleteVideoEditorSticker(itemId);
+      console.log('[ClipEditorDialog] Sticker deleted');
+    } else if (selectedItemType.value === 'watermark') {
+      const { deleteVideoEditorWatermark } = await import('@/services/database/video-editor-edits');
+      await deleteVideoEditorWatermark(itemId);
+      console.log('[ClipEditorDialog] Watermark deleted');
+    } else {
+      console.warn('[ClipEditorDialog] Unknown item type:', selectedItemType.value);
+      return;
+    }
+    
+    // Clear selection
+    selectedItem.value = null;
+    selectedItemType.value = null;
+    
+    // Reload editor data and recalculate timeline duration
+    await loadEditorData();
+    await reloadTimeline();
+    
+    console.log('[ClipEditorDialog] Item deleted and timeline updated');
+  } catch (error) {
+    console.error('[ClipEditorDialog] Failed to delete item:', error);
+  }
 }
 
 async function handleDetachAudio() {
@@ -563,6 +787,12 @@ watch(selectedItem, (newItem) => {
   }
 });
 
+// Handle inspector close
+function handleInspectorClose() {
+  selectedItem.value = null;
+  selectedItemType.value = null;
+}
+
 // ===== Undo/Redo =====
 async function handleUndo() {
   try {
@@ -580,9 +810,69 @@ async function handleRedo() {
   }
 }
 
+// ===== Title Management =====
+async function handleTitleUpdate(newTitle: string) {
+  editorTitle.value = newTitle;
+  
+  // Update the project name in the database
+  if (props.editorProjectId) {
+    try {
+      await updateProject(props.editorProjectId, { name: newTitle });
+      console.log('[ClipEditorDialog] Project title updated:', newTitle);
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to update project title:', error);
+    }
+  }
+}
+
+// ===== Media Management =====
+async function handleMediaAdded(mediaId: string) {
+  console.log('[ClipEditorDialog] Media added to timeline:', mediaId);
+  // Reload the editor data to show the new audio track
+  await loadEditorData();
+  
+  // Reload the project to get updated duration
+  if (props.editorProjectId) {
+    const projectData = await getVideoEditorProjectWithSources(props.editorProjectId);
+    if (projectData) {
+      const audioTracksData = editorEdit.value?.audioTracks || [];
+      
+      playbackEngine.setTimeline({
+        duration: projectData.total_duration,
+        videoSources: projectData.sources.map(s => ({
+          id: s.id,
+          file_path: s.source_path,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          trim_start: s.trim_start,
+          trim_end: s.trim_end,
+          original_duration: s.source_duration || (s.end_time - s.start_time),
+        })),
+        audioTracks: audioTracksData.map(track => ({
+          id: track.id,
+          filePath: track.file_path,
+          startTime: track.start_time,
+          endTime: track.end_time,
+          volume: track.volume,
+          isMuted: track.is_muted === 1,
+          fadeInDuration: track.fade_in,
+          fadeOutDuration: track.fade_out,
+        })),
+      });
+      console.log('[ClipEditorDialog] Timeline updated with new duration:', projectData.total_duration);
+    }
+  }
+}
+
+function handleMediaUpdated() {
+  console.log('[ClipEditorDialog] Media library updated');
+  // Refresh any media-related state if needed
+}
+
 // ===== Export =====
 function handleExport() {
   console.log('[ClipEditorDialog] Export project with edit data:', editorEdit.value);
+  console.log('[ClipEditorDialog] Export filename will be:', editorTitle.value);
   
   // Close this dialog and trigger export flow
   handleClose();
@@ -677,6 +967,9 @@ watch(() => [props.modelValue, props.editorProjectId], async ([isOpen, projectId
     // Load project sources and initialize timeline
     const projectData = await getVideoEditorProjectWithSources(projectId);
     if (projectData) {
+      // Get audio tracks from editorEdit
+      const audioTracksData = editorEdit.value?.audioTracks || [];
+      
       playbackEngine.setTimeline({
         duration: projectData.total_duration,
         videoSources: projectData.sources.map(s => ({
@@ -688,9 +981,18 @@ watch(() => [props.modelValue, props.editorProjectId], async ([isOpen, projectId
           trim_end: s.trim_end,
           original_duration: s.source_duration || (s.end_time - s.start_time),
         })),
-        audioTracks: [],
+        audioTracks: audioTracksData.map(track => ({
+          id: track.id,
+          filePath: track.file_path,
+          startTime: track.start_time,
+          endTime: track.end_time,
+          volume: track.volume,
+          isMuted: track.is_muted === 1,
+          fadeInDuration: track.fade_in,
+          fadeOutDuration: track.fade_out,
+        })),
       });
-      console.log('[ClipEditorDialog] Timeline initialized with', projectData.sources.length, 'video sources');
+      console.log('[ClipEditorDialog] Timeline initialized with', projectData.sources.length, 'video sources and', audioTracksData.length, 'audio tracks');
     }
   }
 }, { immediate: true });
@@ -721,21 +1023,27 @@ onUnmounted(() => {
 <style scoped>
 .clip-editor-overlay {
   position: fixed;
-  inset: 0;
+  top: 32px; /* Account for custom titlebar */
+  left: 0;
+  right: 0;
+  bottom: 0;
   background-color: rgba(0, 0, 0, 0.98);
   backdrop-filter: blur(16px);
   z-index: 10000;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
 }
 
 .clip-editor {
-  background-color: var(--editor-bg);
   width: 100%;
   height: 100%;
-  max-width: 100vw;
-  max-height: 100vh;
+  background-color: var(--editor-bg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-top: 0;
+  box-sizing: border-box;
 }
 
 .clip-editor__content {

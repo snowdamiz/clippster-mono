@@ -29,6 +29,29 @@
     </div>
 
     <div class="editor-toolbar__right">
+      <!-- Undo/Redo -->
+      <button
+        class="editor-toolbar__button"
+        :class="{ 'editor-toolbar__button--disabled': !canUndo }"
+        :disabled="!canUndo"
+        :title="undoDescription ? `Undo: ${undoDescription}` : 'Undo (Ctrl+Z)'"
+        @click="$emit('undo')"
+      >
+        <Undo2 :size="16" />
+        <span>Undo</span>
+      </button>
+
+      <button
+        class="editor-toolbar__button"
+        :class="{ 'editor-toolbar__button--disabled': !canRedo }"
+        :disabled="!canRedo"
+        :title="redoDescription ? `Redo: ${redoDescription}` : 'Redo (Ctrl+Y)'"
+        @click="$emit('redo')"
+      >
+        <Redo2 :size="16" />
+        <span>Redo</span>
+      </button>
+
       <!-- Tools -->
       <button
         class="editor-toolbar__button"
@@ -61,12 +84,16 @@
 </template>
 
 <script setup lang="ts">
-import { ZoomIn, ZoomOut, Scissors, Trash2, Music } from 'lucide-vue-next';
+import { ZoomIn, ZoomOut, Scissors, Trash2, Music, Undo2, Redo2 } from 'lucide-vue-next';
 
 defineProps<{
   zoomLevel: number;
   currentTime: number;
   duration: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  undoDescription: string | null;
+  redoDescription: string | null;
 }>();
 
 defineEmits<{
@@ -75,6 +102,8 @@ defineEmits<{
   (e: 'detachAudio'): void;
   (e: 'zoomIn'): void;
   (e: 'zoomOut'): void;
+  (e: 'undo'): void;
+  (e: 'redo'): void;
 }>();
 
 function formatTime(seconds: number): string {
@@ -150,9 +179,14 @@ function formatTime(seconds: number): string {
   font-weight: 500;
 }
 
-.editor-toolbar__button:hover {
+.editor-toolbar__button:hover:not(:disabled) {
   background-color: rgba(14, 165, 233, 0.15);
   color: var(--editor-accent);
+}
+
+.editor-toolbar__button--disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 </style>
 

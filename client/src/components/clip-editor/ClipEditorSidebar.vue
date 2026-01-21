@@ -1,5 +1,5 @@
 <template>
-  <div class="editor-sidebar">
+  <div class="editor-sidebar" :class="{ 'editor-sidebar--expanded': activePanel }">
     <div class="editor-sidebar__tabs">
       <button
         v-for="panel in panels"
@@ -15,8 +15,23 @@
     </div>
 
     <div v-if="activePanel" class="editor-sidebar__content">
+      <div class="editor-sidebar__content-header">
+        <h3 class="editor-sidebar__content-title">{{ currentPanelLabel }}</h3>
+        <button class="editor-sidebar__close-button" @click="closePanel" title="Close panel">
+          <X :size="16" />
+        </button>
+      </div>
       <!-- Panel content will be rendered here based on activePanel -->
       <div class="editor-sidebar__panel">
+        <!-- Media Panel -->
+        <MediaPanel
+          v-if="activePanel === 'media'"
+          :edit-id="editId"
+          :project-id="projectId"
+          @mediaAdded="$emit('mediaAdded', $event)"
+          @mediaUpdated="$emit('mediaUpdated')"
+        />
+
         <!-- Audio Panel -->
         <AudioPanel
           v-if="activePanel === 'audio'"
@@ -84,6 +99,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { IntroOutroRef } from '@/types';
+import MediaPanel from './panels/MediaPanel.vue';
 import AudioPanel from './panels/AudioPanel.vue';
 import TextPanel from './panels/TextPanel.vue';
 import StickersPanel from './panels/StickersPanel.vue';
@@ -101,12 +117,14 @@ import {
   Palette,
   Crop,
   Image,
-  Video
+  Video,
+  X
 } from 'lucide-vue-next';
 
 const props = defineProps<{
   activePanel: string;
   editId: string | null;
+  projectId?: string | null;
   currentTime?: number;
   creatorWatermarkId?: string | null;
   creatorWatermarkSettings?: any;
@@ -118,6 +136,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:activePanel', value: string): void;
   (e: 'panelChange', value: string): void;
+  (e: 'mediaAdded', mediaId: string): void;
+  (e: 'mediaUpdated'): void;
   (e: 'detachAudio'): void;
   (e: 'tracksUpdated'): void;
   (e: 'textAdded', textId: string): void;
@@ -154,14 +174,19 @@ const currentPanelLabel = computed(() => {
 });
 
 function selectPanel(panelId: string) {
-  // If inspector is active and clicking the same tab, close the panel
-  if (props.hasInspector && props.activePanel === panelId) {
+  // Clicking the same tab always closes the panel
+  if (props.activePanel === panelId) {
     emit('update:activePanel', '');
     emit('panelChange', '');
   } else {
     emit('update:activePanel', panelId);
     emit('panelChange', panelId);
   }
+}
+
+function closePanel() {
+  emit('update:activePanel', '');
+  emit('panelChange', '');
 }
 </script>
 
@@ -170,9 +195,14 @@ function selectPanel(panelId: string) {
   width: 56px;
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background-color: var(--editor-surface);
   border-right: 1px solid var(--editor-border);
+  transition: width 0.3s ease;
+}
+
+.editor-sidebar--expanded {
+  width: 336px; /* 56px tabs + 280px content */
 }
 
 .editor-sidebar__tabs {
@@ -180,7 +210,8 @@ function selectPanel(panelId: string) {
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.5rem;
-  flex: 1;
+  width: 56px;
+  flex-shrink: 0;
   overflow-y: auto;
 }
 
@@ -215,23 +246,59 @@ function selectPanel(panelId: string) {
 }
 
 .editor-sidebar__content {
-  position: absolute;
-  left: 56px;
-  top: 48px;
-  bottom: 280px;
   width: 280px;
+  flex-shrink: 0;
   background-color: var(--editor-surface-elevated);
   border-right: 1px solid var(--editor-border);
   overflow-y: auto;
-  padding: 1rem;
-  z-index: 100;
-  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-sidebar__content-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1rem 0.75rem 1rem;
+  border-bottom: 1px solid var(--editor-border);
+  flex-shrink: 0;
+}
+
+.editor-sidebar__content-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--editor-text);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.editor-sidebar__close-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--editor-text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.editor-sidebar__close-button:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--editor-text);
 }
 
 .editor-sidebar__panel {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .editor-sidebar__panel-title {

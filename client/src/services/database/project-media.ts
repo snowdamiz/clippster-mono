@@ -225,6 +225,9 @@ export async function updateProjectMedia(
     file_name: string;
     thumbnail_path: string | null;
     is_favorite: boolean;
+    duration: number | null;
+    width: number | null;
+    height: number | null;
   }>
 ): Promise<void> {
   if (!(await ensureTableExists())) return;
@@ -244,6 +247,18 @@ export async function updateProjectMedia(
   if (updates.is_favorite !== undefined) {
     updateFields.push('is_favorite = ?');
     values.push(updates.is_favorite ? 1 : 0);
+  }
+  if (updates.duration !== undefined) {
+    updateFields.push('duration = ?');
+    values.push(updates.duration);
+  }
+  if (updates.width !== undefined) {
+    updateFields.push('width = ?');
+    values.push(updates.width);
+  }
+  if (updates.height !== undefined) {
+    updateFields.push('height = ?');
+    values.push(updates.height);
   }
 
   if (updateFields.length === 0) return;

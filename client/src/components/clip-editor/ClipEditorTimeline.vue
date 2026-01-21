@@ -96,10 +96,10 @@
         </div>
       </div>
 
-      <!-- Additional Audio Tracks -->
+      <!-- Grouped Audio Tracks -->
       <div
-        v-for="(audioTrack, index) in audioTracks"
-        :key="audioTrack.id"
+        v-for="(trackGroup, index) in groupedAudioTracks"
+        :key="`audio-track-${trackGroup.order}`"
         class="editor-timeline__track"
       >
         <div class="editor-timeline__track-label">
@@ -107,13 +107,28 @@
           <span>A{{ index + 1 }}</span>
         </div>
         <div class="editor-timeline__track-content" @click="handleTrackClick">
+          <!-- Render all segments in this track -->
           <div
+            v-for="audioTrack in trackGroup.segments"
+            :key="audioTrack.id"
             class="editor-timeline__segment editor-timeline__segment--audio"
             :class="{ 'editor-timeline__segment--selected': selectedItem?.id === audioTrack.id }"
             :style="getSegmentStyle(audioTrack.start_time, audioTrack.end_time - audioTrack.start_time)"
             @click.stop="selectItem(audioTrack, 'audio')"
           >
             <span class="editor-timeline__segment-label">{{ audioTrack.name }}</span>
+            
+            <!-- Audio waveform -->
+            <div class="editor-timeline__segment-waveform">
+              <div class="editor-timeline__waveform-bars">
+                <div
+                  v-for="i in getWaveformBars(audioTrack.end_time - audioTrack.start_time)"
+                  :key="i"
+                  class="editor-timeline__waveform-bar editor-timeline__waveform-bar--audio"
+                  :style="{ height: getAudioWaveformHeight(audioTrack.id, i - 1, audioTrack.start_time, audioTrack.end_time - audioTrack.start_time) }"
+                ></div>
+              </div>
+            </div>
             
             <!-- Mute/Solo indicators -->
             <div class="editor-timeline__track-indicators">
@@ -241,6 +256,7 @@ const emit = defineEmits<{
   (e: 'seek', time: number): void;
   (e: 'selectItem', item: any, type: string): void;
   (e: 'updateItem', item: any): void;
+  (e: 'itemDeselected'): void;
 }>();
 
 // Constants
@@ -345,6 +361,30 @@ const textOverlays = computed(() => props.editorEdit?.textOverlays || []);
 const stickers = computed(() => props.editorEdit?.stickers || []);
 const watermarks = computed(() => props.editorEdit?.watermarks || []);
 
+// Group audio tracks by track_order so split segments appear on same row
+const groupedAudioTracks = computed(() => {
+  const tracks = audioTracks.value;
+  const grouped = new Map<number, any[]>();
+  
+  tracks.forEach(track => {
+    const order = track.track_order || 0;
+    if (!grouped.has(order)) {
+      grouped.set(order, []);
+    }
+    grouped.get(order)!.push(track);
+  });
+  
+  // Sort segments within each track by start_time
+  grouped.forEach(segments => {
+    segments.sort((a, b) => a.start_time - b.start_time);
+  });
+  
+  // Convert to array and sort by track_order
+  return Array.from(grouped.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([order, segments]) => ({ order, segments }));
+});
+
 // Get segment style based on time and duration
 function getSegmentStyle(startTime: number, segmentDuration: number) {
   return {
@@ -356,9 +396,12 @@ function getSegmentStyle(startTime: number, segmentDuration: number) {
 // Playhead dragging state
 const isDraggingPlayhead = ref(false);
 
-// Handle track click to seek
+// Handle track click to seek and deselect items
 function handleTrackClick(event: MouseEvent) {
   if (!tracksContainer.value) return;
+  
+  // Deselect any selected items when clicking on empty track space
+  emit('itemDeselected');
   
   // Calculate position relative to the visible area
   const containerRect = tracksContainer.value.getBoundingClientRect();
@@ -530,6 +573,40 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
   const heightPercent = Math.max(10, amplitude * 100);
   
   return `${heightPercent}%`;
+}
+
+// Generate waveform for audio tracks (uses audio file path)
+function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: number, segmentDuration: number): string {
+  // Find the audio track to get its file path
+  const audioTrack = audioTracks.value.find(t => t.id === audioTrackId);
+  if (!audioTrack) {
+    return '50%'; // Default height if track not found
+  }
+  
+  // Check if waveform is loaded for this audio file
+  if (waveformService.isLoaded(audioTrack.file_path)) {
+    const numBars = getWaveformBars(segmentDuration);
+    const peaks = waveformService.getPeaksForRange(audioTrack.file_path, {
+      startTime,
+      endTime: startTime + segmentDuration,
+      pixelWidth: numBars,
+    });
+    
+    if (peaks.length > 0 && index < peaks.length) {
+      const peak = peaks[index];
+      const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
+      const heightPercent = Math.max(10, amplitude * 100);
+      return `${heightPercent}%`;
+    }
+  }
+  
+  // Fallback to procedural waveform pattern
+  const time = index / 10;
+  const height = 
+    Math.abs(Math.sin(time * 0.7) * 0.5) +
+    Math.abs(Math.sin(time * 1.5) * 0.3) +
+    Math.abs(Math.sin(time * 3.2) * 0.2);
+  return `${Math.max(15, height * 100)}%`;
 }
 </script>
 
@@ -789,6 +866,11 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
 .editor-timeline__waveform-bar {
   flex: 1;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.5) 100%);
+  border-radius: 1px;
+}
+
+.editor-timeline__waveform-bar--audio {
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.9) 0%, rgba(168, 139, 250, 0.6) 100%);
   border-radius: 1px;
   min-height: 4px;
   max-width: 3px;

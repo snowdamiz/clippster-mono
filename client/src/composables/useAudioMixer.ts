@@ -1,5 +1,6 @@
 import { ref, watch, onUnmounted, type Ref } from 'vue';
 import type { ActiveAudioTrack } from './useTimelineRenderer';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 /**
  * Audio source entry in the mixer
@@ -204,9 +205,16 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
 
       // Create new audio element
       const element = new Audio();
-      element.src = track.filePath;
+      
+      // Convert file path to proper URL using Tauri's convertFileSrc
+      // This is required for Tauri to serve local files to the browser
+      const audioUrl = convertFileSrc(track.filePath);
+      
+      element.src = audioUrl;
       element.preload = 'auto';
       element.crossOrigin = 'anonymous';
+      
+      console.log('[AudioMixer] Loading audio track:', track.id, 'from', audioUrl);
 
       entry = {
         id: track.id,
@@ -218,6 +226,15 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
       };
 
       audioSources.set(track.id, entry);
+      
+      // Listen for load events to debug
+      element.addEventListener('loadeddata', () => {
+        console.log('[AudioMixer] Audio loaded successfully:', track.id, 'duration:', element.duration);
+      });
+      
+      element.addEventListener('error', (e) => {
+        console.error('[AudioMixer] Failed to load audio:', track.id, e);
+      });
     }
 
     // Connect to Web Audio if not already connected
@@ -255,11 +272,20 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
    * Called every frame by the playback engine
    */
   function syncToTime(time: number, activeTracks: ActiveAudioTrack[], isPlaying: boolean): void {
-    if (!audioContext || !masterGainNode) return;
+    if (!audioContext || !masterGainNode) {
+      console.warn('[AudioMixer] Cannot sync: not initialized');
+      return;
+    }
 
     // Resume context if needed
     if (audioContext.state === 'suspended' && isPlaying) {
+      console.log('[AudioMixer] Resuming suspended audio context');
       audioContext.resume();
+    }
+
+    // Log active tracks for debugging
+    if (activeTracks.length > 0) {
+      console.log('[AudioMixer] Syncing', activeTracks.length, 'active tracks at time', time, 'isPlaying:', isPlaying);
     }
 
     // Track which sources are still active
@@ -268,6 +294,7 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
     // Pause sources that are no longer active
     for (const [id, entry] of audioSources) {
       if (!activeIds.has(id) && !entry.element.paused) {
+        console.log('[AudioMixer] Pausing inactive track:', id);
         entry.element.pause();
       }
     }
@@ -275,7 +302,12 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
     // Sync active tracks
     for (const track of activeTracks) {
       const entry = getOrCreateAudioSource(track);
-      if (!entry) continue;
+      if (!entry) {
+        console.warn('[AudioMixer] Could not get audio source for track:', track.id);
+        continue;
+      }
+
+      console.log('[AudioMixer] Track', track.id, '- readyState:', entry.element.readyState, 'paused:', entry.element.paused, 'audioTime:', track.audioTime);
 
       // Update gain
       if (entry.gainNode) {
@@ -285,16 +317,21 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
       // Sync time if drifted too far
       const drift = Math.abs(entry.element.currentTime - track.audioTime);
       if (drift > syncTolerance) {
+        console.log('[AudioMixer] Syncing time for track', track.id, 'from', entry.element.currentTime, 'to', track.audioTime);
         entry.element.currentTime = track.audioTime;
       }
 
       // Sync play state
       if (isPlaying && entry.element.paused && entry.element.readyState >= 2) {
-        entry.element.play().catch(() => {
-          // Ignore play errors (autoplay policy, etc.)
+        console.log('[AudioMixer] Playing track:', track.id);
+        entry.element.play().catch((err) => {
+          console.error('[AudioMixer] Failed to play track:', track.id, err);
         });
       } else if (!isPlaying && !entry.element.paused) {
+        console.log('[AudioMixer] Pausing track:', track.id);
         entry.element.pause();
+      } else if (isPlaying && entry.element.paused && entry.element.readyState < 2) {
+        console.warn('[AudioMixer] Track not ready to play:', track.id, 'readyState:', entry.element.readyState);
       }
     }
   }
