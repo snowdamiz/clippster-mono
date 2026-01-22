@@ -52,6 +52,7 @@
                 :watermark-settings="watermarkSettings"
                 :duration="duration"
                 :video-content-duration="videoContentDuration"
+                :video-sources="videoSources"
                 @play="handlePlay"
                 @pause="handlePause"
                 @seek="handleSeek"
@@ -270,7 +271,7 @@ const videoContentDuration = computed(() => {
 
 // ===== View State =====
 const selectedAspectRatio = ref<string>('16:9');
-const zoomLevel = ref(0.1); // Start zoomed out to show full timeline
+const zoomLevel = ref(0); // 0 = fit entire timeline to view
 
 // ===== Creator Profile Props =====
 const watermarkSettings = computed(() => {
@@ -740,11 +741,18 @@ function handleOutroToggled(enabled: boolean) {
 }
 
 function handleZoomIn() {
-  zoomLevel.value = Math.min(zoomLevel.value * 1.5, 10);
+  // From 0 (fit-to-width), jump to 0.5, then scale up
+  if (zoomLevel.value === 0) {
+    zoomLevel.value = 0.5;
+  } else {
+    zoomLevel.value = Math.min(zoomLevel.value * 1.5, 10);
+  }
 }
 
 function handleZoomOut() {
-  zoomLevel.value = Math.max(zoomLevel.value / 1.5, 0.1);
+  // Scale down, but stop at 0 (fit-to-width) instead of 0.1
+  const newZoom = zoomLevel.value / 1.5;
+  zoomLevel.value = newZoom < 0.3 ? 0 : newZoom;
 }
 
 // ===== Selection =====
@@ -831,37 +839,8 @@ async function handleMediaAdded(mediaId: string) {
   // Reload the editor data to show the new audio track
   await loadEditorData();
   
-  // Reload the project to get updated duration
-  if (props.editorProjectId) {
-    const projectData = await getVideoEditorProjectWithSources(props.editorProjectId);
-    if (projectData) {
-      const audioTracksData = editorEdit.value?.audioTracks || [];
-      
-      playbackEngine.setTimeline({
-        duration: projectData.total_duration,
-        videoSources: projectData.sources.map(s => ({
-          id: s.id,
-          file_path: s.source_path,
-          start_time: s.start_time,
-          end_time: s.end_time,
-          trim_start: s.trim_start,
-          trim_end: s.trim_end,
-          original_duration: s.source_duration || (s.end_time - s.start_time),
-        })),
-        audioTracks: audioTracksData.map(track => ({
-          id: track.id,
-          filePath: track.file_path,
-          startTime: track.start_time,
-          endTime: track.end_time,
-          volume: track.volume,
-          isMuted: track.is_muted === 1,
-          fadeInDuration: track.fade_in,
-          fadeOutDuration: track.fade_out,
-        })),
-      });
-      console.log('[ClipEditorDialog] Timeline updated with new duration:', projectData.total_duration);
-    }
-  }
+  // Reload timeline with recalculated duration
+  await reloadTimeline();
 }
 
 function handleMediaUpdated() {
@@ -870,16 +849,103 @@ function handleMediaUpdated() {
 }
 
 // ===== Export =====
-function handleExport() {
-  console.log('[ClipEditorDialog] Export project with edit data:', editorEdit.value);
-  console.log('[ClipEditorDialog] Export filename will be:', editorTitle.value);
+const isExporting = ref(false);
+const exportProgress = ref(0);
+
+async function handleExport() {
+  if (!projectId.value || !editorEdit.value) {
+    console.warn('[ClipEditorDialog] Cannot export: missing project or edit data');
+    return;
+  }
+
+  console.log('[ClipEditorDialog] Starting export for project:', projectId.value);
   
-  // Close this dialog and trigger export flow
-  handleClose();
-  
-  // Emit save to ensure all changes are persisted before export
-  if (props.editorProjectId) {
-    emit('editorSave', props.editorProjectId);
+  try {
+    isExporting.value = true;
+    exportProgress.value = 0;
+
+    // Get project data with sources
+    const projectData = await getVideoEditorProjectWithSources(projectId.value);
+    if (!projectData || projectData.sources.length === 0) {
+      throw new Error('No video sources to export');
+    }
+
+    // Prompt user for save location
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    const savePath = await save({
+      defaultPath: `${editorTitle.value}.mp4`,
+      filters: [{
+        name: 'Video',
+        extensions: ['mp4']
+      }]
+    });
+
+    if (!savePath) {
+      isExporting.value = false;
+      return; // User cancelled
+    }
+
+    console.log('[ClipEditorDialog] Exporting to:', savePath);
+    exportProgress.value = 10;
+
+    // Get video metadata for dimensions
+    const { invoke } = await import('@tauri-apps/api/core');
+    const firstSource = projectData.sources[0];
+    const metadata = await invoke<{ width: number; height: number; duration: number }>('get_video_metadata', {
+      videoPath: firstSource.source_path
+    });
+
+    exportProgress.value = 20;
+
+    // Build export configuration
+    const exportConfig = {
+      video_sources: projectData.sources.map(source => ({
+        source_path: source.source_path,
+        start_time: source.start_time,
+        end_time: source.end_time,
+        trim_start: source.trim_start,
+        trim_end: source.trim_end,
+      })),
+      audio_tracks: (editorEdit.value.audioTracks || []).map(track => ({
+        file_path: track.file_path,
+        start_time: track.start_time,
+        end_time: track.end_time,
+        volume: track.volume,
+        is_muted: track.is_muted === 1,
+      })),
+      text_overlays: (editorEdit.value.textOverlays || []).map(text => ({
+        text: text.text,
+        start_time: text.start_time,
+        end_time: text.end_time,
+        position_x: text.position_x,
+        position_y: text.position_y,
+        style_data: text.style_data,
+      })),
+      output_path: savePath,
+      total_duration: duration.value,
+      width: metadata.width,
+      height: metadata.height,
+    };
+
+    console.log('[ClipEditorDialog] Export config:', exportConfig);
+    exportProgress.value = 30;
+
+    // Execute export
+    await invoke('export_video_editor_project', { config: exportConfig });
+
+    exportProgress.value = 100;
+    
+    console.log('[ClipEditorDialog] Export completed successfully');
+    
+    // Show success message
+    alert(`Video exported successfully to:\n${savePath}`);
+
+  } catch (error) {
+    console.error('[ClipEditorDialog] Export failed:', error);
+    alert(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    isExporting.value = false;
+    exportProgress.value = 0;
   }
 }
 
@@ -964,36 +1030,9 @@ watch(() => [props.modelValue, props.editorProjectId], async ([isOpen, projectId
     console.log('[ClipEditorDialog] Dialog opened with project:', projectId);
     await loadEditorData();
     
-    // Load project sources and initialize timeline
-    const projectData = await getVideoEditorProjectWithSources(projectId);
-    if (projectData) {
-      // Get audio tracks from editorEdit
-      const audioTracksData = editorEdit.value?.audioTracks || [];
-      
-      playbackEngine.setTimeline({
-        duration: projectData.total_duration,
-        videoSources: projectData.sources.map(s => ({
-          id: s.id,
-          file_path: s.source_path,
-          start_time: s.start_time,
-          end_time: s.end_time,
-          trim_start: s.trim_start,
-          trim_end: s.trim_end,
-          original_duration: s.source_duration || (s.end_time - s.start_time),
-        })),
-        audioTracks: audioTracksData.map(track => ({
-          id: track.id,
-          filePath: track.file_path,
-          startTime: track.start_time,
-          endTime: track.end_time,
-          volume: track.volume,
-          isMuted: track.is_muted === 1,
-          fadeInDuration: track.fade_in,
-          fadeOutDuration: track.fade_out,
-        })),
-      });
-      console.log('[ClipEditorDialog] Timeline initialized with', projectData.sources.length, 'video sources and', audioTracksData.length, 'audio tracks');
-    }
+    // Load project sources and initialize timeline with calculated duration
+    await reloadTimeline();
+    console.log('[ClipEditorDialog] Timeline initialized');
   }
 }, { immediate: true });
 

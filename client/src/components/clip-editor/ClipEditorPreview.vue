@@ -186,6 +186,16 @@ import { useAudioMixer } from '@/composables/useAudioMixer';
 import { useTimelineRenderer } from '@/composables/useTimelineRenderer';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
+interface VideoSource {
+  id: string;
+  file_path: string;
+  start_time: number;
+  end_time: number;
+  trim_start: number;
+  trim_end: number | null;
+  original_duration: number;
+}
+
 const props = defineProps<{
   videoSrc: string | null | undefined;
   currentTime: number;
@@ -195,6 +205,7 @@ const props = defineProps<{
   watermarkSettings: any;
   duration?: number;
   videoContentDuration?: number;
+  videoSources?: VideoSource[];
 }>();
 
 const emit = defineEmits<{
@@ -315,13 +326,24 @@ function formatTime(seconds: number): string {
 function onLoadedMetadata() {
   if (videoRef.value) {
     videoDuration.value = videoRef.value.duration;
+    
+    // Perform initial seek to correct position based on trim_start
+    // This prevents showing frame 0 when the clip starts at a different position
+    const videoSourceTime = getVideoSourceTime(props.currentTime);
+    if (Math.abs(videoRef.value.currentTime - videoSourceTime) > 0.05) {
+      console.log(`[ClipEditorPreview] Initial seek on loadedmetadata: timeline=${props.currentTime.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
+      videoRef.value.currentTime = videoSourceTime;
+    }
   }
 }
 
 function onTimeUpdate() {
-  if (videoRef.value) {
-    emit('timeUpdate', videoRef.value.currentTime);
-  }
+  // NOTE: We intentionally do NOT emit the video element's currentTime here.
+  // The playback engine is the master clock, and the video element follows it.
+  // The video element's currentTime has trim_start offset applied, so emitting it
+  // would cause sync issues with the timeline time.
+  // 
+  // The parent (ClipEditorDialog) uses the playback engine's currentTime directly.
 }
 
 function onPlay() {
@@ -535,11 +557,56 @@ watch(() => props.videoSrc, (newSrc) => {
   }
 }, { immediate: true });
 
+// Watch for videoSources changes to perform initial seek
+// This handles the case where videoSources load after the video element is ready
+watch(() => props.videoSources, (newSources) => {
+  if (newSources && newSources.length > 0 && videoRef.value && videoRef.value.readyState >= 1) {
+    const videoSourceTime = getVideoSourceTime(props.currentTime);
+    if (Math.abs(videoRef.value.currentTime - videoSourceTime) > 0.05) {
+      console.log(`[ClipEditorPreview] Seeking on videoSources change: timeline=${props.currentTime.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
+      videoRef.value.currentTime = videoSourceTime;
+    }
+  }
+}, { immediate: true });
+
 // Check if current time is beyond video content
 const isAfterVideoEnd = computed(() => {
   const videoDuration = props.videoContentDuration || props.duration || 0;
   return props.currentTime > videoDuration;
 });
+
+/**
+ * Calculate the actual video element time from timeline time.
+ * This accounts for the trim_start offset - the video file may start at a different
+ * position than the beginning of the file.
+ * 
+ * Timeline time: 0-30s (what the user sees)
+ * Video source time: trim_start to trim_start+30s (actual position in video file)
+ */
+function getVideoSourceTime(timelineTime: number): number {
+  if (!props.videoSources || props.videoSources.length === 0) {
+    return timelineTime;
+  }
+  
+  // Find the video source that contains this timeline time
+  for (const source of props.videoSources) {
+    if (timelineTime >= source.start_time && timelineTime < source.end_time) {
+      // Calculate offset within this source
+      const offsetInSource = timelineTime - source.start_time;
+      // Add trim_start to get actual video file position
+      return source.trim_start + offsetInSource;
+    }
+  }
+  
+  // If we're past all sources, use the last source's end position
+  const lastSource = props.videoSources[props.videoSources.length - 1];
+  if (lastSource && timelineTime >= lastSource.end_time) {
+    const offsetInSource = lastSource.end_time - lastSource.start_time;
+    return lastSource.trim_start + offsetInSource;
+  }
+  
+  return timelineTime;
+}
 
 // Sync video element with props
 watch(() => props.currentTime, (newTime) => {
@@ -554,9 +621,13 @@ watch(() => props.currentTime, (newTime) => {
       // Don't set currentTime - let it stay wherever it naturally ended
       // This prevents the seek loop
     } else {
+      // Calculate the actual video source time with trim offset
+      const videoSourceTime = getVideoSourceTime(newTime);
+      
       // Normal video sync when within video duration
-      if (Math.abs(videoRef.value.currentTime - newTime) > 0.1) {
-        videoRef.value.currentTime = newTime;
+      if (Math.abs(videoRef.value.currentTime - videoSourceTime) > 0.1) {
+        console.log(`[ClipEditorPreview] Seeking video: timeline=${newTime.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
+        videoRef.value.currentTime = videoSourceTime;
       }
     }
   }
@@ -573,6 +644,13 @@ watch(() => props.isPlaying, (playing) => {
   
   // Only play video if we're within the video content duration
   if (playing && props.currentTime <= videoDuration) {
+    // Ensure video is at correct source time before playing
+    const videoSourceTime = getVideoSourceTime(props.currentTime);
+    if (Math.abs(videoRef.value.currentTime - videoSourceTime) > 0.1) {
+      console.log(`[ClipEditorPreview] Pre-play seek: timeline=${props.currentTime.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
+      videoRef.value.currentTime = videoSourceTime;
+    }
+    
     videoRef.value.play().catch(err => {
       console.error('[ClipEditorPreview] Failed to play:', err);
     });

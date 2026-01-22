@@ -262,9 +262,23 @@ const emit = defineEmits<{
 // Constants
 const TRACK_LABEL_WIDTH = 60;
 const PIXELS_PER_SECOND_BASE = 100;
+const MIN_TIMELINE_WIDTH = 800; // Minimum width for timeline content
 
 // Track width (pixels per second)
-const pixelsPerSecond = computed(() => PIXELS_PER_SECOND_BASE * props.zoomLevel);
+const pixelsPerSecond = computed(() => {
+  if (!tracksContainer.value) return PIXELS_PER_SECOND_BASE;
+  
+  // At zoom level 0, fit entire duration to container width
+  if (props.zoomLevel === 0) {
+    const containerWidth = tracksContainer.value.clientWidth;
+    // Use at least MIN_TIMELINE_WIDTH to prevent too-compressed timeline
+    const targetWidth = Math.max(MIN_TIMELINE_WIDTH, containerWidth);
+    return props.duration > 0 ? targetWidth / props.duration : PIXELS_PER_SECOND_BASE;
+  }
+  
+  // For zoom > 0, scale from the fit-to-width baseline
+  return PIXELS_PER_SECOND_BASE * props.zoomLevel;
+});
 
 // Timeline width based on duration and zoom
 const timelineWidth = computed(() => {

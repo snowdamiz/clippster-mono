@@ -12,6 +12,7 @@
             @blur="saveTitle"
             @keydown.enter="saveTitle"
             @keydown.esc="cancelEdit"
+            @keydown="stopPropagation"
           />
         </div>
         <button
@@ -88,6 +89,12 @@ function saveTitle() {
 function cancelEdit() {
   isEditingTitle.value = false;
   editedTitle.value = '';
+}
+
+function stopPropagation(event: KeyboardEvent) {
+  // Stop all keyboard events from propagating to parent when editing title
+  // This prevents editor shortcuts (S for split, Delete, etc.) from triggering
+  event.stopPropagation();
 }
 </script>
 

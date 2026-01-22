@@ -1,6 +1,29 @@
 import { ref, watch, onUnmounted, type Ref } from 'vue';
 import type { ActiveAudioTrack } from './useTimelineRenderer';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
+
+// Video server port for streaming audio files
+let videoServerPort: number | null = null;
+
+/**
+ * Get the streaming server URL for a local file path.
+ * This bypasses the asset protocol scope restrictions.
+ */
+async function getStreamingUrl(filePath: string): Promise<string> {
+  if (videoServerPort === null) {
+    try {
+      videoServerPort = await invoke<number>('get_video_server_port');
+    } catch (error) {
+      console.error('[AudioMixer] Failed to get video server port:', error);
+      // Fallback to default port
+      videoServerPort = 48276;
+    }
+  }
+  
+  // Encode the path as base64 for the streaming server
+  const encodedPath = btoa(unescape(encodeURIComponent(filePath)));
+  return `http://localhost:${videoServerPort}/video/${encodedPath}`;
+}
 
 /**
  * Audio source entry in the mixer
@@ -206,15 +229,17 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
       // Create new audio element
       const element = new Audio();
       
-      // Convert file path to proper URL using Tauri's convertFileSrc
-      // This is required for Tauri to serve local files to the browser
-      const audioUrl = convertFileSrc(track.filePath);
+      // Get streaming URL asynchronously - set src after we have it
+      // Use the streaming server to bypass asset protocol scope restrictions
+      getStreamingUrl(track.filePath).then(audioUrl => {
+        element.src = audioUrl;
+        console.log('[AudioMixer] Loading audio track:', track.id, 'from', audioUrl);
+      }).catch(err => {
+        console.error('[AudioMixer] Failed to get streaming URL for track:', track.id, err);
+      });
       
-      element.src = audioUrl;
       element.preload = 'auto';
       element.crossOrigin = 'anonymous';
-      
-      console.log('[AudioMixer] Loading audio track:', track.id, 'from', audioUrl);
 
       entry = {
         id: track.id,

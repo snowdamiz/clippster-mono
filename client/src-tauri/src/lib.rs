@@ -18,6 +18,7 @@ mod focal_detection;
 mod commands;
 mod dvr;
 mod hls;
+mod video_editor_export;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -770,6 +771,10 @@ pub fn run() {
             hls::cleanup_hls_recordings,
             hls::get_recording_output_dir,
             hls::get_hls_segments,
+
+            // Video Editor Export commands
+            video_editor_export::export_video_editor_project_simple,
+            video_editor_export::export_video_editor_project,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
