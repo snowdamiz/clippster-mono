@@ -1,16 +1,16 @@
 <template>
-  <div class="text-inspector">
-    <div class="text-inspector__header">
+  <div class="flex flex-col gap-5">
+    <div class="flex items-center gap-2 pb-3 border-b border-white/10 text-amber-400">
       <Type :size="18" />
-      <h4 class="text-inspector__title">Text Overlay</h4>
+      <h4 class="text-sm font-semibold text-zinc-100 m-0">Text Overlay</h4>
     </div>
 
     <!-- Text Content -->
-    <div class="text-inspector__section">
-      <label class="text-inspector__label">Text</label>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-white/70">Text</label>
       <textarea
         :value="textOverlay.text"
-        class="text-inspector__textarea"
+        class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 resize-y font-inherit focus:border-amber-400/50 focus:bg-white/[0.08]"
         placeholder="Enter text..."
         rows="3"
         @input="updateProperty('text', ($event.target as HTMLTextAreaElement).value)"
@@ -18,11 +18,11 @@
     </div>
 
     <!-- Font Settings -->
-    <div class="text-inspector__section">
-      <label class="text-inspector__label">Font Family</label>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-white/70">Font Family</label>
       <select
         :value="style.fontFamily"
-        class="text-inspector__select"
+        class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
         @change="updateStyle('fontFamily', ($event.target as HTMLSelectElement).value)"
       >
         <option value="Inter">Inter</option>
@@ -35,24 +35,24 @@
       </select>
     </div>
 
-    <div class="text-inspector__row">
-      <div class="text-inspector__section">
-        <label class="text-inspector__label">Size</label>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium text-white/70">Size</label>
         <input
           :value="style.fontSize"
           type="number"
           min="12"
           max="200"
-          class="text-inspector__input"
+          class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
           @input="updateStyle('fontSize', parseInt(($event.target as HTMLInputElement).value))"
         />
       </div>
 
-      <div class="text-inspector__section">
-        <label class="text-inspector__label">Weight</label>
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium text-white/70">Weight</label>
         <select
           :value="style.fontWeight"
-          class="text-inspector__select"
+          class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
           @change="updateStyle('fontWeight', parseInt(($event.target as HTMLSelectElement).value))"
         >
           <option :value="400">Normal</option>
@@ -66,49 +66,49 @@
     </div>
 
     <!-- Color Settings -->
-    <div class="text-inspector__section">
-      <label class="text-inspector__label">Text Color</label>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-white/70">Text Color</label>
       <input
         :value="style.color"
         type="color"
-        class="text-inspector__color"
+        class="w-full h-10 p-1 bg-white/[0.05] border border-white/10 rounded-lg cursor-pointer"
         @input="updateStyle('color', ($event.target as HTMLInputElement).value)"
       />
     </div>
 
     <!-- Position -->
-    <div class="text-inspector__row">
-      <div class="text-inspector__section">
-        <label class="text-inspector__label">X Position (%)</label>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium text-white/70">X Position (%)</label>
         <input
           :value="textOverlay.position_x"
           type="number"
           min="0"
           max="100"
-          class="text-inspector__input"
+          class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
           @input="updateProperty('position_x', parseFloat(($event.target as HTMLInputElement).value))"
         />
       </div>
 
-      <div class="text-inspector__section">
-        <label class="text-inspector__label">Y Position (%)</label>
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium text-white/70">Y Position (%)</label>
         <input
           :value="textOverlay.position_y"
           type="number"
           min="0"
           max="100"
-          class="text-inspector__input"
+          class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
           @input="updateProperty('position_y', parseFloat(($event.target as HTMLInputElement).value))"
         />
       </div>
     </div>
 
     <!-- Animation -->
-    <div class="text-inspector__section">
-      <label class="text-inspector__label">Animation</label>
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium text-white/70">Animation</label>
       <select
         :value="textOverlay.animation"
-        class="text-inspector__select"
+        class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
         @change="updateProperty('animation', ($event.target as HTMLSelectElement).value)"
       >
         <option value="none">None</option>
@@ -122,35 +122,38 @@
     </div>
 
     <!-- Time Range -->
-    <div class="text-inspector__row">
-      <div class="text-inspector__section">
-        <label class="text-inspector__label">Start (s)</label>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium text-white/70">Start (s)</label>
         <input
           :value="textOverlay.start_time.toFixed(2)"
           type="number"
           min="0"
           step="0.1"
-          class="text-inspector__input"
+          class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
           @input="updateProperty('start_time', parseFloat(($event.target as HTMLInputElement).value))"
         />
       </div>
 
-      <div class="text-inspector__section">
-        <label class="text-inspector__label">End (s)</label>
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium text-white/70">End (s)</label>
         <input
           :value="textOverlay.end_time.toFixed(2)"
           type="number"
           min="0"
           step="0.1"
-          class="text-inspector__input"
+          class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
           @input="updateProperty('end_time', parseFloat(($event.target as HTMLInputElement).value))"
         />
       </div>
     </div>
 
     <!-- Delete Button -->
-    <div class="text-inspector__section">
-      <button class="text-inspector__delete-button" @click="$emit('delete')">
+    <div class="flex flex-col gap-2">
+      <button
+        class="flex items-center justify-center gap-2 px-2.5 py-2.5 bg-red-500/[0.15] border border-red-500/30 rounded-lg text-red-400 cursor-pointer transition-all duration-150 text-sm font-medium hover:bg-red-500/[0.25] hover:border-red-500/50"
+        @click="$emit('delete')"
+      >
         <Trash2 :size="16" />
         <span>Delete Text</span>
       </button>
@@ -159,145 +162,33 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Type, Trash2 } from 'lucide-vue-next';
-import type { VideoEditorTextOverlayRecord } from '@/services/database/video-editor-edits';
+  import { computed } from 'vue';
+  import { Type, Trash2 } from 'lucide-vue-next';
+  import type { VideoEditorTextOverlayRecord } from '@/services/database/video-editor-edits';
 
-const props = defineProps<{
-  textOverlay: VideoEditorTextOverlayRecord;
-}>();
+  const props = defineProps<{
+    textOverlay: VideoEditorTextOverlayRecord;
+  }>();
 
-const emit = defineEmits<{
-  (e: 'update', property: string, value: any): void;
-  (e: 'delete'): void;
-}>();
+  const emit = defineEmits<{
+    (e: 'update', property: string, value: any): void;
+    (e: 'delete'): void;
+  }>();
 
-const style = computed(() => {
-  try {
-    return JSON.parse(props.textOverlay.style_data || '{}');
-  } catch {
-    return {};
+  const style = computed(() => {
+    try {
+      return JSON.parse(props.textOverlay.style_data || '{}');
+    } catch {
+      return {};
+    }
+  });
+
+  function updateProperty(property: string, value: any) {
+    emit('update', property, value);
   }
-});
 
-function updateProperty(property: string, value: any) {
-  emit('update', property, value);
-}
-
-function updateStyle(property: string, value: any) {
-  const newStyle = { ...style.value, [property]: value };
-  emit('update', 'style_data', JSON.stringify(newStyle));
-}
+  function updateStyle(property: string, value: any) {
+    const newStyle = { ...style.value, [property]: value };
+    emit('update', 'style_data', JSON.stringify(newStyle));
+  }
 </script>
-
-<style scoped>
-.text-inspector {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.text-inspector__header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fbbf24;
-}
-
-.text-inspector__title {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: #f4f4f5;
-  margin: 0;
-}
-
-.text-inspector__section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.text-inspector__row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-}
-
-.text-inspector__label {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.text-inspector__input,
-.text-inspector__select {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  color: #f4f4f5;
-  font-size: 0.875rem;
-  outline: none;
-  transition: all 150ms ease;
-}
-
-.text-inspector__input:focus,
-.text-inspector__select:focus {
-  border-color: rgba(251, 191, 36, 0.5);
-  background-color: rgba(255, 255, 255, 0.08);
-}
-
-.text-inspector__textarea {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  color: #f4f4f5;
-  font-size: 0.875rem;
-  outline: none;
-  transition: all 150ms ease;
-  resize: vertical;
-  font-family: inherit;
-}
-
-.text-inspector__textarea:focus {
-  border-color: rgba(251, 191, 36, 0.5);
-  background-color: rgba(255, 255, 255, 0.08);
-}
-
-.text-inspector__color {
-  width: 100%;
-  height: 40px;
-  padding: 0.25rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.text-inspector__delete-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.625rem;
-  background-color: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
-  color: #f87171;
-  cursor: pointer;
-  transition: all 150ms ease;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.text-inspector__delete-button:hover {
-  background-color: rgba(239, 68, 68, 0.25);
-  border-color: rgba(239, 68, 68, 0.5);
-}
-</style>
-

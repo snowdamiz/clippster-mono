@@ -1,25 +1,25 @@
 <template>
-  <div class="audio-inspector">
-    <div class="audio-inspector__header">
+  <div class="flex flex-col gap-5">
+    <div class="flex items-center gap-2 pb-3 border-b border-white/10">
       <Music :size="18" />
-      <h4 class="audio-inspector__title">Audio Track</h4>
+      <h4 class="text-[15px] font-semibold text-zinc-100 m-0">Audio Track</h4>
     </div>
 
     <!-- Track Name -->
-    <div class="audio-inspector__section">
-      <label class="audio-inspector__label">Track Name</label>
+    <div class="flex flex-col gap-2">
+      <label class="text-[13px] font-medium text-white/70">Track Name</label>
       <input
         :value="audioTrack.name"
         type="text"
-        class="audio-inspector__input"
+        class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-sky-500/50 focus:bg-white/[0.08]"
         placeholder="Track name"
         @input="updateProperty('name', ($event.target as HTMLInputElement).value)"
       />
     </div>
 
     <!-- Volume Control -->
-    <div class="audio-inspector__section">
-      <label class="audio-inspector__label">
+    <div class="flex flex-col gap-2">
+      <label class="text-[13px] font-medium text-white/70">
         Volume: {{ Math.round(audioTrack.volume * 100) }}%
       </label>
       <input
@@ -28,10 +28,10 @@
         min="0"
         max="2"
         step="0.01"
-        class="audio-inspector__slider"
+        class="w-full h-1.5 rounded-[3px] bg-white/10 outline-none appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-violet-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)]"
         @input="updateProperty('volume', parseFloat(($event.target as HTMLInputElement).value))"
       />
-      <div class="audio-inspector__range-labels">
+      <div class="flex justify-between text-[11px] text-white/50">
         <span>0%</span>
         <span>100%</span>
         <span>200%</span>
@@ -39,8 +39,8 @@
     </div>
 
     <!-- Pan Control -->
-    <div class="audio-inspector__section">
-      <label class="audio-inspector__label">
+    <div class="flex flex-col gap-2">
+      <label class="text-[13px] font-medium text-white/70">
         Pan: {{ panLabel }}
       </label>
       <input
@@ -49,10 +49,10 @@
         min="-1"
         max="1"
         step="0.01"
-        class="audio-inspector__slider"
+        class="w-full h-1.5 rounded-[3px] bg-white/10 outline-none appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-violet-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)]"
         @input="updateProperty('pan', parseFloat(($event.target as HTMLInputElement).value))"
       />
-      <div class="audio-inspector__range-labels">
+      <div class="flex justify-between text-[11px] text-white/50">
         <span>Left</span>
         <span>Center</span>
         <span>Right</span>
@@ -60,38 +60,38 @@
     </div>
 
     <!-- Fade Controls -->
-    <div class="audio-inspector__section">
-      <label class="audio-inspector__label">Fade In (seconds)</label>
+    <div class="flex flex-col gap-2">
+      <label class="text-[13px] font-medium text-white/70">Fade In (seconds)</label>
       <input
         :value="audioTrack.fade_in"
         type="number"
         min="0"
         max="10"
         step="0.1"
-        class="audio-inspector__input"
+        class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-sky-500/50 focus:bg-white/[0.08]"
         @input="updateProperty('fade_in', parseFloat(($event.target as HTMLInputElement).value))"
       />
     </div>
 
-    <div class="audio-inspector__section">
-      <label class="audio-inspector__label">Fade Out (seconds)</label>
+    <div class="flex flex-col gap-2">
+      <label class="text-[13px] font-medium text-white/70">Fade Out (seconds)</label>
       <input
         :value="audioTrack.fade_out"
         type="number"
         min="0"
         max="10"
         step="0.1"
-        class="audio-inspector__input"
+        class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-sky-500/50 focus:bg-white/[0.08]"
         @input="updateProperty('fade_out', parseFloat(($event.target as HTMLInputElement).value))"
       />
     </div>
 
     <!-- Toggle Controls -->
-    <div class="audio-inspector__section">
-      <div class="audio-inspector__toggles">
+    <div class="flex flex-col gap-2">
+      <div class="flex gap-2">
         <button
-          class="audio-inspector__toggle"
-          :class="{ 'audio-inspector__toggle--active': audioTrack.is_muted }"
+          class="flex-1 flex items-center justify-center gap-2 p-2 bg-white/5 border border-white/10 rounded-md text-white/70 cursor-pointer transition-all duration-150 text-[13px] font-medium hover:bg-white/[0.08] hover:border-white/20"
+          :class="{ 'bg-sky-500/20 border-sky-500/40 text-[var(--editor-accent)]': audioTrack.is_muted }"
           @click="updateProperty('is_muted', audioTrack.is_muted ? 0 : 1)"
         >
           <VolumeX :size="16" />
@@ -99,8 +99,8 @@
         </button>
 
         <button
-          class="audio-inspector__toggle"
-          :class="{ 'audio-inspector__toggle--active': audioTrack.is_solo }"
+          class="flex-1 flex items-center justify-center gap-2 p-2 bg-white/5 border border-white/10 rounded-md text-white/70 cursor-pointer transition-all duration-150 text-[13px] font-medium hover:bg-white/[0.08] hover:border-white/20"
+          :class="{ 'bg-sky-500/20 border-sky-500/40 text-[var(--editor-accent)]': audioTrack.is_solo }"
           @click="updateProperty('is_solo', audioTrack.is_solo ? 0 : 1)"
         >
           <Headphones :size="16" />
@@ -110,33 +110,33 @@
     </div>
 
     <!-- Time Range -->
-    <div class="audio-inspector__section">
-      <label class="audio-inspector__label">Start Time</label>
+    <div class="flex flex-col gap-2">
+      <label class="text-[13px] font-medium text-white/70">Start Time</label>
       <input
         :value="audioTrack.start_time.toFixed(2)"
         type="number"
         min="0"
         step="0.1"
-        class="audio-inspector__input"
+        class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-sky-500/50 focus:bg-white/[0.08]"
         @input="updateProperty('start_time', parseFloat(($event.target as HTMLInputElement).value))"
       />
     </div>
 
-    <div class="audio-inspector__section">
-      <label class="audio-inspector__label">End Time</label>
+    <div class="flex flex-col gap-2">
+      <label class="text-[13px] font-medium text-white/70">End Time</label>
       <input
         :value="audioTrack.end_time.toFixed(2)"
         type="number"
         min="0"
         step="0.1"
-        class="audio-inspector__input"
+        class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-sky-500/50 focus:bg-white/[0.08]"
         @input="updateProperty('end_time', parseFloat(($event.target as HTMLInputElement).value))"
       />
     </div>
 
     <!-- Delete Button -->
-    <div class="audio-inspector__section">
-      <button class="audio-inspector__delete-button" @click="$emit('delete')">
+    <div class="flex flex-col gap-2">
+      <button class="flex items-center justify-center gap-2 p-[10px] bg-red-500/15 border border-red-500/30 rounded-md text-red-400 cursor-pointer transition-all duration-150 text-sm font-medium hover:bg-red-500/25 hover:border-red-500/50" @click="$emit('delete')">
         <Trash2 :size="16" />
         <span>Delete Track</span>
       </button>
@@ -171,147 +171,5 @@ function updateProperty(property: string, value: any) {
 </script>
 
 <style scoped>
-.audio-inspector {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.audio-inspector__header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.audio-inspector__title {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: #f4f4f5;
-  margin: 0;
-}
-
-.audio-inspector__section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.audio-inspector__label {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.audio-inspector__input {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  color: #f4f4f5;
-  font-size: 0.875rem;
-  outline: none;
-  transition: all 150ms ease;
-}
-
-.audio-inspector__input:focus {
-  border-color: rgba(14, 165, 233, 0.5);
-  background-color: rgba(255, 255, 255, 0.08);
-}
-
-.audio-inspector__slider {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.1);
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.audio-inspector__slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #a78bfa;
-  border: 2px solid #fff;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-}
-
-.audio-inspector__slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #a78bfa;
-  border: 2px solid #fff;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-}
-
-.audio-inspector__range-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.6875rem;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.audio-inspector__toggles {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.audio-inspector__toggle {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
-  transition: all 150ms ease;
-  font-size: 0.8125rem;
-  font-weight: 500;
-}
-
-.audio-inspector__toggle:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.audio-inspector__toggle--active {
-  background-color: rgba(14, 165, 233, 0.2);
-  border-color: rgba(14, 165, 233, 0.4);
-  color: var(--editor-accent);
-}
-
-.audio-inspector__delete-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.625rem;
-  background-color: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
-  color: #f87171;
-  cursor: pointer;
-  transition: all 150ms ease;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.audio-inspector__delete-button:hover {
-  background-color: rgba(239, 68, 68, 0.25);
-  border-color: rgba(239, 68, 68, 0.5);
-}
 </style>
 

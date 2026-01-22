@@ -1,47 +1,53 @@
 <template>
-  <div class="audio-panel">
-    <div class="audio-panel__header">
-      <h3 class="audio-panel__title">Audio Tracks</h3>
-      <button class="audio-panel__add-button" @click="handleAddMusic" title="Add Music Track">
+  <div class="flex flex-col gap-4">
+    <div class="flex items-center justify-between gap-2">
+      <h3 class="text-base font-semibold text-zinc-100 m-0">Audio Tracks</h3>
+      <button
+        class="flex items-center gap-2 px-3 py-2 bg-green-500/15 border border-green-500/30 rounded-md text-green-400 cursor-pointer transition-all duration-150 text-xs font-medium hover:bg-green-500/25 hover:border-green-500/50"
+        @click="handleAddMusic"
+        title="Add Music Track"
+      >
         <Plus :size="16" />
         <span>Add Music</span>
       </button>
     </div>
 
     <!-- Original Audio Track -->
-    <div class="audio-panel__section">
-      <div class="audio-panel__section-header">
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-2 text-sm font-semibold text-white/90 pb-2 border-b border-white/10">
         <Music :size="16" />
         <span>Original Audio</span>
       </div>
-      
-      <div class="audio-panel__track-item">
-        <div class="audio-panel__track-controls">
+
+      <div class="flex flex-col gap-3 p-3 bg-white/3 border border-white/8 rounded-md">
+        <div class="flex items-center gap-2">
           <button
-            class="audio-panel__icon-button"
-            :class="{ 'audio-panel__icon-button--active': originalAudioMuted }"
+            class="flex items-center justify-center w-8 h-8 bg-transparent border border-white/10 rounded text-white/70 cursor-pointer transition-all duration-150 hover:bg-white/8 hover:border-white/20 hover:text-white/95"
+            :class="{ 'bg-red-500/20 border-red-500/40 text-red-400': originalAudioMuted }"
             title="Mute"
             @click="toggleOriginalAudioMute"
           >
             <Volume2 v-if="!originalAudioMuted" :size="16" />
             <VolumeX v-else :size="16" />
           </button>
-          
+
           <input
             v-model.number="originalAudioVolume"
             type="range"
             min="-20"
             max="20"
             step="0.5"
-            class="audio-panel__volume-slider"
+            class="flex-1 h-1 rounded bg-white/10 outline-none appearance-none disabled:opacity-30 disabled:cursor-not-allowed [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-green-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow [&::-webkit-slider-thumb]:shadow-black/30 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-green-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow [&::-moz-range-thumb]:shadow-black/30"
             :disabled="originalAudioMuted"
           />
-          
-          <span class="audio-panel__volume-value">{{ originalAudioVolume.toFixed(1) }} dB</span>
+
+          <span class="text-xs font-medium text-white/70 min-w-12 text-right tabular-nums">
+            {{ originalAudioVolume.toFixed(1) }} dB
+          </span>
         </div>
 
         <button
-          class="audio-panel__detach-button"
+          class="flex items-center justify-center gap-2 p-2 bg-blue-500/15 border border-blue-500/30 rounded text-blue-400 cursor-pointer transition-all duration-150 text-xs font-medium hover:bg-blue-500/25 hover:border-blue-500/50"
           @click="handleDetachAudio"
           title="Detach audio to separate track for independent editing"
         >
@@ -52,8 +58,8 @@
     </div>
 
     <!-- Music Tracks -->
-    <div v-if="audioTracks.length > 0" class="audio-panel__section">
-      <div class="audio-panel__section-header">
+    <div v-if="audioTracks.length > 0" class="flex flex-col gap-3">
+      <div class="flex items-center gap-2 text-sm font-semibold text-white/90 pb-2 border-b border-white/10">
         <Disc3 :size="16" />
         <span>Music Tracks ({{ audioTracks.length }})</span>
       </div>
@@ -61,18 +67,18 @@
       <div
         v-for="(track, index) in audioTracks"
         :key="track.id"
-        class="audio-panel__track-item"
+        class="flex flex-col gap-3 p-3 bg-white/3 border border-white/8 rounded-md"
       >
-        <div class="audio-panel__track-header">
+        <div class="flex items-center gap-2">
           <input
             :value="track.name"
-            class="audio-panel__track-name"
+            class="flex-1 bg-transparent border-none border-b border-white/10 text-zinc-100 text-sm py-1 outline-none focus:border-sky-500/50"
             placeholder="Track name"
             @input="updateTrackName(track.id, ($event.target as HTMLInputElement).value)"
           />
-          
+
           <button
-            class="audio-panel__icon-button audio-panel__icon-button--danger"
+            class="flex items-center justify-center w-8 h-8 bg-transparent border border-white/10 rounded text-white/70 cursor-pointer transition-all duration-150 hover:bg-white/8 hover:border-white/20 hover:text-white/95 hover:bg-red-500/20 hover:border-red-500/40 hover:text-red-400"
             title="Remove Track"
             @click="removeTrack(track.id)"
           >
@@ -80,10 +86,10 @@
           </button>
         </div>
 
-        <div class="audio-panel__track-controls">
+        <div class="flex items-center gap-2">
           <button
-            class="audio-panel__icon-button"
-            :class="{ 'audio-panel__icon-button--active': track.is_muted }"
+            class="flex items-center justify-center w-8 h-8 bg-transparent border border-white/10 rounded text-white/70 cursor-pointer transition-all duration-150 hover:bg-white/8 hover:border-white/20 hover:text-white/95"
+            :class="{ 'bg-red-500/20 border-red-500/40 text-red-400': track.is_muted }"
             title="Mute"
             @click="toggleTrackMute(track.id)"
           >
@@ -92,8 +98,8 @@
           </button>
 
           <button
-            class="audio-panel__icon-button"
-            :class="{ 'audio-panel__icon-button--active': track.is_solo }"
+            class="flex items-center justify-center w-8 h-8 bg-transparent border border-white/10 rounded text-white/70 cursor-pointer transition-all duration-150 hover:bg-white/8 hover:border-white/20 hover:text-white/95"
+            :class="{ 'bg-red-500/20 border-red-500/40 text-red-400': track.is_solo }"
             title="Solo"
             @click="toggleTrackSolo(track.id)"
           >
@@ -106,69 +112,80 @@
             min="0"
             max="2"
             step="0.01"
-            class="audio-panel__volume-slider"
+            class="flex-1 h-1 rounded bg-white/10 outline-none appearance-none disabled:opacity-30 disabled:cursor-not-allowed [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-green-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow [&::-webkit-slider-thumb]:shadow-black/30 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-green-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow [&::-moz-range-thumb]:shadow-black/30"
             :disabled="!!track.is_muted"
             @input="updateTrackVolume(track.id, parseFloat(($event.target as HTMLInputElement).value))"
           />
-          
-          <span class="audio-panel__volume-value">{{ Math.round(track.volume * 100) }}%</span>
+
+          <span class="text-xs font-medium text-white/70 min-w-12 text-right tabular-nums">
+            {{ Math.round(track.volume * 100) }}%
+          </span>
         </div>
 
         <!-- Fade Controls -->
-        <div class="audio-panel__fade-controls">
-          <div class="audio-panel__fade-control">
-            <label class="audio-panel__fade-label">Fade In</label>
+        <div class="flex gap-3">
+          <div class="flex-1 flex items-center gap-2">
+            <label class="text-xs text-white/70 min-w-12">Fade In</label>
             <input
               :value="track.fade_in"
               type="number"
               min="0"
               max="10"
               step="0.1"
-              class="audio-panel__fade-input"
+              class="flex-1 px-2 py-1.5 bg-white/5 border border-white/10 rounded text-zinc-100 text-xs outline-none focus:border-sky-500/50 focus:bg-white/8"
               @input="updateTrackFadeIn(track.id, parseFloat(($event.target as HTMLInputElement).value))"
             />
-            <span class="audio-panel__fade-unit">s</span>
+            <span class="text-xs text-white/50">s</span>
           </div>
 
-          <div class="audio-panel__fade-control">
-            <label class="audio-panel__fade-label">Fade Out</label>
+          <div class="flex-1 flex items-center gap-2">
+            <label class="text-xs text-white/70 min-w-12">Fade Out</label>
             <input
               :value="track.fade_out"
               type="number"
               min="0"
               max="10"
               step="0.1"
-              class="audio-panel__fade-input"
+              class="flex-1 px-2 py-1.5 bg-white/5 border border-white/10 rounded text-zinc-100 text-xs outline-none focus:border-sky-500/50 focus:bg-white/8"
               @input="updateTrackFadeOut(track.id, parseFloat(($event.target as HTMLInputElement).value))"
             />
-            <span class="audio-panel__fade-unit">s</span>
+            <span class="text-xs text-white/50">s</span>
           </div>
         </div>
 
         <!-- Pan Control -->
-        <div class="audio-panel__pan-control">
-          <label class="audio-panel__pan-label">Pan</label>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-white/70 min-w-8">Pan</label>
           <input
             :value="track.pan"
             type="range"
             min="-1"
             max="1"
             step="0.01"
-            class="audio-panel__pan-slider"
+            class="flex-1 h-1 rounded bg-white/10 outline-none appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow [&::-webkit-slider-thumb]:shadow-black/30 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-purple-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow [&::-moz-range-thumb]:shadow-black/30"
             @input="updateTrackPan(track.id, parseFloat(($event.target as HTMLInputElement).value))"
           />
-          <span class="audio-panel__pan-value">
-            {{ track.pan === 0 ? 'Center' : track.pan < 0 ? `${Math.abs(track.pan * 100).toFixed(0)}% L` : `${(track.pan * 100).toFixed(0)}% R` }}
+          <span class="text-xs font-medium text-white/70 min-w-16 text-right tabular-nums">
+            {{
+              track.pan === 0
+                ? 'Center'
+                : track.pan < 0
+                  ? `${Math.abs(track.pan * 100).toFixed(0)}% L`
+                  : `${(track.pan * 100).toFixed(0)}% R`
+            }}
           </span>
         </div>
       </div>
     </div>
 
     <!-- Empty State -->
-    <div v-if="audioTracks.length === 0" class="audio-panel__empty">
-      <Music :size="32" class="audio-panel__empty-icon" />
-      <p class="audio-panel__empty-text">No music tracks added yet</p>
-      <button class="audio-panel__empty-button" @click="handleAddMusic">
+    <div v-if="audioTracks.length === 0" class="flex flex-col items-center justify-center gap-4 py-12 px-6 text-center">
+      <Music :size="32" class="text-white/30" />
+      <p class="text-white/50 text-sm m-0">No music tracks added yet</p>
+      <button
+        class="flex items-center gap-2 px-4 py-2.5 bg-green-500/15 border border-green-500/30 rounded-md text-green-400 cursor-pointer transition-all duration-150 text-sm font-medium hover:bg-green-500/25 hover:border-green-500/50"
+        @click="handleAddMusic"
+      >
         <Plus :size="16" />
         <span>Add Your First Track</span>
       </button>
@@ -177,517 +194,195 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { open } from '@tauri-apps/plugin-dialog';
-import { invoke } from '@tauri-apps/api/core';
-import { Plus, Music, Disc3, Volume2, VolumeX, Headphones, Trash2, Unlink } from 'lucide-vue-next';
-import {
-  getVideoEditorAudioTracksByEditId,
-  createVideoEditorAudioTrack,
-  updateVideoEditorAudioTrack,
-  deleteVideoEditorAudioTrack,
-  type VideoEditorAudioTrackRecord,
-} from '@/services/database/video-editor-edits';
+  import { ref, computed } from 'vue';
+  import { open } from '@tauri-apps/plugin-dialog';
+  import { invoke } from '@tauri-apps/api/core';
+  import { Plus, Music, Disc3, Volume2, VolumeX, Headphones, Trash2, Unlink } from 'lucide-vue-next';
+  import {
+    getVideoEditorAudioTracksByEditId,
+    createVideoEditorAudioTrack,
+    updateVideoEditorAudioTrack,
+    deleteVideoEditorAudioTrack,
+    type VideoEditorAudioTrackRecord,
+  } from '@/services/database/video-editor-edits';
 
-const props = defineProps<{
-  editId: string | null;
-}>();
+  const props = defineProps<{
+    editId: string | null;
+  }>();
 
-const emit = defineEmits<{
-  (e: 'detachAudio'): void;
-  (e: 'tracksUpdated'): void;
-}>();
+  const emit = defineEmits<{
+    (e: 'detachAudio'): void;
+    (e: 'tracksUpdated'): void;
+  }>();
 
-// State
-const audioTracks = ref<VideoEditorAudioTrackRecord[]>([]);
-const originalAudioVolume = ref(0); // dB
-const originalAudioMuted = ref(false);
+  // State
+  const audioTracks = ref<VideoEditorAudioTrackRecord[]>([]);
+  const originalAudioVolume = ref(0); // dB
+  const originalAudioMuted = ref(false);
 
-// Load audio tracks
-async function loadAudioTracks() {
-  if (!props.editId) return;
-  
-  try {
-    audioTracks.value = await getVideoEditorAudioTracksByEditId(props.editId);
-    console.log('[AudioPanel] Loaded audio tracks:', audioTracks.value.length);
-  } catch (error) {
-    console.error('[AudioPanel] Failed to load audio tracks:', error);
+  // Load audio tracks
+  async function loadAudioTracks() {
+    if (!props.editId) return;
+
+    try {
+      audioTracks.value = await getVideoEditorAudioTracksByEditId(props.editId);
+      console.log('[AudioPanel] Loaded audio tracks:', audioTracks.value.length);
+    } catch (error) {
+      console.error('[AudioPanel] Failed to load audio tracks:', error);
+    }
   }
-}
 
-// Add music track
-async function handleAddMusic() {
-  try {
-    const selected = await open({
-      multiple: false,
-      filters: [{
-        name: 'Audio',
-        extensions: ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'],
-      }],
-    });
+  // Add music track
+  async function handleAddMusic() {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: 'Audio',
+            extensions: ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'],
+          },
+        ],
+      });
 
-    if (!selected || !props.editId) return;
+      if (!selected || !props.editId) return;
 
-    const filePath = selected as string;
-    
-    // Get audio duration
-    const duration = await invoke<number>('get_audio_duration', { filePath });
-    
-    // Create audio track
-    await createVideoEditorAudioTrack(props.editId, {
-      file_path: filePath,
-      name: filePath.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || 'Music',
-      start_time: 0,
-      end_time: duration,
-      volume: 1.0,
-      pan: 0,
-      fade_in: 0,
-      fade_out: 0,
-      track_order: audioTracks.value.length,
-      is_muted: 0,
-      is_solo: 0,
-    });
+      const filePath = selected as string;
 
-    await loadAudioTracks();
-    emit('tracksUpdated');
-    
-    console.log('[AudioPanel] Added music track:', filePath);
-  } catch (error) {
-    console.error('[AudioPanel] Failed to add music:', error);
+      // Get audio duration
+      const duration = await invoke<number>('get_audio_duration', { filePath });
+
+      // Create audio track
+      await createVideoEditorAudioTrack(props.editId, {
+        file_path: filePath,
+        name:
+          filePath
+            .split(/[\\/]/)
+            .pop()
+            ?.replace(/\.[^.]+$/, '') || 'Music',
+        start_time: 0,
+        end_time: duration,
+        volume: 1.0,
+        pan: 0,
+        fade_in: 0,
+        fade_out: 0,
+        track_order: audioTracks.value.length,
+        is_muted: 0,
+        is_solo: 0,
+      });
+
+      await loadAudioTracks();
+      emit('tracksUpdated');
+
+      console.log('[AudioPanel] Added music track:', filePath);
+    } catch (error) {
+      console.error('[AudioPanel] Failed to add music:', error);
+    }
   }
-}
 
-// Handle detach audio
-function handleDetachAudio() {
-  emit('detachAudio');
-}
-
-// Toggle original audio mute
-function toggleOriginalAudioMute() {
-  originalAudioMuted.value = !originalAudioMuted.value;
-}
-
-// Update track name
-async function updateTrackName(trackId: string, name: string) {
-  try {
-    await updateVideoEditorAudioTrack(trackId, { name });
-    await loadAudioTracks();
-    emit('tracksUpdated');
-  } catch (error) {
-    console.error('[AudioPanel] Failed to update track name:', error);
+  // Handle detach audio
+  function handleDetachAudio() {
+    emit('detachAudio');
   }
-}
 
-// Toggle track mute
-async function toggleTrackMute(trackId: string) {
-  const track = audioTracks.value.find(t => t.id === trackId);
-  if (!track) return;
-  
-  try {
-    await updateVideoEditorAudioTrack(trackId, { is_muted: track.is_muted ? 0 : 1 });
-    await loadAudioTracks();
-    emit('tracksUpdated');
-  } catch (error) {
-    console.error('[AudioPanel] Failed to toggle mute:', error);
+  // Toggle original audio mute
+  function toggleOriginalAudioMute() {
+    originalAudioMuted.value = !originalAudioMuted.value;
   }
-}
 
-// Toggle track solo
-async function toggleTrackSolo(trackId: string) {
-  const track = audioTracks.value.find(t => t.id === trackId);
-  if (!track) return;
-  
-  try {
-    await updateVideoEditorAudioTrack(trackId, { is_solo: track.is_solo ? 0 : 1 });
-    await loadAudioTracks();
-    emit('tracksUpdated');
-  } catch (error) {
-    console.error('[AudioPanel] Failed to toggle solo:', error);
+  // Update track name
+  async function updateTrackName(trackId: string, name: string) {
+    try {
+      await updateVideoEditorAudioTrack(trackId, { name });
+      await loadAudioTracks();
+      emit('tracksUpdated');
+    } catch (error) {
+      console.error('[AudioPanel] Failed to update track name:', error);
+    }
   }
-}
 
-// Update track volume
-async function updateTrackVolume(trackId: string, volume: number) {
-  try {
-    await updateVideoEditorAudioTrack(trackId, { volume });
-    emit('tracksUpdated');
-  } catch (error) {
-    console.error('[AudioPanel] Failed to update volume:', error);
+  // Toggle track mute
+  async function toggleTrackMute(trackId: string) {
+    const track = audioTracks.value.find((t) => t.id === trackId);
+    if (!track) return;
+
+    try {
+      await updateVideoEditorAudioTrack(trackId, { is_muted: track.is_muted ? 0 : 1 });
+      await loadAudioTracks();
+      emit('tracksUpdated');
+    } catch (error) {
+      console.error('[AudioPanel] Failed to toggle mute:', error);
+    }
   }
-}
 
-// Update track fade in
-async function updateTrackFadeIn(trackId: string, fadeIn: number) {
-  try {
-    await updateVideoEditorAudioTrack(trackId, { fade_in: fadeIn });
-    emit('tracksUpdated');
-  } catch (error) {
-    console.error('[AudioPanel] Failed to update fade in:', error);
+  // Toggle track solo
+  async function toggleTrackSolo(trackId: string) {
+    const track = audioTracks.value.find((t) => t.id === trackId);
+    if (!track) return;
+
+    try {
+      await updateVideoEditorAudioTrack(trackId, { is_solo: track.is_solo ? 0 : 1 });
+      await loadAudioTracks();
+      emit('tracksUpdated');
+    } catch (error) {
+      console.error('[AudioPanel] Failed to toggle solo:', error);
+    }
   }
-}
 
-// Update track fade out
-async function updateTrackFadeOut(trackId: string, fadeOut: number) {
-  try {
-    await updateVideoEditorAudioTrack(trackId, { fade_out: fadeOut });
-    emit('tracksUpdated');
-  } catch (error) {
-    console.error('[AudioPanel] Failed to update fade out:', error);
+  // Update track volume
+  async function updateTrackVolume(trackId: string, volume: number) {
+    try {
+      await updateVideoEditorAudioTrack(trackId, { volume });
+      emit('tracksUpdated');
+    } catch (error) {
+      console.error('[AudioPanel] Failed to update volume:', error);
+    }
   }
-}
 
-// Update track pan
-async function updateTrackPan(trackId: string, pan: number) {
-  try {
-    await updateVideoEditorAudioTrack(trackId, { pan });
-    emit('tracksUpdated');
-  } catch (error) {
-    console.error('[AudioPanel] Failed to update pan:', error);
+  // Update track fade in
+  async function updateTrackFadeIn(trackId: string, fadeIn: number) {
+    try {
+      await updateVideoEditorAudioTrack(trackId, { fade_in: fadeIn });
+      emit('tracksUpdated');
+    } catch (error) {
+      console.error('[AudioPanel] Failed to update fade in:', error);
+    }
   }
-}
 
-// Remove track
-async function removeTrack(trackId: string) {
-  try {
-    await deleteVideoEditorAudioTrack(trackId);
-    await loadAudioTracks();
-    emit('tracksUpdated');
-    console.log('[AudioPanel] Removed track:', trackId);
-  } catch (error) {
-    console.error('[AudioPanel] Failed to remove track:', error);
+  // Update track fade out
+  async function updateTrackFadeOut(trackId: string, fadeOut: number) {
+    try {
+      await updateVideoEditorAudioTrack(trackId, { fade_out: fadeOut });
+      emit('tracksUpdated');
+    } catch (error) {
+      console.error('[AudioPanel] Failed to update fade out:', error);
+    }
   }
-}
 
-// Load tracks on mount
-if (props.editId) {
-  loadAudioTracks();
-}
+  // Update track pan
+  async function updateTrackPan(trackId: string, pan: number) {
+    try {
+      await updateVideoEditorAudioTrack(trackId, { pan });
+      emit('tracksUpdated');
+    } catch (error) {
+      console.error('[AudioPanel] Failed to update pan:', error);
+    }
+  }
+
+  // Remove track
+  async function removeTrack(trackId: string) {
+    try {
+      await deleteVideoEditorAudioTrack(trackId);
+      await loadAudioTracks();
+      emit('tracksUpdated');
+      console.log('[AudioPanel] Removed track:', trackId);
+    } catch (error) {
+      console.error('[AudioPanel] Failed to remove track:', error);
+    }
+  }
+
+  // Load tracks on mount
+  if (props.editId) {
+    loadAudioTracks();
+  }
 </script>
-
-<style scoped>
-.audio-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.audio-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.audio-panel__title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #f4f4f5;
-  margin: 0;
-}
-
-.audio-panel__add-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  background-color: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 6px;
-  color: #4ade80;
-  cursor: pointer;
-  transition: all 150ms ease;
-  font-size: 0.8125rem;
-  font-weight: 500;
-}
-
-.audio-panel__add-button:hover {
-  background-color: rgba(34, 197, 94, 0.25);
-  border-color: rgba(34, 197, 94, 0.5);
-}
-
-.audio-panel__section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.audio-panel__section-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.audio-panel__track-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-}
-
-.audio-panel__track-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.audio-panel__track-name {
-  flex: 1;
-  background-color: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  color: #f4f4f5;
-  font-size: 0.875rem;
-  padding: 0.25rem 0;
-  outline: none;
-}
-
-.audio-panel__track-name:focus {
-  border-bottom-color: rgba(14, 165, 233, 0.5);
-}
-
-.audio-panel__track-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.audio-panel__icon-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.audio-panel__icon-button:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.audio-panel__icon-button--active {
-  background-color: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #f87171;
-}
-
-.audio-panel__icon-button--danger:hover {
-  background-color: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #f87171;
-}
-
-.audio-panel__volume-slider {
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.1);
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.audio-panel__volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #4ade80;
-  border: 2px solid #fff;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.audio-panel__volume-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #4ade80;
-  border: 2px solid #fff;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.audio-panel__volume-slider:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.audio-panel__volume-value {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
-  min-width: 48px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.audio-panel__detach-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  background-color: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  border-radius: 4px;
-  color: #60a5fa;
-  cursor: pointer;
-  transition: all 150ms ease;
-  font-size: 0.8125rem;
-  font-weight: 500;
-}
-
-.audio-panel__detach-button:hover {
-  background-color: rgba(59, 130, 246, 0.25);
-  border-color: rgba(59, 130, 246, 0.5);
-}
-
-.audio-panel__fade-controls {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.audio-panel__fade-control {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.audio-panel__fade-label {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.7);
-  min-width: 48px;
-}
-
-.audio-panel__fade-input {
-  flex: 1;
-  padding: 0.375rem 0.5rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  color: #f4f4f5;
-  font-size: 0.8125rem;
-  outline: none;
-}
-
-.audio-panel__fade-input:focus {
-  border-color: rgba(14, 165, 233, 0.5);
-  background-color: rgba(255, 255, 255, 0.08);
-}
-
-.audio-panel__fade-unit {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.audio-panel__pan-control {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.audio-panel__pan-label {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.7);
-  min-width: 32px;
-}
-
-.audio-panel__pan-slider {
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.1);
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.audio-panel__pan-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #a78bfa;
-  border: 2px solid #fff;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.audio-panel__pan-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #a78bfa;
-  border: 2px solid #fff;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.audio-panel__pan-value {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
-  min-width: 64px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.audio-panel__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 3rem 1.5rem;
-  text-align: center;
-}
-
-.audio-panel__empty-icon {
-  color: rgba(255, 255, 255, 0.3);
-}
-
-.audio-panel__empty-text {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.875rem;
-  margin: 0;
-}
-
-.audio-panel__empty-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 1rem;
-  background-color: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 6px;
-  color: #4ade80;
-  cursor: pointer;
-  transition: all 150ms ease;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.audio-panel__empty-button:hover {
-  background-color: rgba(34, 197, 94, 0.25);
-  border-color: rgba(34, 197, 94, 0.5);
-}
-</style>
-
