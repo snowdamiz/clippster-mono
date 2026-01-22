@@ -1,0 +1,21 @@
+{
+  "name": "remotion-renderer",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && node bundle.mjs",
+    "pkg": "pkg dist/bundle.js -t node18-win-x64,node18-macos-x64,node18-linux-x64 -o bin/remotion-renderer"
+  },
+  "dependencies": {
+    "remotion": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "@remotion/bundler": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "esbuild": "^0.20.0",
+    "pkg": "^5.8.0"
+  }
+}

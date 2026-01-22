@@ -19,6 +19,7 @@ mod commands;
 mod dvr;
 mod hls;
 mod video_editor_export;
+mod sidecar;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -552,6 +553,7 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(commands::remotion_export::SidecarState(std::sync::Mutex::new(None)))
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -775,6 +777,10 @@ pub fn run() {
             // Video Editor Export commands
             video_editor_export::export_video_editor_project_simple,
             video_editor_export::export_video_editor_project,
+
+            // Remotion Export commands
+            commands::remotion_export::start_remotion_export,
+            commands::remotion_export::cancel_remotion_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

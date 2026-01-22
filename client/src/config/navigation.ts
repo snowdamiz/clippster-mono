@@ -14,6 +14,7 @@ import {
   Building2,
   Receipt,
   Megaphone,
+  Wand2,
 } from 'lucide-vue-next';
 
 export type NavigationGroup = 'browse' | 'create' | 'manage' | 'system';
@@ -76,6 +77,13 @@ export const navigationItems: NavigationItem[] = [
     path: '/video-editor',
     icon: Clapperboard,
     group: 'create',
+  },
+  {
+    name: 'AI Video',
+    path: '/ai-video',
+    icon: Wand2,
+    group: 'create',
+    badge: 'Beta',
   },
   {
     name: 'Live',

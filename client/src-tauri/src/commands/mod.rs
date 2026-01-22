@@ -10,6 +10,7 @@ pub mod system;
 pub mod download_management;
 pub mod file_operations;
 pub mod focal_detection_commands;
+pub mod remotion_export;
 
 // Re-export all commands for convenient importing
 pub use system::*;

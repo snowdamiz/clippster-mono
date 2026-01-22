@@ -175,6 +175,13 @@ defmodule ClippsterServerWeb.Router do
     # Bug report creation (requires authentication)
     post("/bug-reports", BugReportsController, :create)
 
+    # AI Video generation routes
+    post("/ai-video/generate", AIVideoController, :generate)
+    post("/ai-video/compositions", AIVideoController, :create_composition)
+    get("/ai-video/compositions", AIVideoController, :list_compositions)
+    get("/ai-video/compositions/:id", AIVideoController, :get_composition)
+    delete("/ai-video/compositions/:id", AIVideoController, :delete_composition)
+
     # Organization application management (requires authentication)
     post("/organization-applications", OrganizationApplicationController, :create)
 
