@@ -40,7 +40,6 @@ import { useDvrRecording } from './useDvrRecording';
 import { useToast } from './useToast';
 
 const POLL_INTERVAL_MS = 30_000;
-const AUTO_DVR_POLL_INTERVAL_MS = 60_000; // Poll Auto DVR streamers every 60 seconds
 
 // Global State
 type MonitoredStreamerEntry = { streamer: MonitoredStreamer; options: { detectClips: boolean } };
@@ -60,9 +59,8 @@ const isMonitoring = computed(() => monitoredStreamers.value.size > 0);
 // Key: streamerId, Value: { mintId }
 const dvrSessions = ref<DvrSessionsMap>(new Map());
 
-// Auto DVR polling state
-let autoDvrPollingHandle: number | null = null;
-let autoDvrInitialized = false;
+// Auto DVR streamers are now loaded into monitoredStreamers on startup
+// They are checked by the main polling loop (no separate polling needed)
 
 // Track chunk aggregation state for DVR-based auto-detect sessions
 // Key: streamerId, Value: aggregation state
@@ -1172,14 +1170,20 @@ export function useLivestreamMonitoring() {
         continue;
       }
 
-      if (status.isLive && !sessionActive) {
+      // Check if this is an auto-DVR-only streamer (no manual monitoring)
+      // Auto-DVR streamers have detectClips: false and autoDvr: true
+      const isAutoDvrOnly = !config.options.detectClips && streamer.autoDvr;
+
+      // Start persistent recording session for manually monitored streamers
+      // Skip this for auto-DVR-only streamers (they only get DVR recording below)
+      if (status.isLive && !sessionActive && !isAutoDvrOnly) {
         await handleStreamStart(streamer, status, config.options);
       } else if (!status.isLive && sessionActive) {
         await handleStreamEnd(streamer);
       }
 
       // Auto-start DVR recording for live streamers that don't have persistent recording
-      // This enables DVR for users who just want to watch (not record)
+      // This handles: 1) Auto-DVR-only streamers, 2) Manually monitored streamers who also have auto-DVR enabled
       if (status.isLive && !sessionActive && !hasDvrRecording) {
         await startDvrRecordingForStreamer(streamer);
       }
@@ -1398,44 +1402,38 @@ export function useLivestreamMonitoring() {
   }
 
   // ============================================
-  // Auto DVR System
-  // Automatically starts DVR recording when streamers with auto_dvr=true go live
+  // Auto DVR System (Unified with Main Polling)
+  // Auto-DVR streamers are loaded into monitoredStreamers on startup
+  // They are checked by the main polling loop every 30 seconds
   // ============================================
 
-  async function initAutoDvrPolling() {
-    if (autoDvrInitialized) return;
-    autoDvrInitialized = true;
-
-    console.log('[LiveMonitor] Initializing Auto DVR polling system');
-
-    // Do initial poll immediately
-    await pollAutoDvrStreamers();
-
-    // Start periodic polling
-    autoDvrPollingHandle = window.setInterval(pollAutoDvrStreamers, AUTO_DVR_POLL_INTERVAL_MS);
-  }
-
-  function stopAutoDvrPolling() {
-    if (autoDvrPollingHandle !== null) {
-      clearInterval(autoDvrPollingHandle);
-      autoDvrPollingHandle = null;
-    }
-    autoDvrInitialized = false;
-    console.log('[LiveMonitor] Stopped Auto DVR polling');
-  }
-
-  async function pollAutoDvrStreamers() {
+  /**
+   * Load auto-DVR streamers into the monitoring system
+   * Called on startup to ensure auto-DVR streamers are checked by main polling loop
+   */
+  async function loadAutoDvrStreamers() {
     try {
-      // Get all streamers with auto_dvr enabled from database
       const autoDvrRecords = await getAutoDvrStreamers();
+      
+      if (autoDvrRecords.length === 0) {
+        console.log('[LiveMonitor] No auto-DVR streamers to load');
+        return;
+      }
 
-      if (autoDvrRecords.length === 0) return;
-
-      console.log(`[LiveMonitor] Polling ${autoDvrRecords.length} Auto DVR streamers`);
+      console.log(`[LiveMonitor] Loading ${autoDvrRecords.length} auto-DVR streamers into monitoring`);
 
       for (const record of autoDvrRecords) {
-        // Skip if already has an active recording session (from Auto-Detect or Record mode)
-        if (activeSessions.value.has(record.id)) continue;
+        // Skip Kick streamers - they should remain manual-only
+        if (record.platform?.toLowerCase() === 'kick') {
+          console.log(`[LiveMonitor] Skipping Kick streamer ${record.display_name} from auto-DVR (manual only)`);
+          continue;
+        }
+
+        // Skip if already monitored (user manually added them)
+        if (monitoredStreamers.value.has(record.id)) {
+          console.log(`[LiveMonitor] Streamer ${record.display_name} already monitored, skipping auto-DVR load`);
+          continue;
+        }
 
         // Convert record to MonitoredStreamer type
         const streamer: MonitoredStreamer = {
@@ -1453,49 +1451,26 @@ export function useLivestreamMonitoring() {
           autoDvr: Boolean(record.auto_dvr),
         };
 
-        // Check if stream is live
-        const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
-
-        // Update live status in database
-        await updateMonitoredStreamer(streamer.id, {
-          last_check_timestamp: Math.floor(Date.now() / 1000),
-          is_currently_live: status.isLive ? 1 : 0,
+        // Add to monitored streamers with detectClips: false (DVR-only mode)
+        updateMonitoredStreamersMap((map) => {
+          map.set(record.id, {
+            streamer,
+            options: {
+              detectClips: false, // Auto-DVR is watch-only, no clip detection
+            },
+          });
         });
 
-        const hasDvrRecording = dvrSessions.value.has(streamer.id);
+        console.log(`[LiveMonitor] Added auto-DVR streamer to monitoring: ${record.display_name}`);
+      }
 
-        if (status.isLive && !hasDvrRecording) {
-          // Stream is live and no DVR recording - start one
-          console.log(`[LiveMonitor] Auto DVR: Starting DVR for live streamer ${streamer.displayName}`);
-          const started = await startDvrRecordingForStreamer(streamer);
-          if (started) {
-            addActivityLog({
-              streamerId: streamer.id,
-              streamerName: streamer.displayName,
-              platform: streamer.platform,
-              mintId: streamer.mintId,
-              profileImageUrl: streamer.profileImageUrl,
-              message: 'Auto DVR started - streamer went live',
-              status: 'success',
-            });
-          }
-        } else if (!status.isLive && hasDvrRecording) {
-          // Stream ended - stop DVR recording
-          console.log(`[LiveMonitor] Auto DVR: Stopping DVR for offline streamer ${streamer.displayName}`);
-          await handleDvrStreamEnd(streamer.id, streamer.mintId);
-          addActivityLog({
-            streamerId: streamer.id,
-            streamerName: streamer.displayName,
-            platform: streamer.platform,
-            mintId: streamer.mintId,
-            profileImageUrl: streamer.profileImageUrl,
-            message: 'Auto DVR stopped - stream ended',
-            status: 'info',
-          });
-        }
+      // Start polling if we added any streamers
+      if (monitoredStreamers.value.size > 0 && !pollingHandle.value) {
+        pollingHandle.value = window.setInterval(pollAllStreamers, POLL_INTERVAL_MS);
+        console.log('[LiveMonitor] Started polling for auto-DVR streamers');
       }
     } catch (error) {
-      console.error('[LiveMonitor] Auto DVR polling error:', error);
+      console.error('[LiveMonitor] Failed to load auto-DVR streamers:', error);
     }
   }
 
@@ -1660,8 +1635,7 @@ export function useLivestreamMonitoring() {
     startTwitchDvrRecording,
     stopTwitchDvrRecording,
     // Auto DVR exports
-    initAutoDvrPolling,
-    stopAutoDvrPolling,
+    loadAutoDvrStreamers,
     // Session restoration
     restoreActiveRecordings,
   };

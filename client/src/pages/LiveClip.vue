@@ -568,7 +568,7 @@
     clearLogs,
     dvrSessions,
     hasDvrRecording,
-    initAutoDvrPolling,
+    loadAutoDvrStreamers,
     restoreActiveRecordings,
   } = useLivestreamMonitoring();
 
@@ -614,8 +614,8 @@
     syncDetectionState();
     checkAllLiveStatuses(false); // Skip Kick - only check on manual refresh
 
-    // Initialize Auto DVR polling for streamers with auto_dvr enabled
-    initAutoDvrPolling();
+    // Load Auto DVR streamers into the main monitoring system
+    loadAutoDvrStreamers();
 
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
@@ -795,7 +795,8 @@
   async function handleMonitoredStreamersUpdated() {
     await loadStreamers();
     await refreshStreamerMetadata();
-    await checkAllLiveStatuses(true); // Include Kick since this is a user-triggered update
+    // Don't check live statuses here - the 60s interval (line 620-622) already handles this
+    // Only manual refresh button should trigger immediate live status checks
   }
 
   function getStatusLabel(streamer: ExtendedStreamer) {
