@@ -71,12 +71,8 @@ pub async fn export_video_editor_project(
     let shell = app.shell();
     let mut args = vec!["-y".to_string()];
 
-    // Add video inputs
+    // Add video inputs (no -ss here, do all trimming in filters for better accuracy)
     for source in &config.video_sources {
-        if let Some(trim_start) = source.trim_start {
-            args.push("-ss".to_string());
-            args.push(trim_start.to_string());
-        }
         args.push("-i".to_string());
         args.push(source.source_path.clone());
     }
@@ -112,30 +108,32 @@ pub async fn export_video_editor_project(
     // Process video sources - concat if multiple, trim to timeline positions
     if config.video_sources.len() == 1 {
         let source = &config.video_sources[0];
+        let trim_start = source.trim_start.unwrap_or(0.0);
         let duration = source.end_time - source.start_time;
         
-        // Trim video to exact duration
+        // Trim video from source trim_start for exact duration
         if needs_black_padding {
             // Pad with black frames at the end using tpad filter
             filters.push(format!(
-                "[0:v]trim=duration={}:start=0,setpts=PTS-STARTPTS,tpad=stop_mode=add:stop_duration={}:color=black[v]",
-                duration, black_padding_duration
+                "[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,tpad=stop_mode=add:stop_duration={}:color=black[v]",
+                trim_start, duration, black_padding_duration
             ));
         } else {
-            filters.push(format!("[0:v]trim=duration={}:start=0,setpts=PTS-STARTPTS[v]", duration));
+            filters.push(format!("[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS[v]", trim_start, duration));
         }
         
         // Also trim video audio if it exists
-        filters.push(format!("[0:a]atrim=duration={}:start=0,asetpts=PTS-STARTPTS[va]", duration));
+        filters.push(format!("[0:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS[va]", trim_start, duration));
     } else if config.video_sources.len() > 1 {
         // Concat multiple video sources
         let mut concat_inputs = String::new();
         for i in 0..config.video_sources.len() {
             let source = &config.video_sources[i];
+            let trim_start = source.trim_start.unwrap_or(0.0);
             let duration = source.end_time - source.start_time;
             
-            // Trim each segment
-            filters.push(format!("[{}:v]trim=duration={}:start=0,setpts=PTS-STARTPTS[v{}]", i, duration, i));
+            // Trim each segment from trim_start
+            filters.push(format!("[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS[v{}]", i, trim_start, duration, i));
             concat_inputs.push_str(&format!("[v{}]", i));
         }
         
@@ -153,8 +151,9 @@ pub async fn export_video_editor_project(
         let mut audio_concat_inputs = String::new();
         for i in 0..config.video_sources.len() {
             let source = &config.video_sources[i];
+            let trim_start = source.trim_start.unwrap_or(0.0);
             let duration = source.end_time - source.start_time;
-            filters.push(format!("[{}:a]atrim=duration={}:start=0,asetpts=PTS-STARTPTS[va{}]", i, duration, i));
+            filters.push(format!("[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS[va{}]", i, trim_start, duration, i));
             audio_concat_inputs.push_str(&format!("[va{}]", i));
         }
         filters.push(format!("{}concat=n={}:v=0:a=1[va]", audio_concat_inputs, config.video_sources.len()));
@@ -170,20 +169,29 @@ pub async fn export_video_editor_project(
             }
             
             let audio_index = video_input_count + i;
-            let delay_ms = (audio.start_time * 1000.0) as i64;
             let duration = audio.end_time - audio.start_time;
             
-            // Delay, trim, and adjust volume for each audio track
+            // Trim audio to exact duration and apply volume
             let volume_filter = if (audio.volume - 1.0).abs() > 0.01 {
                 format!(",volume={}", audio.volume)
             } else {
                 String::new()
             };
             
-            filters.push(format!(
-                "[{}:a]adelay={}|{},atrim=duration={}{}[a{}]",
-                audio_index, delay_ms, delay_ms, duration, volume_filter, i
-            ));
+            // Trim and reset PTS, then use adelay for timeline positioning
+            // adelay needs milliseconds for both channels (stereo)
+            if audio.start_time > 0.001 {
+                let delay_ms = (audio.start_time * 1000.0) as i64;
+                filters.push(format!(
+                    "[{}:a]atrim=duration={},asetpts=PTS-STARTPTS{},adelay={}|{}:all=1[a{}]",
+                    audio_index, duration, volume_filter, delay_ms, delay_ms, i
+                ));
+            } else {
+                filters.push(format!(
+                    "[{}:a]atrim=duration={},asetpts=PTS-STARTPTS{}[a{}]",
+                    audio_index, duration, volume_filter, i
+                ));
+            }
             audio_mix_inputs.push(format!("[a{}]", i));
         }
         
@@ -195,11 +203,12 @@ pub async fn export_video_editor_project(
                 audio_mix_inputs.len()
             ));
         } else {
-            filters.push("[va]acopy[aout]".to_string());
+            // Just passthrough video audio
+            filters.push("[va]anull[aout]".to_string());
         }
     } else {
         // No additional audio tracks, just use video audio
-        filters.push("[va]acopy[aout]".to_string());
+        filters.push("[va]anull[aout]".to_string());
     }
 
     // Add text overlays using drawtext filter
@@ -272,6 +281,13 @@ pub async fn export_video_editor_project(
     args.push("aac".to_string());
     args.push("-b:a".to_string());
     args.push("192k".to_string());
+    
+    // Audio sync and quality settings
+    args.push("-async".to_string());
+    args.push("1".to_string());
+    args.push("-vsync".to_string());
+    args.push("cfr".to_string());
+    
     args.push("-movflags".to_string());
     args.push("+faststart".to_string());
     

@@ -247,10 +247,60 @@ async function addToTimeline(item: ProjectMedia) {
     } catch (error) {
       console.error('[MediaPanel] Failed to create audio track:', error);
     }
+  } else if (item.media_type === 'video') {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { createVideoEditorSource, getNextSourceStartTime, getVideoEditorSourcesByProjectId, updateVideoEditorProject } = await import('@/services/database/video-editor-projects');
+      const { updateProjectMedia } = await import('@/services/database/project-media');
+      
+      // Get video metadata (duration, dimensions)
+      const metadata = await invoke<{ width: number; height: number; duration: number }>('get_video_metadata', {
+        videoPath: item.file_path
+      });
+      
+      console.log('[MediaPanel] Video metadata:', metadata);
+      
+      // Update the media item with the actual duration
+      await updateProjectMedia(item.id, { duration: metadata.duration });
+      
+      // Get the next start time (append to end of timeline)
+      const startTime = await getNextSourceStartTime(props.projectId);
+      const endTime = startTime + metadata.duration;
+      
+      // Get current source count for order_index
+      const existingSources = await getVideoEditorSourcesByProjectId(props.projectId);
+      const orderIndex = existingSources.length;
+      
+      // Create video source
+      await createVideoEditorSource(props.projectId, {
+        sourceType: 'imported',
+        sourceId: null,
+        sourcePath: item.file_path,
+        sourceName: item.file_name,
+        sourceThumbnail: item.thumbnail_path,
+        sourceDuration: metadata.duration,
+        startTime: startTime,
+        endTime: endTime,
+        trimStart: 0,
+        trimEnd: null,
+        orderIndex: orderIndex,
+      });
+      
+      // Update project duration
+      await updateVideoEditorProject(props.projectId, {
+        total_duration: endTime,
+      });
+      
+      emit('mediaAdded', item.id);
+      console.log('[MediaPanel] Video source added to timeline at', startTime, '-', endTime);
+    } catch (error) {
+      console.error('[MediaPanel] Failed to add video to timeline:', error);
+      alert(`Failed to add video to timeline: ${error instanceof Error ? error.message : String(error)}`);
+    }
   } else {
-    // For video/image, emit event for future implementation
+    // For images, emit event for future implementation
     emit('mediaAdded', item.id);
-    console.log('[MediaPanel] Video/Image timeline integration coming soon');
+    console.log('[MediaPanel] Image timeline integration coming soon');
   }
 }
 

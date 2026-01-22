@@ -334,6 +334,15 @@ function onLoadedMetadata() {
       console.log(`[ClipEditorPreview] Initial seek on loadedmetadata: timeline=${props.currentTime.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
       videoRef.value.currentTime = videoSourceTime;
     }
+    
+    // Resume playback if we were playing before the source change
+    if (wasPlayingBeforeSourceChange.value && props.isPlaying) {
+      console.log('[ClipEditorPreview] Resuming playback after source change');
+      videoRef.value.play().catch(err => {
+        console.error('[ClipEditorPreview] Failed to resume playback:', err);
+      });
+      wasPlayingBeforeSourceChange.value = false;
+    }
   }
 }
 
@@ -548,12 +557,22 @@ function handleOverlayClick(event: MouseEvent) {
   // This will be used for click-to-place mode in future steps
 }
 
+// Track if we were playing before a source change
+const wasPlayingBeforeSourceChange = ref(false);
+
 // Watch for video source changes
-watch(() => props.videoSrc, (newSrc) => {
-  console.log('[ClipEditorPreview] Video src changed to:', newSrc);
+watch(() => props.videoSrc, (newSrc, oldSrc) => {
+  console.log('[ClipEditorPreview] Video src changed from:', oldSrc, 'to:', newSrc);
   if (videoRef.value && newSrc) {
+    // Remember if we were playing
+    wasPlayingBeforeSourceChange.value = !videoRef.value.paused;
+    
+    // Load new source
     videoRef.value.src = newSrc;
     videoRef.value.load();
+    
+    // The onLoadedMetadata handler will seek to the correct position
+    // and resume playback if needed
   }
 }, { immediate: true });
 

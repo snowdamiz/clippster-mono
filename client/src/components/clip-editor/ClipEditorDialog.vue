@@ -205,9 +205,10 @@ const currentTime = playbackEngine.currentTime;
 const isPlaying = playbackEngine.isPlaying;
 const duration = playbackEngine.duration;
 
-// Active video URL from timeline
+// Active video URL from timeline - dynamically switches based on current time
 const activeVideoUrl = computed(() => {
   const timeline = playbackEngine.getTimeline();
+  const time = currentTime.value;
   
   if (!videoServerPort.value) {
     console.log('[ClipEditorDialog] No video server port yet');
@@ -219,23 +220,26 @@ const activeVideoUrl = computed(() => {
     return null;
   }
   
-  // Always use the first source for now (single-source clips)
-  const firstSource = timeline.videoSources[0];
-  if (!firstSource || !firstSource.file_path) {
-    console.log('[ClipEditorDialog] First source has no file path');
+  // Find the video source that contains the current playback time
+  const activeSource = timeline.videoSources.find(
+    source => time >= source.start_time && time < source.end_time
+  );
+  
+  if (!activeSource || !activeSource.file_path) {
+    console.log('[ClipEditorDialog] No active source at time', time);
     return null;
   }
   
-  const encodedPath = btoa(unescape(encodeURIComponent(firstSource.file_path)));
+  const encodedPath = btoa(unescape(encodeURIComponent(activeSource.file_path)));
   
   // Check if this is a .ts file (MPEG-TS stream) - needs HLS wrapper
-  const isTsFile = firstSource.file_path.toLowerCase().endsWith('.ts');
+  const isTsFile = activeSource.file_path.toLowerCase().endsWith('.ts');
   
   const url = isTsFile
     ? `http://localhost:${videoServerPort.value}/ts-hls/${encodedPath}/playlist.m3u8`
     : `http://localhost:${videoServerPort.value}/video/${encodedPath}`;
   
-  console.log('[ClipEditorDialog] Active video URL:', url, isTsFile ? '(HLS)' : '(Direct)');
+  console.log('[ClipEditorDialog] Active video URL at', time.toFixed(2), 's:', url, isTsFile ? '(HLS)' : '(Direct)');
   return url;
 });
 
@@ -825,7 +829,7 @@ async function handleTitleUpdate(newTitle: string) {
   // Update the project name in the database
   if (props.editorProjectId) {
     try {
-      await updateProject(props.editorProjectId, { name: newTitle });
+      await updateProject(props.editorProjectId, newTitle);
       console.log('[ClipEditorDialog] Project title updated:', newTitle);
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to update project title:', error);
