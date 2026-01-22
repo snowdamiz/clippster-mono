@@ -123,13 +123,13 @@
             >
               <div class="shrink-0 flex items-center justify-center rounded-[20px] overflow-hidden"
                    :class="[
-                     authStore.user?.avatar_url && !avatarFailed ? '' : 'bg-[var(--sidebar-accent)]',
+                     (clipperProfile?.avatar_url || authStore.user?.avatar_url) && !avatarFailed ? '' : 'bg-[var(--sidebar-accent)]',
                      isCollapsed ? 'w-6 h-6' : 'w-7 h-7'
                    ]">
                 <img
-                  v-if="authStore.user?.avatar_url && !avatarFailed"
-                  :src="authStore.user.avatar_url"
-                  :alt="authStore.user.name || authStore.email || 'User'"
+                  v-if="(clipperProfile?.avatar_url || authStore.user?.avatar_url) && !avatarFailed"
+                  :src="clipperProfile?.avatar_url || authStore.user?.avatar_url || ''"
+                  :alt="clipperProfile?.display_name || authStore.user?.name || authStore.email || 'User'"
                   class="w-full h-full object-cover"
                   referrerpolicy="no-referrer"
                   @error="avatarFailed = true"
@@ -221,6 +221,7 @@
   import { useSidebarState } from '@/composables/useSidebarState';
   import { getSortedNavigationGroups, type NavigationItem } from '@/config/navigation';
   import BugReportDialog from '@/components/BugReportDialog.vue';
+  import { getMyClipperProfile, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
     DropdownMenu,
     DropdownMenuContent,
@@ -256,6 +257,7 @@
   const showBugReportDialog = ref(false);
   const userOrganizations = ref<any[]>([]);
   const avatarFailed = ref(false);
+  const clipperProfile = ref<ClipperProfile | null>(null);
   let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
   // ===== Computed Properties =====
@@ -271,6 +273,10 @@
 
   const formattedAddress = computed(() => {
     if (!authStore.isAuthenticated) return '';
+    // Prioritize clipper profile display name
+    if (clipperProfile.value?.display_name) {
+      return clipperProfile.value.display_name;
+    }
     if (authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) && authStore.email) {
       return authStore.email;
     }
@@ -394,6 +400,21 @@
     }
   }
 
+  async function loadClipperProfile() {
+    if (!authStore.isAuthenticated) {
+      clipperProfile.value = null;
+      return;
+    }
+    try {
+      const response = await getMyClipperProfile();
+      if (response.success) {
+        clipperProfile.value = response.profile;
+      }
+    } catch (error) {
+      console.error('Failed to load clipper profile:', error);
+    }
+  }
+
   function handleAuthStateChanged(event: CustomEvent) {
     console.log('[DashboardSidebar] Auth state changed, refetching balance. User ID:', event.detail?.userId);
     if (event.detail?.userId === null) {
@@ -409,20 +430,22 @@
     (isAuth) => {
       if (isAuth) {
         loadUserOrganizations();
+        loadClipperProfile();
         permissionsStore.fetchRestrictions();
         // Refresh live counts now that we're authenticated (to get org profiles)
         liveStatusStore.refreshCreators();
       } else {
         userOrganizations.value = [];
+        clipperProfile.value = null;
         permissionsStore.reset();
       }
     },
     { immediate: true }
   );
 
-  // Reset avatar failed state when user changes
+  // Reset avatar failed state when user or clipper profile changes
   watch(
-    () => authStore.user?.id,
+    () => [authStore.user?.id, clipperProfile.value?.avatar_url],
     () => {
       avatarFailed.value = false;
     }
@@ -432,6 +455,7 @@
   onMounted(() => {
     isNativeEnvironment.value = typeof window !== 'undefined' && '__TAURI__' in window;
     fetchBalance();
+    loadClipperProfile();
     balanceRefreshInterval = setInterval(fetchBalance, 30000);
     window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
     initFeatureFlags();
