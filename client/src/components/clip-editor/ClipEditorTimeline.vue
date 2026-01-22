@@ -1,49 +1,49 @@
 <template>
-  <div class="editor-timeline">
+  <div class="flex-1 flex flex-col bg-[var(--editor-bg)] relative overflow-hidden">
     <!-- Fixed Timeline Ruler -->
-    <div class="editor-timeline__ruler">
-      <div class="editor-timeline__ruler-spacer"></div>
-      <div class="editor-timeline__ruler-content" :style="{ width: timelineWidth + 'px' }">
+    <div class="flex h-7 border-b border-[var(--editor-border)] bg-[var(--editor-surface)] shrink-0 relative z-[3]">
+      <div class="w-[60px] shrink-0 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)]"></div>
+      <div class="relative h-full" :style="{ width: timelineWidth + 'px' }">
         <div
           v-for="marker in timeMarkers"
           :key="marker.time"
-          class="editor-timeline__time-marker"
+          class="absolute top-0 h-full border-l border-sky-500/20 pl-1"
           :style="{ left: (marker.time / duration) * timelineWidth + 'px' }"
         >
-          <span class="editor-timeline__time-label">{{ formatTime(marker.time) }}</span>
+          <span class="text-[0.625rem] text-[var(--editor-text-muted)] [font-variant-numeric:tabular-nums]">{{ formatTime(marker.time) }}</span>
         </div>
       </div>
     </div>
 
     <!-- Scrollable Tracks Container -->
     <div 
-      class="editor-timeline__tracks-container"
+      class="flex-1 overflow-x-auto overflow-y-auto relative editor-timeline__tracks-container"
       ref="tracksContainer"
       @scroll="handleScroll"
     >
-      <div class="editor-timeline__tracks" :style="{ width: timelineWidth + 'px' }">
+      <div class="flex flex-col min-h-full" :style="{ width: timelineWidth + 'px' }">
       <!-- Video Track (with embedded audio waveform) -->
-      <div class="editor-timeline__track editor-timeline__track--video">
-        <div class="editor-timeline__track-label">
+      <div class="flex border-b border-[var(--editor-border)] min-h-[64px] relative">
+        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
           <Film :size="14" />
           <span>V1</span>
         </div>
-        <div class="editor-timeline__track-content" @click="handleTrackClick">
+        <div class="relative flex-1 min-h-[48px] cursor-pointer" @click="handleTrackClick">
           <!-- Intro segment (if present) -->
           <div
             v-if="introRef"
-            class="editor-timeline__segment editor-timeline__segment--intro"
-            :style="getSegmentStyle(0, introRef.duration)"
+            class="absolute top-1 h-14 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-indigo-500/30 to-indigo-500/20 border-indigo-500/40"
+            :style="getSegmentStyle(0, introRef.duration || 0)"
           >
-            <span class="editor-timeline__segment-label">Intro</span>
+            <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">Intro</span>
             <!-- Waveform for intro -->
-            <div class="editor-timeline__segment-waveform">
-              <div class="editor-timeline__waveform-bars">
+            <div class="absolute inset-0 flex items-center py-1 pointer-events-none opacity-40">
+              <div class="flex items-center justify-between gap-[1px] w-full h-full px-1">
                 <div
-                  v-for="i in getWaveformBars(introRef.duration)"
+                  v-for="i in getWaveformBars(introRef.duration || 0)"
                   :key="i"
-                  class="editor-timeline__waveform-bar"
-                  :style="{ height: getWaveformHeight(i - 1, 0, introRef.duration) }"
+                  class="flex-1 bg-gradient-to-b from-white/80 to-white/50 rounded-[1px]"
+                  :style="{ height: getWaveformHeight(i - 1, 0, introRef.duration || 0) }"
                 ></div>
               </div>
             </div>
@@ -53,21 +53,21 @@
           <div
             v-for="source in videoSources"
             :key="source.id"
-            class="editor-timeline__segment editor-timeline__segment--video"
-            :class="{ 'editor-timeline__segment--selected': selectedItem?.id === source.id }"
+            class="absolute top-1 h-14 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-sky-500/30 to-sky-500/20 border-sky-500/40"
+            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === source.id }"
             :style="getSegmentStyle(source.start_time, source.end_time - source.start_time)"
             @click.stop="selectItem(source, 'video')"
           >
-            <span class="editor-timeline__segment-label">
+            <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">
               {{ formatSourceLabel(source) }}
             </span>
             <!-- Embedded audio waveform -->
-            <div class="editor-timeline__segment-waveform">
-              <div class="editor-timeline__waveform-bars">
+            <div class="absolute inset-0 flex items-center py-1 pointer-events-none opacity-40">
+              <div class="flex items-center justify-between gap-[1px] w-full h-full px-1">
                 <div
                   v-for="i in getWaveformBars(source.end_time - source.start_time)"
                   :key="i"
-                  class="editor-timeline__waveform-bar"
+                  class="flex-1 bg-gradient-to-b from-white/80 to-white/50 rounded-[1px]"
                   :style="{ height: getWaveformHeight(i - 1, source.start_time, source.end_time - source.start_time) }"
                 ></div>
               </div>
@@ -77,18 +77,18 @@
           <!-- Outro segment (if present) -->
           <div
             v-if="outroRef"
-            class="editor-timeline__segment editor-timeline__segment--outro"
-            :style="getSegmentStyle(duration - outroOffset, outroRef.duration)"
+            class="absolute top-1 h-14 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-indigo-500/30 to-indigo-500/20 border-indigo-500/40"
+            :style="getSegmentStyle(duration - outroOffset, outroRef.duration || 0)"
           >
-            <span class="editor-timeline__segment-label">Outro</span>
+            <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">Outro</span>
             <!-- Waveform for outro -->
-            <div class="editor-timeline__segment-waveform">
-              <div class="editor-timeline__waveform-bars">
+            <div class="absolute inset-0 flex items-center py-1 pointer-events-none opacity-40">
+              <div class="flex items-center justify-between gap-[1px] w-full h-full px-1">
                 <div
-                  v-for="i in getWaveformBars(outroRef.duration)"
+                  v-for="i in getWaveformBars(outroRef.duration || 0)"
                   :key="i"
-                  class="editor-timeline__waveform-bar"
-                  :style="{ height: getWaveformHeight(i - 1, duration - outroOffset, outroRef.duration) }"
+                  class="flex-1 bg-gradient-to-b from-white/80 to-white/50 rounded-[1px]"
+                  :style="{ height: getWaveformHeight(i - 1, duration - outroOffset, outroRef.duration || 0) }"
                 ></div>
               </div>
             </div>
@@ -100,40 +100,40 @@
       <div
         v-for="(trackGroup, index) in groupedAudioTracks"
         :key="`audio-track-${trackGroup.order}`"
-        class="editor-timeline__track"
+        class="flex border-b border-[var(--editor-border)] min-h-[48px] relative"
       >
-        <div class="editor-timeline__track-label">
+        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
           <Music :size="14" />
           <span>A{{ index + 1 }}</span>
         </div>
-        <div class="editor-timeline__track-content" @click="handleTrackClick">
+        <div class="relative flex-1 min-h-[48px] cursor-pointer" @click="handleTrackClick">
           <!-- Render all segments in this track -->
           <div
             v-for="audioTrack in trackGroup.segments"
             :key="audioTrack.id"
-            class="editor-timeline__segment editor-timeline__segment--audio"
-            :class="{ 'editor-timeline__segment--selected': selectedItem?.id === audioTrack.id }"
+            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-emerald-500/30 to-emerald-500/20 border-emerald-500/40"
+            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === audioTrack.id }"
             :style="getSegmentStyle(audioTrack.start_time, audioTrack.end_time - audioTrack.start_time)"
             @click.stop="selectItem(audioTrack, 'audio')"
           >
-            <span class="editor-timeline__segment-label">{{ audioTrack.name }}</span>
+            <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">{{ audioTrack.name }}</span>
             
             <!-- Audio waveform -->
-            <div class="editor-timeline__segment-waveform">
-              <div class="editor-timeline__waveform-bars">
+            <div class="absolute inset-0 flex items-center py-1 pointer-events-none opacity-40">
+              <div class="flex items-center justify-between gap-[1px] w-full h-full px-1">
                 <div
                   v-for="i in getWaveformBars(audioTrack.end_time - audioTrack.start_time)"
                   :key="i"
-                  class="editor-timeline__waveform-bar editor-timeline__waveform-bar--audio"
+                  class="flex-1 !bg-gradient-to-b !from-violet-500 !to-violet-400 rounded-[1px] min-h-[4px] !max-w-[3px]"
                   :style="{ height: getAudioWaveformHeight(audioTrack.id, i - 1, audioTrack.start_time, audioTrack.end_time - audioTrack.start_time) }"
                 ></div>
               </div>
             </div>
             
             <!-- Mute/Solo indicators -->
-            <div class="editor-timeline__track-indicators">
-              <span v-if="audioTrack.is_muted" class="editor-timeline__indicator editor-timeline__indicator--muted">M</span>
-              <span v-if="audioTrack.is_solo" class="editor-timeline__indicator editor-timeline__indicator--solo">S</span>
+            <div class="flex gap-1 ml-auto pl-2">
+              <span v-if="audioTrack.is_muted" class="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[3px] text-[0.625rem] font-bold tracking-wider bg-red-500/30 text-red-400 border border-red-500/50">M</span>
+              <span v-if="audioTrack.is_solo" class="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[3px] text-[0.625rem] font-bold tracking-wider bg-amber-500/30 text-amber-400 border border-amber-500/50">S</span>
             </div>
           </div>
         </div>
@@ -142,22 +142,22 @@
       <!-- Text Track -->
       <div
         v-if="textOverlays.length > 0"
-        class="editor-timeline__track"
+        class="flex border-b border-[var(--editor-border)] min-h-[48px] relative"
       >
-        <div class="editor-timeline__track-label">
+        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
           <Type :size="14" />
           <span>T1</span>
         </div>
-        <div class="editor-timeline__track-content" @click="handleTrackClick">
+        <div class="relative flex-1 min-h-[48px] cursor-pointer" @click="handleTrackClick">
           <div
             v-for="textOverlay in textOverlays"
             :key="textOverlay.id"
-            class="editor-timeline__segment editor-timeline__segment--text"
-            :class="{ 'editor-timeline__segment--selected': selectedItem?.id === textOverlay.id }"
+            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-amber-500/30 to-amber-500/20 border-amber-500/40"
+            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === textOverlay.id }"
             :style="getSegmentStyle(textOverlay.start_time, textOverlay.end_time - textOverlay.start_time)"
             @click.stop="selectItem(textOverlay, 'text')"
           >
-            <span class="editor-timeline__segment-label">{{ truncate(textOverlay.text, 20) }}</span>
+            <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">{{ truncate(textOverlay.text, 20) }}</span>
           </div>
         </div>
       </div>
@@ -165,22 +165,22 @@
       <!-- Sticker Track -->
       <div
         v-if="stickers.length > 0"
-        class="editor-timeline__track"
+        class="flex border-b border-[var(--editor-border)] min-h-[48px] relative"
       >
-        <div class="editor-timeline__track-label">
+        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
           <Smile :size="14" />
           <span>S1</span>
         </div>
-        <div class="editor-timeline__track-content" @click="handleTrackClick">
+        <div class="relative flex-1 min-h-[48px] cursor-pointer" @click="handleTrackClick">
           <div
             v-for="sticker in stickers"
             :key="sticker.id"
-            class="editor-timeline__segment editor-timeline__segment--sticker"
-            :class="{ 'editor-timeline__segment--selected': selectedItem?.id === sticker.id }"
+            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-pink-500/30 to-pink-500/20 border-pink-500/40"
+            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === sticker.id }"
             :style="getSegmentStyle(sticker.start_time, sticker.end_time - sticker.start_time)"
             @click.stop="selectItem(sticker, 'sticker')"
           >
-            <span class="editor-timeline__segment-label">Sticker</span>
+            <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">Sticker</span>
           </div>
         </div>
       </div>
@@ -188,22 +188,22 @@
       <!-- Watermark Track -->
       <div
         v-if="watermarks.length > 0"
-        class="editor-timeline__track"
+        class="flex border-b border-[var(--editor-border)] min-h-[48px] relative"
       >
-        <div class="editor-timeline__track-label">
+        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
           <Image :size="14" />
           <span>W1</span>
         </div>
-        <div class="editor-timeline__track-content" @click="handleTrackClick">
+        <div class="relative flex-1 min-h-[48px] cursor-pointer" @click="handleTrackClick">
           <div
             v-for="watermark in watermarks"
             :key="watermark.id"
-            class="editor-timeline__segment editor-timeline__segment--watermark"
-            :class="{ 'editor-timeline__segment--selected': selectedItem?.id === watermark.id }"
+            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-blue-500/30 to-blue-500/20 border-blue-500/40"
+            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === watermark.id }"
             :style="getSegmentStyle(watermark.start_time, watermark.end_time - watermark.start_time)"
             @click.stop="selectItem(watermark, 'watermark')"
           >
-            <span class="editor-timeline__segment-label">Watermark</span>
+            <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">Watermark</span>
           </div>
         </div>
       </div>
@@ -212,13 +212,13 @@
 
     <!-- Single Playhead Overlay (spans all tracks) -->
     <div
-      class="editor-timeline__playhead"
-      :class="{ 'editor-timeline__playhead--dragging': isDraggingPlayhead }"
+      class="absolute top-7 bottom-0 w-[2px] z-[100] pointer-events-none"
+      :class="{ 'opacity-80': isDraggingPlayhead }"
       :style="{ left: playheadScreenPosition + 'px' }"
       @mousedown="handlePlayheadMouseDown"
     >
-      <div class="editor-timeline__playhead-line"></div>
-      <div class="editor-timeline__playhead-handle"></div>
+      <div class="w-full h-full bg-[var(--editor-accent)] shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
+      <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-[var(--editor-accent)] border-2 border-white rounded-full cursor-ew-resize pointer-events-auto transition-transform duration-150 ease-in-out hover:scale-[1.3]" :class="{ 'scale-[1.2] cursor-grabbing': isDraggingPlayhead }"></div>
     </div>
   </div>
 </template>
@@ -625,229 +625,6 @@ function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: 
 </script>
 
 <style scoped>
-.editor-timeline {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--editor-bg);
-  position: relative;
-  overflow: hidden;
-}
-
-/* Fixed Timeline Ruler */
-.editor-timeline__ruler {
-  display: flex;
-  height: 28px;
-  border-bottom: 1px solid var(--editor-border);
-  background-color: var(--editor-surface);
-  flex-shrink: 0;
-  position: relative;
-  z-index: 3;
-}
-
-.editor-timeline__ruler-spacer {
-  width: 60px;
-  flex-shrink: 0;
-  background-color: var(--editor-surface-elevated);
-  border-right: 1px solid var(--editor-border);
-}
-
-.editor-timeline__ruler-content {
-  position: relative;
-  height: 100%;
-}
-
-.editor-timeline__time-marker {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  border-left: 1px solid rgba(14, 165, 233, 0.2);
-  padding-left: 0.25rem;
-}
-
-.editor-timeline__time-label {
-  font-size: 0.625rem;
-  color: var(--editor-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Single Playhead (overlays entire timeline) */
-.editor-timeline__playhead {
-  position: absolute;
-  top: 28px; /* Start below ruler */
-  bottom: 0;
-  width: 2px;
-  z-index: 100;
-  pointer-events: none;
-}
-
-.editor-timeline__playhead-line {
-  width: 100%;
-  height: 100%;
-  background-color: var(--editor-accent);
-  box-shadow: 0 0 8px rgba(14, 165, 233, 0.6);
-}
-
-.editor-timeline__playhead-handle {
-  position: absolute;
-  top: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 12px;
-  height: 12px;
-  background-color: var(--editor-accent);
-  border: 2px solid #fff;
-  border-radius: 50%;
-  cursor: ew-resize;
-  pointer-events: auto;
-  transition: transform 150ms ease;
-}
-
-.editor-timeline__playhead-handle:hover {
-  transform: translateX(-50%) scale(1.3);
-}
-
-.editor-timeline__playhead--dragging .editor-timeline__playhead-handle {
-  transform: translateX(-50%) scale(1.2);
-  cursor: grabbing;
-}
-
-/* Scrollable Tracks Container */
-.editor-timeline__tracks-container {
-  flex: 1;
-  overflow-x: auto;
-  overflow-y: auto;
-  position: relative;
-}
-
-.editor-timeline__tracks {
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
-
-.editor-timeline__track {
-  display: flex;
-  border-bottom: 1px solid var(--editor-border);
-  min-height: 48px;
-  position: relative;
-}
-
-.editor-timeline__track--video {
-  min-height: 64px; /* Taller track for video + waveform */
-}
-
-.editor-timeline__track-label {
-  position: sticky;
-  left: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 60px;
-  padding: 0 0.75rem;
-  background-color: var(--editor-surface-elevated);
-  border-right: 1px solid var(--editor-border);
-  color: var(--editor-text-muted);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  flex-shrink: 0;
-  z-index: 2;
-  backdrop-filter: blur(4px);
-}
-
-.editor-timeline__track-content {
-  position: relative;
-  flex: 1;
-  min-height: 48px;
-  cursor: pointer;
-}
-
-.editor-timeline__segment {
-  position: absolute;
-  top: 4px;
-  height: 40px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  cursor: pointer;
-  transition: all 150ms ease;
-  display: flex;
-  align-items: center;
-  padding: 0 0.5rem;
-  overflow: hidden;
-}
-
-.editor-timeline__track--video .editor-timeline__segment {
-  height: 56px; /* Taller segments for video track */
-}
-
-.editor-timeline__segment:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  z-index: 1;
-}
-
-.editor-timeline__segment--selected {
-  border-color: rgba(255, 255, 255, 0.8);
-  border-width: 2px;
-  z-index: 2;
-  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.4);
-}
-
-.editor-timeline__segment--intro,
-.editor-timeline__segment--outro {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(99, 102, 241, 0.2) 100%);
-  border-color: rgba(99, 102, 241, 0.4);
-}
-
-.editor-timeline__segment--video {
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.3) 0%, rgba(14, 165, 233, 0.2) 100%);
-  border-color: rgba(14, 165, 233, 0.4);
-}
-
-.editor-timeline__segment--audio {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(16, 185, 129, 0.2) 100%);
-  border-color: rgba(16, 185, 129, 0.4);
-}
-
-.editor-timeline__segment--text {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.3) 0%, rgba(251, 191, 36, 0.2) 100%);
-  border-color: rgba(251, 191, 36, 0.4);
-}
-
-.editor-timeline__segment--sticker {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.3) 0%, rgba(236, 72, 153, 0.2) 100%);
-  border-color: rgba(236, 72, 153, 0.4);
-}
-
-.editor-timeline__segment--watermark {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.2) 100%);
-  border-color: rgba(59, 130, 246, 0.4);
-}
-
-.editor-timeline__segment-label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  position: relative;
-  z-index: 1;
-}
-
-/* Waveform within segment */
-.editor-timeline__segment-waveform {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  padding: 4px 0;
-  pointer-events: none;
-  opacity: 0.4;
-}
-
 /* Scrollbar styling */
 .editor-timeline__tracks-container::-webkit-scrollbar {
   height: 12px;
@@ -865,60 +642,6 @@ function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: 
 
 .editor-timeline__tracks-container::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
-}
-
-.editor-timeline__waveform-bars {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1px;
-  width: 100%;
-  height: 100%;
-  padding: 0 4px;
-}
-
-.editor-timeline__waveform-bar {
-  flex: 1;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.5) 100%);
-  border-radius: 1px;
-}
-
-.editor-timeline__waveform-bar--audio {
-  background: linear-gradient(180deg, rgba(139, 92, 246, 0.9) 0%, rgba(168, 139, 250, 0.6) 100%);
-  border-radius: 1px;
-  min-height: 4px;
-  max-width: 3px;
-}
-
-.editor-timeline__track-indicators {
-  display: flex;
-  gap: 0.25rem;
-  margin-left: auto;
-  padding-left: 0.5rem;
-}
-
-.editor-timeline__indicator {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.editor-timeline__indicator--muted {
-  background-color: rgba(239, 68, 68, 0.3);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.5);
-}
-
-.editor-timeline__indicator--solo {
-  background-color: rgba(251, 191, 36, 0.3);
-  color: #fbbf24;
-  border: 1px solid rgba(251, 191, 36, 0.5);
 }
 </style>
 

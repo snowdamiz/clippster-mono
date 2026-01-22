@@ -135,7 +135,7 @@ async function handleAddText() {
       maxWidth: 80,
     };
 
-    const newText = await createTextOverlay(props.clipEditId, {
+    const newText = await createVideoEditorTextOverlay(props.editId, {
       text: 'New Text',
       start_time: props.currentTime || 0,
       end_time: (props.currentTime || 0) + 3,
@@ -189,8 +189,6 @@ async function addTextFromTemplate(template: any) {
     
     const defaultStyle = {
       fontFamily: 'Inter',
-      fontSize: 48,
-      fontWeight: 700,
       color: '#ffffff',
       backgroundColor: null,
       backgroundEnabled: false,

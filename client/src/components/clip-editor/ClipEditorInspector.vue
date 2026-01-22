@@ -1,15 +1,20 @@
 <template>
   <Transition name="inspector-slide">
-    <div v-if="selectedItem" class="editor-inspector">
-      <div class="editor-inspector__header">
-        <h3 class="editor-inspector__title">Inspector</h3>
-        <button class="editor-inspector__close-button" @click="$emit('close')" title="Close inspector">
+    <div v-if="selectedItem" class="w-[280px] flex-shrink-0 flex flex-col border-l" 
+         style="background-color: var(--editor-surface); border-color: var(--editor-border);">
+      <div class="flex items-center justify-between p-4 border-b" 
+           style="background: linear-gradient(180deg, var(--editor-surface-elevated) 0%, var(--editor-surface) 100%); border-color: var(--editor-border);">
+        <h3 class="text-sm font-semibold m-0 uppercase tracking-wider" style="color: var(--editor-accent);">Inspector</h3>
+        <button class="flex items-center justify-center w-6 h-6 bg-transparent border-none rounded cursor-pointer transition-all duration-150 hover:bg-white/8" 
+                style="color: var(--editor-text-muted);"
+                @click="$emit('close')" 
+                title="Close inspector">
           <X :size="16" />
         </button>
       </div>
 
-      <div class="editor-inspector__content">
-        <div class="editor-inspector__properties">
+      <div class="flex-1 overflow-y-auto p-4">
+        <div class="flex flex-col gap-6">
           <!-- Audio Track Inspector -->
           <AudioInspector
             v-if="selectedItemType === 'audio' && selectedItem"
@@ -35,11 +40,12 @@
           />
 
           <!-- Placeholder for other inspectors -->
-          <div v-else class="editor-inspector__section">
-            <h4 class="editor-inspector__section-title">
+          <div v-else class="flex flex-col gap-3">
+            <h4 class="text-sm font-semibold m-0 uppercase tracking-wider" style="color: var(--editor-text);">
               {{ selectedItemTypeLabel }}
             </h4>
-            <div class="editor-inspector__placeholder">
+            <div class="text-sm p-4 text-center rounded-md border border-dashed" 
+                 style="color: var(--editor-text-muted); background-color: var(--editor-surface-elevated); border-color: var(--editor-border);">
               Properties for {{ selectedItemTypeLabel }} coming soon...
             </div>
           </div>
@@ -132,90 +138,6 @@ const selectedItemTypeLabel = computed(() => {
 </script>
 
 <style scoped>
-.editor-inspector {
-  width: 280px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--editor-surface);
-  border-left: 1px solid var(--editor-border);
-}
-
-.editor-inspector__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
-  border-bottom: 1px solid var(--editor-border);
-  background: linear-gradient(180deg, var(--editor-surface-elevated) 0%, var(--editor-surface) 100%);
-}
-
-.editor-inspector__title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--editor-accent);
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.editor-inspector__close-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  color: var(--editor-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.editor-inspector__close-button:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: var(--editor-text);
-}
-
-.editor-inspector__content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
-}
-
-
-.editor-inspector__properties {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.editor-inspector__section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.editor-inspector__section-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--editor-text);
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.editor-inspector__placeholder {
-  color: var(--editor-text-muted);
-  font-size: 0.875rem;
-  padding: 1rem;
-  text-align: center;
-  background-color: var(--editor-surface-elevated);
-  border-radius: 6px;
-  border: 1px dashed var(--editor-border);
-}
-
 /* Slide transition */
 .inspector-slide-enter-active,
 .inspector-slide-leave-active {

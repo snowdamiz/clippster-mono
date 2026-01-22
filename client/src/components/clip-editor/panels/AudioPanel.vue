@@ -107,7 +107,7 @@
             max="2"
             step="0.01"
             class="audio-panel__volume-slider"
-            :disabled="track.is_muted"
+            :disabled="!!track.is_muted"
             @input="updateTrackVolume(track.id, parseFloat(($event.target as HTMLInputElement).value))"
           />
           

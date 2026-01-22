@@ -1,28 +1,35 @@
 <template>
-  <div class="editor-sidebar" :class="{ 'editor-sidebar--expanded': activePanel }">
-    <div class="editor-sidebar__tabs">
+  <div 
+    class="w-14 shrink-0 flex flex-row bg-[var(--editor-surface)] border-r border-[var(--editor-border)] transition-[width] duration-300 ease-in-out" 
+    :class="{ '!w-[336px]': activePanel }"
+  >
+    <div class="flex flex-col gap-1 p-2 w-14 shrink-0 overflow-y-auto">
       <button
         v-for="panel in panels"
         :key="panel.id"
-        class="editor-sidebar__tab"
-        :class="{ 'editor-sidebar__tab--active': activePanel === panel.id }"
+        class="relative flex items-center justify-center w-10 h-10 bg-transparent border-none rounded-lg text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out hover:bg-white/10 hover:text-[var(--editor-text)]"
+        :class="{ 'bg-sky-500/15 text-[var(--editor-accent)] shadow-[inset_0_0_0_1px_rgba(14,165,233,0.3)]': activePanel === panel.id }"
         :title="panel.label"
         @click="selectPanel(panel.id)"
       >
         <component :is="panel.icon" :size="20" />
-        <span class="editor-sidebar__tab-label">{{ panel.label }}</span>
+        <span class="hidden">{{ panel.label }}</span>
       </button>
     </div>
 
-    <div v-if="activePanel" class="editor-sidebar__content">
-      <div class="editor-sidebar__content-header">
-        <h3 class="editor-sidebar__content-title">{{ currentPanelLabel }}</h3>
-        <button class="editor-sidebar__close-button" @click="closePanel" title="Close panel">
+    <div v-if="activePanel" class="w-[280px] shrink-0 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] overflow-y-auto flex flex-col">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--editor-border)] shrink-0">
+        <h3 class="text-[0.875rem] font-semibold text-[var(--editor-text)] uppercase tracking-wider">{{ currentPanelLabel }}</h3>
+        <button 
+          class="flex items-center justify-center w-6 h-6 bg-transparent border-none rounded text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out hover:bg-white/10 hover:text-[var(--editor-text)]" 
+          @click="closePanel" 
+          title="Close panel"
+        >
           <X :size="16" />
         </button>
       </div>
       <!-- Panel content will be rendered here based on activePanel -->
-      <div class="editor-sidebar__panel">
+      <div class="flex flex-col gap-4 p-4 overflow-y-auto flex-1">
         <!-- Media Panel -->
         <MediaPanel
           v-if="activePanel === 'media'"
@@ -88,8 +95,8 @@
         />
 
         <!-- Placeholder for other panels -->
-        <div v-else class="editor-sidebar__panel-body">
-          <p class="editor-sidebar__placeholder">{{ currentPanelLabel }} tools coming soon...</p>
+        <div v-else class="flex flex-col gap-3">
+          <p class="text-[var(--editor-text-muted)] text-sm text-center py-8 px-4">{{ currentPanelLabel }} tools coming soon...</p>
         </div>
       </div>
     </div>
@@ -121,7 +128,7 @@ import {
   X
 } from 'lucide-vue-next';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   activePanel: string;
   editId: string | null;
   projectId?: string | null;
@@ -131,7 +138,12 @@ const props = defineProps<{
   creatorDefaultIntro?: IntroOutroRef | null;
   creatorDefaultOutro?: IntroOutroRef | null;
   hasInspector?: boolean;
-}>();
+}>(), {
+  projectId: null,
+  creatorWatermarkId: null,
+  creatorDefaultIntro: null,
+  creatorDefaultOutro: null,
+});
 
 const emit = defineEmits<{
   (e: 'update:activePanel', value: string): void;
@@ -190,135 +202,5 @@ function closePanel() {
 }
 </script>
 
-<style scoped>
-.editor-sidebar {
-  width: 56px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: row;
-  background-color: var(--editor-surface);
-  border-right: 1px solid var(--editor-border);
-  transition: width 0.3s ease;
-}
 
-.editor-sidebar--expanded {
-  width: 336px; /* 56px tabs + 280px content */
-}
-
-.editor-sidebar__tabs {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.5rem;
-  width: 56px;
-  flex-shrink: 0;
-  overflow-y: auto;
-}
-
-.editor-sidebar__tab {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  color: var(--editor-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.editor-sidebar__tab:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: var(--editor-text);
-}
-
-.editor-sidebar__tab--active {
-  background-color: rgba(14, 165, 233, 0.15);
-  color: var(--editor-accent);
-  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.3);
-}
-
-.editor-sidebar__tab-label {
-  display: none;
-}
-
-.editor-sidebar__content {
-  width: 280px;
-  flex-shrink: 0;
-  background-color: var(--editor-surface-elevated);
-  border-right: 1px solid var(--editor-border);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.editor-sidebar__content-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1rem 0.75rem 1rem;
-  border-bottom: 1px solid var(--editor-border);
-  flex-shrink: 0;
-}
-
-.editor-sidebar__content-title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--editor-text);
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.editor-sidebar__close-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  color: var(--editor-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.editor-sidebar__close-button:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: var(--editor-text);
-}
-
-.editor-sidebar__panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.editor-sidebar__panel-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--editor-text);
-  margin: 0;
-}
-
-.editor-sidebar__panel-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.editor-sidebar__placeholder {
-  color: var(--editor-text-muted);
-  font-size: 0.875rem;
-  text-align: center;
-  padding: 2rem 1rem;
-}
-</style>
 

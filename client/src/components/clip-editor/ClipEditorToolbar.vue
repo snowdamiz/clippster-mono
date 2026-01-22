@@ -1,20 +1,20 @@
 <template>
-  <div class="editor-toolbar">
-    <div class="editor-toolbar__left">
+  <div class="flex items-center justify-between px-4 py-3 bg-gradient-to-b from-[var(--editor-surface)] to-[var(--editor-bg)] border-b border-[var(--editor-border)] shrink-0 h-12">
+    <div class="flex items-center gap-4">
       <!-- Zoom Controls -->
-      <div class="editor-toolbar__zoom">
+      <div class="flex items-center gap-2 px-2 py-1 bg-[var(--editor-surface-elevated)] rounded-md border border-[var(--editor-border)]">
         <button
-          class="editor-toolbar__button"
+          class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
           title="Zoom Out (-)"
           @click="$emit('zoomOut')"
         >
           <ZoomOut :size="16" />
         </button>
-        <span class="editor-toolbar__zoom-label">
+        <span class="text-[0.8125rem] font-medium text-[var(--editor-text)] min-w-[48px] text-center [font-variant-numeric:tabular-nums]">
           {{ Math.round(zoomLevel * 100) }}%
         </span>
         <button
-          class="editor-toolbar__button"
+          class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
           title="Zoom In (+)"
           @click="$emit('zoomIn')"
         >
@@ -23,16 +23,16 @@
       </div>
 
       <!-- Time Display -->
-      <div class="editor-toolbar__time">
+      <div class="text-[0.875rem] font-medium text-[var(--editor-text)] [font-variant-numeric:tabular-nums] px-3 py-1.5 bg-[var(--editor-surface-elevated)] rounded-md border border-[var(--editor-border)]">
         {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
       </div>
     </div>
 
-    <div class="editor-toolbar__right">
+    <div class="flex items-center gap-4">
       <!-- Undo/Redo -->
       <button
-        class="editor-toolbar__button"
-        :class="{ 'editor-toolbar__button--disabled': !canUndo }"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
+        :class="{ 'opacity-30 cursor-not-allowed': !canUndo }"
         :disabled="!canUndo"
         :title="undoDescription ? `Undo: ${undoDescription}` : 'Undo (Ctrl+Z)'"
         @click="$emit('undo')"
@@ -42,8 +42,8 @@
       </button>
 
       <button
-        class="editor-toolbar__button"
-        :class="{ 'editor-toolbar__button--disabled': !canRedo }"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
+        :class="{ 'opacity-30 cursor-not-allowed': !canRedo }"
         :disabled="!canRedo"
         :title="redoDescription ? `Redo: ${redoDescription}` : 'Redo (Ctrl+Y)'"
         @click="$emit('redo')"
@@ -54,7 +54,7 @@
 
       <!-- Tools -->
       <button
-        class="editor-toolbar__button"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
         title="Split at Playhead (S)"
         @click="$emit('split')"
       >
@@ -63,7 +63,7 @@
       </button>
 
       <button
-        class="editor-toolbar__button"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
         title="Delete Selected (Delete)"
         @click="$emit('delete')"
       >
@@ -72,7 +72,7 @@
       </button>
 
       <button
-        class="editor-toolbar__button"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
         title="Detach Audio"
         @click="$emit('detachAudio')"
       >
@@ -114,79 +114,5 @@ function formatTime(seconds: number): string {
 }
 </script>
 
-<style scoped>
-.editor-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background: linear-gradient(180deg, var(--editor-surface) 0%, var(--editor-bg) 100%);
-  border-bottom: 1px solid var(--editor-border);
-  flex-shrink: 0;
-  height: 48px;
-}
 
-.editor-toolbar__left,
-.editor-toolbar__right {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.editor-toolbar__zoom {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  background-color: var(--editor-surface-elevated);
-  border-radius: 6px;
-  border: 1px solid var(--editor-border);
-}
-
-.editor-toolbar__zoom-label {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--editor-text);
-  min-width: 48px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.editor-toolbar__time {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--editor-text);
-  font-variant-numeric: tabular-nums;
-  padding: 0.375rem 0.75rem;
-  background-color: var(--editor-surface-elevated);
-  border-radius: 6px;
-  border: 1px solid var(--editor-border);
-}
-
-.editor-toolbar__button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--editor-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-  font-size: 0.8125rem;
-  font-weight: 500;
-}
-
-.editor-toolbar__button:hover:not(:disabled) {
-  background-color: rgba(14, 165, 233, 0.15);
-  color: var(--editor-accent);
-}
-
-.editor-toolbar__button--disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-</style>
 

@@ -1,14 +1,16 @@
 <template>
-  <div class="editor-header">
-    <div class="editor-header__left">
+  <div class="flex items-center justify-between px-4 py-3 h-14 flex-shrink-0 relative z-10 m-0 box-border backdrop-blur-[12px] border-b" 
+       style="background: linear-gradient(180deg, var(--editor-surface) 0%, var(--editor-bg) 100%); border-color: var(--editor-border);">
+    <div class="flex items-center gap-4 min-w-0">
       <!-- Title -->
-      <div class="editor-header__title-section">
-        <Film :size="16" class="editor-header__icon" />
-        <div v-if="isEditingTitle" class="editor-header__title-edit-wrapper">
+      <div class="flex items-center gap-2 min-w-0 flex-1 max-w-[500px]">
+        <Film :size="16" class="flex-shrink-0" style="color: var(--editor-accent);" />
+        <div v-if="isEditingTitle" class="flex-1 min-w-0">
           <input
             ref="titleInputRef"
             v-model="editedTitle"
-            class="editor-header__title-input"
+            class="w-full text-[0.9375rem] font-semibold rounded-md px-3 py-2 outline-none tracking-tight border focus:shadow-[0_0_0_2px_rgba(14,165,233,0.2)]"
+            style="color: var(--editor-text); background-color: var(--editor-surface-elevated); border-color: var(--editor-accent);"
             @blur="saveTitle"
             @keydown.enter="saveTitle"
             @keydown.esc="cancelEdit"
@@ -17,22 +19,25 @@
         </div>
         <button
           v-else
-          class="editor-header__title-button"
+          class="flex items-center gap-2 bg-transparent border border-transparent rounded-md px-3 py-2 cursor-pointer transition-all duration-150 min-w-0 flex-1 text-left hover:bg-white/5 hover:border-white/10 group"
           :title="'Click to edit title'"
           @click="startEditingTitle"
         >
-          <h2 class="editor-header__title">
+          <h2 class="text-[0.9375rem] font-semibold m-0 overflow-hidden text-ellipsis whitespace-nowrap tracking-tight flex-1 min-w-0" 
+              style="color: var(--editor-text);">
             {{ title }}
           </h2>
-          <Pencil :size="14" class="editor-header__title-edit-icon" />
+          <Pencil :size="14" class="flex-shrink-0 opacity-50 transition-opacity duration-150 group-hover:opacity-100" 
+                  style="color: var(--editor-text-muted);" />
         </button>
       </div>
     </div>
 
-    <div class="editor-header__right">
+    <div class="flex items-center gap-2">
       <!-- Export Button -->
       <button
-        class="editor-header__button editor-header__button--export"
+        class="flex items-center justify-center gap-2 px-4 py-2 bg-transparent border rounded text-sm font-medium cursor-pointer transition-all duration-150 hover:border-sky-500/50"
+        style="background-color: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.3); color: var(--editor-accent);"
         title="Export (Ctrl+E)"
         @click="$emit('export')"
       >
@@ -42,7 +47,8 @@
 
       <!-- Close Button -->
       <button
-        class="editor-header__button editor-header__button--close"
+        class="flex items-center justify-center w-8 h-8 p-2 bg-transparent border-none rounded cursor-pointer transition-all duration-150 hover:bg-red-500/20"
+        style="color: var(--editor-text);"
         title="Close (Esc)"
         @click="$emit('close')"
       >
@@ -98,159 +104,5 @@ function stopPropagation(event: KeyboardEvent) {
 }
 </script>
 
-<style scoped>
-.editor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background: linear-gradient(180deg, var(--editor-surface) 0%, var(--editor-bg) 100%);
-  border-bottom: 1px solid var(--editor-border);
-  flex-shrink: 0;
-  height: 56px;
-  backdrop-filter: blur(12px);
-  box-sizing: border-box;
-  margin: 0;
-  position: relative;
-  z-index: 10;
-}
 
-.editor-header__left {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  min-width: 0;
-}
-
-.editor-header__right {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.editor-header__button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  color: var(--editor-text);
-  cursor: pointer;
-  transition: all 150ms ease;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.editor-header__button:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-
-.editor-header__button--export {
-  background-color: rgba(14, 165, 233, 0.15);
-  border: 1px solid rgba(14, 165, 233, 0.3);
-  color: var(--editor-accent);
-  padding: 0.5rem 1rem;
-}
-
-.editor-header__button--export:hover {
-  background-color: rgba(14, 165, 233, 0.25);
-  border-color: rgba(14, 165, 233, 0.5);
-  color: var(--editor-accent-hover);
-}
-
-.editor-header__button--close {
-  width: 32px;
-  height: 32px;
-}
-
-.editor-header__button--close:hover {
-  background-color: rgba(239, 68, 68, 0.2);
-  color: #f87171;
-}
-
-.editor-header__title-section {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  flex: 1;
-  max-width: 500px;
-}
-
-.editor-header__icon {
-  flex-shrink: 0;
-  color: var(--editor-accent);
-}
-
-.editor-header__title-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
-  cursor: pointer;
-  transition: all 150ms ease;
-  min-width: 0;
-  flex: 1;
-  text-align: left;
-}
-
-.editor-header__title-button:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.editor-header__title-button:hover .editor-header__title-edit-icon {
-  opacity: 1;
-}
-
-.editor-header__title {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--editor-text);
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  letter-spacing: -0.01em;
-  flex: 1;
-  min-width: 0;
-}
-
-.editor-header__title-edit-icon {
-  flex-shrink: 0;
-  color: var(--editor-text-muted);
-  opacity: 0.5;
-  transition: opacity 150ms ease;
-}
-
-.editor-header__title-edit-wrapper {
-  flex: 1;
-  min-width: 0;
-}
-
-.editor-header__title-input {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--editor-text);
-  background-color: var(--editor-surface-elevated);
-  border: 1px solid var(--editor-accent);
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
-  outline: none;
-  width: 100%;
-  letter-spacing: -0.01em;
-}
-
-.editor-header__title-input:focus {
-  border-color: var(--editor-accent-hover);
-  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
-}
-</style>
 

@@ -1,13 +1,15 @@
 <template>
-  <div ref="previewContainerRef" class="editor-preview">
+  <div ref="previewContainerRef" class="flex flex-col h-full" 
+       style="background: repeating-conic-gradient(#0a0a0b 0% 25%, #111113 0% 50%) 50% / 20px 20px;">
     <!-- Video Container -->
-    <div class="editor-preview__video-wrapper">
-      <div class="editor-preview__video-container">
+    <div class="flex-1 flex items-center justify-center p-8 min-h-0 relative">
+      <div class="relative w-full h-full max-w-full max-h-full flex items-center justify-center bg-black rounded-xl overflow-hidden" 
+           style="box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(14, 165, 233, 0.1);">
         <video
           ref="videoRef"
-          class="editor-preview__video"
+          class="w-full h-full object-contain"
           :class="{
-            'editor-preview__video--hidden': showCropOverlay || isAfterVideoEnd,
+            'hidden': showCropOverlay || isAfterVideoEnd,
           }"
           :src="videoSrc || undefined"
           :style="{ filter: appliedCSSFilters }"
@@ -21,21 +23,22 @@
         <!-- Black screen when video ends but audio continues -->
         <div
           v-if="isAfterVideoEnd"
-          class="editor-preview__black-screen"
+          class="absolute top-0 left-0 w-full h-full bg-black z-[1]"
         ></div>
 
         <!-- Crop Region Overlay -->
-        <div v-if="showCropOverlay" class="editor-preview__crop-overlay">
-          <div class="editor-preview__crop-region"></div>
+        <div v-if="showCropOverlay" class="absolute top-0 left-0 w-full h-full pointer-events-none bg-black/40">
+          <div class="absolute border-2 border-dashed" style="border-color: rgba(14, 165, 233, 0.8); box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.4);"></div>
         </div>
 
         <!-- Overlays (text, stickers, watermarks) -->
-        <div class="editor-preview__overlays" @click="handleOverlayClick">
+        <div class="absolute top-0 left-0 w-full h-full pointer-events-auto cursor-crosshair" @click="handleOverlayClick">
           <!-- Text Overlays -->
           <div
             v-for="textOverlay in activeTextOverlays"
             :key="textOverlay.id"
-            class="editor-preview__text-overlay"
+            class="absolute text-white text-[2rem] font-bold pointer-events-none whitespace-pre-wrap max-w-[80%]"
+            style="text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);"
             :style="getTextOverlayStyle(textOverlay)"
           >
             {{ textOverlay.text }}
@@ -45,7 +48,7 @@
           <div
             v-for="sticker in activeStickers"
             :key="sticker.id"
-            class="editor-preview__sticker"
+            class="absolute pointer-events-none text-[3rem]"
             :style="getStickerStyle(sticker)"
           >
             {{ sticker.sticker_path }}
@@ -54,14 +57,14 @@
           <!-- Watermark -->
           <div
             v-if="activeWatermark && watermarkSettings"
-            class="editor-preview__watermark"
+            class="absolute pointer-events-none"
             :style="getWatermarkStyle()"
           >
             <img
               v-if="activeWatermark.preview_url"
               :src="activeWatermark.preview_url"
               alt="Watermark"
-              class="editor-preview__watermark-image"
+              class="max-w-full max-h-full object-contain"
             />
           </div>
         </div>
@@ -69,9 +72,11 @@
     </div>
 
     <!-- Controls -->
-    <div class="editor-preview__controls">
+    <div class="flex items-center gap-4 px-6 py-4 relative z-[100] border-t backdrop-blur-[12px]" 
+         style="background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%); border-color: var(--editor-border);">
       <button
-        class="editor-preview__control-button"
+        class="flex items-center justify-center w-10 h-10 rounded-lg border cursor-pointer transition-all duration-150 hover:border-sky-500/50"
+        style="background-color: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.3); color: var(--editor-accent);"
         @click="togglePlayPause"
       >
         <Play v-if="!isPlaying" :size="20" />
@@ -79,18 +84,20 @@
       </button>
 
       <!-- Volume Control -->
-      <div class="editor-preview__volume-control">
+      <div class="flex items-center gap-3">
         <button
-          class="editor-preview__control-button"
+          class="flex items-center justify-center w-10 h-10 rounded-lg border cursor-pointer transition-all duration-150 hover:border-sky-500/50"
+          style="background-color: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.3); color: var(--editor-accent);"
           @click="toggleMute"
           title="Mute/Unmute"
         >
           <VolumeX v-if="isMuted || volume === 0" :size="20" />
           <Volume2 v-else :size="20" />
         </button>
-        <div class="editor-preview__volume-slider-container">
+        <div class="relative w-24 h-1.5 bg-white/10 rounded">
           <div
-            class="editor-preview__volume-slider-fill"
+            class="absolute left-0 top-0 h-full rounded transition-[width] duration-150 pointer-events-none"
+            style="background: linear-gradient(90deg, rgba(14, 165, 233, 0.8), rgba(14, 165, 233, 1));"
             :style="{ width: `${volume * 100}%` }"
           ></div>
           <input
@@ -99,42 +106,45 @@
             min="0"
             max="1"
             step="0.05"
-            class="editor-preview__volume-slider"
+            class="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer z-10"
             @input="updateVolume"
           />
         </div>
       </div>
 
-      <div class="editor-preview__spacer"></div>
+      <div class="flex-1"></div>
 
       <!-- Progress Bar (shown in fullscreen) -->
       <div
         v-if="isFullscreen"
-        class="editor-preview__progress-bar-wrapper"
+        class="flex-[0_0_400px] flex items-center"
       >
         <div
           ref="progressBarRef"
-          class="editor-preview__progress-bar"
+          class="relative w-full h-1.5 bg-gray-600/40 rounded cursor-pointer transition-[height] duration-150 hover:h-2"
           @mousedown="startDragging"
           @mousemove="handleProgressHover"
           @mouseleave="hoverTime = null"
         >
           <!-- Progress fill -->
           <div
-            class="editor-preview__progress-fill"
+            class="absolute left-0 top-0 h-full rounded transition-[width] duration-100 pointer-events-none"
+            style="background: linear-gradient(90deg, #8b5cf6, #a78bfa);"
             :style="{ width: `${progressPercent}%` }"
           ></div>
           <!-- Playhead -->
           <div
-            class="editor-preview__playhead"
-            :class="{ 'editor-preview__playhead--dragging': isDraggingProgress }"
-            :style="{ left: `${progressPercent}%` }"
+            class="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 rounded-full cursor-grab transition-all duration-150 z-10 hover:scale-110"
+            :class="{ 'cursor-grabbing !scale-125': isDraggingProgress }"
+            style="border-color: #8b5cf6; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);"
+            :style="{ left: `${progressPercent}%`, boxShadow: isDraggingProgress ? '0 4px 16px rgba(139, 92, 246, 0.5)' : '0 2px 8px rgba(0, 0, 0, 0.3)' }"
             @mousedown.stop="startDraggingPlayhead"
           ></div>
           <!-- Hover preview -->
           <div
             v-if="hoverTime !== null && !isDraggingProgress"
-            class="editor-preview__progress-tooltip"
+            class="absolute bottom-[150%] -translate-x-1/2 bg-black/95 backdrop-blur-sm text-white px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap pointer-events-none tabular-nums"
+            style="box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);"
             :style="{ left: `${hoverPosition}%` }"
           >
             {{ formatTime(hoverTime) }}
@@ -142,7 +152,8 @@
           <!-- Dragging tooltip -->
           <div
             v-if="isDraggingProgress"
-            class="editor-preview__progress-tooltip"
+            class="absolute bottom-[150%] -translate-x-1/2 bg-black/95 backdrop-blur-sm text-white px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap pointer-events-none tabular-nums"
+            style="box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);"
             :style="{ left: `${progressPercent}%` }"
           >
             {{ formatTime(props.currentTime) }}
@@ -150,15 +161,18 @@
         </div>
       </div>
 
-      <div class="editor-preview__spacer"></div>
+      <div class="flex-1"></div>
+
 
       <!-- Aspect Ratio Selector -->
-      <div class="editor-preview__aspect-selector">
+      <div class="flex gap-1 p-1 rounded-md border" 
+           style="background-color: var(--editor-surface-elevated); border-color: var(--editor-border);">
         <button
           v-for="ratio in aspectRatios"
           :key="ratio"
-          class="editor-preview__aspect-button"
-          :class="{ 'editor-preview__aspect-button--active': aspectRatio === ratio }"
+          class="px-3 py-1.5 bg-transparent border-none rounded text-[0.8125rem] font-medium cursor-pointer transition-all duration-150 hover:bg-white/8"
+          :class="{ '!bg-sky-500/15 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.3)]': aspectRatio === ratio }"
+          :style="aspectRatio === ratio ? 'color: var(--editor-accent);' : 'color: var(--editor-text-muted);'"
           @click="selectAspectRatio(ratio)"
         >
           {{ ratio }}
@@ -167,7 +181,8 @@
 
       <!-- Fullscreen Button -->
       <button
-        class="editor-preview__control-button"
+        class="flex items-center justify-center w-10 h-10 rounded-lg border cursor-pointer transition-all duration-150 hover:border-sky-500/50"
+        style="background-color: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.3); color: var(--editor-accent);"
         @click="toggleFullscreen"
         :title="isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
       >
@@ -694,290 +709,5 @@ onUnmounted(() => {
 });
 </script>
 
-<style scoped>
-.editor-preview {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: 
-    repeating-conic-gradient(#0a0a0b 0% 25%, #111113 0% 50%) 
-    50% / 20px 20px;
-}
 
-.editor-preview__video-wrapper {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  min-height: 0;
-  position: relative;
-}
-
-.editor-preview__video-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #000;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 
-    0 20px 60px rgba(0, 0, 0, 0.8),
-    0 0 0 1px rgba(14, 165, 233, 0.1);
-}
-
-.editor-preview__video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.editor-preview__black-screen {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: #000;
-  z-index: 1;
-}
-
-.editor-preview__overlays {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: auto;
-  cursor: crosshair;
-}
-
-.editor-preview__crop-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  background-color: rgba(0, 0, 0, 0.4);
-}
-
-.editor-preview__crop-region {
-  position: absolute;
-  border: 2px dashed rgba(14, 165, 233, 0.8);
-  box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.4);
-}
-
-.editor-preview__text-overlay {
-  position: absolute;
-  color: white;
-  font-size: 2rem;
-  font-weight: 700;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-  pointer-events: none;
-  white-space: pre-wrap;
-  max-width: 80%;
-}
-
-.editor-preview__sticker {
-  position: absolute;
-  pointer-events: none;
-  font-size: 3rem;
-}
-
-.editor-preview__watermark {
-  position: absolute;
-  pointer-events: none;
-}
-
-.editor-preview__watermark-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.editor-preview__controls {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%);
-  border-top: 1px solid var(--editor-border);
-  backdrop-filter: blur(12px);
-  position: relative;
-  z-index: 100;
-}
-
-.editor-preview__control-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  background-color: rgba(14, 165, 233, 0.15);
-  border: 1px solid rgba(14, 165, 233, 0.3);
-  border-radius: 8px;
-  color: var(--editor-accent);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.editor-preview__control-button:hover {
-  background-color: rgba(14, 165, 233, 0.25);
-  border-color: rgba(14, 165, 233, 0.5);
-  color: var(--editor-accent-hover);
-}
-
-.editor-preview__volume-control {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.editor-preview__volume-slider-container {
-  position: relative;
-  width: 96px;
-  height: 6px;
-  background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-
-.editor-preview__volume-slider-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(90deg, rgba(14, 165, 233, 0.8), rgba(14, 165, 233, 1));
-  border-radius: 3px;
-  transition: width 150ms ease;
-  pointer-events: none;
-}
-
-.editor-preview__volume-slider {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 10;
-}
-
-.editor-preview__spacer {
-  flex: 1;
-}
-
-.editor-preview__aspect-selector {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  background-color: var(--editor-surface-elevated);
-  border-radius: 6px;
-  border: 1px solid var(--editor-border);
-}
-
-.editor-preview__aspect-button {
-  padding: 0.375rem 0.75rem;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  color: var(--editor-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-  font-size: 0.8125rem;
-  font-weight: 500;
-}
-
-.editor-preview__aspect-button:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: var(--editor-text);
-}
-
-.editor-preview__aspect-button--active {
-  background-color: rgba(14, 165, 233, 0.15);
-  color: var(--editor-accent);
-  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.3);
-}
-
-.editor-preview__progress-bar-wrapper {
-  flex: 0 0 400px;
-  display: flex;
-  align-items: center;
-}
-
-.editor-preview__progress-bar {
-  position: relative;
-  width: 100%;
-  height: 6px;
-  background-color: rgba(100, 100, 100, 0.4);
-  border-radius: 3px;
-  cursor: pointer;
-  transition: height 150ms ease;
-}
-
-.editor-preview__progress-bar:hover {
-  height: 8px;
-}
-
-
-.editor-preview__progress-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
-  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
-  border-radius: 3px;
-  transition: width 100ms linear;
-  pointer-events: none;
-}
-
-.editor-preview__playhead {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 14px;
-  height: 14px;
-  background: white;
-  border: 2px solid #8b5cf6;
-  border-radius: 50%;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  cursor: grab;
-  transition: all 150ms ease;
-  z-index: 10;
-}
-
-.editor-preview__playhead:hover {
-  transform: translate(-50%, -50%) scale(1.15);
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4);
-}
-
-.editor-preview__playhead--dragging {
-  cursor: grabbing;
-  transform: translate(-50%, -50%) scale(1.2);
-  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.5);
-}
-
-.editor-preview__progress-tooltip {
-  position: absolute;
-  bottom: 150%;
-  transform: translateX(-50%);
-  background-color: rgba(0, 0, 0, 0.95);
-  backdrop-filter: blur(8px);
-  color: white;
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  white-space: nowrap;
-  pointer-events: none;
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-</style>
 

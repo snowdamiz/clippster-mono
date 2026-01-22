@@ -1,9 +1,9 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="clip-editor-overlay" @click.self="handleClose">
+      <div v-if="modelValue" class="fixed top-8 left-0 right-0 bottom-0 bg-black/[0.98] backdrop-blur-2xl z-[10000] flex items-stretch justify-stretch" @click.self="handleClose">
         <Transition name="dialog" appear>
-          <div v-if="modelValue" class="clip-editor" role="dialog" aria-modal="true">
+          <div v-if="modelValue" class="w-full h-full bg-[var(--editor-bg)] flex flex-col overflow-hidden pt-0 box-border" role="dialog" aria-modal="true">
             <!-- Header -->
             <ClipEditorHeader
               :title="editorTitle"
@@ -13,7 +13,7 @@
             />
 
             <!-- Main Content Area -->
-            <div class="clip-editor__content">
+            <div class="flex flex-1 overflow-hidden min-h-0">
             <!-- Left Sidebar: Tool Panels -->
             <ClipEditorSidebar
               v-model:active-panel="activePanel"
@@ -42,7 +42,7 @@
             />
 
             <!-- Center: Video Preview -->
-            <div class="clip-editor__preview-wrapper">
+            <div class="flex-1 flex flex-col min-w-0 bg-[linear-gradient(135deg,#0a0a0b_0%,#0d0d0e_100%)]">
               <ClipEditorPreview
                 :video-src="activeVideoUrl"
                 :current-time="currentTime"
@@ -72,7 +72,7 @@
             </div>
 
             <!-- Bottom: Timeline -->
-            <div class="clip-editor__timeline-wrapper">
+            <div class="shrink-0 h-[280px] border-t border-[var(--editor-border)] bg-[var(--editor-surface)] flex flex-col">
               <ClipEditorToolbar
                 :zoom-level="zoomLevel"
                 :current-time="currentTime"
@@ -825,7 +825,7 @@ async function handleTitleUpdate(newTitle: string) {
   // Update the project name in the database
   if (props.editorProjectId) {
     try {
-      await updateProject(props.editorProjectId, { name: newTitle });
+      await updateProject(props.editorProjectId, newTitle);
       console.log('[ClipEditorDialog] Project title updated:', newTitle);
     } catch (error) {
       console.error('[ClipEditorDialog] Failed to update project title:', error);
@@ -1060,92 +1060,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.clip-editor-overlay {
-  position: fixed;
-  top: 32px; /* Account for custom titlebar */
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.98);
-  backdrop-filter: blur(16px);
-  z-index: 10000;
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-}
-
-.clip-editor {
-  width: 100%;
-  height: 100%;
-  background-color: var(--editor-bg);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding-top: 0;
-  box-sizing: border-box;
-}
-
-.clip-editor__content {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.clip-editor__preview-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  background: linear-gradient(135deg, #0a0a0b 0%, #0d0d0e 100%);
-}
-
-.clip-editor__timeline-wrapper {
-  flex-shrink: 0;
-  height: 280px;
-  border-top: 1px solid var(--editor-border);
-  background-color: var(--editor-surface);
-  display: flex;
-  flex-direction: column;
-}
-
-.clip-editor__editor-mode-notice {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #000;
-}
-
-.clip-editor__notice-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  max-width: 500px;
-  text-align: center;
-  padding: 3rem;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.clip-editor__notice-content h3 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #f4f4f5;
-  margin: 0;
-}
-
-.clip-editor__notice-content p {
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  margin: 0;
-}
-
-.clip-editor__notice-hint {
-  font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.5);
-}
-
 /* Transitions */
 .modal-enter-active,
 .modal-leave-active {
