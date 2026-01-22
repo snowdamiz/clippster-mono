@@ -853,6 +853,9 @@
       streamers.value = records.map((record) => {
         const monitored = monitoredStreamers.value.get(record.id);
         const session = activeSessions.value.get(record.id);
+        
+        // Preserve existing live status from memory to prevent streamers appearing offline on reload
+        const existingStreamer = streamers.value.find(s => s.id === record.id);
 
         const platformMap: Record<string, Platform> = {
           pumpfun: 'PumpFun',
@@ -878,6 +881,10 @@
           status: session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE',
           selected: false,
           autoDvr: Boolean(record.auto_dvr),
+          // Preserve live status from existing streamer in memory (if it exists)
+          isLive: existingStreamer?.isLive ?? Boolean(record.is_currently_live),
+          viewerCount: existingStreamer?.viewerCount,
+          isCheckingLive: existingStreamer?.isCheckingLive ?? false,
         };
       });
     } catch (error) {
