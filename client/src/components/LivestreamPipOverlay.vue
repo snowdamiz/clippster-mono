@@ -21,7 +21,7 @@
           :muted="isMuted"
         />
 
-        <!-- Live Badge + Streamer Name (auto-hide) -->
+        <!-- LIVE Badge and Streamer Name (auto-hide) -->
         <Transition name="fade">
           <div
             v-if="showControls"

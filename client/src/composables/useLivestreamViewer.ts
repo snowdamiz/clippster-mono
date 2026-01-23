@@ -27,19 +27,12 @@ import type {
 } from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
 import { useHlsPlayback } from './useHlsPlayback';
-import { useToast } from '@/composables/useToast';
 import {
   checkKickLivestream,
   startKickRecording,
   stopKickRecording,
   extractChannelSlug,
 } from '@/services/kick';
-import {
-  checkTwitchLivestream,
-  startTwitchRecording,
-  stopTwitchRecording,
-  extractChannelName,
-} from '@/services/twitch';
 
 // PumpFun LiveKit API endpoints
 const PUMPFUN_LIVESTREAM_API = 'https://livestream-api.pump.fun';
@@ -138,7 +131,6 @@ export function useLivestreamViewer() {
     stopMonitoring,
     dvrSessions,
     getKickDvrSession,
-    getTwitchDvrSession,
   } = useLivestreamMonitoring();
 
   // HLS Playback composable for reliable live streaming with DVR
@@ -184,9 +176,6 @@ export function useLivestreamViewer() {
 
   // Track if HLS is ready for playback (has at least one segment)
   const isHlsReady = ref(false);
-  const isSeekingActive = ref(false);
-  const { error: showToastError } = useToast();
-  let offlineToastShown = false;
   let lastDurationUpdate = 0;
   let lastDurationValue = 0;
   let displayDuration = 0; // Smoothed duration to avoid UI jumps when new segments arrive
@@ -664,128 +653,6 @@ export function useLivestreamViewer() {
     }
   }
 
-  // Connect to Twitch livestream using yt-dlp recording (same approach as Kick)
-  async function connectToTwitch(
-    channelInput: string,
-    streamerId: string,
-    displayName: string,
-    profileImageUrl?: string
-  ) {
-    try {
-      // Extract channel name from URL if needed (e.g., "https://twitch.tv/xqc" -> "xqc")
-      const channelName = extractChannelName(channelInput) || channelInput;
-      console.log('[LiveViewer] Connecting to Twitch channel:', channelName);
-
-      // Check if stream is live and get stream info
-      const twitchStatus = await checkTwitchLivestream(channelName);
-
-      if (!twitchStatus.isLive) {
-        state.value.connectionState = 'failed';
-        state.value.connectionError = 'Stream is not live';
-        return;
-      }
-
-      state.value.viewerCount = twitchStatus.viewerCount || 0;
-      state.value.recordingStartTime = twitchStatus.startedAt
-        ? new Date(twitchStatus.startedAt).getTime()
-        : Date.now();
-
-      // Check if there's an existing DVR session for this streamer (Auto DVR)
-      const existingDvrSession = getTwitchDvrSession(streamerId);
-      let outputDir: string;
-      let sessionId: string;
-
-      if (existingDvrSession) {
-        // Use existing DVR session - allows seeking back to beginning of stream
-        console.log('[LiveViewer] Found existing Twitch DVR session:', existingDvrSession.sessionId);
-        outputDir = existingDvrSession.outputDir;
-        sessionId = existingDvrSession.sessionId;
-        state.value.tempSessionId = sessionId;
-        state.value.isTempRecording = false; // Not a temp recording - it's a DVR session
-      } else {
-        // No existing DVR session - start a new temp recording
-        sessionId = `twitch-view-${channelName}-${Date.now()}`;
-        state.value.tempSessionId = sessionId;
-        state.value.isTempRecording = true;
-
-        console.log('[LiveViewer] Starting new Twitch recording:', channelName);
-
-        // Start yt-dlp recording - this creates local HLS files we can play
-        try {
-          await startTwitchRecording(channelName, streamerId, sessionId, 1);
-        } catch (recordingError) {
-          console.error('[LiveViewer] Failed to start Twitch recording:', recordingError);
-          state.value.connectionState = 'failed';
-          state.value.connectionError = 'Failed to start stream capture';
-          return;
-        }
-
-        // Get the output directory for HLS playback
-        outputDir = await invoke<string>('get_twitch_session_output_dir', { sessionId });
-      }
-
-      console.log('[LiveViewer] Twitch HLS output dir:', outputDir);
-
-      // Initialize HLS playback with the local recording output
-      if (hlsVideoElement.value) {
-        state.value.dvrStartTime = Date.now();
-        state.value.kickEmbedUrl = null;
-
-        // Store the output dir for HLS playback
-        hlsOutputDir.value = outputDir;
-
-        // Use the HLS playback composable for local Twitch stream
-        // This will poll for the playlist to become available
-        await hlsPlayback.initialize(hlsVideoElement.value, outputDir);
-
-        state.value.connectionState = 'connected';
-        state.value.isBuffering = false;
-        state.value.playbackMode = 'hls';
-        isHlsReady.value = true;
-        reconnectAttempts = 0;
-
-        // Reset segment stall detection
-        lastSegmentCount = 0;
-        lastSegmentTime = Date.now();
-        isRestartingRecorder = false;
-
-        // Start live edge updates for Twitch
-        startLiveEdgeUpdates();
-
-        // Start segment polling for clipping functionality
-        startSegmentPolling();
-
-        // Start playback sync to keep UI in sync with HLS state
-        startPlaybackSync();
-
-        // Auto-play
-        hlsPlayback.play();
-        state.value.isPlaying = true;
-
-        console.log(
-          '[LiveViewer] Connected to Twitch stream via yt-dlp',
-          existingDvrSession ? '(using existing DVR)' : '(new recording)'
-        );
-      } else {
-        throw new Error('HLS video element not available');
-      }
-    } catch (error) {
-      console.error('[LiveViewer] Failed to connect to Twitch:', error);
-      state.value.connectionState = 'failed';
-      state.value.connectionError = error instanceof Error ? error.message : 'Connection failed';
-
-      // Clean up recording if it was started (only for temp recordings)
-      if (state.value.tempSessionId && state.value.isTempRecording) {
-        try {
-          const cleanupName = extractChannelName(channelInput) || channelInput;
-          await stopTwitchRecording(cleanupName);
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
-    }
-  }
-
   // Connect to livestream
   async function connect(
     mintId: string,
@@ -821,11 +688,6 @@ export function useLivestreamViewer() {
     // Route to platform-specific connection
     if (platform === 'Kick') {
       await connectToKick(mintId, streamerId, displayName, profileImageUrl);
-      return;
-    }
-
-    if (platform === 'Twitch') {
-      await connectToTwitch(mintId, streamerId, displayName, profileImageUrl);
       return;
     }
 
@@ -1199,7 +1061,6 @@ export function useLivestreamViewer() {
   }
 
   // Ensure HLS recording is available for playback and clipping
-  // Uses Node.js HLS recorder for reliable multi-participant recording
   async function ensureHlsRecordingAvailable(
     streamerId: string,
     mintId: string,
@@ -1210,10 +1071,11 @@ export function useLivestreamViewer() {
     const session = activeSessions.value.get(streamerId);
     if (session) {
       state.value.sessionId = session.sessionId;
-      state.value.projectId = session.projectId ?? null;
+      state.value.projectId = session.projectId;
       state.value.isTempRecording = false;
 
       // Try to get the output directory for HLS playback
+      // Note: Auto-detect for PumpFun now uses DVR recording, so HLS output dir may not exist
       try {
         const outputDir = await invoke<string>('get_recording_output_dir', {
           sessionId: session.sessionId,
@@ -1222,34 +1084,35 @@ export function useLivestreamViewer() {
         return; // HLS recording exists, we're done
       } catch (e) {
         console.warn(
-          '[LiveViewer] Could not get recording output dir, starting HLS recording:',
+          '[LiveViewer] Could not get recording output dir, starting HLS recording for playback:',
           e
         );
-        // Fall through to start HLS recording
+        // Fall through to start HLS recording for playback
       }
     }
 
-    // Start HLS recording via Tauri (Node.js recorder)
+    // Start HLS recording via Tauri (Node.js recorder) for video playback
+    // This is needed even if auto-detect is using DVR, because the video player needs HLS
     try {
       const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
         mintId,
         streamerId,
         displayName,
-        resumeDir: null,
+        resumeDir: null, // New session, not resuming
       });
 
+      // Only update sessionId if we don't already have one from auto-detect
       if (!state.value.sessionId) {
         state.value.sessionId = result.sessionId;
       }
-      state.value.isTempRecording = !session;
+      state.value.isTempRecording = !session; // Temp if no auto-detect session
       if (!session) {
         state.value.projectId = null;
       }
       hlsOutputDir.value = result.outputDir;
       state.value.dvrStartTime = Date.now();
-      console.log('[LiveViewer] HLS recording started:', result.outputDir);
     } catch (error) {
-      console.error('[LiveViewer] Failed to start HLS recording:', error);
+      console.warn('[LiveViewer] Failed to start HLS recording:', error);
       state.value.connectionError = 'Failed to start recording';
     }
   }
@@ -1512,10 +1375,6 @@ export function useLivestreamViewer() {
         console.log('[LiveViewer] Stream is no longer live');
         state.value.connectionState = 'disconnected';
         state.value.connectionError = 'Stream ended';
-        if (!offlineToastShown) {
-          showToastError('Stream ended');
-          offlineToastShown = true;
-        }
       }
     } catch (checkError) {
       console.error('[LiveViewer] Failed to check stream status:', checkError);
@@ -1552,7 +1411,7 @@ export function useLivestreamViewer() {
       const safeDuration = Math.max(displayDuration, 0.001);
 
       // Don't overwrite playback position while actively seeking - let the seek target stick
-      if (!isSeekingActive.value) {
+      if (!isSeekingActive) {
         const clampedPosition = Math.min(ps.currentTime, Math.max(0, safeDuration - 0.25));
         state.value.playbackPosition = clampedPosition;
       }
@@ -1603,7 +1462,7 @@ export function useLivestreamViewer() {
         }
 
         // Don't override isAtLiveEdge while actively seeking
-        if (!isSeekingActive.value) {
+        if (!isSeekingActive) {
           // Check if at live edge (within 2 seconds of end)
           state.value.isAtLiveEdge = ps.isAtLiveEdge || ps.currentTime >= ps.duration - 2;
         }
@@ -1676,7 +1535,7 @@ export function useLivestreamViewer() {
         const session = activeSessions.value.get(state.value.streamerId);
         if (session) {
           state.value.sessionId = session.sessionId;
-          state.value.projectId = session.projectId ?? null;
+          state.value.projectId = session.projectId;
           state.value.isTempRecording = false;
         }
       }
@@ -1764,7 +1623,7 @@ export function useLivestreamViewer() {
         if (!exists) {
           state.value.availableSegments = [...state.value.availableSegments, newSegment];
           state.value.totalRecordedDuration += event.payload.duration;
-
+          
           console.log('[LiveViewer] Segment added (real-time):', event.payload.segment, 'Total:', state.value.availableSegments.length);
         }
       }
@@ -1950,7 +1809,7 @@ export function useLivestreamViewer() {
 
     // Reset HLS ready state and seeking flag
     isHlsReady.value = false;
-    isSeekingActive.value = false;
+    isSeekingActive = false;
   }
 
   // Set video element reference (legacy - not used in HLS-only mode)
@@ -2018,6 +1877,9 @@ export function useLivestreamViewer() {
     }
   }
 
+  // Track when we're actively seeking to prevent sync interval from overwriting position
+  let isSeekingActive = false;
+
   // Seek to a specific time (always uses HLS)
   async function seek(time: number) {
     const hlsDuration = hlsPlayback.state.value.duration;
@@ -2034,7 +1896,7 @@ export function useLivestreamViewer() {
       const clampedTime = Math.max(0, Math.min(time, hlsDuration > 0 ? hlsDuration - 0.5 : time));
 
       // Set seeking flag to prevent sync interval from overwriting position
-      isSeekingActive.value = true;
+      isSeekingActive = true;
 
       // Immediately update UI state to reflect seek target
       state.value.playbackPosition = clampedTime;
@@ -2045,7 +1907,7 @@ export function useLivestreamViewer() {
 
       // Keep the seek flag active briefly to let the video element catch up
       setTimeout(() => {
-        isSeekingActive.value = false;
+        isSeekingActive = false;
       }, 500);
     }
   }
@@ -2059,7 +1921,7 @@ export function useLivestreamViewer() {
     const livePosition = Math.max(0, duration - 8);
 
     // Set seeking flag to prevent sync interval from overwriting position
-    isSeekingActive.value = true;
+    isSeekingActive = true;
 
     // Immediately update UI state
     state.value.playbackPosition = livePosition;
@@ -2069,7 +1931,7 @@ export function useLivestreamViewer() {
 
     // Keep the seek flag active briefly to let the video element catch up
     setTimeout(() => {
-      isSeekingActive.value = false;
+      isSeekingActive = false;
     }, 500);
   }
 
@@ -2101,7 +1963,7 @@ export function useLivestreamViewer() {
     async (session) => {
       if (session) {
         state.value.sessionId = session.sessionId;
-        state.value.projectId = session.projectId ?? null;
+        state.value.projectId = session.projectId;
 
         // Get the output directory for HLS playback if available
         try {

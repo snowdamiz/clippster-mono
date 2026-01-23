@@ -51,7 +51,7 @@ export interface HlsPlaybackState {
 }
 
 // Configuration - optimized for 4-second segments
-const LIVE_EDGE_THRESHOLD = 12; // seconds behind live to consider "at live edge" (3 segments)
+const LIVE_EDGE_THRESHOLD = 15; // seconds behind live to consider "at live edge" (allows ~3-4 segments buffer)
 const SAFE_SEEK_PADDING = 0.25; // Avoid seeking exactly to the start of first fragment
 
 /**
@@ -230,8 +230,11 @@ export function useHlsPlayback() {
       // Create HLS instance with live streaming config optimized for DVR playback
       hls = new Hls({
         // Live streaming optimizations for 4-second segments
-        // We use a larger buffer to ensure smooth playback and avoid stalling
-        liveSyncDurationCount: 5, // Stay 5 segments (20s) behind live edge for safety
+        // CRITICAL: Stay far enough behind live edge to ensure smooth playback
+        // With 4-second segments, we need at least 6 segments (24s) of buffer
+        liveSyncDurationCount: 6, // Stay 6 segments (24s) behind live edge
+        // CRITICAL: Prevent catch-up speed adjustments - always play at 1.0x speed
+        maxLiveSyncPlaybackRate: 1.0, // Never speed up to catch up to live edge
         // Do NOT auto-jump forward when far behind (e.g., paused DVR). Large value disables catch-up seeks.
         liveMaxLatencyDurationCount: Number.POSITIVE_INFINITY,
         liveDurationInfinity: true, // Enable DVR mode (infinite duration)
@@ -785,11 +788,8 @@ export function useHlsPlayback() {
     // NOT what's currently buffered. HLS.js will load necessary segments when seeking.
     const minAvailableOffset = Math.max(0, availableStartTime - offset);
     const safeFloor = minAvailableOffset > 0 ? minAvailableOffset + SAFE_SEEK_PADDING : 0;
-    // Use duration as the upper bound for seeking, NOT liveEdgeTime.
-    // liveEdgeTime represents the "safe" live sync position (a few segments behind),
-    // but users should be able to seek anywhere within the available duration.
-    const maxSeekable = state.value.duration || 0;
-    const clampedTime = Math.max(safeFloor, Math.min(time, maxSeekable));
+    const liveEdge = state.value.liveEdgeTime || state.value.duration || 0;
+    const clampedTime = Math.max(safeFloor, Math.min(time, liveEdge));
 
     // Map back to absolute player time
     const targetAbsolute = clampedTime + offset;

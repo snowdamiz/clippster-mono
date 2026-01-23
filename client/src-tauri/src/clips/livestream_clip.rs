@@ -3,7 +3,7 @@ use tauri_plugin_shell::ShellExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::encoder::{detect_hardware_encoder, run_ffmpeg_with_fallback, build_hwaccel_args};
+use super::encoder::{detect_hardware_encoder, run_ffmpeg_with_fallback};
 use super::types::WatermarkSettings;
 use crate::storage;
 
@@ -356,14 +356,12 @@ async fn extract_single_segment_clip(
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, "high").await;
 
-    let mut args = build_hwaccel_args(&encoder);
-    
-    args.extend(vec![
+    let mut args = vec![
         "-ss".to_string(), seek_in_segment.to_string(),
         "-i".to_string(), segment.file_path.clone(),
         "-t".to_string(), clip_duration.to_string(),
         "-c:v".to_string(), encoder.codec.clone(),
-    ]);
+    ];
 
     // Add preset if applicable
     if let Some(preset) = &encoder.preset {
@@ -460,14 +458,12 @@ async fn extract_multi_segment_clip(
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, "high").await;
 
-    let mut args = build_hwaccel_args(&encoder);
-    
-    args.extend(vec![
+    let mut args = vec![
         "-ss".to_string(), seek_position.to_string(),
         "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
         "-t".to_string(), clip_duration.to_string(),
         "-c:v".to_string(), encoder.codec.clone(),
-    ]);
+    ];
 
     // Add preset if applicable
     if let Some(preset) = &encoder.preset {
@@ -563,14 +559,12 @@ async fn apply_watermark_to_clip(
     // Create temp output path
     let temp_output = clip_path.with_extension("watermarked.mp4");
 
-    let mut args = build_hwaccel_args(&encoder);
-    
-    args.extend(vec![
+    let mut args = vec![
         "-i".to_string(), clip_path.to_string_lossy().to_string(),
         "-i".to_string(), watermark.file_path.clone(),
         "-filter_complex".to_string(), filter_complex,
         "-c:v".to_string(), encoder.codec.clone(),
-    ]);
+    ];
 
     // Add preset if applicable
     if let Some(preset) = &encoder.preset {

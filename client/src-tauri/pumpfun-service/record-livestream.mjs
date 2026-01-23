@@ -404,9 +404,9 @@ class PumpfunRecorder {
     this.stopRequested = false; // Flag to signal stop during waiting phase
     this.room = null;
     this.ffmpeg = null;
-    // Audio mixer latency buffer: 40 frames = 800ms for HLS (multi-track mixing needs more buffer)
-    // This handles network jitter when mixing multiple participant audio tracks
-    this.audioMixer = new AudioMixer(3840, isHlsMode ? 40 : 50);
+    // Reduced latency buffer for HLS mode - 25 frames = 500ms (was 50 = 1000ms)
+    // This reduces encoder delay while still handling network jitter
+    this.audioMixer = new AudioMixer(3840, isHlsMode ? 25 : 50);
     this.audioTracks = new Set(); // Set of active track SIDs
     this.videoReader = null;
     this.audioReady = false;
@@ -456,7 +456,7 @@ class PumpfunRecorder {
     
     // Encoder epoch - incremented on restart so audio loops can reset their counters
     this._encoderEpoch = 0;
-
+    
     // Token refresh to prevent LiveKit disconnections
     this._tokenRefreshInterval = null;
     this._livekitUrl = null;
@@ -475,10 +475,6 @@ class PumpfunRecorder {
     this._diagnosticLastHealthLog = 0; // Timestamp of last health log
     this._diagnosticStreamProfile = null; // Captured stream characteristics
     this._diagnosticPlaneWarnings = new Set(); // Track unique plane warnings
-    
-    // Backpressure handling - drop frames instead of blocking to maintain real-time
-    this._videoBackpressure = false; // True when FFmpeg pipe is full
-    this._videoFramesDropped = 0; // Count of frames dropped due to backpressure
   }
 
   /**
@@ -541,20 +537,13 @@ class PumpfunRecorder {
       });
 
       // NVENC (NVIDIA) - strict_gop ensures GOP boundaries are respected
-      // Use p1 (fastest) preset for 1080p to ensure real-time encoding
-      if (stdout.includes('h264_nvenc')) {
-        const nvencPreset = FIXED_OUTPUT_WIDTH >= 1920 ? 'p1' : 'p4';
-        const bitrate = FIXED_OUTPUT_WIDTH >= 1920 ? '8000k' : '5000k';
-        return [
-          '-c:v', 'h264_nvenc', 
-          '-preset', nvencPreset,
-          '-rc', 'vbr',
-          '-b:v', bitrate,
-          '-maxrate', bitrate,
-          '-bufsize', `${parseInt(bitrate) * 2}k`,
-          '-strict_gop', '1'  // Enforce GOP boundaries for clean HLS segments
-        ];
-      }
+      if (stdout.includes('h264_nvenc')) return [
+        '-c:v', 'h264_nvenc', 
+        '-preset', 'p4', 
+        '-rc', 'vbr', 
+        '-cq', '19',
+        '-strict_gop', '1'  // Enforce GOP boundaries for clean HLS segments
+      ];
       
       // AMF (AMD)
       if (stdout.includes('h264_amf')) return [
@@ -590,13 +579,10 @@ class PumpfunRecorder {
     }
 
     // Software fallback with low-latency settings
-    // Use ultrafast for 1080p to keep up with 30fps raw input (~93 MB/s)
-    const preset = FIXED_OUTPUT_WIDTH >= 1920 ? 'ultrafast' : 'veryfast';
     return [
       '-c:v', 'libx264',
-      '-preset', preset,
+      '-preset', 'ultrafast',
       '-tune', 'zerolatency',
-      '-crf', '23', // Constant quality mode for better rate control
     ];
   }
 
@@ -1721,14 +1707,10 @@ class PumpfunRecorder {
       '-y',
       '-probesize', '32K',  // Reduced for faster startup
       '-analyzeduration', '500000',  // 500ms - faster startup
-      // Audio input with larger thread queue to prevent choppy audio
-      '-thread_queue_size', '64',
       '-f', 's16le',
       '-ac', '2',
       '-ar', '48000',
       '-i', 'pipe:0',
-      // Video input with larger thread queue to prevent frame drops
-      '-thread_queue_size', '64',
       '-f', 'rawvideo',
       '-pix_fmt', 'yuv420p',
       '-s', `${width}x${height}`,
@@ -1741,7 +1723,7 @@ class PumpfunRecorder {
       '-force_key_frames', `expr:gte(t,n_forced*${this.segmentDurationSeconds})`,
       ...encoderArgs,
       '-c:a', 'aac',
-      '-b:a', '192k',
+      '-b:a', '160k',
       // HLS output format for DVR playback
       '-f', 'hls',
       '-hls_time', String(this.segmentDurationSeconds),
@@ -1749,8 +1731,7 @@ class PumpfunRecorder {
       // Event-style playlist that only grows (no sliding window)
       '-hls_playlist_type', 'event',
       // Write timestamps, keep live (no ENDLIST), independent segments for robustness
-      // temp_file: ensures segments are fully written before rename, avoiding readers seeing partial files
-      '-hls_flags', 'program_date_time+omit_endlist+independent_segments+temp_file',
+      '-hls_flags', 'program_date_time+omit_endlist+independent_segments',
       '-hls_segment_type', 'mpegts',
       '-hls_segment_filename', segmentPattern,
       '-start_number', String(startNumber),
@@ -1917,7 +1898,6 @@ class PumpfunRecorder {
               totalAudioFramesReceived: this._diagnosticAudioFrameCount,
               videoFramesSkipped: this._diagnosticVideoQueueSkipped,
               videoFrameReuseCount: this._diagnosticVideoFrameReuse,
-              videoFramesDropped: this._videoFramesDropped || 0,
               strideIssuesDetected: this._diagnosticStrideIssues
           });
           
@@ -2142,33 +2122,10 @@ class PumpfunRecorder {
           const bufferToWrite = this.lastVideoFrame || Buffer.alloc(FIXED_OUTPUT_WIDTH * FIXED_OUTPUT_HEIGHT * 1.5); // Grey/Black
           
           if (this.videoPipe && !this.videoPipe.destroyed) {
-               // Check if we're in backpressure state - skip frame to maintain real-time
-               if (this._videoBackpressure) {
-                   this._videoFramesDropped = (this._videoFramesDropped || 0) + 1;
-                   this.videoFramesWritten++; // Still count it to maintain timing
-                   
-                   // Log periodically
-                   if (DIAGNOSTIC_MODE && this._videoFramesDropped % 30 === 1) {
-                       log('DIAG: Dropping video frame due to backpressure', {
-                           droppedCount: this._videoFramesDropped,
-                           writtenCount: this.videoFramesWritten,
-                           note: 'FFmpeg cannot keep up - dropping frames to maintain real-time'
-                       });
-                   }
-                   continue;
+               if (!this.videoPipe.write(bufferToWrite)) {
+                   // await once(this.videoPipe, 'drain'); // Optional: avoid blocking main loop too much
                }
-               
-               const canWrite = this.videoPipe.write(bufferToWrite);
                this.videoFramesWritten++;
-               
-               // Handle backpressure: set flag and listen for drain instead of blocking
-               // This allows the loop to continue and drop frames to maintain real-time
-               if (!canWrite && !this._videoBackpressure) {
-                   this._videoBackpressure = true;
-                   this.videoPipe.once('drain', () => {
-                       this._videoBackpressure = false;
-                   });
-               }
           } else {
               // Log when video pipe is unavailable
               if (DIAGNOSTIC_MODE && !this._loggedVideoPipeUnavailable) {

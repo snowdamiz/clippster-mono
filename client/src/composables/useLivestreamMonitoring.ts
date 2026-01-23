@@ -12,7 +12,6 @@ import {
   hasClipsForProject,
   hasChildProjects,
   getSegmentsBySession,
-  getActiveLivestreamSessions,
 } from '@/services/database';
 import type {
   LiveSession,
@@ -28,18 +27,13 @@ import {
   stopKickRecording,
   type KickLiveStatus,
 } from '@/services/kick';
-import {
-  checkTwitchLivestream,
-  startTwitchRecording,
-  stopTwitchRecording,
-  type TwitchLiveStatus,
-} from '@/services/twitch';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useCreditBalance } from './useCreditBalance';
 import { useDvrRecording } from './useDvrRecording';
 import { useToast } from './useToast';
 
 const POLL_INTERVAL_MS = 30_000;
+const AUTO_DVR_POLL_INTERVAL_MS = 60_000; // Poll Auto DVR streamers every 60 seconds
 
 // Global State
 type MonitoredStreamerEntry = { streamer: MonitoredStreamer; options: { detectClips: boolean } };
@@ -59,8 +53,9 @@ const isMonitoring = computed(() => monitoredStreamers.value.size > 0);
 // Key: streamerId, Value: { mintId }
 const dvrSessions = ref<DvrSessionsMap>(new Map());
 
-// Auto DVR streamers are now loaded into monitoredStreamers on startup
-// They are checked by the main polling loop (no separate polling needed)
+// Auto DVR polling state
+let autoDvrPollingHandle: number | null = null;
+let autoDvrInitialized = false;
 
 // Track chunk aggregation state for DVR-based auto-detect sessions
 // Key: streamerId, Value: aggregation state
@@ -146,25 +141,6 @@ async function fetchKickLiveStatus(channelSlug: string): Promise<LiveStatus> {
   }
 }
 
-async function fetchTwitchLiveStatus(channelName: string): Promise<LiveStatus> {
-  try {
-    const twitchStatus: TwitchLiveStatus = await checkTwitchLivestream(channelName);
-    return {
-      isLive: twitchStatus.isLive,
-      streamId: twitchStatus.channelId,
-      streamStartTimestamp: twitchStatus.startedAt
-        ? new Date(twitchStatus.startedAt).getTime()
-        : undefined,
-      numParticipants: twitchStatus.viewerCount,
-      profileImageUrl: twitchStatus.profileImageUrl,
-      raw: twitchStatus,
-    };
-  } catch (error) {
-    console.warn('[LiveMonitor] Failed to check Twitch live status', error);
-    return { isLive: false };
-  }
-}
-
 async function fetchLiveStatus(
   platformId: string,
   platform: SupportedLivestreamPlatform = 'PumpFun'
@@ -172,8 +148,6 @@ async function fetchLiveStatus(
   switch (platform) {
     case 'Kick':
       return fetchKickLiveStatus(platformId);
-    case 'Twitch':
-      return fetchTwitchLiveStatus(platformId);
     case 'PumpFun':
     default:
       return fetchPumpFunLiveStatus(platformId);
@@ -301,99 +275,79 @@ async function cleanupSessionProject(sessionId: string, projectId: string) {
   }
 }
 
-// Helper to cleanup PumpFun session (process remaining chunks, stop DVR)
-async function cleanupPumpFunSession(streamerId: string, mintId: string, sessionId: string) {
-  // Process any remaining DVR chunks before stopping
-  const state = chunkAggregationState.get(streamerId);
-  if (state && state.accumulatedChunks > 0) {
-    console.log(
-      `[LiveMonitor] Processing ${state.accumulatedChunks} remaining chunks for final segment`
-    );
-
-    const dvrSession = dvrRecording.getDvrSession(mintId);
-    if (dvrSession && dvrSession.chunks.length > 0) {
-      const lastChunk = dvrSession.chunks[dvrSession.chunks.length - 1];
-      state.segmentNumber++;
-
-      try {
-        const DVR_CHUNK_DURATION = 4;
-        const segmentPath = await invoke<string>('build_segment_from_dvr_chunks', {
-          mintId: state.mintId,
-          startChunk: state.segmentStartChunk,
-          endChunk: lastChunk.index,
-          segmentNumber: state.segmentNumber,
-        });
-
-        const actualDuration =
-          (lastChunk.index - state.segmentStartChunk + 1) * DVR_CHUNK_DURATION;
-
-        const payload: SegmentEventPayload = {
-          streamerId,
-          sessionId: state.sessionId,
-          mintId: state.mintId,
-          segment: state.segmentNumber,
-          path: segmentPath,
-          duration: actualDuration,
-          startedAt: state.sessionId ? Date.now() : undefined,
-        };
-
-        console.log(
-          `[LiveMonitor] Final segment ${state.segmentNumber} built: ${segmentPath}`
-        );
-        handleDvrSegmentReady(payload);
-      } catch (error) {
-        console.error('[LiveMonitor] Failed to build final segment:', error);
-      }
-    }
-  }
-
-  // Clean up chunk aggregation state
-  chunkAggregationState.delete(streamerId);
-
-  // Stop DVR recording and remove tracking
-  try {
-    await dvrRecording.stopDvrSession(mintId);
-  } catch (error) {
-    console.warn('[LiveMonitor] Failed to cleanup DVR session', error);
-  }
-
-  updateDvrSessionsMap((map) => {
-    map.delete(streamerId);
-  });
-}
-
-// Unified session stop logic
-async function stopStreamSession(session: LiveSession) {
-  console.log(`[LiveMonitor] Stopping session for ${session.displayName} (${session.platform})`);
-
-  try {
-    // Stop platform-specific recording
-    if (session.platform === 'Kick') {
-      await stopKickRecording(session.mintId);
-    } else if (session.platform === 'Twitch') {
-      await stopTwitchRecording(session.mintId);
-    } else {
-      // PumpFun cleanup
-      await cleanupPumpFunSession(session.streamerId, session.mintId, session.sessionId);
-    }
-  } catch (error) {
-    console.warn('[LiveMonitor] Failed to stop recorder', error);
-  }
-
-  try {
-    await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
-    // Finalize the session (cleanup empty projects)
-    await finalizeRecordingSession(session);
-  } catch (error) {
-    console.warn('[LiveMonitor] Failed to close session', error);
-  }
-}
-
 async function handleStreamEnd(streamer: MonitoredStreamer) {
   const session = activeSessions.value.get(streamer.id);
   if (!session) return;
 
-  await stopStreamSession(session);
+  try {
+    // Stop platform-specific recording
+    if (streamer.platform === 'Kick') {
+      await stopKickRecording(streamer.mintId);
+    } else {
+      // PumpFun - process any remaining DVR chunks before stopping
+      const state = chunkAggregationState.get(streamer.id);
+      if (state && state.accumulatedChunks > 0) {
+        console.log(
+          `[LiveMonitor] Processing ${state.accumulatedChunks} remaining chunks for final segment`
+        );
+
+        // Get the DVR session to find the last chunk index
+        const dvrSession = dvrRecording.getDvrSession(streamer.mintId);
+        if (dvrSession && dvrSession.chunks.length > 0) {
+          const lastChunk = dvrSession.chunks[dvrSession.chunks.length - 1];
+          state.segmentNumber++;
+
+          try {
+            const DVR_CHUNK_DURATION = 4;
+            const segmentPath = await invoke<string>('build_segment_from_dvr_chunks', {
+              mintId: state.mintId,
+              startChunk: state.segmentStartChunk,
+              endChunk: lastChunk.index,
+              segmentNumber: state.segmentNumber,
+            });
+
+            const actualDuration =
+              (lastChunk.index - state.segmentStartChunk + 1) * DVR_CHUNK_DURATION;
+
+            const payload: SegmentEventPayload = {
+              streamerId: streamer.id,
+              sessionId: state.sessionId,
+              mintId: state.mintId,
+              segment: state.segmentNumber,
+              path: segmentPath,
+              duration: actualDuration,
+            };
+
+            console.log(`[LiveMonitor] Final segment ${state.segmentNumber} built: ${segmentPath}`);
+            handleDvrSegmentReady(payload);
+          } catch (error) {
+            console.error('[LiveMonitor] Failed to build final segment:', error);
+          }
+        }
+      }
+
+      // Clean up chunk aggregation state
+      chunkAggregationState.delete(streamer.id);
+
+      // Stop DVR recording
+      await dvrRecording.stopDvrSession(streamer.mintId);
+      // Also remove from DVR sessions tracking
+      updateDvrSessionsMap((map) => {
+        map.delete(streamer.id);
+      });
+    }
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to stop recorder on end', error);
+  }
+
+  try {
+    await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
+
+    // Finalize the session (cleanup empty projects)
+    await finalizeRecordingSession(session);
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to mark session ended', error);
+  }
 
   await updateMonitoredStreamer(streamer.id, {
     is_currently_live: 0,
@@ -405,41 +359,38 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   activeSessions.value = newMap;
 }
 
-// Cleanup DVR recording for watch-only sessions (no persistent recording)
+// Handle DVR cleanup when stream ends (for watch-only DVR sessions)
 async function handleDvrStreamEnd(streamerId: string, mintId: string) {
-  // Clean up chunk aggregation state if any
-  chunkAggregationState.delete(streamerId);
-
-  // Kick DVR session
+  // Check for Kick DVR session first
   const kickSession = kickDvrSessions.value.get(streamerId);
   if (kickSession) {
-    console.log('[LiveMonitor] Stopping Kick DVR session for', mintId);
+    console.log('[LiveMonitor] Cleaning up Kick DVR session for', mintId);
     await stopKickDvrRecording(streamerId);
-    updateDvrSessionsMap((map) => map.delete(streamerId));
+
+    // Also remove from general DVR sessions
+    updateDvrSessionsMap((map) => {
+      map.delete(streamerId);
+    });
     return;
   }
 
-  // Twitch DVR session
-  const twitchSession = twitchDvrSessions.value.get(streamerId);
-  if (twitchSession) {
-    console.log('[LiveMonitor] Stopping Twitch DVR session for', mintId);
-    await stopTwitchDvrRecording(streamerId);
-    updateDvrSessionsMap((map) => map.delete(streamerId));
-    return;
-  }
+  // Handle PumpFun DVR session
+  const dvrSession = dvrSessions.value.get(streamerId);
+  if (!dvrSession) return;
 
-  // PumpFun DVR session
-  const session = dvrSessions.value.get(streamerId);
-  if (!session) return;
+  console.log('[LiveMonitor] Cleaning up DVR session for', mintId);
 
-  console.log('[LiveMonitor] Stopping PumpFun DVR session for', mintId);
   try {
+    // Stop and cleanup DVR session (including temp files)
     await dvrRecording.stopDvrSession(mintId);
   } catch (error) {
-    console.warn('[LiveMonitor] Failed to stop PumpFun DVR session', error);
+    console.warn('[LiveMonitor] Failed to cleanup DVR session', error);
   }
 
-  updateDvrSessionsMap((map) => map.delete(streamerId));
+  // Remove from DVR sessions tracking
+  const newMap = new Map(dvrSessions.value);
+  newMap.delete(streamerId);
+  dvrSessions.value = newMap;
 }
 
 // Start DVR recording for a streamer (for watch-only DVR)
@@ -459,11 +410,6 @@ async function startDvrRecordingForStreamer(streamer: MonitoredStreamer): Promis
   // For Kick streams, use yt-dlp based recording
   if (streamer.platform === 'Kick') {
     return startKickDvrRecording(streamer);
-  }
-
-  // For Twitch streams, use yt-dlp based recording (same as Kick)
-  if (streamer.platform === 'Twitch') {
-    return startTwitchDvrRecording(streamer);
   }
 
   // For PumpFun, use the existing DVR recording system
@@ -567,80 +513,6 @@ function getKickDvrSession(streamerId: string): KickDvrSession | null {
   return kickDvrSessions.value.get(streamerId) || null;
 }
 
-// Track Twitch DVR sessions separately (they use yt-dlp, not LiveKit)
-// Key: streamerId, Value: { mintId, sessionId, outputDir }
-type TwitchDvrSession = { mintId: string; sessionId: string; outputDir: string };
-const twitchDvrSessions = ref<Map<string, TwitchDvrSession>>(new Map());
-
-// Start Twitch DVR recording using yt-dlp
-async function startTwitchDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
-  // Check if already has Twitch DVR recording
-  if (twitchDvrSessions.value.has(streamer.id)) {
-    console.log('[LiveMonitor] Twitch DVR already active for:', streamer.id);
-    return true;
-  }
-
-  try {
-    // Generate a DVR session ID
-    const sessionId = `twitch-dvr-${streamer.mintId}-${Date.now()}`;
-
-    // Start yt-dlp recording via Rust backend
-    await startTwitchRecording(
-      streamer.mintId, // channel name
-      streamer.id, // streamer ID
-      sessionId,
-      5 // 5 minute segments (doesn't matter much for DVR)
-    );
-
-    // Get the output directory
-    const outputDir = await invoke<string>('get_twitch_session_output_dir', { sessionId });
-
-    // Track the Twitch DVR session
-    const newMap = new Map(twitchDvrSessions.value);
-    newMap.set(streamer.id, { mintId: streamer.mintId, sessionId, outputDir });
-    twitchDvrSessions.value = newMap;
-
-    // Also track in general DVR sessions for compatibility
-    updateDvrSessionsMap((map) => {
-      map.set(streamer.id, { mintId: streamer.mintId });
-    });
-
-    console.log(
-      '[LiveMonitor] Started Twitch DVR recording for',
-      streamer.mintId,
-      'output:',
-      outputDir
-    );
-    return true;
-  } catch (error) {
-    console.warn('[LiveMonitor] Failed to start Twitch DVR for', streamer.mintId, error);
-    return false;
-  }
-}
-
-// Stop Twitch DVR recording
-async function stopTwitchDvrRecording(streamerId: string): Promise<void> {
-  const session = twitchDvrSessions.value.get(streamerId);
-  if (!session) return;
-
-  try {
-    await stopTwitchRecording(session.mintId);
-    console.log('[LiveMonitor] Stopped Twitch DVR recording for', session.mintId);
-  } catch (error) {
-    console.warn('[LiveMonitor] Failed to stop Twitch DVR', error);
-  }
-
-  // Remove from tracking
-  const newMap = new Map(twitchDvrSessions.value);
-  newMap.delete(streamerId);
-  twitchDvrSessions.value = newMap;
-}
-
-// Get Twitch DVR session info
-function getTwitchDvrSession(streamerId: string): TwitchDvrSession | null {
-  return twitchDvrSessions.value.get(streamerId) || null;
-}
-
 // Shared function to finalize a recording session (cleanup empty projects)
 async function finalizeRecordingSession(session: { sessionId: string; projectId?: string }) {
   console.log('[LiveMonitor] finalizeRecordingSession called:', {
@@ -671,16 +543,9 @@ async function handleDvrSegmentReady(payload: SegmentEventPayload) {
   const { fetchBalance, hoursRemaining } = useCreditBalance();
   const info = await getStreamerInfo(payload.streamerId);
 
-  console.log(`[LiveMonitor] handleDvrSegmentReady: ${JSON.stringify(payload)}`);
-
-  // Add debug logging to trace segment processing
-  console.log(`[LiveMonitor] Segment processing started for ${info.displayName} (Segment ${payload.segment})`);
-
   // 1. Update previous segment log
   const segmentKey = `${payload.streamerId}-${payload.segment}`;
   const startingLogId = segmentLogIds.get(segmentKey);
-  console.log(`[LiveMonitor] Segment ready: ${payload.segment} for ${info.displayName}. Log ID: ${startingLogId}`);
-
   if (startingLogId) {
     updateActivityLog(startingLogId, {
       message: `Segment ${payload.segment} finished recording`,
@@ -688,7 +553,6 @@ async function handleDvrSegmentReady(payload: SegmentEventPayload) {
     });
     segmentLogIds.delete(segmentKey);
   } else {
-    // Fallback if log ID not found (e.g. app reload)
     addActivityLog({
       streamerId: payload.streamerId,
       streamerName: info.displayName,
@@ -704,7 +568,6 @@ async function handleDvrSegmentReady(payload: SegmentEventPayload) {
   const session = activeSessions.value.get(payload.streamerId);
   if (session && !session.isStopping) {
     const nextSegment = payload.segment + 1;
-    console.log(`[LiveMonitor] Starting next segment: ${nextSegment} for ${info.displayName}`);
     const id = addActivityLog({
       streamerId: payload.streamerId,
       streamerName: info.displayName,
@@ -716,8 +579,6 @@ async function handleDvrSegmentReady(payload: SegmentEventPayload) {
     });
     const nextSegmentKey = `${payload.streamerId}-${nextSegment}`;
     segmentLogIds.set(nextSegmentKey, id);
-  } else {
-    console.log(`[LiveMonitor] Not starting next segment: session=${!!session}, isStopping=${session?.isStopping}`);
   }
 
   // 3. Create log for processing status
@@ -779,8 +640,6 @@ async function initializeListeners() {
     // 1. Update previous segment log (use streamerId-segment as key to avoid collisions)
     const segmentKey = `${payload.streamerId}-${payload.segment}`;
     const startingLogId = segmentLogIds.get(segmentKey);
-    console.log(`[LiveMonitor] Event segment ready: ${payload.segment} for ${info.displayName}. Log ID: ${startingLogId}`);
-
     if (startingLogId) {
       updateActivityLog(startingLogId, {
         message: `Segment ${payload.segment} finished recording`,
@@ -805,7 +664,6 @@ async function initializeListeners() {
     const session = activeSessions.value.get(payload.streamerId);
     if (session && !session.isStopping) {
       const nextSegment = payload.segment + 1;
-      console.log(`[LiveMonitor] Event starting next segment: ${nextSegment} for ${info.displayName}`);
       const id = addActivityLog({
         streamerId: payload.streamerId,
         streamerName: info.displayName,
@@ -817,12 +675,7 @@ async function initializeListeners() {
       });
       const nextSegmentKey = `${payload.streamerId}-${nextSegment}`;
       segmentLogIds.set(nextSegmentKey, id);
-    } else {
-      console.log(`[LiveMonitor] Event not starting next segment: session=${!!session}, isStopping=${session?.isStopping}`);
     }
-
-    // Add debug logging to trace segment processing
-    console.log(`[LiveMonitor] Event segment processing started for ${info.displayName} (Segment ${payload.segment})`);
 
     // 3. Create log for processing status
     const processingLogId = addActivityLog({
@@ -936,8 +789,7 @@ async function initializeListeners() {
     if (message.includes('Starting Kick recording')) return;
     if (message.includes('Starting HLS recording')) return;
     // Filter periodic status updates (e.g., "Recording: 5 segments, 300s")
-    // DEBUG: Commented out to see Twitch progress
-    // if (message.includes('Recording:') && message.includes('segments')) return;
+    if (message.includes('Recording:') && message.includes('segments')) return;
 
     const info = await getStreamerInfo(streamerId);
 
@@ -1132,7 +984,76 @@ export function useLivestreamMonitoring() {
           }
         }, 35000); // 35 seconds (Rust process timeout is 30s)
 
-        await stopStreamSession(session);
+        try {
+          // For PumpFun, stop DVR recording; for Kick, stop the Node.js recorder
+          if (session.platform === 'Kick') {
+            await invoke('stop_kick_recording', { channelSlug: session.mintId });
+          } else {
+            // PumpFun - process any remaining DVR chunks before stopping
+            const state = chunkAggregationState.get(id);
+            if (state && state.accumulatedChunks > 0) {
+              console.log(
+                `[LiveMonitor] Processing ${state.accumulatedChunks} remaining chunks for final segment`
+              );
+
+              const dvrSession = dvrRecording.getDvrSession(session.mintId);
+              if (dvrSession && dvrSession.chunks.length > 0) {
+                const lastChunk = dvrSession.chunks[dvrSession.chunks.length - 1];
+                state.segmentNumber++;
+
+                try {
+                  const DVR_CHUNK_DURATION = 4;
+                  const segmentPath = await invoke<string>('build_segment_from_dvr_chunks', {
+                    mintId: state.mintId,
+                    startChunk: state.segmentStartChunk,
+                    endChunk: lastChunk.index,
+                    segmentNumber: state.segmentNumber,
+                  });
+
+                  const actualDuration =
+                    (lastChunk.index - state.segmentStartChunk + 1) * DVR_CHUNK_DURATION;
+
+                  const payload: SegmentEventPayload = {
+                    streamerId: id,
+                    sessionId: state.sessionId,
+                    mintId: state.mintId,
+                    segment: state.segmentNumber,
+                    path: segmentPath,
+                    duration: actualDuration,
+                  };
+
+                  console.log(
+                    `[LiveMonitor] Final segment ${state.segmentNumber} built: ${segmentPath}`
+                  );
+                  handleDvrSegmentReady(payload);
+                } catch (error) {
+                  console.error('[LiveMonitor] Failed to build final segment:', error);
+                }
+              }
+            }
+
+            // Clean up chunk aggregation state
+            chunkAggregationState.delete(id);
+
+            // Stop DVR recording
+            await dvrRecording.stopDvrSession(session.mintId);
+            // Also remove from DVR sessions tracking
+            updateDvrSessionsMap((map) => {
+              map.delete(id);
+            });
+          }
+        } catch (error) {
+          console.warn('[LiveMonitor] Failed to stop recorder', error);
+        }
+
+        try {
+          await endLivestreamSession(session.sessionId, Math.floor(Date.now() / 1000));
+
+          // Finalize the session (cleanup empty projects)
+          await finalizeRecordingSession(session);
+        } catch (error) {
+          console.warn('[LiveMonitor] Failed to close session', error);
+        }
       })
     );
   }
@@ -1170,20 +1091,14 @@ export function useLivestreamMonitoring() {
         continue;
       }
 
-      // Check if this is an auto-DVR-only streamer (no manual monitoring)
-      // Auto-DVR streamers have detectClips: false and autoDvr: true
-      const isAutoDvrOnly = !config.options.detectClips && streamer.autoDvr;
-
-      // Start persistent recording session for manually monitored streamers
-      // Skip this for auto-DVR-only streamers (they only get DVR recording below)
-      if (status.isLive && !sessionActive && !isAutoDvrOnly) {
+      if (status.isLive && !sessionActive) {
         await handleStreamStart(streamer, status, config.options);
       } else if (!status.isLive && sessionActive) {
         await handleStreamEnd(streamer);
       }
 
       // Auto-start DVR recording for live streamers that don't have persistent recording
-      // This handles: 1) Auto-DVR-only streamers, 2) Manually monitored streamers who also have auto-DVR enabled
+      // This enables DVR for users who just want to watch (not record)
       if (status.isLive && !sessionActive && !hasDvrRecording) {
         await startDvrRecordingForStreamer(streamer);
       }
@@ -1208,26 +1123,11 @@ export function useLivestreamMonitoring() {
       const requestedDuration = options.segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5;
       const segmentDuration = requestedDuration > 0 ? requestedDuration : 5;
       const isInfiniteSegment = options.segmentDurationMinutes === 0;
-      
-      console.log(`[LiveMonitor] Segment duration calculation:`, {
-        'options.segmentDurationMinutes': options.segmentDurationMinutes,
-        'streamer.segmentDurationMinutes': streamer.segmentDurationMinutes,
-        requestedDuration,
-        segmentDuration,
-        isInfiniteSegment,
-      });
 
       // Start platform-specific recording
       if (streamer.platform === 'Kick') {
         await startKickRecording(
           streamer.mintId, // For Kick, mintId is the channel slug
-          streamer.id,
-          sessionInfo.sessionId,
-          segmentDuration
-        );
-      } else if (streamer.platform === 'Twitch') {
-        await startTwitchRecording(
-          streamer.mintId, // channel name
           streamer.id,
           sessionInfo.sessionId,
           segmentDuration
@@ -1402,38 +1302,44 @@ export function useLivestreamMonitoring() {
   }
 
   // ============================================
-  // Auto DVR System (Unified with Main Polling)
-  // Auto-DVR streamers are loaded into monitoredStreamers on startup
-  // They are checked by the main polling loop every 30 seconds
+  // Auto DVR System
+  // Automatically starts DVR recording when streamers with auto_dvr=true go live
   // ============================================
 
-  /**
-   * Load auto-DVR streamers into the monitoring system
-   * Called on startup to ensure auto-DVR streamers are checked by main polling loop
-   */
-  async function loadAutoDvrStreamers() {
-    try {
-      const autoDvrRecords = await getAutoDvrStreamers();
-      
-      if (autoDvrRecords.length === 0) {
-        console.log('[LiveMonitor] No auto-DVR streamers to load');
-        return;
-      }
+  async function initAutoDvrPolling() {
+    if (autoDvrInitialized) return;
+    autoDvrInitialized = true;
 
-      console.log(`[LiveMonitor] Loading ${autoDvrRecords.length} auto-DVR streamers into monitoring`);
+    console.log('[LiveMonitor] Initializing Auto DVR polling system');
+
+    // Do initial poll immediately
+    await pollAutoDvrStreamers();
+
+    // Start periodic polling
+    autoDvrPollingHandle = window.setInterval(pollAutoDvrStreamers, AUTO_DVR_POLL_INTERVAL_MS);
+  }
+
+  function stopAutoDvrPolling() {
+    if (autoDvrPollingHandle !== null) {
+      clearInterval(autoDvrPollingHandle);
+      autoDvrPollingHandle = null;
+    }
+    autoDvrInitialized = false;
+    console.log('[LiveMonitor] Stopped Auto DVR polling');
+  }
+
+  async function pollAutoDvrStreamers() {
+    try {
+      // Get all streamers with auto_dvr enabled from database
+      const autoDvrRecords = await getAutoDvrStreamers();
+
+      if (autoDvrRecords.length === 0) return;
+
+      console.log(`[LiveMonitor] Polling ${autoDvrRecords.length} Auto DVR streamers`);
 
       for (const record of autoDvrRecords) {
-        // Skip Kick streamers - they should remain manual-only
-        if (record.platform?.toLowerCase() === 'kick') {
-          console.log(`[LiveMonitor] Skipping Kick streamer ${record.display_name} from auto-DVR (manual only)`);
-          continue;
-        }
-
-        // Skip if already monitored (user manually added them)
-        if (monitoredStreamers.value.has(record.id)) {
-          console.log(`[LiveMonitor] Streamer ${record.display_name} already monitored, skipping auto-DVR load`);
-          continue;
-        }
+        // Skip if already has an active recording session (from Auto-Detect or Record mode)
+        if (activeSessions.value.has(record.id)) continue;
 
         // Convert record to MonitoredStreamer type
         const streamer: MonitoredStreamer = {
@@ -1451,155 +1357,49 @@ export function useLivestreamMonitoring() {
           autoDvr: Boolean(record.auto_dvr),
         };
 
-        // Add to monitored streamers with detectClips: false (DVR-only mode)
-        updateMonitoredStreamersMap((map) => {
-          map.set(record.id, {
-            streamer,
-            options: {
-              detectClips: false, // Auto-DVR is watch-only, no clip detection
-            },
-          });
+        // Check if stream is live
+        const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
+
+        // Update live status in database
+        await updateMonitoredStreamer(streamer.id, {
+          last_check_timestamp: Math.floor(Date.now() / 1000),
+          is_currently_live: status.isLive ? 1 : 0,
         });
 
-        console.log(`[LiveMonitor] Added auto-DVR streamer to monitoring: ${record.display_name}`);
-      }
+        const hasDvrRecording = dvrSessions.value.has(streamer.id);
 
-      // Start polling if we added any streamers
-      if (monitoredStreamers.value.size > 0 && !pollingHandle.value) {
-        pollingHandle.value = window.setInterval(pollAllStreamers, POLL_INTERVAL_MS);
-        console.log('[LiveMonitor] Started polling for auto-DVR streamers');
-      }
-    } catch (error) {
-      console.error('[LiveMonitor] Failed to load auto-DVR streamers:', error);
-    }
-  }
-
-  /**
-   * Restore active recording sessions after app refresh
-   * Queries the database for sessions marked as is_recording=1 and checks if they're still
-   * running in the Rust backend. Restores them to frontend state if active, or cleans up
-   * stale database records if not.
-   */
-  async function restoreActiveRecordings(): Promise<void> {
-    console.log('[LiveMonitor] Restoring active recordings...');
-
-    try {
-      // 1. Get sessions marked as recording in DB
-      const dbSessions = await getActiveLivestreamSessions();
-      console.log(`[LiveMonitor] Found ${dbSessions.length} sessions marked as recording in DB`);
-
-      if (dbSessions.length === 0) {
-        return;
-      }
-
-      // 2. Get actually running recordings from Rust backend
-      const [pumpfunActive, kickActive, twitchActive] = await Promise.all([
-        invoke<string[]>('get_active_pumpfun_recordings'),
-        invoke<string[]>('get_active_kick_recordings'),
-        invoke<string[]>('get_active_twitch_recordings'),
-      ]);
-
-      console.log('[LiveMonitor] Active recordings in backend:', {
-        pumpfun: pumpfunActive,
-        kick: kickActive,
-        twitch: twitchActive,
-      });
-
-      // 3. Create lookup set of all active recordings
-      const activeInBackend = new Set([...pumpfunActive, ...kickActive, ...twitchActive]);
-
-      // 4. Initialize event listeners if not already done
-      await initializeListeners();
-
-      // 5. Process each DB session
-      for (const session of dbSessions) {
-        const isActiveInBackend = activeInBackend.has(session.mint_id);
-
-        console.log(`[LiveMonitor] Session ${session.id} (${session.mint_id}):`, {
-          isActiveInBackend,
-          streamerId: session.monitored_streamer_id,
-        });
-
-        if (isActiveInBackend) {
-          // Recording still running - restore to frontend state
-          console.log(`[LiveMonitor] Restoring session ${session.id} to frontend state`);
-
-          // Get streamer info from DB
-          const streamer = await getMonitoredStreamer(session.monitored_streamer_id);
-          if (!streamer) {
-            console.warn(`[LiveMonitor] Streamer not found for session ${session.id}, skipping restore`);
-            continue;
-          }
-
-          // Restore to activeSessions map
-          updateActiveSessionsMap((map) => {
-            map.set(session.monitored_streamer_id, {
-              streamerId: session.monitored_streamer_id,
-              sessionId: session.id,
-              mintId: session.mint_id,
-              displayName: streamer.display_name,
-              platform: (streamer.platform as SupportedLivestreamPlatform) || 'PumpFun',
-              profileImageUrl: streamer.profile_image_url || undefined,
-              projectId: session.project_id || undefined,
-              streamThumbnailUrl: undefined,
-              detectClips: true,
-              isStopping: false,
-              startedAt: new Date(session.stream_start_time).getTime(),
-              streamStartTime: new Date(session.stream_start_time).getTime(),
-              totalSegments: 0,
-              processedSegments: 0,
-              isRecording: true,
-            });
-          });
-
-          // Restore to monitoredStreamers map if not already there
-          if (!monitoredStreamers.value.has(session.monitored_streamer_id)) {
-            updateMonitoredStreamersMap((map) => {
-              map.set(session.monitored_streamer_id, {
-                streamer: {
-                  id: streamer.id,
-                  mintId: streamer.mint_id,
-                  displayName: streamer.display_name,
-                  platform: (streamer.platform as SupportedLivestreamPlatform) || 'PumpFun',
-                  profileImageUrl: streamer.profile_image_url || undefined,
-                  autoDvr: Boolean(streamer.auto_dvr),
-                  segmentDurationMinutes: streamer.segment_duration_minutes || 5,
-                  // Required properties for MonitoredStreamer
-                  lastCheckTimestamp: null,
-                  isCurrentlyLive: true, // Restored sessions are live
-                  currentSessionId: session.id,
-                  selected: false,
-                  isDetecting: true,
-                },
-                options: {
-                  detectClips: true, // Assume clip detection was enabled
-                },
-              });
+        if (status.isLive && !hasDvrRecording) {
+          // Stream is live and no DVR recording - start one
+          console.log(`[LiveMonitor] Auto DVR: Starting DVR for live streamer ${streamer.displayName}`);
+          const started = await startDvrRecordingForStreamer(streamer);
+          if (started) {
+            addActivityLog({
+              streamerId: streamer.id,
+              streamerName: streamer.displayName,
+              platform: streamer.platform,
+              mintId: streamer.mintId,
+              profileImageUrl: streamer.profileImageUrl,
+              message: 'Auto DVR started - streamer went live',
+              status: 'success',
             });
           }
-
-          // Add activity log
+        } else if (!status.isLive && hasDvrRecording) {
+          // Stream ended - stop DVR recording
+          console.log(`[LiveMonitor] Auto DVR: Stopping DVR for offline streamer ${streamer.displayName}`);
+          await handleDvrStreamEnd(streamer.id, streamer.mintId);
           addActivityLog({
-            streamerId: session.monitored_streamer_id,
-            streamerName: streamer.display_name,
-            platform: (streamer.platform as SupportedLivestreamPlatform) || 'PumpFun',
-            mintId: session.mint_id,
-            profileImageUrl: streamer.profile_image_url || undefined,
-            message: 'Session restored after app refresh',
+            streamerId: streamer.id,
+            streamerName: streamer.displayName,
+            platform: streamer.platform,
+            mintId: streamer.mintId,
+            profileImageUrl: streamer.profileImageUrl,
+            message: 'Auto DVR stopped - stream ended',
             status: 'info',
           });
-
-          console.log(`[LiveMonitor] Successfully restored session for ${streamer.display_name}`);
-        } else {
-          // Recording stopped but DB wasn't updated - clean up
-          console.log(`[LiveMonitor] Session ${session.id} not running in backend, marking as ended`);
-          await endLivestreamSession(session.id);
         }
       }
-
-      console.log('[LiveMonitor] Active recordings restoration complete');
     } catch (error) {
-      console.error('[LiveMonitor] Failed to restore active recordings:', error);
+      console.error('[LiveMonitor] Auto DVR polling error:', error);
     }
   }
 
@@ -1629,14 +1429,8 @@ export function useLivestreamMonitoring() {
     getKickDvrSession,
     startKickDvrRecording,
     stopKickDvrRecording,
-    // Twitch DVR exports
-    twitchDvrSessions,
-    getTwitchDvrSession,
-    startTwitchDvrRecording,
-    stopTwitchDvrRecording,
     // Auto DVR exports
-    loadAutoDvrStreamers,
-    // Session restoration
-    restoreActiveRecordings,
+    initAutoDvrPolling,
+    stopAutoDvrPolling,
   };
 }
