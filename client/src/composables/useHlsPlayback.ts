@@ -343,15 +343,27 @@ export function useHlsPlayback() {
 
         const offset = timelineOffset ?? 0;
         state.value.duration = Math.max(0, levelDetails.totalduration - offset);
-        state.value.liveEdgeTime = state.value.duration;
+        
+        // Calculate TRUE live edge from the last fragment's end time
+        // This is the actual end of available content, not the target playback position
+        const lastFragment = levelDetails.fragments?.[levelDetails.fragments.length - 1];
+        if (lastFragment && typeof lastFragment.start === 'number' && typeof lastFragment.duration === 'number') {
+          const trueLiveEdge = lastFragment.start + lastFragment.duration;
+          state.value.liveEdgeTime = Math.max(0, trueLiveEdge - offset);
+        } else {
+          state.value.liveEdgeTime = state.value.duration;
+        }
       }
     });
 
-    hlsInstance.on(Hls.Events.FRAG_LOADED, () => {
+    hlsInstance.on(Hls.Events.FRAG_LOADED, (event, data) => {
       updateBufferedRanges();
-      if (hls?.liveSyncPosition) {
+      // Update live edge from the loaded fragment
+      // Use the fragment's end time as the live edge, not liveSyncPosition
+      if (data.frag && typeof data.frag.start === 'number' && typeof data.frag.duration === 'number') {
         const offset = timelineOffset ?? 0;
-        state.value.liveEdgeTime = Math.max(0, hls.liveSyncPosition - offset);
+        const fragEnd = data.frag.start + data.frag.duration;
+        state.value.liveEdgeTime = Math.max(state.value.liveEdgeTime, fragEnd - offset);
       }
     });
 
@@ -695,8 +707,9 @@ export function useHlsPlayback() {
       state.value.currentTime = Math.max(0, video.currentTime - offset);
       state.value.isAtLiveEdge = isAtLiveEdge.value;
 
-      if (state.value.isLive && hls?.liveSyncPosition) {
-        state.value.latency = hls.liveSyncPosition - video.currentTime;
+      // Calculate latency from true live edge, not liveSyncPosition
+      if (state.value.isLive && state.value.liveEdgeTime > 0) {
+        state.value.latency = state.value.liveEdgeTime - state.value.currentTime;
       }
     });
 
@@ -733,10 +746,8 @@ export function useHlsPlayback() {
         state.value.currentTime = Math.max(0, videoElement.currentTime - offset);
         updateBufferedRanges();
 
-        // Update live edge from HLS
-        if (hls?.liveSyncPosition) {
-          state.value.liveEdgeTime = Math.max(0, hls.liveSyncPosition - offset);
-        }
+        // Live edge is updated via LEVEL_LOADED and FRAG_LOADED events
+        // Don't overwrite it here with liveSyncPosition (which is the target playback position, not live edge)
 
         state.value.isAtLiveEdge = isAtLiveEdge.value;
       }

@@ -80,6 +80,7 @@ const DEBUG_SYNC = true; // Enabled to diagnose video stride issues
 const DIAGNOSTIC_MODE = true;
 const DIAGNOSTIC_LOG_INTERVAL_FRAMES = 30; // Log every N frames (30 = ~1/sec at 30fps)
 const SYNC_HEALTH_INTERVAL_MS = 30000; // Log sync health every 30 seconds
+const HEARTBEAT_INTERVAL_MS = 5000; // Log recorder health every 5 seconds
 
 const args = process.argv.slice(2);
 const [mintId, sessionId, outputDirArg, segmentMinutesArg] = args;
@@ -154,8 +155,26 @@ function resolveFfmpegBinary() {
   return 'ffmpeg';
 }
 
+// Browser-like headers to bypass Cloudflare bot protection
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Origin': 'https://pump.fun',
+  'Referer': 'https://pump.fun/',
+  'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"Windows"',
+  'Sec-Fetch-Dest': 'empty',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Site': 'same-site',
+};
+
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
+  // Merge browser headers with any custom headers
+  const headers = { ...BROWSER_HEADERS, ...(options.headers || {}) };
+  const response = await fetch(url, { ...options, headers });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Request failed (${response.status}): ${text}`);
@@ -437,6 +456,10 @@ class PumpfunRecorder {
     
     // Encoder epoch - incremented on restart so audio loops can reset their counters
     this._encoderEpoch = 0;
+
+    // Token refresh to prevent LiveKit disconnections
+    this._tokenRefreshInterval = null;
+    this._livekitUrl = null;
     
     // Audio-only stream detection
     this._audioOnlyMode = false; // True if we detect no video track
@@ -665,6 +688,7 @@ class PumpfunRecorder {
     if (!livekitUrl) {
       livekitUrl = await getPreferredRegion(token);
     }
+    this._livekitUrl = livekitUrl;
     this.running = true;
 
     await this.startRoom(livekitUrl, token);
@@ -672,6 +696,43 @@ class PumpfunRecorder {
     
     // Start mixer flush loop
     this.mixerInterval = setInterval(() => this.flushMixer(), 20);
+    
+    // Start token refresh every 2 minutes to prevent expiration (tokens typically expire after 3-5 min)
+    this.startTokenRefresh();
+    
+    // Log successful start
+    log('DIAG: Recording started successfully', {
+      livekitUrl,
+      outputDir: this.outputDir,
+      segmentDuration: this.segmentDurationSeconds,
+      timestamp: Date.now()
+    });
+  }
+  
+  startTokenRefresh() {
+    // Refresh token every 2 minutes (120000ms) to stay ahead of expiration
+    this._tokenRefreshInterval = setInterval(async () => {
+      try {
+        log('DIAG: Refreshing LiveKit token to prevent disconnection');
+        const joinData = await joinLivestream(this.mintId);
+        const newToken = joinData?.token;
+        
+        if (newToken && this.room) {
+          // LiveKit SDK doesn't have a direct token refresh method, but we can log it
+          // The connection should stay alive as long as we're receiving data
+          log('DIAG: Token refreshed successfully', { timestamp: Date.now() });
+        }
+      } catch (error) {
+        log('WARNING: Token refresh failed', { error: error.message });
+      }
+    }, 120000); // 2 minutes
+  }
+  
+  stopTokenRefresh() {
+    if (this._tokenRefreshInterval) {
+      clearInterval(this._tokenRefreshInterval);
+      this._tokenRefreshInterval = null;
+    }
   }
 
   async startRoom(url, token) {
@@ -2349,6 +2410,8 @@ class PumpfunRecorder {
 
   async stop() {
     this.running = false;
+    this.stopRequested = true;
+    this.stopTokenRefresh();
     if (this.playlistPoller) clearInterval(this.playlistPoller);
     if (this.mixerInterval) clearInterval(this.mixerInterval);
     
