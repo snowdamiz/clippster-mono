@@ -457,17 +457,19 @@ async fn run_hls_recorder(
                                         if let (Some(segment), Some(path), Some(duration)) = 
                                             (recorder_event.segment, recorder_event.path, recorder_event.duration) 
                                         {
-                                            let _ = app.emit(
-                                                "hls-segment-ready",
-                                                SegmentReadyPayload {
-                                                    streamer_id: streamer_id.clone(),
-                                                    session_id: session_id.clone(),
-                                                    mint_id: mint_id.clone(),
-                                                    segment,
-                                                    path,
-                                                    duration,
-                                                },
-                                            );
+                                            let payload = SegmentReadyPayload {
+                                                streamer_id: streamer_id.clone(),
+                                                session_id: session_id.clone(),
+                                                mint_id: mint_id.clone(),
+                                                segment,
+                                                path: path.clone(),
+                                                duration,
+                                            };
+                                            
+                                            match app.emit("hls-segment-ready", payload) {
+                                                Ok(_) => println!("[HLS Recorder] Emitted hls-segment-ready event for segment {}", segment),
+                                                Err(e) => eprintln!("[HLS Recorder] Failed to emit hls-segment-ready: {:?}", e),
+                                            }
                                         }
                                     }
                                     "started" => {

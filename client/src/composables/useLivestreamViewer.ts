@@ -215,6 +215,7 @@ export function useLivestreamViewer() {
   let liveEdgeUpdateInterval: number | null = null;
   let segmentPollInterval: number | null = null;
   let playbackSyncInterval: number | null = null;
+  let segmentUpdateDebounceTimer: number | null = null;
 
   // Event listeners
   const unlistenFunctions: UnlistenFn[] = [];
@@ -1573,7 +1574,7 @@ export function useLivestreamViewer() {
   }
 
   async function setupSegmentEventListeners() {
-    // Listen for persistent recording segments
+    // Listen for persistent recording segments (Kick)
     const unlisten = await listen<SegmentEventPayload>('segment-ready', (event) => {
       if (event.payload.streamerId === state.value.streamerId && !state.value.isTempRecording) {
         // Update session ID if not set
@@ -1592,6 +1593,39 @@ export function useLivestreamViewer() {
 
         state.value.availableSegments = [...state.value.availableSegments, newSegment];
         state.value.totalRecordedDuration += event.payload.duration;
+      }
+    });
+
+    // Listen for HLS segment events (PumpFun) - real-time updates
+    const hlsSegmentUnlisten = await listen<{
+      streamerId: string;
+      sessionId: string;
+      mintId: string;
+      segment: number;
+      path: string;
+      duration: number;
+    }>('hls-segment-ready', (event) => {
+      // For PumpFun streams, match against mintId (not streamerId which is a UUID)
+      if (event.payload.mintId === state.value.mintId) {
+        console.log('[LiveViewer] HLS segment ready (real-time):', event.payload.segment);
+        
+        // Directly add the segment from the event payload instead of scanning filesystem
+        const newSegment: SegmentInfo = {
+          segmentNumber: event.payload.segment,
+          filePath: event.payload.path,
+          startTime: state.value.totalRecordedDuration,
+          duration: event.payload.duration,
+          endTime: state.value.totalRecordedDuration + event.payload.duration,
+        };
+        
+        // Check if segment already exists to avoid duplicates
+        const exists = state.value.availableSegments.some(s => s.segmentNumber === event.payload.segment);
+        if (!exists) {
+          state.value.availableSegments = [...state.value.availableSegments, newSegment];
+          state.value.totalRecordedDuration += event.payload.duration;
+          
+          console.log('[LiveViewer] Segment added (real-time):', event.payload.segment, 'Total:', state.value.availableSegments.length);
+        }
       }
     });
 
@@ -1676,7 +1710,7 @@ export function useLivestreamViewer() {
       clearInterval(hlsUpdateInterval);
     };
 
-    unlistenFunctions.push(unlisten, recorderExitUnlisten, cleanupHlsInterval as any);
+    unlistenFunctions.push(unlisten, hlsSegmentUnlisten, recorderExitUnlisten, cleanupHlsInterval as any);
   }
 
   // Disconnect from livestream
@@ -1701,6 +1735,11 @@ export function useLivestreamViewer() {
     if (playbackSyncInterval) {
       clearInterval(playbackSyncInterval);
       playbackSyncInterval = null;
+    }
+
+    if (segmentUpdateDebounceTimer) {
+      clearTimeout(segmentUpdateDebounceTimer);
+      segmentUpdateDebounceTimer = null;
     }
 
     if (reconnectTimeout) {
