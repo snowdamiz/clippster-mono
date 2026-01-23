@@ -210,6 +210,7 @@ export function useLivestreamViewer() {
   let recorderRestartCount = 0;
   const MAX_RECORDER_RESTARTS = 3; // Stop trying after 3 failed restarts
   const SEGMENT_STALL_THRESHOLD = 30000; // 30 seconds without new segments = stalled
+  let streamHasEnded = false; // Flag to indicate stream has ended
 
   // Update timers
   let liveEdgeUpdateInterval: number | null = null;
@@ -1256,12 +1257,18 @@ export function useLivestreamViewer() {
       return;
     }
 
+    // Don't attempt restart if stream has already ended
+    if (streamHasEnded) {
+      console.log('[LiveViewer] Stream has ended, skipping restart check');
+      return;
+    }
+    
     // Check if we've exceeded max restart attempts
     if (recorderRestartCount >= MAX_RECORDER_RESTARTS) {
       console.error(
-        `[LiveViewer] Max recorder restarts (${MAX_RECORDER_RESTARTS}) exceeded. Recording may have failed.`
+        `[LiveViewer] Max recorder restarts (${MAX_RECORDER_RESTARTS}) exceeded. Checking if stream ended...`
       );
-      state.value.connectionError = 'Recording stopped - too many restart attempts. Stream may be unavailable.';
+      // Don't set error yet - let the stream status check determine if it ended
       return;
     }
 
@@ -1360,11 +1367,21 @@ export function useLivestreamViewer() {
             lastSegmentTime = Date.now();
             hlsOutputDir.value = result.outputDir;
 
-            if (hlsVideoElement.value) {
-              await hlsPlayback.initialize(hlsVideoElement.value, result.outputDir);
-              hlsPlayback.play();
+            // CRITICAL FIX: Do NOT reinitialize HLS playback when recorder restarts in same directory
+            // HLS.js will automatically pick up new segments from the playlist as they're added
+            // Reinitializing causes the player to reload the playlist and jump backwards, creating a buffer loop
+            // The HLS player is already watching the playlist file and will detect new segments automatically
+            console.log('[LiveViewer] PumpFun recorder restarted - HLS playback continues without reinitialization');
+            
+            // Just ensure playback is still active
+            if (hlsVideoElement.value && hlsPlayback.state.value.isInitialized) {
+              // Refresh the playlist to pick up any new segments immediately
+              hlsPlayback.refreshPlaylist();
+              // Resume playback if it was paused
+              if (!hlsPlayback.state.value.isPlaying) {
+                hlsPlayback.play();
+              }
               state.value.isBuffering = false;
-              console.log('[LiveViewer] Playback reinitialized after PumpFun recorder restart');
             }
           } catch (restartError) {
             console.error('[LiveViewer] Failed to restart PumpFun recording:', restartError);
@@ -1373,8 +1390,19 @@ export function useLivestreamViewer() {
         }
       } else {
         console.log('[LiveViewer] Stream is no longer live');
+        streamHasEnded = true;
         state.value.connectionState = 'disconnected';
         state.value.connectionError = 'Stream ended';
+        
+        // Stop segment polling since stream has ended
+        if (segmentPollInterval) {
+          clearInterval(segmentPollInterval);
+          segmentPollInterval = null;
+          console.log('[LiveViewer] Stopped segment polling - stream ended');
+        }
+        
+        // Notify HLS playback that stream has ended so it stops seeking back
+        hlsPlayback.setStreamEnded(true);
       }
     } catch (checkError) {
       console.error('[LiveViewer] Failed to check stream status:', checkError);
@@ -1623,6 +1651,16 @@ export function useLivestreamViewer() {
         if (!exists) {
           state.value.availableSegments = [...state.value.availableSegments, newSegment];
           state.value.totalRecordedDuration += event.payload.duration;
+          
+          // CRITICAL: Update lastSegmentTime to prevent false stall detection
+          // Without this, the system thinks segments have stalled even though they're arriving continuously
+          lastSegmentTime = Date.now();
+          
+          // Reset restart counter since segments are flowing
+          if (recorderRestartCount > 0) {
+            console.log('[LiveViewer] Segments flowing again, resetting restart counter');
+            recorderRestartCount = 0;
+          }
           
           console.log('[LiveViewer] Segment added (real-time):', event.payload.segment, 'Total:', state.value.availableSegments.length);
         }

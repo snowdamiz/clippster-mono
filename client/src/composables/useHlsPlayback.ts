@@ -101,6 +101,9 @@ export function useHlsPlayback() {
   let lastProgressPosition: number = 0;
   let reinitAttempts = 0;
   let cachedOutputDirOrUrl: string | null = null;
+  
+  // Stream end state
+  let streamHasEnded = false;
 
   // Computed
   const isAtLiveEdge = computed(() => {
@@ -582,6 +585,11 @@ export function useHlsPlayback() {
    * Handle buffer stall with recovery timeout
    */
   function handleBufferStall() {
+    // Don't attempt recovery if stream has ended - just let it finish playing
+    if (streamHasEnded) {
+      console.log('[HlsPlayback] Stream ended, skipping buffer stall recovery');
+      return;
+    }
     state.value.isBuffering = true;
 
     if (!bufferStallStart) {
@@ -671,6 +679,16 @@ export function useHlsPlayback() {
     if (bufferStallRecoveryTimeout) {
       clearTimeout(bufferStallRecoveryTimeout);
       bufferStallRecoveryTimeout = null;
+    }
+  }
+
+  /**
+   * Set stream ended flag to disable buffer recovery
+   */
+  function setStreamEnded(ended: boolean) {
+    streamHasEnded = ended;
+    if (ended) {
+      console.log('[HlsPlayback] Stream ended - disabling buffer recovery');
     }
   }
 
@@ -1008,6 +1026,7 @@ export function useHlsPlayback() {
     cleanup,
     refreshPlaylist,
     waitForPlaylistReady,
+    setStreamEnded,
 
     // Utility
     getHlsUrl,

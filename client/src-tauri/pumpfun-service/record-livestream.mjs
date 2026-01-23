@@ -560,9 +560,11 @@ class PumpfunRecorder {
       // VideoToolbox (macOS)
       if (process.platform === 'darwin' && stdout.includes('h264_videotoolbox')) {
          // Use fixed output resolution for bitrate calculation
-         let bitrate = '4000k'; // Good for 1280x720
-         if (FIXED_OUTPUT_WIDTH >= 1920) bitrate = '6000k';
-         else if (FIXED_OUTPUT_WIDTH < 1280) bitrate = '2500k';
+         // 1080p30: 5000k provides good quality without overloading encoder
+         let bitrate = '5000k'; // Optimized for 1920x1080 @ 30fps
+         if (FIXED_OUTPUT_WIDTH >= 1920) bitrate = '5000k';
+         else if (FIXED_OUTPUT_WIDTH >= 1280) bitrate = '3500k';
+         else bitrate = '2500k';
          return [
            '-c:v', 'h264_videotoolbox', 
            '-b:v', bitrate, 
@@ -581,7 +583,7 @@ class PumpfunRecorder {
     // Software fallback with low-latency settings
     return [
       '-c:v', 'libx264',
-      '-preset', 'ultrafast',
+      '-preset', 'veryfast',
       '-tune', 'zerolatency',
     ];
   }
