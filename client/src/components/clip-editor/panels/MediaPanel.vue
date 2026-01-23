@@ -218,16 +218,10 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue';
+  import { toRef, computed } from 'vue';
   import { Upload, Film, Video, Music, Trash2 } from 'lucide-vue-next';
-  import { open } from '@tauri-apps/plugin-dialog';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import {
-    addProjectMedia,
-    getProjectMedia,
-    deleteProjectMedia,
-    type ProjectMedia,
-  } from '@/services/database/project-media';
+  import { useMediaCRUD, type MediaItem } from '@/composables/clip-editor';
 
   const props = defineProps<{
     editId: string | null;
@@ -239,177 +233,29 @@
     (e: 'mediaUpdated'): void;
   }>();
 
-  const mediaItems = ref<ProjectMedia[]>([]);
-  const loading = ref(false);
-
-  onMounted(async () => {
-    await loadMedia();
+  // Use the media CRUD composable
+  const {
+    mediaItems,
+    isLoading: loading,
+    handleUploadClick,
+    addToTimeline: addToTimelineBase,
+    deleteMedia: deleteMediaBase,
+  } = useMediaCRUD({
+    projectId: toRef(props, 'projectId'),
+    editId: toRef(props, 'editId'),
+    onUpdate: () => emit('mediaUpdated'),
+    onMediaAdded: (id) => emit('mediaAdded', id),
   });
 
-  async function loadMedia() {
-    if (!props.projectId) return;
-
-    loading.value = true;
-    try {
-      mediaItems.value = await getProjectMedia(props.projectId);
-    } catch (error) {
-      console.error('[MediaPanel] Failed to load media:', error);
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  async function handleUploadClick() {
-    if (!props.projectId) {
-      console.error('[MediaPanel] No project ID');
-      return;
-    }
-
-    try {
-      // Open file dialog for media files
-      const selected = await open({
-        multiple: true,
-        filters: [
-          {
-            name: 'Media Files',
-            extensions: [
-              'mp4',
-              'mov',
-              'avi',
-              'mkv',
-              'webm',
-              'mp3',
-              'wav',
-              'ogg',
-              'm4a',
-              'aac',
-              'jpg',
-              'jpeg',
-              'png',
-              'gif',
-              'webp',
-              'svg',
-            ],
-          },
-        ],
-      });
-
-      if (!selected) return;
-
-      loading.value = true;
-
-      const filePaths = Array.isArray(selected) ? selected : [selected];
-
-      for (const filePath of filePaths) {
-        const fileName = filePath.split(/[\\/]/).pop() || 'unknown';
-        const extension = fileName.split('.').pop()?.toLowerCase() || '';
-        const mediaType = getMediaTypeFromExtension(extension);
-
-        await addProjectMedia(props.projectId, {
-          mediaType,
-          filePath,
-          fileName,
-        });
-      }
-
-      await loadMedia();
-      emit('mediaUpdated');
-    } catch (error) {
-      console.error('[MediaPanel] Failed to upload files:', error);
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  function getMediaTypeFromExtension(extension: string): 'video' | 'image' | 'audio' {
-    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
-    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac'];
-    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
-
-    if (videoExts.includes(extension)) return 'video';
-    if (audioExts.includes(extension)) return 'audio';
-    if (imageExts.includes(extension)) return 'image';
-    return 'video'; // Default fallback
-  }
-
-  async function addToTimeline(item: ProjectMedia) {
-    if (!props.editId || !props.projectId) {
-      console.error('[MediaPanel] No edit ID or project ID');
-      return;
-    }
-
-    console.log('[MediaPanel] Adding media to timeline:', item);
-
-    // For audio files, create an audio track
-    if (item.media_type === 'audio') {
-      try {
-        // Get actual audio duration from the file
-        const audioUrl = convertFileSrc(item.file_path);
-        const audio = new Audio(audioUrl);
-
-        // Wait for metadata to load to get duration
-        await new Promise<void>((resolve, reject) => {
-          audio.addEventListener('loadedmetadata', () => resolve());
-          audio.addEventListener('error', () => reject(new Error('Failed to load audio')));
-        });
-
-        const audioDuration = audio.duration;
-        console.log('[MediaPanel] Audio duration:', audioDuration, 'seconds');
-
-        const { createVideoEditorAudioTrack } = await import('@/services/database/video-editor-edits');
-        const { updateProjectMedia } = await import('@/services/database/project-media');
-        const { getVideoEditorProjectWithSources, updateVideoEditorProject } =
-          await import('@/services/database/video-editor-projects');
-
-        // Update the media item with the actual duration
-        await updateProjectMedia(item.id, { duration: audioDuration });
-
-        // Create audio track with full duration
-        await createVideoEditorAudioTrack(props.editId, {
-          file_path: item.file_path,
-          name: item.file_name,
-          start_time: 0,
-          end_time: audioDuration,
-          volume: 1.0,
-          pan: 0,
-          fade_in: 0,
-          fade_out: 0,
-          track_order: 0,
-          is_muted: 0,
-          is_solo: 0,
-        });
-
-        // Extend project duration if audio is longer
-        const project = await getVideoEditorProjectWithSources(props.projectId);
-        if (project && audioDuration > project.total_duration) {
-          await updateVideoEditorProject(props.projectId, {
-            total_duration: audioDuration,
-          });
-          console.log('[MediaPanel] Extended project duration to', audioDuration, 'seconds');
-        }
-
-        emit('mediaAdded', item.id);
-        console.log('[MediaPanel] Audio track created successfully with duration:', audioDuration);
-      } catch (error) {
-        console.error('[MediaPanel] Failed to create audio track:', error);
-      }
-    } else {
-      // For video/image, emit event for future implementation
-      emit('mediaAdded', item.id);
-      console.log('[MediaPanel] Video/Image timeline integration coming soon');
-    }
-  }
-
+  // Wrapper to handle confirmation for delete
   async function deleteMedia(mediaId: string) {
     if (!confirm('Delete this media item?')) return;
+    await deleteMediaBase(mediaId);
+  }
 
-    try {
-      await deleteProjectMedia(mediaId);
-      await loadMedia();
-      emit('mediaUpdated');
-    } catch (error) {
-      console.error('[MediaPanel] Failed to delete media:', error);
-    }
+  // Direct pass-through for addToTimeline
+  function addToTimeline(item: MediaItem) {
+    addToTimelineBase(item);
   }
 
   function formatDuration(seconds: number): string {

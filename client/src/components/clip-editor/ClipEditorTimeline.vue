@@ -224,21 +224,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, watch, toRef } from 'vue';
 import { Film, Music, Type, Smile, Image } from 'lucide-vue-next';
 import type { FullVideoEditorEdit } from '@/services/database/video-editor-edits';
 import type { IntroOutroRef } from '@/types';
-import { waveformService } from '@/services/waveformService';
-
-interface VideoSource {
-  id: string;
-  file_path: string;
-  start_time: number;
-  end_time: number;
-  trim_start: number;
-  trim_end: number | null;
-  original_duration: number;
-}
+import {
+  formatTime,
+  truncateText,
+  useTimelineItems,
+  usePlayheadDrag,
+  useWaveformRenderer,
+  useTimelineZoom,
+  useTimelineRuler,
+  TRACK_LABEL_WIDTH,
+  type VideoSource,
+} from '@/composables/clip-editor';
 
 const props = defineProps<{
   editorEdit: FullVideoEditorEdit | null;
@@ -259,145 +259,69 @@ const emit = defineEmits<{
   (e: 'itemDeselected'): void;
 }>();
 
-// Constants
-const TRACK_LABEL_WIDTH = 60;
-const PIXELS_PER_SECOND_BASE = 100;
-const MIN_TIMELINE_WIDTH = 800; // Minimum width for timeline content
-
-// Track width (pixels per second)
-const pixelsPerSecond = computed(() => {
-  if (!tracksContainer.value) return PIXELS_PER_SECOND_BASE;
-  
-  // At zoom level 0, fit entire duration to container width
-  if (props.zoomLevel === 0) {
-    const containerWidth = tracksContainer.value.clientWidth;
-    // Use at least MIN_TIMELINE_WIDTH to prevent too-compressed timeline
-    const targetWidth = Math.max(MIN_TIMELINE_WIDTH, containerWidth);
-    return props.duration > 0 ? targetWidth / props.duration : PIXELS_PER_SECOND_BASE;
-  }
-  
-  // For zoom > 0, scale from the fit-to-width baseline
-  return PIXELS_PER_SECOND_BASE * props.zoomLevel;
-});
-
-// Timeline width based on duration and zoom
-const timelineWidth = computed(() => {
-  return props.duration * pixelsPerSecond.value;
-});
+// Scroll container ref
+const tracksContainer = ref<HTMLElement | null>(null);
 
 // Intro/outro offsets
 const introOffset = computed(() => props.introRef?.duration || 0);
 const outroOffset = computed(() => props.outroRef?.duration || 0);
 
-// Scroll container ref
-const tracksContainer = ref<HTMLElement | null>(null);
-const scrollLeft = ref(0);
-
-// Waveform state
-const isWaveformLoading = ref(false);
-const isWaveformLoaded = ref(false);
-const waveformPeaks = ref<Map<string, Array<{ min: number; max: number }>>>(new Map());
-
-// Playhead position within the timeline content (based on current time)
-const playheadPosition = computed(() => {
-  return props.currentTime * pixelsPerSecond.value;
+// Timeline zoom composable
+const {
+  pixelsPerSecond,
+  timelineWidth,
+  scrollLeft,
+  handleScroll,
+  playheadPosition,
+  playheadScreenPosition,
+} = useTimelineZoom({
+  containerRef: tracksContainer,
+  zoomLevel: computed(() => props.zoomLevel),
+  duration: computed(() => props.duration),
+  currentTime: computed(() => props.currentTime),
 });
 
-// Playhead screen position (accounting for scroll and track label width)
-const playheadScreenPosition = computed(() => {
-  return TRACK_LABEL_WIDTH + playheadPosition.value - scrollLeft.value;
+// Timeline ruler composable
+const { timeMarkers } = useTimelineRuler({
+  duration: computed(() => props.duration),
+  zoomLevel: computed(() => props.zoomLevel),
 });
 
-// Auto-scroll timeline to keep playhead in view
-watch(() => props.currentTime, (newTime) => {
-  if (!tracksContainer.value) return;
-  
-  const playheadPos = newTime * pixelsPerSecond.value;
-  const containerWidth = tracksContainer.value.clientWidth;
-  const scrollLeft = tracksContainer.value.scrollLeft;
-  
-  // Target position: keep playhead at 30% from left edge (not centered, gives context)
-  const targetScrollLeft = playheadPos - (containerWidth * 0.3);
-  
-  // Only auto-scroll if playhead would go off-screen
-  const isOffScreenRight = playheadPos > scrollLeft + (containerWidth * 0.8);
-  const isOffScreenLeft = playheadPos < scrollLeft + (containerWidth * 0.2);
-  
-  if (isOffScreenRight || isOffScreenLeft) {
-    // Smooth scroll to keep playhead in view
-    tracksContainer.value.scrollTo({
-      left: Math.max(0, targetScrollLeft),
-      behavior: 'smooth'
-    });
-  }
+// Waveform composable
+const {
+  isLoading: isWaveformLoading,
+  isLoaded: isWaveformLoaded,
+  getWaveformBars,
+  getWaveformHeight,
+  getAudioWaveformHeight: getAudioWaveformHeightFromPath,
+} = useWaveformRenderer({
+  videoSourcePath: computed(() => props.videoSourcePath),
+  zoomLevel: computed(() => props.zoomLevel),
+  pixelsPerSecond,
 });
 
-// Time markers for ruler
-const timeMarkers = computed(() => {
-  const markers = [];
-  const interval = getTimeInterval();
-  
-  for (let time = 0; time <= props.duration; time += interval) {
-    markers.push({ time });
-  }
-  
-  return markers;
+// Playhead drag composable
+const {
+  isDragging: isDraggingPlayhead,
+  startDraggingPlayhead: handlePlayheadMouseDown,
+  getTimeFromPosition,
+} = usePlayheadDrag({
+  containerRef: tracksContainer,
+  scrollLeft,
+  pixelsPerSecond,
+  duration: computed(() => props.duration),
+  onSeek: (time) => emit('seek', time),
 });
 
-// Get appropriate time interval based on zoom level
-function getTimeInterval(): number {
-  const visibleDuration = props.duration / props.zoomLevel;
-  
-  if (visibleDuration > 120) return 30; // 30s intervals
-  if (visibleDuration > 60) return 15;  // 15s intervals
-  if (visibleDuration > 30) return 10;  // 10s intervals
-  if (visibleDuration > 10) return 5;   // 5s intervals
-  return 1;  // 1s intervals
-}
-
-// Format time for display
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-// Handle scroll to update scroll position
-function handleScroll() {
-  if (tracksContainer.value) {
-    scrollLeft.value = tracksContainer.value.scrollLeft;
-  }
-}
-
-// Extract items from editor edit
-const audioTracks = computed(() => props.editorEdit?.audioTracks || []);
-const textOverlays = computed(() => props.editorEdit?.textOverlays || []);
-const stickers = computed(() => props.editorEdit?.stickers || []);
-const watermarks = computed(() => props.editorEdit?.watermarks || []);
-
-// Group audio tracks by track_order so split segments appear on same row
-const groupedAudioTracks = computed(() => {
-  const tracks = audioTracks.value;
-  const grouped = new Map<number, any[]>();
-  
-  tracks.forEach(track => {
-    const order = track.track_order || 0;
-    if (!grouped.has(order)) {
-      grouped.set(order, []);
-    }
-    grouped.get(order)!.push(track);
-  });
-  
-  // Sort segments within each track by start_time
-  grouped.forEach(segments => {
-    segments.sort((a, b) => a.start_time - b.start_time);
-  });
-  
-  // Convert to array and sort by track_order
-  return Array.from(grouped.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([order, segments]) => ({ order, segments }));
-});
+// Extract items from editor edit using composable
+const editorEditRef = toRef(props, 'editorEdit');
+const {
+  audioTracks,
+  textOverlays,
+  stickers,
+  watermarks,
+  groupedAudioTracks,
+} = useTimelineItems(editorEditRef);
 
 // Get segment style based on time and duration
 function getSegmentStyle(startTime: number, segmentDuration: number) {
@@ -407,54 +331,14 @@ function getSegmentStyle(startTime: number, segmentDuration: number) {
   };
 }
 
-// Playhead dragging state
-const isDraggingPlayhead = ref(false);
-
 // Handle track click to seek and deselect items
 function handleTrackClick(event: MouseEvent) {
-  if (!tracksContainer.value) return;
-  
   // Deselect any selected items when clicking on empty track space
   emit('itemDeselected');
-  
-  // Calculate position relative to the visible area
-  const containerRect = tracksContainer.value.getBoundingClientRect();
-  const clickX = event.clientX - containerRect.left;
-  
-  // Account for scroll position
-  const timelineX = clickX + scrollLeft.value;
-  const time = timelineX / pixelsPerSecond.value;
-  
-  emit('seek', Math.max(0, Math.min(time, props.duration)));
-}
 
-// Handle playhead drag
-function handlePlayheadMouseDown(event: MouseEvent) {
-  event.stopPropagation();
-  isDraggingPlayhead.value = true;
-  
-  const onMouseMove = (e: MouseEvent) => {
-    if (!isDraggingPlayhead.value || !tracksContainer.value) return;
-    
-    // Calculate position relative to tracks container
-    const rect = tracksContainer.value.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    
-    // Account for scroll position
-    const timelineX = clickX + scrollLeft.value;
-    const time = timelineX / pixelsPerSecond.value;
-    
-    emit('seek', Math.max(0, Math.min(time, props.duration)));
-  };
-  
-  const onMouseUp = () => {
-    isDraggingPlayhead.value = false;
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-  };
-  
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
+  // Use composable to get time from click position
+  const time = getTimeFromPosition(event);
+  emit('seek', time);
 }
 
 // Props access for comparison
@@ -465,10 +349,8 @@ function selectItem(item: any, type: string) {
   emit('selectItem', item, type);
 }
 
-// Truncate text
-function truncate(text: string, maxLength: number): string {
-  return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
-}
+// truncate is an alias for truncateText from composable
+const truncate = truncateText;
 
 // Format video source label
 function formatSourceLabel(source: VideoSource): string {
@@ -476,151 +358,11 @@ function formatSourceLabel(source: VideoSource): string {
   return `Clip (${duration.toFixed(1)}s)`;
 }
 
-// Load waveform data
-async function loadWaveformData() {
-  if (!props.videoSourcePath) {
-    console.log('[ClipEditorTimeline] No video source path provided');
-    return;
-  }
-  
-  // Check if already loaded
-  if (waveformService.isLoaded(props.videoSourcePath)) {
-    console.log('[ClipEditorTimeline] Waveform already loaded');
-    isWaveformLoaded.value = true;
-    waveformPeaks.value.clear(); // Clear cache to regenerate with new data
-    return;
-  }
-  
-  // Check if already loading
-  if (isWaveformLoading.value) {
-    console.log('[ClipEditorTimeline] Waveform already loading');
-    return;
-  }
-  
-  try {
-    isWaveformLoading.value = true;
-    console.log('[ClipEditorTimeline] Loading waveform for:', props.videoSourcePath);
-    
-    await waveformService.loadAudio(props.videoSourcePath);
-    
-    isWaveformLoaded.value = true;
-    waveformPeaks.value.clear(); // Clear cache to force regeneration with real data
-    
-    console.log('[ClipEditorTimeline] Waveform loaded successfully');
-  } catch (error) {
-    console.error('[ClipEditorTimeline] Failed to load waveform:', error);
-    isWaveformLoaded.value = false;
-  } finally {
-    isWaveformLoading.value = false;
-  }
-}
-
-// Watch for video source changes
-watch(() => props.videoSourcePath, (newPath) => {
-  if (newPath) {
-    isWaveformLoaded.value = false;
-    waveformPeaks.value.clear();
-    loadWaveformData();
-  }
-}, { immediate: true });
-
-// Watch for zoom level changes to invalidate peak cache
-watch(() => props.zoomLevel, () => {
-  waveformPeaks.value.clear();
-});
-
-// Get number of waveform bars based on segment duration and zoom
-function getWaveformBars(segmentDuration: number): number {
-  // More bars for longer segments and higher zoom levels
-  const baseBarCount = 50;
-  const scaledCount = Math.max(baseBarCount, Math.floor(segmentDuration * pixelsPerSecond.value / 4));
-  return Math.min(scaledCount, 500); // Cap at 500 bars for performance
-}
-
-// Get waveform peaks for a segment
-function getSegmentPeaks(startTime: number, segmentDuration: number): Array<{ min: number; max: number }> {
-  const cacheKey = `${startTime}-${segmentDuration}`;
-  
-  // Check cache first
-  if (waveformPeaks.value.has(cacheKey)) {
-    return waveformPeaks.value.get(cacheKey)!;
-  }
-  
-  // If waveform not loaded yet, return empty array
-  if (!isWaveformLoaded.value || !props.videoSourcePath) {
-    return [];
-  }
-  
-  // Get peaks from waveform service
-  const numBars = getWaveformBars(segmentDuration);
-  const peaks = waveformService.getPeaksForRange(props.videoSourcePath, {
-    startTime,
-    endTime: startTime + segmentDuration,
-    pixelWidth: numBars,
-  });
-  
-  // Cache the result
-  waveformPeaks.value.set(cacheKey, peaks);
-  
-  return peaks;
-}
-
-// Generate waveform height from real peak data
-function getWaveformHeight(index: number, startTime: number, segmentDuration: number): string {
-  const peaks = getSegmentPeaks(startTime, segmentDuration);
-  
-  if (peaks.length === 0 || index >= peaks.length) {
-    // Fallback to placeholder pattern if no data
-    const time = index / 10;
-    const height = 
-      Math.abs(Math.sin(time * 0.5) * 0.6) +
-      Math.abs(Math.sin(time * 1.2) * 0.3) +
-      Math.abs(Math.sin(time * 2.8) * 0.1);
-    return `${Math.max(10, height * 100)}%`;
-  }
-  
-  const peak = peaks[index];
-  // Calculate amplitude from min/max (use the larger absolute value)
-  const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
-  
-  // Scale to percentage (with minimum height for visibility)
-  const heightPercent = Math.max(10, amplitude * 100);
-  
-  return `${heightPercent}%`;
-}
-
-// Generate waveform for audio tracks (uses audio file path)
+// Wrapper for audio track waveform height that looks up file path by ID
 function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: number, segmentDuration: number): string {
-  // Find the audio track to get its file path
   const audioTrack = audioTracks.value.find(t => t.id === audioTrackId);
-  if (!audioTrack) {
-    return '50%'; // Default height if track not found
-  }
-  
-  // Check if waveform is loaded for this audio file
-  if (waveformService.isLoaded(audioTrack.file_path)) {
-    const numBars = getWaveformBars(segmentDuration);
-    const peaks = waveformService.getPeaksForRange(audioTrack.file_path, {
-      startTime,
-      endTime: startTime + segmentDuration,
-      pixelWidth: numBars,
-    });
-    
-    if (peaks.length > 0 && index < peaks.length) {
-      const peak = peaks[index];
-      const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
-      const heightPercent = Math.max(10, amplitude * 100);
-      return `${heightPercent}%`;
-    }
-  }
-  
-  // Fallback to procedural waveform pattern
-  const time = index / 10;
-  const height = 
-    Math.abs(Math.sin(time * 0.7) * 0.5) +
-    Math.abs(Math.sin(time * 1.5) * 0.3) +
-    Math.abs(Math.sin(time * 3.2) * 0.2);
-  return `${Math.max(15, height * 100)}%`;
+  if (!audioTrack) return '50%';
+  return getAudioWaveformHeightFromPath(audioTrack.file_path, index, startTime, segmentDuration);
 }
 </script>
 

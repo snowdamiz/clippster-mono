@@ -23,7 +23,7 @@
       >
         <div class="flex items-center gap-2 flex-1 min-w-0 text-white/90">
           <Type :size="16" />
-          <span class="flex-1 text-sm truncate">{{ truncateText(textOverlay.text) }}</span>
+          <span class="flex-1 text-sm truncate">{{ truncateText(textOverlay.text, 30) }}</span>
         </div>
         <button
           class="flex items-center justify-center w-7 h-7 bg-transparent border border-white/10 rounded text-white/50 cursor-pointer transition-all duration-150 hover:bg-red-500/20 hover:border-red-500/40 hover:text-red-400"
@@ -66,14 +66,10 @@
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue';
+  import { toRef } from 'vue';
   import { Plus, Type, Trash2 } from 'lucide-vue-next';
-  import {
-    getVideoEditorTextOverlaysByEditId,
-    createVideoEditorTextOverlay,
-    deleteVideoEditorTextOverlay,
-    type VideoEditorTextOverlayRecord,
-  } from '@/services/database/video-editor-edits';
+  import type { VideoEditorTextOverlayRecord } from '@/services/database/video-editor-edits';
+  import { truncateText, useTextOverlaysCRUD, useTextTemplates, type TextTemplate } from '@/composables/clip-editor';
 
   const props = defineProps<{
     editId: string | null;
@@ -86,76 +82,28 @@
     (e: 'textsUpdated'): void;
   }>();
 
-  // State
-  const textOverlays = ref<VideoEditorTextOverlayRecord[]>([]);
-  const selectedTextId = ref<string | null>(null);
+  // Use the CRUD composable for text overlays
+  const editIdRef = toRef(props, 'editId');
+  const {
+    items: textOverlays,
+    selectedId: selectedTextId,
+    create: createText,
+    remove: deleteText,
+    select,
+  } = useTextOverlaysCRUD(editIdRef, () => emit('textsUpdated'));
 
-  // Templates
-  const textTemplates = [
-    { id: 'title', label: 'Title', preset: 'title' },
-    { id: 'subtitle', label: 'Subtitle', preset: 'lower-third' },
-    { id: 'caption', label: 'Caption', preset: 'caption' },
-    { id: 'quote', label: 'Quote', preset: 'quote' },
-  ];
-
-  // Load text overlays
-  async function loadTextOverlays() {
-    if (!props.editId) return;
-
-    try {
-      textOverlays.value = await getVideoEditorTextOverlaysByEditId(props.editId);
-      console.log('[TextPanel] Loaded text overlays:', textOverlays.value.length);
-    } catch (error) {
-      console.error('[TextPanel] Failed to load text overlays:', error);
-    }
-  }
+  // Use the text templates composable
+  const { templates: textTemplates, createTextData, createDefaultTextData } = useTextTemplates();
 
   // Add text overlay
   async function handleAddText() {
     if (!props.editId) return;
 
     try {
-      const defaultStyle = {
-        fontFamily: 'Inter',
-        fontSize: 48,
-        fontWeight: 700,
-        color: '#ffffff',
-        backgroundColor: null,
-        backgroundEnabled: false,
-        strokeEnabled: true,
-        strokeColor: '#000000',
-        strokeWidth: 2,
-        shadowEnabled: true,
-        shadowColor: '#000000',
-        shadowBlur: 4,
-        shadowOffsetX: 2,
-        shadowOffsetY: 2,
-        border1Width: 0,
-        border1Color: '#000000',
-        border2Width: 0,
-        border2Color: '#000000',
-        padding: 16,
-        borderRadius: 8,
-        letterSpacing: 0,
-        lineHeight: 1.2,
-        textAlign: 'center' as const,
-        maxWidth: 80,
-      };
+      const textData = createDefaultTextData(props.currentTime || 0);
+      const newText = await createText(textData);
 
-      const newText = await createVideoEditorTextOverlay(props.editId, {
-        text: 'New Text',
-        start_time: props.currentTime || 0,
-        end_time: (props.currentTime || 0) + 3,
-        position_x: 50,
-        position_y: 50,
-        style_data: JSON.stringify(defaultStyle),
-        animation: 'fade',
-      });
-
-      await loadTextOverlays();
       emit('textAdded', newText.id);
-      emit('textsUpdated');
-
       console.log('[TextPanel] Added text overlay:', newText.id);
     } catch (error) {
       console.error('[TextPanel] Failed to add text:', error);
@@ -163,113 +111,23 @@
   }
 
   // Add text from template
-  async function addTextFromTemplate(template: any) {
+  async function addTextFromTemplate(template: TextTemplate) {
     if (!props.editId) return;
 
     try {
-      const templateStyles = {
-        title: {
-          fontSize: 64,
-          fontWeight: 800,
-          position_y: 20,
-        },
-        'lower-third': {
-          fontSize: 32,
-          fontWeight: 600,
-          position_y: 85,
-          backgroundEnabled: true,
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        },
-        caption: {
-          fontSize: 28,
-          fontWeight: 600,
-          position_y: 90,
-        },
-        quote: {
-          fontSize: 40,
-          fontWeight: 500,
-          fontStyle: 'italic',
-        },
-      };
+      const textData = createTextData(template, props.currentTime || 0);
+      const newText = await createText(textData);
 
-      const style = templateStyles[template.preset as keyof typeof templateStyles] || {};
-
-      const defaultStyle = {
-        fontFamily: 'Inter',
-        color: '#ffffff',
-        backgroundColor: null,
-        backgroundEnabled: false,
-        strokeEnabled: true,
-        strokeColor: '#000000',
-        strokeWidth: 2,
-        shadowEnabled: true,
-        shadowColor: '#000000',
-        shadowBlur: 4,
-        shadowOffsetX: 2,
-        shadowOffsetY: 2,
-        border1Width: 0,
-        border1Color: '#000000',
-        border2Width: 0,
-        border2Color: '#000000',
-        padding: 16,
-        borderRadius: 8,
-        letterSpacing: 0,
-        lineHeight: 1.2,
-        textAlign: 'center' as const,
-        maxWidth: 80,
-        ...style,
-      };
-
-      const newText = await createVideoEditorTextOverlay(props.editId, {
-        text: template.label,
-        start_time: props.currentTime || 0,
-        end_time: (props.currentTime || 0) + 3,
-        position_x: 50,
-        position_y: (style as any).position_y || 50,
-        style_data: JSON.stringify(defaultStyle),
-        animation: 'fade',
-      });
-
-      await loadTextOverlays();
       emit('textAdded', newText.id);
-      emit('textsUpdated');
-
       console.log('[TextPanel] Added text from template:', template.label);
     } catch (error) {
       console.error('[TextPanel] Failed to add text from template:', error);
     }
   }
 
-  // Select text
+  // Select text and emit event
   function selectText(text: VideoEditorTextOverlayRecord) {
-    selectedTextId.value = text.id;
+    select(text);
     emit('textSelected', text);
-  }
-
-  // Delete text
-  async function deleteText(textId: string) {
-    try {
-      await deleteVideoEditorTextOverlay(textId);
-      await loadTextOverlays();
-
-      if (selectedTextId.value === textId) {
-        selectedTextId.value = null;
-      }
-
-      emit('textsUpdated');
-      console.log('[TextPanel] Deleted text:', textId);
-    } catch (error) {
-      console.error('[TextPanel] Failed to delete text:', error);
-    }
-  }
-
-  // Truncate text
-  function truncateText(text: string): string {
-    return text.length > 30 ? text.substring(0, 30) + '...' : text;
-  }
-
-  // Load texts on mount
-  if (props.editId) {
-    loadTextOverlays();
   }
 </script>

@@ -69,15 +69,11 @@
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue';
+  import { toRef } from 'vue';
   import { open } from '@tauri-apps/plugin-dialog';
   import { Plus, Upload, Smile, Trash2 } from 'lucide-vue-next';
-  import {
-    getVideoEditorStickersByEditId,
-    createVideoEditorSticker,
-    deleteVideoEditorSticker,
-    type VideoEditorStickerRecord,
-  } from '@/services/database/video-editor-edits';
+  import type { VideoEditorStickerRecord } from '@/services/database/video-editor-edits';
+  import { useStickersCRUD, extractFileName, truncateText } from '@/composables/clip-editor';
 
   const props = defineProps<{
     editId: string | null;
@@ -90,49 +86,22 @@
     (e: 'stickersUpdated'): void;
   }>();
 
-  // State
-  const stickers = ref<VideoEditorStickerRecord[]>([]);
-  const selectedStickerId = ref<string | null>(null);
+  // Use the CRUD composable for stickers
+  const editIdRef = toRef(props, 'editId');
+  const {
+    items: stickers,
+    selectedId: selectedStickerId,
+    create: createSticker,
+    remove: deleteSticker,
+    select,
+  } = useStickersCRUD(editIdRef, () => emit('stickersUpdated'));
 
   // Common emojis
   const commonEmojis = [
-    '😀',
-    '😂',
-    '🤣',
-    '😍',
-    '😎',
-    '🔥',
-    '💯',
-    '👍',
-    '❤️',
-    '✨',
-    '🎉',
-    '🎊',
-    '🎈',
-    '🏆',
-    '⭐',
-    '💪',
-    '👏',
-    '🙌',
-    '🤝',
-    '💰',
-    '💎',
-    '🚀',
-    '⚡',
-    '💥',
+    '😀', '😂', '🤣', '😍', '😎', '🔥', '💯', '👍',
+    '❤️', '✨', '🎉', '🎊', '🎈', '🏆', '⭐', '💪',
+    '👏', '🙌', '🤝', '💰', '💎', '🚀', '⚡', '💥',
   ];
-
-  // Load stickers
-  async function loadStickers() {
-    if (!props.editId) return;
-
-    try {
-      stickers.value = await getVideoEditorStickersByEditId(props.editId);
-      console.log('[StickersPanel] Loaded stickers:', stickers.value.length);
-    } catch (error) {
-      console.error('[StickersPanel] Failed to load stickers:', error);
-    }
-  }
 
   // Upload sticker
   async function handleUploadSticker() {
@@ -140,19 +109,15 @@
       const selected = await open({
         multiple: false,
         filters: [
-          {
-            name: 'Images',
-            extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'],
-          },
+          { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] },
         ],
       });
 
       if (!selected || !props.editId) return;
 
       const filePath = selected as string;
-      const fileName = filePath.split(/[\\/]/).pop() || 'Sticker';
 
-      await createVideoEditorSticker(props.editId, {
+      await createSticker({
         sticker_path: filePath,
         sticker_type: filePath.endsWith('.gif') ? 'gif' : 'image',
         start_time: props.currentTime || 0,
@@ -164,10 +129,7 @@
         animation: 'none',
       });
 
-      await loadStickers();
-      emit('stickersUpdated');
-
-      console.log('[StickersPanel] Uploaded sticker:', fileName);
+      console.log('[StickersPanel] Uploaded sticker:', extractFileName(filePath));
     } catch (error) {
       console.error('[StickersPanel] Failed to upload sticker:', error);
     }
@@ -178,7 +140,7 @@
     if (!props.editId) return;
 
     try {
-      const newSticker = await createVideoEditorSticker(props.editId, {
+      const newSticker = await createSticker({
         sticker_path: emoji,
         sticker_type: 'emoji',
         start_time: props.currentTime || 0,
@@ -190,58 +152,27 @@
         animation: 'bounce',
       });
 
-      await loadStickers();
       emit('stickerAdded', newSticker.id);
-      emit('stickersUpdated');
-
       console.log('[StickersPanel] Added emoji:', emoji);
     } catch (error) {
       console.error('[StickersPanel] Failed to add emoji:', error);
     }
   }
 
-  // Select sticker
+  // Select sticker and emit event
   function selectSticker(sticker: VideoEditorStickerRecord) {
-    selectedStickerId.value = sticker.id;
+    select(sticker);
     emit('stickerSelected', sticker);
-  }
-
-  // Delete sticker
-  async function deleteSticker(stickerId: string) {
-    try {
-      await deleteVideoEditorSticker(stickerId);
-      await loadStickers();
-
-      if (selectedStickerId.value === stickerId) {
-        selectedStickerId.value = null;
-      }
-
-      emit('stickersUpdated');
-      console.log('[StickersPanel] Deleted sticker:', stickerId);
-    } catch (error) {
-      console.error('[StickersPanel] Failed to delete sticker:', error);
-    }
   }
 
   // Get sticker preview
   function getStickerPreview(sticker: VideoEditorStickerRecord): string {
-    if (sticker.sticker_type === 'emoji') {
-      return sticker.sticker_path;
-    }
-    return '🖼️';
+    return sticker.sticker_type === 'emoji' ? sticker.sticker_path : '🖼️';
   }
 
   // Get sticker name
   function getStickerName(sticker: VideoEditorStickerRecord): string {
-    if (sticker.sticker_type === 'emoji') {
-      return 'Emoji';
-    }
-    const fileName = sticker.sticker_path.split(/[\\/]/).pop() || 'Sticker';
-    return fileName.length > 20 ? fileName.substring(0, 20) + '...' : fileName;
-  }
-
-  // Load stickers on mount
-  if (props.editId) {
-    loadStickers();
+    if (sticker.sticker_type === 'emoji') return 'Emoji';
+    return truncateText(extractFileName(sticker.sticker_path), 20);
   }
 </script>

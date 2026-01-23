@@ -124,7 +124,7 @@
           class="relative w-full h-1.5 bg-gray-600/40 rounded cursor-pointer transition-[height] duration-150 hover:h-2"
           @mousedown="startDragging"
           @mousemove="handleProgressHover"
-          @mouseleave="hoverTime = null"
+          @mouseleave="clearProgressHover"
         >
           <!-- Progress fill -->
           <div
@@ -194,22 +194,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, toRef } from 'vue';
 import { Play, Pause, Volume2, VolumeX, Maximize2, Minimize2 } from 'lucide-vue-next';
 import type { FullVideoEditorEdit } from '@/services/database/video-editor-edits';
 import { useAudioMixer } from '@/composables/useAudioMixer';
 import { useTimelineRenderer } from '@/composables/useTimelineRenderer';
 import { convertFileSrc } from '@tauri-apps/api/core';
-
-interface VideoSource {
-  id: string;
-  file_path: string;
-  start_time: number;
-  end_time: number;
-  trim_start: number;
-  trim_end: number | null;
-  original_duration: number;
-}
+import {
+  formatTime,
+  useTimelineItems,
+  useVideoEffects,
+  useVideoSourceTime,
+  usePlayheadDrag,
+  useOverlayStyles,
+  useVideoSync,
+  type VideoSource,
+} from '@/composables/clip-editor';
 
 const props = defineProps<{
   videoSrc: string | null | undefined;
@@ -239,9 +239,6 @@ const isMuted = ref(false);
 const isFullscreen = ref(false);
 const previewContainerRef = ref<HTMLElement | null>(null);
 const progressBarRef = ref<HTMLElement | null>(null);
-const isDraggingProgress = ref(false);
-const hoverTime = ref<number | null>(null);
-const hoverPosition = ref(0);
 
 // Audio mixer for playing audio tracks
 const audioMixer = useAudioMixer();
@@ -270,72 +267,29 @@ const timelineState = computed(() => {
 
 const timelineRenderer = useTimelineRenderer(timelineState);
 
-// Active overlays based on current time
-const activeTextOverlays = computed(() => {
-  if (!props.editorEdit) return [];
-  return props.editorEdit.textOverlays.filter(
-    (overlay) =>
-      props.currentTime >= overlay.start_time && props.currentTime <= overlay.end_time
-  );
+// ===== Composables for timeline items, effects, and time conversion =====
+const editorEditRef = toRef(props, 'editorEdit');
+const currentTimeRef = toRef(props, 'currentTime');
+const videoSourcesRef = computed(() => props.videoSources || []);
+
+// Timeline items from composable
+const { getActiveTextOverlays, getActiveStickers, getActiveWatermark } = useTimelineItems(editorEditRef);
+
+// Active overlays based on current time (computed for reactivity)
+const activeTextOverlays = computed(() => getActiveTextOverlays(props.currentTime));
+const activeStickers = computed(() => getActiveStickers(props.currentTime));
+const activeWatermark = computed(() => getActiveWatermark(props.currentTime));
+
+// CSS filters from composable
+const { appliedCSSFilters } = useVideoEffects({
+  editorEdit: editorEditRef,
+  currentTime: currentTimeRef,
 });
 
-const activeStickers = computed(() => {
-  if (!props.editorEdit) return [];
-  return props.editorEdit.stickers.filter(
-    (sticker) =>
-      props.currentTime >= sticker.start_time && props.currentTime <= sticker.end_time
-  );
-});
+// Video source time conversion from composable
+const { getVideoSourceTime } = useVideoSourceTime(videoSourcesRef);
 
-const activeWatermark = computed(() => {
-  if (!props.editorEdit) return null;
-  const watermarks = props.editorEdit.watermarks.filter(
-    (wm) => props.currentTime >= wm.start_time && props.currentTime <= wm.end_time
-  );
-  return watermarks.length > 0 ? watermarks[0] : null;
-});
-
-// CSS filters from effects
-const appliedCSSFilters = computed(() => {
-  if (!props.editorEdit) return '';
-  
-  const activeEffects = props.editorEdit.effects.filter(
-    (effect) =>
-      props.currentTime >= effect.start_time && props.currentTime <= effect.end_time
-  );
-
-  if (activeEffects.length === 0) return '';
-
-  const filters: string[] = [];
-  activeEffects.forEach((effect) => {
-    const settings = JSON.parse(effect.settings || '{}');
-    
-    if (effect.effect_type === 'filter') {
-      // Apply filter settings
-      if (settings.brightness !== undefined) {
-        filters.push(`brightness(${settings.brightness}%)`);
-      }
-      if (settings.contrast !== undefined) {
-        filters.push(`contrast(${settings.contrast}%)`);
-      }
-      if (settings.saturation !== undefined) {
-        filters.push(`saturate(${settings.saturation}%)`);
-      }
-      if (settings.blur !== undefined) {
-        filters.push(`blur(${settings.blur}px)`);
-      }
-    }
-  });
-
-  return filters.join(' ');
-});
-
-// Format time as MM:SS
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-}
+// formatTime is imported from composable
 
 // Video event handlers
 function onLoadedMetadata() {
@@ -444,112 +398,38 @@ const timelineDuration = computed(() => {
   return props.duration || videoDuration.value || 0;
 });
 
-// Progress bar controls
+// Progress bar drag handling via composable
+const {
+  isDragging: isDraggingProgress,
+  hoverTime,
+  hoverPosition,
+  startDragging,
+  startDraggingPlayhead,
+  handleHover: handleProgressHover,
+  clearHover: clearProgressHover,
+} = usePlayheadDrag({
+  containerRef: progressBarRef,
+  duration: timelineDuration,
+  onSeek: (time) => emit('seek', time),
+});
+
+// Progress bar visual position
 const progressPercent = computed(() => {
   const duration = timelineDuration.value;
   if (duration === 0) return 0;
   return (props.currentTime / duration) * 100;
 });
 
-function startDragging(event: MouseEvent) {
-  // Only start dragging if clicking on the bar itself, not the playhead
-  if ((event.target as HTMLElement).classList.contains('editor-preview__playhead')) {
-    return;
-  }
-  
-  isDraggingProgress.value = true;
-  seekToPosition(event);
-  
-  const handleMouseMove = (e: MouseEvent) => {
-    if (isDraggingProgress.value) {
-      seekToPositionFromEvent(e);
-    }
-  };
-  
-  const handleMouseUp = () => {
-    isDraggingProgress.value = false;
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
-  };
-  
-  document.addEventListener('mousemove', handleMouseMove);
-  document.addEventListener('mouseup', handleMouseUp);
-}
+// Overlay styles from composable
+const {
+  getTextOverlayStyle,
+  getStickerStyle,
+  getWatermarkStyle: getWatermarkStyleBase,
+} = useOverlayStyles();
 
-function startDraggingPlayhead(event: MouseEvent) {
-  event.preventDefault();
-  isDraggingProgress.value = true;
-  
-  const handleMouseMove = (e: MouseEvent) => {
-    if (isDraggingProgress.value) {
-      seekToPositionFromEvent(e);
-    }
-  };
-  
-  const handleMouseUp = () => {
-    isDraggingProgress.value = false;
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
-  };
-  
-  document.addEventListener('mousemove', handleMouseMove);
-  document.addEventListener('mouseup', handleMouseUp);
-}
-
-function seekToPosition(event: MouseEvent) {
-  const target = event.currentTarget as HTMLElement;
-  const rect = target.getBoundingClientRect();
-  const percent = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
-  const time = (percent / 100) * timelineDuration.value;
-  emit('seek', time);
-}
-
-function seekToPositionFromEvent(event: MouseEvent) {
-  if (!progressBarRef.value) return;
-  
-  const rect = progressBarRef.value.getBoundingClientRect();
-  const percent = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
-  const time = (percent / 100) * timelineDuration.value;
-  emit('seek', time);
-}
-
-function handleProgressHover(event: MouseEvent) {
-  const target = event.currentTarget as HTMLElement;
-  const rect = target.getBoundingClientRect();
-  const percent = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
-  hoverPosition.value = percent;
-  hoverTime.value = (percent / 100) * timelineDuration.value;
-}
-
-// Get text overlay styles
-function getTextOverlayStyle(textOverlay: any) {
-  return {
-    left: `${textOverlay.position_x}%`,
-    top: `${textOverlay.position_y}%`,
-    transform: 'translate(-50%, -50%)',
-  };
-}
-
-// Get sticker styles
-function getStickerStyle(sticker: any) {
-  return {
-    left: `${sticker.position_x}%`,
-    top: `${sticker.position_y}%`,
-    transform: `translate(-50%, -50%) scale(${sticker.scale}) rotate(${sticker.rotation}deg)`,
-  };
-}
-
-// Get watermark styles
+// Wrapper for watermark style to use active watermark
 function getWatermarkStyle() {
-  if (!activeWatermark.value) return {};
-  
-  const wm = activeWatermark.value;
-  return {
-    left: `${wm.position_x}%`,
-    top: `${wm.position_y}%`,
-    transform: `translate(-50%, -50%) scale(${wm.scale / 100})`,
-    opacity: wm.opacity / 100,
-  };
+  return getWatermarkStyleBase(activeWatermark.value);
 }
 
 // Handle overlay click (for placement mode)
@@ -584,98 +464,17 @@ watch(() => props.videoSources, (newSources) => {
   }
 }, { immediate: true });
 
-// Check if current time is beyond video content
-const isAfterVideoEnd = computed(() => {
-  const videoDuration = props.videoContentDuration || props.duration || 0;
-  return props.currentTime > videoDuration;
-});
-
-/**
- * Calculate the actual video element time from timeline time.
- * This accounts for the trim_start offset - the video file may start at a different
- * position than the beginning of the file.
- * 
- * Timeline time: 0-30s (what the user sees)
- * Video source time: trim_start to trim_start+30s (actual position in video file)
- */
-function getVideoSourceTime(timelineTime: number): number {
-  if (!props.videoSources || props.videoSources.length === 0) {
-    return timelineTime;
-  }
-  
-  // Find the video source that contains this timeline time
-  for (const source of props.videoSources) {
-    if (timelineTime >= source.start_time && timelineTime < source.end_time) {
-      // Calculate offset within this source
-      const offsetInSource = timelineTime - source.start_time;
-      // Add trim_start to get actual video file position
-      return source.trim_start + offsetInSource;
-    }
-  }
-  
-  // If we're past all sources, use the last source's end position
-  const lastSource = props.videoSources[props.videoSources.length - 1];
-  if (lastSource && timelineTime >= lastSource.end_time) {
-    const offsetInSource = lastSource.end_time - lastSource.start_time;
-    return lastSource.trim_start + offsetInSource;
-  }
-  
-  return timelineTime;
-}
-
-// Sync video element with props
-watch(() => props.currentTime, (newTime) => {
-  if (videoRef.value) {
-    const videoDuration = props.videoContentDuration || props.duration || 0;
-    
-    // If we're past the video content, just pause and don't touch currentTime
-    if (newTime > videoDuration) {
-      if (!videoRef.value.paused) {
-        videoRef.value.pause();
-      }
-      // Don't set currentTime - let it stay wherever it naturally ended
-      // This prevents the seek loop
-    } else {
-      // Calculate the actual video source time with trim offset
-      const videoSourceTime = getVideoSourceTime(newTime);
-      
-      // Normal video sync when within video duration
-      if (Math.abs(videoRef.value.currentTime - videoSourceTime) > 0.1) {
-        console.log(`[ClipEditorPreview] Seeking video: timeline=${newTime.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
-        videoRef.value.currentTime = videoSourceTime;
-      }
-    }
-  }
-  
-  // Sync audio mixer with current time
-  const activeTracks = timelineRenderer.getActiveAudioTracks(newTime);
-  audioMixer.syncToTime(newTime, activeTracks, props.isPlaying);
-});
-
-watch(() => props.isPlaying, (playing) => {
-  if (!videoRef.value) return;
-  
-  const videoDuration = props.videoContentDuration || props.duration || 0;
-  
-  // Only play video if we're within the video content duration
-  if (playing && props.currentTime <= videoDuration) {
-    // Ensure video is at correct source time before playing
-    const videoSourceTime = getVideoSourceTime(props.currentTime);
-    if (Math.abs(videoRef.value.currentTime - videoSourceTime) > 0.1) {
-      console.log(`[ClipEditorPreview] Pre-play seek: timeline=${props.currentTime.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
-      videoRef.value.currentTime = videoSourceTime;
-    }
-    
-    videoRef.value.play().catch(err => {
-      console.error('[ClipEditorPreview] Failed to play:', err);
-    });
-  } else {
-    videoRef.value.pause();
-  }
-  
-  // Sync audio playback state
-  const activeTracks = timelineRenderer.getActiveAudioTracks(props.currentTime);
-  audioMixer.syncToTime(props.currentTime, activeTracks, playing);
+// Video synchronization via composable
+const { isAfterVideoEnd } = useVideoSync({
+  videoRef,
+  currentTime: toRef(props, 'currentTime'),
+  isPlaying: toRef(props, 'isPlaying'),
+  videoContentDuration: computed(() => props.videoContentDuration || 0),
+  duration: computed(() => props.duration || 0),
+  videoSources: videoSourcesRef,
+  getVideoSourceTime,
+  audioMixer,
+  timelineRenderer,
 });
 
 onMounted(async () => {

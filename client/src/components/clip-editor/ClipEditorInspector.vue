@@ -56,19 +56,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Info, X } from 'lucide-vue-next';
+import { toRef } from 'vue';
+import { X } from 'lucide-vue-next';
 import AudioInspector from './inspector/AudioInspector.vue';
 import TextInspector from './inspector/TextInspector.vue';
 import StickerInspector from './inspector/StickerInspector.vue';
-import { 
-  updateVideoEditorAudioTrack, 
-  deleteVideoEditorAudioTrack,
-  updateVideoEditorTextOverlay,
-  deleteVideoEditorTextOverlay,
-  updateVideoEditorSticker,
-  deleteVideoEditorSticker,
-} from '@/services/database/video-editor-edits';
+import { useInspectorOperations } from '@/composables/clip-editor';
 
 const props = defineProps<{
   selectedItem: any;
@@ -82,59 +75,23 @@ const emit = defineEmits<{
   (e: 'close'): void;
 }>();
 
+// Use inspector operations composable
+const { updateProperty, deleteItem, typeLabel: selectedItemTypeLabel } = useInspectorOperations({
+  selectedItem: toRef(props, 'selectedItem'),
+  selectedItemType: toRef(props, 'selectedItemType'),
+  onUpdate: (property, value) => emit('update', { property, value }),
+  onDelete: () => emit('itemDeleted'),
+});
+
 // Handle property updates
 async function handlePropertyUpdate(property: string, value: any) {
-  if (!props.selectedItem || !props.selectedItem.id) return;
-
-  try {
-    if (props.selectedItemType === 'audio') {
-      await updateVideoEditorAudioTrack(props.selectedItem.id, { [property]: value });
-      emit('update', { property, value });
-    } else if (props.selectedItemType === 'text') {
-      await updateVideoEditorTextOverlay(props.selectedItem.id, { [property]: value });
-      emit('update', { property, value });
-    } else if (props.selectedItemType === 'sticker') {
-      await updateVideoEditorSticker(props.selectedItem.id, { [property]: value });
-      emit('update', { property, value });
-    }
-  } catch (error) {
-    console.error('[ClipEditorInspector] Failed to update property:', error);
-  }
+  await updateProperty(property, value);
 }
 
 // Handle item deletion
 async function handleDelete() {
-  if (!props.selectedItem || !props.selectedItem.id) return;
-
-  try {
-    if (props.selectedItemType === 'audio') {
-      await deleteVideoEditorAudioTrack(props.selectedItem.id);
-      emit('itemDeleted');
-    } else if (props.selectedItemType === 'text') {
-      await deleteVideoEditorTextOverlay(props.selectedItem.id);
-      emit('itemDeleted');
-    } else if (props.selectedItemType === 'sticker') {
-      await deleteVideoEditorSticker(props.selectedItem.id);
-      emit('itemDeleted');
-    }
-  } catch (error) {
-    console.error('[ClipEditorInspector] Failed to delete item:', error);
-  }
+  await deleteItem();
 }
-
-const selectedItemTypeLabel = computed(() => {
-  const labels: Record<string, string> = {
-    segment: 'Video Segment',
-    audio: 'Audio Track',
-    text: 'Text Overlay',
-    sticker: 'Sticker',
-    effect: 'Effect',
-    transition: 'Transition',
-    watermark: 'Watermark',
-  };
-
-  return labels[props.selectedItemType || ''] || 'Item';
-});
 </script>
 
 <style scoped>
