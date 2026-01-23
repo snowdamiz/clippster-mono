@@ -20,14 +20,14 @@
     <!-- Volume Control -->
     <div class="flex flex-col gap-2">
       <label class="text-[13px] font-medium text-white/70">
-        Volume: {{ Math.round(audioTrack.volume * 100) }}%
+        Volume: {{ volumePercent }}
       </label>
       <input
         :value="audioTrack.volume"
         type="range"
-        min="0"
-        max="2"
-        step="0.01"
+        :min="constraints.volume.min"
+        :max="constraints.volume.max"
+        :step="constraints.volume.step"
         class="w-full h-1.5 rounded-[3px] bg-white/10 outline-none appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-violet-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)]"
         @input="updateProperty('volume', parseFloat(($event.target as HTMLInputElement).value))"
       />
@@ -46,9 +46,9 @@
       <input
         :value="audioTrack.pan"
         type="range"
-        min="-1"
-        max="1"
-        step="0.01"
+        :min="constraints.pan.min"
+        :max="constraints.pan.max"
+        :step="constraints.pan.step"
         class="w-full h-1.5 rounded-[3px] bg-white/10 outline-none appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-violet-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)]"
         @input="updateProperty('pan', parseFloat(($event.target as HTMLInputElement).value))"
       />
@@ -65,9 +65,9 @@
       <input
         :value="audioTrack.fade_in"
         type="number"
-        min="0"
-        max="10"
-        step="0.1"
+        :min="constraints.fade.min"
+        :max="constraints.fade.max"
+        :step="constraints.fade.step"
         class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-sky-500/50 focus:bg-white/[0.08]"
         @input="updateProperty('fade_in', parseFloat(($event.target as HTMLInputElement).value))"
       />
@@ -78,9 +78,9 @@
       <input
         :value="audioTrack.fade_out"
         type="number"
-        min="0"
-        max="10"
-        step="0.1"
+        :min="constraints.fade.min"
+        :max="constraints.fade.max"
+        :step="constraints.fade.step"
         class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-sky-500/50 focus:bg-white/[0.08]"
         @input="updateProperty('fade_out', parseFloat(($event.target as HTMLInputElement).value))"
       />
@@ -92,7 +92,7 @@
         <button
           class="flex-1 flex items-center justify-center gap-2 p-2 bg-white/5 border border-white/10 rounded-md text-white/70 cursor-pointer transition-all duration-150 text-[13px] font-medium hover:bg-white/[0.08] hover:border-white/20"
           :class="{ 'bg-sky-500/20 border-sky-500/40 text-[var(--editor-accent)]': audioTrack.is_muted }"
-          @click="updateProperty('is_muted', audioTrack.is_muted ? 0 : 1)"
+          @click="updateProperty('is_muted', toBinary(!fromBinary(audioTrack.is_muted)))"
         >
           <VolumeX :size="16" />
           <span>Mute</span>
@@ -101,7 +101,7 @@
         <button
           class="flex-1 flex items-center justify-center gap-2 p-2 bg-white/5 border border-white/10 rounded-md text-white/70 cursor-pointer transition-all duration-150 text-[13px] font-medium hover:bg-white/[0.08] hover:border-white/20"
           :class="{ 'bg-sky-500/20 border-sky-500/40 text-[var(--editor-accent)]': audioTrack.is_solo }"
-          @click="updateProperty('is_solo', audioTrack.is_solo ? 0 : 1)"
+          @click="updateProperty('is_solo', toBinary(!fromBinary(audioTrack.is_solo)))"
         >
           <Headphones :size="16" />
           <span>Solo</span>
@@ -115,8 +115,8 @@
       <input
         :value="audioTrack.start_time.toFixed(2)"
         type="number"
-        min="0"
-        step="0.1"
+        :min="constraints.time.min"
+        :step="constraints.time.step"
         class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-sky-500/50 focus:bg-white/[0.08]"
         @input="updateProperty('start_time', parseFloat(($event.target as HTMLInputElement).value))"
       />
@@ -127,8 +127,8 @@
       <input
         :value="audioTrack.end_time.toFixed(2)"
         type="number"
-        min="0"
-        step="0.1"
+        :min="constraints.time.min"
+        :step="constraints.time.step"
         class="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-sky-500/50 focus:bg-white/[0.08]"
         @input="updateProperty('end_time', parseFloat(($event.target as HTMLInputElement).value))"
       />
@@ -145,31 +145,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Music, VolumeX, Headphones, Trash2 } from 'lucide-vue-next';
-import type { VideoEditorAudioTrackRecord } from '@/services/database/video-editor-edits';
+  import { toRef } from 'vue';
+  import { Music, VolumeX, Headphones, Trash2 } from 'lucide-vue-next';
+  import type { VideoEditorAudioTrackRecord } from '@/services/database/video-editor-edits';
+  import { useAudioInspectorLogic, toBinary, fromBinary } from '@/composables/clip-editor';
 
-const props = defineProps<{
-  audioTrack: VideoEditorAudioTrackRecord;
-}>();
+  const props = defineProps<{
+    audioTrack: VideoEditorAudioTrackRecord;
+  }>();
 
-const emit = defineEmits<{
-  (e: 'update', property: string, value: any): void;
-  (e: 'delete'): void;
-}>();
+  const emit = defineEmits<{
+    (e: 'update', property: string, value: any): void;
+    (e: 'delete'): void;
+  }>();
 
-const panLabel = computed(() => {
-  const pan = props.audioTrack.pan;
-  if (pan === 0) return 'Center';
-  if (pan < 0) return `${Math.abs(pan * 100).toFixed(0)}% Left`;
-  return `${(pan * 100).toFixed(0)}% Right`;
-});
+  // Use composable for formatting and constraints
+  const { volumePercent, panLabel, constraints } = useAudioInspectorLogic({
+    volume: toRef(() => props.audioTrack.volume),
+    pan: toRef(() => props.audioTrack.pan),
+  });
 
-function updateProperty(property: string, value: any) {
-  emit('update', property, value);
-}
+  function updateProperty(property: string, value: any) {
+    emit('update', property, value);
+  }
 </script>
-
-<style scoped>
-</style>
-

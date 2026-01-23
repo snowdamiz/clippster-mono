@@ -18,13 +18,13 @@
     <!-- Enable/Disable Toggle -->
     <div class="flex flex-col gap-2">
       <label class="flex items-center gap-2 text-sm font-medium text-white/90 cursor-pointer">
-        <input v-model="watermarkEnabled" type="checkbox" class="w-[18px] h-[18px] cursor-pointer" />
+        <input v-model="enabled" type="checkbox" class="w-[18px] h-[18px] cursor-pointer" />
         <span>Enable Watermark</span>
       </label>
     </div>
 
     <!-- Per-Ratio Settings -->
-    <div v-if="watermarkEnabled" class="flex flex-col gap-2">
+    <div v-if="enabled" class="flex flex-col gap-2">
       <!-- Aspect Ratio Selector -->
       <div class="flex flex-col gap-2">
         <label class="text-xs font-medium text-white/70">Active Aspect Ratio</label>
@@ -50,7 +50,7 @@
             :key="preset.id"
             class="p-2 bg-white/5 border border-white/10 rounded text-white/70 cursor-pointer transition-all duration-150 text-[0.75rem] font-medium hover:bg-blue-500/15 hover:border-blue-500/30 hover:text-blue-400"
             :title="preset.label"
-            @click="applyPositionPreset(preset)"
+            @click="applyPreset(preset)"
           >
             {{ preset.label }}
           </button>
@@ -62,49 +62,53 @@
         <div class="flex flex-col gap-2">
           <label class="text-xs font-medium text-white/70">X Position (%)</label>
           <input
-            v-model.number="positionX"
+            :value="currentConfig.positionX"
             type="number"
-            min="0"
-            max="100"
+            :min="constraints.position.min"
+            :max="constraints.position.max"
             class="w-full p-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-blue-500/50 focus:bg-white/8"
+            @input="updateConfig('positionX', parseFloat(($event.target as HTMLInputElement).value))"
           />
         </div>
 
         <div class="flex flex-col gap-2">
           <label class="text-xs font-medium text-white/70">Y Position (%)</label>
           <input
-            v-model.number="positionY"
+            :value="currentConfig.positionY"
             type="number"
-            min="0"
-            max="100"
+            :min="constraints.position.min"
+            :max="constraints.position.max"
             class="w-full p-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-blue-500/50 focus:bg-white/8"
+            @input="updateConfig('positionY', parseFloat(($event.target as HTMLInputElement).value))"
           />
         </div>
       </div>
 
       <!-- Scale -->
       <div class="flex flex-col gap-2">
-        <label class="text-xs font-medium text-white/70">Scale: {{ scale }}%</label>
+        <label class="text-xs font-medium text-white/70">Scale: {{ formatScale(currentConfig.scale) }}</label>
         <input
-          v-model.number="scale"
+          :value="currentConfig.scale"
           type="range"
-          min="5"
-          max="100"
+          :min="constraints.scale.min"
+          :max="constraints.scale.max"
           step="1"
           class="w-full h-1.5 rounded bg-white/10 outline-none appearance-none [&::-webkit-slider-thumb]:-webkit-appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-blue-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)]"
+          @input="updateConfig('scale', parseFloat(($event.target as HTMLInputElement).value))"
         />
       </div>
 
       <!-- Opacity -->
       <div class="flex flex-col gap-2">
-        <label class="text-xs font-medium text-white/70">Opacity: {{ opacity }}%</label>
+        <label class="text-xs font-medium text-white/70">Opacity: {{ formatOpacity(currentConfig.opacity) }}</label>
         <input
-          v-model.number="opacity"
+          :value="currentConfig.opacity"
           type="range"
-          min="0"
-          max="100"
+          :min="constraints.opacity.min"
+          :max="constraints.opacity.max"
           step="1"
           class="w-full h-1.5 rounded bg-white/10 outline-none appearance-none [&::-webkit-slider-thumb]:-webkit-appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-blue-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)]"
+          @input="updateConfig('opacity', parseFloat(($event.target as HTMLInputElement).value))"
         />
       </div>
 
@@ -113,21 +117,23 @@
         <label class="text-xs font-medium text-white/70">Visibility</label>
         <div class="flex items-center gap-2">
           <input
-            v-model.number="startTime"
+            :value="currentConfig.startTime"
             type="number"
-            min="0"
-            step="0.1"
+            :min="constraints.time.min"
+            :step="constraints.time.step"
             class="w-full p-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-blue-500/50 focus:bg-white/8"
             placeholder="Start (s)"
+            @input="updateConfig('startTime', parseFloat(($event.target as HTMLInputElement).value))"
           />
           <span class="text-white/50 text-sm">to</span>
           <input
-            v-model.number="endTime"
+            :value="currentConfig.endTime"
             type="number"
-            min="0"
-            step="0.1"
+            :min="constraints.time.min"
+            :step="constraints.time.step"
             class="w-full p-2 bg-white/5 border border-white/10 rounded-md text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-blue-500/50 focus:bg-white/8"
             placeholder="End (s)"
+            @input="updateConfig('endTime', parseFloat(($event.target as HTMLInputElement).value))"
           />
         </div>
       </div>
@@ -151,8 +157,12 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed } from 'vue';
   import { Sparkles, Info, Save } from 'lucide-vue-next';
+  import {
+    useWatermarkSettings,
+    formatScale,
+    formatOpacity,
+  } from '@/composables/clip-editor';
 
   const props = defineProps<{
     creatorWatermarkId: string | null;
@@ -164,34 +174,35 @@
     (e: 'watermarkUpdated'): void;
   }>();
 
-  // State
-  const watermarkEnabled = ref(!!props.creatorWatermarkId);
-  const selectedRatio = ref('16:9');
-  const positionX = ref(12);
-  const positionY = ref(92);
-  const scale = ref(20);
-  const opacity = ref(80);
-  const startTime = ref(0);
-  const endTime = ref(0);
-
-  const aspectRatios = ['16:9', '9:16', '1:1', '4:5'];
-
-  const positionPresets = [
-    { id: 'top-left', label: 'Top Left', x: 8, y: 8 },
-    { id: 'top-right', label: 'Top Right', x: 92, y: 8 },
-    { id: 'bottom-left', label: 'Bottom Left', x: 8, y: 92 },
-    { id: 'bottom-right', label: 'Bottom Right', x: 92, y: 92 },
-    { id: 'center', label: 'Center', x: 50, y: 50 },
-  ];
-
-  function applyPositionPreset(preset: any) {
-    positionX.value = preset.x;
-    positionY.value = preset.y;
-  }
+  // Use composable for watermark settings with persistence
+  const {
+    enabled,
+    selectedRatio,
+    currentConfig,
+    aspectRatios,
+    positionPresets,
+    constraints,
+    isSaving,
+    hasUnsavedChanges,
+    applyPreset,
+    updateConfig,
+    saveSettings,
+  } = useWatermarkSettings({
+    initialEnabled: !!props.creatorWatermarkId,
+    initialSettings: props.creatorWatermarkSettings,
+    onSettingsChange: () => {
+      // Settings changed, will be applied on handleApply
+    },
+    onSave: async (settings) => {
+      // TODO: Implement database persistence when watermark storage is ready
+      // Example: await updateWatermarkSettings(props.editId, settings);
+      console.log('[WatermarkPanel] Saving watermark settings:', settings);
+    },
+  });
 
   async function handleApply() {
     console.log('[WatermarkPanel] Applying watermark settings for', selectedRatio.value);
-    // TODO: Save watermark settings to database
+    await saveSettings();
     emit('watermarkUpdated');
   }
 </script>

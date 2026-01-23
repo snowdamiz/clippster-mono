@@ -7,31 +7,31 @@
 
     <!-- Preview -->
     <div class="flex items-center justify-center p-8 bg-white/[0.03] border border-white/[0.08] rounded-lg">
-      <span class="text-4xl">{{ getStickerPreview() }}</span>
+      <span class="text-4xl">{{ getStickerPreview(sticker) }}</span>
     </div>
 
     <!-- Transform -->
     <div class="flex flex-col gap-2">
-      <label class="text-xs font-medium text-white/70">Scale: {{ Math.round(sticker.scale * 100) }}%</label>
+      <label class="text-xs font-medium text-white/70">Scale: {{ scalePercent }}</label>
       <input
         :value="sticker.scale"
         type="range"
-        min="0.1"
-        max="3"
-        step="0.05"
+        :min="constraints.scale.min"
+        :max="constraints.scale.max"
+        :step="constraints.scale.step"
         class="w-full h-1.5 rounded-full bg-white/10 outline-none appearance-none -webkit-appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-pink-500 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-pink-500 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)]"
         @input="updateProperty('scale', parseFloat(($event.target as HTMLInputElement).value))"
       />
     </div>
 
     <div class="flex flex-col gap-2">
-      <label class="text-xs font-medium text-white/70">Rotation: {{ Math.round(sticker.rotation) }}°</label>
+      <label class="text-xs font-medium text-white/70">Rotation: {{ rotationDegrees }}</label>
       <input
         :value="sticker.rotation"
         type="range"
-        min="-180"
-        max="180"
-        step="1"
+        :min="constraints.rotation.min"
+        :max="constraints.rotation.max"
+        :step="constraints.rotation.step"
         class="w-full h-1.5 rounded-full bg-white/10 outline-none appearance-none -webkit-appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-pink-500 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)] [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-pink-500 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow-[0_2px_6px_rgba(0,0,0,0.3)]"
         @input="updateProperty('rotation', parseFloat(($event.target as HTMLInputElement).value))"
       />
@@ -44,8 +44,8 @@
         <input
           :value="sticker.position_x"
           type="number"
-          min="0"
-          max="100"
+          :min="constraints.position.min"
+          :max="constraints.position.max"
           class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-pink-500/50 focus:bg-white/[0.08]"
           @input="updateProperty('position_x', parseFloat(($event.target as HTMLInputElement).value))"
         />
@@ -56,8 +56,8 @@
         <input
           :value="sticker.position_y"
           type="number"
-          min="0"
-          max="100"
+          :min="constraints.position.min"
+          :max="constraints.position.max"
           class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-pink-500/50 focus:bg-white/[0.08]"
           @input="updateProperty('position_y', parseFloat(($event.target as HTMLInputElement).value))"
         />
@@ -72,12 +72,9 @@
         class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-pink-500/50 focus:bg-white/[0.08]"
         @change="updateProperty('animation', ($event.target as HTMLSelectElement).value)"
       >
-        <option value="none">None</option>
-        <option value="bounce">Bounce</option>
-        <option value="spin">Spin</option>
-        <option value="pulse">Pulse</option>
-        <option value="shake">Shake</option>
-        <option value="float">Float</option>
+        <option v-for="anim in animations" :key="anim.value" :value="anim.value">
+          {{ anim.label }}
+        </option>
       </select>
     </div>
 
@@ -88,8 +85,8 @@
         <input
           :value="sticker.start_time.toFixed(2)"
           type="number"
-          min="0"
-          step="0.1"
+          :min="constraints.time.min"
+          :step="constraints.time.step"
           class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-pink-500/50 focus:bg-white/[0.08]"
           @input="updateProperty('start_time', parseFloat(($event.target as HTMLInputElement).value))"
         />
@@ -100,8 +97,8 @@
         <input
           :value="sticker.end_time.toFixed(2)"
           type="number"
-          min="0"
-          step="0.1"
+          :min="constraints.time.min"
+          :step="constraints.time.step"
           class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-pink-500/50 focus:bg-white/[0.08]"
           @input="updateProperty('end_time', parseFloat(($event.target as HTMLInputElement).value))"
         />
@@ -122,8 +119,10 @@
 </template>
 
 <script setup lang="ts">
+  import { computed, toRef } from 'vue';
   import { Smile, Trash2 } from 'lucide-vue-next';
   import type { VideoEditorStickerRecord } from '@/services/database/video-editor-edits';
+  import { getStickerPreview, useStickerInspectorLogic } from '@/composables/clip-editor';
 
   const props = defineProps<{
     sticker: VideoEditorStickerRecord;
@@ -134,12 +133,11 @@
     (e: 'delete'): void;
   }>();
 
-  function getStickerPreview(): string {
-    if (props.sticker.sticker_type === 'emoji') {
-      return props.sticker.sticker_path;
-    }
-    return '🖼️';
-  }
+  // Use composable for formatting and constraints
+  const { scalePercent, rotationDegrees, animations, constraints } = useStickerInspectorLogic({
+    scale: toRef(() => props.sticker.scale),
+    rotation: toRef(() => props.sticker.rotation),
+  });
 
   function updateProperty(property: string, value: any) {
     emit('update', property, value);

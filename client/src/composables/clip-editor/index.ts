@@ -29,12 +29,16 @@ export {
   useEditorFormatters,
   formatTime,
   formatTimeWithMs,
+  formatTimeWithCentiseconds,
   formatDuration,
   formatPanLabel,
   extractFileName,
   truncateText,
   formatVolumePercent,
   formatVolumeDb,
+  formatPercentage,
+  formatRawPercentage,
+  formatRotation,
 } from './useEditorFormatters';
 
 export {
@@ -210,3 +214,216 @@ export {
   type TimelineReloadOptions,
   type TimelineReloadReturn,
 } from './useTimelineReload';
+
+// Phase 3: New Composables - Component Logic Extraction
+export {
+  useTimelineSegmentStyles,
+  type TimelineSegmentStylesOptions,
+  type TimelineSegmentStylesReturn,
+} from './useTimelineSegmentStyles';
+
+export {
+  useStickerFormatting,
+  getStickerPreview,
+  getStickerName,
+  type StickerFormattingReturn,
+} from './useStickerFormatting';
+
+export {
+  useStickerUpload,
+  type StickerUploadOptions,
+  type StickerUploadReturn,
+} from './useStickerUpload';
+
+export {
+  useInlineEdit,
+  type InlineEditOptions,
+  type InlineEditReturn,
+} from './useInlineEdit';
+
+export {
+  useAudioTrackToggles,
+  type AudioTrackTogglesOptions,
+  type AudioTrackTogglesReturn,
+} from './useAudioTrackToggles';
+
+export {
+  useOriginalAudioControl,
+  type OriginalAudioControlOptions,
+  type OriginalAudioControlReturn,
+} from './useOriginalAudioControl';
+
+export {
+  useEmojiStickerCreation,
+  COMMON_EMOJIS,
+  type EmojiStickerCreationOptions,
+  type EmojiStickerCreationReturn,
+} from './useEmojiStickerCreation';
+
+// Phase 4: Component Logic Extraction - Inspector & Panel Business Logic
+export {
+  useTextInspectorLogic,
+  parseStyle,
+  mergeStyle,
+  serializeStyle,
+  validateStyleProperty,
+  FONT_FAMILIES,
+  FONT_WEIGHTS,
+  TEXT_ANIMATIONS,
+  TEXT_STYLE_CONSTRAINTS,
+  type TextInspectorLogicOptions,
+  type TextInspectorLogicReturn,
+} from './useTextInspectorLogic';
+
+export {
+  useWatermarkSettings,
+  formatScale,
+  formatOpacity,
+  WATERMARK_ASPECT_RATIOS,
+  POSITION_PRESETS,
+  DEFAULT_WATERMARK_CONFIG,
+  WATERMARK_CONSTRAINTS,
+  type WatermarkConfig,
+  type PositionPreset,
+  type WatermarkAspectRatio,
+  type WatermarkSettingsOptions,
+  type WatermarkSettingsReturn,
+} from './useWatermarkSettings';
+
+export {
+  useFramingSettings,
+  ASPECT_RATIOS,
+  FRAMING_MODES,
+  type FramingMode,
+  type AspectRatio,
+  type FramingModeId,
+  type FramingSettingsOptions,
+  type FramingSettingsReturn,
+} from './useFramingSettings';
+
+export {
+  useStickerInspectorLogic,
+  formatStickerScale,
+  formatStickerRotation,
+  validateStickerScale,
+  validateStickerRotation,
+  validateStickerPosition,
+  STICKER_ANIMATIONS,
+  STICKER_CONSTRAINTS,
+  type StickerAnimation,
+  type StickerInspectorLogicOptions,
+  type StickerInspectorLogicReturn,
+} from './useStickerInspectorLogic';
+
+export {
+  useAudioInspectorLogic,
+  validateAudioVolume,
+  validateAudioPan,
+  validateAudioFade,
+  toBinary,
+  fromBinary,
+  AUDIO_CONSTRAINTS,
+  type AudioInspectorLogicOptions,
+  type AudioInspectorLogicReturn,
+} from './useAudioInspectorLogic';
+
+export {
+  usePanelDefinitions,
+  getPanelById,
+  getPanelLabel,
+  getPanelIcon,
+  isPanelImplemented,
+  PANEL_DEFINITIONS,
+  IMPLEMENTED_PANELS,
+  type PanelDefinition,
+  type PanelId,
+  type PanelDefinitionsReturn,
+} from './usePanelDefinitions';
+
+// Phase 5: Additional Refactoring - Business Logic Extraction
+export {
+  useTimelineZoomControl,
+  type TimelineZoomControlOptions,
+  type TimelineZoomControlReturn,
+} from './useTimelineZoomControl';
+
+export {
+  useWatermarkSettingsTransform,
+  type WatermarkSettingsInput,
+  type WatermarkSettingsTransformOptions,
+  type WatermarkSettingsTransformReturn,
+} from './useWatermarkSettingsTransform';
+
+export {
+  useAudioTrackCreation,
+  AUDIO_FILE_EXTENSIONS,
+  DEFAULT_AUDIO_TRACK_VALUES,
+  type AudioTrackData,
+  type AudioTrackCreationOptions,
+  type AudioTrackCreationReturn,
+} from './useAudioTrackCreation';
+
+export {
+  useMediaTypeStyles,
+  getMediaTypeColors,
+  getThumbnailStyles,
+  getBadgeStyles,
+  getHoverClasses,
+  getIconColor,
+  MEDIA_TYPE_COLORS,
+  type MediaType as MediaTypeEnum,
+  type MediaTypeColorScheme,
+  type MediaTypeStylesReturn,
+} from './useMediaTypeStyles';
+
+export {
+  useTextOverlayCreation,
+  type TextOverlayCreationOptions,
+  type TextOverlayCreationReturn,
+} from './useTextOverlayCreation';
+
+export {
+  useTimelineAudioTransform,
+  transformAudioTrack,
+  type AudioTrackRecord,
+  type PlayerAudioTrack,
+  type TimelineAudioState,
+  type TimelineAudioTransformOptions,
+  type TimelineAudioTransformReturn,
+} from './useTimelineAudioTransform';
+
+export {
+  useDateTimeFormatters,
+  formatDate,
+  formatShortDate,
+  formatTimeFromTimestamp,
+  formatRelativeTime,
+  formatLongDuration,
+  type DateTimeFormattersReturn,
+} from './useDateTimeFormatters';
+
+export {
+  usePanelToggle,
+  type PanelToggleEmit,
+  type PanelToggleOptions,
+  type PanelToggleReturn,
+} from './usePanelToggle';
+
+// Phase 6: Dialog Business Logic Extraction
+export {
+  useEditorDataLoader,
+  type EditorDataLoaderOptions,
+  type EditorDataLoaderReturn,
+} from './useEditorDataLoader';
+
+export {
+  useEditorAutoSave,
+  type EditorAutoSaveOptions,
+  type EditorAutoSaveReturn,
+} from './useEditorAutoSave';
+
+export {
+  useTitleManagement,
+  type TitleManagementOptions,
+  type TitleManagementReturn,
+} from './useTitleManagement';

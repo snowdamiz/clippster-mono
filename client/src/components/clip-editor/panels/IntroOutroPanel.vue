@@ -88,6 +88,7 @@
   import { ref } from 'vue';
   import { Video, Info } from 'lucide-vue-next';
   import type { IntroOutroRef } from '@/types';
+  import { formatDuration } from '@/composables/clip-editor';
 
   const props = defineProps<{
     creatorDefaultIntro: IntroOutroRef | null;
@@ -101,10 +102,4 @@
 
   const introEnabled = ref(!!props.creatorDefaultIntro);
   const outroEnabled = ref(!!props.creatorDefaultOutro);
-
-  function formatDuration(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
 </script>

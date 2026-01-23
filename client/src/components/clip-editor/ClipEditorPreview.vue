@@ -208,6 +208,7 @@ import {
   usePlayheadDrag,
   useOverlayStyles,
   useVideoSync,
+  useTimelineAudioTransform,
   type VideoSource,
 } from '@/composables/clip-editor';
 
@@ -243,26 +244,10 @@ const progressBarRef = ref<HTMLElement | null>(null);
 // Audio mixer for playing audio tracks
 const audioMixer = useAudioMixer();
 
-// Timeline renderer to get active audio tracks
-const timelineState = computed(() => {
-  const audioTracks = props.editorEdit?.audioTracks.map(track => ({
-    id: track.id,
-    filePath: track.file_path,
-    startTime: track.start_time,
-    endTime: track.end_time,
-    volume: track.volume,
-    isMuted: track.is_muted === 1,
-    fadeInDuration: track.fade_in,
-    fadeOutDuration: track.fade_out,
-  })) || [];
-  
-  console.log('[ClipEditorPreview] Timeline state updated with', audioTracks.length, 'audio tracks:', audioTracks);
-  
-  return {
-    duration: props.duration || 0,
-    videoSources: [],
-    audioTracks,
-  };
+// Timeline audio transformation (from composable)
+const { timelineState } = useTimelineAudioTransform({
+  audioTracks: computed(() => props.editorEdit?.audioTracks),
+  duration: computed(() => props.duration || 0),
 });
 
 const timelineRenderer = useTimelineRenderer(timelineState);

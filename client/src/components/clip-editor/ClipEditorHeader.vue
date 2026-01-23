@@ -59,8 +59,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue';
 import { Film, Download, X, Pencil } from 'lucide-vue-next';
+import { useInlineEdit } from '@/composables/clip-editor';
 
 const props = defineProps<{
   title: string;
@@ -72,35 +72,22 @@ const emit = defineEmits<{
   (e: 'titleUpdate', newTitle: string): void;
 }>();
 
-const isEditingTitle = ref(false);
-const editedTitle = ref('');
-const titleInputRef = ref<HTMLInputElement | null>(null);
+// Use inline edit composable for title editing
+const {
+  isEditing: isEditingTitle,
+  editedValue: editedTitle,
+  inputRef: titleInputRef,
+  startEditing,
+  saveEdit: saveTitle,
+  cancelEdit,
+  stopPropagation,
+} = useInlineEdit({
+  onSave: (newTitle) => emit('titleUpdate', newTitle),
+});
 
+// Wrapper to start editing with current title
 function startEditingTitle() {
-  isEditingTitle.value = true;
-  editedTitle.value = props.title;
-  nextTick(() => {
-    titleInputRef.value?.focus();
-    titleInputRef.value?.select();
-  });
-}
-
-function saveTitle() {
-  if (editedTitle.value.trim() && editedTitle.value !== props.title) {
-    emit('titleUpdate', editedTitle.value.trim());
-  }
-  isEditingTitle.value = false;
-}
-
-function cancelEdit() {
-  isEditingTitle.value = false;
-  editedTitle.value = '';
-}
-
-function stopPropagation(event: KeyboardEvent) {
-  // Stop all keyboard events from propagating to parent when editing title
-  // This prevents editor shortcuts (S for split, Delete, etc.) from triggering
-  event.stopPropagation();
+  startEditing(props.title);
 }
 </script>
 

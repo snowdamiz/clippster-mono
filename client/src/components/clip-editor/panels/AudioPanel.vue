@@ -188,12 +188,15 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, toRef } from 'vue';
-  import { open } from '@tauri-apps/plugin-dialog';
-  import { invoke } from '@tauri-apps/api/core';
+  import { toRef, computed } from 'vue';
   import { Plus, Music, Disc3, Volume2, VolumeX, Headphones, Trash2, Unlink } from 'lucide-vue-next';
-  import type { VideoEditorAudioTrackRecord } from '@/services/database/video-editor-edits';
-  import { formatPanLabel, useAudioTracksCRUD, extractFileName } from '@/composables/clip-editor';
+  import {
+    formatPanLabel,
+    useAudioTracksCRUD,
+    useAudioTrackToggles,
+    useOriginalAudioControl,
+    useAudioTrackCreation,
+  } from '@/composables/clip-editor';
 
   const props = defineProps<{
     editId: string | null;
@@ -214,70 +217,33 @@
     getById,
   } = useAudioTracksCRUD(editIdRef, () => emit('tracksUpdated'));
 
-  // Original audio state (for the video's embedded audio)
-  const originalAudioVolume = ref(0); // dB
-  const originalAudioMuted = ref(false);
+  // Original audio control composable
+  const {
+    volume: originalAudioVolume,
+    isMuted: originalAudioMuted,
+    toggleMute: toggleOriginalAudioMute,
+  } = useOriginalAudioControl();
 
-  // Add music track
-  async function handleAddMusic() {
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [
-          {
-            name: 'Audio',
-            extensions: ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'],
-          },
-        ],
-      });
+  // Audio track toggles composable
+  const { toggleMute: toggleTrackMute, toggleSolo: toggleTrackSolo } = useAudioTrackToggles({
+    getById,
+    updateTrack,
+  });
 
-      if (!selected || !props.editId) return;
-
-      const filePath = selected as string;
-      const duration = await invoke<number>('get_audio_duration', { filePath });
-
-      await createTrack({
-        file_path: filePath,
-        name: extractFileName(filePath, false) || 'Music',
-        start_time: 0,
-        end_time: duration,
-        volume: 1.0,
-        pan: 0,
-        fade_in: 0,
-        fade_out: 0,
-        track_order: audioTracks.value.length,
-        is_muted: 0,
-        is_solo: 0,
-      });
-
+  // Audio track creation workflow (from composable)
+  const { addMusicTrack: handleAddMusic } = useAudioTrackCreation({
+    createTrack,
+    currentTrackCount: computed(() => audioTracks.value.length),
+    onTrackCreated: (filePath) => {
       console.log('[AudioPanel] Added music track:', filePath);
-    } catch (error) {
+    },
+    onError: (error) => {
       console.error('[AudioPanel] Failed to add music:', error);
-    }
-  }
+    },
+  });
 
   // Handle detach audio
   function handleDetachAudio() {
     emit('detachAudio');
-  }
-
-  // Toggle original audio mute
-  function toggleOriginalAudioMute() {
-    originalAudioMuted.value = !originalAudioMuted.value;
-  }
-
-  // Track toggle helpers - these need to read current state before toggling
-  async function toggleTrackMute(trackId: string) {
-    const track = getById(trackId);
-    if (track) {
-      await updateTrack(trackId, { is_muted: track.is_muted ? 0 : 1 });
-    }
-  }
-
-  async function toggleTrackSolo(trackId: string) {
-    const track = getById(trackId);
-    if (track) {
-      await updateTrack(trackId, { is_solo: track.is_solo ? 0 : 1 });
-    }
   }
 </script>

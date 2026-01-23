@@ -66,10 +66,16 @@
 </template>
 
 <script setup lang="ts">
-  import { toRef } from 'vue';
+  import { toRef, computed } from 'vue';
   import { Plus, Type, Trash2 } from 'lucide-vue-next';
   import type { VideoEditorTextOverlayRecord } from '@/services/database/video-editor-edits';
-  import { truncateText, useTextOverlaysCRUD, useTextTemplates, type TextTemplate } from '@/composables/clip-editor';
+  import {
+    truncateText,
+    useTextOverlaysCRUD,
+    useTextTemplates,
+    useTextOverlayCreation,
+    type TextTemplate,
+  } from '@/composables/clip-editor';
 
   const props = defineProps<{
     editId: string | null;
@@ -95,34 +101,26 @@
   // Use the text templates composable
   const { templates: textTemplates, createTextData, createDefaultTextData } = useTextTemplates();
 
-  // Add text overlay
+  // Text overlay creation workflow (from composable)
+  const { addDefaultText, addTextFromTemplate: addFromTemplate } = useTextOverlayCreation({
+    editId: editIdRef,
+    currentTime: computed(() => props.currentTime || 0),
+    createText,
+    createDefaultTextData,
+    createTextData,
+    onTextCreated: (textId) => {
+      emit('textAdded', textId);
+    },
+  });
+
+  // Wrapper for adding default text
   async function handleAddText() {
-    if (!props.editId) return;
-
-    try {
-      const textData = createDefaultTextData(props.currentTime || 0);
-      const newText = await createText(textData);
-
-      emit('textAdded', newText.id);
-      console.log('[TextPanel] Added text overlay:', newText.id);
-    } catch (error) {
-      console.error('[TextPanel] Failed to add text:', error);
-    }
+    await addDefaultText();
   }
 
-  // Add text from template
+  // Wrapper for adding text from template
   async function addTextFromTemplate(template: TextTemplate) {
-    if (!props.editId) return;
-
-    try {
-      const textData = createTextData(template, props.currentTime || 0);
-      const newText = await createText(textData);
-
-      emit('textAdded', newText.id);
-      console.log('[TextPanel] Added text from template:', template.label);
-    } catch (error) {
-      console.error('[TextPanel] Failed to add text from template:', error);
-    }
+    await addFromTemplate(template);
   }
 
   // Select text and emit event

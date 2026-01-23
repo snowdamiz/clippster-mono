@@ -68,6 +68,7 @@
 <script setup lang="ts">
   import { X, FolderOpen, Video, Plus } from 'lucide-vue-next';
   import type { VideoEditorProject } from '@/services/database';
+  import { formatDate, formatLongDuration as formatDuration } from '@/composables/clip-editor';
 
   interface Props {
     show: boolean;
@@ -82,30 +83,6 @@
 
   defineProps<Props>();
   defineEmits<Emits>();
-
-  function formatDate(timestamp: number): string {
-    // Timestamp is in seconds
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-
-  function formatDuration(seconds: number): string {
-    if (!seconds) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    if (mins >= 60) {
-      const hrs = Math.floor(mins / 60);
-      const remainingMins = mins % 60;
-      return `${hrs}:${remainingMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
 </script>
 
 

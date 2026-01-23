@@ -97,6 +97,45 @@ export function formatVolumeDb(db: number): string {
 }
 
 /**
+ * Format a decimal value as a percentage
+ * @param value - Decimal value (e.g., 0.5 for 50%, 1.5 for 150%)
+ * @returns Formatted percentage string
+ */
+export function formatPercentage(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+/**
+ * Format a raw percentage value (already 0-100)
+ * @param value - Percentage value (e.g., 50 for 50%)
+ * @returns Formatted percentage string
+ */
+export function formatRawPercentage(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
+/**
+ * Format rotation with degree symbol
+ * @param degrees - Rotation in degrees
+ * @returns Formatted rotation string
+ */
+export function formatRotation(degrees: number): string {
+  return `${Math.round(degrees)}°`;
+}
+
+/**
+ * Format time with centiseconds (like toolbar display)
+ * @param seconds - Time in seconds
+ * @returns Formatted time string MM:SS.cc
+ */
+export function formatTimeWithCentiseconds(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const cs = Math.floor((seconds % 1) * 100);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
+}
+
+/**
  * Composable that returns all formatter functions
  * Use this in Vue components for a consistent API
  */
@@ -104,11 +143,15 @@ export function useEditorFormatters() {
   return {
     formatTime,
     formatTimeWithMs,
+    formatTimeWithCentiseconds,
     formatDuration,
     formatPanLabel,
     extractFileName,
     truncateText,
     formatVolumePercent,
     formatVolumeDb,
+    formatPercentage,
+    formatRawPercentage,
+    formatRotation,
   };
 }

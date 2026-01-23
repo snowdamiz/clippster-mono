@@ -85,6 +85,7 @@
 
 <script setup lang="ts">
 import { ZoomIn, ZoomOut, Scissors, Trash2, Music, Undo2, Redo2 } from 'lucide-vue-next';
+import { formatTimeWithCentiseconds as formatTime } from '@/composables/clip-editor';
 
 defineProps<{
   zoomLevel: number;
@@ -105,13 +106,6 @@ defineEmits<{
   (e: 'undo'): void;
   (e: 'redo'): void;
 }>();
-
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 100);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
-}
 </script>
 
 

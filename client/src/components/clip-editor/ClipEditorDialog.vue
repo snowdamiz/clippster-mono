@@ -115,17 +115,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { useDebounceFn } from '@vueuse/core';
 import { commandHistory } from '@/services/commands/CommandHistory';
-import {
-  getFullVideoEditorEdit,
-  getOrCreateVideoEditorEdit,
-  updateVideoEditorEdit,
-  type FullVideoEditorEdit,
-} from '@/services/database/video-editor-edits';
 import type { IntroOutroRef } from '@/types';
 import { usePlaybackEngine } from '@/composables/usePlaybackEngine';
-import { getProject, updateProject } from '@/services/database/projects';
 import {
   useEditorSelection,
   useDurationCalculator,
@@ -136,6 +128,11 @@ import {
   useVideoUrlBuilder,
   useAudioDetach,
   useTimelineReload,
+  useTimelineZoomControl,
+  useWatermarkSettingsTransform,
+  useEditorDataLoader,
+  useEditorAutoSave,
+  useTitleManagement,
 } from '@/composables/clip-editor';
 
 import ClipEditorHeader from './ClipEditorHeader.vue';
@@ -173,12 +170,18 @@ const emit = defineEmits<{
   (e: 'editorSave', projectId: string): void;
 }>();
 
-// ===== Core State =====
-// Always use video editor edit ID (unified)
-const editId = ref<string | null>(null);
-const editorEdit = ref<FullVideoEditorEdit | null>(null);
-const projectId = ref<string | null>(null);
-const editorTitle = ref<string>('Untitled Clip');
+// ===== Core State (from composable) =====
+const {
+  editId,
+  editorEdit,
+  projectId,
+  editorTitle,
+  loadEditorData,
+} = useEditorDataLoader({
+  fallbackTitle: props.clipTitle,
+  secondaryFallbackTitle: props.editorProjectName,
+});
+
 const activePanel = ref<string>('media');
 
 // ===== Selection (from composable) =====
@@ -220,19 +223,15 @@ const {
 
 // ===== View State =====
 const selectedAspectRatio = ref<string>('16:9');
-const zoomLevel = ref(0); // 0 = fit entire timeline to view
+
+// ===== Timeline Zoom Control (from composable) =====
+const { zoomLevel, zoomIn: handleZoomIn, zoomOut: handleZoomOut } = useTimelineZoomControl();
 
 // ===== Creator Profile Props =====
-const watermarkSettings = computed(() => {
-  if (!props.creatorWatermarkId) return null;
-  
-  return {
-    enabled: true,
-    watermarkId: props.creatorWatermarkId,
-    perRatioSettings: props.creatorWatermarkSettings 
-      ? JSON.parse(props.creatorWatermarkSettings) 
-      : null,
-  };
+// Watermark settings transformation (from composable)
+const { watermarkSettings } = useWatermarkSettingsTransform({
+  watermarkId: computed(() => props.creatorWatermarkId),
+  watermarkSettingsJson: computed(() => props.creatorWatermarkSettings),
 });
 
 const introRef = computed(() => props.creatorDefaultIntro || null);
@@ -251,7 +250,7 @@ const { splitAtTime } = useEditorSplit({
   selectedItem,
   selectedItemType,
   onComplete: async () => {
-    await loadEditorData();
+    await loadEditorData(projectId.value);
     await reloadTimeline();
   },
 });
@@ -262,7 +261,7 @@ const { deleteSelectedItem, canDelete } = useEditorDelete({
   selectedItemType,
   clearSelection: () => deselectItem(),
   onComplete: async () => {
-    await loadEditorData();
+    await loadEditorData(projectId.value);
     await reloadTimeline();
   },
 });
@@ -280,7 +279,7 @@ const { detachAudio, isExtracting } = useAudioDetach({
   projectId,
   editId,
   onComplete: async () => {
-    await loadEditorData();
+    await loadEditorData(projectId.value);
   },
 });
 
@@ -292,66 +291,18 @@ const { reloadTimeline } = useTimelineReload({
   calculateMaxDuration,
 });
 
-// ===== Data Loading =====
-async function loadEditorData() {
-  if (!props.editorProjectId) {
-    console.log('[ClipEditorDialog] No project ID provided - dialog not active or project not selected');
-    return;
-  }
+// ===== Auto-save (from composable) =====
+const { save: debouncedSave, stop: stopAutoSave } = useEditorAutoSave({
+  editId,
+  editorEdit,
+  debounceMs: 500,
+});
 
-  try {
-    console.log(`[ClipEditorDialog] Loading video editor project: ${props.editorProjectId}`);
-    
-    projectId.value = props.editorProjectId;
-    
-    // Load project to get the name/title (always use database as source of truth)
-    const project = await getProject(props.editorProjectId);
-    if (project && project.name) {
-      editorTitle.value = project.name;
-    } else if (props.clipTitle) {
-      editorTitle.value = props.clipTitle;
-    } else if (props.editorProjectName) {
-      editorTitle.value = props.editorProjectName;
-    } else {
-      editorTitle.value = 'Untitled Clip';
-    }
-    
-    // Get or create video editor edit
-    const editRecord = await getOrCreateVideoEditorEdit(props.editorProjectId);
-    editId.value = editRecord.id;
-
-    // Load full edit with all related data
-    const fullEdit = await getFullVideoEditorEdit(props.editorProjectId);
-    if (fullEdit) {
-      editorEdit.value = fullEdit;
-      console.log('[ClipEditorDialog] Editor data loaded:', {
-        audioTracks: fullEdit.audioTracks.length,
-        textOverlays: fullEdit.textOverlays.length,
-        stickers: fullEdit.stickers.length,
-        watermarks: fullEdit.watermarks.length,
-        effects: fullEdit.effects.length,
-      });
-    }
-  } catch (error) {
-    console.error('[ClipEditorDialog] Failed to load editor data:', error);
-  }
-}
-
-// ===== Auto-save =====
-const debouncedSave = useDebounceFn(async () => {
-  if (!editId.value || !editorEdit.value) return;
-
-  try {
-    const editData = JSON.parse(editorEdit.value.edit.edit_data || '{}');
-    await updateVideoEditorEdit(editId.value, editData);
-    console.log('[ClipEditorDialog] Auto-saved editor data');
-  } catch (error) {
-    console.error('[ClipEditorDialog] Failed to auto-save:', error);
-  }
-}, 500);
-
-// Watch for changes to trigger auto-save
-watch(() => editorEdit.value, debouncedSave, { deep: true });
+// ===== Title Management (from composable) =====
+const { updateTitle } = useTitleManagement({
+  projectId,
+  editorTitle,
+});
 
 // ===== Playback Controls =====
 function handlePlay() {
@@ -393,7 +344,7 @@ async function handleDetachAudio() {
 // Factory for handlers that just reload editor data
 const createReloadHandler = (label: string) => async (id?: string) => {
   console.log(`[ClipEditorDialog] ${label}:`, id || '');
-  await loadEditorData();
+  await loadEditorData(projectId.value);
 };
 
 // Factory for selection handlers
@@ -421,21 +372,6 @@ function handleOutroToggled(enabled: boolean) {
   console.log('[ClipEditorDialog] Outro toggled:', enabled);
 }
 
-function handleZoomIn() {
-  // From 0 (fit-to-width), jump to 0.5, then scale up
-  if (zoomLevel.value === 0) {
-    zoomLevel.value = 0.5;
-  } else {
-    zoomLevel.value = Math.min(zoomLevel.value * 1.5, 10);
-  }
-}
-
-function handleZoomOut() {
-  // Scale down, but stop at 0 (fit-to-width) instead of 0.1
-  const newZoom = zoomLevel.value / 1.5;
-  zoomLevel.value = newZoom < 0.3 ? 0 : newZoom;
-}
-
 // ===== Selection =====
 function handleSelectItem(item: any, type: string) {
   selectItem(item, type as any);
@@ -450,7 +386,7 @@ function handleUpdateItem(item: any) {
 async function handleInspectorUpdate(updates: any) {
   console.log('[ClipEditorDialog] Inspector update:', updates);
   // Reload editor data to reflect changes
-  await loadEditorData();
+  await loadEditorData(projectId.value);
 }
 
 async function handleItemDeleted() {
@@ -458,7 +394,7 @@ async function handleItemDeleted() {
   deselectItem();
 
   // Reload editor data
-  await loadEditorData();
+  await loadEditorData(projectId.value);
 }
 
 // ===== Panel Changes =====
@@ -498,25 +434,15 @@ async function handleRedo() {
 
 // ===== Title Management =====
 async function handleTitleUpdate(newTitle: string) {
-  editorTitle.value = newTitle;
-  
-  // Update the project name in the database
-  if (props.editorProjectId) {
-    try {
-      await updateProject(props.editorProjectId, newTitle);
-      console.log('[ClipEditorDialog] Project title updated:', newTitle);
-    } catch (error) {
-      console.error('[ClipEditorDialog] Failed to update project title:', error);
-    }
-  }
+  await updateTitle(newTitle);
 }
 
 // ===== Media Management =====
 async function handleMediaAdded(mediaId: string) {
   console.log('[ClipEditorDialog] Media added to timeline:', mediaId);
   // Reload the editor data to show the new audio track
-  await loadEditorData();
-  
+  await loadEditorData(projectId.value);
+
   // Reload timeline with recalculated duration
   await reloadTimeline();
 }
@@ -560,11 +486,11 @@ useEditorKeyboardShortcuts({
 });
 
 // Watch for dialog open and project ID changes
-watch(() => [props.modelValue, props.editorProjectId], async ([isOpen, projectId]) => {
-  if (isOpen && projectId) {
-    console.log('[ClipEditorDialog] Dialog opened with project:', projectId);
-    await loadEditorData();
-    
+watch(() => [props.modelValue, props.editorProjectId], async ([isOpen, editorProjectId]) => {
+  if (isOpen && editorProjectId) {
+    console.log('[ClipEditorDialog] Dialog opened with project:', editorProjectId);
+    await loadEditorData(editorProjectId as string);
+
     // Load project sources and initialize timeline with calculated duration
     await reloadTimeline();
     console.log('[ClipEditorDialog] Timeline initialized');
@@ -582,6 +508,9 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  // Stop auto-save watcher
+  stopAutoSave();
+
   // Dispose playback engine
   playbackEngine.dispose();
 

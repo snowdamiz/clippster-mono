@@ -23,15 +23,11 @@
       <select
         :value="style.fontFamily"
         class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
-        @change="updateStyle('fontFamily', ($event.target as HTMLSelectElement).value)"
+        @change="handleStyleUpdate('fontFamily', ($event.target as HTMLSelectElement).value)"
       >
-        <option value="Inter">Inter</option>
-        <option value="Arial">Arial</option>
-        <option value="Helvetica">Helvetica</option>
-        <option value="Times New Roman">Times New Roman</option>
-        <option value="Georgia">Georgia</option>
-        <option value="Impact">Impact</option>
-        <option value="Courier New">Courier New</option>
+        <option v-for="font in fontFamilies" :key="font.value" :value="font.value">
+          {{ font.label }}
+        </option>
       </select>
     </div>
 
@@ -41,10 +37,10 @@
         <input
           :value="style.fontSize"
           type="number"
-          min="12"
-          max="200"
+          :min="constraints.fontSize.min"
+          :max="constraints.fontSize.max"
           class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
-          @input="updateStyle('fontSize', parseInt(($event.target as HTMLInputElement).value))"
+          @input="handleStyleUpdate('fontSize', parseInt(($event.target as HTMLInputElement).value))"
         />
       </div>
 
@@ -53,14 +49,11 @@
         <select
           :value="style.fontWeight"
           class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
-          @change="updateStyle('fontWeight', parseInt(($event.target as HTMLSelectElement).value))"
+          @change="handleStyleUpdate('fontWeight', parseInt(($event.target as HTMLSelectElement).value))"
         >
-          <option :value="400">Normal</option>
-          <option :value="500">Medium</option>
-          <option :value="600">Semi-Bold</option>
-          <option :value="700">Bold</option>
-          <option :value="800">Extra-Bold</option>
-          <option :value="900">Black</option>
+          <option v-for="weight in fontWeights" :key="weight.value" :value="weight.value">
+            {{ weight.label }}
+          </option>
         </select>
       </div>
     </div>
@@ -72,7 +65,7 @@
         :value="style.color"
         type="color"
         class="w-full h-10 p-1 bg-white/[0.05] border border-white/10 rounded-lg cursor-pointer"
-        @input="updateStyle('color', ($event.target as HTMLInputElement).value)"
+        @input="handleStyleUpdate('color', ($event.target as HTMLInputElement).value)"
       />
     </div>
 
@@ -83,8 +76,8 @@
         <input
           :value="textOverlay.position_x"
           type="number"
-          min="0"
-          max="100"
+          :min="constraints.position.min"
+          :max="constraints.position.max"
           class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
           @input="updateProperty('position_x', parseFloat(($event.target as HTMLInputElement).value))"
         />
@@ -95,8 +88,8 @@
         <input
           :value="textOverlay.position_y"
           type="number"
-          min="0"
-          max="100"
+          :min="constraints.position.min"
+          :max="constraints.position.max"
           class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
           @input="updateProperty('position_y', parseFloat(($event.target as HTMLInputElement).value))"
         />
@@ -111,13 +104,9 @@
         class="w-full px-3 py-2 bg-white/[0.05] border border-white/10 rounded-lg text-zinc-100 text-sm outline-none transition-all duration-150 focus:border-amber-400/50 focus:bg-white/[0.08]"
         @change="updateProperty('animation', ($event.target as HTMLSelectElement).value)"
       >
-        <option value="none">None</option>
-        <option value="fade">Fade</option>
-        <option value="slide-up">Slide Up</option>
-        <option value="slide-down">Slide Down</option>
-        <option value="zoom">Zoom</option>
-        <option value="pop">Pop</option>
-        <option value="typewriter">Typewriter</option>
+        <option v-for="anim in textAnimations" :key="anim.value" :value="anim.value">
+          {{ anim.label }}
+        </option>
       </select>
     </div>
 
@@ -162,9 +151,15 @@
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue';
+  import { computed, toRef } from 'vue';
   import { Type, Trash2 } from 'lucide-vue-next';
   import type { VideoEditorTextOverlayRecord } from '@/services/database/video-editor-edits';
+  import {
+    useTextInspectorLogic,
+    mergeStyle,
+    serializeStyle,
+    type TextStyle,
+  } from '@/composables/clip-editor';
 
   const props = defineProps<{
     textOverlay: VideoEditorTextOverlayRecord;
@@ -175,20 +170,18 @@
     (e: 'delete'): void;
   }>();
 
-  const style = computed(() => {
-    try {
-      return JSON.parse(props.textOverlay.style_data || '{}');
-    } catch {
-      return {};
-    }
+  // Use composable for style parsing and constants
+  const styleDataRef = computed(() => props.textOverlay.style_data);
+  const { style, fontFamilies, fontWeights, textAnimations, constraints } = useTextInspectorLogic({
+    styleData: styleDataRef,
   });
 
   function updateProperty(property: string, value: any) {
     emit('update', property, value);
   }
 
-  function updateStyle(property: string, value: any) {
-    const newStyle = { ...style.value, [property]: value };
-    emit('update', 'style_data', JSON.stringify(newStyle));
+  function handleStyleUpdate(property: keyof TextStyle, value: any) {
+    const newStyle = mergeStyle(style.value, property, value);
+    emit('update', 'style_data', serializeStyle(newStyle));
   }
 </script>

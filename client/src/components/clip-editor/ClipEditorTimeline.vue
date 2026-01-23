@@ -236,6 +236,7 @@ import {
   useWaveformRenderer,
   useTimelineZoom,
   useTimelineRuler,
+  useTimelineSegmentStyles,
   TRACK_LABEL_WIDTH,
   type VideoSource,
 } from '@/composables/clip-editor';
@@ -323,13 +324,10 @@ const {
   groupedAudioTracks,
 } = useTimelineItems(editorEditRef);
 
-// Get segment style based on time and duration
-function getSegmentStyle(startTime: number, segmentDuration: number) {
-  return {
-    left: startTime * pixelsPerSecond.value + 'px',
-    width: segmentDuration * pixelsPerSecond.value + 'px',
-  };
-}
+// Timeline segment styling composable
+const { getSegmentStyle, formatSourceLabel } = useTimelineSegmentStyles({
+  pixelsPerSecond,
+});
 
 // Handle track click to seek and deselect items
 function handleTrackClick(event: MouseEvent) {
@@ -351,12 +349,6 @@ function selectItem(item: any, type: string) {
 
 // truncate is an alias for truncateText from composable
 const truncate = truncateText;
-
-// Format video source label
-function formatSourceLabel(source: VideoSource): string {
-  const duration = source.end_time - source.start_time;
-  return `Clip (${duration.toFixed(1)}s)`;
-}
 
 // Wrapper for audio track waveform height that looks up file path by ID
 function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: number, segmentDuration: number): string {

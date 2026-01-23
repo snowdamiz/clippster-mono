@@ -61,36 +61,16 @@
         <div
           v-for="item in mediaItems"
           :key="item.id"
-          class="group flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-150 hover:bg-[rgba(14,165,233,0.1)] hover:border-[rgba(14,165,233,0.3)] hover:translate-x-0.5"
+          class="group flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-150 hover:translate-x-0.5"
           style="background-color: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05)"
-          :class="{
-            'hover:!bg-[rgba(139,92,246,0.1)] hover:!border-[rgba(139,92,246,0.3)]': item.media_type === 'audio',
-            'hover:!bg-[rgba(14,165,233,0.1)] hover:!border-[rgba(14,165,233,0.3)]': item.media_type === 'video',
-            'hover:!bg-[rgba(16,185,129,0.1)] hover:!border-[rgba(16,185,129,0.3)]': item.media_type === 'image',
-          }"
+          :class="getHoverClasses(item.media_type)"
           @click="addToTimeline(item)"
           :title="`Click to add to timeline`"
         >
           <!-- Thumbnail/Preview -->
           <div
             class="w-14 h-14 shrink-0 rounded-lg overflow-hidden flex items-center justify-center relative"
-            :style="{
-              backgroundColor: 'rgba(0, 0, 0, 0.3)',
-              ...(item.media_type === 'audio'
-                ? {
-                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(168, 139, 250, 0.2))',
-                    border: '1px solid rgba(139, 92, 246, 0.3)',
-                  }
-                : item.media_type === 'video'
-                  ? {
-                      background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(59, 130, 246, 0.2))',
-                      border: '1px solid rgba(14, 165, 233, 0.3)',
-                    }
-                  : {
-                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(52, 211, 153, 0.2))',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
-                    }),
-            }"
+            :style="getThumbnailStyles(item.media_type)"
           >
             <img
               v-if="item.media_type === 'image' && item.thumbnail_path"
@@ -177,22 +157,7 @@
             <div class="flex items-center gap-2 text-xs" style="color: var(--editor-text-muted)">
               <span
                 class="uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded text-[10px]"
-                :style="{
-                  ...(item.media_type === 'audio'
-                    ? {
-                        backgroundColor: 'rgba(139, 92, 246, 0.2)',
-                        color: 'rgba(168, 139, 250, 1)',
-                      }
-                    : item.media_type === 'video'
-                      ? {
-                          backgroundColor: 'rgba(14, 165, 233, 0.2)',
-                          color: 'rgba(59, 130, 246, 1)',
-                        }
-                      : {
-                          backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                          color: 'rgba(52, 211, 153, 1)',
-                        }),
-                }"
+                :style="getBadgeStyles(item.media_type)"
               >
                 {{ item.media_type }}
               </span>
@@ -218,10 +183,15 @@
 </template>
 
 <script setup lang="ts">
-  import { toRef, computed } from 'vue';
+  import { toRef } from 'vue';
   import { Upload, Film, Video, Music, Trash2 } from 'lucide-vue-next';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { useMediaCRUD, type MediaItem } from '@/composables/clip-editor';
+  import {
+    useMediaCRUD,
+    formatDuration,
+    useMediaTypeStyles,
+    type MediaItem,
+  } from '@/composables/clip-editor';
 
   const props = defineProps<{
     editId: string | null;
@@ -247,6 +217,9 @@
     onMediaAdded: (id) => emit('mediaAdded', id),
   });
 
+  // Media type styling (from composable)
+  const { getThumbnailStyles, getBadgeStyles, getHoverClasses } = useMediaTypeStyles();
+
   // Wrapper to handle confirmation for delete
   async function deleteMedia(mediaId: string) {
     if (!confirm('Delete this media item?')) return;
@@ -256,12 +229,6 @@
   // Direct pass-through for addToTimeline
   function addToTimeline(item: MediaItem) {
     addToTimelineBase(item);
-  }
-
-  function formatDuration(seconds: number): string {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 </script>
 
