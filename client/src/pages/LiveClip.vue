@@ -477,6 +477,7 @@
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
   import { useLivestreamStore } from '@/stores/livestream';
+  import { useToast } from '@/composables/useToast';
   import {
     getAllMonitoredStreamers,
     createMonitoredStreamer,
@@ -497,6 +498,7 @@
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
 
   const { gates, requireSubscription } = useSubscriptionGate();
+  const { success } = useToast();
 
   type ExtendedStreamer = MonitoredStreamer & {
     isDetecting: boolean;
@@ -615,6 +617,8 @@
       }
 
       try {
+        const wasLive = streamer.isLive ?? false;
+        
         const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
         const idx = streamers.value.findIndex((s) => s.id === streamer.id);
         if (idx !== -1) {
@@ -624,6 +628,11 @@
             viewerCount: status.numParticipants,
             isCheckingLive: false,
           };
+          
+          // Show toast if streamer just went live (offline → live transition)
+          if (!wasLive && status.isLive) {
+            success(`${streamer.displayName} is now live!`, undefined, 7000);
+          }
         }
       } catch (error) {
         console.error('[LiveClip] Failed to check live status for', streamer.mintId, error);
@@ -653,6 +662,8 @@
         viewerCount: status.numParticipants,
         isCheckingLive: false,
       };
+      
+      // Don't show toast on manual refresh - only on automatic polling
     } catch (error) {
       console.error('[LiveClip] Failed to refresh live status for', streamer.mintId, error);
       streamers.value[index] = { ...streamers.value[index], isCheckingLive: false };

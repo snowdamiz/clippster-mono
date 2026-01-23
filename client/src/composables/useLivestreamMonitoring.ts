@@ -1112,6 +1112,9 @@ export function useLivestreamMonitoring() {
 
   async function handleStreamStart(streamer: MonitoredStreamer, status: LiveStatus, options: StartOptions) {
     try {
+      // Show toast notification that streamer went live
+      showSuccess(`${streamer.displayName} is now live!`, undefined, 7000);
+      
       const sessionInfo = await createLivestreamSession(
         streamer.id,
         streamer.mintId,
@@ -1371,6 +1374,10 @@ export function useLivestreamMonitoring() {
         if (status.isLive && !hasDvrRecording) {
           // Stream is live and no DVR recording - start one
           console.log(`[LiveMonitor] Auto DVR: Starting DVR for live streamer ${streamer.displayName}`);
+          
+          // Show toast notification that streamer went live
+          showSuccess(`${streamer.displayName} is now live!`, undefined, 7000);
+          
           const started = await startDvrRecordingForStreamer(streamer);
           if (started) {
             addActivityLog({
