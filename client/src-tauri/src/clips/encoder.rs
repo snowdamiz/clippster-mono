@@ -4,10 +4,10 @@ use tauri_plugin_shell::process::Output;
 // Helper function to get FFmpeg quality settings
 pub fn get_quality_settings(quality: &str) -> (&str, &str) {
     match quality {
-        "low" => ("faster", "28"),
-        "medium" => ("medium", "23"),
-        "high" => ("slow", "18"),
-        _ => ("medium", "23"),
+        "low" => ("ultrafast", "28"),
+        "medium" => ("fast", "23"),
+        "high" => ("medium", "20"),
+        _ => ("fast", "23"),
     }
 }
 
@@ -205,6 +205,17 @@ pub async fn run_ffmpeg_with_fallback(
     quality: &str,
     env_vars: Option<Vec<(&str, String)>>,
 ) -> Result<Output, String> {
+    let cpu_count = num_cpus::get().max(1);
+    let encode_threads = (cpu_count / 2).max(2).min(8);
+    let filter_threads = (encode_threads / 2).max(1);
+
+    args.insert(0, encode_threads.to_string());
+    args.insert(0, "-threads".to_string());
+    args.insert(0, filter_threads.to_string());
+    args.insert(0, "-filter_threads".to_string());
+    args.insert(0, filter_threads.to_string());
+    args.insert(0, "-filter_complex_threads".to_string());
+
     let shell = app.shell();
     
     // First attempt with original encoder
