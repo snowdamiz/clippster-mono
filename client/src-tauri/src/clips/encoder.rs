@@ -209,6 +209,8 @@ pub async fn run_ffmpeg_with_fallback(
     let encode_threads = (cpu_count / 2).max(2).min(8);
     let filter_threads = (encode_threads / 2).max(1);
 
+    // CRITICAL: Add -nostdin to prevent FFmpeg from hanging waiting for user input
+    args.insert(0, "-nostdin".to_string());
     args.insert(0, encode_threads.to_string());
     args.insert(0, "-threads".to_string());
     args.insert(0, filter_threads.to_string());
