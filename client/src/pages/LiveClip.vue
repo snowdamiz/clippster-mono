@@ -617,7 +617,8 @@
       }
 
       try {
-        const wasLive = streamer.isLive ?? false;
+        // Use persisted database value to detect actual state changes
+        const wasLive = streamer.isCurrentlyLive;
         
         const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
         const idx = streamers.value.findIndex((s) => s.id === streamer.id);
@@ -625,13 +626,29 @@
           streamers.value[idx] = {
             ...streamers.value[idx],
             isLive: status.isLive,
+            isCurrentlyLive: status.isLive,
             viewerCount: status.numParticipants,
             isCheckingLive: false,
           };
           
-          // Show toast if streamer just went live (offline → live transition)
+          // Persist live status to database
+          await updateMonitoredStreamer(streamer.id, {
+            is_currently_live: status.isLive,
+            last_check_timestamp: Date.now(),
+          });
+          
+          // Dispatch global event if streamer just went live (offline → live transition)
           if (!wasLive && status.isLive) {
-            success(`${streamer.displayName} is now live!`, undefined, 7000);
+            window.dispatchEvent(
+              new CustomEvent('streamer-went-live', {
+                detail: {
+                  streamerId: streamer.id,
+                  displayName: streamer.displayName,
+                  platform: streamer.platform,
+                  mintId: streamer.mintId,
+                },
+              })
+            );
           }
         }
       } catch (error) {

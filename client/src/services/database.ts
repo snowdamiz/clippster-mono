@@ -134,6 +134,9 @@ export {
   updatePrompt,
   deletePrompt,
   seedDefaultPrompt,
+  seedGamingPrompt,
+  seedGamblingPrompt,
+  seedBreakingNewsPrompt,
 } from './database/prompts';
 
 // Re-export transcript functions
