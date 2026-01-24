@@ -282,6 +282,7 @@ pub async fn generate_thumbnail(app: tauri::AppHandle, video_path: String) -> Re
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
+            "-nostdin",
             "-hwaccel", "auto",
             "-ss", "00:00:01",
             "-i", &video_path,
@@ -356,6 +357,7 @@ pub async fn generate_thumbnail_at_timestamp(
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
+            "-nostdin",
             "-hwaccel", "auto",
             "-ss", &timestamp_str,
             "-i", &video_path,
@@ -604,6 +606,7 @@ pub async fn get_video_duration(app: tauri::AppHandle, video_path: String) -> Re
     let output = app.shell().sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
         .args([
+            "-nostdin",
             "-i", &video_path,
             "-f", "null",
             "-",
@@ -663,7 +666,7 @@ pub async fn get_video_metadata(app: tauri::AppHandle, video_path: String) -> Re
 
     let output = app.shell().sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
-        .args(["-i", &video_path, "-f", "null", "-"])
+        .args(["-nostdin", "-i", &video_path, "-f", "null", "-"])
         .output()
         .await
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
@@ -737,7 +740,7 @@ pub async fn get_audio_metadata(app: tauri::AppHandle, audio_path: String) -> Re
 
     let output = app.shell().sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
-        .args(["-i", &audio_path, "-f", "null", "-"])
+        .args(["-nostdin", "-i", &audio_path, "-f", "null", "-"])
         .output()
         .await
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
@@ -818,7 +821,7 @@ pub async fn get_image_metadata(app: tauri::AppHandle, image_path: String) -> Re
 
     let output = app.shell().sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
-        .args(["-i", &image_path, "-f", "null", "-"])
+        .args(["-nostdin", "-i", &image_path, "-f", "null", "-"])
         .output()
         .await
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;

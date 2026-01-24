@@ -83,6 +83,7 @@ pub async fn get_video_info(app: &tauri::AppHandle, video_path: &str) -> Result<
     let output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
+            "-nostdin",
             "-hide_banner",
             "-i", video_path,
         ])

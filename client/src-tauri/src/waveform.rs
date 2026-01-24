@@ -308,6 +308,7 @@ pub async fn extract_audio_waveform(
     let extract_output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
+            "-nostdin",
             "-i", &local_video_path,
             "-vn",                    // No video
             "-acodec", "pcm_s16le",   // 16-bit PCM
@@ -332,6 +333,7 @@ pub async fn extract_audio_waveform(
     let duration_output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
+            "-nostdin",
             "-i", &local_video_path,
             "-f", "null",
             "-"

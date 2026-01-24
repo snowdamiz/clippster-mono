@@ -2192,6 +2192,9 @@
   const inlineProgressBarRef = ref<HTMLElement | null>(null);
   const inlineHoverTime = ref<number | null>(null);
   const inlineHoverPosition = ref(0);
+  // Segmented playback state for stitched clips
+  const inlineVideoSegments = ref<Array<{ start_time: number; end_time: number; duration: number }>>([]);
+  const inlineCurrentSegmentIndex = ref(0);
 
   // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
   let inlineHlsInstance: Hls | null = null;
@@ -2613,22 +2616,51 @@
     inlineVideoClipDuration.value = 0;
   }
 
-  // Get clip start and end times
+  // Get clip segments for stitched clips, or single segment for continuous clips
+  function getClipSegments(): Array<{ start_time: number; end_time: number; duration: number }> {
+    if (!clipToPreview.value) return [];
+    
+    // Check if clip has multiple segments (stitched clip)
+    if (clipToPreview.value.current_version_segments && clipToPreview.value.current_version_segments.length > 0) {
+      return clipToPreview.value.current_version_segments.map(seg => ({
+        start_time: seg.start_time,
+        end_time: seg.end_time,
+        duration: seg.duration || (seg.end_time - seg.start_time)
+      }));
+    }
+    
+    // Fallback: single continuous segment
+    const startTime = clipToPreview.value?.current_version?.start_time ?? clipToPreview.value?.start_time ?? 0;
+    const endTime = clipToPreview.value?.current_version?.end_time ?? clipToPreview.value?.end_time ?? 0;
+    return [{ start_time: startTime, end_time: endTime, duration: endTime - startTime }];
+  }
+
+  // Get clip start and end times (for backward compatibility)
   function getClipStartTime(): number {
-    return clipToPreview.value?.current_version?.start_time ?? clipToPreview.value?.start_time ?? 0;
+    const segments = getClipSegments();
+    return segments.length > 0 ? segments[0].start_time : 0;
   }
 
   function getClipEndTime(): number {
-    return clipToPreview.value?.current_version?.end_time ?? clipToPreview.value?.end_time ?? 0;
+    const segments = getClipSegments();
+    return segments.length > 0 ? segments[segments.length - 1].end_time : 0;
   }
 
   // Handle inline video loaded - seek to clip start time
   function onInlineVideoLoaded() {
     if (inlineVideoRef.value && clipToPreview.value) {
-      const startTime = getClipStartTime();
-      const endTime = getClipEndTime();
-      inlineVideoClipDuration.value = endTime - startTime;
-      inlineVideoRef.value.currentTime = startTime;
+      // Load segments for this clip
+      inlineVideoSegments.value = getClipSegments();
+      inlineCurrentSegmentIndex.value = 0;
+      
+      // Calculate total duration (sum of all segments)
+      inlineVideoClipDuration.value = inlineVideoSegments.value.reduce((total, seg) => total + seg.duration, 0);
+      
+      // Seek to first segment start
+      if (inlineVideoSegments.value.length > 0) {
+        inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
+      }
+      
       inlineVideoCurrentTime.value = 0;
       inlineVideoProgress.value = 0;
       // Don't auto-play - let user start playback manually
@@ -2636,31 +2668,52 @@
     }
   }
 
-  // Handle inline video time update - loop within clip bounds
+  // Handle inline video time update - handle segmented playback
   function onInlineVideoTimeUpdate() {
-    if (inlineVideoRef.value && clipToPreview.value && !inlineSeekDragging.value) {
-      const startTime = getClipStartTime();
-      const endTime = getClipEndTime();
+    if (inlineVideoRef.value && clipToPreview.value && !inlineSeekDragging.value && inlineVideoSegments.value.length > 0) {
+      const currentSegment = inlineVideoSegments.value[inlineCurrentSegmentIndex.value];
+      if (!currentSegment) return;
+      
       const currentTime = inlineVideoRef.value.currentTime;
-
-      // Loop back if past end time
-      if (currentTime >= endTime) {
-        inlineVideoRef.value.currentTime = startTime;
-        return;
+      
+      // Check if we've reached the end of current segment
+      if (currentTime >= currentSegment.end_time - 0.1) {
+        // Move to next segment
+        inlineCurrentSegmentIndex.value++;
+        
+        if (inlineCurrentSegmentIndex.value >= inlineVideoSegments.value.length) {
+          // All segments played, loop back to first segment
+          inlineCurrentSegmentIndex.value = 0;
+          inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
+          inlineVideoCurrentTime.value = 0;
+          inlineVideoProgress.value = 0;
+          return;
+        } else {
+          // Jump to next segment
+          const nextSegment = inlineVideoSegments.value[inlineCurrentSegmentIndex.value];
+          inlineVideoRef.value.currentTime = nextSegment.start_time;
+        }
       }
-
-      // Update relative time display (relative to clip start)
-      inlineVideoCurrentTime.value = Math.max(0, currentTime - startTime);
+      
+      // Calculate elapsed time across all played segments
+      let elapsedTime = 0;
+      for (let i = 0; i < inlineCurrentSegmentIndex.value; i++) {
+        elapsedTime += inlineVideoSegments.value[i].duration;
+      }
+      // Add time within current segment
+      elapsedTime += Math.max(0, currentTime - currentSegment.start_time);
+      
+      inlineVideoCurrentTime.value = elapsedTime;
       inlineVideoProgress.value =
-        inlineVideoClipDuration.value > 0 ? (inlineVideoCurrentTime.value / inlineVideoClipDuration.value) * 100 : 0;
+        inlineVideoClipDuration.value > 0 ? (elapsedTime / inlineVideoClipDuration.value) * 100 : 0;
     }
   }
 
   // Handle inline video ended - loop back to start
   function onInlineVideoEnded() {
-    if (inlineVideoRef.value && clipToPreview.value) {
-      const startTime = getClipStartTime();
-      inlineVideoRef.value.currentTime = startTime;
+    if (inlineVideoRef.value && clipToPreview.value && inlineVideoSegments.value.length > 0) {
+      inlineCurrentSegmentIndex.value = 0;
+      inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
       inlineVideoRef.value.play();
     }
   }
@@ -2704,14 +2757,33 @@
     return Math.max(0, Math.min(100, (x / rect.width) * 100));
   }
 
-  // Seek video to a specific percent
-  function seekInlineVideoToPercent(percent: number) {
-    if (!inlineVideoRef.value || !clipToPreview.value) return;
-    const startTime = getClipStartTime();
-    const newTime = startTime + (percent / 100) * inlineVideoClipDuration.value;
-    inlineVideoRef.value.currentTime = newTime;
-    inlineVideoCurrentTime.value = (percent / 100) * inlineVideoClipDuration.value;
-    inlineVideoProgress.value = percent;
+  // Seek to specific time in clip (handles segmented clips)
+  function seekInlineVideo(percent: number) {
+    if (!inlineVideoRef.value || !clipToPreview.value || inlineVideoSegments.value.length === 0) return;
+    
+    // Calculate target elapsed time
+    const targetElapsedTime = (percent / 100) * inlineVideoClipDuration.value;
+    
+    // Find which segment this time falls into
+    let accumulatedTime = 0;
+    for (let i = 0; i < inlineVideoSegments.value.length; i++) {
+      const segment = inlineVideoSegments.value[i];
+      if (accumulatedTime + segment.duration >= targetElapsedTime) {
+        // Target time is in this segment
+        const timeIntoSegment = targetElapsedTime - accumulatedTime;
+        inlineCurrentSegmentIndex.value = i;
+        inlineVideoRef.value.currentTime = segment.start_time + timeIntoSegment;
+        inlineVideoCurrentTime.value = targetElapsedTime;
+        inlineVideoProgress.value = percent;
+        return;
+      }
+      accumulatedTime += segment.duration;
+    }
+    
+    // Fallback: seek to last segment
+    const lastSegment = inlineVideoSegments.value[inlineVideoSegments.value.length - 1];
+    inlineCurrentSegmentIndex.value = inlineVideoSegments.value.length - 1;
+    inlineVideoRef.value.currentTime = lastSegment.start_time;
   }
 
   // Start drag seeking
@@ -2720,7 +2792,7 @@
 
     inlineSeekDragging.value = true;
     const percent = getInlinePercentFromEvent(event);
-    seekInlineVideoToPercent(percent);
+    seekInlineVideo(percent);
 
     // Add document-level listeners for drag
     document.addEventListener('mousemove', onInlineSeekDrag);
@@ -2733,7 +2805,7 @@
   function onInlineSeekDrag(event: MouseEvent) {
     if (!inlineSeekDragging.value) return;
     const percent = getInlinePercentFromEvent(event);
-    seekInlineVideoToPercent(percent);
+    seekInlineVideo(percent);
   }
 
   // Stop drag seeking
@@ -2813,6 +2885,9 @@
     if (segmentProject) {
       // Open workspace with the segment project and the clip pre-selected
       openWorkspace(segmentProject, clipId);
+    } else if (folderProject.value && clip.project_id === folderProject.value.id) {
+      // Standalone project (no children) - open the folder project itself
+      openWorkspace(folderProject.value, clipId);
     }
   }
 

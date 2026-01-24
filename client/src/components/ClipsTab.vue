@@ -258,7 +258,7 @@
                           <Teleport to="body">
                             <div
                               v-if="openDownloadDropdownId === clip.id"
-                              class="clips-tab-dropdown fixed z-[9999] w-[220px] rounded-lg shadow-2xl py-1.5 overflow-hidden"
+                              class="clips-tab-dropdown fixed z-[99999] w-[220px] rounded-lg shadow-2xl py-1.5 overflow-hidden"
                               :style="getDropdownPosition(clip.id)"
                               data-action-menu
                               @click.stop
@@ -346,7 +346,7 @@
                           <Teleport to="body">
                             <div
                               v-if="openActionMenuId === clip.id"
-                              class="clips-tab-dropdown fixed z-[9999] w-[200px] rounded-lg shadow-2xl py-1.5 overflow-hidden"
+                              class="clips-tab-dropdown fixed z-[99999] w-[200px] rounded-lg shadow-2xl py-1.5 overflow-hidden"
                               :style="getActionMenuPosition(clip.id)"
                               data-action-menu
                               @click.stop
@@ -473,11 +473,7 @@
                       >
                         <ClockIcon class="h-2.5 w-2.5 opacity-70" />
                         <span>
-                          {{
-                            formatDuration(
-                              (clip.current_version_end_time || 0) - (clip.current_version_start_time || 0)
-                            )
-                          }}
+                          {{ formatDuration(getClipDuration(clip)) }}
                         </span>
                       </div>
 
@@ -1362,6 +1358,17 @@
   );
 
   // Functions
+  function getClipDuration(clip: ClipWithVersion): number {
+    // If clip has segments, sum their durations (for stitched clips)
+    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
+      return clip.current_version_segments.reduce((total, segment) => {
+        return total + (segment.duration || (segment.end_time - segment.start_time));
+      }, 0);
+    }
+    // Otherwise use the time range (for continuous clips)
+    return (clip.current_version_end_time || 0) - (clip.current_version_start_time || 0);
+  }
+
   function formatDuration(seconds: number): string {
     if (!seconds) return '0:00';
     const mins = Math.floor(seconds / 60);
