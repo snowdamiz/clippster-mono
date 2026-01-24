@@ -106,10 +106,10 @@ pub fn remove_hwaccel_flags(args: &mut Vec<String>) {
 
 // Build hardware acceleration args from encoder config
 // These args must be placed BEFORE the -i input argument
-// NOTE: We intentionally do NOT use -hwaccel_output_format because that keeps frames
-// in GPU memory (e.g., CUDA format), which is incompatible with CPU-based filters like crop.
-// By omitting it, frames are decoded on GPU but transferred to CPU memory for filtering.
-pub fn build_hwaccel_args(encoder: &EncoderConfig) -> Vec<String> {
+// IMPORTANT: hwaccel_output_format should NOT be used when there are no video filters,
+// as FFmpeg cannot convert from CUDA format to encoder format without a filter chain.
+// Always use GPU decode, but skip hwaccel_output_format to let FFmpeg handle format conversion.
+pub fn build_hwaccel_args(encoder: &EncoderConfig, uses_cpu_filters: bool) -> Vec<String> {
     let mut args = Vec::new();
     
     if let Some(hw_accel) = &encoder.hw_accel {
@@ -118,9 +118,9 @@ pub fn build_hwaccel_args(encoder: &EncoderConfig) -> Vec<String> {
         args.push("-hwaccel".to_string());
         args.push(hw_accel.clone());
         
-        // NOTE: Intentionally NOT adding -hwaccel_output_format
-        // This allows CPU-based filters (crop, scale, etc.) to work with the decoded frames
-        // The GPU still handles decoding, but frames are transferred to CPU for filtering
+        // NEVER use hwaccel_output_format - it causes format conversion errors
+        // FFmpeg will automatically handle GPU decode -> CPU memory -> GPU encode
+        println!("[Rust]   Skipping hwaccel_output_format (let FFmpeg handle format conversion)");
         
         if let Some(device) = &encoder.hw_accel_device {
             println!("[Rust]   -hwaccel_device {}", device);
@@ -244,6 +244,17 @@ pub async fn run_ffmpeg_with_fallback(
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    
+    // Always log FFmpeg stderr for performance analysis
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    // Extract and log encoding speed from last progress line
+    for line in stderr.lines().rev().take(20) {
+        if line.contains("speed=") || line.contains("fps=") {
+            println!("[Rust] FFmpeg progress: {}", line.trim());
+            break;
+        }
+    }
     
     // Check if successful
     if output.status.success() {
