@@ -3854,6 +3854,10 @@
       closeFolderDownloadDropdown();
       closeClipPreview();
       cancelThumbnailGeneration(); // Stop any running thumbnail generation
+      // Clear project from generated set so thumbnails can regenerate on next visit
+      if (folderProject.value?.id) {
+        thumbnailsGeneratedForProjects.value.delete(folderProject.value.id);
+      }
     }
   });
 
