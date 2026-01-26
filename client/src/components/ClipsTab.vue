@@ -1007,9 +1007,8 @@
       }
     }
 
-    // Always generate thumbnails for clips that don't have built_thumbnail_path
-    // This is critical for newly detected clips
-    await generateMissingThumbnails();
+    // NOTE: Thumbnail generation is handled by Projects.vue to prevent duplicate FFmpeg processes
+    // Do NOT call generateMissingThumbnails() here - it causes 50+ FFmpeg processes to spawn
   }
 
   // Load which clips are already part of a video editor project

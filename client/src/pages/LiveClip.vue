@@ -601,7 +601,6 @@
     }, 60_000);
 
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
-    window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
   async function checkAllLiveStatuses(includeKick: boolean = true) {
@@ -663,27 +662,116 @@
     await Promise.all(promises);
   }
 
-  async function refreshLiveStatus(streamer: ExtendedStreamer) {
+  async function checkSingleLiveStatus(streamer: ExtendedStreamer, showSpinner: boolean = false) {
     if (streamer.isDetecting) return;
 
     const index = streamers.value.findIndex((s) => s.id === streamer.id);
     if (index === -1) return;
 
-    streamers.value[index] = { ...streamers.value[index], isCheckingLive: true };
+    if (showSpinner) {
+      streamers.value[index] = { ...streamers.value[index], isCheckingLive: true };
+    }
 
     try {
+      const wasLive = streamer.isCurrentlyLive;
       const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
+      
       streamers.value[index] = {
         ...streamers.value[index],
         isLive: status.isLive,
+        isCurrentlyLive: status.isLive,
         viewerCount: status.numParticipants,
         isCheckingLive: false,
       };
       
-      // Don't show toast on manual refresh - only on automatic polling
+      // Persist live status to database
+      await updateMonitoredStreamer(streamer.id, {
+        is_currently_live: status.isLive,
+        last_check_timestamp: Date.now(),
+      });
+      
+      // Dispatch global event if streamer just went live (offline → live transition)
+      if (!wasLive && status.isLive) {
+        window.dispatchEvent(
+          new CustomEvent('streamer-went-live', {
+            detail: {
+              streamerId: streamer.id,
+              displayName: streamer.displayName,
+              platform: streamer.platform,
+              mintId: streamer.mintId,
+            },
+          })
+        );
+      }
     } catch (error) {
-      console.error('[LiveClip] Failed to refresh live status for', streamer.mintId, error);
-      streamers.value[index] = { ...streamers.value[index], isCheckingLive: false };
+      console.error('[LiveClip] Failed to check live status for', streamer.mintId, error);
+      if (showSpinner) {
+        streamers.value[index] = { ...streamers.value[index], isCheckingLive: false };
+      }
+    }
+  }
+
+  async function refreshLiveStatus(streamer: ExtendedStreamer) {
+    await checkSingleLiveStatus(streamer, true);
+  }
+
+  async function refreshSingleStreamerMetadata(streamer: ExtendedStreamer) {
+    const needsUpdate = 
+      (streamer.platform === 'PumpFun' && (streamer.displayName === streamer.mintId || !streamer.profileImageUrl)) ||
+      (streamer.platform === 'Kick' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId));
+
+    if (!needsUpdate) return;
+
+    try {
+      if (streamer.platform === 'Kick') {
+        const status = await checkKickLivestream(streamer.mintId);
+        const updates: any = {};
+
+        if (streamer.displayName === streamer.mintId && status.username) {
+          updates.display_name = status.username;
+        }
+        if (!streamer.profileImageUrl && status.profileImageUrl) {
+          updates.profile_image_url = status.profileImageUrl;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await updateMonitoredStreamer(streamer.id, updates);
+          if (updates.display_name) streamer.displayName = updates.display_name;
+          if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+        }
+      } else {
+        let match: TokenSearchResult | null = null;
+
+        const results = await searchPumpFunTokens(streamer.mintId);
+        if (results && results.length > 0) {
+          match = results.find((r) => r.mint === streamer.mintId) || results[0];
+        }
+
+        if (!match || !match.image) {
+          const serverMeta = await fetchTokenMetadataFromServer(streamer.mintId);
+          if (serverMeta) {
+            match = serverMeta;
+          }
+        }
+
+        if (match) {
+          const updates: any = {};
+          if (streamer.displayName === streamer.mintId) {
+            updates.display_name = match.symbol;
+          }
+          if (!streamer.profileImageUrl && match.image) {
+            updates.profile_image_url = match.image;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await updateMonitoredStreamer(streamer.id, updates);
+            if (updates.display_name) streamer.displayName = updates.display_name;
+            if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to refresh metadata for', streamer.mintId, e);
     }
   }
 
@@ -697,57 +785,7 @@
     if (needsUpdate.length === 0) return;
 
     for (const streamer of needsUpdate) {
-      try {
-        if (streamer.platform === 'Kick') {
-          const status = await checkKickLivestream(streamer.mintId);
-          const updates: any = {};
-
-          if (streamer.displayName === streamer.mintId && status.username) {
-            updates.display_name = status.username;
-          }
-          if (!streamer.profileImageUrl && status.profileImageUrl) {
-            updates.profile_image_url = status.profileImageUrl;
-          }
-
-          if (Object.keys(updates).length > 0) {
-            await updateMonitoredStreamer(streamer.id, updates);
-            if (updates.display_name) streamer.displayName = updates.display_name;
-            if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
-          }
-        } else {
-          let match: TokenSearchResult | null = null;
-
-          const results = await searchPumpFunTokens(streamer.mintId);
-          if (results && results.length > 0) {
-            match = results.find((r) => r.mint === streamer.mintId) || results[0];
-          }
-
-          if (!match || !match.image) {
-            const serverMeta = await fetchTokenMetadataFromServer(streamer.mintId);
-            if (serverMeta) {
-              match = serverMeta;
-            }
-          }
-
-          if (match) {
-            const updates: any = {};
-            if (streamer.displayName === streamer.mintId) {
-              updates.display_name = match.symbol;
-            }
-            if (!streamer.profileImageUrl && match.image) {
-              updates.profile_image_url = match.image;
-            }
-
-            if (Object.keys(updates).length > 0) {
-              await updateMonitoredStreamer(streamer.id, updates);
-              if (updates.display_name) streamer.displayName = updates.display_name;
-              if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Failed to refresh metadata for', streamer.mintId, e);
-      }
+      await refreshSingleStreamerMetadata(streamer);
     }
   }
 
@@ -758,7 +796,6 @@
     }
 
     window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
-    window.removeEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
   watch([activeSessions, monitoredStreamers, dvrSessions], () => syncDetectionState(), { deep: true });
@@ -778,12 +815,6 @@
         hasTempRecording: !!dvrSession,
       };
     });
-  }
-
-  async function handleMonitoredStreamersUpdated() {
-    await loadStreamers();
-    await refreshStreamerMetadata();
-    await checkAllLiveStatuses(true); // Include Kick since this is a user-triggered update
   }
 
   function getStatusLabel(streamer: ExtendedStreamer) {
@@ -1135,8 +1166,20 @@
   ) {
     const platformDisplay = platform === 'kick' ? 'Kick' : 'PumpFun';
     try {
-      await createMonitoredStreamer(platformId, displayName, profileImageUrl, 5, false, platform);
+      const newStreamerId = await createMonitoredStreamer(platformId, displayName, profileImageUrl, 5, false, platform);
+      
+      // Reload streamers from database
       await loadStreamers();
+      
+      // Find the newly added streamer
+      const newStreamer = streamers.value.find(s => s.id === newStreamerId);
+      
+      if (newStreamer) {
+        // Only refresh metadata and check live status for the new streamer
+        await refreshSingleStreamerMetadata(newStreamer);
+        await checkSingleLiveStatus(newStreamer);
+      }
+      
       inputValue.value = '';
       detectedPlatform.value = null;
       showSearchDialog.value = false;

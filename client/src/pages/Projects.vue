@@ -1930,7 +1930,7 @@
       // Load existing thumbnails in parallel (non-blocking, fast)
       loadClipThumbnailsInParallel();
 
-      // Generate missing thumbnails in background (non-blocking, slow)
+      // Generate missing thumbnails in background (controlled: one at a time with 500ms delay)
       generateMissingThumbnailsInBackground();
     } catch (e) {
       console.error('Failed to load folder clips:', e);
@@ -1963,72 +1963,145 @@
     );
   }
 
+  // Track which projects have had thumbnails generated to avoid re-generation
+  const thumbnailsGeneratedForProjects = ref(new Set<string>());
+  
+  // Cancellation flag for thumbnail generation - set to true when navigating away
+  let thumbnailGenerationCancelled = false;
+  // Flag to prevent concurrent thumbnail generation
+  let thumbnailGenerationInProgress = false;
+
   // Generate thumbnails for clips that don't have one yet (background, non-blocking)
   async function generateMissingThumbnailsInBackground() {
+    // Prevent concurrent runs
+    if (thumbnailGenerationInProgress) {
+      console.log('[Projects] Thumbnail generation already in progress, skipping');
+      return;
+    }
+    
     const clipsWithoutThumbnails = folderClips.value.filter((clip) => !clip.built_thumbnail_path);
 
     if (clipsWithoutThumbnails.length === 0) return;
 
-    console.log(`[Projects] Generating thumbnails for ${clipsWithoutThumbnails.length} clips in background...`);
-
-    // Process in parallel batches for better performance
-    const batchSize = 3;
-    for (let i = 0; i < clipsWithoutThumbnails.length; i += batchSize) {
-      const batch = clipsWithoutThumbnails.slice(i, i + batchSize);
-
-      await Promise.all(
-        batch.map(async (clip) => {
-          try {
-            const segmentId = clip.segment_id || clip.project_id;
-            if (!segmentId) return;
-
-            let videos = projectVideos.value[segmentId];
-
-            // Load videos on demand if not cached
-            if (!videos || videos.length === 0) {
-              try {
-                videos = await getRawVideosByProjectId(segmentId);
-                projectVideos.value[segmentId] = videos;
-              } catch {
-                return;
-              }
-            }
-
-            if (videos && videos.length > 0) {
-              const videoPath = videos[0].file_path;
-              const startTime =
-                clip.current_version?.start_time ?? clip.current_version_start_time ?? clip.start_time ?? 0;
-
-              // Generate thumbnail at clip start time
-              const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-                videoPath: videoPath,
-                timestampSeconds: startTime,
-                outputFilename: `clip_${clip.id}`,
-              });
-
-              // Load the generated thumbnail into cache
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: thumbnailPath,
-              });
-              clipThumbnailCache.value.set(clip.id, dataUrl);
-
-              // Update the clip's thumbnail path
-              clip.built_thumbnail_path = thumbnailPath;
-
-              // Persist to database (non-blocking)
-              const { updateClipBuildStatus } = await import('@/services/database');
-              await updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
-                builtThumbnailPath: thumbnailPath,
-              });
-            }
-          } catch (err) {
-            console.warn('Failed to generate clip thumbnail:', clip.id, err);
-          }
-        })
-      );
+    // Check if we've already generated thumbnails for this project
+    const projectId = folderProject.value?.id;
+    if (projectId && thumbnailsGeneratedForProjects.value.has(projectId)) {
+      console.log('[Projects] Thumbnails already generated for this project, skipping');
+      return;
     }
 
-    console.log('[Projects] Background thumbnail generation complete');
+    console.log(`[Projects] Generating thumbnails for ${clipsWithoutThumbnails.length} clips in background (one at a time)...`);
+    
+    // Reset cancellation flag and mark as in progress
+    thumbnailGenerationCancelled = false;
+    thumbnailGenerationInProgress = true;
+
+    // Process ONE at a time to prevent spawning 50+ FFmpeg processes
+    const dbUpdates: Array<{ clipId: string; thumbnailPath: string; buildStatus: 'pending' | 'building' | 'completed' | 'failed' }> = [];
+
+    try {
+      // Process clips ONE AT A TIME sequentially (not in parallel)
+      for (let i = 0; i < clipsWithoutThumbnails.length; i++) {
+        // Check cancellation before each clip
+        if (thumbnailGenerationCancelled) {
+          console.log('[Projects] Thumbnail generation cancelled');
+          break;
+        }
+        
+        const clip = clipsWithoutThumbnails[i];
+        
+        try {
+          const segmentId = clip.segment_id || clip.project_id;
+          if (!segmentId) continue;
+
+          let videos = projectVideos.value[segmentId];
+
+          // Load videos on demand if not cached
+          if (!videos || videos.length === 0) {
+            try {
+              videos = await getRawVideosByProjectId(segmentId);
+              projectVideos.value[segmentId] = videos;
+            } catch {
+              continue;
+            }
+          }
+
+          if (videos && videos.length > 0) {
+            const videoPath = videos[0].file_path;
+            const startTime =
+              clip.current_version?.start_time ?? clip.current_version_start_time ?? clip.start_time ?? 0;
+
+            // Generate thumbnail at clip start time (SINGLE process)
+            const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+              videoPath: videoPath,
+              timestampSeconds: startTime,
+              outputFilename: `clip_${clip.id}`,
+            });
+
+            // Check cancellation after FFmpeg completes
+            if (thumbnailGenerationCancelled) {
+              console.log('[Projects] Thumbnail generation cancelled after FFmpeg');
+              break;
+            }
+
+            // Load the generated thumbnail into cache
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: thumbnailPath,
+            });
+            clipThumbnailCache.value.set(clip.id, dataUrl);
+
+            // Update the clip's thumbnail path
+            clip.built_thumbnail_path = thumbnailPath;
+
+            // Queue database update instead of writing immediately
+            dbUpdates.push({
+              clipId: clip.id,
+              thumbnailPath: thumbnailPath,
+              buildStatus: (clip.build_status || 'pending') as 'pending' | 'building' | 'completed' | 'failed',
+            });
+            
+            console.log(`[Projects] Generated thumbnail ${i + 1}/${clipsWithoutThumbnails.length}`);
+          }
+        } catch (err) {
+          console.warn('Failed to generate clip thumbnail:', clip.id, err);
+        }
+
+        // Add delay between clips to prevent system overload (500ms)
+        if (i < clipsWithoutThumbnails.length - 1 && !thumbnailGenerationCancelled) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+    } finally {
+      thumbnailGenerationInProgress = false;
+    }
+
+    // Batch write all database updates at once (only if not cancelled)
+    if (dbUpdates.length > 0 && !thumbnailGenerationCancelled) {
+      console.log(`[Projects] Writing ${dbUpdates.length} thumbnail updates to database...`);
+      const { updateClipBuildStatus } = await import('@/services/database');
+      
+      // Write sequentially to avoid overwhelming the database
+      for (const update of dbUpdates) {
+        await updateClipBuildStatus(update.clipId, update.buildStatus, {
+          builtThumbnailPath: update.thumbnailPath,
+        });
+      }
+    }
+
+    // Mark this project as having thumbnails generated (even if cancelled partway)
+    if (projectId && dbUpdates.length > 0) {
+      thumbnailsGeneratedForProjects.value.add(projectId);
+    }
+
+    console.log(`[Projects] Background thumbnail generation complete (${dbUpdates.length} generated)`);
+  }
+  
+  // Cancel any running thumbnail generation
+  function cancelThumbnailGeneration() {
+    if (thumbnailGenerationInProgress) {
+      console.log('[Projects] Cancelling thumbnail generation...');
+      thumbnailGenerationCancelled = true;
+    }
   }
 
   // Handle clip build progress events (for folder dialog builds)
@@ -3780,6 +3853,7 @@
       clearFolderChildSelection();
       closeFolderDownloadDropdown();
       closeClipPreview();
+      cancelThumbnailGeneration(); // Stop any running thumbnail generation
     }
   });
 
