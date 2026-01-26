@@ -178,9 +178,37 @@
             <span v-if="totalPages > 1">(Page {{ currentPage }} of {{ totalPages }})</span>
           </div>
 
+          <!-- Bulk Actions Bar -->
+          <div v-if="selectedVodIds.size > 0" class="streamvods__bulk-actions">
+            <span class="streamvods__bulk-count">{{ selectedVodIds.size }} selected</span>
+            <div class="streamvods__bulk-buttons">
+              <button @click="clearSelection" class="streamvods__bulk-btn streamvods__bulk-btn--secondary">
+                Clear Selection
+              </button>
+              <button @click="downloadSelectedVods" class="streamvods__bulk-btn streamvods__bulk-btn--primary">
+                <Download :size="14" />
+                Download Selected
+              </button>
+            </div>
+          </div>
+
           <!-- VOD Cards Grid -->
           <div class="streamvods__grid">
-            <div v-for="clip in paginatedClips" :key="clip.clipId" class="vod-card" @click="handleClipClick(clip)">
+            <div v-for="clip in paginatedClips" :key="clip.clipId" class="vod-card" :class="{ 'vod-card--selected': selectedVodIds.has(clip.clipId) }" @click="handleClipClick(clip)">
+              <!-- Selection Checkbox -->
+              <div
+                class="vod-card__checkbox"
+                :class="{ 'vod-card__checkbox--visible': selectedVodIds.has(clip.clipId) }"
+                @click.stop="toggleVodSelection(clip)"
+              >
+                <div
+                  class="vod-card__checkbox-inner"
+                  :class="{ 'vod-card__checkbox-inner--checked': selectedVodIds.has(clip.clipId) }"
+                >
+                  <Check v-if="selectedVodIds.has(clip.clipId)" class="vod-card__checkbox-icon" />
+                </div>
+              </div>
+              
               <!-- Thumbnail Background -->
               <div
                 v-if="clip.thumbnailUrl"
@@ -264,7 +292,9 @@
                 <div class="download-modal__icon">
                   <Download :size="24" />
                 </div>
-                <h2 class="download-modal__title">Download Options</h2>
+                <h2 class="download-modal__title">
+                  {{ isProcessingQueue ? `Download Options (${currentQueueIndex + 1}/${downloadQueue.length})` : 'Download Options' }}
+                </h2>
                 <p class="download-modal__subtitle">Configure your download settings</p>
               </div>
 
@@ -407,7 +437,7 @@
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber } from '@/services/database';
-  import { Clock, ChevronDown, X, AlertTriangle, Download, Video, Search, Loader2, RotateCcw } from 'lucide-vue-next';
+  import { Clock, ChevronDown, X, AlertTriangle, Download, Video, Search, Loader2, RotateCcw, Check } from 'lucide-vue-next';
   import { getCreatorProfileByPlatformId } from '@/services/database';
   import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
@@ -434,6 +464,12 @@
   const currentPage = ref(1);
   const clipsPerPage = 20;
   const showAuthModal = ref(false);
+
+  // Multi-selection state
+  const selectedVodIds = ref<Set<string>>(new Set());
+  const downloadQueue = ref<PlatformClip[]>([]);
+  const currentQueueIndex = ref(0);
+  const isProcessingQueue = ref(false);
 
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(null);
@@ -753,6 +789,32 @@
     clipToDownload.value = null;
   }
 
+  function toggleVodSelection(clip: PlatformClip) {
+    if (selectedVodIds.value.has(clip.clipId)) {
+      selectedVodIds.value.delete(clip.clipId);
+    } else {
+      selectedVodIds.value.add(clip.clipId);
+    }
+    // Force reactivity update
+    selectedVodIds.value = new Set(selectedVodIds.value);
+  }
+
+  function clearSelection() {
+    selectedVodIds.value.clear();
+  }
+
+  async function downloadSelectedVods() {
+    const selectedClips = platformStore.clips.filter(clip => selectedVodIds.value.has(clip.clipId));
+    if (selectedClips.length === 0) return;
+    
+    downloadQueue.value = selectedClips;
+    currentQueueIndex.value = 0;
+    isProcessingQueue.value = true;
+    
+    // Start with first VOD in queue
+    await handleDownloadClip(downloadQueue.value[0]);
+  }
+
   async function downloadClipConfirmed() {
     if (!clipToDownload.value || !currentPlatformConfig.value) return;
 
@@ -906,14 +968,45 @@
       success('Download Started', downloadMessage);
       closeDownloadDialog();
 
-      setTimeout(() => {
-        downloadStarting.value = false;
-        router.push('/projects');
-      }, 500);
+      // Check if we're processing a queue
+      if (isProcessingQueue.value && downloadQueue.value.length > 0) {
+        currentQueueIndex.value++;
+        
+        // If there are more VODs in queue, show next dialog
+        if (currentQueueIndex.value < downloadQueue.value.length) {
+          setTimeout(() => {
+            downloadStarting.value = false;
+            handleDownloadClip(downloadQueue.value[currentQueueIndex.value]);
+          }, 500);
+        } else {
+          // Queue complete - navigate to projects and cleanup
+          setTimeout(() => {
+            downloadStarting.value = false;
+            isProcessingQueue.value = false;
+            downloadQueue.value = [];
+            currentQueueIndex.value = 0;
+            clearSelection();
+            router.push('/projects');
+          }, 500);
+        }
+      } else {
+        // Single download - navigate immediately
+        setTimeout(() => {
+          downloadStarting.value = false;
+          router.push('/projects');
+        }, 500);
+      }
     } catch (err) {
       showError('Download Failed', `Failed to download "${clip.title}": ${err}`);
       downloadStarting.value = false;
       closeDownloadDialog();
+      
+      // If queue processing failed, cleanup
+      if (isProcessingQueue.value) {
+        isProcessingQueue.value = false;
+        downloadQueue.value = [];
+        currentQueueIndex.value = 0;
+      }
     }
   }
 </script>
@@ -2185,5 +2278,115 @@
     100% {
       background-position: 200% 0;
     }
+  }
+
+  /* ===== Selection Checkbox ===== */
+  .vod-card__checkbox {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .vod-card:hover .vod-card__checkbox,
+  .vod-card__checkbox--visible {
+    opacity: 1;
+  }
+
+  .vod-card__checkbox-inner {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 150ms ease;
+  }
+
+  .vod-card__checkbox-inner:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .vod-card__checkbox-inner--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .vod-card__checkbox-inner--checked:hover {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .vod-card__checkbox-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .vod-card--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+  }
+
+  /* ===== Bulk Actions Bar ===== */
+  .streamvods__bulk-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background-color: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .streamvods__bulk-count {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+  }
+
+  .streamvods__bulk-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .streamvods__bulk-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods__bulk-btn--secondary {
+    background-color: transparent;
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .streamvods__bulk-btn--secondary:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .streamvods__bulk-btn--primary {
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .streamvods__bulk-btn--primary:hover {
+    opacity: 0.9;
   }
 </style>
