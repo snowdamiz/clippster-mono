@@ -484,18 +484,20 @@
     deleteMonitoredStreamer,
     updateMonitoredStreamer,
   } from '@/services/database';
-  import {
-    extractMintId,
-    searchPumpFunTokens,
-    fetchTokenMetadataFromServer,
-    type TokenSearchResult,
-  } from '@/services/pumpfun';
+  import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer, type TokenSearchResult } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
+  import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
+
+  interface PendingMetadataFetch {
+    streamerId: string;
+    platform: Platform;
+    identifier: string;
+  }
 
   const { gates, requireSubscription } = useSubscriptionGate();
   const { success } = useToast();
@@ -867,6 +869,7 @@
   async function loadStreamers() {
     try {
       const records = await getAllMonitoredStreamers();
+      console.log('[LiveClip] Loaded streamers from database:', records.length, records);
 
       streamers.value = records.map((record) => {
         const monitored = monitoredStreamers.value.get(record.id);
@@ -880,7 +883,7 @@
         };
         const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
 
-        return {
+        const streamer = {
           id: record.id,
           mintId: record.mint_id,
           displayName: record.display_name,
@@ -892,12 +895,17 @@
           profileImageUrl: record.profile_image_url || undefined,
           streamThumbnailUrl: record.stream_thumbnail_url || undefined,
           segmentDurationMinutes: record.segment_duration_minutes ?? 5,
-          mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
-          status: session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE',
+          mode: (monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null) as 'Auto-Detect' | 'Record Only' | null,
+          status: (session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE') as 'LIVE' | 'WAITING' | 'IDLE' | 'STOPPING',
           selected: false,
           autoDvr: Boolean(record.auto_dvr),
         };
+        
+        console.log('[LiveClip] Mapped streamer:', streamer);
+        return streamer;
       });
+      
+      console.log('[LiveClip] Final streamers array:', streamers.value);
     } catch (error) {
       console.error('[LiveClip] Failed to load monitored streamers', error);
     }
@@ -1022,6 +1030,25 @@
   async function addStreamer() {
     if (!inputValue.value) return;
 
+    // Handle Twitch
+    if (detectedPlatform.value === 'Twitch') {
+      const channelName = extractChannelName(inputValue.value);
+      if (channelName) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Twitch',
+          message: `Adding Twitch channel "${channelName}"...`,
+          status: 'loading',
+        });
+
+        // Add immediately with basic info, fetch metadata in background
+        await confirmAddStreamer(channelName, channelName, undefined, 'twitch');
+        return;
+      }
+    }
+
+    // Handle Kick
     if (detectedPlatform.value === 'Kick') {
       const channelSlug = extractChannelSlug(inputValue.value);
       if (channelSlug) {
@@ -1029,76 +1056,30 @@
           streamerId: 'system',
           streamerName: 'System',
           platform: 'Kick',
-          message: `Checking Kick channel "${channelSlug}"...`,
+          message: `Adding Kick channel "${channelSlug}"...`,
           status: 'loading',
         });
 
-        try {
-          const kickStatus = await checkKickLivestream(channelSlug);
-          const displayName = kickStatus.username || channelSlug;
-          const profileImage = kickStatus.profileImageUrl;
-
-          addActivityLog({
-            streamerId: 'system',
-            streamerName: 'System',
-            platform: 'Kick',
-            message: kickStatus.isLive ? `Found ${displayName} - Currently LIVE!` : `Found ${displayName}`,
-            status: 'success',
-          });
-
-          await confirmAddStreamer(channelSlug, displayName, profileImage, 'kick');
-        } catch (error) {
-          console.error('[LiveClip] Failed to fetch Kick channel info', error);
-          await confirmAddStreamer(channelSlug, channelSlug, undefined, 'kick');
-        }
+        // Add immediately with basic info, fetch metadata in background
+        await confirmAddStreamer(channelSlug, channelSlug, undefined, 'kick');
         return;
       }
     }
 
+    // Handle PumpFun mint ID
     const mintId = extractMintId(inputValue.value);
-
     if (mintId) {
       addActivityLog({
         streamerId: 'system',
         streamerName: 'System',
         platform: 'PumpFun',
-        message: `Fetching metadata for ${mintId.slice(0, 8)}...`,
+        message: `Adding token ${mintId.slice(0, 8)}...`,
         status: 'loading',
       });
 
-      let displayName = extractIdentifier(inputValue.value);
-      let profileImage = undefined;
-
-      try {
-        let match: TokenSearchResult | null = null;
-        const results = await searchPumpFunTokens(mintId);
-        if (results && results.length > 0) {
-          match = results.find((r) => r.mint === mintId) || results[0];
-        }
-
-        if (!match || !match.image) {
-          const serverMeta = await fetchTokenMetadataFromServer(mintId);
-          if (serverMeta) {
-            match = serverMeta;
-          }
-        }
-
-        if (match) {
-          displayName = match.symbol;
-          profileImage = match.image;
-          addActivityLog({
-            streamerId: 'system',
-            streamerName: 'System',
-            platform: 'PumpFun',
-            message: `Identified as ${match.name} (${match.symbol})`,
-            status: 'success',
-          });
-        }
-      } catch (e) {
-        // Ignore errors, fallback to basic ID
-      }
-
-      await confirmAddStreamer(mintId, displayName, profileImage, 'pumpfun');
+      const displayName = extractIdentifier(inputValue.value);
+      // Add immediately with basic info, fetch metadata in background
+      await confirmAddStreamer(mintId, displayName, undefined, 'pumpfun');
       return;
     }
 
@@ -1164,22 +1145,32 @@
     profileImageUrl?: string,
     platform: string = 'pumpfun'
   ) {
-    const platformDisplay = platform === 'kick' ? 'Kick' : 'PumpFun';
+    const platformDisplay = platform === 'kick' ? 'Kick' : platform === 'twitch' ? 'Twitch' : 'PumpFun';
     try {
+      // Check if streamer already exists
+      const existingStreamer = streamers.value.find(s => s.mintId === platformId && s.platform === platformDisplay);
+      if (existingStreamer) {
+        addActivityLog({
+          streamerId: platformId,
+          streamerName: displayName,
+          platform: platformDisplay,
+          message: `${displayName} is already being tracked.`,
+          status: 'info',
+          mintId: platformId,
+          profileImageUrl,
+        });
+        inputValue.value = '';
+        detectedPlatform.value = null;
+        showSearchDialog.value = false;
+        return;
+      }
+
       const newStreamerId = await createMonitoredStreamer(platformId, displayName, profileImageUrl, 5, false, platform);
       
       // Reload streamers from database
       await loadStreamers();
       
-      // Find the newly added streamer
-      const newStreamer = streamers.value.find(s => s.id === newStreamerId);
-      
-      if (newStreamer) {
-        // Only refresh metadata and check live status for the new streamer
-        await refreshSingleStreamerMetadata(newStreamer);
-        await checkSingleLiveStatus(newStreamer);
-      }
-      
+      // Clear input immediately
       inputValue.value = '';
       detectedPlatform.value = null;
       showSearchDialog.value = false;
@@ -1193,16 +1184,39 @@
         mintId: platformId,
         profileImageUrl,
       });
-    } catch (error) {
+      
+      // Find the newly added streamer and fetch metadata in background (non-blocking)
+      const newStreamer = streamers.value.find(s => s.id === newStreamerId);
+      if (newStreamer) {
+        // Fire and forget - don't await these operations
+        Promise.allSettled([
+          refreshSingleStreamerMetadata(newStreamer),
+          checkSingleLiveStatus(newStreamer)
+        ]).then(() => {
+          console.log('[LiveClip] Background metadata fetch completed for', platformId);
+        });
+      }
+    } catch (error: any) {
       console.error('[LiveClip] Failed to add streamer', error);
+      
+      // Check if it's a duplicate error
+      const isDuplicate = error?.message?.includes('UNIQUE constraint') || error?.toString()?.includes('UNIQUE constraint');
+      
       addActivityLog({
         streamerId: platformId,
         streamerName: displayName,
         platform: platformDisplay,
-        message: 'Failed to add streamer. Ensure it is not already tracked.',
+        message: isDuplicate 
+          ? `${displayName} is already being tracked.`
+          : 'Failed to add streamer. Please try again.',
         status: 'info',
         mintId: platformId,
       });
+      
+      // Clear input on error
+      inputValue.value = '';
+      detectedPlatform.value = null;
+      showSearchDialog.value = false;
     }
   }
 

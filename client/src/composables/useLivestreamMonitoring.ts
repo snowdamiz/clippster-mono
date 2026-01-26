@@ -27,6 +27,12 @@ import {
   stopKickRecording,
   type KickLiveStatus,
 } from '@/services/kick';
+import {
+  checkTwitchLivestream,
+  startTwitchRecording,
+  stopTwitchRecording,
+  type TwitchLiveStatus,
+} from '@/services/twitch';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useCreditBalance } from './useCreditBalance';
 import { useDvrRecording } from './useDvrRecording';
@@ -141,6 +147,25 @@ async function fetchKickLiveStatus(channelSlug: string): Promise<LiveStatus> {
   }
 }
 
+async function fetchTwitchLiveStatus(channelName: string): Promise<LiveStatus> {
+  try {
+    const twitchStatus: TwitchLiveStatus = await checkTwitchLivestream(channelName);
+    return {
+      isLive: twitchStatus.isLive,
+      streamId: twitchStatus.channelId,
+      streamStartTimestamp: twitchStatus.startedAt
+        ? new Date(twitchStatus.startedAt).getTime()
+        : undefined,
+      numParticipants: twitchStatus.viewerCount,
+      profileImageUrl: twitchStatus.profileImageUrl,
+      raw: twitchStatus,
+    };
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to check Twitch live status', error);
+    return { isLive: false };
+  }
+}
+
 async function fetchLiveStatus(
   platformId: string,
   platform: SupportedLivestreamPlatform = 'PumpFun'
@@ -148,6 +173,8 @@ async function fetchLiveStatus(
   switch (platform) {
     case 'Kick':
       return fetchKickLiveStatus(platformId);
+    case 'Twitch':
+      return fetchTwitchLiveStatus(platformId);
     case 'PumpFun':
     default:
       return fetchPumpFunLiveStatus(platformId);
