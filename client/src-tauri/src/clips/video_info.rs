@@ -72,20 +72,15 @@ pub async fn get_video_info(app: &tauri::AppHandle, video_path: &str) -> Result<
         }
     }
     
-    // Not in cache, fetch metadata by just opening the file (no decoding)
-    // FFmpeg prints stream info to stderr when opening a file, then exits
-    // This only reads the container header (moov atom for MP4), not video frames
-    println!("[Rust] Fetching video info from container header for: {}", video_path);
+    // Not in cache, fetch from ffmpeg
+    println!("[Rust] Fetching video info from ffmpeg for: {}", video_path);
     let shell = app.shell();
-    
-    // Use -i alone - FFmpeg will print metadata and exit with error (no output specified)
-    // This is much faster than -f null which tries to decode frames
     let output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
-            "-nostdin",
-            "-hide_banner",
             "-i", video_path,
+            "-f", "null",
+            "-",
         ])
         .output()
         .await

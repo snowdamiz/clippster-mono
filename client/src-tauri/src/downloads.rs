@@ -221,6 +221,7 @@ async fn run_full_download_with_encoder(
     // Build args based on whether we're copying or encoding
     let args: Vec<&str> = if use_copy_codec {
         vec![
+            "-ss", "0.1",
             "-i", video_url,
             "-c:v", "copy",
             "-c:a", "aac",
@@ -236,6 +237,7 @@ async fn run_full_download_with_encoder(
         ]
     } else {
         vec![
+            "-ss", "0.1",
             "-i", video_url,
             "-c:v", encoder,
             "-preset", preset,

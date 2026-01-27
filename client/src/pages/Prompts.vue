@@ -60,10 +60,7 @@
   }
 
   function isDefaultPrompt(prompt: Prompt): boolean {
-    return prompt.name === 'Default Clip Detector' || 
-           prompt.name === 'Gaming Stream Clip Detector' || 
-           prompt.name === 'Gambling Stream Clip Detector' ||
-           prompt.name === 'Breaking News & Trending Viral';
+    return prompt.name === 'Default Clip Detector';
   }
 
   async function loadPrompts() {
@@ -91,8 +88,9 @@
   }
 
   function editPrompt(prompt: Prompt) {
-    // Allow viewing all prompts, system prompts will be read-only in the dialog
-    openEditPromptDialog(prompt);
+    if (!isDefaultPrompt(prompt)) {
+      openEditPromptDialog(prompt);
+    }
   }
 
   function confirmDelete(prompt: Prompt) {
@@ -182,9 +180,10 @@
             <div
               v-for="prompt in prompts"
               :key="prompt.id"
-              class="prompts-card prompts-card--clickable"
+              class="prompts-card"
               :class="{
                 'prompts-card--system': isDefaultPrompt(prompt),
+                'prompts-card--clickable': !isDefaultPrompt(prompt),
               }"
               @click="editPrompt(prompt)"
             >

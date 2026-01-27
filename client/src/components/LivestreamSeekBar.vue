@@ -60,6 +60,23 @@
         {{ formatTime(isDragging ? currentTime : hoverTime) }}
       </div>
     </div>
+
+    <!-- Time Display Row -->
+    <div class="flex items-center justify-between mt-1 text-xs text-zinc-400">
+      <span>{{ formatTime(currentTime) }}</span>
+      <div class="flex items-center gap-2">
+        <!-- Go Live Button -->
+        <button
+          v-if="!isAtLiveEdge && duration > 0"
+          @click.stop="$emit('seek-to-live')"
+          class="flex items-center gap-1 px-2 py-0.5 bg-red-600/80 hover:bg-red-500 text-white text-xs font-medium rounded transition-colors"
+        >
+          <div class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+          LIVE
+        </button>
+        <span>{{ formatTime(duration) }}</span>
+      </div>
+    </div>
   </div>
 </template>
 

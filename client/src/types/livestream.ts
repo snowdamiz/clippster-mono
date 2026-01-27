@@ -38,16 +38,18 @@ export interface LiveSession {
   totalSegments: number;
   processedSegments: number;
   isRecording: boolean;
-  projectId: string;
+  projectId: string | undefined;
   // Display info for logs
   displayName: string;
   platform: SupportedLivestreamPlatform;
   profileImageUrl?: string;
+  streamThumbnailUrl?: string;
   detectClips?: boolean;
   isStopping?: boolean;
   segmentDurationMinutes?: number;
   promptId?: string;
   promptContent?: string;
+  offlineSince?: number;
 }
 
 export interface SegmentEventPayload {

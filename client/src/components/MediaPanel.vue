@@ -96,7 +96,6 @@
       @scroll-to-timeline="onScrollToTimeline"
       @refresh-clips="refreshClips"
       @edit-clip="onEditClip"
-      @adjust-clip="onAdjustClip"
       @add-clip="handleAddClip"
     />
   </div>
@@ -359,10 +358,6 @@
 
   function onEditClip(clipId: string) {
     emit('editClip', clipId);
-  }
-
-  function onAdjustClip(clipId: string) {
-    emit('adjustClip', clipId);
   }
 
   // Event listener for fallback refresh mechanism

@@ -117,7 +117,7 @@
   let resizeObserver: ResizeObserver | null = null;
 
   // Render waveform on canvas
-  async function renderWaveformOnCanvas(): Promise<void> {
+  function renderWaveformOnCanvas(): void {
     if (!waveformCanvas.value || !props.videoSrc || !isLoaded.value) {
       return;
     }
@@ -135,14 +135,14 @@
 
       // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
       const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
-      const peaks = await waveformService.getPeaksForRange(props.videoSrc, {
+      const peaks = waveformService.getPeaksForRange(props.videoSrc, {
         startTime: 0,
         endTime: props.duration,
         pixelWidth: Math.floor(rect.width),
         gainMultiplier,
       });
 
-      if (!peaks || peaks.length === 0) {
+      if (peaks.length === 0) {
         return;
       }
 

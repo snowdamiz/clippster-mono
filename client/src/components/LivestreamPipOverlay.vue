@@ -8,11 +8,7 @@
       @mousedown="startDrag"
     >
       <!-- Video Container -->
-      <div 
-        class="relative w-full h-full"
-        @mousemove="handleMouseMove"
-        @mouseleave="handleMouseLeave"
-      >
+      <div class="relative w-full h-full">
         <video
           ref="videoRef"
           class="w-full h-full object-contain bg-black"
@@ -21,42 +17,31 @@
           :muted="isMuted"
         />
 
-        <!-- LIVE Badge and Streamer Name (auto-hide) -->
-        <Transition name="fade">
-          <div
-            v-if="showControls"
-            class="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none"
-          >
-            <div class="flex items-center gap-2 bg-red-600 px-2 py-1 rounded text-white text-xs font-bold">
-              LIVE
+        <!-- Controls Overlay (show on hover) -->
+        <div
+          class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 opacity-0 hover:opacity-100 transition-opacity duration-200 flex flex-col justify-between p-2"
+          @mousedown.stop
+        >
+          <!-- Top Bar -->
+          <div class="flex items-center justify-between">
+            <!-- Drag Handle -->
+            <div class="flex items-center gap-1 text-white/60 text-xs cursor-move" @mousedown="startDrag">
+              <GripVertical class="w-3 h-3" />
+              <span>LIVE</span>
             </div>
-            <div v-if="streamerName" class="bg-black/70 px-2 py-1 rounded text-white text-xs font-medium">
-              {{ streamerName }}
-            </div>
-          </div>
-        </Transition>
 
-        <!-- Controls Overlay (auto-hide) -->
-        <Transition name="fade">
-          <div
-            v-if="showControls"
-            class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-between p-2 pointer-events-none"
-            @mousedown.stop
-          >
-            <!-- Top Bar -->
-            <div class="flex items-center justify-end pointer-events-auto">
-              <!-- Close Button -->
-              <button
-                @click="handleClose"
-                class="p-1 rounded bg-black/50 hover:bg-red-600/80 text-white transition-colors"
-                title="Close PIP"
-              >
-                <X class="w-3 h-3" />
-              </button>
-            </div>
+            <!-- Close Button -->
+            <button
+              @click="handleClose"
+              class="p-1 rounded bg-black/50 hover:bg-red-600/80 text-white transition-colors"
+              title="Close PIP"
+            >
+              <X class="w-3 h-3" />
+            </button>
+          </div>
 
           <!-- Bottom Controls -->
-          <div class="flex items-center justify-between gap-2 pointer-events-auto">
+          <div class="flex items-center justify-between gap-2">
             <!-- Left: Play/Pause + Volume -->
             <div class="flex items-center gap-1">
               <!-- Play/Pause -->
@@ -103,7 +88,6 @@
             </button>
           </div>
         </div>
-        </Transition>
 
         <!-- Resize Handle -->
         <div
@@ -127,7 +111,6 @@ interface Props {
   isPlaying?: boolean;
   volume?: number;
   isMuted?: boolean;
-  streamerName?: string;
 }
 
 interface Emits {
@@ -145,7 +128,6 @@ const props = withDefaults(defineProps<Props>(), {
   isPlaying: false,
   volume: 1,
   isMuted: false,
-  streamerName: '',
 });
 
 const emit = defineEmits<Emits>();
@@ -156,11 +138,6 @@ const videoRef = ref<HTMLVideoElement | null>(null);
 // Position and size state
 const position = ref({ x: window.innerWidth - 340, y: window.innerHeight - 230 });
 const size = ref({ width: 320, height: 180 });
-
-// Controls visibility with auto-hide
-const showControls = ref(true);
-let controlsTimeout: number | null = null;
-const CONTROLS_HIDE_DELAY = 2000; // 2 seconds
 
 // Drag state
 const isDragging = ref(false);
@@ -332,30 +309,6 @@ function stopResize() {
   document.removeEventListener('mouseup', stopResize);
 }
 
-// Controls auto-hide
-function showControlsTemporarily() {
-  showControls.value = true;
-  
-  if (controlsTimeout) {
-    clearTimeout(controlsTimeout);
-  }
-  
-  controlsTimeout = window.setTimeout(() => {
-    showControls.value = false;
-  }, CONTROLS_HIDE_DELAY);
-}
-
-function handleMouseMove() {
-  showControlsTemporarily();
-}
-
-function handleMouseLeave() {
-  if (controlsTimeout) {
-    clearTimeout(controlsTimeout);
-  }
-  showControls.value = false;
-}
-
 // Keyboard shortcut for clip
 function handleKeydown(event: KeyboardEvent) {
   if (event.key.toLowerCase() === 'c' && props.modelValue) {
@@ -374,24 +327,10 @@ onUnmounted(() => {
   document.removeEventListener('mouseup', stopDrag);
   document.removeEventListener('mousemove', onResize);
   document.removeEventListener('mouseup', stopResize);
-  
-  if (controlsTimeout) {
-    clearTimeout(controlsTimeout);
-  }
 });
 </script>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
 input[type='range'] {
   -webkit-appearance: none;
   appearance: none;

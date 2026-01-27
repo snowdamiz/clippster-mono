@@ -57,20 +57,6 @@
           </button>
         </div>
 
-        <!-- Fix Stream Info Button -->
-        <button 
-          v-if="hasVideosWithoutDuration" 
-          @click="fixVideoMetadata" 
-          :disabled="fixingMetadata"
-          class="projects-create-btn" 
-          :style="{ marginRight: '0.5rem', background: fixingMetadata ? '#9ca3af' : '#f59e0b', cursor: fixingMetadata ? 'not-allowed' : 'pointer' }" 
-          title="Extract metadata for videos with missing information"
-        >
-          <Loader2 v-if="fixingMetadata" class="projects-create-btn__icon" style="animation: spin 1s linear infinite;" />
-          <Clock v-else class="projects-create-btn__icon" />
-          {{ fixingMetadata ? 'Processing...' : 'Fix Stream Info' }}
-        </button>
-
         <!-- New Project Button -->
         <button @click="openCreateDialog" class="projects-create-btn">
           <Plus class="projects-create-btn__icon" />
@@ -146,17 +132,7 @@
 
         <!-- Active Downloads Section -->
         <div v-if="getActiveDownloads().length > 0 || getQueuedDownloads().length > 0" class="projects__section">
-          <div class="projects__section-header-row">
-            <h3 class="projects__section-header">Active Downloads</h3>
-            <button
-              class="projects__cancel-all-btn"
-              @click="handleCancelAllDownloads"
-              title="Cancel all downloads"
-            >
-              <XCircle :size="16" />
-              Cancel All
-            </button>
-          </div>
+          <h3 class="projects__section-header">Active Downloads</h3>
           <div class="projects__grid projects__grid--downloads">
             <DownloadCard
               v-for="download in [...getActiveDownloads(), ...getQueuedDownloads()]"
@@ -172,15 +148,12 @@
             <!-- Date Header -->
             <h3 class="projects__section-header">{{ group.dateLabel }}</h3>
 
-            <div class="projects__grid" :class="{ 'projects__grid--list': viewMode === 'list' }">
+            <div class="projects__grid">
               <div
                 v-for="project in group.projects"
                 :key="project.id"
                 class="project-card"
-                :class="{ 
-                  'project-card--selected': isProjectSelected(project.id),
-                  'project-card--list': viewMode === 'list'
-                }"
+                :class="{ 'project-card--selected': isProjectSelected(project.id) }"
                 @click="handleProjectClick(project)"
               >
                 <!-- Selection Checkbox (visible on hover or when selected) -->
@@ -305,12 +278,6 @@
 
                     <!-- Time -->
                     <span class="project-card__meta-text">{{ getRelativeTime(project.updated_at) }}</span>
-
-                    <!-- Duration -->
-                    <template v-if="getProjectDuration(project.id)">
-                      <span class="project-card__dot"></span>
-                      <span class="project-card__meta-text">{{ getProjectDuration(project.id) }}</span>
-                    </template>
 
                     <span class="project-card__dot"></span>
 
@@ -1205,7 +1172,6 @@
     List,
     FolderOpen,
     X,
-    XCircle,
     Search,
     Clock,
     Monitor,
@@ -1318,13 +1284,10 @@
   const inEditorStore = useInEditorClips();
   inEditorStore.hydrate();
   const { processVideoFile } = useVideoOperations();
-  const fixingMetadata = ref(false);
-  const hasVideosWithoutDuration = ref(false);
   const {
     getActiveDownloads,
     getQueuedDownloads,
     getCompletedDownloads,
-    cancelAllDownloads,
     initialize: initializeDownloads,
   } = useDownloads();
 
@@ -1591,108 +1554,14 @@
   }
 
   function getProjectDuration(projectId: string): string | null {
-    let totalDuration = 0;
-
-    // Check direct videos on this project
     const videos = projectVideos.value[projectId];
     if (videos && videos.length > 0) {
-      totalDuration += videos.reduce((acc, v) => acc + (v.duration || 0), 0);
-    }
-
-    // Also check children if this is a folder project
-    const children = childrenMap.value.get(projectId);
-    if (children && children.length > 0) {
-      for (const child of children) {
-        const childVideos = projectVideos.value[child.id];
-        if (childVideos && childVideos.length > 0) {
-          totalDuration += childVideos.reduce((acc, v) => acc + (v.duration || 0), 0);
-        }
+      const duration = videos.reduce((acc, v) => acc + (v.duration || 0), 0);
+      if (duration > 0) {
+        return formatDuration(duration);
       }
-    }
-
-    if (totalDuration > 0) {
-      return formatDuration(totalDuration);
     }
     return null;
-  }
-
-  // Utility function to extract metadata for videos with missing duration
-  async function fixVideoMetadata() {
-    if (fixingMetadata.value) return;
-    
-    fixingMetadata.value = true;
-    try {
-      const { getAllRawVideos, updateRawVideo } = await import('@/services/database');
-      const allVideos = await getAllRawVideos();
-      
-      // Find videos with missing or zero duration
-      const videosToFix = allVideos.filter(v => !v.duration || v.duration === 0);
-      
-      if (videosToFix.length === 0) {
-        success('No videos need fixing', 'All videos have duration metadata');
-        fixingMetadata.value = false;
-        return;
-      }
-      
-      console.log(`[Projects] Fixing metadata for ${videosToFix.length} videos...`);
-      let fixed = 0;
-      let failed = 0;
-      
-      for (let i = 0; i < videosToFix.length; i++) {
-        const video = videosToFix[i];
-        console.log(`[Projects] Processing video ${i + 1}/${videosToFix.length}: ${video.original_filename}`);
-        console.log(`[Projects] Video path: ${video.file_path}`);
-        
-        try {
-          // Extract metadata using Tauri backend
-          console.log(`[Projects] Calling get_video_metadata for: ${video.file_path}`);
-          const metadata = await invoke('get_video_metadata', { 
-            videoPath: video.file_path 
-          }) as any;
-          
-          console.log(`[Projects] Received metadata:`, metadata);
-          
-          if (metadata && metadata.duration) {
-            await updateRawVideo(video.id, {
-              duration: metadata.duration,
-              width: metadata.width,
-              height: metadata.height,
-              codec: metadata.codec,
-            });
-            fixed++;
-            console.log(`[Projects] ✓ Fixed metadata for: ${video.original_filename} (${metadata.duration}s)`);
-          } else {
-            console.warn(`[Projects] ✗ No duration in metadata for: ${video.original_filename}`);
-            failed++;
-          }
-        } catch (err) {
-          console.error(`[Projects] ✗ Failed to fix metadata for ${video.original_filename}:`, err);
-          failed++;
-        }
-      }
-      
-      console.log(`[Projects] Metadata extraction complete. Fixed: ${fixed}, Failed: ${failed}`);
-      success('Metadata Updated', `Fixed ${fixed} videos${failed > 0 ? `, ${failed} failed` : ''}`);
-      
-      // Reload projects to show updated durations
-      await loadProjects();
-    } catch (err) {
-      console.error('[Projects] Error in fixVideoMetadata:', err);
-      error('Failed to fix metadata', err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      fixingMetadata.value = false;
-    }
-  }
-
-  // Check if any videos need metadata fixing
-  async function checkForVideosWithoutDuration() {
-    try {
-      const { getAllRawVideos } = await import('@/services/database');
-      const allVideos = await getAllRawVideos();
-      hasVideosWithoutDuration.value = allVideos.some(v => !v.duration || v.duration === 0);
-    } catch (err) {
-      console.warn('[Projects] Failed to check for videos without duration:', err);
-    }
   }
 
   function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null {
@@ -2061,7 +1930,7 @@
       // Load existing thumbnails in parallel (non-blocking, fast)
       loadClipThumbnailsInParallel();
 
-      // Generate missing thumbnails in background (controlled: one at a time with 500ms delay)
+      // Generate missing thumbnails in background (non-blocking, slow)
       generateMissingThumbnailsInBackground();
     } catch (e) {
       console.error('Failed to load folder clips:', e);
@@ -2094,145 +1963,72 @@
     );
   }
 
-  // Track which projects have had thumbnails generated to avoid re-generation
-  const thumbnailsGeneratedForProjects = ref(new Set<string>());
-  
-  // Cancellation flag for thumbnail generation - set to true when navigating away
-  let thumbnailGenerationCancelled = false;
-  // Flag to prevent concurrent thumbnail generation
-  let thumbnailGenerationInProgress = false;
-
   // Generate thumbnails for clips that don't have one yet (background, non-blocking)
   async function generateMissingThumbnailsInBackground() {
-    // Prevent concurrent runs
-    if (thumbnailGenerationInProgress) {
-      console.log('[Projects] Thumbnail generation already in progress, skipping');
-      return;
-    }
-    
     const clipsWithoutThumbnails = folderClips.value.filter((clip) => !clip.built_thumbnail_path);
 
     if (clipsWithoutThumbnails.length === 0) return;
 
-    // Check if we've already generated thumbnails for this project
-    const projectId = folderProject.value?.id;
-    if (projectId && thumbnailsGeneratedForProjects.value.has(projectId)) {
-      console.log('[Projects] Thumbnails already generated for this project, skipping');
-      return;
-    }
+    console.log(`[Projects] Generating thumbnails for ${clipsWithoutThumbnails.length} clips in background...`);
 
-    console.log(`[Projects] Generating thumbnails for ${clipsWithoutThumbnails.length} clips in background (one at a time)...`);
-    
-    // Reset cancellation flag and mark as in progress
-    thumbnailGenerationCancelled = false;
-    thumbnailGenerationInProgress = true;
+    // Process in parallel batches for better performance
+    const batchSize = 3;
+    for (let i = 0; i < clipsWithoutThumbnails.length; i += batchSize) {
+      const batch = clipsWithoutThumbnails.slice(i, i + batchSize);
 
-    // Process ONE at a time to prevent spawning 50+ FFmpeg processes
-    const dbUpdates: Array<{ clipId: string; thumbnailPath: string; buildStatus: 'pending' | 'building' | 'completed' | 'failed' }> = [];
+      await Promise.all(
+        batch.map(async (clip) => {
+          try {
+            const segmentId = clip.segment_id || clip.project_id;
+            if (!segmentId) return;
 
-    try {
-      // Process clips ONE AT A TIME sequentially (not in parallel)
-      for (let i = 0; i < clipsWithoutThumbnails.length; i++) {
-        // Check cancellation before each clip
-        if (thumbnailGenerationCancelled) {
-          console.log('[Projects] Thumbnail generation cancelled');
-          break;
-        }
-        
-        const clip = clipsWithoutThumbnails[i];
-        
-        try {
-          const segmentId = clip.segment_id || clip.project_id;
-          if (!segmentId) continue;
+            let videos = projectVideos.value[segmentId];
 
-          let videos = projectVideos.value[segmentId];
-
-          // Load videos on demand if not cached
-          if (!videos || videos.length === 0) {
-            try {
-              videos = await getRawVideosByProjectId(segmentId);
-              projectVideos.value[segmentId] = videos;
-            } catch {
-              continue;
-            }
-          }
-
-          if (videos && videos.length > 0) {
-            const videoPath = videos[0].file_path;
-            const startTime =
-              clip.current_version?.start_time ?? clip.current_version_start_time ?? clip.start_time ?? 0;
-
-            // Generate thumbnail at clip start time (SINGLE process)
-            const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-              videoPath: videoPath,
-              timestampSeconds: startTime,
-              outputFilename: `clip_${clip.id}`,
-            });
-
-            // Check cancellation after FFmpeg completes
-            if (thumbnailGenerationCancelled) {
-              console.log('[Projects] Thumbnail generation cancelled after FFmpeg');
-              break;
+            // Load videos on demand if not cached
+            if (!videos || videos.length === 0) {
+              try {
+                videos = await getRawVideosByProjectId(segmentId);
+                projectVideos.value[segmentId] = videos;
+              } catch {
+                return;
+              }
             }
 
-            // Load the generated thumbnail into cache
-            const dataUrl = await invoke<string>('read_file_as_data_url', {
-              filePath: thumbnailPath,
-            });
-            clipThumbnailCache.value.set(clip.id, dataUrl);
+            if (videos && videos.length > 0) {
+              const videoPath = videos[0].file_path;
+              const startTime =
+                clip.current_version?.start_time ?? clip.current_version_start_time ?? clip.start_time ?? 0;
 
-            // Update the clip's thumbnail path
-            clip.built_thumbnail_path = thumbnailPath;
+              // Generate thumbnail at clip start time
+              const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+                videoPath: videoPath,
+                timestampSeconds: startTime,
+                outputFilename: `clip_${clip.id}`,
+              });
 
-            // Queue database update instead of writing immediately
-            dbUpdates.push({
-              clipId: clip.id,
-              thumbnailPath: thumbnailPath,
-              buildStatus: (clip.build_status || 'pending') as 'pending' | 'building' | 'completed' | 'failed',
-            });
-            
-            console.log(`[Projects] Generated thumbnail ${i + 1}/${clipsWithoutThumbnails.length}`);
+              // Load the generated thumbnail into cache
+              const dataUrl = await invoke<string>('read_file_as_data_url', {
+                filePath: thumbnailPath,
+              });
+              clipThumbnailCache.value.set(clip.id, dataUrl);
+
+              // Update the clip's thumbnail path
+              clip.built_thumbnail_path = thumbnailPath;
+
+              // Persist to database (non-blocking)
+              const { updateClipBuildStatus } = await import('@/services/database');
+              await updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
+                builtThumbnailPath: thumbnailPath,
+              });
+            }
+          } catch (err) {
+            console.warn('Failed to generate clip thumbnail:', clip.id, err);
           }
-        } catch (err) {
-          console.warn('Failed to generate clip thumbnail:', clip.id, err);
-        }
-
-        // Add delay between clips to prevent system overload (500ms)
-        if (i < clipsWithoutThumbnails.length - 1 && !thumbnailGenerationCancelled) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-      }
-    } finally {
-      thumbnailGenerationInProgress = false;
+        })
+      );
     }
 
-    // Batch write all database updates at once (only if not cancelled)
-    if (dbUpdates.length > 0 && !thumbnailGenerationCancelled) {
-      console.log(`[Projects] Writing ${dbUpdates.length} thumbnail updates to database...`);
-      const { updateClipBuildStatus } = await import('@/services/database');
-      
-      // Write sequentially to avoid overwhelming the database
-      for (const update of dbUpdates) {
-        await updateClipBuildStatus(update.clipId, update.buildStatus, {
-          builtThumbnailPath: update.thumbnailPath,
-        });
-      }
-    }
-
-    // Mark this project as having thumbnails generated (even if cancelled partway)
-    if (projectId && dbUpdates.length > 0) {
-      thumbnailsGeneratedForProjects.value.add(projectId);
-    }
-
-    console.log(`[Projects] Background thumbnail generation complete (${dbUpdates.length} generated)`);
-  }
-  
-  // Cancel any running thumbnail generation
-  function cancelThumbnailGeneration() {
-    if (thumbnailGenerationInProgress) {
-      console.log('[Projects] Cancelling thumbnail generation...');
-      thumbnailGenerationCancelled = true;
-    }
+    console.log('[Projects] Background thumbnail generation complete');
   }
 
   // Handle clip build progress events (for folder dialog builds)
@@ -2396,9 +2192,6 @@
   const inlineProgressBarRef = ref<HTMLElement | null>(null);
   const inlineHoverTime = ref<number | null>(null);
   const inlineHoverPosition = ref(0);
-  // Segmented playback state for stitched clips
-  const inlineVideoSegments = ref<Array<{ start_time: number; end_time: number; duration: number }>>([]);
-  const inlineCurrentSegmentIndex = ref(0);
 
   // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
   let inlineHlsInstance: Hls | null = null;
@@ -2820,51 +2613,22 @@
     inlineVideoClipDuration.value = 0;
   }
 
-  // Get clip segments for stitched clips, or single segment for continuous clips
-  function getClipSegments(): Array<{ start_time: number; end_time: number; duration: number }> {
-    if (!clipToPreview.value) return [];
-    
-    // Check if clip has multiple segments (stitched clip)
-    if (clipToPreview.value.current_version_segments && clipToPreview.value.current_version_segments.length > 0) {
-      return clipToPreview.value.current_version_segments.map(seg => ({
-        start_time: seg.start_time,
-        end_time: seg.end_time,
-        duration: seg.duration || (seg.end_time - seg.start_time)
-      }));
-    }
-    
-    // Fallback: single continuous segment
-    const startTime = clipToPreview.value?.current_version?.start_time ?? clipToPreview.value?.start_time ?? 0;
-    const endTime = clipToPreview.value?.current_version?.end_time ?? clipToPreview.value?.end_time ?? 0;
-    return [{ start_time: startTime, end_time: endTime, duration: endTime - startTime }];
-  }
-
-  // Get clip start and end times (for backward compatibility)
+  // Get clip start and end times
   function getClipStartTime(): number {
-    const segments = getClipSegments();
-    return segments.length > 0 ? segments[0].start_time : 0;
+    return clipToPreview.value?.current_version?.start_time ?? clipToPreview.value?.start_time ?? 0;
   }
 
   function getClipEndTime(): number {
-    const segments = getClipSegments();
-    return segments.length > 0 ? segments[segments.length - 1].end_time : 0;
+    return clipToPreview.value?.current_version?.end_time ?? clipToPreview.value?.end_time ?? 0;
   }
 
   // Handle inline video loaded - seek to clip start time
   function onInlineVideoLoaded() {
     if (inlineVideoRef.value && clipToPreview.value) {
-      // Load segments for this clip
-      inlineVideoSegments.value = getClipSegments();
-      inlineCurrentSegmentIndex.value = 0;
-      
-      // Calculate total duration (sum of all segments)
-      inlineVideoClipDuration.value = inlineVideoSegments.value.reduce((total, seg) => total + seg.duration, 0);
-      
-      // Seek to first segment start
-      if (inlineVideoSegments.value.length > 0) {
-        inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
-      }
-      
+      const startTime = getClipStartTime();
+      const endTime = getClipEndTime();
+      inlineVideoClipDuration.value = endTime - startTime;
+      inlineVideoRef.value.currentTime = startTime;
       inlineVideoCurrentTime.value = 0;
       inlineVideoProgress.value = 0;
       // Don't auto-play - let user start playback manually
@@ -2872,52 +2636,31 @@
     }
   }
 
-  // Handle inline video time update - handle segmented playback
+  // Handle inline video time update - loop within clip bounds
   function onInlineVideoTimeUpdate() {
-    if (inlineVideoRef.value && clipToPreview.value && !inlineSeekDragging.value && inlineVideoSegments.value.length > 0) {
-      const currentSegment = inlineVideoSegments.value[inlineCurrentSegmentIndex.value];
-      if (!currentSegment) return;
-      
+    if (inlineVideoRef.value && clipToPreview.value && !inlineSeekDragging.value) {
+      const startTime = getClipStartTime();
+      const endTime = getClipEndTime();
       const currentTime = inlineVideoRef.value.currentTime;
-      
-      // Check if we've reached the end of current segment
-      if (currentTime >= currentSegment.end_time - 0.1) {
-        // Move to next segment
-        inlineCurrentSegmentIndex.value++;
-        
-        if (inlineCurrentSegmentIndex.value >= inlineVideoSegments.value.length) {
-          // All segments played, loop back to first segment
-          inlineCurrentSegmentIndex.value = 0;
-          inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
-          inlineVideoCurrentTime.value = 0;
-          inlineVideoProgress.value = 0;
-          return;
-        } else {
-          // Jump to next segment
-          const nextSegment = inlineVideoSegments.value[inlineCurrentSegmentIndex.value];
-          inlineVideoRef.value.currentTime = nextSegment.start_time;
-        }
+
+      // Loop back if past end time
+      if (currentTime >= endTime) {
+        inlineVideoRef.value.currentTime = startTime;
+        return;
       }
-      
-      // Calculate elapsed time across all played segments
-      let elapsedTime = 0;
-      for (let i = 0; i < inlineCurrentSegmentIndex.value; i++) {
-        elapsedTime += inlineVideoSegments.value[i].duration;
-      }
-      // Add time within current segment
-      elapsedTime += Math.max(0, currentTime - currentSegment.start_time);
-      
-      inlineVideoCurrentTime.value = elapsedTime;
+
+      // Update relative time display (relative to clip start)
+      inlineVideoCurrentTime.value = Math.max(0, currentTime - startTime);
       inlineVideoProgress.value =
-        inlineVideoClipDuration.value > 0 ? (elapsedTime / inlineVideoClipDuration.value) * 100 : 0;
+        inlineVideoClipDuration.value > 0 ? (inlineVideoCurrentTime.value / inlineVideoClipDuration.value) * 100 : 0;
     }
   }
 
   // Handle inline video ended - loop back to start
   function onInlineVideoEnded() {
-    if (inlineVideoRef.value && clipToPreview.value && inlineVideoSegments.value.length > 0) {
-      inlineCurrentSegmentIndex.value = 0;
-      inlineVideoRef.value.currentTime = inlineVideoSegments.value[0].start_time;
+    if (inlineVideoRef.value && clipToPreview.value) {
+      const startTime = getClipStartTime();
+      inlineVideoRef.value.currentTime = startTime;
       inlineVideoRef.value.play();
     }
   }
@@ -2961,33 +2704,14 @@
     return Math.max(0, Math.min(100, (x / rect.width) * 100));
   }
 
-  // Seek to specific time in clip (handles segmented clips)
-  function seekInlineVideo(percent: number) {
-    if (!inlineVideoRef.value || !clipToPreview.value || inlineVideoSegments.value.length === 0) return;
-    
-    // Calculate target elapsed time
-    const targetElapsedTime = (percent / 100) * inlineVideoClipDuration.value;
-    
-    // Find which segment this time falls into
-    let accumulatedTime = 0;
-    for (let i = 0; i < inlineVideoSegments.value.length; i++) {
-      const segment = inlineVideoSegments.value[i];
-      if (accumulatedTime + segment.duration >= targetElapsedTime) {
-        // Target time is in this segment
-        const timeIntoSegment = targetElapsedTime - accumulatedTime;
-        inlineCurrentSegmentIndex.value = i;
-        inlineVideoRef.value.currentTime = segment.start_time + timeIntoSegment;
-        inlineVideoCurrentTime.value = targetElapsedTime;
-        inlineVideoProgress.value = percent;
-        return;
-      }
-      accumulatedTime += segment.duration;
-    }
-    
-    // Fallback: seek to last segment
-    const lastSegment = inlineVideoSegments.value[inlineVideoSegments.value.length - 1];
-    inlineCurrentSegmentIndex.value = inlineVideoSegments.value.length - 1;
-    inlineVideoRef.value.currentTime = lastSegment.start_time;
+  // Seek video to a specific percent
+  function seekInlineVideoToPercent(percent: number) {
+    if (!inlineVideoRef.value || !clipToPreview.value) return;
+    const startTime = getClipStartTime();
+    const newTime = startTime + (percent / 100) * inlineVideoClipDuration.value;
+    inlineVideoRef.value.currentTime = newTime;
+    inlineVideoCurrentTime.value = (percent / 100) * inlineVideoClipDuration.value;
+    inlineVideoProgress.value = percent;
   }
 
   // Start drag seeking
@@ -2996,7 +2720,7 @@
 
     inlineSeekDragging.value = true;
     const percent = getInlinePercentFromEvent(event);
-    seekInlineVideo(percent);
+    seekInlineVideoToPercent(percent);
 
     // Add document-level listeners for drag
     document.addEventListener('mousemove', onInlineSeekDrag);
@@ -3009,7 +2733,7 @@
   function onInlineSeekDrag(event: MouseEvent) {
     if (!inlineSeekDragging.value) return;
     const percent = getInlinePercentFromEvent(event);
-    seekInlineVideo(percent);
+    seekInlineVideoToPercent(percent);
   }
 
   // Stop drag seeking
@@ -3089,9 +2813,6 @@
     if (segmentProject) {
       // Open workspace with the segment project and the clip pre-selected
       openWorkspace(segmentProject, clipId);
-    } else if (folderProject.value && clip.project_id === folderProject.value.id) {
-      // Standalone project (no children) - open the folder project itself
-      openWorkspace(folderProject.value, clipId);
     }
   }
 
@@ -3984,11 +3705,6 @@
       clearFolderChildSelection();
       closeFolderDownloadDropdown();
       closeClipPreview();
-      cancelThumbnailGeneration(); // Stop any running thumbnail generation
-      // Clear project from generated set so thumbnails can regenerate on next visit
-      if (folderProject.value?.id) {
-        thumbnailsGeneratedForProjects.value.delete(folderProject.value.id);
-      }
     }
   });
 
@@ -4020,29 +3736,11 @@
     showDialog.value = true;
   }
 
-  // Cancel all active downloads
-  async function handleCancelAllDownloads() {
-    try {
-      await cancelAllDownloads();
-      success('Downloads cancelled', 'All active downloads have been cancelled');
-    } catch (err) {
-      console.error('[Projects] Failed to cancel all downloads:', err);
-      error('Failed to cancel downloads', 'Could not cancel all downloads');
-    }
-  }
-
   async function handleProjectSubmit(data: ProjectFormData) {
     try {
       if (selectedProject.value) {
         // Update existing project
-        await updateProject(
-          selectedProject.value.id,
-          data.name,
-          data.description || undefined,
-          undefined,
-          undefined,
-          data.creatorProfileId
-        );
+        await updateProject(selectedProject.value.id, data.name, data.description || undefined);
 
         // Add newly selected videos if any
         if (data.selectedVideoPaths && data.selectedVideoPaths.length > 0) {
@@ -4179,6 +3877,22 @@
   // Helper function to delete a project and its associated video files from the filesystem
   // Uses enhanced deletion that respects in-editor and built clip retention
   async function deleteProjectWithFiles(projectId: string): Promise<void> {
+    // Get all raw videos for this project
+    const videos = await getRawVideosByProjectId(projectId);
+
+    // Delete each video file from the filesystem
+    for (const video of videos) {
+      try {
+        await invoke('delete_video_file', {
+          filePath: video.file_path,
+          thumbnailPath: video.thumbnail_path || null,
+        });
+      } catch (err) {
+        console.warn(`Failed to delete video file: ${video.file_path}`, err);
+        // Continue deleting other files even if one fails
+      }
+    }
+
     // Get in-editor clip IDs to preserve them during deletion
     const inEditorClipIds = new Set(inEditorStore.entries.map((e) => e.clipId));
 
@@ -4188,37 +3902,6 @@
     console.log(
       `[Projects] Project ${projectId} deleted. Clips deleted: ${deletedClipIds.length}, retained: ${retainedClipIds.length}`
     );
-
-    // Get all raw videos for this project
-    const videos = await getRawVideosByProjectId(projectId);
-
-    // If there are retained clips (built or in-editor), preserve audio/waveform caches
-    // These caches are needed for waveform display and editing
-    const hasRetainedClips = retainedClipIds.length > 0;
-
-    for (const video of videos) {
-      try {
-        if (hasRetainedClips) {
-          // Only delete video file and thumbnail, preserve audio/waveform caches
-          // Retained clips (built or in-editor) still need these caches
-          await invoke('delete_video_file', {
-            filePath: video.file_path,
-            thumbnailPath: video.thumbnail_path || null,
-          });
-          console.log(`[Projects] Deleted video/thumbnail only (preserving caches for ${retainedClipIds.length} retained clips): ${video.file_path}`);
-        } else {
-          // No retained clips, safe to delete everything
-          await invoke('delete_raw_video_files', {
-            filePath: video.file_path,
-            thumbnailPath: video.thumbnail_path || null,
-          });
-          console.log(`[Projects] Comprehensive cleanup completed for: ${video.file_path}`);
-        }
-      } catch (err) {
-        console.warn(`[Projects] Failed to delete video files for: ${video.file_path}`, err);
-        // Continue deleting other files even if one fails
-      }
-    }
   }
 
   async function deleteProjectConfirmed() {
@@ -4672,9 +4355,6 @@
 
     await loadProjects();
     await loadFolderPrompts();
-    
-    // Check if any videos need metadata fixing
-    await checkForVideosWithoutDuration();
 
     // Add event listener for clip refresh events
     document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
@@ -5098,44 +4778,12 @@
     gap: 1rem;
   }
 
-  .projects__section-header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-  }
-
   .projects__section-header {
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--sidebar-text-muted);
     margin: 0;
     padding-bottom: 0.1rem;
-  }
-
-  .projects__cancel-all-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .projects__cancel-all-btn:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border-color: var(--border-hover);
-  }
-
-  .projects__cancel-all-btn:active {
-    transform: scale(0.98);
   }
 
   /* ===== Projects Grid ===== */
@@ -5175,11 +4823,6 @@
     }
   }
 
-  /* List View Override */
-  .projects__grid--list {
-    grid-template-columns: 1fr !important;
-  }
-
   /* ===== Project Card ===== */
   .project-card {
     position: relative;
@@ -5209,140 +4852,6 @@
 
   .project-card--skeleton {
     pointer-events: none;
-  }
-
-  /* List View Card */
-  .project-card--list {
-    aspect-ratio: unset !important;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    min-height: 96px;
-    padding: 0.75rem;
-    gap: 1rem;
-    background-color: rgba(255, 255, 255, 0.02);
-    border-radius: 8px;
-  }
-
-  .project-card--list:hover {
-    transform: translateY(-1px);
-    background-color: rgba(255, 255, 255, 0.04);
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .project-card--list .project-card__thumbnail,
-  .project-card--list .project-card__thumbnail--empty {
-    position: relative;
-    width: 140px;
-    min-width: 140px;
-    height: 80px;
-    border-radius: 6px;
-    overflow: hidden;
-  }
-
-  .project-card--list .project-card__vignette {
-    display: none;
-  }
-
-  .project-card--list .project-card__bottom {
-    position: relative;
-    background: transparent;
-    padding: 0;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.375rem;
-    min-width: 0;
-  }
-
-  .project-card--list .project-card__title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.95);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    letter-spacing: -0.01em;
-  }
-
-  .project-card--list .project-card__meta {
-    opacity: 0.65;
-    font-size: 0.8125rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .project-card--list .project-card__hover-actions {
-    position: relative;
-    opacity: 1;
-    transform: none;
-    margin-left: auto;
-    padding-right: 0;
-    display: flex;
-    gap: 0.375rem;
-    align-items: center;
-  }
-
-
-  .project-card--list .project-card__badge {
-    left: 0.5rem;
-    top: 0.5rem;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  .project-card--list .project-card__badge-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .project-card--list .project-card__checkbox {
-    position: relative;
-    left: 0;
-    right: auto;
-    top: 0;
-    transform: none;
-    margin-right: 0.5rem;
-    opacity: 1;
-  }
-
-  .project-card--list .project-card__platform-icon,
-  .project-card--list .project-card__platform-svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  .project-card--list .project-card__live {
-    font-size: 0.75rem;
-    padding: 0.125rem 0.5rem;
-  }
-
-  .project-card--list .project-card__live-dot {
-    width: 6px;
-    height: 6px;
-  }
-
-  .project-card--list .project-card__live-ping,
-  .project-card--list .project-card__live-core {
-    width: 6px;
-    height: 6px;
-  }
-
-  .project-card--list .project-card__dot {
-    width: 3px;
-    height: 3px;
-    opacity: 0.4;
-  }
-
-  .project-card--list .project-card__empty-icon {
-    transform: scale(0.7);
-  }
-
-  .project-card--list .project-card__empty-live {
-    transform: scale(0.7);
   }
 
   .project-card__skeleton-bg {

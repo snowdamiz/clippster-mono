@@ -258,7 +258,7 @@
                           <Teleport to="body">
                             <div
                               v-if="openDownloadDropdownId === clip.id"
-                              class="clips-tab-dropdown fixed z-[99999] w-[220px] rounded-lg shadow-2xl py-1.5 overflow-hidden"
+                              class="clips-tab-dropdown fixed z-[9999] w-[220px] rounded-lg shadow-2xl py-1.5 overflow-hidden"
                               :style="getDropdownPosition(clip.id)"
                               data-action-menu
                               @click.stop
@@ -346,7 +346,7 @@
                           <Teleport to="body">
                             <div
                               v-if="openActionMenuId === clip.id"
-                              class="clips-tab-dropdown fixed z-[99999] w-[200px] rounded-lg shadow-2xl py-1.5 overflow-hidden"
+                              class="clips-tab-dropdown fixed z-[9999] w-[200px] rounded-lg shadow-2xl py-1.5 overflow-hidden"
                               :style="getActionMenuPosition(clip.id)"
                               data-action-menu
                               @click.stop
@@ -473,7 +473,11 @@
                       >
                         <ClockIcon class="h-2.5 w-2.5 opacity-70" />
                         <span>
-                          {{ formatDuration(getClipDuration(clip)) }}
+                          {{
+                            formatDuration(
+                              (clip.current_version_end_time || 0) - (clip.current_version_start_time || 0)
+                            )
+                          }}
                         </span>
                       </div>
 
@@ -1007,8 +1011,9 @@
       }
     }
 
-    // NOTE: Thumbnail generation is handled by Projects.vue to prevent duplicate FFmpeg processes
-    // Do NOT call generateMissingThumbnails() here - it causes 50+ FFmpeg processes to spawn
+    // Always generate thumbnails for clips that don't have built_thumbnail_path
+    // This is critical for newly detected clips
+    await generateMissingThumbnails();
   }
 
   // Load which clips are already part of a video editor project
@@ -1153,7 +1158,7 @@
     return clipThumbnailCache.value.get(clipId) || null;
   }
 
-  // Sorted clips: by virality descending across all runs
+  // Sorted clips: by run_number descending (newest first), then by virality descending
   const sortedClips = computed(() => {
     return [...props.clips].sort((a, b) => {
       // First, put manual clips at the bottom
@@ -1163,8 +1168,14 @@
         return aIsManual ? 1 : -1; // Manual clips go to the bottom
       }
 
-      // For non-manual clips: sort by virality score descending (highest first)
-      // This sorts ALL clips by virality regardless of which run they came from
+      // For non-manual clips: sort by run_number descending (newest run first)
+      const runA = a.run_number || 0;
+      const runB = b.run_number || 0;
+      if (runB !== runA) {
+        return runB - runA;
+      }
+
+      // Then sort by virality score descending (highest first)
       const viralityA = a.current_version_virality_score || 0;
       const viralityB = b.current_version_virality_score || 0;
       return viralityB - viralityA;
@@ -1351,17 +1362,6 @@
   );
 
   // Functions
-  function getClipDuration(clip: ClipWithVersion): number {
-    // If clip has segments, sum their durations (for stitched clips)
-    if (clip.current_version_segments && clip.current_version_segments.length > 0) {
-      return clip.current_version_segments.reduce((total, segment) => {
-        return total + (segment.duration || (segment.end_time - segment.start_time));
-      }, 0);
-    }
-    // Otherwise use the time range (for continuous clips)
-    return (clip.current_version_end_time || 0) - (clip.current_version_start_time || 0);
-  }
-
   function formatDuration(seconds: number): string {
     if (!seconds) return '0:00';
     const mins = Math.floor(seconds / 60);

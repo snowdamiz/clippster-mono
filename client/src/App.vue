@@ -9,14 +9,13 @@
   import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
   import MandatoryUpdateDialog from '@/components/MandatoryUpdateDialog.vue';
   import SubscriptionGate from '@/components/SubscriptionGate.vue';
-  import { initDatabase, seedDefaultPrompt, seedGamingPrompt, seedGamblingPrompt, seedBreakingNewsPrompt, ensureOrganizationAssetColumns } from '@/services/database';
+  import { initDatabase, seedDefaultPrompt, ensureOrganizationAssetColumns } from '@/services/database';
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
   import { useLivestreamStore } from '@/stores/livestream';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useAppUpdater } from '@/composables/useAppUpdater';
-  import { useToast } from '@/composables/useToast';
   import { invoke } from '@tauri-apps/api/core';
 
   // Platform detection for OS-specific styling (e.g., rounded corners on macOS)
@@ -27,7 +26,6 @@
   const livestreamStore = useLivestreamStore();
   const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
   const { state: updateState, checkForUpdates } = useAppUpdater();
-  const { success } = useToast();
 
   // Update check must complete before app continues
   const isCheckingForUpdates = ref(true);
@@ -75,12 +73,6 @@
       })
     );
   }
-
-  // Handle streamer went live event
-  const handleStreamerWentLive = (event: CustomEvent) => {
-    const { displayName } = event.detail;
-    success(`${displayName} is now live!`, undefined, 7000);
-  };
 
   // Key for router-view to force re-render on auth changes
   const routerKey = ref(0);
@@ -205,18 +197,12 @@
     // Listen for platform override events from Admin panel
     window.addEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
 
-    // Listen for streamer went live events
-    window.addEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
-
     // Initialize database connection
     try {
       await initDatabase();
 
-      // Seed default prompts if they don't exist (order matters for display)
+      // Seed default prompt if it doesn't exist
       await seedDefaultPrompt();
-      await seedGamingPrompt();
-      await seedGamblingPrompt();
-      await seedBreakingNewsPrompt();
 
       // Ensure organization asset columns exist (migration)
       await ensureOrganizationAssetColumns();
@@ -251,7 +237,6 @@
     });
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
-    window.removeEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
 
     // Cleanup global clip build event handler
     cleanupClipBuildEventHandler();

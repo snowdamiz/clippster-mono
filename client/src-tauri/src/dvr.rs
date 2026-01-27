@@ -636,6 +636,140 @@ fn sanitize_filename(name: &str) -> String {
     result.trim().chars().take(100).collect()
 }
 
+/// Convert a single DVR chunk to an HLS segment and update the playlist
+/// This enables real-time HLS playback from MediaRecorder DVR chunks
+/// Returns the path to the created HLS segment
+#[tauri::command]
+pub async fn convert_dvr_chunk_to_hls(
+    app: AppHandle,
+    mint_id: String,
+    chunk_index: u32,
+    hls_output_dir: String,
+) -> Result<String, String> {
+    let dvr_dir = get_dvr_dir(&app, &mint_id)?;
+    let chunk_filename = format!("chunk_{:05}.webm", chunk_index);
+    let chunk_path = dvr_dir.join(&chunk_filename);
+    
+    if !chunk_path.exists() {
+        return Err(format!("DVR chunk {} not found", chunk_index));
+    }
+    
+    // Ensure HLS output directory exists
+    let hls_dir = PathBuf::from(&hls_output_dir);
+    fs::create_dir_all(&hls_dir)
+        .map_err(|e| format!("Failed to create HLS directory: {}", e))?;
+    
+    // For chunks > 0, we need to prepend the init segment to make a valid WebM
+    let input_path = if chunk_index == 0 {
+        chunk_path.clone()
+    } else {
+        // Read init segment
+        let init_path = get_init_segment_path(&dvr_dir);
+        let init_data = if init_path.exists() {
+            fs::read(&init_path).map_err(|e| format!("Failed to read init segment: {}", e))?
+        } else {
+            // Try to extract from chunk 0
+            let chunk0_path = dvr_dir.join("chunk_00000.webm");
+            if chunk0_path.exists() {
+                let chunk0_data = fs::read(&chunk0_path)
+                    .map_err(|e| format!("Failed to read chunk 0: {}", e))?;
+                extract_init_segment(&chunk0_data)
+                    .ok_or_else(|| "Could not extract init segment".to_string())?
+            } else {
+                return Err("No init segment available".to_string());
+            }
+        };
+        
+        // Create temp file with init + chunk data
+        let temp_path = hls_dir.join(format!("temp_chunk_{}.webm", chunk_index));
+        let chunk_data = fs::read(&chunk_path)
+            .map_err(|e| format!("Failed to read chunk: {}", e))?;
+        
+        let mut combined = init_data;
+        combined.extend_from_slice(&chunk_data);
+        fs::write(&temp_path, &combined)
+            .map_err(|e| format!("Failed to write temp file: {}", e))?;
+        
+        temp_path
+    };
+    
+    // Output segment path
+    let segment_filename = format!("segment_{:04}.ts", chunk_index);
+    let segment_path = hls_dir.join(&segment_filename);
+    
+    // FFmpeg args for fast transcoding
+    let args = vec![
+        "-y".to_string(),
+        "-fflags".to_string(), "+genpts+igndts".to_string(),
+        "-i".to_string(), input_path.to_string_lossy().to_string(),
+        "-c:v".to_string(), "libx264".to_string(),
+        "-preset".to_string(), "ultrafast".to_string(),
+        "-tune".to_string(), "zerolatency".to_string(),
+        "-crf".to_string(), "23".to_string(),
+        "-r".to_string(), "30".to_string(),
+        "-g".to_string(), "60".to_string(), // GOP = 2 seconds
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "192k".to_string(),
+        "-ac".to_string(), "2".to_string(),
+        "-ar".to_string(), "48000".to_string(),
+        "-f".to_string(), "mpegts".to_string(),
+        segment_path.to_string_lossy().to_string(),
+    ];
+    
+    let shell = app.shell();
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+    
+    // Cleanup temp file if we created one
+    if chunk_index > 0 {
+        let _ = fs::remove_file(&input_path);
+    }
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("FFmpeg transcode failed: {}", stderr));
+    }
+    
+    // Get segment duration (assumed 4 seconds like DVR chunks)
+    let segment_duration = 4.0f64;
+    
+    // Update playlist.m3u8
+    let playlist_path = hls_dir.join("playlist.m3u8");
+    let mut playlist_content = if playlist_path.exists() {
+        fs::read_to_string(&playlist_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    
+    // Create or update playlist
+    if playlist_content.is_empty() || !playlist_content.contains("#EXTM3U") {
+        playlist_content = format!(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n"
+        );
+    }
+    
+    // Remove #EXT-X-ENDLIST if present (we're still live)
+    playlist_content = playlist_content.replace("#EXT-X-ENDLIST\n", "");
+    playlist_content = playlist_content.replace("#EXT-X-ENDLIST", "");
+    
+    // Check if this segment is already in the playlist
+    if !playlist_content.contains(&segment_filename) {
+        // Add the new segment
+        playlist_content.push_str(&format!("#EXTINF:{:.3},\n{}\n", segment_duration, segment_filename));
+    }
+    
+    fs::write(&playlist_path, &playlist_content)
+        .map_err(|e| format!("Failed to write playlist: {}", e))?;
+    
+    println!("[DVR->HLS] Converted chunk {} to HLS segment: {}", chunk_index, segment_filename);
+    
+    Ok(segment_path.to_string_lossy().to_string())
+}
+
 /// Build a segment file from a range of DVR chunks
 /// Used by auto-detect to create longer segments from 4-second DVR chunks
 #[tauri::command]
@@ -725,6 +859,31 @@ pub async fn build_segment_from_dvr_chunks(
     
     println!("[DVR] Combined {} chunks into single WebM ({} bytes)", chunk_files.len(), combined_data.len());
     
+    // Optional: run volumedetect on the combined WebM to verify audio presence/level before re-encode
+    let debug_audio = std::env::var("DVR_DEBUG_AUDIO").unwrap_or_else(|_| "0".to_string()) == "1";
+    if debug_audio {
+        println!("[DVR] DVR_DEBUG_AUDIO=1; running volumedetect on combined WebM...");
+        let shell = app.shell();
+        let vd_output = shell.sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar (volumedetect): {}", e))?
+            .args([
+                "-v", "warning",
+                "-i", combined_webm_path.to_string_lossy().to_string().as_str(),
+                "-af", "volumedetect",
+                "-f", "null",
+                "-",
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run ffmpeg volumedetect: {}", e))?;
+        let vd_stderr = String::from_utf8_lossy(&vd_output.stderr);
+        for line in vd_stderr.lines() {
+            if !line.trim().is_empty() {
+                println!("[DVR][volumedetect] {}", line.trim());
+            }
+        }
+    }
+    
     // Generate output filename - use .ts format for compatibility with existing pipeline
     let output_filename = format!("segment_{}_{}.ts", mint_id, segment_number);
     let output_path = temp_dir.join(&output_filename);
@@ -733,6 +892,8 @@ pub async fn build_segment_from_dvr_chunks(
     let args = vec![
         "-fflags".to_string(), "+genpts+igndts".to_string(), // regenerate timestamps
         "-i".to_string(), combined_webm_path.to_string_lossy().to_string(),
+        "-map".to_string(), "0:v:0".to_string(),
+        "-map".to_string(), "0:a:0".to_string(),
         "-vf".to_string(), "fps=30,setpts=PTS-STARTPTS".to_string(),
         // Re-encode video to H.264 for TS compatibility
         "-c:v".to_string(), "libx264".to_string(),
@@ -745,6 +906,8 @@ pub async fn build_segment_from_dvr_chunks(
         // Re-encode audio to AAC for TS compatibility  
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
+        "-ac".to_string(), "2".to_string(),
+        "-ar".to_string(), "48000".to_string(),
         // Output format
         "-f".to_string(), "mpegts".to_string(),
         "-y".to_string(),
@@ -761,8 +924,13 @@ pub async fn build_segment_from_dvr_chunks(
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
     
-    // Cleanup combined file
-    let _ = fs::remove_file(&combined_webm_path);
+    // Cleanup combined file unless explicitly kept for inspection
+    let keep_combined = std::env::var("KEEP_COMBINED_WEBM").unwrap_or_else(|_| "0".to_string()) == "1";
+    if keep_combined {
+        println!("[DVR] KEEP_COMBINED_WEBM=1 set; leaving combined WebM at {}", combined_webm_path.display());
+    } else {
+        let _ = fs::remove_file(&combined_webm_path);
+    }
     
     // Log FFmpeg output for debugging
     let stderr = String::from_utf8_lossy(&output.stderr);

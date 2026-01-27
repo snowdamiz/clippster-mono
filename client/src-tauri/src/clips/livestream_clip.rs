@@ -299,7 +299,6 @@ async fn generate_clip_thumbnail(
         Ok(cmd) => {
             match cmd
                 .args([
-                    "-nostdin",
                     "-hwaccel", "auto",
                     "-ss", &timestamp_str,
                     "-i", &clip_path_str,
@@ -424,7 +423,6 @@ async fn extract_multi_segment_clip(
 
     // Concatenate segments
     let concat_args = vec![
-        "-nostdin".to_string(),
         "-f".to_string(), "concat".to_string(),
         "-safe".to_string(), "0".to_string(),
         "-i".to_string(), concat_list_path.to_string_lossy().to_string(),

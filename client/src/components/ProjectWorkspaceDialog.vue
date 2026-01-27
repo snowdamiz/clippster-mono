@@ -1614,18 +1614,8 @@
     // while raw ClipWithVersion objects have `current_version_segments`
     let segments: any[] = [];
 
-    console.log('[ProjectWorkspaceDialog] Playing clip:', {
-      clipId: clip.id,
-      hasSegments: !!clip.segments,
-      segmentsLength: clip.segments?.length,
-      hasCurrentVersionSegments: !!clip.current_version_segments,
-      currentVersionSegmentsLength: clip.current_version_segments?.length,
-      currentVersion: clip.current_version,
-    });
-
     if (clip.segments && Array.isArray(clip.segments) && clip.segments.length > 0) {
       // Use segments from transformed clip format (Timeline clips)
-      console.log('[ProjectWorkspaceDialog] Using clip.segments');
       segments = clip.segments.map((segment: any, index: number) => ({
         id: segment.id || `segment-${clip.id}-${index}`,
         clip_version_id: segment.clip_version_id || clip.id,
@@ -1642,7 +1632,6 @@
       clip.current_version_segments.length > 0
     ) {
       // Use the proper segments from database (raw ClipWithVersion format)
-      console.log('[ProjectWorkspaceDialog] Using clip.current_version_segments:', clip.current_version_segments);
       segments = clip.current_version_segments.map((segment: any) => ({
         id: segment.id,
         clip_version_id: segment.clip_version_id,
@@ -1655,7 +1644,6 @@
       }));
     } else if (clip.current_version) {
       // Fallback: create single segment from version timing (raw format)
-      console.log('[ProjectWorkspaceDialog] Using fallback - clip.current_version');
       segments = [
         {
           id: `fallback-${clip.id}`,
@@ -1670,7 +1658,6 @@
       ];
     } else if (clip.total_duration > 0) {
       // Last resort: use total_duration from transformed clip
-      console.log('[ProjectWorkspaceDialog] Using last resort - clip.total_duration');
       segments = [
         {
           id: `fallback-${clip.id}`,
@@ -1684,8 +1671,6 @@
         },
       ];
     }
-
-    console.log('[ProjectWorkspaceDialog] Final segments to play:', segments);
 
     if (segments.length > 0) {
       playClipSegments(segments);
@@ -1923,16 +1908,10 @@
     if (props.project) {
       await loadTimelineClips(props.project.id);
 
-      // Refresh MediaPanel - await to ensure clips are fully reloaded
+      // Refresh MediaPanel
       if (mediaPanelRef.value) {
-        await mediaPanelRef.value.refreshClips();
+        mediaPanelRef.value.refreshClips();
       }
-
-      // Also emit refresh events for other components
-      const refreshEvent = new CustomEvent('refresh-clips', {
-        detail: { projectId: props.project.id },
-      });
-      document.dispatchEvent(refreshEvent);
     }
   }
 

@@ -61,12 +61,22 @@
                           <Users class="w-3 h-3" />
                           {{ viewer.state.value.viewerCount }}
                         </span>
+                        <span v-if="viewer.isLive.value" class="text-red-400 font-medium">LIVE</span>
                       </div>
                     </div>
                   </div>
 
                   <!-- Right side actions -->
                   <div class="flex items-center gap-2">
+                    <!-- HLS Latency Badge -->
+                    <div
+                      v-if="viewer.state.value.connectionState === 'connected'"
+                      class="px-2 py-1 rounded bg-zinc-800/80 text-xs text-zinc-300 flex items-center gap-1"
+                    >
+                      <Clock class="w-3 h-3" />
+                      ~{{ estimatedDelay }}s delay
+                    </div>
+
                     <!-- Quality Badge -->
                     <button
                       v-if="viewer.state.value.streamQuality"
@@ -157,6 +167,9 @@
                   <Loader2 class="w-12 h-12 text-violet-500 animate-spin" />
                   <span class="text-white text-sm font-medium">
                     {{ viewer.state.value.totalRecordedDuration < 12 ? 'Building buffer...' : 'Buffering...' }}
+                  </span>
+                  <span v-if="viewer.state.value.totalRecordedDuration < 12" class="text-zinc-400 text-xs">
+                    {{ Math.round(viewer.state.value.totalRecordedDuration) }}s / 12s for smooth playback
                   </span>
                 </div>
               </div>
@@ -279,6 +292,27 @@
                           />
                         </div>
                       </div>
+
+                      <!-- Live Indicator / Go Live Button -->
+                      <button
+                        v-if="viewer.state.value.playbackMode === 'webrtc'"
+                        class="flex items-center gap-2 px-3 py-1 bg-red-600/90 text-white text-xs font-medium rounded-full cursor-default"
+                      >
+                        <div class="relative w-2 h-2">
+                          <div class="absolute inset-0 bg-white rounded-full" />
+                          <div class="absolute inset-0 bg-white rounded-full animate-ping opacity-75" />
+                        </div>
+                        <span>LIVE</span>
+                      </button>
+                      <button
+                        v-else
+                        @click="handleSeekToLive"
+                        class="flex items-center gap-2 px-3 py-1 bg-zinc-700 hover:bg-red-600/90 text-white text-xs font-medium rounded-full transition-colors"
+                        title="Switch to real-time WebRTC playback"
+                      >
+                        <Radio class="w-3 h-3" />
+                        <span>Go Live</span>
+                      </button>
                     </div>
 
                     <!-- Right Controls -->

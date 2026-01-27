@@ -203,7 +203,6 @@
         isEdit.value = true;
         formData.name = newProject.name;
         formData.description = newProject.description || '';
-        formData.creatorProfileId = newProject.creator_profile_id || null;
         selectedVideoPaths.value = [];
       } else {
         isEdit.value = false;

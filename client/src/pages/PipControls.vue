@@ -1,8 +1,8 @@
 <template>
   <div 
     class="h-full w-full bg-black overflow-hidden select-none relative"
-    @mousemove="handleMouseMove"
-    @mouseleave="handleMouseLeave"
+    @mouseenter="showControls = true"
+    @mouseleave="showControls = false"
   >
     <!-- Video fills entire container -->
     <video
@@ -15,26 +15,16 @@
       @dblclick="closeWindow"
     />
     
-    <!-- Live Badge - auto-hide -->
-    <Transition name="fade">
-      <div 
-        v-if="showControls"
-        class="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-red-600/90 rounded text-white text-xs font-medium pointer-events-none"
-      >
-        <div class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-        LIVE
-      </div>
-    </Transition>
+    <!-- Live Badge - always visible -->
+    <div class="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-red-600/90 rounded text-white text-xs font-medium pointer-events-none">
+      <div class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+      LIVE
+    </div>
 
-    <!-- Streamer Name - auto-hide -->
-    <Transition name="fade">
-      <div 
-        v-if="showControls"
-        class="absolute top-2 right-2 px-2 py-1 bg-black/60 rounded text-white text-xs font-medium truncate max-w-[150px] pointer-events-none"
-      >
-        {{ streamerName }}
-      </div>
-    </Transition>
+    <!-- Streamer Name - always visible -->
+    <div class="absolute top-2 right-2 px-2 py-1 bg-black/60 rounded text-white text-xs font-medium truncate max-w-[150px] pointer-events-none">
+      {{ streamerName }}
+    </div>
 
     <!-- Toast Notification -->
     <Transition name="toast">
@@ -118,8 +108,6 @@ import Hls from 'hls.js';
 
 const videoRef = ref<HTMLVideoElement | null>(null);
 const showControls = ref(false);
-let controlsTimeout: ReturnType<typeof setTimeout> | null = null;
-const CONTROLS_HIDE_DELAY = 2000; // 2 seconds
 
 // State synced from main window
 const streamerName = ref('Stream');
@@ -200,7 +188,6 @@ onUnmounted(() => {
     hls = null;
   }
   if (toastTimeout) clearTimeout(toastTimeout);
-  if (controlsTimeout) clearTimeout(controlsTimeout);
 });
 
 // Watch for volume/mute changes
@@ -313,25 +300,6 @@ function initHls(url: string) {
   }
 }
 
-function handleMouseMove() {
-  showControls.value = true;
-  
-  if (controlsTimeout) {
-    clearTimeout(controlsTimeout);
-  }
-  
-  controlsTimeout = setTimeout(() => {
-    showControls.value = false;
-  }, CONTROLS_HIDE_DELAY);
-}
-
-function handleMouseLeave() {
-  if (controlsTimeout) {
-    clearTimeout(controlsTimeout);
-  }
-  showControls.value = false;
-}
-
 function startDrag(event: MouseEvent) {
   // Only drag if not clicking a button
   if ((event.target as HTMLElement).closest('button')) return;
@@ -403,17 +371,6 @@ input[type='range']::-moz-range-thumb {
   border-radius: 50%;
   border: none;
   cursor: pointer;
-}
-
-/* Fade transition for controls and badges */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 
 /* Toast transition */

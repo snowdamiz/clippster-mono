@@ -82,132 +82,104 @@
                     'monitor-card--live': !streamer.isDetecting && streamer.isLive,
                   }"
                 >
-                  <div class="monitor-card__content">
-                    <!-- Header: Avatar + Info + Status -->
-                    <div class="monitor-card__header">
-                      <div class="monitor-card__avatar">
+                  <!-- Card Header -->
+                  <div class="monitor-card__header">
+                    <div class="monitor-card__avatar">
+                      <img
+                        v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
+                        :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
+                        class="monitor-card__avatar-img"
+                      />
+                      <div
+                        v-else
+                        class="monitor-card__avatar-fallback"
+                        :class="getPlatformBgClass(streamer.platform)"
+                      >
                         <img
-                          v-if="streamer.profileImageUrl || streamer.streamThumbnailUrl"
-                          :src="streamer.streamThumbnailUrl || streamer.profileImageUrl"
-                          class="monitor-card__avatar-img"
+                          :src="getPlatformIcon(streamer.platform)"
+                          class="monitor-card__avatar-icon"
+                          :class="getPlatformIconClasses(streamer.platform)"
                         />
-                        <div
-                          v-else
-                          class="monitor-card__avatar-fallback"
-                          :class="getPlatformBgClass(streamer.platform)"
-                        >
-                          <img
-                            :src="getPlatformIcon(streamer.platform)"
-                            class="monitor-card__avatar-icon"
-                            :class="getPlatformIconClasses(streamer.platform)"
-                          />
-                        </div>
-                      </div>
-
-                      <div class="monitor-card__info">
-                        <h3 class="monitor-card__name">{{ streamer.displayName }}</h3>
-                        <div class="monitor-card__meta">
-                          <span class="monitor-card__platform" :class="getPlatformTextClass(streamer.platform)">
-                            {{ streamer.platform }}
-                          </span>
-                          <span class="monitor-card__divider"></span>
-                          <!-- Status Badge -->
-                          <div v-if="streamer.isDetecting" class="monitor-status monitor-status--active">
-                            <span class="monitor-status__dot"></span>
-                            {{ getStatusLabel(streamer) }}
-                          </div>
-                          <template v-else>
-                            <div v-if="streamer.isCheckingLive" class="monitor-status monitor-status--checking">
-                              <Loader2 class="monitor-status__spinner" />
-                            </div>
-                            <div v-else-if="streamer.isLive" class="monitor-status monitor-status--live">
-                              <span class="monitor-status__dot"></span>
-                              LIVE
-                              <span v-if="streamer.viewerCount" class="monitor-status__viewers">
-                                {{ formatViewerCount(streamer.viewerCount) }}
-                              </span>
-                              <span v-if="streamer.hasTempRecording" class="monitor-status__dvr">DVR</span>
-                            </div>
-                            <div v-else class="monitor-status monitor-status--offline">
-                              <span class="monitor-status__dot"></span>
-                              Offline
-                            </div>
-                          </template>
-                        </div>
-                      </div>
-
-                      <!-- Quick Actions (top right) -->
-                      <div class="monitor-card__quick-actions">
-                        <button
-                          v-if="!streamer.isDetecting"
-                          @click.stop="refreshLiveStatus(streamer)"
-                          class="monitor-card__icon-btn"
-                          :class="{ 'monitor-card__icon-btn--spinning': streamer.isCheckingLive }"
-                          :disabled="streamer.isCheckingLive"
-                          title="Refresh status"
-                        >
-                          <RefreshCw class="monitor-card__icon-btn-icon" />
-                        </button>
-                        <button
-                          v-if="!streamer.isDetecting"
-                          @click.stop="removeStreamer(streamer.id)"
-                          class="monitor-card__icon-btn monitor-card__icon-btn--danger"
-                          title="Remove"
-                        >
-                          <Trash2 class="monitor-card__icon-btn-icon" />
-                        </button>
                       </div>
                     </div>
 
-                    <!-- Controls Row -->
-                    <div class="monitor-card__controls">
-                      <!-- Left: Settings -->
-                      <div class="monitor-card__settings">
-                        <button
-                          @click="updateAutoDvr(streamer, !streamer.autoDvr)"
-                          :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
-                          class="monitor-setting__toggle"
-                          :class="{ 'monitor-setting__toggle--on': streamer.autoDvr }"
-                          title="Auto DVR"
-                        >
-                          <Video class="monitor-setting__toggle-icon" />
-                          DVR
-                        </button>
+                    <div class="monitor-card__info">
+                      <h3 class="monitor-card__name">{{ streamer.displayName }}</h3>
+                      <div class="monitor-card__platform" :class="getPlatformTextClass(streamer.platform)">
+                        {{ streamer.platform }}
                       </div>
+                    </div>
 
-                      <!-- Right: Action Buttons -->
-                      <div class="monitor-card__actions">
-                        <template v-if="!streamer.isDetecting">
-                          <div v-if="streamer.status === 'STOPPING'" class="monitor-action monitor-action--stopping">
-                            <Loader2 class="monitor-action__spinner" />
-                            Stopping...
-                          </div>
-                          <template v-else>
-                            <button
-                              v-if="streamer.isLive"
-                              @click="openWatchDialog(streamer)"
-                              class="monitor-action monitor-action--watch"
-                            >
-                              <Eye class="monitor-action__icon" />
-                              Watch
-                            </button>
-                            <div class="monitor-action-group">
-                              <button @click="startStreamer(streamer, false)" class="monitor-action-group__btn">
-                                <Video class="monitor-action__icon" />
-                                Rec
-                              </button>
-                              <button
-                                @click="startStreamer(streamer, true)"
-                                class="monitor-action-group__btn monitor-action-group__btn--primary"
-                              >
-                                <Sparkles class="monitor-action__icon" />
-                                Auto
-                              </button>
-                            </div>
-                          </template>
-                        </template>
+                    <!-- Quick Actions (top right) -->
+                    <div class="monitor-card__quick-actions">
+                      <button
+                        v-if="!streamer.isDetecting"
+                        @click.stop="refreshLiveStatus(streamer)"
+                        class="monitor-card__icon-btn"
+                        :class="{ 'monitor-card__icon-btn--spinning': streamer.isCheckingLive }"
+                        :disabled="streamer.isCheckingLive"
+                        title="Refresh status"
+                      >
+                        <RefreshCw class="monitor-card__icon-btn-icon" />
+                      </button>
+                      <button
+                        v-if="!streamer.isDetecting"
+                        @click.stop="confirmRemoveStreamer(streamer)"
+                        class="monitor-card__icon-btn monitor-card__icon-btn--danger"
+                        title="Remove"
+                      >
+                        <Trash2 class="monitor-card__icon-btn-icon" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Footer: Status + Settings + Actions -->
+                  <div class="monitor-card__footer">
+                    <!-- Left: Status -->
+                    <div class="monitor-card__status">
+                      <div v-if="streamer.isDetecting" class="monitor-status monitor-status--active">
+                        <span class="monitor-status__dot"></span>
+                        {{ getStatusLabel(streamer) }}
+                      </div>
+                      <template v-else>
+                        <div v-if="streamer.isCheckingLive" class="monitor-status monitor-status--checking">
+                          <Loader2 class="monitor-status__spinner" />
+                          Checking...
+                        </div>
+                        <div v-else-if="streamer.isLive" class="monitor-status monitor-status--live">
+                          <span class="monitor-status__dot"></span>
+                          LIVE
+                          <span v-if="streamer.viewerCount" class="monitor-status__viewers">
+                            {{ formatViewerCount(streamer.viewerCount) }}
+                          </span>
+                          <span v-if="streamer.hasTempRecording" class="monitor-status__dvr">DVR</span>
+                        </div>
+                        <div v-else class="monitor-status monitor-status--offline">
+                          <span class="monitor-status__dot"></span>
+                          Offline
+                        </div>
+                      </template>
+                    </div>
+
+                    <!-- Right: Settings + Actions -->
+                    <div class="monitor-card__controls">
+                      <button
+                        @click="updateAutoDvr(streamer, !streamer.autoDvr)"
+                        :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
+                        class="monitor-action monitor-action--dvr"
+                        :class="{ 'monitor-action--dvr-on': streamer.autoDvr }"
+                        title="Auto DVR"
+                      >
+                        <Video class="monitor-action__icon" />
+                        Auto DVR
+                      </button>
+
+                      <template v-if="!streamer.isDetecting">
+                        <div v-if="streamer.status === 'STOPPING'" class="monitor-action monitor-action--stopping">
+                          <Loader2 class="monitor-action__spinner" />
+                          Stopping...
+                        </div>
                         <template v-else>
-                          <!-- Watch button available even while detecting/recording -->
                           <button
                             v-if="streamer.isLive"
                             @click="openWatchDialog(streamer)"
@@ -216,12 +188,35 @@
                             <Eye class="monitor-action__icon" />
                             Watch
                           </button>
-                          <button class="monitor-action monitor-action--stop" @click="stopStreamer(streamer)">
-                            <Square class="monitor-action__icon" />
-                            Stop
-                          </button>
+                          <div class="monitor-action-group">
+                            <button @click="startStreamer(streamer, false)" class="monitor-action-group__btn">
+                              <Video class="monitor-action__icon" />
+                              Rec
+                            </button>
+                            <button
+                              @click="startStreamer(streamer, true)"
+                              class="monitor-action-group__btn monitor-action-group__btn--primary"
+                            >
+                              <Sparkles class="monitor-action__icon" />
+                              Auto
+                            </button>
+                          </div>
                         </template>
-                      </div>
+                      </template>
+                      <template v-else>
+                        <button
+                          v-if="streamer.isLive"
+                          @click="openWatchDialog(streamer)"
+                          class="monitor-action monitor-action--watch"
+                        >
+                          <Eye class="monitor-action__icon" />
+                          Watch
+                        </button>
+                        <button class="monitor-action monitor-action--stop" @click="stopStreamer(streamer)">
+                          <Square class="monitor-action__icon" />
+                          Stop
+                        </button>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -327,6 +322,19 @@
         :show-cannot-undone-text="false"
         @close="showCreditWarningDialog = false"
         @confirm="confirmCreditWarning"
+      />
+
+      <!-- Delete Streamer Confirmation Dialog -->
+      <ConfirmationModal
+        :show="showDeleteStreamerDialog"
+        title="Remove Streamer"
+        message="Are you sure you want to remove"
+        :item-name="streamerToDelete?.displayName"
+        suffix="from monitoring?"
+        confirm-text="Remove"
+        variant="destructive"
+        @close="handleDeleteStreamerDialogClose"
+        @confirm="deleteStreamerConfirmed"
       />
 
       <!-- Segment & Prompt Selection Dialog -->
@@ -445,6 +453,9 @@
         @select="handleCampaignSelect"
         @cancel="handleCampaignCancel"
       />
+
+      <!-- Auth Modal -->
+      <AuthModal v-model="showAuthModal" />
     </PageLayout>
   </div>
 </template>
@@ -474,17 +485,23 @@
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CampaignSelectionDialog from '@/components/campaigns/CampaignSelectionDialog.vue';
+  import AuthModal from '@/components/AuthModal.vue';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
+  import { useAuthStore } from '@/stores/auth';
   import { getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
   import { useLivestreamStore } from '@/stores/livestream';
-  import { useToast } from '@/composables/useToast';
   import {
     getAllMonitoredStreamers,
     createMonitoredStreamer,
     deleteMonitoredStreamer,
     updateMonitoredStreamer,
   } from '@/services/database';
-  import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer, type TokenSearchResult } from '@/services/pumpfun';
+  import {
+    extractMintId,
+    searchPumpFunTokens,
+    fetchTokenMetadataFromServer,
+    type TokenSearchResult,
+  } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
   import type { MonitoredStreamer } from '@/types/livestream';
@@ -493,14 +510,7 @@
 
   type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
 
-  interface PendingMetadataFetch {
-    streamerId: string;
-    platform: Platform;
-    identifier: string;
-  }
-
   const { gates, requireSubscription } = useSubscriptionGate();
-  const { success } = useToast();
 
   type ExtendedStreamer = MonitoredStreamer & {
     isDetecting: boolean;
@@ -559,11 +569,14 @@
     dvrSessions,
     hasDvrRecording,
     initAutoDvrPolling,
+    restoreActiveRecordings,
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
+  const authStore = useAuthStore();
 
   const isDetectingAny = computed(() => monitoredStreamers.value.size > 0 || activeSessions.value.size > 0);
+  const showAuthModal = ref(false);
 
   const sortedStreamers = computed(() => {
     return [...streamers.value].sort((a, b) => {
@@ -586,10 +599,16 @@
 
   const showCreditWarningDialog = ref(false);
   const pendingStreamerStart = ref<{ streamer: ExtendedStreamer; detectClips: boolean } | null>(null);
+  
+  const showDeleteStreamerDialog = ref(false);
+  const streamerToDelete = ref<ExtendedStreamer | null>(null);
 
   const liveStatusInterval = ref<number | null>(null);
 
   onMounted(async () => {
+    // Restore active recording sessions from backend before other initialization
+    await restoreActiveRecordings();
+    
     await loadStreamers();
     refreshStreamerMetadata();
     syncDetectionState();
@@ -603,6 +622,7 @@
     }, 60_000);
 
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
+    window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
   async function checkAllLiveStatuses(includeKick: boolean = true) {
@@ -618,39 +638,15 @@
       }
 
       try {
-        // Use persisted database value to detect actual state changes
-        const wasLive = streamer.isCurrentlyLive;
-        
         const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
         const idx = streamers.value.findIndex((s) => s.id === streamer.id);
         if (idx !== -1) {
           streamers.value[idx] = {
             ...streamers.value[idx],
             isLive: status.isLive,
-            isCurrentlyLive: status.isLive,
             viewerCount: status.numParticipants,
             isCheckingLive: false,
           };
-          
-          // Persist live status to database
-          await updateMonitoredStreamer(streamer.id, {
-            is_currently_live: status.isLive,
-            last_check_timestamp: Date.now(),
-          });
-          
-          // Dispatch global event if streamer just went live (offline → live transition)
-          if (!wasLive && status.isLive) {
-            window.dispatchEvent(
-              new CustomEvent('streamer-went-live', {
-                detail: {
-                  streamerId: streamer.id,
-                  displayName: streamer.displayName,
-                  platform: streamer.platform,
-                  mintId: streamer.mintId,
-                },
-              })
-            );
-          }
         }
       } catch (error) {
         console.error('[LiveClip] Failed to check live status for', streamer.mintId, error);
@@ -664,116 +660,25 @@
     await Promise.all(promises);
   }
 
-  async function checkSingleLiveStatus(streamer: ExtendedStreamer, showSpinner: boolean = false) {
+  async function refreshLiveStatus(streamer: ExtendedStreamer) {
     if (streamer.isDetecting) return;
 
     const index = streamers.value.findIndex((s) => s.id === streamer.id);
     if (index === -1) return;
 
-    if (showSpinner) {
-      streamers.value[index] = { ...streamers.value[index], isCheckingLive: true };
-    }
+    streamers.value[index] = { ...streamers.value[index], isCheckingLive: true };
 
     try {
-      const wasLive = streamer.isCurrentlyLive;
       const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
-      
       streamers.value[index] = {
         ...streamers.value[index],
         isLive: status.isLive,
-        isCurrentlyLive: status.isLive,
         viewerCount: status.numParticipants,
         isCheckingLive: false,
       };
-      
-      // Persist live status to database
-      await updateMonitoredStreamer(streamer.id, {
-        is_currently_live: status.isLive,
-        last_check_timestamp: Date.now(),
-      });
-      
-      // Dispatch global event if streamer just went live (offline → live transition)
-      if (!wasLive && status.isLive) {
-        window.dispatchEvent(
-          new CustomEvent('streamer-went-live', {
-            detail: {
-              streamerId: streamer.id,
-              displayName: streamer.displayName,
-              platform: streamer.platform,
-              mintId: streamer.mintId,
-            },
-          })
-        );
-      }
     } catch (error) {
-      console.error('[LiveClip] Failed to check live status for', streamer.mintId, error);
-      if (showSpinner) {
-        streamers.value[index] = { ...streamers.value[index], isCheckingLive: false };
-      }
-    }
-  }
-
-  async function refreshLiveStatus(streamer: ExtendedStreamer) {
-    await checkSingleLiveStatus(streamer, true);
-  }
-
-  async function refreshSingleStreamerMetadata(streamer: ExtendedStreamer) {
-    const needsUpdate = 
-      (streamer.platform === 'PumpFun' && (streamer.displayName === streamer.mintId || !streamer.profileImageUrl)) ||
-      (streamer.platform === 'Kick' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId));
-
-    if (!needsUpdate) return;
-
-    try {
-      if (streamer.platform === 'Kick') {
-        const status = await checkKickLivestream(streamer.mintId);
-        const updates: any = {};
-
-        if (streamer.displayName === streamer.mintId && status.username) {
-          updates.display_name = status.username;
-        }
-        if (!streamer.profileImageUrl && status.profileImageUrl) {
-          updates.profile_image_url = status.profileImageUrl;
-        }
-
-        if (Object.keys(updates).length > 0) {
-          await updateMonitoredStreamer(streamer.id, updates);
-          if (updates.display_name) streamer.displayName = updates.display_name;
-          if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
-        }
-      } else {
-        let match: TokenSearchResult | null = null;
-
-        const results = await searchPumpFunTokens(streamer.mintId);
-        if (results && results.length > 0) {
-          match = results.find((r) => r.mint === streamer.mintId) || results[0];
-        }
-
-        if (!match || !match.image) {
-          const serverMeta = await fetchTokenMetadataFromServer(streamer.mintId);
-          if (serverMeta) {
-            match = serverMeta;
-          }
-        }
-
-        if (match) {
-          const updates: any = {};
-          if (streamer.displayName === streamer.mintId) {
-            updates.display_name = match.symbol;
-          }
-          if (!streamer.profileImageUrl && match.image) {
-            updates.profile_image_url = match.image;
-          }
-
-          if (Object.keys(updates).length > 0) {
-            await updateMonitoredStreamer(streamer.id, updates);
-            if (updates.display_name) streamer.displayName = updates.display_name;
-            if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Failed to refresh metadata for', streamer.mintId, e);
+      console.error('[LiveClip] Failed to refresh live status for', streamer.mintId, error);
+      streamers.value[index] = { ...streamers.value[index], isCheckingLive: false };
     }
   }
 
@@ -781,13 +686,80 @@
     const needsUpdate = streamers.value.filter(
       (s) =>
         (s.platform === 'PumpFun' && (s.displayName === s.mintId || !s.profileImageUrl)) ||
-        (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId))
+        (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId)) ||
+        (s.platform === 'Twitch' && (!s.profileImageUrl || s.displayName === s.mintId))
     );
 
     if (needsUpdate.length === 0) return;
 
     for (const streamer of needsUpdate) {
-      await refreshSingleStreamerMetadata(streamer);
+      try {
+        if (streamer.platform === 'Kick') {
+          const status = await checkKickLivestream(streamer.mintId);
+          const updates: any = {};
+
+          if (streamer.displayName === streamer.mintId && status.username) {
+            updates.display_name = status.username;
+          }
+          if (!streamer.profileImageUrl && status.profileImageUrl) {
+            updates.profile_image_url = status.profileImageUrl;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await updateMonitoredStreamer(streamer.id, updates);
+            if (updates.display_name) streamer.displayName = updates.display_name;
+            if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+          }
+        } else if (streamer.platform === 'Twitch') {
+          const status = await checkTwitchLivestream(streamer.mintId);
+          const updates: any = {};
+
+          if (streamer.displayName === streamer.mintId && status.displayName) {
+            updates.display_name = status.displayName;
+          }
+          if (!streamer.profileImageUrl && status.profileImageUrl) {
+            updates.profile_image_url = status.profileImageUrl;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await updateMonitoredStreamer(streamer.id, updates);
+            if (updates.display_name) streamer.displayName = updates.display_name;
+            if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+          }
+        } else {
+          let match: TokenSearchResult | null = null;
+
+          const results = await searchPumpFunTokens(streamer.mintId);
+          if (results && results.length > 0) {
+            match = results.find((r) => r.mint === streamer.mintId) || results[0];
+          }
+
+          if (!match || !match.image) {
+            const serverMeta = await fetchTokenMetadataFromServer(streamer.mintId);
+            if (serverMeta) {
+              match = serverMeta;
+            }
+          }
+
+          if (match) {
+            const updates: any = {};
+            if (streamer.displayName === streamer.mintId) {
+              updates.display_name = match.symbol;
+            }
+            if (!streamer.profileImageUrl && match.image) {
+              updates.profile_image_url = match.image;
+            }
+
+            if (Object.keys(updates).length > 0) {
+              await updateMonitoredStreamer(streamer.id, updates);
+              if (updates.display_name) streamer.displayName = updates.display_name;
+              if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to refresh metadata for', streamer.mintId, e);
+      }
     }
   }
 
@@ -798,6 +770,7 @@
     }
 
     window.removeEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
+    window.removeEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated);
   });
 
   watch([activeSessions, monitoredStreamers, dvrSessions], () => syncDetectionState(), { deep: true });
@@ -817,6 +790,12 @@
         hasTempRecording: !!dvrSession,
       };
     });
+  }
+
+  async function handleMonitoredStreamersUpdated() {
+    await loadStreamers();
+    await refreshStreamerMetadata();
+    await checkAllLiveStatuses(true); // Include Kick since this is a user-triggered update
   }
 
   function getStatusLabel(streamer: ExtendedStreamer) {
@@ -869,7 +848,6 @@
   async function loadStreamers() {
     try {
       const records = await getAllMonitoredStreamers();
-      console.log('[LiveClip] Loaded streamers from database:', records.length, records);
 
       streamers.value = records.map((record) => {
         const monitored = monitoredStreamers.value.get(record.id);
@@ -883,7 +861,7 @@
         };
         const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
 
-        const streamer = {
+        return {
           id: record.id,
           mintId: record.mint_id,
           displayName: record.display_name,
@@ -895,17 +873,12 @@
           profileImageUrl: record.profile_image_url || undefined,
           streamThumbnailUrl: record.stream_thumbnail_url || undefined,
           segmentDurationMinutes: record.segment_duration_minutes ?? 5,
-          mode: (monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null) as 'Auto-Detect' | 'Record Only' | null,
-          status: (session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE') as 'LIVE' | 'WAITING' | 'IDLE' | 'STOPPING',
+          mode: monitored ? (monitored.options.detectClips ? 'Auto-Detect' : 'Record Only') : null,
+          status: session ? 'LIVE' : monitored ? 'WAITING' : 'IDLE',
           selected: false,
           autoDvr: Boolean(record.auto_dvr),
         };
-        
-        console.log('[LiveClip] Mapped streamer:', streamer);
-        return streamer;
       });
-      
-      console.log('[LiveClip] Final streamers array:', streamers.value);
     } catch (error) {
       console.error('[LiveClip] Failed to load monitored streamers', error);
     }
@@ -1030,25 +1003,12 @@
   async function addStreamer() {
     if (!inputValue.value) return;
 
-    // Handle Twitch
-    if (detectedPlatform.value === 'Twitch') {
-      const channelName = extractChannelName(inputValue.value);
-      if (channelName) {
-        addActivityLog({
-          streamerId: 'system',
-          streamerName: 'System',
-          platform: 'Twitch',
-          message: `Adding Twitch channel "${channelName}"...`,
-          status: 'loading',
-        });
-
-        // Add immediately with basic info, fetch metadata in background
-        await confirmAddStreamer(channelName, channelName, undefined, 'twitch');
-        return;
-      }
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
     }
 
-    // Handle Kick
     if (detectedPlatform.value === 'Kick') {
       const channelSlug = extractChannelSlug(inputValue.value);
       if (channelSlug) {
@@ -1056,30 +1016,107 @@
           streamerId: 'system',
           streamerName: 'System',
           platform: 'Kick',
-          message: `Adding Kick channel "${channelSlug}"...`,
+          message: `Checking Kick channel "${channelSlug}"...`,
           status: 'loading',
         });
 
-        // Add immediately with basic info, fetch metadata in background
-        await confirmAddStreamer(channelSlug, channelSlug, undefined, 'kick');
+        try {
+          const kickStatus = await checkKickLivestream(channelSlug);
+          const displayName = kickStatus.username || channelSlug;
+          const profileImage = kickStatus.profileImageUrl;
+
+          addActivityLog({
+            streamerId: 'system',
+            streamerName: 'System',
+            platform: 'Kick',
+            message: kickStatus.isLive ? `Found ${displayName} - Currently LIVE!` : `Found ${displayName}`,
+            status: 'success',
+          });
+
+          await confirmAddStreamer(channelSlug, displayName, profileImage, 'kick');
+        } catch (error) {
+          console.error('[LiveClip] Failed to fetch Kick channel info', error);
+          await confirmAddStreamer(channelSlug, channelSlug, undefined, 'kick');
+        }
+        return;
+      }
+    } else if (detectedPlatform.value === 'Twitch') {
+      const channelName = extractChannelName(inputValue.value) || inputValue.value.trim();
+      if (channelName) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Twitch',
+          message: `Checking Twitch channel "${channelName}"...`,
+          status: 'loading',
+        });
+
+        try {
+          const twitchStatus = await checkTwitchLivestream(channelName);
+          const displayName = twitchStatus.displayName || twitchStatus.channelName || channelName;
+          const profileImage = twitchStatus.profileImageUrl;
+
+          addActivityLog({
+            streamerId: 'system',
+            streamerName: 'System',
+            platform: 'Twitch',
+            message: twitchStatus.isLive ? `Found ${displayName} - Currently LIVE!` : `Found ${displayName}`,
+            status: 'success',
+          });
+
+          await confirmAddStreamer(channelName, displayName, profileImage, 'twitch');
+        } catch (error) {
+          console.error('[LiveClip] Failed to fetch Twitch channel info', error);
+          await confirmAddStreamer(channelName, channelName, undefined, 'twitch');
+        }
         return;
       }
     }
 
-    // Handle PumpFun mint ID
     const mintId = extractMintId(inputValue.value);
+
     if (mintId) {
       addActivityLog({
         streamerId: 'system',
         streamerName: 'System',
         platform: 'PumpFun',
-        message: `Adding token ${mintId.slice(0, 8)}...`,
+        message: `Fetching metadata for ${mintId.slice(0, 8)}...`,
         status: 'loading',
       });
 
-      const displayName = extractIdentifier(inputValue.value);
-      // Add immediately with basic info, fetch metadata in background
-      await confirmAddStreamer(mintId, displayName, undefined, 'pumpfun');
+      let displayName = extractIdentifier(inputValue.value);
+      let profileImage = undefined;
+
+      try {
+        let match: TokenSearchResult | null = null;
+        const results = await searchPumpFunTokens(mintId);
+        if (results && results.length > 0) {
+          match = results.find((r) => r.mint === mintId) || results[0];
+        }
+
+        if (!match || !match.image) {
+          const serverMeta = await fetchTokenMetadataFromServer(mintId);
+          if (serverMeta) {
+            match = serverMeta;
+          }
+        }
+
+        if (match) {
+          displayName = match.symbol;
+          profileImage = match.image;
+          addActivityLog({
+            streamerId: 'system',
+            streamerName: 'System',
+            platform: 'PumpFun',
+            message: `Identified as ${match.name} (${match.symbol})`,
+            status: 'success',
+          });
+        }
+      } catch (e) {
+        // Ignore errors, fallback to basic ID
+      }
+
+      await confirmAddStreamer(mintId, displayName, profileImage, 'pumpfun');
       return;
     }
 
@@ -1147,30 +1184,8 @@
   ) {
     const platformDisplay = platform === 'kick' ? 'Kick' : platform === 'twitch' ? 'Twitch' : 'PumpFun';
     try {
-      // Check if streamer already exists
-      const existingStreamer = streamers.value.find(s => s.mintId === platformId && s.platform === platformDisplay);
-      if (existingStreamer) {
-        addActivityLog({
-          streamerId: platformId,
-          streamerName: displayName,
-          platform: platformDisplay,
-          message: `${displayName} is already being tracked.`,
-          status: 'info',
-          mintId: platformId,
-          profileImageUrl,
-        });
-        inputValue.value = '';
-        detectedPlatform.value = null;
-        showSearchDialog.value = false;
-        return;
-      }
-
-      const newStreamerId = await createMonitoredStreamer(platformId, displayName, profileImageUrl, 5, false, platform);
-      
-      // Reload streamers from database
+      await createMonitoredStreamer(platformId, displayName, profileImageUrl, 5, false, platform);
       await loadStreamers();
-      
-      // Clear input immediately
       inputValue.value = '';
       detectedPlatform.value = null;
       showSearchDialog.value = false;
@@ -1184,39 +1199,16 @@
         mintId: platformId,
         profileImageUrl,
       });
-      
-      // Find the newly added streamer and fetch metadata in background (non-blocking)
-      const newStreamer = streamers.value.find(s => s.id === newStreamerId);
-      if (newStreamer) {
-        // Fire and forget - don't await these operations
-        Promise.allSettled([
-          refreshSingleStreamerMetadata(newStreamer),
-          checkSingleLiveStatus(newStreamer)
-        ]).then(() => {
-          console.log('[LiveClip] Background metadata fetch completed for', platformId);
-        });
-      }
-    } catch (error: any) {
+    } catch (error) {
       console.error('[LiveClip] Failed to add streamer', error);
-      
-      // Check if it's a duplicate error
-      const isDuplicate = error?.message?.includes('UNIQUE constraint') || error?.toString()?.includes('UNIQUE constraint');
-      
       addActivityLog({
         streamerId: platformId,
         streamerName: displayName,
         platform: platformDisplay,
-        message: isDuplicate 
-          ? `${displayName} is already being tracked.`
-          : 'Failed to add streamer. Please try again.',
+        message: 'Failed to add streamer. Ensure it is not already tracked.',
         status: 'info',
         mintId: platformId,
       });
-      
-      // Clear input on error
-      inputValue.value = '';
-      detectedPlatform.value = null;
-      showSearchDialog.value = false;
     }
   }
 
@@ -1224,10 +1216,26 @@
     confirmAddStreamer(token.mint, token.symbol, token.image);
   }
 
-  async function removeStreamer(id: string) {
-    try {
-      const streamer = streamers.value.find((s) => s.id === id);
+  function confirmRemoveStreamer(streamer: ExtendedStreamer) {
+    streamerToDelete.value = streamer;
+    showDeleteStreamerDialog.value = true;
+  }
 
+  function handleDeleteStreamerDialogClose() {
+    showDeleteStreamerDialog.value = false;
+    streamerToDelete.value = null;
+  }
+
+  async function deleteStreamerConfirmed() {
+    if (!streamerToDelete.value) return;
+
+    const id = streamerToDelete.value.id;
+    const streamer = streamerToDelete.value;
+
+    // Close dialog immediately
+    showDeleteStreamerDialog.value = false;
+
+    try {
       if (streamer) {
         try {
           await invoke('cleanup_hls_recordings', { mintId: streamer.mintId });
@@ -1239,8 +1247,10 @@
 
       await deleteMonitoredStreamer(id);
       streamers.value = streamers.value.filter((s) => s.id !== id);
+      streamerToDelete.value = null;
     } catch (error) {
       console.error('[LiveClip] Failed to remove streamer', error);
+      streamerToDelete.value = null;
     }
   }
 
@@ -1253,8 +1263,19 @@
     selectedPromptName.value = '';
     selectedPromptContent.value = '';
 
-    if (detectClips && prompts.value.length === 0) {
-      await loadPrompts();
+    if (detectClips) {
+      if (prompts.value.length === 0) {
+        await loadPrompts();
+      }
+
+      // Ensure a prompt is selected if we have prompts (auto-select default)
+      if (prompts.value.length > 0 && !selectedPromptId.value) {
+        const defaultPrompt = prompts.value.find((p) => p.name === 'Default Clip Detector');
+        const promptToSelect = defaultPrompt || prompts.value[0];
+        if (promptToSelect) {
+          selectPrompt(promptToSelect);
+        }
+      }
     }
 
     showSegmentDialog.value = true;
@@ -1272,7 +1293,11 @@
         livestreamStore.setSessionCampaign(streamer.id, campaign);
       }
 
-      executeStartStreamer(streamer, detectClips);
+      // Pass the selected duration and prompt from the segment dialog
+      executeStartStreamer(streamer, detectClips, selectedDuration.value, {
+        promptId: selectedPromptId.value || undefined,
+        promptContent: selectedPromptContent.value || undefined,
+      });
       return;
     }
 
@@ -1324,13 +1349,22 @@
     const segmentDurationMinutes =
       typeof durationOverride === 'number' ? durationOverride : streamer.segmentDurationMinutes;
 
+    console.log('[LiveClip] executeStartStreamer duration:', {
+      durationOverride,
+      'streamer.segmentDurationMinutes': streamer.segmentDurationMinutes,
+      segmentDurationMinutes,
+    });
+
     if (typeof segmentDurationMinutes === 'number' && segmentDurationMinutes > 0) {
       await updateSegmentDuration(streamer, segmentDurationMinutes);
     }
 
+    const finalDuration = segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5;
+    console.log('[LiveClip] Calling startMonitoring with segmentDurationMinutes:', finalDuration);
+
     await startMonitoring([streamer], {
       detectClips,
-      segmentDurationMinutes: segmentDurationMinutes ?? streamer.segmentDurationMinutes ?? 5,
+      segmentDurationMinutes: finalDuration,
       promptId: prompt?.promptId,
       promptContent: prompt?.promptContent,
     });
@@ -1552,7 +1586,7 @@
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
+    margin: 0 0 0.2rem;
     letter-spacing: -0.02em;
   }
 
@@ -1841,18 +1875,19 @@
 
   /* ===== Monitor Card ===== */
   .monitor-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
     background-color: var(--sidebar-surface);
-    border-radius: 12px;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
     overflow: hidden;
-    transition: all 200ms ease;
+    transition: all 150ms ease;
   }
 
   .monitor-card:hover {
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  }
-
-  .monitor-card__content {
-    padding: 1rem 1.25rem;
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   }
 
   /* Card Header */
@@ -1860,7 +1895,7 @@
     display: flex;
     align-items: center;
     gap: 0.875rem;
-    margin-bottom: 1rem;
+    padding: 1rem;
   }
 
   .monitor-card__avatar {
@@ -1869,6 +1904,8 @@
     border-radius: 10px;
     overflow: hidden;
     flex-shrink: 0;
+    border: 2px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
   }
 
   .monitor-card__avatar-img {
@@ -1899,8 +1936,8 @@
   }
 
   .monitor-card__avatar-icon {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
   }
 
   .monitor-card__info {
@@ -1909,24 +1946,18 @@
   }
 
   .monitor-card__name {
-    font-size: 0.9375rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0 0 0.25rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .monitor-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
+    line-height: 1.3;
   }
 
   .monitor-card__platform {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     font-weight: 500;
   }
 
@@ -1943,17 +1974,10 @@
     color: #34d399;
   }
 
-  .monitor-card__divider {
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background-color: var(--sidebar-text-muted);
-    opacity: 0.4;
-  }
-
   .monitor-card__quick-actions {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.375rem;
+    flex-shrink: 0;
   }
 
   .monitor-card__icon-btn {
@@ -1964,14 +1988,16 @@
     justify-content: center;
     border-radius: 6px;
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
+    flex-shrink: 0;
   }
 
   .monitor-card__icon-btn:hover:not(:disabled) {
     background-color: var(--sidebar-hover);
+    border-color: var(--sidebar-border);
     color: var(--sidebar-text);
   }
 
@@ -1985,15 +2011,18 @@
   }
 
   .monitor-card__icon-btn-icon {
-    width: 14px;
-    height: 14px;
+    width: 18px;
+    height: 18px;
   }
+
 
   /* Status Badges */
   .monitor-status {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 5px;
     font-size: 0.6875rem;
     font-weight: 600;
   }
@@ -2012,6 +2041,7 @@
   }
 
   .monitor-status--active {
+    background-color: rgba(16, 185, 129, 0.15);
     color: #34d399;
   }
 
@@ -2020,6 +2050,7 @@
   }
 
   .monitor-status--live {
+    background-color: rgba(239, 68, 68, 0.15);
     color: #f87171;
   }
 
@@ -2042,111 +2073,40 @@
   }
 
   .monitor-status--offline {
+    background-color: transparent;
     color: var(--sidebar-text-muted);
-    opacity: 0.6;
+    padding: 0.375rem 0;
+    opacity: 0.7;
   }
 
   .monitor-status--offline .monitor-status__dot {
     background-color: var(--sidebar-text-muted);
+    opacity: 0.4;
     animation: none;
   }
 
   .monitor-status--checking {
+    background-color: var(--sidebar-hover);
     color: var(--sidebar-text-muted);
   }
 
-  /* Card Controls */
-  .monitor-card__controls {
+  /* Card Footer */
+  .monitor-card__footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-top: 0.875rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    gap: 0.75rem;
+    gap: 0.625rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--sidebar-border);
   }
 
-  .monitor-card__settings {
+  .monitor-card__status {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    flex-shrink: 0;
   }
 
-  .monitor-setting__dropdown-trigger {
-    height: 30px;
-    padding: 0 0.5rem 0 0.625rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    background-color: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .monitor-setting__dropdown-trigger:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.12);
-    color: var(--sidebar-text);
-  }
-
-  .monitor-setting__dropdown-trigger--disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .monitor-setting__dropdown-chevron {
-    width: 12px;
-    height: 12px;
-    opacity: 0.6;
-  }
-
-  .monitor-setting__toggle {
-    height: 30px;
-    padding: 0 0.625rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background-color: rgba(255, 255, 255, 0.04);
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .monitor-setting__toggle:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-
-  .monitor-setting__toggle--on {
-    background-color: rgba(16, 185, 129, 0.12);
-    border-color: rgba(16, 185, 129, 0.25);
-    color: #34d399;
-  }
-
-  .monitor-setting__toggle--on:hover:not(:disabled) {
-    background-color: rgba(16, 185, 129, 0.18);
-  }
-
-  .monitor-setting__toggle-icon {
-    width: 12px;
-    height: 12px;
-    opacity: 0.7;
-  }
-
-  .monitor-setting__toggle--on .monitor-setting__toggle-icon {
-    opacity: 1;
-  }
-
-  /* Card Actions */
-  .monitor-card__actions {
+  .monitor-card__controls {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -2164,7 +2124,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
+    padding: 0.5rem 0.625rem;
+    height: 32px;
     font-size: 0.6875rem;
     font-weight: 500;
     background-color: rgba(255, 255, 255, 0.04);
@@ -2198,7 +2159,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.4375rem 0.75rem;
+    padding: 0.5rem 0.625rem;
+    height: 32px;
     border-radius: 6px;
     font-size: 0.6875rem;
     font-weight: 500;
@@ -2244,6 +2206,28 @@
   .monitor-action--stop:hover {
     background-color: rgba(239, 68, 68, 0.2);
     color: #fca5a5;
+  }
+
+  .monitor-action--dvr {
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--sidebar-text-muted);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .monitor-action--dvr:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+  }
+
+  .monitor-action--dvr-on {
+    background-color: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.25);
+    color: #34d399;
+  }
+
+  .monitor-action--dvr-on:hover:not(:disabled) {
+    background-color: rgba(16, 185, 129, 0.18);
+    color: #34d399;
   }
 
   /* ===== Activity Log ===== */

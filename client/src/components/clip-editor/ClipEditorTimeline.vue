@@ -551,36 +551,18 @@ function getSegmentPeaks(startTime: number, segmentDuration: number): Array<{ mi
     return [];
   }
   
+  // Get peaks from waveform service
   const numBars = getWaveformBars(segmentDuration);
-  
-  // Try sync first (works for cached mode)
-  const syncPeaks = waveformService.getPeaksSync(props.videoSourcePath, {
+  const peaks = waveformService.getPeaksForRange(props.videoSourcePath, {
     startTime,
     endTime: startTime + segmentDuration,
     pixelWidth: numBars,
   });
   
-  if (syncPeaks && syncPeaks.length > 0) {
-    // Cache and return
-    waveformPeaks.value.set(cacheKey, syncPeaks);
-    return syncPeaks;
-  }
+  // Cache the result
+  waveformPeaks.value.set(cacheKey, peaks);
   
-  // For streaming mode, fetch async and cache when ready
-  waveformService.getPeaksForRange(props.videoSourcePath, {
-    startTime,
-    endTime: startTime + segmentDuration,
-    pixelWidth: numBars,
-  }).then(peaks => {
-    if (peaks && peaks.length > 0) {
-      waveformPeaks.value.set(cacheKey, peaks);
-    }
-  }).catch(err => {
-    console.error('[ClipEditorTimeline] Failed to fetch peaks:', err);
-  });
-  
-  // Return empty for now, will update when async completes
-  return [];
+  return peaks;
 }
 
 // Generate waveform height from real peak data
@@ -588,8 +570,13 @@ function getWaveformHeight(index: number, startTime: number, segmentDuration: nu
   const peaks = getSegmentPeaks(startTime, segmentDuration);
   
   if (peaks.length === 0 || index >= peaks.length) {
-    // No data yet - return minimal height (loading)
-    return '5%';
+    // Fallback to placeholder pattern if no data
+    const time = index / 10;
+    const height = 
+      Math.abs(Math.sin(time * 0.5) * 0.6) +
+      Math.abs(Math.sin(time * 1.2) * 0.3) +
+      Math.abs(Math.sin(time * 2.8) * 0.1);
+    return `${Math.max(10, height * 100)}%`;
   }
   
   const peak = peaks[index];
@@ -607,14 +594,18 @@ function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: 
   // Find the audio track to get its file path
   const audioTrack = audioTracks.value.find(t => t.id === audioTrackId);
   if (!audioTrack) {
-    return '5%'; // Minimal height if track not found
+    return '50%'; // Default height if track not found
   }
   
-  const cacheKey = `audio_${audioTrackId}_${startTime}-${segmentDuration}`;
-  
-  // Check cache first
-  if (waveformPeaks.value.has(cacheKey)) {
-    const peaks = waveformPeaks.value.get(cacheKey)!;
+  // Check if waveform is loaded for this audio file
+  if (waveformService.isLoaded(audioTrack.file_path)) {
+    const numBars = getWaveformBars(segmentDuration);
+    const peaks = waveformService.getPeaksForRange(audioTrack.file_path, {
+      startTime,
+      endTime: startTime + segmentDuration,
+      pixelWidth: numBars,
+    });
+    
     if (peaks.length > 0 && index < peaks.length) {
       const peak = peaks[index];
       const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
@@ -623,26 +614,13 @@ function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: 
     }
   }
   
-  // Check if waveform is loaded for this audio file
-  if (waveformService.isLoaded(audioTrack.file_path)) {
-    const numBars = getWaveformBars(segmentDuration);
-    
-    // Fetch async and cache
-    waveformService.getPeaksForRange(audioTrack.file_path, {
-      startTime,
-      endTime: startTime + segmentDuration,
-      pixelWidth: numBars,
-    }).then(peaks => {
-      if (peaks && peaks.length > 0) {
-        waveformPeaks.value.set(cacheKey, peaks);
-      }
-    }).catch(err => {
-      console.error('[ClipEditorTimeline] Failed to fetch audio peaks:', err);
-    });
-  }
-  
-  // Return minimal height while loading
-  return '5%';
+  // Fallback to procedural waveform pattern
+  const time = index / 10;
+  const height = 
+    Math.abs(Math.sin(time * 0.7) * 0.5) +
+    Math.abs(Math.sin(time * 1.5) * 0.3) +
+    Math.abs(Math.sin(time * 3.2) * 0.2);
+  return `${Math.max(15, height * 100)}%`;
 }
 </script>
 
