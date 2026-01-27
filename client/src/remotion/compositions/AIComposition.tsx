@@ -7,6 +7,7 @@ import { AudioTrack } from '../components/AudioTrack';
 import { ShapeElement } from '../components/ShapeElement';
 import { CameraMotion } from '../components/CameraMotion';
 import { ImpactEffects } from '../components/ImpactEffects';
+import { TransitionEffects } from '../components/TransitionEffects';
 
 interface AICompositionProps {
   composition: AIVideoComposition | null;
@@ -39,8 +40,9 @@ export const AIComposition: React.FC<AICompositionProps> = ({ composition, video
   const audioTracks = sortedTracks.filter(track => track.type === 'audio');
   const cameraMotionTrack = sortedTracks.find(track => track.type === 'cameraMotion');
   const impactFXTrack = sortedTracks.find(track => track.type === 'impactFX');
+  const transitionTrack = sortedTracks.find(track => track.type === 'transition');
   const visualTracks = sortedTracks.filter(track => 
-    track.type !== 'audio' && track.type !== 'cameraMotion' && track.type !== 'impactFX'
+    track.type !== 'audio' && track.type !== 'cameraMotion' && track.type !== 'impactFX' && track.type !== 'transition'
   );
 
   // Render visual content
@@ -97,6 +99,15 @@ export const AIComposition: React.FC<AICompositionProps> = ({ composition, video
       <ImpactEffects track={impactFXTrack}>
         {wrappedContent}
       </ImpactEffects>
+    );
+  }
+  
+  // Wrap with transitions if present
+  if (transitionTrack) {
+    wrappedContent = (
+      <TransitionEffects track={transitionTrack}>
+        {wrappedContent}
+      </TransitionEffects>
     );
   }
 

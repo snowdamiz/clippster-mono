@@ -510,39 +510,96 @@ function handleAssetsSelected(assets: AIVideoMediaItem[]) {
 }
 
 async function fetchClipTranscript(item: AIVideoMediaItem) {
+  console.log(`[AIVideoCreator] Fetching transcript for clip: ${item.name} (${item.id})`);
+  
   try {
     transcriptGenerationStatus.value.set(item.id, { status: 'generating', progress: 'Loading...' });
     
-    // Fetch clip segments which contain the transcript
-    const result = await invoke<any[]>('execute_query', {
-      query: `
-        SELECT cs.transcript 
-        FROM clip_versions cv
-        JOIN clip_segments cs ON cs.clip_version_id = cv.id
-        WHERE cv.clip_id = ? AND cv.id = (
-          SELECT current_version_id FROM clips WHERE id = ?
-        )
-        ORDER BY cs.segment_index
-      `,
-      params: [item.id, item.id]
-    });
+    // Import the database service
+    const { getClipSegmentsByClipId } = await import('../services/database/clip-segments');
+    console.log(`[AIVideoCreator] Database service imported`);
     
-    if (result && result.length > 0) {
+    // Extract actual clip ID from composite ID (format: clipId_buildId_aspectRatio)
+    const actualClipId = item.source?.clipId || item.id.split('_')[0];
+    console.log(`[AIVideoCreator] Using clip ID: ${actualClipId} (from composite: ${item.id})`);
+    
+    // Fetch clip segments which contain the transcript
+    const segments = await getClipSegmentsByClipId(actualClipId);
+    console.log(`[AIVideoCreator] Found ${segments?.length || 0} segments for clip ${item.name}`);
+    
+    // If no segments, try to get transcript from the clip's project
+    if (!segments || segments.length === 0) {
+      console.log(`[AIVideoCreator] No segments found, trying to get transcript from project level`);
+      
+      const { getClip } = await import('../services/database/clips');
+      const { getTranscriptByProjectId } = await import('../services/database/transcripts');
+      
+      const clip = await getClip(actualClipId);
+      if (clip?.project_id) {
+        console.log(`[AIVideoCreator] Found project ID: ${clip.project_id}`);
+        const transcript = await getTranscriptByProjectId(clip.project_id);
+        
+        if (transcript?.text) {
+          console.log(`[AIVideoCreator] Found project-level transcript: ${transcript.text.length} characters`);
+          const m = mediaItems.value.find(x => x.id === item.id);
+          if (m) {
+            m.transcript = transcript.text;
+            console.log(`[AIVideoCreator] ✅ Loaded project transcript for ${item.name}: ${transcript.text.substring(0, 100)}...`);
+          }
+          transcriptGenerationStatus.value.delete(item.id);
+          return;
+        } else {
+          console.log(`[AIVideoCreator] No transcript found at project level`);
+        }
+      } else {
+        console.log(`[AIVideoCreator] Clip has no project_id`);
+      }
+    }
+    
+    if (segments && segments.length > 0) {
+      // Log first segment to see what we have
+      console.log(`[AIVideoCreator] First segment transcript:`, segments[0].transcript?.substring(0, 100));
+      
       // Combine all segment transcripts
-      const fullTranscript = result
-        .map(row => row.transcript)
+      const fullTranscript = segments
+        .map(seg => {
+          if (!seg.transcript) return '';
+          
+          // Handle JSON transcript format
+          try {
+            const parsed = JSON.parse(seg.transcript);
+            if (parsed.words && Array.isArray(parsed.words)) {
+              return parsed.words.map((w: any) => w.word || w.text || '').join(' ');
+            } else if (parsed.segments && Array.isArray(parsed.segments)) {
+              return parsed.segments.map((s: any) => s.text || '').join(' ');
+            } else if (Array.isArray(parsed)) {
+              return parsed.map((w: any) => w.word || w.text || '').join(' ');
+            }
+            return String(parsed);
+          } catch {
+            // Plain text transcript
+            return seg.transcript;
+          }
+        })
         .filter(t => t)
         .join(' ');
+      
+      console.log(`[AIVideoCreator] Combined transcript length: ${fullTranscript.length} characters`);
       
       const m = mediaItems.value.find(x => x.id === item.id);
       if (m) {
         m.transcript = fullTranscript;
+        console.log(`[AIVideoCreator] ✅ Loaded transcript for ${item.name}: ${fullTranscript.substring(0, 100)}...`);
+      } else {
+        console.warn(`[AIVideoCreator] Could not find media item ${item.id} to update transcript`);
       }
+    } else {
+      console.warn(`[AIVideoCreator] No segments found for clip ${item.name}`);
     }
     
     transcriptGenerationStatus.value.delete(item.id);
   } catch (e) {
-    console.error(`Failed to fetch transcript for clip ${item.id}:`, e);
+    console.error(`[AIVideoCreator] ❌ Failed to fetch transcript for clip ${item.id}:`, e);
     transcriptGenerationStatus.value.delete(item.id);
   }
 }

@@ -14,7 +14,7 @@ export interface AIVideoComposition {
 
 export interface AIVideoTrack {
   id: string;
-  type: 'video' | 'audio' | 'image' | 'text' | 'shape' | 'cameraMotion' | 'impactFX';
+  type: 'video' | 'audio' | 'image' | 'text' | 'shape' | 'cameraMotion' | 'impactFX' | 'transition';
   name: string;
   source?: MediaSource;
   startTime: number;

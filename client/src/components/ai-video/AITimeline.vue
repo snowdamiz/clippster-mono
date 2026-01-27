@@ -34,18 +34,59 @@
             </div>
             
             <div class="ai-timeline__track-content">
-              <div
-                class="ai-timeline__segment"
-                :style="{
-                  left: `${(track.startTime / duration) * 100}%`,
-                  width: `${((track.endTime - track.startTime) / duration) * 100}%`,
-                }"
-                :class="`ai-timeline__segment--${track.type}`"
-              >
-                <div class="ai-timeline__segment-content">
-                  <span class="ai-timeline__segment-label">{{ formatTime(track.endTime - track.startTime) }}</span>
+              <!-- Show individual effects/transitions for effect tracks -->
+              <template v-if="track.type === 'cameraMotion' || track.type === 'impactFX'">
+                <div
+                  v-for="(effect, idx) in getTrackEffects(track)"
+                  :key="`${track.id}-effect-${idx}`"
+                  class="ai-timeline__segment ai-timeline__segment--effect"
+                  :style="{
+                    left: `${(effect.startTime / duration) * 100}%`,
+                    width: `${((effect.endTime - effect.startTime) / duration) * 100}%`,
+                  }"
+                  :class="`ai-timeline__segment--${track.type}`"
+                  :title="effect.type"
+                >
+                  <div class="ai-timeline__segment-content">
+                    <span class="ai-timeline__segment-label">{{ effect.type }}</span>
+                  </div>
                 </div>
-              </div>
+              </template>
+              
+              <!-- Show individual transitions -->
+              <template v-else-if="track.type === 'transition'">
+                <div
+                  v-for="(transition, idx) in getTrackTransitions(track)"
+                  :key="`${track.id}-transition-${idx}`"
+                  class="ai-timeline__segment ai-timeline__segment--transition"
+                  :style="{
+                    left: `${(transition.time / duration) * 100}%`,
+                    width: `${(transition.duration / duration) * 100}%`,
+                  }"
+                  :class="`ai-timeline__segment--${track.type}`"
+                  :title="transition.type"
+                >
+                  <div class="ai-timeline__segment-content">
+                    <span class="ai-timeline__segment-label">{{ transition.type }}</span>
+                  </div>
+                </div>
+              </template>
+              
+              <!-- Show full track segment for other types -->
+              <template v-else>
+                <div
+                  class="ai-timeline__segment"
+                  :style="{
+                    left: `${(track.startTime / duration) * 100}%`,
+                    width: `${((track.endTime - track.startTime) / duration) * 100}%`,
+                  }"
+                  :class="`ai-timeline__segment--${track.type}`"
+                >
+                  <div class="ai-timeline__segment-content">
+                    <span class="ai-timeline__segment-label">{{ formatTime(track.endTime - track.startTime) }}</span>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -65,7 +106,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { Video, Music, Type, Shapes, Camera, Zap } from 'lucide-vue-next';
+import { Video, Music, Type, Shapes, Camera, Zap, Repeat } from 'lucide-vue-next';
 import type { AIVideoComposition } from '@/types/ai-video';
 
 const props = defineProps<{
@@ -76,7 +117,8 @@ const props = defineProps<{
 const duration = computed(() => props.composition?.duration || 0);
 
 const playheadPosition = computed(() => {
-  if (!duration.value || !props.currentTime) return 0;
+  if (!duration.value) return 0;
+  if (props.currentTime === undefined || props.currentTime === null) return 0;
   return (props.currentTime / duration.value) * 100;
 });
 
@@ -109,9 +151,24 @@ function getTrackIcon(type: string) {
       return Camera;
     case 'impactFX':
       return Zap;
+    case 'transition':
+      return Repeat;
     default:
       return Video;
   }
+}
+
+function getTrackEffects(track: any) {
+  const effects = track.properties?.effects || [];
+  return effects.map((effect: any) => ({
+    ...effect,
+    startTime: effect.startTime ?? effect.time ?? 0,
+    endTime: effect.endTime ?? (effect.time + effect.duration) ?? 0,
+  }));
+}
+
+function getTrackTransitions(track: any) {
+  return track.properties?.transitions || [];
 }
 
 function formatTime(seconds: number): string {

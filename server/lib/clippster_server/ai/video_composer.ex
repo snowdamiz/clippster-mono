@@ -374,62 +374,292 @@ defmodule ClippsterServer.AI.VideoComposer do
     - Position: x: 50 (center), y: 85 (bottom)
     - Animation: {"type": "fade", "duration": 0.3}
     
-    ## EFFECT LIBRARY & USAGE GUIDELINES
+    ## ADVANCED EFFECT LIBRARY & USAGE GUIDELINES
+    
+    ### Scene Transitions (transition track)
+    
+    **CRITICAL**: Use transitions between major scene changes, not just effects on one continuous clip.
+    
+    **Hard Cut**:
+    - Type: "cut"
+    - Instant switch between scenes
+    - Use for: Fast-paced content, beat-synced edits, action sequences
+    - Duration: 0s (instant)
+    
+    **Fade (Cross Dissolve)**:
+    - Type: "fade"
+    - Smooth opacity blend between scenes
+    - Use for: Calm transitions, time passage, mood shifts
+    - Duration: 0.3-0.8s
+    
+    **Slide Transitions**:
+    - Type: "slideLeft", "slideRight", "slideUp", "slideDown"
+    - One scene pushes the other off screen
+    - Use for: Sequential content, location changes, before/after
+    - Duration: 0.4-0.6s
+    - Direction: Match content flow (left→right for progression)
+    
+    **Wipe Transitions**:
+    - Type: "wipeLeft", "wipeRight", "wipeUp", "wipeDown"
+    - New scene reveals over old scene
+    - Use for: Reveals, comparisons, dramatic changes
+    - Duration: 0.4-0.7s
+    
+    **Diagonal Wipe**:
+    - Type: "diagonalWipe"
+    - Wipe from corner (adds dynamic energy)
+    - Use for: Modern aesthetic, tech content, product reveals
+    - Duration: 0.5-0.7s
+    
+    **Spin/Rotate Transition**:
+    - Type: "spin", "rotate180", "rotate360"
+    - Scene rotates to reveal next scene
+    - Use for: Energetic content, music videos, sports highlights
+    - Duration: 0.3-0.5s
+    - Direction: "clockwise" or "counterClockwise"
+    
+    **Spiral Transition**:
+    - Type: "spiralIn", "spiralOut"
+    - Scene spirals in/out from center
+    - Use for: Hypnotic effect, music videos, psychedelic content
+    - Duration: 0.5-0.8s
+    
+    **Zoom Transition**:
+    - Type: "zoomIn", "zoomOut"
+    - Scene zooms in/out to reveal next scene
+    - Use for: Focus shifts, dramatic reveals, impact moments
+    - Duration: 0.4-0.6s
+    
+    **Flip Transition**:
+    - Type: "flipHorizontal", "flipVertical"
+    - Scene flips like a card to reveal back side
+    - Use for: Before/after, reveals, card-style presentations
+    - Duration: 0.5-0.7s
+    
+    **Clock Wipe**:
+    - Type: "clockWipe"
+    - Circular wipe like clock hands
+    - Use for: Time-based content, countdowns, reveals
+    - Duration: 0.6-0.9s
+    
+    **Iris Transition**:
+    - Type: "irisIn", "irisOut"
+    - Circular mask expands/contracts from center
+    - Use for: Focus on subject, vintage aesthetic, dramatic reveals
+    - Duration: 0.5-0.8s
+    
+    **Pixelate Transition**:
+    - Type: "pixelate"
+    - Scene breaks into pixels then reforms
+    - Use for: Gaming content, tech aesthetic, glitch style
+    - Duration: 0.4-0.6s
+    
+    **Glitch Transition**:
+    - Type: "glitchTransition"
+    - Digital distortion between scenes
+    - Use for: Tech content, cyberpunk aesthetic, error moments
+    - Duration: 0.2-0.4s
+    
+    **Burn Transition**:
+    - Type: "burn"
+    - Scene burns away with fire effect
+    - Use for: Dramatic reveals, intense moments, action content
+    - Duration: 0.5-0.8s
+    - Color: Orange/red gradient
+    
+    **Liquid Transition**:
+    - Type: "liquidStreaks", "liquidDrops"
+    - Liquid-like motion between scenes
+    - Use for: Smooth, organic transitions, beauty/fashion content
+    - Duration: 0.6-0.9s
+    
+    **Page Turn**:
+    - Type: "pageTurn"
+    - Scene peels away like turning a page
+    - Use for: Storytelling, tutorials, book-style presentations
+    - Duration: 0.7-1.0s
+    
+    **Blinds Transition**:
+    - Type: "blinds"
+    - Horizontal/vertical blinds reveal next scene
+    - Use for: Retro aesthetic, reveals, suspense
+    - Duration: 0.5-0.7s
+    
+    **Cube 3D Transition**:
+    - Type: "cube3D"
+    - Scenes on sides of rotating 3D cube
+    - Use for: Premium content, product showcases, modern aesthetic
+    - Duration: 0.8-1.2s
     
     ### Camera Motion (cameraMotion track)
     
     **Handheld Shake (Continuous)**:
+    - Type: "handheldShake"
     - Almost always use for cinematic feel
     - Commercial/Tutorial: 0.03 intensity
     - Vlog/Story: 0.04-0.05 intensity
     - Gaming/Viral: 0.06-0.07 intensity
     
     **Slow Zoom**:
+    - Type: "slowZoom"
     - Use for: Building suspense, emphasizing features, opening/closing
     - Don't use for: Fast action, tutorials (distracting)
     - Intensity: 0.15-0.25, Duration: 2-4s
+    - Direction: "in" or "out"
     
     **Punch Zoom**:
+    - Type: "punchZoom"
     - Use for: Genuine surprises, big reveals, beat drops
     - Don't use for: Every audio peak, calm content, sad moments
     - Intensity: 0.4-0.6, Duration: 0.2-0.4s
+    - Direction: "in" or "out"
     - MAX 3-4 times per video
     
     **Dolly Pan**:
+    - Type: "dollyPan"
     - Use for: Product showcases, transitions, building anticipation
     - Intensity: 0.15-0.25, Duration: 2-4s
+    - Direction: "left", "right", "up", "down"
+    
+    **Orbit/Arc Shot**:
+    - Type: "orbit"
+    - Camera circles around subject
+    - Use for: Product showcases, 3D reveals, hero moments
+    - Intensity: 0.2-0.4, Duration: 2-4s
+    - Direction: "clockwise" or "counterClockwise"
+    
+    **Dutch Angle/Tilt**:
+    - Type: "dutchAngle"
+    - Camera tilts on Z-axis
+    - Use for: Unease, action, dynamic energy
+    - Angle: 5-15 degrees
+    - Duration: 1-3s
     
     **Impact Shake**:
+    - Type: "impactShake"
     - Use for: Explosions, big wins/losses, shocking revelations
     - Don't use for: Calm content, professional presentations
     - Intensity: 0.4-0.6, Duration: 0.3-0.4s
     - MAX 2-3 times per video
     
+    **Parallax Effect**:
+    - Type: "parallax"
+    - Layers move at different speeds
+    - Use for: Depth, 3D feel, modern aesthetic
+    - Intensity: 0.1-0.3, Duration: 2-4s
+    
     ### Impact Effects (impactFX track)
     
     **Flash**:
+    - Type: "flash"
     - Use for: Major reveals, transitions, beat drops
     - Colors: White (neutral), Gold (wins), Red (losses), Blue (tech)
     - Duration: 0.12-0.2s
+    - Intensity: 0.5-0.8
     
     **Radial Glow**:
+    - Type: "radialGlow"
     - Use for: Highlighting elements, magical moments, victories
     - Duration: 0.6-1.0s
+    - Color: Match content (gold for wins, blue for tech)
+    - Intensity: 0.4-0.7
     
     **Impact Lines** (Anime style):
+    - Type: "impactLines"
     - Use for: Anime/gaming content, extreme reactions
     - Don't use for: Professional/corporate, tutorials
     - Duration: 0.2-0.4s
+    - Pattern: "radial" or "directional"
     
     **Chromatic Aberration**:
+    - Type: "chromaticAberration"
     - Use for: Tech aesthetic, impact moments (sparingly)
     - Don't use for: Clean professional content
     - MAX 1-2 times per video
     - Duration: 0.2-0.3s
+    - Intensity: 0.3-0.6
     
     **Glitch Effect**:
+    - Type: "glitch"
     - Use for: Tech/gaming, transitions, error moments
     - Duration: 0.08-0.15s
+    - Style: "digital", "analog", "rgb"
+    
+    **Lens Flare**:
+    - Type: "lensFlare"
+    - Use for: Cinematic moments, sun reveals, dramatic lighting
+    - Duration: 0.5-1.5s
+    - Position: Follow light source
+    - Intensity: 0.4-0.7
+    
+    **Light Rays/God Rays**:
+    - Type: "lightRays"
+    - Use for: Dramatic reveals, spiritual moments, beauty shots
+    - Duration: 1.0-3.0s
+    - Angle: Match light direction
+    - Intensity: 0.3-0.6
+    
+    **Particle Burst**:
+    - Type: "particleBurst"
+    - Use for: Celebrations, wins, magical moments
+    - Duration: 0.5-1.0s
+    - Particle type: "sparkles", "confetti", "smoke", "dust"
+    - Count: 50-200 particles
+    
+    **Screen Shake**:
+    - Type: "screenShake"
+    - Use for: Impacts, explosions, bass drops
+    - Duration: 0.2-0.4s
+    - Intensity: 0.3-0.6
+    - Axis: "both", "horizontal", "vertical"
+    
+    **Freeze Frame**:
+    - Type: "freezeFrame"
+    - Use for: Dramatic pauses, record scratch moments, emphasis
+    - Duration: 0.3-1.0s
+    - Effect: Optional slow-mo lead-in
+    
+    **Speed Ramp**:
+    - Type: "speedRamp"
+    - Use for: Action sequences, dramatic moments, transitions
+    - Speed: 0.25x to 3.0x
+    - Duration: 0.5-2.0s
+    - Curve: "easeIn", "easeOut", "easeInOut"
+    
+    **Motion Blur**:
+    - Type: "motionBlur"
+    - Use for: Fast action, speed emphasis, dynamic movement
+    - Duration: 0.2-0.5s
+    - Intensity: 0.3-0.7
+    - Direction: Match movement
+    
+    **Vignette Pulse**:
+    - Type: "vignettePulse"
+    - Use for: Beat-synced effects, tension, focus
+    - Duration: 0.3-0.6s per pulse
+    - Intensity: 0.3-0.6
+    - Sync to: Audio beats
+    
+    **Color Flash**:
+    - Type: "colorFlash"
+    - Use for: Beat drops, transitions, energy bursts
+    - Duration: 0.1-0.3s
+    - Color: Match mood (red=energy, blue=calm, purple=mystery)
+    - Intensity: 0.4-0.8
+    
+    **Distortion Wave**:
+    - Type: "distortionWave"
+    - Use for: Bass drops, impact moments, surreal effects
+    - Duration: 0.3-0.6s
+    - Intensity: 0.2-0.5
+    - Direction: "horizontal", "vertical", "radial"
+    
+    **RGB Split**:
+    - Type: "rgbSplit"
+    - Use for: Glitch aesthetic, tech content, impact moments
+    - Duration: 0.1-0.3s
+    - Offset: 5-20 pixels
+    - Intensity: 0.4-0.8
     
     ### Color Grading (ALWAYS APPLY)
     
@@ -449,15 +679,38 @@ defmodule ClippsterServer.AI.VideoComposer do
     
     ## EFFECT BUDGET BY CONTENT TYPE
     
-    - **Commercial**: 2-4 effects total (quality over quantity)
-    - **Viral/Gaming**: 6-10 effects (strategic energy)
-    - **Tutorial**: 1-3 effects (functional only)
-    - **Vlog**: 2-5 effects (natural feel)
-    - **Music**: 8-15 effects (artistic freedom)
+    - **Commercial/Product**: 4-8 effects + 2-4 transitions (polished, professional)
+    - **Viral/Gaming**: 10-15 effects + 4-6 transitions (high energy, fast-paced)
+    - **Tutorial**: 2-4 effects + 1-2 transitions (functional only, clear)
+    - **Vlog**: 3-6 effects + 2-3 transitions (natural, authentic)
+    - **Music Video**: 15-25 effects + 6-10 transitions (artistic freedom, beat-synced)
+    - **3D Product Reveal**: 6-10 effects + 4-6 transitions (cinematic, premium)
+    
+    ## TRANSITION STRATEGY
+    
+    **When to Use Transitions:**
+    - Scene changes (different location, time, subject)
+    - Major topic shifts
+    - Beat drops in music
+    - Before/after comparisons
+    - Chapter/section breaks
+    
+    **When NOT to Use Transitions:**
+    - Within same continuous shot
+    - Every 2 seconds (too chaotic)
+    - During important dialogue
+    - In calm, contemplative moments
+    
+    **Transition Pacing:**
+    - **Fast-paced content**: Transition every 3-5s
+    - **Medium-paced**: Transition every 5-8s
+    - **Slow-paced**: Transition every 8-12s
+    - **Match to music**: Sync transitions to beat/measure changes
     
     # TRACK LAYER SYSTEM
     - Layer 0: Main video/media
     - Layer 1-5: Camera motion and transforms
+    - Layer 6-9: Transitions between scenes
     - Layer 10-14: Text and captions
     - Layer 15-19: Shapes (vignettes, overlays)
     - Layer 20+: Impact effects (flashes, shakes)
@@ -491,6 +744,21 @@ defmodule ClippsterServer.AI.VideoComposer do
           }
         },
         {
+          "id": "transitions",
+          "type": "transition",
+          "name": "Scene Transitions",
+          "startTime": 0,
+          "endTime": #{duration},
+          "layer": 6,
+          "properties": {
+            "transitions": [
+              {"time": 3.5, "type": "slideLeft", "duration": 0.5},
+              {"time": 7.2, "type": "spin", "duration": 0.4, "direction": "clockwise"},
+              {"time": 10.8, "type": "zoomIn", "duration": 0.5}
+            ]
+          }
+        },
+        {
           "id": "camera-motion",
           "type": "cameraMotion",
           "name": "Camera Effects",
@@ -500,7 +768,9 @@ defmodule ClippsterServer.AI.VideoComposer do
           "properties": {
             "effects": [
               {"startTime": 0, "endTime": #{duration}, "type": "handheldShake", "intensity": 0.05},
-              {"startTime": 0, "endTime": 2.5, "type": "slowZoom", "direction": "in", "intensity": 0.2, "easing": "easeIn"}
+              {"startTime": 0, "endTime": 2.5, "type": "slowZoom", "direction": "in", "intensity": 0.2, "easing": "easeIn"},
+              {"startTime": 5.0, "endTime": 7.5, "type": "orbit", "direction": "clockwise", "intensity": 0.3},
+              {"startTime": 8.5, "endTime": 8.7, "type": "punchZoom", "direction": "in", "intensity": 0.5}
             ]
           }
         },
@@ -537,7 +807,9 @@ defmodule ClippsterServer.AI.VideoComposer do
           "properties": {
             "effects": [
               {"time": 4.2, "type": "flash", "duration": 0.15, "color": "#FFFFFF", "intensity": 0.7},
-              {"time": 4.2, "type": "shake", "duration": 0.3, "intensity": 0.5}
+              {"time": 4.2, "type": "screenShake", "duration": 0.3, "intensity": 0.5, "axis": "both"},
+              {"time": 6.8, "type": "radialGlow", "duration": 0.8, "color": "#FFD700", "intensity": 0.6},
+              {"time": 9.5, "type": "particleBurst", "duration": 0.7, "particleType": "sparkles", "count": 150}
             ]
           }
         }
@@ -547,16 +819,19 @@ defmodule ClippsterServer.AI.VideoComposer do
     Track types available:
     - "video": Video clips with source path and filters
     - "audio": Audio tracks
+    - "transition": Scene transitions (cuts, slides, spins, wipes, etc.)
     - "text": Text overlays with content, styling, and animations
     - "shape": Visual overlays (vignettes, flashes, gradients)
     - "cameraMotion": Zoom/pan effects applied to video layer
-    - "impactFX": Shake, flash, glow effects
+    - "impactFX": Impact effects (flash, shake, glow, particles, etc.)
     
     Text animations: "fade", "slide-up", "slide-down", "typewriter", "bounce", "scale-in", "blur-in"
     
-    Camera motion types: "slowZoom", "punchZoom", "dollyPan", "orbit", "handheldShake", "impactShake"
+    Transition types: "cut", "fade", "slideLeft", "slideRight", "slideUp", "slideDown", "wipeLeft", "wipeRight", "wipeUp", "wipeDown", "diagonalWipe", "spin", "rotate180", "rotate360", "spiralIn", "spiralOut", "zoomIn", "zoomOut", "flipHorizontal", "flipVertical", "clockWipe", "irisIn", "irisOut", "pixelate", "glitchTransition", "burn", "liquidStreaks", "liquidDrops", "pageTurn", "blinds", "cube3D"
     
-    Impact FX types: "flash", "shake", "radialGlow", "impactLines", "chromaticAberration", "glitch"
+    Camera motion types: "handheldShake", "slowZoom", "punchZoom", "dollyPan", "orbit", "dutchAngle", "impactShake", "parallax"
+    
+    Impact FX types: "flash", "radialGlow", "impactLines", "chromaticAberration", "glitch", "lensFlare", "lightRays", "particleBurst", "screenShake", "freezeFrame", "speedRamp", "motionBlur", "vignettePulse", "colorFlash", "distortionWave", "rgbSplit"
     
     ## CRITICAL DECISION-MAKING FRAMEWORK
     
