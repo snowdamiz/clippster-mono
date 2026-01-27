@@ -71,18 +71,19 @@
                 <div class="media-thumb">
                   <img v-if="item.thumbnailUrl" :src="item.thumbnailUrl" :alt="item.name" />
                   <component v-else :is="getMediaIcon(item.type)" :size="20" />
-                  
-                  <!-- Progress Overlay for Transcription -->
-                  <div v-if="transcriptGenerationStatus.has(item.id)" class="media-progress-overlay">
-                    <Loader2 :size="16" class="animate-spin text-primary" />
-                  </div>
                 </div>
                 
                 <div class="media-info">
                   <span class="media-name">{{ item.name }}</span>
-                  <span class="media-meta">
-                    {{ item.type }} • {{ formatDuration(item.duration) }}
-                  </span>
+                  <div class="media-meta-row">
+                    <span class="media-meta">
+                      {{ item.type }} • {{ formatDuration(item.duration) }}
+                    </span>
+                    <span v-if="transcriptGenerationStatus.has(item.id)" class="transcribing-badge">
+                      <Loader2 :size="10" class="animate-spin" />
+                      Transcribing
+                    </span>
+                  </div>
                 </div>
 
                 <button @click="removeMedia(item.id)" class="media-remove-btn">
@@ -491,15 +492,16 @@ async function handleClipsSelected(clips: any[]) {
     source: { type: 'clip', clipId: clip.id, path: clip.videoPath || clip.builtFilePath || '' },
     thumbnailUrl: clip.thumbnailPath,
     duration: clip.duration || 0,
-    transcript: clip.transcript || '',
+    transcript: '',
     addedAt: new Date(),
   }));
   
   mediaItems.value.push(...items);
   showClipPicker.value = false;
   
+  // Fetch transcripts from clip segments for built clips
   for (const item of items) {
-    if (!item.transcript) generateTranscriptForClip(item);
+    fetchClipTranscript(item);
   }
 }
 
@@ -507,29 +509,41 @@ function handleAssetsSelected(assets: AIVideoMediaItem[]) {
   mediaItems.value.push(...assets);
 }
 
-async function generateTranscriptForClip(item: AIVideoMediaItem) {
+async function fetchClipTranscript(item: AIVideoMediaItem) {
   try {
-    transcriptGenerationStatus.value.set(item.id, { status: 'generating', progress: 'Starting...' });
-    const clipData = await invoke<any>('get_clip_by_id', { clipId: item.id });
-    if (!clipData?.built_file_path) throw new Error('Clip file not found');
+    transcriptGenerationStatus.value.set(item.id, { status: 'generating', progress: 'Loading...' });
     
-    const audioPath = clipData.built_file_path.replace('.mp4', '_audio.mp3');
-    const audioData = await invoke<number[]>('read_file_binary', { path: audioPath });
-    const formData = new FormData();
-    formData.append('audio', new Blob([new Uint8Array(audioData)], { type: 'audio/mpeg' }), 'audio.mp3');
-    
-    const res = await api.post('/clips/transcribe', formData, {
-      params: { project_id: clipData.project_id },
-      headers: { 'Content-Type': 'multipart/form-data' }
+    // Fetch clip segments which contain the transcript
+    const result = await invoke<any[]>('execute_query', {
+      query: `
+        SELECT cs.transcript 
+        FROM clip_versions cv
+        JOIN clip_segments cs ON cs.clip_version_id = cv.id
+        WHERE cv.clip_id = ? AND cv.id = (
+          SELECT current_version_id FROM clips WHERE id = ?
+        )
+        ORDER BY cs.segment_index
+      `,
+      params: [item.id, item.id]
     });
     
-    const m = mediaItems.value.find(x => x.id === item.id);
-    if (m && res.data.transcript) {
-      m.transcript = res.data.transcript.text || '';
-      transcriptGenerationStatus.value.delete(item.id);
+    if (result && result.length > 0) {
+      // Combine all segment transcripts
+      const fullTranscript = result
+        .map(row => row.transcript)
+        .filter(t => t)
+        .join(' ');
+      
+      const m = mediaItems.value.find(x => x.id === item.id);
+      if (m) {
+        m.transcript = fullTranscript;
+      }
     }
+    
+    transcriptGenerationStatus.value.delete(item.id);
   } catch (e) {
-    transcriptGenerationStatus.value.set(item.id, { status: 'error' });
+    console.error(`Failed to fetch transcript for clip ${item.id}:`, e);
+    transcriptGenerationStatus.value.delete(item.id);
   }
 }
 
@@ -709,20 +723,13 @@ function formatTime(s: number) { return formatDuration(s); }
   object-fit: cover;
 }
 
-.media-progress-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
 .media-info {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 0.25rem;
 }
 
 .media-name {
@@ -735,11 +742,31 @@ function formatTime(s: number) { return formatDuration(s); }
   line-height: 1.2;
 }
 
+.media-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .media-meta {
   font-size: 0.6875rem;
   color: var(--muted-foreground);
   text-transform: capitalize;
   line-height: 1.2;
+}
+
+.transcribing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  background: var(--sidebar-active);
+  color: var(--sidebar-accent);
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .media-remove-btn {

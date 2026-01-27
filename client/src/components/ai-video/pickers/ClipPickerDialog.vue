@@ -33,20 +33,13 @@
             />
           </div>
 
-          <select v-model="projectFilter" class="clip-picker__filter">
-            <option value="all">All Projects</option>
-            <option v-for="project in projects" :key="project.id" :value="project.id">
-              {{ project.name }}
-            </option>
-          </select>
-
-          <select v-model="aspectRatioFilter" class="clip-picker__filter">
-            <option value="all">All Ratios</option>
-            <option value="16:9">16:9</option>
-            <option value="9:16">9:16</option>
-            <option value="1:1">1:1</option>
-            <option value="4:5">4:5</option>
-          </select>
+          <CustomDropdown
+            v-model="aspectRatioFilter"
+            :options="aspectRatioOptions"
+            placeholder="All Ratios"
+            class="clip-picker__dropdown"
+            trigger-class="clip-picker__dropdown-trigger"
+          />
         </div>
 
         <!-- Loading State -->
@@ -67,32 +60,37 @@
         <!-- Clips Grid -->
         <div v-else class="clip-picker__grid">
           <div
-            v-for="clipData in displayClips"
-            :key="clipData.clip.id"
+            v-for="buildItem in displayClips"
+            :key="buildItem.id"
             class="clip-picker__card"
-            :class="{ 'clip-picker__card--selected': isSelected(clipData.clip.id) }"
-            @click="toggleSelection(clipData)"
+            :class="{ 'clip-picker__card--selected': isSelected(buildItem.id) }"
+            @click="toggleSelection(buildItem)"
           >
             <!-- Selection Checkbox -->
             <div
               class="clip-picker__checkbox"
-              :class="{ 'clip-picker__checkbox--visible': isSelected(clipData.clip.id) }"
-              @click.stop="toggleSelection(clipData)"
+              :class="{ 'clip-picker__checkbox--visible': isSelected(buildItem.id) }"
+              @click.stop="toggleSelection(buildItem)"
             >
               <div
                 class="clip-picker__checkbox-inner"
-                :class="{ 'clip-picker__checkbox-inner--checked': isSelected(clipData.clip.id) }"
+                :class="{ 'clip-picker__checkbox-inner--checked': isSelected(buildItem.id) }"
               >
-                <Check v-if="isSelected(clipData.clip.id)" class="clip-picker__checkbox-icon" />
+                <Check v-if="isSelected(buildItem.id)" class="clip-picker__checkbox-icon" />
               </div>
+            </div>
+
+            <!-- Aspect Ratio Badge -->
+            <div v-if="buildItem.aspectRatio" class="clip-picker__aspect-badge">
+              {{ buildItem.aspectRatio }}
             </div>
 
             <!-- Thumbnail -->
             <div class="clip-picker__thumbnail">
               <img
-                v-if="getThumbnailUrl(clipData.clip)"
-                :src="getThumbnailUrl(clipData.clip)"
-                :alt="clipData.clip.name || 'Clip'"
+                v-if="getThumbnailUrl(buildItem)"
+                :src="getThumbnailUrl(buildItem)"
+                :alt="buildItem.clip.name || 'Clip'"
                 class="clip-picker__thumbnail-img"
               />
               <div v-else class="clip-picker__thumbnail-placeholder">
@@ -102,7 +100,7 @@
 
             <!-- Info -->
             <div class="clip-picker__info">
-              <h4 class="clip-picker__name">{{ clipData.clip.name || 'Untitled Clip' }}</h4>
+              <h4 class="clip-picker__name">{{ buildItem.clip.name || 'Untitled Clip' }}</h4>
             </div>
           </div>
         </div>
@@ -127,6 +125,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue';
 import { Search, Video, Music, Type, Sparkles, Check, Loader2, X } from 'lucide-vue-next';
+import CustomDropdown from '@/components/CustomDropdown.vue';
 import { invoke } from '@tauri-apps/api/core';
 import { getAllClipsWithBuilds } from '@/services/database/clip-build';
 import { getClipEdit, getClipAudioTracks, getClipTextOverlays, getClipStickers, getClipWatermarks, getClipEffects } from '@/services/database/clip-edits';
@@ -140,8 +139,12 @@ import type {
 } from '@/services/database/clip-edits';
 import type { ImportedClipData } from '@/types/ai-video';
 
-interface ClipWithFullData {
+interface ClipBuildItem {
+  id: string; // Unique ID for this build item (clip.id + build.id)
   clip: Clip & { builds: ClipBuild[] };
+  build: ClipBuild; // The specific build this item represents
+  aspectRatio: string | null;
+  thumbnailUrl?: string;
   editData?: {
     audioTracks: ClipAudioTrackRecord[];
     textOverlays: ClipTextOverlayRecord[];
@@ -166,13 +169,12 @@ const isOpen = computed({
 });
 
 const loading = ref(false);
-const allClips = ref<ClipWithFullData[]>([]);
-const selectedClips = ref<ClipWithFullData[]>([]);
+const allClips = ref<ClipBuildItem[]>([]);
+const selectedClips = ref<ClipBuildItem[]>([]);
 
 // Debug: expose allClips length for template
 const clipCount = computed(() => allClips.value.length);
 const searchQuery = ref('');
-const projectFilter = ref('all');
 const aspectRatioFilter = ref('all');
 const thumbnailCache = ref<Map<string, string>>(new Map());
 
@@ -180,8 +182,8 @@ function close() {
   cancel();
 }
 
-function getThumbnailUrl(clip: Clip & { builds: ClipBuild[] }): string | undefined {
-  return thumbnailCache.value.get(clip.id);
+function getThumbnailUrl(buildItem: ClipBuildItem): string | undefined {
+  return buildItem.thumbnailUrl || thumbnailCache.value.get(buildItem.id);
 }
 
 // Helper to extract output paths from a build (same as Clips.vue)
@@ -207,6 +209,8 @@ function getOutputPathsFromBuild(build: ClipBuild): string[] {
 }
 
 // Derive thumbnail path from video file path (same pattern as Clips.vue)
+// The video filename already contains the aspect ratio (e.g., clip_name_9-16_1.mp4)
+// So the thumbnail is simply: clip_name_9-16_1_thumb.jpg
 function deriveThumbnailPath(videoPath: string): string {
   // Extract filename without extension
   const parts = videoPath.split(/[/\\]/);
@@ -225,44 +229,41 @@ function deriveThumbnailPath(videoPath: string): string {
 }
 
 async function loadThumbnails() {
-  // Load thumbnails for all clips that don't have one cached yet
-  const clipsToLoad = allClips.value.filter(
-    (clipData) => !thumbnailCache.value.has(clipData.clip.id)
+  // Load thumbnails for all build items that don't have one cached yet
+  const itemsToLoad = allClips.value.filter(
+    (buildItem) => !buildItem.thumbnailUrl && !thumbnailCache.value.has(buildItem.id)
   );
 
-  if (clipsToLoad.length === 0) return;
+  if (itemsToLoad.length === 0) return;
 
   await Promise.all(
-    clipsToLoad.map(async (clipData) => {
-      const clip = clipData.clip;
+    itemsToLoad.map(async (buildItem) => {
+      const { clip, build, aspectRatio } = buildItem;
       
       // Try multiple thumbnail sources in order of preference
       const thumbnailCandidates: string[] = [];
       
-      // 1. Try built_thumbnail_path from clip
-      if (clip.built_thumbnail_path) {
-        thumbnailCandidates.push(clip.built_thumbnail_path);
+      // 1. Try deriving thumbnail from this build's output paths
+      // The video filename already contains aspect ratio (e.g., clip_name_9-16_1.mp4)
+      // So thumbnail will be: clip_name_9-16_1_thumb.jpg
+      const outputPaths = getOutputPathsFromBuild(build);
+      for (const outputPath of outputPaths) {
+        thumbnailCandidates.push(deriveThumbnailPath(outputPath));
       }
       
-      // 2. Try deriving from built_file_path
+      // 2. Try thumbnail from this specific build's thumbnail_path field
+      if (build.thumbnail_path) {
+        thumbnailCandidates.push(build.thumbnail_path);
+      }
+      
+      // 3. Try deriving from clip's built_file_path
       if (clip.built_file_path) {
         thumbnailCandidates.push(deriveThumbnailPath(clip.built_file_path));
       }
       
-      // 3. Try thumbnail from builds
-      if (clip.builds) {
-        for (const build of clip.builds) {
-          if (build.status === 'completed') {
-            if (build.thumbnail_path) {
-              thumbnailCandidates.push(build.thumbnail_path);
-            }
-            // Try deriving from build output paths
-            const outputPaths = getOutputPathsFromBuild(build);
-            for (const outputPath of outputPaths) {
-              thumbnailCandidates.push(deriveThumbnailPath(outputPath));
-            }
-          }
-        }
+      // 4. Try clip's built_thumbnail_path field
+      if (clip.built_thumbnail_path) {
+        thumbnailCandidates.push(clip.built_thumbnail_path);
       }
       
       // Try each candidate until one works
@@ -273,7 +274,9 @@ async function loadThumbnails() {
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: thumbnailPath,
             });
-            thumbnailCache.value.set(clip.id, dataUrl);
+            // Store in both the buildItem and cache
+            buildItem.thumbnailUrl = dataUrl;
+            thumbnailCache.value.set(buildItem.id, dataUrl);
             return; // Success, stop trying
           }
         } catch (err) {
@@ -281,28 +284,23 @@ async function loadThumbnails() {
         }
       }
       
-      console.warn(`[ClipPickerDialog] No thumbnail found for clip ${clip.id}`);
+      console.warn(`[ClipPickerDialog] No thumbnail found for build item ${buildItem.id} (aspect ratio: ${aspectRatio})`);
     })
   );
 }
 
-const projects = computed(() => {
-  const projectMap = new Map<string, { id: string; name: string }>();
-  allClips.value.forEach(clipData => {
-    if (clipData.clip.project_id && clipData.clip.project_name) {
-      projectMap.set(clipData.clip.project_id, {
-        id: clipData.clip.project_id,
-        name: clipData.clip.project_name,
-      });
-    }
-  });
-  return Array.from(projectMap.values());
-});
+const aspectRatioOptions = computed(() => [
+  { label: 'All Ratios', value: 'all' },
+  { label: '16:9', value: '16:9' },
+  { label: '9:16', value: '9:16' },
+  { label: '1:1', value: '1:1' },
+  { label: '4:5', value: '4:5' },
+]);
 
 // Use allClips directly with computed filtering - simpler reactivity
 const displayClips = computed(() => {
-  const result = allClips.value.filter(clipData => {
-    const clip = clipData.clip;
+  const result = allClips.value.filter(buildItem => {
+    const clip = buildItem.clip;
     
     // Search filter
     if (searchQuery.value) {
@@ -314,9 +312,11 @@ const displayClips = computed(() => {
       }
     }
 
-    // Project filter
-    if (projectFilter.value !== 'all' && clip.project_id !== projectFilter.value) {
-      return false;
+    // Aspect ratio filter - check this specific build's aspect ratio
+    if (aspectRatioFilter.value !== 'all') {
+      if (buildItem.aspectRatio !== aspectRatioFilter.value) {
+        return false;
+      }
     }
     
     return true;
@@ -325,8 +325,11 @@ const displayClips = computed(() => {
     allClipsLength: allClips.value.length,
     resultLength: result.length,
     searchQuery: searchQuery.value,
-    projectFilter: projectFilter.value,
-    sampleClip: result[0]?.clip?.name
+    aspectRatioFilter: aspectRatioFilter.value,
+    sampleBuildItem: result[0] ? {
+      clipName: result[0].clip.name,
+      aspectRatio: result[0].aspectRatio
+    } : null
   });
   return result;
 });
@@ -353,59 +356,16 @@ async function loadClips() {
     const clipsWithBuilds = await getAllClipsWithBuilds();
     console.log('[ClipPickerDialog] Total clips loaded:', clipsWithBuilds.length);
     
-    // Filter to clips that have completed builds with actual output files
-    const completedClips: (Clip & { builds: ClipBuild[] })[] = [];
+    // Create a ClipBuildItem for each completed build
+    const buildItems: ClipBuildItem[] = [];
     
     for (const clip of clipsWithBuilds) {
-      // Check if clip has any completed builds with output files
       if (clip.builds && clip.builds.length > 0) {
-        for (const build of clip.builds) {
-          if (build.status === 'completed') {
-            const outputPaths = getOutputPathsFromBuild(build);
-            if (outputPaths.length > 0) {
-              // Verify at least one output file exists
-              for (const filePath of outputPaths) {
-                try {
-                  const fileExists = await invoke<boolean>('check_file_exists', { path: filePath });
-                  if (fileExists) {
-                    // Update clip with the first valid built file path for display
-                    if (!clip.built_file_path) {
-                      clip.built_file_path = filePath;
-                    }
-                    completedClips.push(clip);
-                    break; // Found a valid build, move to next clip
-                  }
-                } catch (err) {
-                  console.warn('[ClipPickerDialog] Error checking file:', err);
-                }
-              }
-              if (completedClips.includes(clip)) break; // Already added this clip
-            }
-          }
-        }
-      }
-    }
-    
-    console.log('[ClipPickerDialog] Clips with verified built files:', completedClips.length);
-    
-    if (completedClips.length > 0) {
-      console.log('[ClipPickerDialog] Sample clip:', {
-        id: completedClips[0].id,
-        name: completedClips[0].name,
-        built_file_path: completedClips[0].built_file_path,
-        builds: completedClips[0].builds?.length,
-      });
-    }
-
-    // Load full edit data for each clip
-    const clipsWithFullData = await Promise.all(
-      completedClips.map(async (clip) => {
+        // Get edit data once per clip (shared across all builds)
+        let editData: ClipBuildItem['editData'] | undefined;
         try {
-          // Get the clip edit record
           const editRecord = await getClipEdit(clip.id);
-          
           if (editRecord) {
-            // Load all edit components
             const [audioTracks, textOverlays, stickers, watermarks, effects] = await Promise.all([
               getClipAudioTracks(editRecord.id),
               getClipTextOverlays(editRecord.id),
@@ -413,29 +373,82 @@ async function loadClips() {
               getClipWatermarks(editRecord.id),
               getClipEffects(editRecord.id),
             ]);
-
-            return {
-              clip,
-              editData: {
-                audioTracks,
-                textOverlays,
-                stickers,
-                watermarks,
-                effects,
-              },
-            };
+            editData = { audioTracks, textOverlays, stickers, watermarks, effects };
           }
-          
-          return { clip, editData: undefined };
         } catch (error) {
           console.error(`Failed to load edit data for clip ${clip.id}:`, error);
-          return { clip, editData: undefined };
         }
-      })
-    );
+
+        // Create a separate item for each completed build
+        for (const build of clip.builds) {
+          if (build.status === 'completed') {
+            const outputPaths = getOutputPathsFromBuild(build);
+            if (outputPaths.length > 0) {
+              // Verify at least one output file exists
+              let hasValidFile = false;
+              for (const filePath of outputPaths) {
+                try {
+                  const fileExists = await invoke<boolean>('check_file_exists', { path: filePath });
+                  if (fileExists) {
+                    hasValidFile = true;
+                    break;
+                  }
+                } catch (err) {
+                  console.warn('[ClipPickerDialog] Error checking file:', err);
+                }
+              }
+
+              if (hasValidFile) {
+                // Parse aspect ratios - create separate item for EACH aspect ratio
+                let aspectRatios: (string | null)[] = [];
+                if (build.aspect_ratios) {
+                  try {
+                    const parsed = JSON.parse(build.aspect_ratios);
+                    if (Array.isArray(parsed)) {
+                      aspectRatios = parsed;
+                    } else {
+                      aspectRatios = [build.aspect_ratios];
+                    }
+                  } catch {
+                    aspectRatios = [build.aspect_ratios];
+                  }
+                }
+                
+                // If no aspect ratios found, create one item with null
+                if (aspectRatios.length === 0) {
+                  aspectRatios = [null];
+                }
+
+                // Create a separate ClipBuildItem for each aspect ratio
+                for (const aspectRatio of aspectRatios) {
+                  buildItems.push({
+                    id: `${clip.id}_${build.id}_${aspectRatio || 'default'}`,
+                    clip,
+                    build,
+                    aspectRatio,
+                    editData,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    console.log('[ClipPickerDialog] Build items created:', buildItems.length);
+    
+    if (buildItems.length > 0) {
+      console.log('[ClipPickerDialog] Sample build item:', {
+        id: buildItems[0].id,
+        clipName: buildItems[0].clip.name,
+        aspectRatio: buildItems[0].aspectRatio,
+        buildId: buildItems[0].build.id,
+      });
+    }
 
     // Set the clips
-    allClips.value = clipsWithFullData;
+    allClips.value = buildItems;
     console.log('[ClipPickerDialog] Final allClips.value length:', allClips.value.length);
     
     // Load thumbnails after clips are loaded
@@ -447,16 +460,16 @@ async function loadClips() {
   }
 }
 
-function isSelected(clipId: string): boolean {
-  return selectedClips.value.some(c => c.clip.id === clipId);
+function isSelected(buildItemId: string): boolean {
+  return selectedClips.value.some(c => c.id === buildItemId);
 }
 
-function toggleSelection(clipData: ClipWithFullData) {
-  const index = selectedClips.value.findIndex(c => c.clip.id === clipData.clip.id);
+function toggleSelection(buildItem: ClipBuildItem) {
+  const index = selectedClips.value.findIndex(c => c.id === buildItem.id);
   if (index >= 0) {
     selectedClips.value.splice(index, 1);
   } else {
-    selectedClips.value.push(clipData);
+    selectedClips.value.push(buildItem);
   }
 }
 
@@ -466,61 +479,67 @@ function cancel() {
 }
 
 function confirm() {
-  const importedClips: ImportedClipData[] = selectedClips.value.map(clipData => ({
-    id: clipData.clip.id,
-    name: clipData.clip.name || 'Untitled Clip',
-    videoPath: clipData.clip.built_file_path || clipData.clip.file_path,
-    thumbnailPath: getThumbnailUrl(clipData.clip) || clipData.clip.built_thumbnail_path || '',
-    duration: clipData.clip.built_duration || clipData.clip.duration || 0,
+  const importedClips: ImportedClipData[] = selectedClips.value.map(buildItem => {
+    // Get the file path from the specific build
+    const outputPaths = getOutputPathsFromBuild(buildItem.build);
+    const videoPath = outputPaths[0] || buildItem.clip.built_file_path || buildItem.clip.file_path;
     
-    audioTracks: clipData.editData?.audioTracks.map(track => ({
-      filePath: track.file_path,
-      name: track.name,
-      startTime: track.start_time,
-      endTime: track.end_time,
-      volume: track.volume,
-      pan: track.pan,
-      fadeIn: track.fade_in,
-      fadeOut: track.fade_out,
-    })) || [],
-    
-    textOverlays: clipData.editData?.textOverlays.map(overlay => ({
-      text: overlay.text,
-      startTime: overlay.start_time,
-      endTime: overlay.end_time,
-      positionX: overlay.position_x,
-      positionY: overlay.position_y,
-      styleData: JSON.parse(overlay.style_data),
-      animation: overlay.animation,
-    })) || [],
-    
-    stickers: clipData.editData?.stickers.map(sticker => ({
-      stickerPath: sticker.sticker_path,
-      startTime: sticker.start_time,
-      endTime: sticker.end_time,
-      positionX: sticker.position_x,
-      positionY: sticker.position_y,
-      scale: sticker.scale,
-      rotation: sticker.rotation,
-    })) || [],
-    
-    watermarks: clipData.editData?.watermarks.map(watermark => ({
-      watermarkPath: watermark.watermark_path,
-      startTime: watermark.start_time,
-      endTime: watermark.end_time,
-      positionX: watermark.position_x,
-      positionY: watermark.position_y,
-      scale: watermark.scale,
-      opacity: watermark.opacity,
-    })) || [],
-    
-    effects: clipData.editData?.effects.map(effect => ({
-      effectType: effect.effect_type,
-      startTime: effect.start_time,
-      endTime: effect.end_time,
-      settings: JSON.parse(effect.settings),
-    })) || [],
-  }));
+    return {
+      id: buildItem.clip.id,
+      name: buildItem.clip.name || 'Untitled Clip',
+      videoPath,
+      thumbnailPath: getThumbnailUrl(buildItem) || buildItem.clip.built_thumbnail_path || '',
+      duration: buildItem.build.duration || buildItem.clip.built_duration || buildItem.clip.duration || 0,
+      
+      audioTracks: buildItem.editData?.audioTracks.map(track => ({
+        filePath: track.file_path,
+        name: track.name,
+        startTime: track.start_time,
+        endTime: track.end_time,
+        volume: track.volume,
+        pan: track.pan,
+        fadeIn: track.fade_in,
+        fadeOut: track.fade_out,
+      })) || [],
+      
+      textOverlays: buildItem.editData?.textOverlays.map(overlay => ({
+        text: overlay.text,
+        startTime: overlay.start_time,
+        endTime: overlay.end_time,
+        positionX: overlay.position_x,
+        positionY: overlay.position_y,
+        styleData: JSON.parse(overlay.style_data),
+        animation: overlay.animation,
+      })) || [],
+      
+      stickers: buildItem.editData?.stickers.map(sticker => ({
+        stickerPath: sticker.sticker_path,
+        startTime: sticker.start_time,
+        endTime: sticker.end_time,
+        positionX: sticker.position_x,
+        positionY: sticker.position_y,
+        scale: sticker.scale,
+        rotation: sticker.rotation,
+      })) || [],
+      
+      watermarks: buildItem.editData?.watermarks.map(watermark => ({
+        watermarkPath: watermark.watermark_path,
+        startTime: watermark.start_time,
+        endTime: watermark.end_time,
+        positionX: watermark.position_x,
+        positionY: watermark.position_y,
+        scale: watermark.scale,
+        opacity: watermark.opacity,
+      })) || [],
+      
+      effects: buildItem.editData?.effects.map(effect => ({
+        effectType: effect.effect_type,
+        startTime: effect.start_time,
+        endTime: effect.end_time,
+        settings: JSON.parse(effect.settings),
+      })) || [],
+    };
+  });
 
   emit('select', importedClips);
   selectedClips.value = [];
@@ -551,7 +570,7 @@ function formatDuration(seconds?: number | null): string {
 /* ===== Dialog Container ===== */
 .clip-picker {
   background-color: var(--sidebar-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--sidebar-border);
   border-radius: 12px;
   width: 100%;
   max-width: 680px;
@@ -566,7 +585,7 @@ function formatDuration(seconds?: number | null): string {
 /* ===== Accent Bar ===== */
 .clip-picker__accent {
   height: 3px;
-  background: var(--sidebar-accent);
+  background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
   flex-shrink: 0;
 }
 
@@ -609,7 +628,7 @@ function formatDuration(seconds?: number | null): string {
   width: 52px;
   height: 52px;
   border-radius: 12px;
-  background-color: var(--sidebar-active);
+  background-color: rgba(6, 182, 212, 0.15);
   color: var(--sidebar-accent);
   margin-bottom: 0.875rem;
 }
@@ -647,14 +666,14 @@ function formatDuration(seconds?: number | null): string {
 }
 
 .clip-picker__content::-webkit-scrollbar-thumb {
-  background-color: var(--border);
+  background-color: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
 
 .clip-picker__filters {
   display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .clip-picker__search {
@@ -677,27 +696,67 @@ function formatDuration(seconds?: number | null): string {
 .clip-picker__search-input {
   width: 100%;
   padding: 0.5rem 0.75rem 0.5rem 2.5rem;
-  background: var(--input);
-  border: 1px solid var(--border);
+  background: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
   border-radius: 8px;
-  color: var(--foreground);
+  color: var(--sidebar-text);
   font-size: 0.875rem;
+  transition: all 150ms ease;
+}
+
+.clip-picker__search-input::placeholder {
+  color: var(--sidebar-text-muted);
+  opacity: 0.6;
 }
 
 .clip-picker__search-input:focus {
   outline: none;
   border-color: var(--sidebar-accent);
-  box-shadow: 0 0 0 3px var(--sidebar-active);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
 }
 
-.clip-picker__filter {
-  padding: 0.5rem 0.75rem;
-  background: var(--input);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--foreground);
-  font-size: 0.875rem;
-  cursor: pointer;
+.clip-picker__dropdown {
+  flex-shrink: 0;
+}
+
+/* Override CustomDropdown's default w-full class */
+.clip-picker__dropdown :deep(.relative) {
+  width: auto !important;
+  display: inline-block !important;
+}
+
+/* Dropdown trigger button styling */
+:deep(.clip-picker__dropdown-trigger) {
+  width: auto !important;
+  min-width: 140px !important;
+  padding: 0.5rem 0.75rem !important;
+  background-color: var(--sidebar-hover) !important;
+  border: 1px solid var(--sidebar-border) !important;
+  border-radius: 8px !important;
+  font-size: 0.875rem !important;
+  color: var(--sidebar-text) !important;
+  transition: all 150ms ease !important;
+  justify-content: space-between !important;
+  display: inline-flex !important;
+}
+
+:deep(.clip-picker__dropdown-trigger:hover) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+:deep(.clip-picker__dropdown-trigger:focus-within) {
+  border-color: var(--sidebar-accent) !important;
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15) !important;
+}
+
+:deep(.clip-picker__dropdown-trigger span) {
+  color: var(--sidebar-text) !important;
+}
+
+:deep(.clip-picker__dropdown-trigger svg) {
+  width: 14px !important;
+  height: 14px !important;
+  color: var(--sidebar-text-muted) !important;
 }
 
 .clip-picker__loading,
@@ -798,6 +857,21 @@ function formatDuration(seconds?: number | null): string {
   width: 16px;
   height: 16px;
   color: white;
+}
+
+/* Aspect Ratio Badge */
+.clip-picker__aspect-badge {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 5;
+  padding: 0.25rem 0.5rem;
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+  backdrop-filter: blur(4px);
 }
 
 .clip-picker__thumbnail {
@@ -932,45 +1006,49 @@ function formatDuration(seconds?: number | null): string {
 /* ===== Footer ===== */
 .clip-picker__footer {
   display: flex;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  border-top: 1px solid var(--border);
-  background-color: var(--sidebar-surface);
+  gap: 0.625rem;
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid var(--sidebar-border);
 }
 
 .clip-picker__btn {
   flex: 1;
-  padding: 0.625rem 1.25rem;
-  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
   font-size: 0.875rem;
   font-weight: 600;
+  border-radius: 8px;
+  border: none;
   cursor: pointer;
   transition: all 150ms ease;
-  border: none;
+}
+
+.clip-picker__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .clip-picker__btn--secondary {
   background-color: var(--sidebar-hover);
   color: var(--sidebar-text);
+  border: 1px solid var(--sidebar-border);
 }
 
-.clip-picker__btn--secondary:hover {
-  background-color: rgba(255, 255, 255, 0.15);
+.clip-picker__btn--secondary:hover:not(:disabled) {
+  background-color: var(--sidebar-active);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .clip-picker__btn--primary {
-  background: var(--sidebar-accent);
+  background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
   color: white;
 }
 
 .clip-picker__btn--primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--sidebar-active);
-}
-
-.clip-picker__btn--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  opacity: 0.9;
 }
 
 /* ===== Transitions ===== */
@@ -985,20 +1063,66 @@ function formatDuration(seconds?: number | null): string {
 }
 
 .dialog-enter-active {
-  transition: all 200ms ease;
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dialog-leave-active {
-  transition: all 150ms ease;
+  transition: all 150ms ease-in;
 }
 
 .dialog-enter-from {
   opacity: 0;
-  transform: scale(0.95) translateY(-10px);
+  transform: scale(0.96) translateY(8px);
 }
 
 .dialog-leave-to {
   opacity: 0;
   transform: scale(0.98);
 }
+</style>
+
+<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
+<style>
+  /* Clip Picker dropdown menu styling */
+  .clip-picker__dropdown + div[class*='fixed'],
+  div.fixed.bg-popover {
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+    animation: clipPickerDropdownFade 100ms ease-out !important;
+  }
+
+  @keyframes clipPickerDropdownFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dropdown menu items */
+  .clip-picker__dropdown + div[class*='fixed'] button,
+  div.fixed.bg-popover button {
+    display: flex !important;
+    align-items: center !important;
+    padding: 0.5rem 0.75rem !important;
+    border-radius: 5px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: background-color 150ms ease !important;
+  }
+
+  .clip-picker__dropdown + div[class*='fixed'] button:hover,
+  div.fixed.bg-popover button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  .clip-picker__dropdown + div[class*='fixed'] button.bg-primary\/10,
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(6, 182, 212, 0.15) !important;
+    color: var(--sidebar-accent) !important;
+  }
 </style>
