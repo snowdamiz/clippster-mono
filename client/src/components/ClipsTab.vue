@@ -1153,7 +1153,7 @@
     return clipThumbnailCache.value.get(clipId) || null;
   }
 
-  // Sorted clips: by run_number descending (newest first), then by virality descending
+  // Sorted clips: by virality descending across all runs
   const sortedClips = computed(() => {
     return [...props.clips].sort((a, b) => {
       // First, put manual clips at the bottom
@@ -1163,14 +1163,8 @@
         return aIsManual ? 1 : -1; // Manual clips go to the bottom
       }
 
-      // For non-manual clips: sort by run_number descending (newest run first)
-      const runA = a.run_number || 0;
-      const runB = b.run_number || 0;
-      if (runB !== runA) {
-        return runB - runA;
-      }
-
-      // Then sort by virality score descending (highest first)
+      // For non-manual clips: sort by virality score descending (highest first)
+      // This sorts ALL clips by virality regardless of which run they came from
       const viralityA = a.current_version_virality_score || 0;
       const viralityB = b.current_version_virality_score || 0;
       return viralityB - viralityA;
