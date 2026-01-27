@@ -45,17 +45,11 @@
       </h3>
 
       <div class="flex items-center gap-2 text-xs text-white/70 font-medium">
-        <p class="line-clamp-1 max-w-[50%]" v-if="streamerName">
-          <span class="text-primary/90">{{ streamerName }}</span>
-        </p>
-
-        <span v-if="streamerName && projectName" class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
-
         <p class="line-clamp-1 max-w-[50%]" v-if="projectName">
           {{ projectName }}
         </p>
 
-        <span v-if="(streamerName || projectName)" class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
+        <span v-if="projectName" class="w-0.5 h-0.5 rounded-full bg-white/40"></span>
 
         <p class="line-clamp-1">
           {{ formattedDate }}
@@ -120,7 +114,6 @@
     clipName: string;
     thumbnailUrl: string | null;
     projectName: string | null;
-    streamerName?: string | null;
     /** Override file path (for multi-file builds where each file is shown separately) */
     filePath?: string;
     /** Override aspect ratio display */

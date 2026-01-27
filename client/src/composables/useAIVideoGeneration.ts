@@ -15,6 +15,7 @@ export function useAIVideoGeneration() {
       style?: string;
       duration?: number;
       aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5';
+      existingComposition?: AIVideoComposition | null;
     }
   ): Promise<AIVideoComposition | null> {
     isGenerating.value = true;
@@ -38,12 +39,17 @@ export function useAIVideoGeneration() {
         style: options?.style,
         duration: options?.duration,
         aspectRatio: options?.aspectRatio || '16:9',
+        existingComposition: options?.existingComposition || composition.value,
       };
 
       progress.value = 10;
 
+      console.log('[AIVideoGen] Request:', JSON.stringify(request, null, 2));
+
       // Call backend API
       const response = await generateVideoComposition(request);
+      
+      console.log('[AIVideoGen] Response:', JSON.stringify(response, null, 2));
       
       progress.value = 90;
 
@@ -60,13 +66,18 @@ export function useAIVideoGeneration() {
         tracks: response.tracks || [],
       };
 
+      console.log('[AIVideoGen] Final composition:', JSON.stringify(generatedComposition, null, 2));
+
       composition.value = generatedComposition;
       progress.value = 100;
 
       return generatedComposition;
     } catch (err: any) {
-      error.value = err.message || 'Failed to generate video composition';
+      // Extract backend error message if available
+      const backendError = err.response?.data?.error;
+      error.value = backendError || err.message || 'Failed to generate video composition';
       console.error('AI generation error:', err);
+      console.error('Backend error:', backendError);
       return null;
     } finally {
       isGenerating.value = false;

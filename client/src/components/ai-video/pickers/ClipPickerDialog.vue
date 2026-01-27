@@ -56,7 +56,7 @@
         </div>
 
         <!-- Empty State -->
-        <div v-else-if="filteredClips.length === 0" class="clip-picker__empty">
+        <div v-else-if="displayClips.length === 0" class="clip-picker__empty">
           <Video class="clip-picker__empty-icon" />
           <p class="clip-picker__empty-text">No clips found</p>
           <p class="clip-picker__empty-hint">
@@ -67,15 +67,24 @@
         <!-- Clips Grid -->
         <div v-else class="clip-picker__grid">
           <div
-            v-for="clipData in filteredClips"
+            v-for="clipData in displayClips"
             :key="clipData.clip.id"
             class="clip-picker__card"
             :class="{ 'clip-picker__card--selected': isSelected(clipData.clip.id) }"
             @click="toggleSelection(clipData)"
           >
             <!-- Selection Checkbox -->
-            <div class="clip-picker__checkbox">
-              <Check v-if="isSelected(clipData.clip.id)" class="clip-picker__checkbox-icon" />
+            <div
+              class="clip-picker__checkbox"
+              :class="{ 'clip-picker__checkbox--visible': isSelected(clipData.clip.id) }"
+              @click.stop="toggleSelection(clipData)"
+            >
+              <div
+                class="clip-picker__checkbox-inner"
+                :class="{ 'clip-picker__checkbox-inner--checked': isSelected(clipData.clip.id) }"
+              >
+                <Check v-if="isSelected(clipData.clip.id)" class="clip-picker__checkbox-icon" />
+              </div>
             </div>
 
             <!-- Thumbnail -->
@@ -87,34 +96,13 @@
                 class="clip-picker__thumbnail-img"
               />
               <div v-else class="clip-picker__thumbnail-placeholder">
-                <Video class="clip-picker__thumbnail-icon" />
-              </div>
-
-              <!-- Badges -->
-              <div class="clip-picker__badges">
-                <span v-if="clipData.editData?.audioTracks?.length" class="clip-picker__badge" title="Has audio tracks">
-                  <Music class="clip-picker__badge-icon" />
-                  {{ clipData.editData.audioTracks.length }}
-                </span>
-                <span v-if="clipData.editData?.textOverlays?.length" class="clip-picker__badge" title="Has text overlays">
-                  <Type class="clip-picker__badge-icon" />
-                  {{ clipData.editData.textOverlays.length }}
-                </span>
-                <span v-if="clipData.editData?.effects?.length" class="clip-picker__badge" title="Has effects">
-                  <Sparkles class="clip-picker__badge-icon" />
-                  {{ clipData.editData.effects.length }}
-                </span>
+                <Video :size="48" class="clip-picker__thumbnail-icon" />
               </div>
             </div>
 
             <!-- Info -->
             <div class="clip-picker__info">
               <h4 class="clip-picker__name">{{ clipData.clip.name || 'Untitled Clip' }}</h4>
-              <div class="clip-picker__meta">
-                <span>{{ formatDuration(clipData.clip.built_duration) }}</span>
-                <span class="clip-picker__meta-dot">•</span>
-                <span>{{ clipData.clip.project_name || 'No Project' }}</span>
-              </div>
             </div>
           </div>
         </div>
@@ -137,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick, onMounted } from 'vue';
 import { Search, Video, Music, Type, Sparkles, Check, Loader2, X } from 'lucide-vue-next';
 import { invoke } from '@tauri-apps/api/core';
 import { getAllClipsWithBuilds } from '@/services/database/clip-build';
@@ -180,6 +168,9 @@ const isOpen = computed({
 const loading = ref(false);
 const allClips = ref<ClipWithFullData[]>([]);
 const selectedClips = ref<ClipWithFullData[]>([]);
+
+// Debug: expose allClips length for template
+const clipCount = computed(() => allClips.value.length);
 const searchQuery = ref('');
 const projectFilter = ref('all');
 const aspectRatioFilter = ref('all');
@@ -190,27 +181,107 @@ function close() {
 }
 
 function getThumbnailUrl(clip: Clip & { builds: ClipBuild[] }): string | undefined {
-  if (!clip.built_thumbnail_path) return undefined;
   return thumbnailCache.value.get(clip.id);
 }
 
+// Helper to extract output paths from a build (same as Clips.vue)
+function getOutputPathsFromBuild(build: ClipBuild): string[] {
+  if (build.output_paths) {
+    try {
+      const parsed = JSON.parse(build.output_paths);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // If parsing fails, try using it as a single path
+      if (typeof build.output_paths === 'string') {
+        return [build.output_paths];
+      }
+    }
+  }
+  // Fallback to file_path if output_paths not available
+  if (build.file_path) {
+    return [build.file_path];
+  }
+  return [];
+}
+
+// Derive thumbnail path from video file path (same pattern as Clips.vue)
+function deriveThumbnailPath(videoPath: string): string {
+  // Extract filename without extension
+  const parts = videoPath.split(/[/\\]/);
+  const filename = parts.pop() || '';
+  const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
+  
+  // Get the thumbnails directory (parent of clips directory)
+  const clipsIndex = videoPath.toLowerCase().indexOf('clips');
+  if (clipsIndex > 0) {
+    const basePath = videoPath.substring(0, clipsIndex);
+    return `${basePath}thumbnails/${nameWithoutExt}_thumb.jpg`;
+  }
+  
+  // Fallback: put thumbnail next to video
+  return videoPath.replace(/\.[^.]+$/, '_thumb.jpg');
+}
+
 async function loadThumbnails() {
-  const clipsWithThumbnails = allClips.value.filter(
-    (clipData) => clipData.clip.built_thumbnail_path && !thumbnailCache.value.has(clipData.clip.id)
+  // Load thumbnails for all clips that don't have one cached yet
+  const clipsToLoad = allClips.value.filter(
+    (clipData) => !thumbnailCache.value.has(clipData.clip.id)
   );
 
-  if (clipsWithThumbnails.length === 0) return;
+  if (clipsToLoad.length === 0) return;
 
   await Promise.all(
-    clipsWithThumbnails.map(async (clipData) => {
-      try {
-        const dataUrl = await invoke<string>('read_file_as_data_url', {
-          filePath: clipData.clip.built_thumbnail_path,
-        });
-        thumbnailCache.value.set(clipData.clip.id, dataUrl);
-      } catch (err) {
-        console.warn(`[ClipPickerDialog] Failed to load thumbnail for clip ${clipData.clip.id}:`, err);
+    clipsToLoad.map(async (clipData) => {
+      const clip = clipData.clip;
+      
+      // Try multiple thumbnail sources in order of preference
+      const thumbnailCandidates: string[] = [];
+      
+      // 1. Try built_thumbnail_path from clip
+      if (clip.built_thumbnail_path) {
+        thumbnailCandidates.push(clip.built_thumbnail_path);
       }
+      
+      // 2. Try deriving from built_file_path
+      if (clip.built_file_path) {
+        thumbnailCandidates.push(deriveThumbnailPath(clip.built_file_path));
+      }
+      
+      // 3. Try thumbnail from builds
+      if (clip.builds) {
+        for (const build of clip.builds) {
+          if (build.status === 'completed') {
+            if (build.thumbnail_path) {
+              thumbnailCandidates.push(build.thumbnail_path);
+            }
+            // Try deriving from build output paths
+            const outputPaths = getOutputPathsFromBuild(build);
+            for (const outputPath of outputPaths) {
+              thumbnailCandidates.push(deriveThumbnailPath(outputPath));
+            }
+          }
+        }
+      }
+      
+      // Try each candidate until one works
+      for (const thumbnailPath of thumbnailCandidates) {
+        try {
+          const exists = await invoke<boolean>('check_file_exists', { path: thumbnailPath });
+          if (exists) {
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: thumbnailPath,
+            });
+            thumbnailCache.value.set(clip.id, dataUrl);
+            return; // Success, stop trying
+          }
+        } catch (err) {
+          // Continue to next candidate
+        }
+      }
+      
+      console.warn(`[ClipPickerDialog] No thumbnail found for clip ${clip.id}`);
     })
   );
 }
@@ -228,8 +299,9 @@ const projects = computed(() => {
   return Array.from(projectMap.values());
 });
 
-const filteredClips = computed(() => {
-  return allClips.value.filter(clipData => {
+// Use allClips directly with computed filtering - simpler reactivity
+const displayClips = computed(() => {
+  const result = allClips.value.filter(clipData => {
     const clip = clipData.clip;
     
     // Search filter
@@ -246,16 +318,31 @@ const filteredClips = computed(() => {
     if (projectFilter.value !== 'all' && clip.project_id !== projectFilter.value) {
       return false;
     }
-
-    // Aspect ratio filter (would need to be stored in clip metadata)
-    // For now, skip this filter
     
     return true;
   });
+  console.log('[ClipPickerDialog] displayClips computed:', {
+    allClipsLength: allClips.value.length,
+    resultLength: result.length,
+    searchQuery: searchQuery.value,
+    projectFilter: projectFilter.value,
+    sampleClip: result[0]?.clip?.name
+  });
+  return result;
 });
 
+// Load clips when dialog opens
 watch(() => props.modelValue, async (open) => {
+  console.log('[ClipPickerDialog] Watch triggered, open:', open);
   if (open) {
+    await loadClips();
+  }
+}, { immediate: true });
+
+// Also load on mount if already open
+onMounted(async () => {
+  console.log('[ClipPickerDialog] Mounted, isOpen:', props.modelValue);
+  if (props.modelValue) {
     await loadClips();
   }
 });
@@ -266,15 +353,49 @@ async function loadClips() {
     const clipsWithBuilds = await getAllClipsWithBuilds();
     console.log('[ClipPickerDialog] Total clips loaded:', clipsWithBuilds.length);
     
-    // Filter to only clips that have at least one completed build with an output file
-    const completedClips = clipsWithBuilds.filter(clip => {
-      const hasCompletedBuild = clip.builds && clip.builds.some(build => 
-        build.status === 'completed' && build.output_paths
-      );
-      return hasCompletedBuild;
-    });
+    // Filter to clips that have completed builds with actual output files
+    const completedClips: (Clip & { builds: ClipBuild[] })[] = [];
     
-    console.log('[ClipPickerDialog] Clips with completed builds:', completedClips.length);
+    for (const clip of clipsWithBuilds) {
+      // Check if clip has any completed builds with output files
+      if (clip.builds && clip.builds.length > 0) {
+        for (const build of clip.builds) {
+          if (build.status === 'completed') {
+            const outputPaths = getOutputPathsFromBuild(build);
+            if (outputPaths.length > 0) {
+              // Verify at least one output file exists
+              for (const filePath of outputPaths) {
+                try {
+                  const fileExists = await invoke<boolean>('check_file_exists', { path: filePath });
+                  if (fileExists) {
+                    // Update clip with the first valid built file path for display
+                    if (!clip.built_file_path) {
+                      clip.built_file_path = filePath;
+                    }
+                    completedClips.push(clip);
+                    break; // Found a valid build, move to next clip
+                  }
+                } catch (err) {
+                  console.warn('[ClipPickerDialog] Error checking file:', err);
+                }
+              }
+              if (completedClips.includes(clip)) break; // Already added this clip
+            }
+          }
+        }
+      }
+    }
+    
+    console.log('[ClipPickerDialog] Clips with verified built files:', completedClips.length);
+    
+    if (completedClips.length > 0) {
+      console.log('[ClipPickerDialog] Sample clip:', {
+        id: completedClips[0].id,
+        name: completedClips[0].name,
+        built_file_path: completedClips[0].built_file_path,
+        builds: completedClips[0].builds?.length,
+      });
+    }
 
     // Load full edit data for each clip
     const clipsWithFullData = await Promise.all(
@@ -313,7 +434,9 @@ async function loadClips() {
       })
     );
 
+    // Set the clips
     allClips.value = clipsWithFullData;
+    console.log('[ClipPickerDialog] Final allClips.value length:', allClips.value.length);
     
     // Load thumbnails after clips are loaded
     await loadThumbnails();
@@ -347,7 +470,7 @@ function confirm() {
     id: clipData.clip.id,
     name: clipData.clip.name || 'Untitled Clip',
     videoPath: clipData.clip.built_file_path || clipData.clip.file_path,
-    thumbnailPath: clipData.clip.built_thumbnail_path || '',
+    thumbnailPath: getThumbnailUrl(clipData.clip) || clipData.clip.built_thumbnail_path || '',
     duration: clipData.clip.built_duration || clipData.clip.duration || 0,
     
     audioTracks: clipData.editData?.audioTracks.map(track => ({
@@ -428,7 +551,7 @@ function formatDuration(seconds?: number | null): string {
 /* ===== Dialog Container ===== */
 .clip-picker {
   background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
+  border: 1px solid var(--border);
   border-radius: 12px;
   width: 100%;
   max-width: 680px;
@@ -443,7 +566,7 @@ function formatDuration(seconds?: number | null): string {
 /* ===== Accent Bar ===== */
 .clip-picker__accent {
   height: 3px;
-  background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  background: var(--sidebar-accent);
   flex-shrink: 0;
 }
 
@@ -486,7 +609,7 @@ function formatDuration(seconds?: number | null): string {
   width: 52px;
   height: 52px;
   border-radius: 12px;
-  background-color: rgba(6, 182, 212, 0.15);
+  background-color: var(--sidebar-active);
   color: var(--sidebar-accent);
   margin-bottom: 0.875rem;
 }
@@ -524,7 +647,7 @@ function formatDuration(seconds?: number | null): string {
 }
 
 .clip-picker__content::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: var(--border);
   border-radius: 3px;
 }
 
@@ -547,32 +670,32 @@ function formatDuration(seconds?: number | null): string {
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   pointer-events: none;
 }
 
 .clip-picker__search-input {
   width: 100%;
   padding: 0.5rem 0.75rem 0.5rem 2.5rem;
-  background: hsl(var(--input));
-  border: 1px solid hsl(var(--border));
+  background: var(--input);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   font-size: 0.875rem;
 }
 
 .clip-picker__search-input:focus {
   outline: none;
-  border-color: rgba(14, 165, 233, 0.5);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  border-color: var(--sidebar-accent);
+  box-shadow: 0 0 0 3px var(--sidebar-active);
 }
 
 .clip-picker__filter {
   padding: 0.5rem 0.75rem;
-  background: hsl(var(--input));
-  border: 1px solid hsl(var(--border));
+  background: var(--input);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   font-size: 0.875rem;
   cursor: pointer;
 }
@@ -591,7 +714,7 @@ function formatDuration(seconds?: number | null): string {
 .clip-picker__loading-icon {
   width: 48px;
   height: 48px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   animation: spin 1s linear infinite;
 }
 
@@ -603,36 +726,36 @@ function formatDuration(seconds?: number | null): string {
 .clip-picker__empty-icon {
   width: 48px;
   height: 48px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .clip-picker__empty-text {
   font-size: 1rem;
   font-weight: 500;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   margin: 0;
 }
 
 .clip-picker__empty-hint {
   font-size: 0.875rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   margin: 0;
 }
 
 .clip-picker__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
-  overflow-y: auto;
   padding: 0.5rem;
+  max-height: none;
 }
 
 .clip-picker__card {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: hsl(var(--card));
-  border: 2px solid hsl(var(--border));
+  background: var(--card);
+  border: 2px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
@@ -640,14 +763,14 @@ function formatDuration(seconds?: number | null): string {
 }
 
 .clip-picker__card:hover {
-  border-color: rgba(14, 165, 233, 0.5);
+  border-color: var(--sidebar-accent);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .clip-picker__card--selected {
-  border-color: #0ea5e9;
-  background: rgba(14, 165, 233, 0.05);
+  border-color: var(--sidebar-accent);
+  background: var(--sidebar-active);
 }
 
 .clip-picker__checkbox {
@@ -656,8 +779,8 @@ function formatDuration(seconds?: number | null): string {
   right: 0.5rem;
   width: 24px;
   height: 24px;
-  background: hsl(var(--card));
-  border: 2px solid hsl(var(--border));
+  background: var(--card);
+  border: 2px solid var(--border);
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -667,8 +790,8 @@ function formatDuration(seconds?: number | null): string {
 }
 
 .clip-picker__card--selected .clip-picker__checkbox {
-  background: #0ea5e9;
-  border-color: #0ea5e9;
+  background: var(--sidebar-accent);
+  border-color: var(--sidebar-accent);
 }
 
 .clip-picker__checkbox-icon {
@@ -681,7 +804,7 @@ function formatDuration(seconds?: number | null): string {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  background: hsl(var(--muted));
+  background: var(--muted);
   overflow: hidden;
 }
 
@@ -702,7 +825,56 @@ function formatDuration(seconds?: number | null): string {
 .clip-picker__thumbnail-icon {
   width: 48px;
   height: 48px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
+}
+
+/* Selection Checkbox */
+.clip-picker__checkbox {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.clip-picker__card:hover .clip-picker__checkbox,
+.clip-picker__checkbox--visible {
+  opacity: 1;
+}
+
+.clip-picker__checkbox-inner {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background-color: rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.clip-picker__checkbox-inner:hover {
+  background-color: rgba(0, 0, 0, 0.8);
+}
+
+.clip-picker__checkbox-inner--checked {
+  background-color: var(--sidebar-accent);
+  border-color: var(--sidebar-accent);
+  color: white;
+}
+
+.clip-picker__checkbox-inner--checked:hover {
+  background-color: var(--sidebar-accent);
+  border-color: var(--sidebar-accent);
+}
+
+.clip-picker__checkbox-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .clip-picker__badges {
@@ -738,7 +910,7 @@ function formatDuration(seconds?: number | null): string {
 .clip-picker__name {
   font-size: 0.875rem;
   font-weight: 500;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   margin: 0 0 0.25rem 0;
   white-space: nowrap;
   overflow: hidden;
@@ -750,7 +922,7 @@ function formatDuration(seconds?: number | null): string {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.75rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .clip-picker__meta-dot {
@@ -762,7 +934,7 @@ function formatDuration(seconds?: number | null): string {
   display: flex;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
-  border-top: 1px solid var(--sidebar-border);
+  border-top: 1px solid var(--border);
   background-color: var(--sidebar-surface);
 }
 
@@ -787,13 +959,13 @@ function formatDuration(seconds?: number | null): string {
 }
 
 .clip-picker__btn--primary {
-  background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.8));
+  background: var(--sidebar-accent);
   color: white;
 }
 
 .clip-picker__btn--primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.4);
+  box-shadow: 0 4px 12px var(--sidebar-active);
 }
 
 .clip-picker__btn--primary:disabled {

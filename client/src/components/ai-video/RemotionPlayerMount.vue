@@ -76,7 +76,7 @@ onUnmounted(() => {
 .remotion-player-mount {
   width: 100%;
   height: 100%;
-  background: #0a0a0b;
+  background: var(--background);
   border-radius: 12px;
   overflow: hidden;
 }

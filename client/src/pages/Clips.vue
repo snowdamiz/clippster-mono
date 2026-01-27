@@ -174,7 +174,6 @@
                       :clip-name="item.clipName"
                       :thumbnail-url="item.thumbnailUrl"
                       :project-name="item.projectName"
-                      :streamer-name="item.streamerName"
                       :file-path="item.filePath"
                       :display-aspect-ratio="item.aspectRatio ?? undefined"
                       :show-build-number="item.hasMultipleBuilds"
@@ -905,7 +904,6 @@
     deleteClipBuild,
     getThumbnailByClipId,
     getProject,
-    getCreatorProfile,
     getRawVideosByProjectId,
     getCreatorProfileByProjectId,
     searchTranscriptSegmentsByClipIds,
@@ -950,7 +948,6 @@
     clipName: string;
     projectName: string | null;
     projectId: string | null;
-    streamerName: string | null;
     thumbnailUrl: string | null;
     createdAt: number; // For sorting - use build completion time
     videoEditorProjectId?: string | null; // ID of video editor project containing this clip
@@ -1002,7 +999,6 @@
   const buildThumbnailCache = ref<Map<string, string>>(new Map());
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
-  const creatorProfileCache = ref<Map<string, any>>(new Map());
   const { getRelativeTime, formatDuration } = useFormatters();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
@@ -1209,30 +1205,6 @@
       const clipName = clip.name || 'Untitled Clip';
       const projectName = getClipProjectName(clip);
       const clipThumbnailUrl = getThumbnailUrl(clip);
-      
-      // Extract streamer name from raw videos or creator profile
-      let streamerName: string | null = null;
-      if (clip.project_id) {
-        const project = projectCache.value.get(clip.project_id);
-        
-        // For Twitch/Kick, get channel name from raw video's source_mint_id
-        if (project && (project.platform === 'Twitch' || project.platform === 'Kick')) {
-          const rawVideos = rawVideoCache.value.get(clip.project_id);
-          if (rawVideos && rawVideos.length > 0 && rawVideos[0].source_mint_id) {
-            // source_mint_id contains the channel slug/username for Twitch/Kick
-            streamerName = rawVideos[0].source_mint_id;
-          }
-        }
-        
-        // Fallback to creator profile if available
-        if (!streamerName && project && project.creator_profile_id) {
-          const creatorProfile = creatorProfileCache.value.get(project.creator_profile_id);
-          if (creatorProfile && creatorProfile.platform_links && creatorProfile.platform_links.length > 0) {
-            const primaryLink = creatorProfile.platform_links.find((link: any) => link.is_primary) || creatorProfile.platform_links[0];
-            streamerName = primaryLink.display_name || creatorProfile.name;
-          }
-        }
-      }
 
       // Count completed builds for this clip
       const completedBuildsCount = clip.builds?.filter((b) => b.status === 'completed').length || 0;
@@ -1266,7 +1238,6 @@
                 clipName,
                 projectName,
                 projectId: clip.project_id,
-                streamerName,
                 thumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
@@ -1582,30 +1553,6 @@
     for (const clip of folderProject.value.clips) {
       const clipName = clip.name || 'Untitled Clip';
       const clipThumbnailUrl = getThumbnailUrl(clip);
-      
-      // Extract streamer name from raw videos or creator profile
-      let streamerName: string | null = null;
-      if (clip.project_id) {
-        const project = projectCache.value.get(clip.project_id);
-        
-        // For Twitch/Kick, get channel name from raw video's source_mint_id
-        if (project && (project.platform === 'Twitch' || project.platform === 'Kick')) {
-          const rawVideos = rawVideoCache.value.get(clip.project_id);
-          if (rawVideos && rawVideos.length > 0 && rawVideos[0].source_mint_id) {
-            // source_mint_id contains the channel slug/username for Twitch/Kick
-            streamerName = rawVideos[0].source_mint_id;
-          }
-        }
-        
-        // Fallback to creator profile if available
-        if (!streamerName && project && project.creator_profile_id) {
-          const creatorProfile = creatorProfileCache.value.get(project.creator_profile_id);
-          if (creatorProfile && creatorProfile.platform_links && creatorProfile.platform_links.length > 0) {
-            const primaryLink = creatorProfile.platform_links.find((link: any) => link.is_primary) || creatorProfile.platform_links[0];
-            streamerName = primaryLink.display_name || creatorProfile.name;
-          }
-        }
-      }
 
       // Count completed builds for this clip
       const completedBuildsCount = clip.builds?.filter((b) => b.status === 'completed').length || 0;
@@ -1637,7 +1584,6 @@
                 clipName,
                 projectName: folderProject.value!.name,
                 projectId: clip.project_id,
-                streamerName,
                 thumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
@@ -2020,20 +1966,7 @@
 
         // Load project info if clip has a project
         if (clip.project_id) {
-          const project = await getProjectInfo(clip.project_id);
-          
-          // Load creator profile if project has one
-          if (project && project.creator_profile_id && !creatorProfileCache.value.has(project.creator_profile_id)) {
-            try {
-              const creatorProfile = await getCreatorProfile(project.creator_profile_id);
-              if (creatorProfile) {
-                creatorProfileCache.value.set(project.creator_profile_id, creatorProfile);
-              }
-            } catch (error) {
-              console.warn(`Failed to load creator profile ${project.creator_profile_id}:`, error);
-            }
-          }
-          
+          await getProjectInfo(clip.project_id);
           // Load raw videos for this project to use as fallback thumbnails
           await loadRawVideosForProject(clip.project_id);
         }

@@ -14,7 +14,7 @@ export interface AIVideoComposition {
 
 export interface AIVideoTrack {
   id: string;
-  type: 'video' | 'audio' | 'image' | 'text' | 'shape';
+  type: 'video' | 'audio' | 'image' | 'text' | 'shape' | 'cameraMotion' | 'impactFX';
   name: string;
   source?: MediaSource;
   startTime: number;
@@ -125,6 +125,7 @@ export interface AIVideoMediaItem {
   thumbnailUrl?: string;
   duration?: number;
   dimensions?: { width: number; height: number };
+  transcript?: string;
   addedAt: Date;
 }
 
@@ -135,6 +136,7 @@ export interface AIGenerationRequest {
   style?: string;
   duration?: number;
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5';
+  existingComposition?: AIVideoComposition | null;
 }
 
 // Export
@@ -159,8 +161,9 @@ export interface ImportedClipData {
   id: string;
   name: string;
   videoPath: string;
-  thumbnailPath: string;
+  thumbnailPath?: string;
   duration: number;
+  transcript?: string;
   
   // Complete edit data for re-composition
   audioTracks: Array<{

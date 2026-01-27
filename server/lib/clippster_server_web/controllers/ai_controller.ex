@@ -14,7 +14,8 @@ defmodule ClippsterServerWeb.AIController do
       params["style"],
       params["duration"],
       params["aspectRatio"],
-      user
+      user,
+      params["existingComposition"]
     ) do
       json(conn, %{composition: composition})
     else

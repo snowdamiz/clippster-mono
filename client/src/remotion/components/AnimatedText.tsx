@@ -118,6 +118,8 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({ track }) => {
     borderRadius: textProps.borderRadius ? `${textProps.borderRadius}px` : undefined,
     WebkitTextStroke: textProps.stroke 
       ? `${textProps.stroke.width}px ${textProps.stroke.color}`
+      : (textProps as any).strokeWidth && (textProps as any).strokeColor
+      ? `${(textProps as any).strokeWidth}px ${(textProps as any).strokeColor}`
       : undefined,
     whiteSpace: 'pre-wrap',
     ...animatedStyle,

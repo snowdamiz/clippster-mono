@@ -299,7 +299,7 @@ function close() {
 .export-dialog__label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -308,7 +308,7 @@ function close() {
 .export-dialog__hint {
   font-size: 0.75rem;
   font-weight: 400;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .export-dialog__path-input {
@@ -319,26 +319,26 @@ function close() {
 .export-dialog__input {
   flex: 1;
   padding: 0.5rem 0.75rem;
-  background: hsl(var(--input));
-  border: 1px solid hsl(var(--border));
+  background: var(--input);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   font-size: 0.875rem;
 }
 
 .export-dialog__select {
   padding: 0.5rem 0.75rem;
-  background: hsl(var(--input));
-  border: 1px solid hsl(var(--border));
+  background: var(--input);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   font-size: 0.875rem;
 }
 
 .export-dialog__slider {
   width: 100%;
   height: 6px;
-  background: hsl(var(--muted));
+  background: var(--muted);
   border-radius: 3px;
   outline: none;
   -webkit-appearance: none;
@@ -349,7 +349,7 @@ function close() {
   appearance: none;
   width: 18px;
   height: 18px;
-  background: #0ea5e9;
+  background: var(--sidebar-accent);
   border-radius: 50%;
   cursor: pointer;
 }
@@ -357,7 +357,7 @@ function close() {
 .export-dialog__slider::-moz-range-thumb {
   width: 18px;
   height: 18px;
-  background: #0ea5e9;
+  background: var(--sidebar-accent);
   border-radius: 50%;
   cursor: pointer;
   border: none;
@@ -367,7 +367,7 @@ function close() {
   display: flex;
   justify-content: space-between;
   font-size: 0.75rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .export-dialog__info {
@@ -375,7 +375,7 @@ function close() {
   grid-template-columns: repeat(2, 1fr);
   gap: 0.75rem;
   padding: 1rem;
-  background: hsl(var(--muted) / 0.3);
+  background: var(--muted);
   border-radius: 8px;
 }
 
@@ -387,7 +387,7 @@ function close() {
 
 .export-dialog__info-label {
   font-weight: 500;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .export-dialog__progress,
@@ -412,7 +412,7 @@ function close() {
 .export-dialog__spinner {
   width: 48px;
   height: 48px;
-  color: #0ea5e9;
+  color: var(--sidebar-accent);
   animation: spin 1s linear infinite;
 }
 
@@ -424,13 +424,13 @@ function close() {
 .export-dialog__check-icon {
   width: 48px;
   height: 48px;
-  color: #10b981;
+  color: var(--sidebar-accent);
 }
 
 .export-dialog__alert-icon {
   width: 48px;
   height: 48px;
-  color: #ef4444;
+  color: var(--destructive);
 }
 
 .export-dialog__progress-title,
@@ -438,40 +438,40 @@ function close() {
 .export-dialog__error-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   margin: 0;
 }
 
 .export-dialog__progress-bar {
   width: 100%;
   height: 8px;
-  background: hsl(var(--muted));
+  background: var(--muted);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .export-dialog__progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #0ea5e9, #06b6d4);
+  background: var(--sidebar-accent);
   transition: width 0.3s ease;
 }
 
 .export-dialog__progress-text {
   font-size: 0.875rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   margin: 0;
 }
 
 .export-dialog__complete-path {
   font-size: 0.875rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   word-break: break-all;
   margin: 0;
 }
 
 .export-dialog__error-message {
   font-size: 0.875rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   margin: 0;
 }
 

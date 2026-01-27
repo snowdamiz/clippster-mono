@@ -16,13 +16,35 @@ export const MediaClip: React.FC<MediaClipProps> = ({ track, videoServerPort }) 
   const trackEndFrame = track.endTime * fps;
   const trackDuration = track.endTime - track.startTime;
   
+  const localFrame = frame - trackStartFrame;
+  const progress = localFrame / ((trackEndFrame - trackStartFrame) || 1);
+  
+  // Apply effects - MUST be called before any early returns (React Hooks rule)
+  const filters = useMemo(() => {
+    if (!track.properties.effects) return '';
+    
+    return track.properties.effects.map(effect => {
+      const value = typeof effect.value === 'number' 
+        ? effect.value 
+        : getAnimatedValue(effect.value, progress, 0);
+      
+      switch (effect.type) {
+        case 'blur': return `blur(${value}px)`;
+        case 'brightness': return `brightness(${value}%)`;
+        case 'contrast': return `contrast(${value}%)`;
+        case 'saturation': return `saturate(${value}%)`;
+        case 'hue-rotate': return `hue-rotate(${value}deg)`;
+        case 'grayscale': return `grayscale(${value}%)`;
+        case 'sepia': return `sepia(${value}%)`;
+        default: return '';
+      }
+    }).join(' ');
+  }, [track.properties.effects, progress]);
+  
   // Only render if current frame is within track bounds
   if (frame < trackStartFrame || frame > trackEndFrame) {
     return null;
   }
-  
-  const localFrame = frame - trackStartFrame;
-  const progress = localFrame / ((trackEndFrame - trackStartFrame) || 1);
   
   // Get transform properties with keyframe support
   const x = getAnimatedValue(track.properties.x, progress, 50);
@@ -46,28 +68,6 @@ export const MediaClip: React.FC<MediaClipProps> = ({ track, videoServerPort }) 
       transitionOpacity *= applyTransition(track.properties.exitTransition.type, 1 - exitProgress);
     }
   }
-  
-  // Apply effects
-  const filters = useMemo(() => {
-    if (!track.properties.effects) return '';
-    
-    return track.properties.effects.map(effect => {
-      const value = typeof effect.value === 'number' 
-        ? effect.value 
-        : getAnimatedValue(effect.value, progress, 0);
-      
-      switch (effect.type) {
-        case 'blur': return `blur(${value}px)`;
-        case 'brightness': return `brightness(${value}%)`;
-        case 'contrast': return `contrast(${value}%)`;
-        case 'saturation': return `saturate(${value}%)`;
-        case 'hue-rotate': return `hue-rotate(${value}deg)`;
-        case 'grayscale': return `grayscale(${value}%)`;
-        case 'sepia': return `sepia(${value}%)`;
-        default: return '';
-      }
-    }).join(' ');
-  }, [track.properties.effects, progress]);
   
   const style: React.CSSProperties = {
     position: 'absolute',
@@ -114,14 +114,15 @@ export const MediaClip: React.FC<MediaClipProps> = ({ track, videoServerPort }) 
 };
 
 function getAnimatedValue(
-  value: number | { keyframes: Array<{ time: number; value: number; easing?: string }> } | undefined,
+  value: number | { keyframes: Array<{ time: number; value: number; easing?: string }>; animated?: boolean } | undefined,
   progress: number,
   defaultValue: number
 ): number {
   if (value === undefined) return defaultValue;
   if (typeof value === 'number') return value;
   
-  const { keyframes } = value;
+  // Handle both {keyframes: [...]} and {animated: true, keyframes: [...]} formats
+  const keyframes = value.keyframes;
   if (!keyframes || keyframes.length === 0) return defaultValue;
   if (keyframes.length === 1) return keyframes[0].value;
   
@@ -184,7 +185,9 @@ function getMediaUrl(path: string, videoServerPort: number): string {
     return path;
   }
   if (videoServerPort > 0) {
-    return `http://localhost:${videoServerPort}/video?path=${encodeURIComponent(path)}`;
+    // Video server expects base64-encoded path in URL path segment
+    const base64Path = btoa(path);
+    return `http://localhost:${videoServerPort}/video/${base64Path}`;
   }
   return `asset://localhost/${path}`;
 }

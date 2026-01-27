@@ -109,6 +109,9 @@ defmodule ClippsterServerWeb.KickController do
       {"x-rapidapi-host", rapid_api_host}
     ]
 
+    # Log the first few chars of the key to verify it's not the placeholder
+    key_preview = if String.length(rapid_api_key) > 4, do: String.slice(rapid_api_key, 0, 4) <> "...", else: "TooShort"
+
     case Req.get(url, headers: headers) do
       {:ok, %Req.Response{status: 200, body: body}} ->
         limit_int = String.to_integer(limit)
@@ -164,8 +167,6 @@ defmodule ClippsterServerWeb.KickController do
         })
 
       {:ok, %Req.Response{status: status, body: body}} ->
-        # Log the first few chars of the key to verify it's not the placeholder
-        key_preview = if String.length(rapid_api_key) > 4, do: String.slice(rapid_api_key, 0, 4) <> "...", else: "TooShort"
         Logger.error("Kick API returned #{status}. Key used starts with: #{key_preview}. Body: #{inspect(body)}")
 
         error_msg =

@@ -48,8 +48,19 @@ export const RemotionPlayerWrapper: React.FC<Props> = ({
     }
   }, [currentFrame, isPlaying]);
 
-  // Note: Frame updates will be handled via polling or useCurrentFrame hook in parent
-  // The Player component doesn't expose onFrameUpdate in the current API
+  // Poll for frame updates during playback
+  useEffect(() => {
+    if (!isPlaying || !playerRef.current || !onFrameUpdate) return;
+    
+    const interval = setInterval(() => {
+      if (playerRef.current) {
+        const frame = playerRef.current.getCurrentFrame();
+        onFrameUpdate(frame);
+      }
+    }, 1000 / 30); // Poll at 30fps
+    
+    return () => clearInterval(interval);
+  }, [isPlaying, onFrameUpdate]);
 
   if (!composition) {
     return (
@@ -87,8 +98,10 @@ export const RemotionPlayerWrapper: React.FC<Props> = ({
       compositionWidth={composition.width}
       compositionHeight={composition.height}
       style={{ width: '100%', height: '100%' }}
-      controls={false}
+      controls={true}
+      showVolumeControls={true}
       loop={false}
+      clickToPlay={true}
     />
   );
 };

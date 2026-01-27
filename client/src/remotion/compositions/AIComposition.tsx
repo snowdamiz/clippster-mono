@@ -5,6 +5,8 @@ import { MediaClip } from '../components/MediaClip';
 import { AnimatedText } from '../components/AnimatedText';
 import { AudioTrack } from '../components/AudioTrack';
 import { ShapeElement } from '../components/ShapeElement';
+import { CameraMotion } from '../components/CameraMotion';
+import { ImpactEffects } from '../components/ImpactEffects';
 
 interface AICompositionProps {
   composition: AIVideoComposition | null;
@@ -33,17 +35,17 @@ export const AIComposition: React.FC<AICompositionProps> = ({ composition, video
     return [...composition.tracks].sort((a, b) => a.layer - b.layer);
   }, [composition.tracks]);
 
-  // Separate audio tracks from visual tracks
+  // Separate tracks by type
   const audioTracks = sortedTracks.filter(track => track.type === 'audio');
-  const visualTracks = sortedTracks.filter(track => track.type !== 'audio');
+  const cameraMotionTrack = sortedTracks.find(track => track.type === 'cameraMotion');
+  const impactFXTrack = sortedTracks.find(track => track.type === 'impactFX');
+  const visualTracks = sortedTracks.filter(track => 
+    track.type !== 'audio' && track.type !== 'cameraMotion' && track.type !== 'impactFX'
+  );
 
-  return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: composition.backgroundColor || '#000000',
-      }}
-    >
-      {/* Render visual tracks in layer order */}
+  // Render visual content
+  const visualContent = (
+    <>
       {visualTracks.map((track) => {
         switch (track.type) {
           case 'video':
@@ -76,6 +78,35 @@ export const AIComposition: React.FC<AICompositionProps> = ({ composition, video
             return null;
         }
       })}
+    </>
+  );
+
+  // Wrap with camera motion if present
+  let wrappedContent = visualContent;
+  if (cameraMotionTrack) {
+    wrappedContent = (
+      <CameraMotion track={cameraMotionTrack}>
+        {wrappedContent}
+      </CameraMotion>
+    );
+  }
+
+  // Wrap with impact effects if present
+  if (impactFXTrack) {
+    wrappedContent = (
+      <ImpactEffects track={impactFXTrack}>
+        {wrappedContent}
+      </ImpactEffects>
+    );
+  }
+
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: composition.backgroundColor || '#000000',
+      }}
+    >
+      {wrappedContent}
 
       {/* Render audio tracks */}
       {audioTracks.map((track) => (

@@ -14,7 +14,7 @@
           <button
             v-for="tab in tabs"
             :key="tab.id"
-            @click="activeTab = tab.id"
+            @click="activeTab = tab.id as any"
             class="asset-picker__tab"
             :class="{ 'asset-picker__tab--active': activeTab === tab.id }"
           >
@@ -404,7 +404,7 @@ function formatDuration(seconds?: number): string {
 .asset-picker__tabs {
   display: flex;
   gap: 0.5rem;
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid var(--border);
   padding-bottom: 0.5rem;
 }
 
@@ -416,7 +416,7 @@ function formatDuration(seconds?: number): string {
   background: transparent;
   border: none;
   border-radius: 8px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
@@ -424,14 +424,14 @@ function formatDuration(seconds?: number): string {
 }
 
 .asset-picker__tab:hover {
-  background: hsl(var(--accent));
-  color: hsl(var(--foreground));
+  background: var(--accent);
+  color: var(--foreground);
 }
 
 .asset-picker__tab--active {
-  background: hsl(var(--secondary));
-  color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--border));
+  background: var(--secondary);
+  color: var(--foreground);
+  border: 1px solid var(--border);
 }
 
 .asset-picker__tab-icon {
@@ -446,8 +446,8 @@ function formatDuration(seconds?: number): string {
   min-width: 20px;
   height: 20px;
   padding: 0 0.375rem;
-  background: rgba(14, 165, 233, 0.15);
-  color: #0ea5e9;
+  background: var(--sidebar-active);
+  color: var(--sidebar-accent);
   border-radius: 10px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -464,24 +464,24 @@ function formatDuration(seconds?: number): string {
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   pointer-events: none;
 }
 
 .asset-picker__search-input {
   width: 100%;
   padding: 0.5rem 0.75rem 0.5rem 2.5rem;
-  background: hsl(var(--input));
-  border: 1px solid hsl(var(--border));
+  background: var(--input);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   font-size: 0.875rem;
 }
 
 .asset-picker__search-input:focus {
   outline: none;
-  border-color: rgba(14, 165, 233, 0.5);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  border-color: var(--sidebar-accent);
+  box-shadow: 0 0 0 3px var(--sidebar-active);
 }
 
 .asset-picker__loading,
@@ -498,7 +498,7 @@ function formatDuration(seconds?: number): string {
 .asset-picker__loading-icon {
   width: 48px;
   height: 48px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   animation: spin 1s linear infinite;
 }
 
@@ -510,19 +510,19 @@ function formatDuration(seconds?: number): string {
 .asset-picker__empty-icon {
   width: 48px;
   height: 48px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .asset-picker__empty-text {
   font-size: 1rem;
   font-weight: 500;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   margin: 0;
 }
 
 .asset-picker__empty-hint {
   font-size: 0.875rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
   margin: 0;
 }
 
@@ -538,8 +538,8 @@ function formatDuration(seconds?: number): string {
   position: relative;
   display: flex;
   flex-direction: column;
-  background: hsl(var(--card));
-  border: 2px solid hsl(var(--border));
+  background: var(--card);
+  border: 2px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
   cursor: pointer;
@@ -547,14 +547,14 @@ function formatDuration(seconds?: number): string {
 }
 
 .asset-picker__card:hover {
-  border-color: rgba(14, 165, 233, 0.5);
+  border-color: var(--sidebar-accent);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .asset-picker__card--selected {
-  border-color: #0ea5e9;
-  background: rgba(14, 165, 233, 0.05);
+  border-color: var(--sidebar-accent);
+  background: var(--sidebar-active);
 }
 
 .asset-picker__checkbox {
@@ -563,8 +563,8 @@ function formatDuration(seconds?: number): string {
   right: 0.5rem;
   width: 24px;
   height: 24px;
-  background: hsl(var(--card));
-  border: 2px solid hsl(var(--border));
+  background: var(--card);
+  border: 2px solid var(--border);
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -574,8 +574,8 @@ function formatDuration(seconds?: number): string {
 }
 
 .asset-picker__card--selected .asset-picker__checkbox {
-  background: #0ea5e9;
-  border-color: #0ea5e9;
+  background: var(--sidebar-accent);
+  border-color: var(--sidebar-accent);
 }
 
 .asset-picker__checkbox-icon {
@@ -588,7 +588,7 @@ function formatDuration(seconds?: number): string {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  background: hsl(var(--muted));
+  background: var(--muted);
   overflow: hidden;
 }
 
@@ -609,7 +609,7 @@ function formatDuration(seconds?: number): string {
 .asset-picker__thumbnail-icon {
   width: 48px;
   height: 48px;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .asset-picker__play-btn {
@@ -632,7 +632,7 @@ function formatDuration(seconds?: number): string {
 }
 
 .asset-picker__play-btn:hover {
-  background: rgba(14, 165, 233, 0.9);
+  background: var(--sidebar-accent);
   transform: translate(-50%, -50%) scale(1.1);
 }
 
@@ -660,7 +660,7 @@ function formatDuration(seconds?: number): string {
 .asset-picker__name {
   font-size: 0.875rem;
   font-weight: 500;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   margin: 0 0 0.25rem 0;
   white-space: nowrap;
   overflow: hidden;
@@ -672,7 +672,7 @@ function formatDuration(seconds?: number): string {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.75rem;
-  color: hsl(var(--muted-foreground));
+  color: var(--muted-foreground);
 }
 
 .asset-picker__org-badge {
@@ -680,8 +680,8 @@ function formatDuration(seconds?: number): string {
   align-items: center;
   gap: 0.25rem;
   padding: 0.125rem 0.375rem;
-  background: rgba(14, 165, 233, 0.15);
-  color: #0ea5e9;
+  background: var(--sidebar-active);
+  color: var(--sidebar-accent);
   border-radius: 4px;
   font-weight: 500;
 }

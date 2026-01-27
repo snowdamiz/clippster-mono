@@ -80,7 +80,9 @@ function getAudioUrl(path: string, videoServerPort: number): string {
     return path;
   }
   if (videoServerPort > 0) {
-    return `http://localhost:${videoServerPort}/video?path=${encodeURIComponent(path)}`;
+    // Video server expects base64-encoded path in URL path segment
+    const base64Path = btoa(path);
+    return `http://localhost:${videoServerPort}/video/${base64Path}`;
   }
   return `asset://localhost/${path}`;
 }
