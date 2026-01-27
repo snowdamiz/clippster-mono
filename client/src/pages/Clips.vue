@@ -174,6 +174,7 @@
                       :clip-name="item.clipName"
                       :thumbnail-url="item.thumbnailUrl"
                       :project-name="item.projectName"
+                      :streamer-name="item.streamerName"
                       :file-path="item.filePath"
                       :display-aspect-ratio="item.aspectRatio ?? undefined"
                       :show-build-number="item.hasMultipleBuilds"
@@ -904,6 +905,7 @@
     deleteClipBuild,
     getThumbnailByClipId,
     getProject,
+    getCreatorProfile,
     getRawVideosByProjectId,
     getCreatorProfileByProjectId,
     searchTranscriptSegmentsByClipIds,
@@ -948,6 +950,7 @@
     clipName: string;
     projectName: string | null;
     projectId: string | null;
+    streamerName: string | null;
     thumbnailUrl: string | null;
     createdAt: number; // For sorting - use build completion time
     videoEditorProjectId?: string | null; // ID of video editor project containing this clip
@@ -999,6 +1002,7 @@
   const buildThumbnailCache = ref<Map<string, string>>(new Map());
   const rawVideoCache = ref<Map<string, (RawVideo & { thumbnail_path: string | null })[]>>(new Map());
   const projectCache = ref<Map<string, Project>>(new Map());
+  const creatorProfileCache = ref<Map<string, any>>(new Map());
   const { getRelativeTime, formatDuration } = useFormatters();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
@@ -1007,7 +1011,7 @@
   const buildToDelete = ref<ClipBuild | null>(null);
 
   // View state
-  const viewMode = ref<'folders' | 'list'>('folders');
+  const viewMode = ref<'folders' | 'list'>('list');
   const showFolderDialog = ref(false);
   const folderProject = ref<{ id: string; name: string; clips: ClipWithBuilds[] } | null>(null);
   const folderCurrentPage = ref(1);
@@ -1205,6 +1209,30 @@
       const clipName = clip.name || 'Untitled Clip';
       const projectName = getClipProjectName(clip);
       const clipThumbnailUrl = getThumbnailUrl(clip);
+      
+      // Extract streamer name from raw videos or creator profile
+      let streamerName: string | null = null;
+      if (clip.project_id) {
+        const project = projectCache.value.get(clip.project_id);
+        
+        // For Twitch/Kick, get channel name from raw video's source_mint_id
+        if (project && (project.platform === 'Twitch' || project.platform === 'Kick')) {
+          const rawVideos = rawVideoCache.value.get(clip.project_id);
+          if (rawVideos && rawVideos.length > 0 && rawVideos[0].source_mint_id) {
+            // source_mint_id contains the channel slug/username for Twitch/Kick
+            streamerName = rawVideos[0].source_mint_id;
+          }
+        }
+        
+        // Fallback to creator profile if available
+        if (!streamerName && project && project.creator_profile_id) {
+          const creatorProfile = creatorProfileCache.value.get(project.creator_profile_id);
+          if (creatorProfile && creatorProfile.platform_links && creatorProfile.platform_links.length > 0) {
+            const primaryLink = creatorProfile.platform_links.find((link: any) => link.is_primary) || creatorProfile.platform_links[0];
+            streamerName = primaryLink.display_name || creatorProfile.name;
+          }
+        }
+      }
 
       // Count completed builds for this clip
       const completedBuildsCount = clip.builds?.filter((b) => b.status === 'completed').length || 0;
@@ -1238,6 +1266,7 @@
                 clipName,
                 projectName,
                 projectId: clip.project_id,
+                streamerName,
                 thumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
@@ -1553,6 +1582,30 @@
     for (const clip of folderProject.value.clips) {
       const clipName = clip.name || 'Untitled Clip';
       const clipThumbnailUrl = getThumbnailUrl(clip);
+      
+      // Extract streamer name from raw videos or creator profile
+      let streamerName: string | null = null;
+      if (clip.project_id) {
+        const project = projectCache.value.get(clip.project_id);
+        
+        // For Twitch/Kick, get channel name from raw video's source_mint_id
+        if (project && (project.platform === 'Twitch' || project.platform === 'Kick')) {
+          const rawVideos = rawVideoCache.value.get(clip.project_id);
+          if (rawVideos && rawVideos.length > 0 && rawVideos[0].source_mint_id) {
+            // source_mint_id contains the channel slug/username for Twitch/Kick
+            streamerName = rawVideos[0].source_mint_id;
+          }
+        }
+        
+        // Fallback to creator profile if available
+        if (!streamerName && project && project.creator_profile_id) {
+          const creatorProfile = creatorProfileCache.value.get(project.creator_profile_id);
+          if (creatorProfile && creatorProfile.platform_links && creatorProfile.platform_links.length > 0) {
+            const primaryLink = creatorProfile.platform_links.find((link: any) => link.is_primary) || creatorProfile.platform_links[0];
+            streamerName = primaryLink.display_name || creatorProfile.name;
+          }
+        }
+      }
 
       // Count completed builds for this clip
       const completedBuildsCount = clip.builds?.filter((b) => b.status === 'completed').length || 0;
@@ -1584,6 +1637,7 @@
                 clipName,
                 projectName: folderProject.value!.name,
                 projectId: clip.project_id,
+                streamerName,
                 thumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
@@ -1966,7 +2020,20 @@
 
         // Load project info if clip has a project
         if (clip.project_id) {
-          await getProjectInfo(clip.project_id);
+          const project = await getProjectInfo(clip.project_id);
+          
+          // Load creator profile if project has one
+          if (project && project.creator_profile_id && !creatorProfileCache.value.has(project.creator_profile_id)) {
+            try {
+              const creatorProfile = await getCreatorProfile(project.creator_profile_id);
+              if (creatorProfile) {
+                creatorProfileCache.value.set(project.creator_profile_id, creatorProfile);
+              }
+            } catch (error) {
+              console.warn(`Failed to load creator profile ${project.creator_profile_id}:`, error);
+            }
+          }
+          
           // Load raw videos for this project to use as fallback thumbnails
           await loadRawVideosForProject(clip.project_id);
         }
@@ -2123,24 +2190,69 @@
       return;
     }
 
+    console.log(`[Clips] Loading thumbnail for output file: ${filePath}`);
+
     try {
       // Derive the expected thumbnail path
       const thumbnailPath = await getThumbnailPathForVideoFile(filePath);
-      if (!thumbnailPath) return;
+      console.log(`[Clips] Expected thumbnail path: ${thumbnailPath}`);
+      
+      if (!thumbnailPath) {
+        console.warn(`[Clips] Could not derive thumbnail path for ${filePath}`);
+        return;
+      }
 
       // Check if file exists
       const fileExists = await invoke<boolean>('check_file_exists', {
         path: thumbnailPath,
       });
 
+      console.log(`[Clips] Thumbnail exists: ${fileExists}`);
+
       if (fileExists) {
         const dataUrl = await invoke<string>('read_file_as_data_url', {
           filePath: thumbnailPath,
         });
         buildThumbnailCache.value.set(filePath, dataUrl);
+        console.log(`[Clips] Loaded existing thumbnail for ${filePath}`);
+      } else {
+        // Thumbnail doesn't exist - regenerate it from the video file
+        console.log(`[Clips] Thumbnail missing, regenerating for ${filePath}`);
+        
+        // Check if the video file exists
+        const videoExists = await invoke<boolean>('check_file_exists', {
+          path: filePath,
+        });
+        
+        console.log(`[Clips] Video file exists: ${videoExists}`);
+        
+        if (videoExists) {
+          try {
+            // Generate thumbnail at 1 second mark
+            console.log(`[Clips] Calling generate_thumbnail_at_timestamp...`);
+            const newThumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+              videoPath: filePath,
+              timestampSeconds: 1.0,
+              outputFilename: null,
+            });
+            
+            console.log(`[Clips] Generated thumbnail at: ${newThumbnailPath}`);
+            
+            // Load the newly generated thumbnail
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: newThumbnailPath,
+            });
+            buildThumbnailCache.value.set(filePath, dataUrl);
+            console.log(`[Clips] ✅ Successfully regenerated and loaded thumbnail for ${filePath}`);
+          } catch (genError) {
+            console.error(`[Clips] ❌ Failed to regenerate thumbnail for ${filePath}:`, genError);
+          }
+        } else {
+          console.warn(`[Clips] ❌ Video file does not exist: ${filePath}`);
+        }
       }
     } catch (error) {
-      console.warn(`Failed to load thumbnail for output file ${filePath}:`, error);
+      console.error(`[Clips] ❌ Failed to load thumbnail for output file ${filePath}:`, error);
     }
   }
 

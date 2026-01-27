@@ -1,14 +1,26 @@
 <template>
-  <Dialog v-model:open="isOpen">
-    <DialogContent class="clip-picker">
-      <DialogHeader>
-        <DialogTitle>Select Clips</DialogTitle>
-        <DialogDescription>
-          Choose built clips to use in your AI video. All edits, audio tracks, and effects will be preserved.
-        </DialogDescription>
-      </DialogHeader>
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="isOpen" class="clip-picker__overlay" @click.self="close">
+        <Transition name="dialog" appear>
+          <div v-if="isOpen" class="clip-picker" role="dialog" aria-modal="true">
+            <!-- Accent bar -->
+            <div class="clip-picker__accent"></div>
 
-      <div class="clip-picker__content">
+            <!-- Header -->
+            <div class="clip-picker__header">
+              <button class="clip-picker__close" @click="close" title="Close">
+                <X :size="18" />
+              </button>
+              <div class="clip-picker__icon">
+                <Video :size="24" />
+              </div>
+              <h2 class="clip-picker__title">Select Clips</h2>
+              <p class="clip-picker__subtitle">Choose built clips to use in your AI video. All edits, audio tracks, and effects will be preserved.</p>
+            </div>
+
+            <!-- Content -->
+            <div class="clip-picker__content">
         <!-- Filters -->
         <div class="clip-picker__filters">
           <div class="clip-picker__search">
@@ -69,8 +81,8 @@
             <!-- Thumbnail -->
             <div class="clip-picker__thumbnail">
               <img
-                v-if="clipData.clip.built_thumbnail_path"
-                :src="`asset://localhost/${clipData.clip.built_thumbnail_path}`"
+                v-if="getThumbnailUrl(clipData.clip)"
+                :src="getThumbnailUrl(clipData.clip)"
                 :alt="clipData.clip.name || 'Clip'"
                 class="clip-picker__thumbnail-img"
               />
@@ -108,28 +120,26 @@
         </div>
       </div>
 
-      <DialogFooter>
-        <Button variant="outline" @click="cancel">Cancel</Button>
-        <Button @click="confirm" :disabled="selectedClips.length === 0">
-          Add {{ selectedClips.length }} Clip{{ selectedClips.length !== 1 ? 's' : '' }}
-        </Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+            <!-- Footer -->
+            <div class="clip-picker__footer">
+              <button @click="cancel" class="clip-picker__btn clip-picker__btn--secondary">
+                Cancel
+              </button>
+              <button @click="confirm" :disabled="selectedClips.length === 0" class="clip-picker__btn clip-picker__btn--primary">
+                Add {{ selectedClips.length }} Clip{{ selectedClips.length !== 1 ? 's' : '' }}
+              </button>
+            </div>
+          </div>
+        </Transition>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { Search, Video, Music, Type, Sparkles, Check, Loader2 } from 'lucide-vue-next';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Search, Video, Music, Type, Sparkles, Check, Loader2, X } from 'lucide-vue-next';
+import { invoke } from '@tauri-apps/api/core';
 import { getAllClipsWithBuilds } from '@/services/database/clip-build';
 import { getClipEdit, getClipAudioTracks, getClipTextOverlays, getClipStickers, getClipWatermarks, getClipEffects } from '@/services/database/clip-edits';
 import type { Clip, ClipBuild } from '@/services/database/types';
@@ -173,6 +183,37 @@ const selectedClips = ref<ClipWithFullData[]>([]);
 const searchQuery = ref('');
 const projectFilter = ref('all');
 const aspectRatioFilter = ref('all');
+const thumbnailCache = ref<Map<string, string>>(new Map());
+
+function close() {
+  cancel();
+}
+
+function getThumbnailUrl(clip: Clip & { builds: ClipBuild[] }): string | undefined {
+  if (!clip.built_thumbnail_path) return undefined;
+  return thumbnailCache.value.get(clip.id);
+}
+
+async function loadThumbnails() {
+  const clipsWithThumbnails = allClips.value.filter(
+    (clipData) => clipData.clip.built_thumbnail_path && !thumbnailCache.value.has(clipData.clip.id)
+  );
+
+  if (clipsWithThumbnails.length === 0) return;
+
+  await Promise.all(
+    clipsWithThumbnails.map(async (clipData) => {
+      try {
+        const dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: clipData.clip.built_thumbnail_path,
+        });
+        thumbnailCache.value.set(clipData.clip.id, dataUrl);
+      } catch (err) {
+        console.warn(`[ClipPickerDialog] Failed to load thumbnail for clip ${clipData.clip.id}:`, err);
+      }
+    })
+  );
+}
 
 const projects = computed(() => {
   const projectMap = new Map<string, { id: string; name: string }>();
@@ -223,11 +264,17 @@ async function loadClips() {
   loading.value = true;
   try {
     const clipsWithBuilds = await getAllClipsWithBuilds();
+    console.log('[ClipPickerDialog] Total clips loaded:', clipsWithBuilds.length);
     
-    // Filter to only completed builds
-    const completedClips = clipsWithBuilds.filter(clip => 
-      clip.builds.some(build => build.status === 'completed')
-    );
+    // Filter to only clips that have at least one completed build with an output file
+    const completedClips = clipsWithBuilds.filter(clip => {
+      const hasCompletedBuild = clip.builds && clip.builds.some(build => 
+        build.status === 'completed' && build.output_paths
+      );
+      return hasCompletedBuild;
+    });
+    
+    console.log('[ClipPickerDialog] Clips with completed builds:', completedClips.length);
 
     // Load full edit data for each clip
     const clipsWithFullData = await Promise.all(
@@ -267,6 +314,9 @@ async function loadClips() {
     );
 
     allClips.value = clipsWithFullData;
+    
+    // Load thumbnails after clips are loaded
+    await loadThumbnails();
   } catch (error) {
     console.error('Failed to load clips:', error);
   } finally {
@@ -363,12 +413,119 @@ function formatDuration(seconds?: number | null): string {
 </script>
 
 <style scoped>
+/* ===== Overlay ===== */
+.clip-picker__overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+/* ===== Dialog Container ===== */
+.clip-picker {
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 680px;
+  margin: 1rem;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== Accent Bar ===== */
+.clip-picker__accent {
+  height: 3px;
+  background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  flex-shrink: 0;
+}
+
+/* ===== Header ===== */
+.clip-picker__header {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 1.5rem 1rem;
+  text-align: center;
+}
+
+.clip-picker__close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--sidebar-text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.clip-picker__close:hover {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
+}
+
+.clip-picker__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  margin-bottom: 0.875rem;
+}
+
+.clip-picker__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.clip-picker__subtitle {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  margin: 0.25rem 0 0;
+}
+
+/* ===== Content Area ===== */
 .clip-picker__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 1.5rem 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-height: 60vh;
-  overflow: hidden;
+}
+
+.clip-picker__content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.clip-picker__content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.clip-picker__content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
 }
 
 .clip-picker__filters {
@@ -598,5 +755,78 @@ function formatDuration(seconds?: number | null): string {
 
 .clip-picker__meta-dot {
   opacity: 0.5;
+}
+
+/* ===== Footer ===== */
+.clip-picker__footer {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--sidebar-border);
+  background-color: var(--sidebar-surface);
+}
+
+.clip-picker__btn {
+  flex: 1;
+  padding: 0.625rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+  border: none;
+}
+
+.clip-picker__btn--secondary {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
+}
+
+.clip-picker__btn--secondary:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.clip-picker__btn--primary {
+  background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.8));
+  color: white;
+}
+
+.clip-picker__btn--primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.4);
+}
+
+.clip-picker__btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== Transitions ===== */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 200ms ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.dialog-enter-active {
+  transition: all 200ms ease;
+}
+
+.dialog-leave-active {
+  transition: all 150ms ease;
+}
+
+.dialog-enter-from {
+  opacity: 0;
+  transform: scale(0.95) translateY(-10px);
+}
+
+.dialog-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
 }
 </style>

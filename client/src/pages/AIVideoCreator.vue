@@ -1,143 +1,154 @@
 <template>
-  <div class="ai-video-creator">
-    <!-- Left Sidebar: Media Library + Prompt -->
-    <div class="ai-video-creator__sidebar">
-      <div class="ai-video-creator__sidebar-header">
-        <h2 class="ai-video-creator__sidebar-title">AI Video Creator</h2>
-        <span class="ai-video-creator__badge">Beta</span>
-      </div>
+  <PageLayout
+    title="AI Video Creator"
+    description="Create AI-powered video compositions"
+    :show-header="true"
+    :icon="Wand2"
+  >
+    <template #badge>
+      <span class="ai-video__badge">Beta</span>
+    </template>
 
-      <!-- Media Library -->
-      <div class="ai-video-creator__media-section">
-        <div class="ai-video-creator__section-header">
-          <h3 class="ai-video-creator__section-title">Media Library</h3>
-          <button
-            @click="handleUpload"
-            class="ai-video-creator__btn ai-video-creator__btn--sm"
-            title="Upload media"
-          >
-            <Plus class="ai-video-creator__icon" />
-          </button>
-        </div>
+    <template #actions>
+      <button
+        v-if="composition"
+        @click="openExport"
+        class="ai-video__export-btn"
+      >
+        <Download class="ai-video__export-icon" />
+        Export
+      </button>
+    </template>
 
-        <div v-if="mediaItems.length === 0" class="ai-video-creator__empty-state">
-          <Upload class="ai-video-creator__empty-icon" />
-          <p class="ai-video-creator__empty-text">No media added yet</p>
-          <button @click="handleUpload" class="ai-video-creator__btn ai-video-creator__btn--secondary">
-            Upload Files
-          </button>
-          <button @click="openAssetPicker" class="ai-video-creator__btn ai-video-creator__btn--secondary">
-            From Assets
-          </button>
-          <button @click="openClipPicker" class="ai-video-creator__btn ai-video-creator__btn--secondary">
-            From Clips
-          </button>
-        </div>
-
-        <div v-else class="ai-video-creator__media-list">
-          <div
-            v-for="item in mediaItems"
-            :key="item.id"
-            class="ai-video-creator__media-item"
-          >
-            <div class="ai-video-creator__media-thumbnail">
-              <img
-                v-if="item.thumbnailUrl"
-                :src="item.thumbnailUrl"
-                :alt="item.name"
-                class="ai-video-creator__media-img"
-              />
-              <div v-else class="ai-video-creator__media-placeholder">
-                <component :is="getMediaIcon(item.type)" class="ai-video-creator__media-placeholder-icon" />
-              </div>
-            </div>
-            <div class="ai-video-creator__media-info">
-              <p class="ai-video-creator__media-name">{{ item.name }}</p>
-              <p class="ai-video-creator__media-meta">
-                {{ item.type }} • {{ formatDuration(item.duration) }}
-              </p>
-            </div>
+    <div class="ai-video">
+      <!-- Left Sidebar: Media Library + Prompt -->
+      <div class="ai-video__sidebar">
+        <!-- Media Library -->
+        <div class="ai-video__section">
+          <div class="ai-video__section-header">
+            <h3 class="ai-video__section-title">Media Library</h3>
             <button
-              @click="removeMedia(item.id)"
-              class="ai-video-creator__media-remove"
-              title="Remove"
+              @click="handleUpload"
+              class="ai-video__add-btn"
+              title="Upload media"
             >
-              <X class="ai-video-creator__icon" />
+              <Plus :size="16" />
             </button>
           </div>
+
+          <div v-if="mediaItems.length === 0" class="ai-video__empty">
+            <Upload class="ai-video__empty-icon" />
+            <p class="ai-video__empty-text">No media added yet</p>
+            <div class="ai-video__empty-actions">
+              <button @click="handleUpload" class="ai-video__empty-btn">
+                <Upload :size="16" />
+                Upload Files
+              </button>
+              <button @click="openAssetPicker" class="ai-video__empty-btn">
+                <ImageIcon :size="16" />
+                From Assets
+              </button>
+              <button @click="openClipPicker" class="ai-video__empty-btn">
+                <Video :size="16" />
+                From Clips
+              </button>
+            </div>
+          </div>
+
+          <div v-else class="ai-video__media-list">
+            <div
+              v-for="item in mediaItems"
+              :key="item.id"
+              class="ai-video__media-item"
+            >
+              <div class="ai-video__media-thumb">
+                <img
+                  v-if="item.thumbnailUrl"
+                  :src="item.thumbnailUrl"
+                  :alt="item.name"
+                />
+                <div v-else class="ai-video__media-placeholder">
+                  <component :is="getMediaIcon(item.type)" :size="20" />
+                </div>
+              </div>
+              <div class="ai-video__media-info">
+                <p class="ai-video__media-name">{{ item.name }}</p>
+                <p class="ai-video__media-meta">
+                  {{ item.type }} • {{ formatDuration(item.duration) }}
+                </p>
+              </div>
+              <button
+                @click="removeMedia(item.id)"
+                class="ai-video__media-remove"
+                title="Remove"
+              >
+                <X :size="16" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Prompt Section -->
+        <div class="ai-video__section ai-video__section--prompt">
+          <h3 class="ai-video__section-title">Prompt</h3>
+          <textarea
+            v-model="prompt"
+            placeholder="Describe the video you want to create..."
+            class="ai-video__prompt"
+            rows="4"
+          />
+          <button
+            @click="handleGenerate"
+            :disabled="isGenerating || mediaItems.length === 0 || !prompt.trim()"
+            class="ai-video__generate-btn"
+          >
+            <Wand2 v-if="!isGenerating" :size="16" />
+            <Loader2 v-else :size="16" class="ai-video__spinner" />
+            {{ isGenerating ? 'Generating...' : 'Generate Video' }}
+          </button>
         </div>
       </div>
 
-      <!-- Prompt Section -->
-      <div class="ai-video-creator__prompt-section">
-        <h3 class="ai-video-creator__section-title">Prompt</h3>
-        <textarea
-          v-model="prompt"
-          placeholder="Describe the video you want to create..."
-          class="ai-video-creator__prompt-input"
-          rows="4"
-        />
-        <button
-          @click="handleGenerate"
-          :disabled="isGenerating || mediaItems.length === 0 || !prompt.trim()"
-          class="ai-video-creator__btn ai-video-creator__btn--primary"
-        >
-          <Wand2 v-if="!isGenerating" class="ai-video-creator__icon" />
-          <Loader2 v-else class="ai-video-creator__icon ai-video-creator__icon--spin" />
-          {{ isGenerating ? 'Generating...' : 'Generate Video' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Center: Preview -->
-    <div class="ai-video-creator__preview">
-      <div class="ai-video-creator__preview-container">
-        <RemotionPlayerMount
-          :composition="composition"
-          :current-time="currentTime"
-          :is-playing="isPlaying"
-          @time-update="handleTimeUpdate"
-          @duration-change="handleDurationChange"
-          @playing-change="handlePlayingChange"
-        />
-      </div>
-
-      <!-- Playback Controls -->
-      <div class="ai-video-creator__controls">
-        <button
-          @click="togglePlayback"
-          class="ai-video-creator__control-btn"
-          :disabled="!composition"
-        >
-          <Play v-if="!isPlaying" class="ai-video-creator__icon" />
-          <Pause v-else class="ai-video-creator__icon" />
-        </button>
-
-        <div class="ai-video-creator__timeline">
-          <input
-            type="range"
-            v-model.number="currentTime"
-            :min="0"
-            :max="duration"
-            :step="0.01"
-            class="ai-video-creator__timeline-slider"
-            :disabled="!composition"
+      <!-- Center: Preview -->
+      <div class="ai-video__main">
+        <div class="ai-video__preview">
+          <RemotionPlayerMount
+            :composition="composition"
+            :current-time="currentTime"
+            :is-playing="isPlaying"
+            @time-update="handleTimeUpdate"
+            @duration-change="handleDurationChange"
+            @playing-change="handlePlayingChange"
           />
         </div>
 
-        <span class="ai-video-creator__time">
-          {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-        </span>
+        <!-- Playback Controls -->
+        <div class="ai-video__controls">
+          <button
+            @click="togglePlayback"
+            class="ai-video__control-btn"
+            :disabled="!composition"
+          >
+            <Play v-if="!isPlaying" :size="20" />
+            <Pause v-else :size="20" />
+          </button>
 
-        <button
-          @click="openExport"
-          :disabled="!composition"
-          class="ai-video-creator__btn ai-video-creator__btn--primary ai-video-creator__export-btn"
-          title="Export video"
-        >
-          <Download class="ai-video-creator__icon" />
-          Export
-        </button>
+          <div class="ai-video__timeline">
+            <input
+              type="range"
+              v-model.number="currentTime"
+              :min="0"
+              :max="duration"
+              :step="0.01"
+              class="ai-video__timeline-slider"
+              :disabled="!composition"
+            />
+          </div>
+
+          <span class="ai-video__time">
+            {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
+          </span>
+        </div>
       </div>
     </div>
 
@@ -154,12 +165,13 @@
       v-model="showExportDialog"
       :composition="composition"
     />
-  </div>
+  </PageLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { Wand2, Plus, Upload, X, Play, Pause, SkipBack, SkipForward, Video, Music, Image as ImageIcon, Loader2, Download } from 'lucide-vue-next';
+import { ref } from 'vue';
+import { Wand2, Plus, Upload, X, Play, Pause, Video, Music, Image as ImageIcon, Loader2, Download } from 'lucide-vue-next';
+import PageLayout from '@/components/PageLayout.vue';
 import RemotionPlayerMount from '@/components/ai-video/RemotionPlayerMount.vue';
 import ClipPickerDialog from '@/components/ai-video/pickers/ClipPickerDialog.vue';
 import AssetPickerDialog from '@/components/ai-video/pickers/AssetPickerDialog.vue';
@@ -396,133 +408,196 @@ function formatTime(seconds: number): string {
 </script>
 
 <style scoped>
-.ai-video-creator {
+.ai-video {
   display: grid;
   grid-template-columns: 320px 1fr;
-  height: 100vh;
-  background: hsl(var(--background));
-  overflow: hidden;
+  gap: 1.5rem;
+  height: 100%;
+  padding: 1.5rem;
 }
 
-.ai-video-creator__sidebar {
-  display: flex;
-  flex-direction: column;
-  background: hsl(var(--card));
-  border-right: 1px solid hsl(var(--border));
-  overflow-y: auto;
-}
-
-.ai-video-creator__sidebar-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1.5rem 1rem;
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-.ai-video-creator__sidebar-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: hsl(var(--foreground));
-  margin: 0;
-}
-
-.ai-video-creator__badge {
+.ai-video__badge {
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.5rem;
-  background: rgba(14, 165, 233, 0.15);
+  background: rgba(14, 165, 233, 0.1);
   color: #0ea5e9;
-  border: 1px solid rgba(14, 165, 233, 0.3);
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 500;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.ai-video-creator__media-section {
-  flex: 1;
+.ai-video__export-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #0ea5e9;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.ai-video__export-btn:hover {
+  background: #0284c7;
+}
+
+.ai-video__export-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.ai-video__sidebar {
   display: flex;
   flex-direction: column;
-  padding: 1rem;
-  border-bottom: 1px solid hsl(var(--border));
-  min-height: 0;
+  gap: 1rem;
+  overflow-y: auto;
 }
 
-.ai-video-creator__section-header {
+.ai-video__section {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.ai-video__section--prompt {
+  margin-top: auto;
+}
+
+.ai-video__section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
 }
 
-.ai-video-creator__section-title {
-  font-size: 0.875rem;
+.ai-video__section-title {
+  font-size: 0.8125rem;
   font-weight: 600;
   color: hsl(var(--foreground));
   margin: 0;
 }
 
-.ai-video-creator__empty-state {
+.ai-video__add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ai-video__add-btn:hover {
+  background: hsl(var(--accent));
+  border-color: hsl(var(--accent));
+}
+
+.ai-video__empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
+  gap: 1rem;
   padding: 2rem 1rem;
   text-align: center;
 }
 
-.ai-video-creator__empty-icon {
-  width: 48px;
-  height: 48px;
+.ai-video__empty-icon {
+  width: 40px;
+  height: 40px;
   color: hsl(var(--muted-foreground));
+  opacity: 0.5;
 }
 
-.ai-video-creator__empty-text {
-  font-size: 0.875rem;
+.ai-video__empty-text {
+  font-size: 0.8125rem;
   color: hsl(var(--muted-foreground));
   margin: 0;
 }
 
-.ai-video-creator__media-list {
+.ai-video__empty-actions {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  overflow-y: auto;
-  min-height: 0;
+  width: 100%;
 }
 
-.ai-video-creator__media-item {
+.ai-video__empty-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  color: hsl(var(--foreground));
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ai-video__empty-btn:hover {
+  background: hsl(var(--accent));
+  border-color: hsl(var(--accent));
+}
+
+.ai-video__media-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.ai-video__media-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem;
-  background: hsl(var(--secondary));
+  padding: 0.625rem;
+  background: hsl(var(--secondary) / 0.5);
   border: 1px solid hsl(var(--border));
-  border-radius: 8px;
-  transition: all 150ms ease;
-}
-
-.ai-video-creator__media-item:hover {
-  border-color: rgba(14, 165, 233, 0.3);
-}
-
-.ai-video-creator__media-thumbnail {
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
   border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.ai-video__media-item:hover {
+  background: hsl(var(--secondary));
+  border-color: hsl(var(--accent));
+}
+
+.ai-video__media-thumb {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 4px;
   overflow: hidden;
   background: hsl(var(--muted));
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.ai-video-creator__media-img {
+.ai-video__media-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.ai-video-creator__media-placeholder {
+.ai-video__media-placeholder {
   width: 100%;
   height: 100%;
   display: flex;
@@ -530,19 +605,17 @@ function formatTime(seconds: number): string {
   justify-content: center;
 }
 
-.ai-video-creator__media-placeholder-icon {
-  width: 24px;
-  height: 24px;
+.ai-video__media-placeholder {
   color: hsl(var(--muted-foreground));
 }
 
-.ai-video-creator__media-info {
+.ai-video__media-info {
   flex: 1;
   min-width: 0;
 }
 
-.ai-video-creator__media-name {
-  font-size: 0.875rem;
+.ai-video__media-name {
+  font-size: 0.8125rem;
   font-weight: 500;
   color: hsl(var(--foreground));
   margin: 0 0 0.25rem 0;
@@ -551,104 +624,79 @@ function formatTime(seconds: number): string {
   text-overflow: ellipsis;
 }
 
-.ai-video-creator__media-meta {
-  font-size: 0.75rem;
+.ai-video__media-meta {
+  font-size: 0.6875rem;
   color: hsl(var(--muted-foreground));
   margin: 0;
+  text-transform: capitalize;
 }
 
-.ai-video-creator__media-remove {
+.ai-video__media-remove {
   padding: 0.25rem;
   background: transparent;
   border: none;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
   border-radius: 4px;
-  transition: all 150ms ease;
+  transition: all 0.15s;
 }
 
-.ai-video-creator__media-remove:hover {
-  background: hsl(var(--destructive));
-  color: white;
+.ai-video__media-remove:hover {
+  background: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
 }
 
-.ai-video-creator__prompt-section {
-  padding: 1rem;
-}
-
-.ai-video-creator__prompt-input {
+.ai-video__prompt {
   width: 100%;
   padding: 0.75rem;
   background: hsl(var(--input));
   border: 1px solid hsl(var(--border));
-  border-radius: 8px;
+  border-radius: 6px;
   color: hsl(var(--foreground));
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-family: inherit;
   resize: vertical;
   margin-bottom: 0.75rem;
-  transition: all 150ms ease;
+  transition: all 0.15s;
 }
 
-.ai-video-creator__prompt-input:focus {
+.ai-video__prompt:focus {
   outline: none;
-  border-color: rgba(14, 165, 233, 0.5);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.2);
 }
 
-.ai-video-creator__btn {
-  display: inline-flex;
+.ai-video__prompt::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+.ai-video__generate-btn {
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.625rem 1.25rem;
-  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  padding: 0.625rem 1rem;
+  background: #0ea5e9;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   color: white;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: 0.8125rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: all 0.15s;
   width: 100%;
 }
 
-.ai-video-creator__btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
+.ai-video__generate-btn:hover:not(:disabled) {
+  background: #0284c7;
 }
 
-.ai-video-creator__btn:disabled {
+.ai-video__generate-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.ai-video-creator__btn--primary {
-  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
-}
-
-.ai-video-creator__btn--secondary {
-  background: hsl(var(--secondary));
-  border: 1px solid hsl(var(--border));
-  color: hsl(var(--foreground));
-}
-
-.ai-video-creator__btn--secondary:hover:not(:disabled) {
-  background: hsl(var(--accent));
-  border-color: rgba(14, 165, 233, 0.3);
-}
-
-.ai-video-creator__btn--sm {
-  padding: 0.375rem;
-  width: auto;
-}
-
-.ai-video-creator__icon {
-  width: 16px;
-  height: 16px;
-}
-
-.ai-video-creator__icon--spin {
+.ai-video__spinner {
   animation: spin 1s linear infinite;
 }
 
@@ -657,90 +705,116 @@ function formatTime(seconds: number): string {
   to { transform: rotate(360deg); }
 }
 
-.ai-video-creator__preview {
+.ai-video__main {
   display: flex;
   flex-direction: column;
-  background: #0a0a0b;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.ai-video-creator__preview-container {
+.ai-video__preview {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  background: #000;
   min-height: 0;
+  position: relative;
 }
 
-.ai-video-creator__controls {
+.ai-video__controls {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 1rem 2rem;
+  padding: 1rem;
   background: hsl(var(--card));
   border-top: 1px solid hsl(var(--border));
 }
 
-.ai-video-creator__control-btn {
+.ai-video__control-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   background: hsl(var(--secondary));
   border: 1px solid hsl(var(--border));
-  border-radius: 8px;
+  border-radius: 6px;
   color: hsl(var(--foreground));
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: all 0.15s;
+  flex-shrink: 0;
 }
 
-.ai-video-creator__control-btn:hover:not(:disabled) {
+.ai-video__control-btn:hover:not(:disabled) {
   background: hsl(var(--accent));
-  border-color: rgba(14, 165, 233, 0.3);
+  border-color: hsl(var(--ring));
 }
 
-.ai-video-creator__control-btn:disabled {
+.ai-video__control-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.ai-video-creator__timeline {
+.ai-video__timeline {
   flex: 1;
+  min-width: 0;
 }
 
-.ai-video-creator__timeline-slider {
+.ai-video__timeline-slider {
   width: 100%;
-  height: 6px;
+  height: 4px;
   background: hsl(var(--secondary));
-  border-radius: 3px;
+  border-radius: 2px;
   outline: none;
   -webkit-appearance: none;
-}
-
-.ai-video-creator__timeline-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  background: #0ea5e9;
-  border-radius: 50%;
+  appearance: none;
   cursor: pointer;
 }
 
-.ai-video-creator__timeline-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+.ai-video__timeline-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #0ea5e9;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ai-video__timeline-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.ai-video__timeline-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
   background: #0ea5e9;
   border: none;
   border-radius: 50%;
   cursor: pointer;
+  transition: all 0.15s;
 }
 
-.ai-video-creator__time {
-  font-size: 0.875rem;
+.ai-video__timeline-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+.ai-video__timeline-slider:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-video__time {
+  font-size: 0.75rem;
+  font-weight: 500;
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
-  min-width: 100px;
+  flex-shrink: 0;
+  min-width: 80px;
   text-align: right;
 }
 </style>
