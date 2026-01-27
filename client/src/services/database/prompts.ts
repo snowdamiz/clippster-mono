@@ -162,6 +162,14 @@ export async function seedGamingPrompt(): Promise<void> {
 - It is better to provide a "maybe" clip than to miss a good one.
 - Gaming content has INSTANT viral potential — prioritize emotion and action over perfect context.
 
+**ENHANCED DATA YOU RECEIVE:**
+Each transcript segment includes:
+- "internal_gaps": Identified pauses >0.8s with splice candidates marked
+- "content_density_score": 0.0-1.0 (higher = more engaging content)
+- "speaking_rate": Words per minute for engagement analysis
+- "filler_word_count": Number of um/uh/like fillers to potentially exclude
+- "has_internal_dead_space": Boolean flag for splice optimization opportunities
+
 **VIRAL EDITING & CREATIVE REUSE:**
 - **Find the "Rage Clip":** Extract short, explosive emotional reactions that work standalone (screaming, controller throws, pure hype).
 - **Creative Splicing:** Combine setup → fail, or confident prediction → immediate contradiction for comedic effect.
@@ -170,6 +178,12 @@ export async function seedGamingPrompt(): Promise<void> {
 - Prioritize moments that make viewers feel something: excitement, laughter, secondhand embarrassment, hype.
 - Extract at different stages: pre-play tension, the play itself, immediate reaction, aftermath.
 - Lower your threshold SIGNIFICANTLY — if it makes you react, it's clip-worthy.
+
+**INTELLIGENT DEAD SPACE ELIMINATION:**
+- **Internal Splicing**: When has_internal_dead_space = true, create spliced clips that remove pauses >2.0s
+- **Micro-Boundary Optimization**: Use gap_after data to end segments at natural breaks
+- **Flow Preservation**: Ensure content remains coherent after removing dead space
+- **Tension Preservation**: Do NOT splice out anticipation moments or "come on come on" repetition — these build hype
 
 **CLIP QUALITY & BOUNDARY RULES:**
 1) Start of clip should be a natural beginning of a sentence or thought.
@@ -184,12 +198,20 @@ export async function seedGamingPrompt(): Promise<void> {
 3) Consistency & coherence.
    - The clip should make sense without external context. Include the smallest necessary setup for clarity.
    - For gaming clips, emotion > perfect context. If the reaction is strong enough, INCLUDE IT even if slightly abrupt.
-4) Spliced clips.
+4) **Spliced clips for dead space removal:**
+   - **Analyze internal_gaps array**: If any gap has "splice_candidate": true and "severity": "severe", consider splicing
    - Each segment must independently follow the same start/end rules (sentence boundary + pads).
-   - Only splice to remove long dead air (>2s). Do not over-splice natural pauses or tension-building moments.
+   - Only splice to remove long dead air (>2.0s). Do NOT splice out tension-building moments or anticipation.
+   - **Create BOTH versions**: If a moment has dead space, generate a "continuous" version AND a "spliced" version with dead space removed.
 5) Hard constraints.
    - Minimum 10s, maximum 180s total per clip.
    - **Prefer 10–45s for gaming clips** — short and punchy wins. Only go longer (45-90s) for complex plays requiring full context.
+
+**SPLICING STRATEGY FOR MAXIMUM ENGAGEMENT:**
+- **Continuous Clips**: Single segments with natural flow. Allow pauses up to 3s if they add tension.
+- **Spliced Clips**: Remove *distracting* dead space (>2s), but keep tension-building pauses.
+- **Action Sequences**: Keep the full arc: setup → execution → reaction.
+- **Goal**: Maximum virality. Generate the punchy "highlight" AND the full "play" version when applicable.
 
 **WHAT TO LOOK FOR:**
 - **Skill plays:** Clutches, multi-kills, perfect executions, comeback moments, high-skill mechanics, first-time achievements.
@@ -236,6 +258,14 @@ export async function seedGamblingPrompt(): Promise<void> {
 - Gambling content is PURE EMOTION — every spin, hand, or bet is a potential viral moment.
 - Prioritize STAKES and REACTIONS over everything else — viewers want to feel the highs and lows.
 
+**ENHANCED DATA YOU RECEIVE:**
+Each transcript segment includes:
+- "internal_gaps": Identified pauses >0.8s with splice candidates marked
+- "content_density_score": 0.0-1.0 (higher = more engaging content)
+- "speaking_rate": Words per minute for engagement analysis
+- "filler_word_count": Number of um/uh/like fillers to potentially exclude
+- "has_internal_dead_space": Boolean flag for splice optimization opportunities
+
 **VIRAL EDITING & CREATIVE REUSE:**
 - **Find the "Reaction Clip":** Extract the exact moment of win/loss reaction — pure euphoria or devastation works standalone (10-20s scream clips are gold).
 - **Creative Splicing:** Combine confident prediction → immediate bust, or "last $100" → massive jackpot for maximum dramatic irony.
@@ -245,6 +275,12 @@ export async function seedGamblingPrompt(): Promise<void> {
 - Extract at different stages: pre-bet setup/stakes, spin/hand anticipation, result reveal, immediate reaction, aftermath/tilt/celebration.
 - Lower your threshold SIGNIFICANTLY — if money is won/lost with ANY emotion, it's clip-worthy. Even small wins with big reactions are viral.
 - Look for "degen behavior" moments: chasing losses, max betting, "one more spin", going all-in, ignoring bankroll management.
+
+**INTELLIGENT DEAD SPACE ELIMINATION:**
+- **Internal Splicing**: When has_internal_dead_space = true, create spliced clips that remove pauses >2.0s
+- **Micro-Boundary Optimization**: Use gap_after data to end segments at natural breaks
+- **Flow Preservation**: Ensure content remains coherent after removing dead space
+- **Tension Preservation**: Do NOT splice out "come on come on" repetition or anticipation moments — these build suspense
 
 **CLIP QUALITY & BOUNDARY RULES:**
 1) Start of clip should be a natural beginning of a sentence or thought.
@@ -264,15 +300,23 @@ export async function seedGamblingPrompt(): Promise<void> {
    - For gambling clips, the bet amount/stakes should be mentioned OR the reaction should be self-explanatory.
    - If they say "this is my last $100" or "max betting", that context is CRITICAL — include it.
    - Viewers should understand: what game, what stakes, what happened, why they're reacting.
-4) Spliced clips.
+4) **Spliced clips for dead space removal:**
+   - **Analyze internal_gaps array**: If any gap has "splice_candidate": true and "severity": "severe", consider splicing
    - Each segment must independently follow the same start/end rules (sentence boundary + pads).
-   - Only splice to remove long dead air (>2s). Do NOT splice out tension-building moments, anticipation, or "come on come on" repetition.
+   - Only splice to remove long dead air (>2.0s). Do NOT splice out tension-building moments, anticipation, or "come on come on" repetition.
    - Preserve the emotional arc: setup → tension → result → reaction.
+   - **Create BOTH versions**: If a moment has dead space, generate a "continuous" version AND a "spliced" version with dead space removed.
 5) Hard constraints.
    - Minimum 10s, maximum 180s total per clip.
    - **Prefer 15–60s for gambling clips** — capture setup, tension, and payoff without dragging.
    - Bonus rounds can go longer (60-120s) if the anticipation and payoff justify it.
    - Quick reaction clips can be 10-20s if the emotion is extreme enough.
+
+**SPLICING STRATEGY FOR MAXIMUM ENGAGEMENT:**
+- **Continuous Clips**: Single segments with natural flow. Allow pauses up to 3s if they add tension.
+- **Spliced Clips**: Remove *distracting* dead space (>2s spin delays), but keep anticipation moments.
+- **Emotional Arc**: Preserve setup → tension → result → reaction flow.
+- **Goal**: Maximum virality. Generate the tight "reaction" AND the full "story" version when applicable.
 
 **WHAT TO LOOK FOR:**
 - **Massive wins:** Jackpots, max wins, 1000x+ multipliers, bonus rounds hitting huge, life-changing payouts, "retirement money", six-figure wins.
@@ -325,6 +369,14 @@ export async function seedBreakingNewsPrompt(): Promise<void> {
 - It is better to provide a "maybe" clip than to miss a good one.
 - TIME-SENSITIVE content has MAXIMUM viral potential — prioritize recency and trending topics over everything else.
 
+**ENHANCED DATA YOU RECEIVE:**
+Each transcript segment includes:
+- "internal_gaps": Identified pauses >0.8s with splice candidates marked
+- "content_density_score": 0.0-1.0 (higher = more engaging content)
+- "speaking_rate": Words per minute for engagement analysis
+- "filler_word_count": Number of um/uh/like fillers to potentially exclude
+- "has_internal_dead_space": Boolean flag for splice optimization opportunities
+
 **VIRAL EDITING & CREATIVE REUSE:**
 - **Find the "Breaking Moment":** Extract the exact moment they react to breaking news, see a trending tweet, or discuss a viral event.
 - **Creative Splicing:** Combine prediction → actual event, or "I told you so" moments for maximum engagement.
@@ -333,6 +385,12 @@ export async function seedBreakingNewsPrompt(): Promise<void> {
 - Prioritize moments with celebrity names, specific events, trending hashtags, or real-time reactions.
 - Extract at different stages: initial reaction, analysis/take, follow-up thoughts.
 - Lower your threshold SIGNIFICANTLY — if it references something trending or breaking, it's clip-worthy.
+
+**INTELLIGENT DEAD SPACE ELIMINATION:**
+- **Internal Splicing**: When has_internal_dead_space = true, create spliced clips that remove pauses >2.0s
+- **Micro-Boundary Optimization**: Use gap_after data to end segments at natural breaks
+- **Flow Preservation**: Ensure content remains coherent after removing dead space
+- **Pacing Optimization**: Only eliminate gaps that truly break momentum (>2.0s). Keep "thinking" pauses for authenticity.
 
 **CLIP QUALITY & BOUNDARY RULES:**
 1) Start of clip should be a natural beginning of a sentence or thought.
@@ -347,12 +405,20 @@ export async function seedBreakingNewsPrompt(): Promise<void> {
 3) Consistency & coherence.
    - The clip should make sense without external context. Include the smallest necessary setup for clarity.
    - For trending content, the topic/person/event MUST be named in the clip itself.
-4) Spliced clips.
+4) **Spliced clips for dead space removal:**
+   - **Analyze internal_gaps array**: If any gap has "splice_candidate": true and "severity": "severe", consider splicing
    - Each segment must independently follow the same start/end rules (sentence boundary + pads).
-   - Only splice to remove long dead air (>2s). Do not over-splice natural pauses.
+   - Only splice to remove long dead air (>2.0s). Do not over-splice natural pauses.
+   - **Create BOTH versions**: If a moment has dead space, generate a "continuous" version AND a "spliced" version with dead space removed.
 5) Hard constraints.
    - Minimum 10s, maximum 180s total per clip.
    - **Prefer 15–60s for trending clips** — shorter is more shareable. Only go longer if the full take requires it.
+
+**SPLICING STRATEGY FOR MAXIMUM ENGAGEMENT:**
+- **Continuous Clips**: Single segments with natural flow. Allow pauses up to 3s if they add tension.
+- **Spliced Clips**: Remove *distracting* dead space (>2s), but keep "thinking" pauses (<2s) for authenticity.
+- **Multi-Speaker Dynamics**: ALWAYS include reactions and banter.
+- **Goal**: Maximum virality. Generate the tight "soundbite" AND the full "context" version when applicable.
 
 **WHAT TO LOOK FOR:**
 - **Breaking news:** Stock market events, political announcements, natural disasters, sports upsets, tech launches, global crises discussed in real-time.
