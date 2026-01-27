@@ -701,6 +701,7 @@ pub fn run() {
             storage::save_temp_file,
             storage::read_file_as_data_url,
             storage::delete_video_file,
+            storage::delete_raw_video_files,
             storage::get_video_duration,
             storage::get_video_metadata,
             storage::get_audio_metadata,

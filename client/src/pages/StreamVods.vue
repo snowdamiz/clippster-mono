@@ -194,7 +194,16 @@
 
           <!-- VOD Cards Grid -->
           <div class="streamvods__grid">
-            <div v-for="clip in paginatedClips" :key="clip.clipId" class="vod-card" :class="{ 'vod-card--selected': selectedVodIds.has(clip.clipId) }" @click="handleClipClick(clip)">
+            <div 
+              v-for="clip in paginatedClips" 
+              :key="clip.clipId" 
+              class="vod-card" 
+              :class="{ 
+                'vod-card--selected': selectedVodIds.has(clip.clipId),
+                'vod-card--downloaded': isVodAlreadyDownloaded(clip.clipId)
+              }" 
+              @click="handleClipClick(clip)"
+            >
               <!-- Selection Checkbox -->
               <div
                 class="vod-card__checkbox"
@@ -227,6 +236,11 @@
                 <span class="vod-card__badge vod-card__badge--duration">
                   <Clock class="vod-card__badge-icon-svg" />
                   {{ formatDuration(clip.duration) }}
+                </span>
+                <!-- Downloaded Badge -->
+                <span v-if="isVodAlreadyDownloaded(clip.clipId)" class="vod-card__badge vod-card__badge--downloaded">
+                  <Check class="vod-card__badge-icon-svg" />
+                  Downloaded
                 </span>
               </div>
 
@@ -436,7 +450,7 @@
   import { extractChannelSlug } from '@/services/kick';
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
-  import { getNextSegmentNumber } from '@/services/database';
+  import { getNextSegmentNumber, getDownloadedVodIds } from '@/services/database';
   import { Clock, ChevronDown, X, AlertTriangle, Download, Video, Search, Loader2, RotateCcw, Check } from 'lucide-vue-next';
   import { getCreatorProfileByPlatformId } from '@/services/database';
   import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
@@ -470,6 +484,9 @@
   const downloadQueue = ref<PlatformClip[]>([]);
   const currentQueueIndex = ref(0);
   const isProcessingQueue = ref(false);
+
+  // Downloaded VODs tracking
+  const downloadedVodIds = ref<Set<string>>(new Set());
 
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(null);
@@ -519,10 +536,31 @@
     detectedPlatform.value = null;
   }
 
+  // Load downloaded VOD IDs
+  async function loadDownloadedVodIds() {
+    try {
+      downloadedVodIds.value = await getDownloadedVodIds();
+    } catch (error) {
+      console.error('[StreamVods] Failed to load downloaded VOD IDs:', error);
+    }
+  }
+
+  // Check if a VOD is downloaded
+  function isVodAlreadyDownloaded(clipId: string): boolean {
+    return downloadedVodIds.value.has(clipId);
+  }
+
+  // Reload downloaded VODs when window regains focus (user returns from Projects page)
+  function handleWindowFocus() {
+    loadDownloadedVodIds();
+  }
+
   // Initialize
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
+    window.addEventListener('focus', handleWindowFocus);
     await platformStore.refreshRecentSearchMetadata();
+    await loadDownloadedVodIds();
     detectPlatform();
 
     // Check for query params (from Creator Profiles navigation)
@@ -557,6 +595,7 @@
 
   onUnmounted(() => {
     document.removeEventListener('click', handleClickOutside);
+    window.removeEventListener('focus', handleWindowFocus);
   });
 
   function handleClickOutside(event: Event) {
@@ -740,6 +779,9 @@
     try {
       const result = await platformStore.searchClips(input, 20);
       if (result.success) {
+        // Reload downloaded VOD IDs after search to ensure we have latest data
+        await loadDownloadedVodIds();
+        
         if (result.total === 0) {
           showError('No VODs Found', 'No available VODs found for this search');
         } else {
@@ -1535,6 +1577,12 @@
     color: #7dd3fc;
   }
 
+  .vod-card__badge--downloaded {
+    background-color: rgba(34, 197, 94, 0.3);
+    color: #86efac;
+    border: 1px solid rgba(34, 197, 94, 0.4);
+  }
+
   .vod-card__badge-icon {
     width: 10px;
     height: 10px;
@@ -1548,6 +1596,19 @@
   .vod-card__badge-icon-svg {
     width: 10px;
     height: 10px;
+  }
+
+  /* Downloaded VOD styling - greyed out appearance */
+  .vod-card--downloaded {
+    opacity: 0.6;
+  }
+
+  .vod-card--downloaded:hover {
+    opacity: 0.75;
+  }
+
+  .vod-card--downloaded .vod-card__thumbnail {
+    filter: grayscale(0.5);
   }
 
   .vod-card__actions {

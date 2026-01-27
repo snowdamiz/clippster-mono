@@ -107,6 +107,66 @@ pub fn delete_video_file(file_path: String, thumbnail_path: Option<String>) -> R
     Ok(())
 }
 
+/// Comprehensive cleanup of all files associated with a raw video
+/// Deletes: video file, thumbnail, audio cache, waveform cache
+#[tauri::command]
+pub fn delete_raw_video_files(file_path: String, thumbnail_path: Option<String>) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+    
+    println!("[Storage] Comprehensive cleanup for video: {}", file_path);
+    
+    let video_path = Path::new(&file_path);
+    
+    // 1. Delete the video file if it exists
+    if video_path.exists() {
+        match fs::remove_file(video_path) {
+            Ok(_) => println!("[Storage] Deleted video file: {}", file_path),
+            Err(e) => {
+                println!("[Storage] Warning: Failed to delete video file: {}", e);
+                // Continue with other deletions even if video fails
+            }
+        }
+    }
+    
+    // 2. Delete the thumbnail file if it exists
+    if let Some(thumb_path) = thumbnail_path {
+        let thumbnail = Path::new(&thumb_path);
+        if thumbnail.exists() {
+            match fs::remove_file(thumbnail) {
+                Ok(_) => println!("[Storage] Deleted thumbnail: {}", thumb_path),
+                Err(e) => println!("[Storage] Warning: Failed to delete thumbnail: {}", e),
+            }
+        }
+    }
+    
+    // 3. Delete waveform cache file
+    // Generate hash for the video path to find cache files
+    let video_path_hash = crate::waveform::generate_video_path_hash(&file_path);
+    
+    if let Ok(waveform_cache_path) = crate::waveform::get_waveform_cache_file_path(&video_path_hash) {
+        if waveform_cache_path.exists() {
+            match fs::remove_file(&waveform_cache_path) {
+                Ok(_) => println!("[Storage] Deleted waveform cache: {:?}", waveform_cache_path),
+                Err(e) => println!("[Storage] Warning: Failed to delete waveform cache: {}", e),
+            }
+        }
+    }
+    
+    // 4. Delete audio cache file
+    if let Ok(audio_cache_path) = crate::waveform::get_audio_cache_file_path(&video_path_hash) {
+        if audio_cache_path.exists() {
+            match fs::remove_file(&audio_cache_path) {
+                Ok(_) => println!("[Storage] Deleted audio cache: {:?}", audio_cache_path),
+                Err(e) => println!("[Storage] Warning: Failed to delete audio cache: {}", e),
+            }
+        }
+    }
+    
+    println!("[Storage] Comprehensive cleanup completed for: {}", file_path);
+    Ok(())
+}
+
 /// Initialize storage directories, creating them if they don't exist (cached version)
 pub fn init_storage_dirs() -> Result<StoragePaths, String> {
     let mut cache = STORAGE_PATHS.lock().unwrap();
@@ -664,9 +724,10 @@ pub async fn get_video_metadata(app: tauri::AppHandle, video_path: String) -> Re
         return Err("Video file does not exist".to_string());
     }
 
+    // Just read metadata without processing the video - this is instant
     let output = app.shell().sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
-        .args(["-nostdin", "-i", &video_path, "-f", "null", "-"])
+        .args(["-nostdin", "-i", &video_path])
         .output()
         .await
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;

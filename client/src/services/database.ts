@@ -175,6 +175,8 @@ export {
   updateRawVideo,
   deleteRawVideo,
   hasClipsReferencingRawVideo,
+  isVodDownloaded,
+  getDownloadedVodIds,
 } from './database/raw-videos';
 
 // Re-export clip functions

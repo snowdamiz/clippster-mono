@@ -57,6 +57,20 @@
           </button>
         </div>
 
+        <!-- Fix Stream Info Button -->
+        <button 
+          v-if="hasVideosWithoutDuration" 
+          @click="fixVideoMetadata" 
+          :disabled="fixingMetadata"
+          class="projects-create-btn" 
+          :style="{ marginRight: '0.5rem', background: fixingMetadata ? '#9ca3af' : '#f59e0b', cursor: fixingMetadata ? 'not-allowed' : 'pointer' }" 
+          title="Extract metadata for videos with missing information"
+        >
+          <Loader2 v-if="fixingMetadata" class="projects-create-btn__icon" style="animation: spin 1s linear infinite;" />
+          <Clock v-else class="projects-create-btn__icon" />
+          {{ fixingMetadata ? 'Processing...' : 'Fix Stream Info' }}
+        </button>
+
         <!-- New Project Button -->
         <button @click="openCreateDialog" class="projects-create-btn">
           <Plus class="projects-create-btn__icon" />
@@ -132,7 +146,17 @@
 
         <!-- Active Downloads Section -->
         <div v-if="getActiveDownloads().length > 0 || getQueuedDownloads().length > 0" class="projects__section">
-          <h3 class="projects__section-header">Active Downloads</h3>
+          <div class="projects__section-header-row">
+            <h3 class="projects__section-header">Active Downloads</h3>
+            <button
+              class="projects__cancel-all-btn"
+              @click="handleCancelAllDownloads"
+              title="Cancel all downloads"
+            >
+              <XCircle :size="16" />
+              Cancel All
+            </button>
+          </div>
           <div class="projects__grid projects__grid--downloads">
             <DownloadCard
               v-for="download in [...getActiveDownloads(), ...getQueuedDownloads()]"
@@ -278,6 +302,12 @@
 
                     <!-- Time -->
                     <span class="project-card__meta-text">{{ getRelativeTime(project.updated_at) }}</span>
+
+                    <!-- Duration -->
+                    <template v-if="getProjectDuration(project.id)">
+                      <span class="project-card__dot"></span>
+                      <span class="project-card__meta-text">{{ getProjectDuration(project.id) }}</span>
+                    </template>
 
                     <span class="project-card__dot"></span>
 
@@ -1172,6 +1202,7 @@
     List,
     FolderOpen,
     X,
+    XCircle,
     Search,
     Clock,
     Monitor,
@@ -1284,10 +1315,13 @@
   const inEditorStore = useInEditorClips();
   inEditorStore.hydrate();
   const { processVideoFile } = useVideoOperations();
+  const fixingMetadata = ref(false);
+  const hasVideosWithoutDuration = ref(false);
   const {
     getActiveDownloads,
     getQueuedDownloads,
     getCompletedDownloads,
+    cancelAllDownloads,
     initialize: initializeDownloads,
   } = useDownloads();
 
@@ -1554,14 +1588,108 @@
   }
 
   function getProjectDuration(projectId: string): string | null {
+    let totalDuration = 0;
+
+    // Check direct videos on this project
     const videos = projectVideos.value[projectId];
     if (videos && videos.length > 0) {
-      const duration = videos.reduce((acc, v) => acc + (v.duration || 0), 0);
-      if (duration > 0) {
-        return formatDuration(duration);
+      totalDuration += videos.reduce((acc, v) => acc + (v.duration || 0), 0);
+    }
+
+    // Also check children if this is a folder project
+    const children = childrenMap.value.get(projectId);
+    if (children && children.length > 0) {
+      for (const child of children) {
+        const childVideos = projectVideos.value[child.id];
+        if (childVideos && childVideos.length > 0) {
+          totalDuration += childVideos.reduce((acc, v) => acc + (v.duration || 0), 0);
+        }
       }
     }
+
+    if (totalDuration > 0) {
+      return formatDuration(totalDuration);
+    }
     return null;
+  }
+
+  // Utility function to extract metadata for videos with missing duration
+  async function fixVideoMetadata() {
+    if (fixingMetadata.value) return;
+    
+    fixingMetadata.value = true;
+    try {
+      const { getAllRawVideos, updateRawVideo } = await import('@/services/database');
+      const allVideos = await getAllRawVideos();
+      
+      // Find videos with missing or zero duration
+      const videosToFix = allVideos.filter(v => !v.duration || v.duration === 0);
+      
+      if (videosToFix.length === 0) {
+        success('No videos need fixing', 'All videos have duration metadata');
+        fixingMetadata.value = false;
+        return;
+      }
+      
+      console.log(`[Projects] Fixing metadata for ${videosToFix.length} videos...`);
+      let fixed = 0;
+      let failed = 0;
+      
+      for (let i = 0; i < videosToFix.length; i++) {
+        const video = videosToFix[i];
+        console.log(`[Projects] Processing video ${i + 1}/${videosToFix.length}: ${video.original_filename}`);
+        console.log(`[Projects] Video path: ${video.file_path}`);
+        
+        try {
+          // Extract metadata using Tauri backend
+          console.log(`[Projects] Calling get_video_metadata for: ${video.file_path}`);
+          const metadata = await invoke('get_video_metadata', { 
+            videoPath: video.file_path 
+          }) as any;
+          
+          console.log(`[Projects] Received metadata:`, metadata);
+          
+          if (metadata && metadata.duration) {
+            await updateRawVideo(video.id, {
+              duration: metadata.duration,
+              width: metadata.width,
+              height: metadata.height,
+              codec: metadata.codec,
+            });
+            fixed++;
+            console.log(`[Projects] ✓ Fixed metadata for: ${video.original_filename} (${metadata.duration}s)`);
+          } else {
+            console.warn(`[Projects] ✗ No duration in metadata for: ${video.original_filename}`);
+            failed++;
+          }
+        } catch (err) {
+          console.error(`[Projects] ✗ Failed to fix metadata for ${video.original_filename}:`, err);
+          failed++;
+        }
+      }
+      
+      console.log(`[Projects] Metadata extraction complete. Fixed: ${fixed}, Failed: ${failed}`);
+      success('Metadata Updated', `Fixed ${fixed} videos${failed > 0 ? `, ${failed} failed` : ''}`);
+      
+      // Reload projects to show updated durations
+      await loadProjects();
+    } catch (err) {
+      console.error('[Projects] Error in fixVideoMetadata:', err);
+      error('Failed to fix metadata', err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      fixingMetadata.value = false;
+    }
+  }
+
+  // Check if any videos need metadata fixing
+  async function checkForVideosWithoutDuration() {
+    try {
+      const { getAllRawVideos } = await import('@/services/database');
+      const allVideos = await getAllRawVideos();
+      hasVideosWithoutDuration.value = allVideos.some(v => !v.duration || v.duration === 0);
+    } catch (err) {
+      console.warn('[Projects] Failed to check for videos without duration:', err);
+    }
   }
 
   function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null {
@@ -3889,6 +4017,17 @@
     showDialog.value = true;
   }
 
+  // Cancel all active downloads
+  async function handleCancelAllDownloads() {
+    try {
+      await cancelAllDownloads();
+      success('Downloads cancelled', 'All active downloads have been cancelled');
+    } catch (err) {
+      console.error('[Projects] Failed to cancel all downloads:', err);
+      error('Failed to cancel downloads', 'Could not cancel all downloads');
+    }
+  }
+
   async function handleProjectSubmit(data: ProjectFormData) {
     try {
       if (selectedProject.value) {
@@ -4030,22 +4169,6 @@
   // Helper function to delete a project and its associated video files from the filesystem
   // Uses enhanced deletion that respects in-editor and built clip retention
   async function deleteProjectWithFiles(projectId: string): Promise<void> {
-    // Get all raw videos for this project
-    const videos = await getRawVideosByProjectId(projectId);
-
-    // Delete each video file from the filesystem
-    for (const video of videos) {
-      try {
-        await invoke('delete_video_file', {
-          filePath: video.file_path,
-          thumbnailPath: video.thumbnail_path || null,
-        });
-      } catch (err) {
-        console.warn(`Failed to delete video file: ${video.file_path}`, err);
-        // Continue deleting other files even if one fails
-      }
-    }
-
     // Get in-editor clip IDs to preserve them during deletion
     const inEditorClipIds = new Set(inEditorStore.entries.map((e) => e.clipId));
 
@@ -4055,6 +4178,37 @@
     console.log(
       `[Projects] Project ${projectId} deleted. Clips deleted: ${deletedClipIds.length}, retained: ${retainedClipIds.length}`
     );
+
+    // Get all raw videos for this project
+    const videos = await getRawVideosByProjectId(projectId);
+
+    // If there are retained clips (built or in-editor), preserve audio/waveform caches
+    // These caches are needed for waveform display and editing
+    const hasRetainedClips = retainedClipIds.length > 0;
+
+    for (const video of videos) {
+      try {
+        if (hasRetainedClips) {
+          // Only delete video file and thumbnail, preserve audio/waveform caches
+          // Retained clips (built or in-editor) still need these caches
+          await invoke('delete_video_file', {
+            filePath: video.file_path,
+            thumbnailPath: video.thumbnail_path || null,
+          });
+          console.log(`[Projects] Deleted video/thumbnail only (preserving caches for ${retainedClipIds.length} retained clips): ${video.file_path}`);
+        } else {
+          // No retained clips, safe to delete everything
+          await invoke('delete_raw_video_files', {
+            filePath: video.file_path,
+            thumbnailPath: video.thumbnail_path || null,
+          });
+          console.log(`[Projects] Comprehensive cleanup completed for: ${video.file_path}`);
+        }
+      } catch (err) {
+        console.warn(`[Projects] Failed to delete video files for: ${video.file_path}`, err);
+        // Continue deleting other files even if one fails
+      }
+    }
   }
 
   async function deleteProjectConfirmed() {
@@ -4508,6 +4662,9 @@
 
     await loadProjects();
     await loadFolderPrompts();
+    
+    // Check if any videos need metadata fixing
+    await checkForVideosWithoutDuration();
 
     // Add event listener for clip refresh events
     document.addEventListener('refresh-clips-projects', handleClipRefreshEvent as EventListener);
@@ -4931,12 +5088,44 @@
     gap: 1rem;
   }
 
+  .projects__section-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
   .projects__section-header {
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--sidebar-text-muted);
     margin: 0;
     padding-bottom: 0.1rem;
+  }
+
+  .projects__cancel-all-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .projects__cancel-all-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+  }
+
+  .projects__cancel-all-btn:active {
+    transform: scale(0.98);
   }
 
   /* ===== Projects Grid ===== */
