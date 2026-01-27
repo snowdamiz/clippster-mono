@@ -524,13 +524,36 @@ export function calculatePeaks(
 // Waveform Service Class
 // ============================================================================
 
+// Threshold for switching to streaming mode (1 hour)
+const LONG_VIDEO_THRESHOLD = 3600; // seconds
+
+type WaveformMode = 'cached' | 'streaming';
+
 class WaveformServiceImpl {
   private audioCache = new Map<string, AudioData>();
   private loadingPromises = new Map<string, Promise<AudioData>>();
+  private peakMode = new Map<string, WaveformMode>(); // Track which mode to use per file
+
+  /**
+   * Get video duration from audio extraction result
+   * Returns the duration from the cached extraction info
+   */
+  private videoDurations = new Map<string, number>();
+  
+  private getVideoDuration(filePath: string): number {
+    const normalizedPath = this.normalizePath(filePath);
+    return this.videoDurations.get(normalizedPath) || 0;
+  }
+  
+  private setVideoDuration(filePath: string, duration: number): void {
+    const normalizedPath = this.normalizePath(filePath);
+    this.videoDurations.set(normalizedPath, duration);
+  }
 
   /**
    * Load audio data for a video/audio file
    * Uses IndexedDB cache for persistence
+   * Automatically chooses cached or streaming mode based on video duration
    */
   async loadAudio(filePath: string, forceReload: boolean = false): Promise<AudioData> {
     // Normalize path for caching
@@ -565,60 +588,192 @@ class WaveformServiceImpl {
       const cached = await getCachedAudio(normalizedPath);
       if (cached) {
         console.log('[WaveformService] Loaded from cache:', normalizedPath);
+        // Set mode based on cached duration
+        if (cached.duration > LONG_VIDEO_THRESHOLD) {
+          console.log(`[WaveformService] Long video detected from cache (${(cached.duration / 60).toFixed(1)} min), using streaming mode`);
+          this.peakMode.set(normalizedPath, 'streaming');
+        } else {
+          console.log(`[WaveformService] Short video from cache (${(cached.duration / 60).toFixed(1)} min), using cached mode`);
+          this.peakMode.set(normalizedPath, 'cached');
+        }
+        this.setVideoDuration(normalizedPath, cached.duration);
         return cached;
       }
     }
 
-    // Extract fresh audio data
-    console.log('[WaveformService] Extracting audio:', normalizedPath);
-    const { data, fileSize } = await extractAudioFromFile(normalizedPath);
+    // HYBRID STRATEGY: Extract audio via Rust first to get duration
+    const localPath = resolveLocalPath(normalizedPath);
+    if (!localPath) {
+      // Non-local file, extract normally
+      console.log('[WaveformService] Extracting audio:', normalizedPath);
+      const { data, fileSize } = await extractAudioFromFile(normalizedPath);
+      await setCachedAudio(normalizedPath, data, fileSize);
+      this.peakMode.set(normalizedPath, 'cached');
+      this.setVideoDuration(normalizedPath, data.duration);
+      return data;
+    }
 
-    // Cache to IndexedDB
-    await setCachedAudio(normalizedPath, data, fileSize);
-    console.log('[WaveformService] Cached audio data:', {
-      path: normalizedPath,
-      duration: data.duration.toFixed(2) + 's',
-      sampleRate: data.sampleRate,
-      samples: data.channelData.length,
-    });
+    // For local files: extract audio via Rust to get duration
+    const extractedAudioPath = await extractAudioViaRust(localPath);
+    if (!extractedAudioPath) {
+      // Extraction failed, fall back to direct load
+      console.warn('[WaveformService] FFmpeg extraction failed, attempting direct load');
+      const { data, fileSize } = await extractAudioFromFile(normalizedPath);
+      await setCachedAudio(normalizedPath, data, fileSize);
+      this.peakMode.set(normalizedPath, 'cached');
+      this.setVideoDuration(normalizedPath, data.duration);
+      return data;
+    }
 
-    return data;
+    // Get file size of extracted audio to estimate duration
+    const audioBuffer = await fetchAudioFile(extractedAudioPath);
+    if (!audioBuffer) {
+      console.warn('[WaveformService] Could not fetch extracted audio');
+      const { data, fileSize } = await extractAudioFromFile(normalizedPath);
+      await setCachedAudio(normalizedPath, data, fileSize);
+      this.peakMode.set(normalizedPath, 'cached');
+      this.setVideoDuration(normalizedPath, data.duration);
+      return data;
+    }
+
+    const audioSizeMB = audioBuffer.byteLength / (1024 * 1024);
+    // Rough estimate: 1 minute of MP3 at 128kbps ≈ 1MB
+    const estimatedDuration = (audioSizeMB / 1.0) * 60;
+
+    console.log(`[WaveformService] Extracted audio size: ${audioSizeMB.toFixed(1)}MB, estimated duration: ${(estimatedDuration / 60).toFixed(1)} min`);
+
+    // DECISION POINT: Check if video is too long
+    if (audioSizeMB > 200 || estimatedDuration > LONG_VIDEO_THRESHOLD) {
+      console.log(`[WaveformService] Long video detected (${(estimatedDuration / 60).toFixed(1)} min), using streaming mode`);
+      this.peakMode.set(normalizedPath, 'streaming');
+      this.setVideoDuration(normalizedPath, estimatedDuration);
+      // Don't load audio into memory
+      return {
+        channelData: new Float32Array(0),
+        sampleRate: 0,
+        duration: estimatedDuration,
+      };
+    }
+
+    // Short video: proceed with loading
+    console.log(`[WaveformService] Short video (${(estimatedDuration / 60).toFixed(1)} min), loading audio into memory`);
+    this.peakMode.set(normalizedPath, 'cached');
+
+    // Decode the extracted audio
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    try {
+      const audioBufferDecoded = await audioContext.decodeAudioData(audioBuffer);
+
+      // Get channel data (mono or mixed stereo)
+      let channelData: Float32Array;
+      if (audioBufferDecoded.numberOfChannels === 1) {
+        channelData = new Float32Array(audioBufferDecoded.getChannelData(0));
+      } else {
+        const left = audioBufferDecoded.getChannelData(0);
+        const right = audioBufferDecoded.getChannelData(1);
+        channelData = new Float32Array(left.length);
+        for (let i = 0; i < left.length; i++) {
+          channelData[i] = (left[i] + right[i]) / 2;
+        }
+      }
+
+      const data: AudioData = {
+        channelData,
+        sampleRate: audioBufferDecoded.sampleRate,
+        duration: audioBufferDecoded.duration,
+      };
+
+      this.setVideoDuration(normalizedPath, data.duration);
+
+      // Cache to IndexedDB
+      await setCachedAudio(normalizedPath, data, audioBuffer.byteLength);
+      console.log('[WaveformService] Cached audio data:', {
+        path: normalizedPath,
+        duration: data.duration.toFixed(2) + 's',
+        sampleRate: data.sampleRate,
+        samples: data.channelData.length,
+      });
+
+      return data;
+    } finally {
+      await audioContext.close();
+    }
   }
 
   /**
    * Get peaks for a time range at specified pixel width
    * This is the main method for rendering - call this per render frame
+   * HYBRID: Routes to Rust streaming or cached peaks based on video duration
    */
-  getPeaksForRange(
+  async getPeaksForRange(
     filePath: string,
     options: WaveformRenderOptions
-  ): WaveformPeak[] {
+  ): Promise<WaveformPeak[]> {
     const normalizedPath = this.normalizePath(filePath);
-    const data = this.audioCache.get(normalizedPath);
+    const mode = this.peakMode.get(normalizedPath);
 
-    if (!data) {
-      return [];
+    if (mode === 'streaming') {
+      // LONG VIDEO: Ask Rust to calculate peaks on-demand
+      try {
+        const peaks = await invoke<WaveformPeak[]>('extract_audio_peaks_for_range', {
+          videoPath: filePath,
+          startTime: options.startTime,
+          duration: options.endTime - options.startTime,
+          numPeaks: options.pixelWidth,
+        });
+        
+        // Apply gain multiplier if specified
+        if (options.gainMultiplier && options.gainMultiplier !== 1.0) {
+          return peaks.map(p => ({
+            min: Math.max(-1, p.min * options.gainMultiplier!),
+            max: Math.min(1, p.max * options.gainMultiplier!),
+          }));
+        }
+        
+        return peaks;
+      } catch (error) {
+        console.error('[WaveformService] Rust peak extraction failed:', error);
+        // Return empty array - no placeholders
+        return [];
+      }
+    } else {
+      // SHORT VIDEO: Use cached audio data
+      const data = this.audioCache.get(normalizedPath);
+
+      if (!data) {
+        return [];
+      }
+
+      return calculatePeaks(
+        data.channelData,
+        data.sampleRate,
+        options.startTime,
+        options.endTime,
+        options.pixelWidth,
+        options.gainMultiplier ?? 1.0
+      );
     }
-
-    return calculatePeaks(
-      data.channelData,
-      data.sampleRate,
-      options.startTime,
-      options.endTime,
-      options.pixelWidth,
-      options.gainMultiplier ?? 1.0
-    );
   }
+
 
   /**
    * Get peaks synchronously if data is already loaded
    * Returns null if data not loaded yet
+   * NOTE: Only works in cached mode. Streaming mode requires async call.
    */
   getPeaksSync(
     filePath: string,
     options: WaveformRenderOptions
   ): WaveformPeak[] | null {
     const normalizedPath = this.normalizePath(filePath);
+    const mode = this.peakMode.get(normalizedPath);
+
+    // Streaming mode doesn't support sync access - must use async getPeaksForRange
+    if (mode === 'streaming') {
+      console.warn('[WaveformService] getPeaksSync called on streaming mode video - use async getPeaksForRange instead');
+      return [];
+    }
+
     const data = this.audioCache.get(normalizedPath);
 
     if (!data) {
@@ -665,6 +820,7 @@ class WaveformServiceImpl {
   async clearCache(filePath: string): Promise<void> {
     const normalizedPath = this.normalizePath(filePath);
     this.audioCache.delete(normalizedPath);
+    this.peakMode.delete(normalizedPath);
     await deleteCachedAudio(normalizedPath);
     console.log('[WaveformService] Cleared cache for:', normalizedPath);
   }
@@ -674,6 +830,7 @@ class WaveformServiceImpl {
    */
   async clearAllCache(): Promise<void> {
     this.audioCache.clear();
+    this.peakMode.clear();
     await clearAllCache();
     console.log('[WaveformService] Cleared all cache');
   }
@@ -745,7 +902,7 @@ export function useWaveform(initialPath?: string, options: UseWaveformOptions = 
     if (!filePath.value || !audioData.value) {
       return [];
     }
-    return waveformService.getPeaksForRange(filePath.value, options);
+    return waveformService.getPeaksSync(filePath.value, options) || [];
   }
 
   async function clearCache(): Promise<void> {

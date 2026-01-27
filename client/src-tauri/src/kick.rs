@@ -602,7 +602,8 @@ async fn run_kick_recorder(
         .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
 
     let recording_start = std::time::Instant::now();
-    let mut segment_count: u32 = 0;
+    let mut last_emitted_segment: u32 = 0; // Track the last segment we emitted (1-indexed)
+    let mut last_log_time = std::time::Instant::now();
 
     // Monitor for new segments and stop signal
     loop {
@@ -642,40 +643,54 @@ async fn run_kick_recorder(
             
             // Periodically check for new segments and emit events
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
-                // Count segments in output directory
-                if let Ok(entries) = std::fs::read_dir(&output_dir) {
-                    let new_count = entries
-                        .filter_map(|e| e.ok())
-                        .filter(|e| e.path().extension().map(|ext| ext == "ts").unwrap_or(false))
-                        .count() as u32;
+                // Check for the next expected segment (FFmpeg uses 0-indexed naming)
+                // We track last_emitted_segment in 1-indexed format for frontend
+                // So next segment file is segment_{last_emitted_segment:04}.ts (0-indexed)
+                let next_segment_index = last_emitted_segment; // 0-indexed file number
+                let seg_path = PathBuf::from(&output_dir).join(format!("segment_{:04}.ts", next_segment_index));
+                
+                // Check if the next segment file exists and is stable (not being written)
+                if seg_path.exists() {
+                    // Verify file is stable by checking size twice with a small delay
+                    let size1 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    let size2 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
                     
-                    if new_count > segment_count {
-                        // New segments available
-                        for seg in segment_count..new_count {
-                            let seg_path = PathBuf::from(&output_dir).join(format!("segment_{:04}.ts", seg));
-                            if seg_path.exists() {
-                                // FFmpeg uses 0-indexed segments, but frontend expects 1-indexed
-                                let segment_number = seg + 1;
-                                let _ = app.emit("segment-ready", KickSegmentReadyPayload {
-                                    streamer_id: streamer_id.clone(),
-                                    session_id: session_id.clone(),
-                                    channel_slug: channel_slug.clone(),
-                                    mint_id: channel_slug.clone(), // For Kick, mintId = channel_slug
-                                    segment: segment_number,
-                                    path: seg_path.to_string_lossy().to_string(),
-                                    duration: hls_segment_seconds as f64,
-                                });
-                            }
+                    // If sizes match and file is non-empty, segment is complete
+                    if let (Some(s1), Some(s2)) = (size1, size2) {
+                        if s1 == s2 && s1 > 0 {
+                            // Segment is ready - emit event
+                            let segment_number = next_segment_index + 1; // Frontend expects 1-indexed
+                            
+                            println!("[KickRecorder] Segment {} ready: {} ({} bytes)", 
+                                segment_number, seg_path.display(), s1);
+                            
+                            let _ = app.emit("segment-ready", KickSegmentReadyPayload {
+                                streamer_id: streamer_id.clone(),
+                                session_id: session_id.clone(),
+                                channel_slug: channel_slug.clone(),
+                                mint_id: channel_slug.clone(), // For Kick, mintId = channel_slug
+                                segment: segment_number,
+                                path: seg_path.to_string_lossy().to_string(),
+                                duration: hls_segment_seconds as f64,
+                            });
+                            
+                            last_emitted_segment = segment_number;
                         }
-                        segment_count = new_count;
-                        
-                        let _ = app.emit("recorder-log", KickRecorderLogPayload {
-                            streamer_id: streamer_id.clone(),
-                            channel_slug: channel_slug.clone(),
-                            message: format!("Recording: {} segments, {:.0}s", segment_count, recording_start.elapsed().as_secs_f64()),
-                            level: "info".to_string(),
-                        });
                     }
+                }
+                
+                // Emit periodic status log (every 10 seconds)
+                if last_log_time.elapsed().as_secs() >= 10 {
+                    let _ = app.emit("recorder-log", KickRecorderLogPayload {
+                        streamer_id: streamer_id.clone(),
+                        channel_slug: channel_slug.clone(),
+                        message: format!("Recording: {} segments, {:.0}s", 
+                            last_emitted_segment, 
+                            recording_start.elapsed().as_secs_f64()),
+                        level: "info".to_string(),
+                    });
+                    last_log_time = std::time::Instant::now();
                 }
             }
         }

@@ -134,6 +134,9 @@ export {
   updatePrompt,
   deletePrompt,
   seedDefaultPrompt,
+  seedGamingPrompt,
+  seedGamblingPrompt,
+  seedBreakingNewsPrompt,
 } from './database/prompts';
 
 // Re-export transcript functions
@@ -172,6 +175,8 @@ export {
   updateRawVideo,
   deleteRawVideo,
   hasClipsReferencingRawVideo,
+  isVodDownloaded,
+  getDownloadedVodIds,
 } from './database/raw-videos';
 
 // Re-export clip functions
