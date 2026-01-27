@@ -64,7 +64,8 @@ export async function updateProject(
   name?: string,
   description?: string,
   thumbnailPath?: string,
-  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual'
+  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual',
+  creatorProfileId?: string | null
 ): Promise<void> {
   const db = await getDatabase();
   const now = timestamp();
@@ -87,6 +88,10 @@ export async function updateProject(
   if (platform !== undefined) {
     updates.push('platform = ?');
     values.push(platform);
+  }
+  if (creatorProfileId !== undefined) {
+    updates.push('creator_profile_id = ?');
+    values.push(creatorProfileId);
   }
 
   updates.push('updated_at = ?');

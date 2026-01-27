@@ -172,12 +172,15 @@
             <!-- Date Header -->
             <h3 class="projects__section-header">{{ group.dateLabel }}</h3>
 
-            <div class="projects__grid">
+            <div class="projects__grid" :class="{ 'projects__grid--list': viewMode === 'list' }">
               <div
                 v-for="project in group.projects"
                 :key="project.id"
                 class="project-card"
-                :class="{ 'project-card--selected': isProjectSelected(project.id) }"
+                :class="{ 
+                  'project-card--selected': isProjectSelected(project.id),
+                  'project-card--list': viewMode === 'list'
+                }"
                 @click="handleProjectClick(project)"
               >
                 <!-- Selection Checkbox (visible on hover or when selected) -->
@@ -4032,7 +4035,14 @@
     try {
       if (selectedProject.value) {
         // Update existing project
-        await updateProject(selectedProject.value.id, data.name, data.description || undefined);
+        await updateProject(
+          selectedProject.value.id,
+          data.name,
+          data.description || undefined,
+          undefined,
+          undefined,
+          data.creatorProfileId
+        );
 
         // Add newly selected videos if any
         if (data.selectedVideoPaths && data.selectedVideoPaths.length > 0) {
@@ -5165,6 +5175,11 @@
     }
   }
 
+  /* List View Override */
+  .projects__grid--list {
+    grid-template-columns: 1fr !important;
+  }
+
   /* ===== Project Card ===== */
   .project-card {
     position: relative;
@@ -5194,6 +5209,140 @@
 
   .project-card--skeleton {
     pointer-events: none;
+  }
+
+  /* List View Card */
+  .project-card--list {
+    aspect-ratio: unset !important;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-height: 96px;
+    padding: 0.75rem;
+    gap: 1rem;
+    background-color: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+  }
+
+  .project-card--list:hover {
+    transform: translateY(-1px);
+    background-color: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .project-card--list .project-card__thumbnail,
+  .project-card--list .project-card__thumbnail--empty {
+    position: relative;
+    width: 140px;
+    min-width: 140px;
+    height: 80px;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .project-card--list .project-card__vignette {
+    display: none;
+  }
+
+  .project-card--list .project-card__bottom {
+    position: relative;
+    background: transparent;
+    padding: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.375rem;
+    min-width: 0;
+  }
+
+  .project-card--list .project-card__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: -0.01em;
+  }
+
+  .project-card--list .project-card__meta {
+    opacity: 0.65;
+    font-size: 0.8125rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .project-card--list .project-card__hover-actions {
+    position: relative;
+    opacity: 1;
+    transform: none;
+    margin-left: auto;
+    padding-right: 0;
+    display: flex;
+    gap: 0.375rem;
+    align-items: center;
+  }
+
+
+  .project-card--list .project-card__badge {
+    left: 0.5rem;
+    top: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .project-card--list .project-card__badge-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .project-card--list .project-card__checkbox {
+    position: relative;
+    left: 0;
+    right: auto;
+    top: 0;
+    transform: none;
+    margin-right: 0.5rem;
+    opacity: 1;
+  }
+
+  .project-card--list .project-card__platform-icon,
+  .project-card--list .project-card__platform-svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .project-card--list .project-card__live {
+    font-size: 0.75rem;
+    padding: 0.125rem 0.5rem;
+  }
+
+  .project-card--list .project-card__live-dot {
+    width: 6px;
+    height: 6px;
+  }
+
+  .project-card--list .project-card__live-ping,
+  .project-card--list .project-card__live-core {
+    width: 6px;
+    height: 6px;
+  }
+
+  .project-card--list .project-card__dot {
+    width: 3px;
+    height: 3px;
+    opacity: 0.4;
+  }
+
+  .project-card--list .project-card__empty-icon {
+    transform: scale(0.7);
+  }
+
+  .project-card--list .project-card__empty-live {
+    transform: scale(0.7);
   }
 
   .project-card__skeleton-bg {
