@@ -19,6 +19,7 @@ mod commands;
 mod dvr;
 mod hls;
 mod video_editor_export;
+mod sidecar;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -772,10 +773,22 @@ pub fn run() {
     hls::get_recording_output_dir,
     hls::get_hls_segments,
 
-    // Video Editor Export commands
-    video_editor_export::export_video_editor_project_simple,
-    video_editor_export::export_video_editor_project,
+// Video Editor Export commands
+video_editor_export::export_video_editor_project_simple,
+video_editor_export::export_video_editor_project,
+
+// File Utils commands
+file_utils::get_file_info,
+file_utils::get_media_metadata,
+storage::get_image_metadata,
+file_utils::generate_video_thumbnail,
+
+// Remotion Export commands
+remotion_export::start_remotion_export,
+remotion_export::cancel_remotion_export,
+remotion_export::stop_remotion_sidecar,
 ])
+.manage(remotion_export::SidecarState::new())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
 }

@@ -56,6 +56,19 @@ const router = createRouter({
       ],
     },
     {
+      path: '/ai-video',
+      name: 'ai-video',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'ai-video-home',
+          component: () => import('@/pages/AIVideoCreator.vue'),
+        },
+      ],
+    },
+    {
       path: '/live-clip',
       name: 'live-clip',
       component: () => import('@/layouts/DashboardLayout.vue'),

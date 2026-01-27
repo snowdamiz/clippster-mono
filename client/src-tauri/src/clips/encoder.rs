@@ -109,7 +109,7 @@ pub fn remove_hwaccel_flags(args: &mut Vec<String>) {
 // IMPORTANT: hwaccel_output_format should NOT be used when there are no video filters,
 // as FFmpeg cannot convert from CUDA format to encoder format without a filter chain.
 // Always use GPU decode, but skip hwaccel_output_format to let FFmpeg handle format conversion.
-pub fn build_hwaccel_args(encoder: &EncoderConfig, uses_cpu_filters: bool) -> Vec<String> {
+pub fn build_hwaccel_args(encoder: &EncoderConfig, _uses_cpu_filters: bool) -> Vec<String> {
     let mut args = Vec::new();
     
     if let Some(hw_accel) = &encoder.hw_accel {

@@ -1031,9 +1031,376 @@ import { Wand2 } from 'lucide-vue-next';
 - `AIVideoTimeline.vue` - Bottom timeline view
 - `AIVideoControls.vue` - Playback controls
 
-### Phase 7: Media Pickers
-- `AssetPickerDialog.vue` - Browse/select from Assets
-- `ClipPickerDialog.vue` - Browse/select from Clips
+### Phase 7: Media Pickers & Media Import
+
+#### 7.1 ClipPickerDialog Implementation
+
+**Database Integration:**
+```typescript
+// client/src/components/ai-video/pickers/ClipPickerDialog.vue
+import { getAllClipsWithBuilds } from '@/services/database/clip-build';
+import { getClipEdit } from '@/services/database/clip-edits';
+
+interface ClipWithFullData {
+  clip: Clip & { builds: ClipBuild[] };
+  editData?: {
+    audioTracks: ClipAudioTrackRecord[];
+    textOverlays: ClipTextOverlayRecord[];
+    stickers: ClipStickerRecord[];
+    watermarks: ClipWatermarkRecord[];
+    effects: ClipEffectRecord[];
+  };
+}
+
+async function loadClipsWithFullData(): Promise<ClipWithFullData[]> {
+  // Get all clips with their builds
+  const clipsWithBuilds = await getAllClipsWithBuilds();
+  
+  // Filter to only completed builds
+  const completedClips = clipsWithBuilds.filter(clip => 
+    clip.builds.some(build => build.status === 'completed')
+  );
+  
+  // Load full edit data for each clip
+  const clipsWithFullData = await Promise.all(
+    completedClips.map(async (clip) => {
+      try {
+        const editData = await getClipEdit(clip.id);
+        return { clip, editData };
+      } catch {
+        return { clip, editData: undefined };
+      }
+    })
+  );
+  
+  return clipsWithFullData;
+}
+```
+
+**Clip Selection UI:**
+- Grid view with thumbnails from `built_thumbnail_path`
+- Display clip name, duration, aspect ratio
+- Show badges for: has audio tracks, has text overlays, has effects
+- Filter by project, aspect ratio, build date
+- Search by clip name
+- Multi-select support
+
+**Data Passed to AI Video Creator:**
+```typescript
+interface ImportedClipData {
+  id: string;
+  name: string;
+  videoPath: string; // built_file_path
+  thumbnailPath: string; // built_thumbnail_path
+  duration: number; // built_duration
+  
+  // Complete edit data for re-composition
+  audioTracks: Array<{
+    filePath: string;
+    name: string;
+    startTime: number;
+    endTime: number;
+    volume: number;
+    pan: number;
+    fadeIn: number;
+    fadeOut: number;
+  }>;
+  
+  textOverlays: Array<{
+    text: string;
+    startTime: number;
+    endTime: number;
+    positionX: number;
+    positionY: number;
+    styleData: any; // Font, color, size, etc.
+    animation: string;
+  }>;
+  
+  stickers: Array<{
+    stickerPath: string;
+    startTime: number;
+    endTime: number;
+    positionX: number;
+    positionY: number;
+    scale: number;
+    rotation: number;
+  }>;
+  
+  watermarks: Array<{
+    watermarkPath: string;
+    startTime: number;
+    endTime: number;
+    positionX: number;
+    positionY: number;
+    scale: number;
+    opacity: number;
+  }>;
+  
+  effects: Array<{
+    effectType: string;
+    startTime: number;
+    endTime: number;
+    settings: any;
+  }>;
+}
+```
+
+#### 7.2 AssetPickerDialog Implementation
+
+**Database Integration:**
+```typescript
+import { getAllIntroOutros } from '@/services/database/intro-outros';
+import { getAllAudioAssets } from '@/services/database/audio-assets';
+import { getAllImageAssets } from '@/services/database/image-assets';
+import { getAllWatermarks } from '@/services/database/watermarks';
+import { getOrganizationAssets } from '@/services/database/organization-assets';
+
+async function loadAllAssets() {
+  const [intros, outros, audio, images, watermarks, orgAssets] = await Promise.all([
+    getAllIntroOutros().then(all => all.filter(a => a.type === 'intro')),
+    getAllIntroOutros().then(all => all.filter(a => a.type === 'outro')),
+    getAllAudioAssets(),
+    getAllImageAssets(),
+    getAllWatermarks(),
+    getOrganizationAssets(), // If user is in an organization
+  ]);
+  
+  return { intros, outros, audio, images, watermarks, orgAssets };
+}
+```
+
+**Asset Selection UI:**
+- Tabbed interface: Intros/Outros, Audio, Images, Watermarks
+- Grid view with thumbnails/icons
+- Play button for audio preview
+- Display duration for video/audio assets
+- Filter by organization vs personal assets
+- Search by name
+
+#### 7.3 Media Upload & Validation
+
+**File Upload Handler:**
+```typescript
+// client/src/components/ai-video/MediaLibraryPanel.vue
+import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
+
+async function handleMediaUpload() {
+  const files = await open({
+    multiple: true,
+    filters: [
+      {
+        name: 'Media Files',
+        extensions: [
+          // Video
+          'mp4', 'mov', 'webm', 'avi', 'mkv',
+          // Image
+          'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg',
+          // Audio
+          'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'
+        ]
+      }
+    ]
+  });
+  
+  if (!files) return;
+  
+  const fileArray = Array.isArray(files) ? files : [files];
+  
+  for (const filePath of fileArray) {
+    await processUploadedFile(filePath);
+  }
+}
+
+async function processUploadedFile(filePath: string) {
+  // Get file info from Rust
+  const fileInfo = await invoke<{
+    name: string;
+    size: number;
+    extension: string;
+  }>('get_file_info', { path: filePath });
+  
+  // Validate file size
+  const maxSizes = {
+    video: 2 * 1024 * 1024 * 1024, // 2GB
+    image: 50 * 1024 * 1024, // 50MB
+    audio: 100 * 1024 * 1024, // 100MB
+  };
+  
+  const fileType = getFileType(fileInfo.extension);
+  const maxSize = maxSizes[fileType];
+  
+  if (fileInfo.size > maxSize) {
+    showError(`File too large. Maximum size for ${fileType}: ${formatBytes(maxSize)}`);
+    return;
+  }
+  
+  // Extract metadata
+  let metadata: any = {};
+  
+  if (fileType === 'video' || fileType === 'audio') {
+    metadata = await invoke('get_media_metadata', { path: filePath });
+    // Returns: { duration, width?, height?, codec?, frameRate? }
+  }
+  
+  if (fileType === 'image') {
+    metadata = await invoke('get_image_metadata', { path: filePath });
+    // Returns: { width, height }
+  }
+  
+  // Generate thumbnail for videos
+  let thumbnailPath: string | undefined;
+  if (fileType === 'video') {
+    thumbnailPath = await invoke('generate_video_thumbnail', {
+      videoPath: filePath,
+      timestamp: 0
+    });
+  }
+  
+  // Add to media library
+  const mediaItem: AIVideoMediaItem = {
+    id: `local-${Date.now()}-${Math.random()}`,
+    name: fileInfo.name,
+    type: fileType,
+    source: {
+      type: 'local',
+      path: filePath,
+    },
+    thumbnailUrl: thumbnailPath,
+    duration: metadata.duration,
+    dimensions: metadata.width && metadata.height 
+      ? { width: metadata.width, height: metadata.height }
+      : undefined,
+    addedAt: new Date(),
+  };
+  
+  mediaItems.value.push(mediaItem);
+}
+
+function getFileType(extension: string): 'video' | 'audio' | 'image' {
+  const videoExts = ['mp4', 'mov', 'webm', 'avi', 'mkv'];
+  const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'];
+  const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+  
+  if (videoExts.includes(extension.toLowerCase())) return 'video';
+  if (audioExts.includes(extension.toLowerCase())) return 'audio';
+  return 'image';
+}
+```
+
+**Rust Commands for File Processing:**
+```rust
+// client/src-tauri/src/commands/file_utils.rs
+
+#[command]
+pub async fn get_file_info(path: String) -> Result<FileInfo, String> {
+    let metadata = std::fs::metadata(&path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+    
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Unknown")
+        .to_string();
+    
+    let extension = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_string();
+    
+    Ok(FileInfo {
+        name,
+        size: metadata.len(),
+        extension,
+    })
+}
+
+#[command]
+pub async fn get_media_metadata(path: String) -> Result<MediaMetadata, String> {
+    // Use ffprobe to get media metadata
+    let output = Command::new("ffprobe")
+        .args([
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            &path
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+    
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Failed to parse ffprobe output: {}", e))?;
+    
+    // Extract relevant metadata
+    let duration = json["format"]["duration"]
+        .as_str()
+        .and_then(|s| s.parse::<f64>().ok());
+    
+    let video_stream = json["streams"]
+        .as_array()
+        .and_then(|streams| {
+            streams.iter().find(|s| s["codec_type"] == "video")
+        });
+    
+    let width = video_stream.and_then(|s| s["width"].as_u64());
+    let height = video_stream.and_then(|s| s["height"].as_u64());
+    let codec = video_stream.and_then(|s| s["codec_name"].as_str().map(String::from));
+    let frame_rate = video_stream.and_then(|s| {
+        s["r_frame_rate"].as_str().and_then(|r| {
+            let parts: Vec<&str> = r.split('/').collect();
+            if parts.len() == 2 {
+                let num: f64 = parts[0].parse().ok()?;
+                let den: f64 = parts[1].parse().ok()?;
+                Some(num / den)
+            } else {
+                None
+            }
+        })
+    });
+    
+    Ok(MediaMetadata {
+        duration,
+        width,
+        height,
+        codec,
+        frame_rate,
+    })
+}
+
+#[command]
+pub async fn get_image_metadata(path: String) -> Result<ImageMetadata, String> {
+    let img = image::open(&path)
+        .map_err(|e| format!("Failed to open image: {}", e))?;
+    
+    Ok(ImageMetadata {
+        width: img.width() as u64,
+        height: img.height() as u64,
+    })
+}
+```
+
+**Important: Clip Import Requirements**
+When importing clips from the "My Clips" tab, the system must:
+1. Query `getAllClipsWithBuilds()` to get all completed clip builds
+2. Load the complete clip edit data including:
+   - Audio tracks (from `clip_audio_tracks` table)
+   - Text overlays (from `clip_text_overlays` table)
+   - Stickers (from `clip_stickers` table)
+   - Watermarks (from `clip_watermarks` table)
+   - Effects (from `clip_effects` table)
+3. Import the built video file (`built_file_path`) as the base media
+4. Preserve all edit metadata for potential re-composition or AI analysis
+
+**Media Upload Validation**
+- Supported video formats: MP4, MOV, WEBM, AVI, MKV
+- Supported image formats: PNG, JPG, JPEG, GIF, WEBP, SVG
+- Supported audio formats: MP3, WAV, OGG, AAC, M4A, FLAC
+- File size limits: Video (2GB), Image (50MB), Audio (100MB)
+- Automatic thumbnail generation for videos
+- Duration extraction for video/audio files
+- Dimension extraction for images/videos
 
 ### Phase 8: AI Generation
 - `useAIVideoGeneration.ts` - Composable
