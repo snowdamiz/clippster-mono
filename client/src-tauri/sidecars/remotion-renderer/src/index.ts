@@ -34,7 +34,11 @@ process.stdin.on('end', () => {
 async function handleCommand(command: RenderCommand) {
   switch (command.type) {
     case 'render':
-      await handleRender(command);
+      if (command.composition && command.outputPath) {
+        await handleRender(command as RenderCommand & { type: 'render'; composition: any; outputPath: string });
+      } else {
+        sendError('invalid-command', 'Missing composition or outputPath for render command');
+      }
       break;
       
     case 'cancel':
@@ -46,7 +50,7 @@ async function handleCommand(command: RenderCommand) {
   }
 }
 
-async function handleRender(command: RenderCommand & { type: 'render' }) {
+async function handleRender(command: RenderCommand & { type: 'render'; composition: any; outputPath: string }) {
   const { renderId, composition, outputPath, codec, crf } = command;
   
   // Create abort controller for this render

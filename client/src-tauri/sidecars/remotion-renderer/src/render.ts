@@ -48,6 +48,19 @@ export async function renderVideo(options: RenderOptions): Promise<void> {
 
     onProgress(0.3);
 
+    // Create cancel signal wrapper for Remotion
+    let cancelCallback: (() => void) | null = null;
+    const cancelSignal = (callback: () => void) => {
+      cancelCallback = callback;
+    };
+    
+    // Listen for abort signal
+    signal.addEventListener('abort', () => {
+      if (cancelCallback) {
+        cancelCallback();
+      }
+    });
+
     // Render the video
     await renderMedia({
       composition: comp,
@@ -59,7 +72,7 @@ export async function renderVideo(options: RenderOptions): Promise<void> {
         // Map 0.3-1.0 to the remaining progress
         onProgress(0.3 + progress * 0.7);
       },
-      cancelSignal: signal,
+      cancelSignal,
     });
 
     onProgress(1.0);

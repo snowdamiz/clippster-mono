@@ -10,7 +10,12 @@ async function build() {
       target: 'node18',
       outfile: 'dist/bundle.js',
       external: [
-        // Mark native modules as external
+        'remotion',
+        '@remotion/renderer',
+        '@remotion/bundler',
+        '@remotion/compositor-*',
+        'esbuild',
+        'webpack',
         'fsevents',
       ],
       minify: false,

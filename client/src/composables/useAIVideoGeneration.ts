@@ -49,7 +49,22 @@ export function useAIVideoGeneration() {
       // Call backend API
       const response = await generateVideoComposition(request);
       
-      console.log('[AIVideoGen] Response:', JSON.stringify(response, null, 2));
+      console.log('[AIVideoGen] Raw response:', response);
+      console.log('[AIVideoGen] Response tracks:', response.tracks);
+      console.log('[AIVideoGen] Response duration:', response.duration);
+      
+      // Log each track type
+      if (response.tracks) {
+        const tracksByType = response.tracks.reduce((acc: any, track: any) => {
+          acc[track.type] = (acc[track.type] || 0) + 1;
+          return acc;
+        }, {});
+        console.log('[AIVideoGen] Track types:', tracksByType);
+        
+        // Log text tracks specifically
+        const textTracks = response.tracks.filter((t: any) => t.type === 'text');
+        console.log('[AIVideoGen] Text tracks:', textTracks.length, textTracks);
+      }
       
       progress.value = 90;
 
@@ -66,7 +81,8 @@ export function useAIVideoGeneration() {
         tracks: response.tracks || [],
       };
 
-      console.log('[AIVideoGen] Final composition:', JSON.stringify(generatedComposition, null, 2));
+      console.log('[AIVideoGen] Final composition duration:', generatedComposition.duration);
+      console.log('[AIVideoGen] Final composition tracks:', generatedComposition.tracks.length);
 
       composition.value = generatedComposition;
       progress.value = 100;

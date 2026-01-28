@@ -14,6 +14,7 @@ mod pumpfun;
 mod kick;
 mod twitch;
 mod waveform;
+mod audio_peaks;
 mod focal_detection;
 mod commands;
 mod dvr;
@@ -542,6 +543,12 @@ pub fn run() {
                             sql: include_str!("../migrations/079_add_creator_profile_to_projects.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 81,
+                            description: "add_audio_peaks_to_segments",
+                            sql: include_str!("../migrations/081_add_audio_peaks_to_segments.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -690,6 +697,9 @@ pub fn run() {
             waveform::save_waveform_to_cache,
             waveform::clear_waveform_cache,
             waveform::extract_audio_peaks_for_range,
+
+            // Audio peaks detection commands
+            audio_peaks::detect_audio_peaks,
 
             // Storage commands
             storage::get_storage_paths,

@@ -55,28 +55,42 @@ pub struct RemotionSidecar {
 
 impl RemotionSidecar {
     pub fn spawn(app: &AppHandle) -> Result<Self, String> {
-        let resource_path = app
+        // In development, use the bundle.js from the sidecars directory
+        // In production, this would be bundled with the app
+        let app_dir = app
             .path()
-            .resource_dir()
-            .map_err(|e| format!("Failed to get resource dir: {}", e))?;
-
-        #[cfg(target_os = "windows")]
-        let sidecar_path = resource_path.join("remotion-renderer.exe");
+            .app_data_dir()
+            .map_err(|e| format!("Failed to get app dir: {}", e))?;
         
-        #[cfg(target_os = "macos")]
-        let sidecar_path = resource_path.join("remotion-renderer");
-        
-        #[cfg(target_os = "linux")]
-        let sidecar_path = resource_path.join("remotion-renderer");
+        // Development path: client/src-tauri/sidecars/remotion-renderer/dist/bundle.js
+        let dev_bundle_path = app_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .map(|p| p.join("client").join("src-tauri").join("sidecars").join("remotion-renderer").join("dist").join("bundle.js"))
+            .ok_or("Failed to construct dev bundle path")?;
 
-        if !sidecar_path.exists() {
+        let bundle_path = if dev_bundle_path.exists() {
+            dev_bundle_path
+        } else {
+            // Production: look in resources
+            let resource_path = app
+                .path()
+                .resource_dir()
+                .map_err(|e| format!("Failed to get resource dir: {}", e))?;
+            resource_path.join("remotion-renderer").join("bundle.js")
+        };
+
+        if !bundle_path.exists() {
             return Err(format!(
-                "Remotion renderer sidecar not found at: {}",
-                sidecar_path.display()
+                "Remotion renderer bundle not found at: {}",
+                bundle_path.display()
             ));
         }
 
-        let mut process = Command::new(&sidecar_path)
+        // Run with Node.js
+        let mut process = Command::new("node")
+            .arg(&bundle_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

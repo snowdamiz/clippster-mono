@@ -121,11 +121,18 @@ export interface AIVideoMediaItem {
   id: string;
   name: string;
   type: 'video' | 'audio' | 'image';
-  source: MediaSource;
+  source: {
+    type: 'local' | 'asset' | 'clip';
+    path: string;
+    thumbnailPath?: string;
+    duration?: number;
+    assetId?: string;
+    clipId?: string;
+  };
   thumbnailUrl?: string;
   duration?: number;
-  dimensions?: { width: number; height: number };
   transcript?: string;
+  audioPeaks?: Array<{ time: number; amplitude: number }>;
   addedAt: Date;
 }
 

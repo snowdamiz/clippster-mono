@@ -48,18 +48,28 @@ export const RemotionPlayerWrapper: React.FC<Props> = ({
     }
   }, [currentFrame, isPlaying]);
 
-  // Poll for frame updates during playback
+  // Poll for frame updates only when playing, using a throttled interval
   useEffect(() => {
-    if (!isPlaying || !playerRef.current || !onFrameUpdate) return;
-    
-    const interval = setInterval(() => {
+    if (!playerRef.current || !onFrameUpdate || !isPlaying) return;
+
+    let lastFrame = -1;
+
+    const pollFrame = () => {
       if (playerRef.current) {
-        const frame = playerRef.current.getCurrentFrame();
-        onFrameUpdate(frame);
+        const currentFrame = playerRef.current.getCurrentFrame();
+        if (currentFrame !== lastFrame) {
+          lastFrame = currentFrame;
+          onFrameUpdate(currentFrame);
+        }
       }
-    }, 1000 / 30); // Poll at 30fps
-    
-    return () => clearInterval(interval);
+    };
+
+    // Poll at 15fps to reduce CPU usage while maintaining smooth playhead
+    const intervalId = setInterval(pollFrame, 1000 / 15);
+
+    return () => {
+      clearInterval(intervalId);
+    };
   }, [isPlaying, onFrameUpdate]);
 
   if (!composition) {

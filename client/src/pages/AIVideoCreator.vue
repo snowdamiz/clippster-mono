@@ -312,10 +312,12 @@ function togglePlayback() {
 }
 
 function handleTimeUpdate(time: number) {
+  console.log('[AIVideoCreator] Time update:', time);
   currentTime.value = time;
 }
 
 function handleDurationChange(dur: number) {
+  console.log('[AIVideoCreator] Duration change:', dur);
   duration.value = dur;
 }
 
@@ -544,6 +546,26 @@ async function fetchClipTranscript(item: AIVideoMediaItem) {
           const m = mediaItems.value.find(x => x.id === item.id);
           if (m) {
             m.transcript = transcript.text;
+            
+            // Try to calculate audio peaks from the video file
+            try {
+              const videoPath = clip.built_file_path || clip.file_path;
+              if (videoPath) {
+                const peaks = await invoke<Array<{ time: number; amplitude: number }>>('detect_audio_peaks', {
+                  videoPath,
+                  threshold: 0.3,
+                  minInterval: 0.5
+                });
+                
+                if (peaks && peaks.length > 0) {
+                  m.audioPeaks = peaks;
+                  console.log(`[AIVideoCreator] ✅ Calculated ${peaks.length} audio peaks from video`);
+                }
+              }
+            } catch (e) {
+              console.warn(`[AIVideoCreator] Failed to calculate audio peaks:`, e);
+            }
+            
             console.log(`[AIVideoCreator] ✅ Loaded project transcript for ${item.name}: ${transcript.text.substring(0, 100)}...`);
           }
           transcriptGenerationStatus.value.delete(item.id);
@@ -589,6 +611,27 @@ async function fetchClipTranscript(item: AIVideoMediaItem) {
       const m = mediaItems.value.find(x => x.id === item.id);
       if (m) {
         m.transcript = fullTranscript;
+        
+        // Extract audio peaks from segments if available
+        const audioPeaks: Array<{ time: number; amplitude: number }> = [];
+        for (const seg of segments) {
+          if (seg.audio_peaks) {
+            try {
+              const peaks = JSON.parse(seg.audio_peaks);
+              if (Array.isArray(peaks)) {
+                audioPeaks.push(...peaks);
+              }
+            } catch (e) {
+              console.warn(`[AIVideoCreator] Failed to parse audio peaks:`, e);
+            }
+          }
+        }
+        
+        if (audioPeaks.length > 0) {
+          m.audioPeaks = audioPeaks;
+          console.log(`[AIVideoCreator] ✅ Loaded ${audioPeaks.length} audio peaks`);
+        }
+        
         console.log(`[AIVideoCreator] ✅ Loaded transcript for ${item.name}: ${fullTranscript.substring(0, 100)}...`);
       } else {
         console.warn(`[AIVideoCreator] Could not find media item ${item.id} to update transcript`);

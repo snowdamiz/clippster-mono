@@ -117,9 +117,7 @@ export const AIComposition: React.FC<AICompositionProps> = ({ composition, video
         backgroundColor: composition.backgroundColor || '#000000',
       }}
     >
-      {wrappedContent}
-
-      {/* Render audio tracks */}
+      {/* Render audio tracks FIRST - outside of visual effects to prevent audio cutouts */}
       {audioTracks.map((track) => (
         <AudioTrack
           key={track.id}
@@ -127,6 +125,8 @@ export const AIComposition: React.FC<AICompositionProps> = ({ composition, video
           videoServerPort={videoServerPort}
         />
       ))}
+      
+      {wrappedContent}
     </AbsoluteFill>
   );
 };

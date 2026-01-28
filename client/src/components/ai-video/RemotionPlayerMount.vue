@@ -34,7 +34,9 @@ async function renderPlayer() {
       isPlaying: props.isPlaying,
       videoServerPort: await getVideoServerPort(),
       onFrameUpdate: (frame: number) => {
-        emit('timeUpdate', frame / (props.composition?.fps || 30));
+        const time = frame / (props.composition?.fps || 30);
+        console.log('[RemotionPlayerMount] Frame update:', frame, '→', time, 's');
+        emit('timeUpdate', time);
       },
       onDurationChange: (dur: number) => emit('durationChange', dur),
       onPlayingChange: (playing: boolean) => emit('playingChange', playing),

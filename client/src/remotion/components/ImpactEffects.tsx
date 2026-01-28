@@ -40,6 +40,7 @@ export const ImpactEffects: React.FC<ImpactEffectsProps> = ({ track, children })
   let distortionAmount = 0;
   const particles: any[] = [];
   const impactLines: any[] = [];
+  const filters: string[] = [];
   
   activeEffects.forEach((effect: any) => {
     const effectProgress = (currentTime - effect.time) / effect.duration;
@@ -204,19 +205,42 @@ export const ImpactEffects: React.FC<ImpactEffectsProps> = ({ track, children })
         break;
       }
       
-      case 'motionBlur':
-      case 'speedRamp':
+      case 'motionBlur': {
+        // Simulate motion blur with directional blur
+        const blurAmount = interpolate(
+          effectProgress,
+          [0, 0.5, 1],
+          [0, intensity * 15, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        filters.push(`blur(${blurAmount}px)`);
+        break;
+      }
+      
+      case 'speedRamp': {
+        // Visual feedback for speed changes with motion blur
+        const blurAmount = interpolate(
+          effectProgress,
+          [0, 0.5, 1],
+          [0, intensity * 8, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        filters.push(`blur(${blurAmount}px)`);
+        break;
+      }
+      
       case 'freezeFrame': {
-        // These timing effects are handled by the video playback layer
-        // They don't have visual overlays, so we just acknowledge them here
-        // The actual implementation would require frame manipulation at the video level
+        // Flash effect to indicate freeze
+        if (effectProgress < 0.1) {
+          flashOpacity = Math.max(flashOpacity, 0.3);
+          flashColor = '#ffffff';
+        }
         break;
       }
     }
   });
   
   // Build filter string
-  const filters: string[] = [];
   if (glowIntensity > 0) {
     filters.push(`brightness(${1 + glowIntensity})`);
     filters.push(`saturate(${1 + glowIntensity * 0.5})`);

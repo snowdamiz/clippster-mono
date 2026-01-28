@@ -114,25 +114,54 @@ const props = defineProps<{
   currentTime?: number;
 }>();
 
-const duration = computed(() => props.composition?.duration || 0);
+const duration = computed(() => {
+  const dur = props.composition?.duration || 0;
+  console.log('[AITimeline] Duration:', dur);
+  return dur;
+});
 
 const playheadPosition = computed(() => {
-  if (!duration.value) return 0;
-  if (props.currentTime === undefined || props.currentTime === null) return 0;
-  return (props.currentTime / duration.value) * 100;
+  if (!duration.value || props.currentTime === undefined || props.currentTime === null) {
+    return 0;
+  }
+  const position = (props.currentTime / duration.value) * 100;
+  // Log only occasionally to avoid spam
+  if (Math.floor(props.currentTime) % 5 === 0) {
+    console.log('[AITimeline] Playhead at', props.currentTime.toFixed(2), 's →', position.toFixed(2), '%');
+  }
+  return position;
 });
 
 const sortedTracks = computed(() => {
   if (!props.composition) return [];
-  return [...props.composition.tracks].sort((a, b) => a.layer - b.layer);
+  const tracks = [...props.composition.tracks].sort((a, b) => a.layer - b.layer);
+  console.log('[AITimeline] Tracks:', tracks.length, tracks.map(t => ({
+    name: t.name,
+    type: t.type,
+    layer: t.layer,
+    startTime: t.startTime,
+    endTime: t.endTime
+  })));
+  return tracks;
 });
 
 const timeMarks = computed(() => {
   const marks: number[] = [];
-  const interval = duration.value > 60 ? 10 : duration.value > 30 ? 5 : 2;
-  for (let i = 0; i <= duration.value; i += interval) {
+  const dur = duration.value;
+  
+  // Calculate appropriate interval based on duration
+  let interval = 2;
+  if (dur > 600) interval = 60;        // 10+ min: every minute
+  else if (dur > 300) interval = 30;   // 5-10 min: every 30s
+  else if (dur > 120) interval = 20;   // 2-5 min: every 20s
+  else if (dur > 60) interval = 10;    // 1-2 min: every 10s
+  else if (dur > 30) interval = 5;     // 30s-1min: every 5s
+  
+  for (let i = 0; i <= dur; i += interval) {
     marks.push(i);
   }
+  
+  console.log('[AITimeline] Time marks:', marks.length, 'marks with interval', interval, 'for duration', dur);
   return marks;
 });
 
@@ -160,15 +189,20 @@ function getTrackIcon(type: string) {
 
 function getTrackEffects(track: any) {
   const effects = track.properties?.effects || [];
-  return effects.map((effect: any) => ({
+  console.log(`[AITimeline] Track "${track.name}" effects:`, effects);
+  const mapped = effects.map((effect: any) => ({
     ...effect,
     startTime: effect.startTime ?? effect.time ?? 0,
     endTime: effect.endTime ?? (effect.time + effect.duration) ?? 0,
   }));
+  console.log(`[AITimeline] Mapped effects:`, mapped);
+  return mapped;
 }
 
 function getTrackTransitions(track: any) {
-  return track.properties?.transitions || [];
+  const transitions = track.properties?.transitions || [];
+  console.log(`[AITimeline] Track "${track.name}" transitions:`, transitions);
+  return transitions;
 }
 
 function formatTime(seconds: number): string {
@@ -185,6 +219,7 @@ function formatTime(seconds: number): string {
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
+  padding-right: 1rem; /* Add right padding to container */
 }
 
 .ai-timeline__container {
@@ -197,6 +232,7 @@ function formatTime(seconds: number): string {
   background: var(--sidebar-surface);
   border-bottom: 1px solid var(--border);
   position: relative;
+  padding-right: 1rem; /* Add right padding to match tracks */
 }
 
 .ai-timeline__ruler-labels {
@@ -307,7 +343,7 @@ function formatTime(seconds: number): string {
 .ai-timeline__track-content {
   position: relative;
   flex: 1;
-  padding: 0.25rem 0;
+  padding: 0.25rem 1rem 0.25rem 0; /* Add right padding */
   background: var(--sidebar-surface);
 }
 
@@ -381,10 +417,11 @@ function formatTime(seconds: number): string {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 1px;
+  width: 2px; /* Make slightly wider for visibility */
   pointer-events: none;
   z-index: 100;
-  transition: left 0.05s linear;
+  transition: left 0.1s linear;
+  margin-left: 140px; /* Offset for track headers */
 }
 
 .ai-timeline__playhead-line {
