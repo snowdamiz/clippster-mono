@@ -1,8 +1,8 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="fixed top-8 left-0 right-0 bottom-0 bg-black/[0.98] backdrop-blur-2xl z-[10000] flex items-stretch justify-stretch" @click.self="handleClose">
-        <Transition name="dialog" appear>
+      <div v-if="modelValue" class="fixed top-8 left-0 right-0 bottom-0 bg-black/90 backdrop-blur-sm z-[10000] flex items-stretch justify-stretch" @click.self="handleClose">
+        <Transition name="editor-modal" appear>
           <div v-if="modelValue" class="w-full h-full bg-[var(--editor-bg)] flex flex-col overflow-hidden pt-0 box-border" role="dialog" aria-modal="true">
             <!-- Header -->
             <ClipEditorHeader
@@ -10,6 +10,7 @@
               @export="handleExport"
               @close="handleClose"
               @titleUpdate="handleTitleUpdate"
+              @showShortcuts="showShortcutsModal = true"
             />
 
             <!-- Main Content Area -->
@@ -108,6 +109,9 @@
             </div>
           </div>
         </Transition>
+
+        <!-- Keyboard Shortcuts Modal -->
+        <KeyboardShortcutsModal v-model="showShortcutsModal" />
       </div>
     </Transition>
   </Teleport>
@@ -141,6 +145,7 @@ import ClipEditorPreview from './ClipEditorPreview.vue';
 import ClipEditorInspector from './ClipEditorInspector.vue';
 import ClipEditorTimeline from './ClipEditorTimeline.vue';
 import ClipEditorToolbar from './ClipEditorToolbar.vue';
+import KeyboardShortcutsModal from './KeyboardShortcutsModal.vue';
 
 // ===== Props =====
 const props = defineProps<{
@@ -183,6 +188,7 @@ const {
 });
 
 const activePanel = ref<string>('media');
+const showShortcutsModal = ref(false);
 
 // ===== Selection (from composable) =====
 const {
@@ -525,7 +531,7 @@ onUnmounted(() => {
 /* Transitions */
 .modal-enter-active,
 .modal-leave-active {
-  transition: opacity 0.2s ease;
+  transition: opacity 0.25s ease;
 }
 
 .modal-enter-from,
@@ -533,15 +539,23 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-.dialog-enter-active,
-.dialog-leave-active {
-  transition: all 0.25s ease;
+/* Improved modal animation with scale + fade */
+.editor-modal-enter-active {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.dialog-enter-from,
-.dialog-leave-to {
+.editor-modal-leave-active {
+  transition: all 0.2s ease-in;
+}
+
+.editor-modal-enter-from {
   opacity: 0;
-  transform: scale(0.95);
+  transform: scale(0.98) translateY(8px);
+}
+
+.editor-modal-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
 }
 </style>
 

@@ -41,10 +41,12 @@
 
           <!-- Placeholder for other inspectors -->
           <div v-else class="flex flex-col gap-3">
-            <h4 class="text-sm font-semibold m-0 uppercase tracking-wider" style="color: var(--editor-text);">
-              {{ selectedItemTypeLabel }}
-            </h4>
-            <div class="text-sm p-4 text-center rounded-md border border-dashed" 
+            <!-- Section header pattern -->
+            <div class="flex items-center gap-2 pb-2 mb-4 border-b border-white/10">
+              <Settings :size="16" class="text-[var(--editor-accent)]" />
+              <h3 class="text-sm font-semibold text-[var(--editor-text)]">{{ selectedItemTypeLabel }}</h3>
+            </div>
+            <div class="text-sm p-4 text-center rounded-md border border-dashed"
                  style="color: var(--editor-text-muted); background-color: var(--editor-surface-elevated); border-color: var(--editor-border);">
               Properties for {{ selectedItemTypeLabel }} coming soon...
             </div>
@@ -57,7 +59,7 @@
 
 <script setup lang="ts">
 import { toRef } from 'vue';
-import { X } from 'lucide-vue-next';
+import { X, Settings } from 'lucide-vue-next';
 import AudioInspector from './inspector/AudioInspector.vue';
 import TextInspector from './inspector/TextInspector.vue';
 import StickerInspector from './inspector/StickerInspector.vue';

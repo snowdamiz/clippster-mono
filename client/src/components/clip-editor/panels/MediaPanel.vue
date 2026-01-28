@@ -93,7 +93,7 @@
                   class="w-0.5 rounded-full animate-[waveform-pulse_1.5s_ease-in-out_infinite]"
                   style="
                     height: 40%;
-                    background: linear-gradient(to top, rgba(139, 92, 246, 0.8), rgba(168, 139, 250, 0.6));
+                    background: linear-gradient(to top, rgba(6, 182, 212, 0.8), rgba(34, 211, 238, 0.6));
                     animation-delay: 0s;
                   "
                 ></div>
@@ -101,7 +101,7 @@
                   class="w-0.5 rounded-full animate-[waveform-pulse_1.5s_ease-in-out_infinite]"
                   style="
                     height: 70%;
-                    background: linear-gradient(to top, rgba(139, 92, 246, 0.8), rgba(168, 139, 250, 0.6));
+                    background: linear-gradient(to top, rgba(6, 182, 212, 0.8), rgba(34, 211, 238, 0.6));
                     animation-delay: 0.1s;
                   "
                 ></div>
@@ -109,7 +109,7 @@
                   class="w-0.5 rounded-full animate-[waveform-pulse_1.5s_ease-in-out_infinite]"
                   style="
                     height: 50%;
-                    background: linear-gradient(to top, rgba(139, 92, 246, 0.8), rgba(168, 139, 250, 0.6));
+                    background: linear-gradient(to top, rgba(6, 182, 212, 0.8), rgba(34, 211, 238, 0.6));
                     animation-delay: 0.2s;
                   "
                 ></div>
@@ -117,7 +117,7 @@
                   class="w-0.5 rounded-full animate-[waveform-pulse_1.5s_ease-in-out_infinite]"
                   style="
                     height: 85%;
-                    background: linear-gradient(to top, rgba(139, 92, 246, 0.8), rgba(168, 139, 250, 0.6));
+                    background: linear-gradient(to top, rgba(6, 182, 212, 0.8), rgba(34, 211, 238, 0.6));
                     animation-delay: 0.3s;
                   "
                 ></div>
@@ -125,7 +125,7 @@
                   class="w-0.5 rounded-full animate-[waveform-pulse_1.5s_ease-in-out_infinite]"
                   style="
                     height: 60%;
-                    background: linear-gradient(to top, rgba(139, 92, 246, 0.8), rgba(168, 139, 250, 0.6));
+                    background: linear-gradient(to top, rgba(6, 182, 212, 0.8), rgba(34, 211, 238, 0.6));
                     animation-delay: 0.4s;
                   "
                 ></div>
@@ -133,7 +133,7 @@
                   class="w-0.5 rounded-full animate-[waveform-pulse_1.5s_ease-in-out_infinite]"
                   style="
                     height: 75%;
-                    background: linear-gradient(to top, rgba(139, 92, 246, 0.8), rgba(168, 139, 250, 0.6));
+                    background: linear-gradient(to top, rgba(6, 182, 212, 0.8), rgba(34, 211, 238, 0.6));
                     animation-delay: 0.5s;
                   "
                 ></div>
@@ -141,7 +141,7 @@
                   class="w-0.5 rounded-full animate-[waveform-pulse_1.5s_ease-in-out_infinite]"
                   style="
                     height: 45%;
-                    background: linear-gradient(to top, rgba(139, 92, 246, 0.8), rgba(168, 139, 250, 0.6));
+                    background: linear-gradient(to top, rgba(6, 182, 212, 0.8), rgba(34, 211, 238, 0.6));
                     animation-delay: 0.6s;
                   "
                 ></div>

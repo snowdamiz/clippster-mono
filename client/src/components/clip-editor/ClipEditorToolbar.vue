@@ -1,38 +1,38 @@
 <template>
   <div class="flex items-center justify-between px-4 py-3 bg-gradient-to-b from-[var(--editor-surface)] to-[var(--editor-bg)] border-b border-[var(--editor-border)] shrink-0 h-12">
-    <div class="flex items-center gap-4">
+    <div class="flex items-center gap-2">
       <!-- Zoom Controls -->
-      <div class="flex items-center gap-2 px-2 py-1 bg-[var(--editor-surface-elevated)] rounded-md border border-[var(--editor-border)]">
-        <button
-          class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
-          title="Zoom Out (-)"
-          @click="$emit('zoomOut')"
-        >
-          <ZoomOut :size="16" />
-        </button>
-        <span class="text-[0.8125rem] font-medium text-[var(--editor-text)] min-w-[48px] text-center [font-variant-numeric:tabular-nums]">
-          {{ Math.round(zoomLevel * 100) }}%
-        </span>
-        <button
-          class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
-          title="Zoom In (+)"
-          @click="$emit('zoomIn')"
-        >
-          <ZoomIn :size="16" />
-        </button>
-      </div>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-[var(--editor-active)] hover:enabled:text-[var(--editor-accent)]"
+        title="Zoom Out (-)"
+        @click="$emit('zoomOut')"
+      >
+        <ZoomOut :size="16" />
+      </button>
+      <span class="text-[0.8125rem] font-medium text-[var(--editor-text-muted)] min-w-[48px] text-center [font-variant-numeric:tabular-nums]">
+        {{ Math.round(zoomLevel * 100) }}%
+      </span>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-[var(--editor-active)] hover:enabled:text-[var(--editor-accent)]"
+        title="Zoom In (+)"
+        @click="$emit('zoomIn')"
+      >
+        <ZoomIn :size="16" />
+      </button>
+
+      <!-- Visual divider -->
+      <div class="w-px h-6 bg-white/10 mx-2" />
 
       <!-- Time Display -->
-      <div class="text-[0.875rem] font-medium text-[var(--editor-text)] [font-variant-numeric:tabular-nums] px-3 py-1.5 bg-[var(--editor-surface-elevated)] rounded-md border border-[var(--editor-border)]">
+      <span class="text-[0.8125rem] font-medium text-[var(--editor-text-muted)] [font-variant-numeric:tabular-nums]">
         {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-      </div>
+      </span>
     </div>
 
-    <div class="flex items-center gap-4">
+    <div class="flex items-center gap-2">
       <!-- Undo/Redo -->
       <button
-        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
-        :class="{ 'opacity-30 cursor-not-allowed': !canUndo }"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-[var(--editor-active)] hover:enabled:text-[var(--editor-accent)] disabled:opacity-30 disabled:cursor-not-allowed"
         :disabled="!canUndo"
         :title="undoDescription ? `Undo: ${undoDescription}` : 'Undo (Ctrl+Z)'"
         @click="$emit('undo')"
@@ -42,8 +42,7 @@
       </button>
 
       <button
-        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
-        :class="{ 'opacity-30 cursor-not-allowed': !canRedo }"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-[var(--editor-active)] hover:enabled:text-[var(--editor-accent)] disabled:opacity-30 disabled:cursor-not-allowed"
         :disabled="!canRedo"
         :title="redoDescription ? `Redo: ${redoDescription}` : 'Redo (Ctrl+Y)'"
         @click="$emit('redo')"
@@ -52,9 +51,12 @@
         <span>Redo</span>
       </button>
 
+      <!-- Visual divider between button groups -->
+      <div class="w-px h-6 bg-white/10 mx-2" />
+
       <!-- Tools -->
       <button
-        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-[var(--editor-active)] hover:enabled:text-[var(--editor-accent)]"
         title="Split at Playhead (S)"
         @click="$emit('split')"
       >
@@ -63,7 +65,7 @@
       </button>
 
       <button
-        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-[var(--editor-active)] hover:enabled:text-[var(--editor-accent)]"
         title="Delete Selected (Delete)"
         @click="$emit('delete')"
       >
@@ -71,8 +73,11 @@
         <span>Delete</span>
       </button>
 
+      <!-- Visual divider between button groups -->
+      <div class="w-px h-6 bg-white/10 mx-2" />
+
       <button
-        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-sky-500/15 hover:enabled:text-[var(--editor-accent)]"
+        class="flex items-center justify-center gap-2 px-3 py-2 bg-transparent border-none rounded-md text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out text-[0.8125rem] font-medium hover:enabled:bg-[var(--editor-active)] hover:enabled:text-[var(--editor-accent)]"
         title="Detach Audio"
         @click="$emit('detachAudio')"
       >

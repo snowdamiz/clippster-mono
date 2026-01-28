@@ -230,6 +230,24 @@
   --editor-accent-hover: #38bdf8;
   --editor-text: #fafafa;
   --editor-text-muted: #71717a;
+
+  /* Track type colors (harmonious cyan/blue palette) */
+  --track-video: #0ea5e9;      /* sky-500 */
+  --track-audio: #06b6d4;      /* cyan-500 */
+  --track-text: #38bdf8;       /* sky-400 */
+  --track-sticker: #22d3ee;    /* cyan-400 */
+  --track-watermark: #3b82f6;  /* blue-500 */
+  --track-intro: #6366f1;      /* indigo-500 */
+
+  /* Interactive state colors */
+  --editor-hover: rgba(255, 255, 255, 0.08);
+  --editor-active: rgba(14, 165, 233, 0.15);
+  --editor-focus-ring: rgba(14, 165, 233, 0.4);
+
+  /* Semantic colors */
+  --editor-success: #22c55e;
+  --editor-warning: #f59e0b;
+  --editor-error: #ef4444;
 }
 
 @layer base {

@@ -3,7 +3,7 @@
     <div class="flex items-center justify-between gap-2">
       <h3 class="text-base font-semibold text-zinc-100 m-0">Stickers</h3>
       <button
-        class="flex items-center gap-2 px-3 py-2 bg-pink-500/15 border border-pink-500/30 rounded-md text-pink-500 cursor-pointer transition-all duration-150 text-xs font-medium hover:bg-pink-500/25 hover:border-pink-500/50"
+        class="flex items-center gap-2 px-3 py-2 bg-sky-500/15 border border-sky-500/30 rounded-md text-sky-500 cursor-pointer transition-all duration-150 text-xs font-medium hover:bg-sky-500/25 hover:border-sky-500/50"
         @click="handleUploadSticker"
         title="Upload Sticker"
       >
@@ -18,7 +18,7 @@
         v-for="sticker in stickers"
         :key="sticker.id"
         class="flex items-center justify-between gap-2 p-3 bg-white/5 border border-white/10 rounded-md cursor-pointer transition-all duration-150 hover:bg-white/10 hover:border-white/15"
-        :class="{ 'bg-pink-500/15 border-pink-500/40': selectedStickerId === sticker.id }"
+        :class="{ 'bg-sky-500/15 border-sky-500/40': selectedStickerId === sticker.id }"
         @click="selectSticker(sticker)"
       >
         <div class="flex items-center gap-2 flex-1 min-w-0">
@@ -44,7 +44,7 @@
         <button
           v-for="emoji in commonEmojis"
           :key="emoji"
-          class="flex items-center justify-center aspect-square p-2 bg-white/5 border border-white/10 rounded-md text-xl cursor-pointer transition-all duration-150 hover:bg-pink-500/15 hover:border-pink-500/30 hover:scale-110"
+          class="flex items-center justify-center aspect-square p-2 bg-white/5 border border-white/10 rounded-md text-xl cursor-pointer transition-all duration-150 hover:bg-sky-500/15 hover:border-sky-500/30 hover:scale-110"
           @click="addEmoji(emoji)"
           :title="`Add ${emoji}`"
         >
@@ -58,7 +58,7 @@
       <Smile :size="32" class="text-white/30" />
       <p class="text-white/50 text-sm m-0">No stickers added yet</p>
       <button
-        class="flex items-center gap-2 px-4 py-2.5 bg-pink-500/15 border border-pink-500/30 rounded-md text-pink-500 cursor-pointer transition-all duration-150 text-sm font-medium hover:bg-pink-500/25 hover:border-pink-500/50"
+        class="flex items-center gap-2 px-4 py-2.5 bg-sky-500/15 border border-sky-500/30 rounded-md text-sky-500 cursor-pointer transition-all duration-150 text-sm font-medium hover:bg-sky-500/25 hover:border-sky-500/50"
         @click="handleUploadSticker"
       >
         <Upload :size="16" />

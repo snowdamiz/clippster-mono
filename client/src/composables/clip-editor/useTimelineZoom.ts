@@ -3,7 +3,7 @@ import { ref, computed, watch, type Ref, type ComputedRef } from 'vue';
 /**
  * Constants for timeline zoom calculations
  */
-export const TRACK_LABEL_WIDTH = 60;
+export const TRACK_LABEL_WIDTH = 100;
 export const PIXELS_PER_SECOND_BASE = 100;
 export const MIN_TIMELINE_WIDTH = 800;
 

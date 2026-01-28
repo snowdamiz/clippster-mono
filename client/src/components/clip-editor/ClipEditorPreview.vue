@@ -72,11 +72,11 @@
     </div>
 
     <!-- Controls -->
-    <div class="flex items-center gap-4 px-6 py-4 relative z-[100] border-t backdrop-blur-[12px]" 
-         style="background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%); border-color: var(--editor-border);">
+    <div class="flex items-center gap-4 px-6 py-4 relative z-[100] border-t backdrop-blur-sm"
+         style="background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.85) 100%); border-color: var(--editor-border);">
+      <!-- Pill-shaped play button -->
       <button
-        class="flex items-center justify-center w-10 h-10 rounded-lg border cursor-pointer transition-all duration-150 hover:border-sky-500/50"
-        style="background-color: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.3); color: var(--editor-accent);"
+        class="flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur text-[var(--editor-accent)] cursor-pointer transition-all duration-150 hover:bg-sky-500/20 hover:ring-2 hover:ring-sky-500/30"
         @click="togglePlayPause"
       >
         <Play v-if="!isPlaying" :size="20" />
@@ -86,18 +86,16 @@
       <!-- Volume Control -->
       <div class="flex items-center gap-3">
         <button
-          class="flex items-center justify-center w-10 h-10 rounded-lg border cursor-pointer transition-all duration-150 hover:border-sky-500/50"
-          style="background-color: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.3); color: var(--editor-accent);"
+          class="flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur text-[var(--editor-accent)] cursor-pointer transition-all duration-150 hover:bg-sky-500/20 hover:ring-2 hover:ring-sky-500/30"
           @click="toggleMute"
           title="Mute/Unmute"
         >
           <VolumeX v-if="isMuted || volume === 0" :size="20" />
           <Volume2 v-else :size="20" />
         </button>
-        <div class="relative w-24 h-1.5 bg-white/10 rounded">
+        <div class="relative w-24 h-1.5 bg-white/20 rounded-full overflow-hidden">
           <div
-            class="absolute left-0 top-0 h-full rounded transition-[width] duration-150 pointer-events-none"
-            style="background: linear-gradient(90deg, rgba(14, 165, 233, 0.8), rgba(14, 165, 233, 1));"
+            class="absolute left-0 top-0 h-full rounded-full transition-[width] duration-150 pointer-events-none bg-gradient-to-r from-cyan-500 to-sky-500"
             :style="{ width: `${volume * 100}%` }"
           ></div>
           <input
@@ -128,16 +126,14 @@
         >
           <!-- Progress fill -->
           <div
-            class="absolute left-0 top-0 h-full rounded transition-[width] duration-100 pointer-events-none"
-            style="background: linear-gradient(90deg, #8b5cf6, #a78bfa);"
+            class="absolute left-0 top-0 h-full rounded transition-[width] duration-100 pointer-events-none bg-gradient-to-r from-cyan-500 to-sky-500"
             :style="{ width: `${progressPercent}%` }"
           ></div>
           <!-- Playhead -->
           <div
-            class="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 rounded-full cursor-grab transition-all duration-150 z-10 hover:scale-110"
+            class="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-sky-500 rounded-full cursor-grab transition-all duration-150 z-10 hover:scale-110"
             :class="{ 'cursor-grabbing !scale-125': isDraggingProgress }"
-            style="border-color: #8b5cf6; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);"
-            :style="{ left: `${progressPercent}%`, boxShadow: isDraggingProgress ? '0 4px 16px rgba(139, 92, 246, 0.5)' : '0 2px 8px rgba(0, 0, 0, 0.3)' }"
+            :style="{ left: `${progressPercent}%`, boxShadow: isDraggingProgress ? '0 4px 16px rgba(14, 165, 233, 0.5)' : '0 2px 8px rgba(0, 0, 0, 0.3)' }"
             @mousedown.stop="startDraggingPlayhead"
           ></div>
           <!-- Hover preview -->
@@ -181,8 +177,7 @@
 
       <!-- Fullscreen Button -->
       <button
-        class="flex items-center justify-center w-10 h-10 rounded-lg border cursor-pointer transition-all duration-150 hover:border-sky-500/50"
-        style="background-color: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.3); color: var(--editor-accent);"
+        class="flex items-center justify-center w-10 h-10 rounded-full bg-white/10 backdrop-blur text-[var(--editor-accent)] cursor-pointer transition-all duration-150 hover:bg-sky-500/20 hover:ring-2 hover:ring-sky-500/30"
         @click="toggleFullscreen"
         :title="isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
       >

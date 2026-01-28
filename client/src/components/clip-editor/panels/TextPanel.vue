@@ -3,7 +3,7 @@
     <div class="flex items-center justify-between gap-2">
       <h3 class="text-base font-semibold text-zinc-100 m-0">Text Overlays</h3>
       <button
-        class="flex items-center gap-2 px-3 py-2 bg-amber-500/15 border border-amber-500/30 rounded text-amber-400 cursor-pointer transition-all duration-150 text-xs font-medium hover:bg-amber-500/25 hover:border-amber-500/50"
+        class="flex items-center gap-2 px-3 py-2 bg-sky-500/15 border border-sky-500/30 rounded text-sky-400 cursor-pointer transition-all duration-150 text-xs font-medium hover:bg-sky-500/25 hover:border-sky-500/50"
         @click="handleAddText"
         title="Add Text"
       >
@@ -18,7 +18,7 @@
         v-for="textOverlay in textOverlays"
         :key="textOverlay.id"
         class="flex items-center justify-between gap-2 px-3 bg-white/3 border border-white/8 rounded cursor-pointer transition-all duration-150 hover:bg-white/6 hover:border-white/15"
-        :class="{ 'bg-amber-500/15 border-amber-500/40': selectedTextId === textOverlay.id }"
+        :class="{ 'bg-sky-500/15 border-sky-500/40': selectedTextId === textOverlay.id }"
         @click="selectText(textOverlay)"
       >
         <div class="flex items-center gap-2 flex-1 min-w-0 text-white/90">
@@ -40,7 +40,7 @@
       <Type :size="32" class="text-white/30" />
       <p class="text-white/50 text-sm m-0">No text overlays added yet</p>
       <button
-        class="flex items-center gap-2 px-4 py-2.5 bg-amber-500/15 border border-amber-500/30 rounded text-amber-400 cursor-pointer transition-all duration-150 text-sm font-medium hover:bg-amber-500/25 hover:border-amber-500/50"
+        class="flex items-center gap-2 px-4 py-2.5 bg-sky-500/15 border border-sky-500/30 rounded text-sky-400 cursor-pointer transition-all duration-150 text-sm font-medium hover:bg-sky-500/25 hover:border-sky-500/50"
         @click="handleAddText"
       >
         <Plus :size="16" />
@@ -55,7 +55,7 @@
         <button
           v-for="template in textTemplates"
           :key="template.id"
-          class="flex items-center justify-center px-3 bg-white/5 border border-white/10 rounded text-white/90 cursor-pointer transition-all duration-150 text-xs font-medium hover:bg-amber-500/15 hover:border-amber-500/30 hover:text-amber-400"
+          class="flex items-center justify-center px-3 bg-white/5 border border-white/10 rounded text-white/90 cursor-pointer transition-all duration-150 text-xs font-medium hover:bg-sky-500/15 hover:border-sky-500/30 hover:text-sky-400"
           @click="addTextFromTemplate(template)"
         >
           <span class="text-center">{{ template.label }}</span>

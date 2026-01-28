@@ -7,17 +7,27 @@
       <button
         v-for="panel in panels"
         :key="panel.id"
-        class="relative flex items-center justify-center w-10 h-10 bg-transparent border-none rounded-lg text-[var(--editor-text-muted)] cursor-pointer transition-all duration-150 ease-in-out hover:bg-white/10 hover:text-[var(--editor-text)]"
-        :class="{ 'bg-sky-500/15 text-[var(--editor-accent)] shadow-[inset_0_0_0_1px_rgba(14,165,233,0.3)]': activePanel === panel.id }"
+        class="relative flex items-center justify-center w-10 h-10 bg-transparent border-none rounded-lg cursor-pointer transition-all duration-150 ease-in-out"
+        :class="[
+          activePanel === panel.id
+            ? 'bg-[var(--editor-active)] text-[var(--editor-accent)]'
+            : 'text-[var(--editor-text-muted)] hover:bg-[var(--editor-hover)] hover:text-[var(--editor-text)]'
+        ]"
         :title="panel.label"
         @click="selectPanel(panel.id)"
       >
         <component :is="panel.icon" :size="20" />
+        <!-- Active indicator dot -->
+        <span
+          v-if="activePanel === panel.id"
+          class="absolute top-1 right-1 w-1.5 h-1.5 bg-sky-500 rounded-full"
+        />
         <span class="hidden">{{ panel.label }}</span>
       </button>
     </div>
 
-    <div v-if="activePanel" class="w-[280px] shrink-0 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] overflow-y-auto flex flex-col">
+    <!-- Panel container with glass effect -->
+    <div v-if="activePanel" class="w-[280px] shrink-0 bg-[var(--editor-surface)]/80 backdrop-blur-sm border-r border-[var(--editor-border)] overflow-y-auto flex flex-col">
       <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--editor-border)] shrink-0">
         <h3 class="text-[0.875rem] font-semibold text-[var(--editor-text)] uppercase tracking-wider">{{ currentPanelLabel }}</h3>
         <button

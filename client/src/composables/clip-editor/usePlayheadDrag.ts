@@ -1,4 +1,5 @@
 import { ref, computed, type Ref, type ComputedRef } from 'vue';
+import { TRACK_LABEL_WIDTH } from './useTimelineZoom';
 
 /**
  * Options for usePlayheadDrag
@@ -95,7 +96,8 @@ export function usePlayheadDrag(options: PlayheadDragOptions): PlayheadDragRetur
 
     // Timeline mode: use pixels per second and scroll offset
     if (pixelsPerSecond?.value && scrollLeft) {
-      const timelineX = clickX + scrollLeft.value;
+      // Subtract track label width since timeline content starts after the labels
+      const timelineX = clickX - TRACK_LABEL_WIDTH + scrollLeft.value;
       const time = timelineX / pixelsPerSecond.value;
       return Math.max(0, Math.min(time, duration.value));
     }

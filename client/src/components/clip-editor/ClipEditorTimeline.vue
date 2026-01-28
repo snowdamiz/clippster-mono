@@ -2,7 +2,7 @@
   <div class="flex-1 flex flex-col bg-[var(--editor-bg)] relative overflow-hidden">
     <!-- Fixed Timeline Ruler -->
     <div class="flex h-7 border-b border-[var(--editor-border)] bg-[var(--editor-surface)] shrink-0 relative z-[3]">
-      <div class="w-[60px] shrink-0 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)]"></div>
+      <div class="w-[100px] shrink-0 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)]"></div>
       <div class="relative h-full" :style="{ width: timelineWidth + 'px' }">
         <div
           v-for="marker in timeMarkers"
@@ -10,7 +10,7 @@
           class="absolute top-0 h-full border-l border-sky-500/20 pl-1"
           :style="{ left: (marker.time / duration) * timelineWidth + 'px' }"
         >
-          <span class="text-[0.625rem] text-[var(--editor-text-muted)] [font-variant-numeric:tabular-nums]">{{ formatTime(marker.time) }}</span>
+          <span class="text-xs font-mono text-white/50">{{ formatTime(marker.time) }}</span>
         </div>
       </div>
     </div>
@@ -24,9 +24,11 @@
       <div class="flex flex-col min-h-full" :style="{ width: timelineWidth + 'px' }">
       <!-- Video Track (with embedded audio waveform) -->
       <div class="flex border-b border-[var(--editor-border)] min-h-[64px] relative">
-        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
-          <Film :size="14" />
-          <span>V1</span>
+        <div class="sticky left-0 flex items-center gap-2 w-[100px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.75rem] font-medium shrink-0 z-[2] backdrop-blur overflow-hidden">
+          <Film :size="14" class="shrink-0" />
+          <div class="track-label-scroll">
+            <span class="track-label-text">{{ videoSourceName }}<span class="track-label-spacer">&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;</span>{{ videoSourceName }}<span class="track-label-spacer">&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;</span></span>
+          </div>
         </div>
         <div class="relative flex-1 min-h-[48px] cursor-pointer" @click="handleTrackClick">
           <!-- Intro segment (if present) -->
@@ -37,12 +39,12 @@
           >
             <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">Intro</span>
             <!-- Waveform for intro -->
-            <div class="absolute inset-0 flex items-center py-1 pointer-events-none opacity-40">
-              <div class="flex items-center justify-between gap-[1px] w-full h-full px-1">
+            <div class="absolute inset-0 flex items-end py-1 pointer-events-none opacity-60">
+              <div class="flex items-end justify-between gap-[1px] w-full h-full px-1">
                 <div
                   v-for="i in getWaveformBars(introRef.duration || 0)"
                   :key="i"
-                  class="flex-1 bg-gradient-to-b from-white/80 to-white/50 rounded-[1px]"
+                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
                   :style="{ height: getWaveformHeight(i - 1, 0, introRef.duration || 0) }"
                 ></div>
               </div>
@@ -54,7 +56,7 @@
             v-for="source in videoSources"
             :key="source.id"
             class="absolute top-1 h-14 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-sky-500/30 to-sky-500/20 border-sky-500/40"
-            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === source.id }"
+            :class="{ 'ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--editor-bg)] z-[2]': selectedItem?.id === source.id }"
             :style="getSegmentStyle(source.start_time, source.end_time - source.start_time)"
             @click.stop="selectItem(source, 'video')"
           >
@@ -62,12 +64,12 @@
               {{ formatSourceLabel(source) }}
             </span>
             <!-- Embedded audio waveform -->
-            <div class="absolute inset-0 flex items-center py-1 pointer-events-none opacity-40">
-              <div class="flex items-center justify-between gap-[1px] w-full h-full px-1">
+            <div class="absolute inset-0 flex items-end py-1 pointer-events-none opacity-60">
+              <div class="flex items-end justify-between gap-[1px] w-full h-full px-1">
                 <div
                   v-for="i in getWaveformBars(source.end_time - source.start_time)"
                   :key="i"
-                  class="flex-1 bg-gradient-to-b from-white/80 to-white/50 rounded-[1px]"
+                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
                   :style="{ height: getWaveformHeight(i - 1, source.start_time, source.end_time - source.start_time) }"
                 ></div>
               </div>
@@ -82,12 +84,12 @@
           >
             <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">Outro</span>
             <!-- Waveform for outro -->
-            <div class="absolute inset-0 flex items-center py-1 pointer-events-none opacity-40">
-              <div class="flex items-center justify-between gap-[1px] w-full h-full px-1">
+            <div class="absolute inset-0 flex items-end py-1 pointer-events-none opacity-60">
+              <div class="flex items-end justify-between gap-[1px] w-full h-full px-1">
                 <div
                   v-for="i in getWaveformBars(outroRef.duration || 0)"
                   :key="i"
-                  class="flex-1 bg-gradient-to-b from-white/80 to-white/50 rounded-[1px]"
+                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
                   :style="{ height: getWaveformHeight(i - 1, duration - outroOffset, outroRef.duration || 0) }"
                 ></div>
               </div>
@@ -102,7 +104,7 @@
         :key="`audio-track-${trackGroup.order}`"
         class="flex border-b border-[var(--editor-border)] min-h-[48px] relative"
       >
-        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
+        <div class="sticky left-0 flex items-center gap-2 w-[100px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
           <Music :size="14" />
           <span>A{{ index + 1 }}</span>
         </div>
@@ -111,20 +113,20 @@
           <div
             v-for="audioTrack in trackGroup.segments"
             :key="audioTrack.id"
-            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-emerald-500/30 to-emerald-500/20 border-emerald-500/40"
-            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === audioTrack.id }"
+            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-cyan-500/30 to-cyan-500/20 border-cyan-500/40"
+            :class="{ 'ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--editor-bg)] z-[2]': selectedItem?.id === audioTrack.id }"
             :style="getSegmentStyle(audioTrack.start_time, audioTrack.end_time - audioTrack.start_time)"
             @click.stop="selectItem(audioTrack, 'audio')"
           >
             <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">{{ audioTrack.name }}</span>
             
             <!-- Audio waveform -->
-            <div class="absolute inset-0 flex items-center py-1 pointer-events-none opacity-40">
-              <div class="flex items-center justify-between gap-[1px] w-full h-full px-1">
+            <div class="absolute inset-0 flex items-end py-1 pointer-events-none opacity-60">
+              <div class="flex items-end justify-between gap-[1px] w-full h-full px-1">
                 <div
                   v-for="i in getWaveformBars(audioTrack.end_time - audioTrack.start_time)"
                   :key="i"
-                  class="flex-1 !bg-gradient-to-b !from-violet-500 !to-violet-400 rounded-[1px] min-h-[4px] !max-w-[3px]"
+                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
                   :style="{ height: getAudioWaveformHeight(audioTrack.id, i - 1, audioTrack.start_time, audioTrack.end_time - audioTrack.start_time) }"
                 ></div>
               </div>
@@ -132,8 +134,8 @@
             
             <!-- Mute/Solo indicators -->
             <div class="flex gap-1 ml-auto pl-2">
-              <span v-if="audioTrack.is_muted" class="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[3px] text-[0.625rem] font-bold tracking-wider bg-red-500/30 text-red-400 border border-red-500/50">M</span>
-              <span v-if="audioTrack.is_solo" class="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[3px] text-[0.625rem] font-bold tracking-wider bg-amber-500/30 text-amber-400 border border-amber-500/50">S</span>
+              <span v-if="audioTrack.is_muted" class="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[3px] text-[0.625rem] font-bold tracking-wider bg-zinc-600 text-white border border-zinc-500">M</span>
+              <span v-if="audioTrack.is_solo" class="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[3px] text-[0.625rem] font-bold tracking-wider bg-sky-500 text-white border border-sky-400">S</span>
             </div>
           </div>
         </div>
@@ -144,7 +146,7 @@
         v-if="textOverlays.length > 0"
         class="flex border-b border-[var(--editor-border)] min-h-[48px] relative"
       >
-        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
+        <div class="sticky left-0 flex items-center gap-2 w-[100px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
           <Type :size="14" />
           <span>T1</span>
         </div>
@@ -152,8 +154,8 @@
           <div
             v-for="textOverlay in textOverlays"
             :key="textOverlay.id"
-            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-amber-500/30 to-amber-500/20 border-amber-500/40"
-            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === textOverlay.id }"
+            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-sky-400/30 to-sky-400/20 border-sky-400/40"
+            :class="{ 'ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--editor-bg)] z-[2]': selectedItem?.id === textOverlay.id }"
             :style="getSegmentStyle(textOverlay.start_time, textOverlay.end_time - textOverlay.start_time)"
             @click.stop="selectItem(textOverlay, 'text')"
           >
@@ -167,7 +169,7 @@
         v-if="stickers.length > 0"
         class="flex border-b border-[var(--editor-border)] min-h-[48px] relative"
       >
-        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
+        <div class="sticky left-0 flex items-center gap-2 w-[100px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
           <Smile :size="14" />
           <span>S1</span>
         </div>
@@ -175,8 +177,8 @@
           <div
             v-for="sticker in stickers"
             :key="sticker.id"
-            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-pink-500/30 to-pink-500/20 border-pink-500/40"
-            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === sticker.id }"
+            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-cyan-400/30 to-cyan-400/20 border-cyan-400/40"
+            :class="{ 'ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--editor-bg)] z-[2]': selectedItem?.id === sticker.id }"
             :style="getSegmentStyle(sticker.start_time, sticker.end_time - sticker.start_time)"
             @click.stop="selectItem(sticker, 'sticker')"
           >
@@ -190,7 +192,7 @@
         v-if="watermarks.length > 0"
         class="flex border-b border-[var(--editor-border)] min-h-[48px] relative"
       >
-        <div class="sticky left-0 flex items-center gap-2 w-[60px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
+        <div class="sticky left-0 flex items-center gap-2 w-[100px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.8125rem] font-semibold shrink-0 z-[2] backdrop-blur">
           <Image :size="14" />
           <span>W1</span>
         </div>
@@ -199,7 +201,7 @@
             v-for="watermark in watermarks"
             :key="watermark.id"
             class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-blue-500/30 to-blue-500/20 border-blue-500/40"
-            :class="{ '!border-white/80 border-2 z-[2] shadow-[0_0_0_2px_rgba(14,165,233,0.4)]': selectedItem?.id === watermark.id }"
+            :class="{ 'ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--editor-bg)] z-[2]': selectedItem?.id === watermark.id }"
             :style="getSegmentStyle(watermark.start_time, watermark.end_time - watermark.start_time)"
             @click.stop="selectItem(watermark, 'watermark')"
           >
@@ -212,13 +214,20 @@
 
     <!-- Single Playhead Overlay (spans all tracks) -->
     <div
-      class="absolute top-7 bottom-0 w-[2px] z-[100] pointer-events-none"
-      :class="{ 'opacity-80': isDraggingPlayhead }"
-      :style="{ left: playheadScreenPosition + 'px' }"
+      class="absolute top-7 bottom-0 z-[100] flex justify-center"
+      :style="{
+        left: (playheadScreenPosition - 6) + 'px',
+        width: '13px',
+        cursor: isDraggingPlayhead ? 'grabbing' : 'col-resize'
+      }"
       @mousedown="handlePlayheadMouseDown"
     >
-      <div class="w-full h-full bg-[var(--editor-accent)] shadow-[0_0_8px_rgba(14,165,233,0.6)]"></div>
-      <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-[var(--editor-accent)] border-2 border-white rounded-full cursor-ew-resize pointer-events-auto transition-transform duration-150 ease-in-out hover:scale-[1.3]" :class="{ 'scale-[1.2] cursor-grabbing': isDraggingPlayhead }"></div>
+      <!-- Visible playhead line -->
+      <div class="w-0.5 h-full bg-sky-500 pointer-events-none"></div>
+      <!-- Playhead handle at top (circle) -->
+      <div
+        class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-sky-500 rounded-full pointer-events-none"
+      ></div>
     </div>
   </div>
 </template>
@@ -266,6 +275,18 @@ const tracksContainer = ref<HTMLElement | null>(null);
 // Intro/outro offsets
 const introOffset = computed(() => props.introRef?.duration || 0);
 const outroOffset = computed(() => props.outroRef?.duration || 0);
+
+// Video source name extracted and formatted from path
+const videoSourceName = computed(() => {
+  if (!props.videoSourcePath) return 'Video';
+  // Extract filename from path and remove extension
+  const filename = props.videoSourcePath.split('/').pop() || 'Video';
+  const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+  // Format: replace underscores/hyphens with spaces, then title case
+  return nameWithoutExt
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+});
 
 // Timeline zoom composable
 const {
@@ -376,6 +397,37 @@ function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: 
 
 .editor-timeline__tracks-container::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
+}
+
+/* Track label scroll on hover - marquee style */
+.track-label-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, black 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+}
+
+.track-label-text {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.track-label-spacer {
+  opacity: 0.4;
+}
+
+.track-label-scroll:hover .track-label-text {
+  animation: scroll-text 6s linear infinite;
+}
+
+@keyframes scroll-text {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
 }
 </style>
 
