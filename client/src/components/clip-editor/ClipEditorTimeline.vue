@@ -38,17 +38,12 @@
             :style="getSegmentStyle(0, introRef.duration || 0)"
           >
             <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">Intro</span>
-            <!-- Waveform for intro -->
-            <div class="absolute inset-0 flex items-end py-1 pointer-events-none opacity-60">
-              <div class="flex items-end justify-between gap-[1px] w-full h-full px-1">
-                <div
-                  v-for="i in getWaveformBars(introRef.duration || 0)"
-                  :key="i"
-                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
-                  :style="{ height: getWaveformHeight(i - 1, 0, introRef.duration || 0) }"
-                ></div>
-              </div>
-            </div>
+            <!-- Waveform canvas for intro -->
+            <canvas
+              :ref="el => setWaveformCanvasRef(el, 'intro')"
+              class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
+              style="mix-blend-mode: normal"
+            ></canvas>
           </div>
 
           <!-- Video source segments (from splits/edits) -->
@@ -63,17 +58,12 @@
             <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">
               {{ formatSourceLabel(source) }}
             </span>
-            <!-- Embedded audio waveform -->
-            <div class="absolute inset-0 flex items-end py-1 pointer-events-none opacity-60">
-              <div class="flex items-end justify-between gap-[1px] w-full h-full px-1">
-                <div
-                  v-for="i in getWaveformBars(source.end_time - source.start_time)"
-                  :key="i"
-                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
-                  :style="{ height: getWaveformHeight(i - 1, source.start_time, source.end_time - source.start_time) }"
-                ></div>
-              </div>
-            </div>
+            <!-- Embedded audio waveform canvas -->
+            <canvas
+              :ref="el => setWaveformCanvasRef(el, `source-${source.id}`)"
+              class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
+              style="mix-blend-mode: normal"
+            ></canvas>
           </div>
 
           <!-- Outro segment (if present) -->
@@ -83,17 +73,12 @@
             :style="getSegmentStyle(duration - outroOffset, outroRef.duration || 0)"
           >
             <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">Outro</span>
-            <!-- Waveform for outro -->
-            <div class="absolute inset-0 flex items-end py-1 pointer-events-none opacity-60">
-              <div class="flex items-end justify-between gap-[1px] w-full h-full px-1">
-                <div
-                  v-for="i in getWaveformBars(outroRef.duration || 0)"
-                  :key="i"
-                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
-                  :style="{ height: getWaveformHeight(i - 1, duration - outroOffset, outroRef.duration || 0) }"
-                ></div>
-              </div>
-            </div>
+            <!-- Waveform canvas for outro -->
+            <canvas
+              :ref="el => setWaveformCanvasRef(el, 'outro')"
+              class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
+              style="mix-blend-mode: normal"
+            ></canvas>
           </div>
         </div>
       </div>
@@ -120,17 +105,12 @@
           >
             <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">{{ audioTrack.name }}</span>
             
-            <!-- Audio waveform -->
-            <div class="absolute inset-0 flex items-end py-1 pointer-events-none opacity-60">
-              <div class="flex items-end justify-between gap-[1px] w-full h-full px-1">
-                <div
-                  v-for="i in getWaveformBars(audioTrack.end_time - audioTrack.start_time)"
-                  :key="i"
-                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
-                  :style="{ height: getAudioWaveformHeight(audioTrack.id, i - 1, audioTrack.start_time, audioTrack.end_time - audioTrack.start_time) }"
-                ></div>
-              </div>
-            </div>
+            <!-- Audio waveform canvas -->
+            <canvas
+              :ref="el => setWaveformCanvasRef(el, `audio-${audioTrack.id}`)"
+              class="absolute inset-0 w-full h-full pointer-events-none opacity-60"
+              style="mix-blend-mode: normal"
+            ></canvas>
             
             <!-- Mute/Solo indicators -->
             <div class="flex gap-1 ml-auto pl-2">
@@ -233,10 +213,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, toRef } from 'vue';
+import { ref, computed, watch, toRef, nextTick, onMounted, onUnmounted } from 'vue';
 import { Film, Music, Type, Smile, Image } from 'lucide-vue-next';
 import type { FullVideoEditorEdit } from '@/services/database/video-editor-edits';
 import type { IntroOutroRef } from '@/types';
+import { waveformService } from '@/services/waveformService';
+import { renderWaveform } from '@/utils/waveformRenderer';
 import {
   formatTime,
   truncateText,
@@ -271,6 +253,11 @@ const emit = defineEmits<{
 
 // Scroll container ref
 const tracksContainer = ref<HTMLElement | null>(null);
+
+// Canvas refs for waveform rendering
+const waveformCanvasRefs = ref<Map<string, HTMLCanvasElement>>(new Map());
+const renderingKeys = new Set<string>(); // Track which keys are currently rendering
+let resizeObserver: ResizeObserver | null = null;
 
 // Intro/outro offsets
 const introOffset = computed(() => props.introRef?.duration || 0);
@@ -371,12 +358,237 @@ function selectItem(item: any, type: string) {
 // truncate is an alias for truncateText from composable
 const truncate = truncateText;
 
-// Wrapper for audio track waveform height that looks up file path by ID
-function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: number, segmentDuration: number): string {
-  const audioTrack = audioTracks.value.find(t => t.id === audioTrackId);
-  if (!audioTrack) return '50%';
-  return getAudioWaveformHeightFromPath(audioTrack.file_path, index, startTime, segmentDuration);
+// Normalize peaks for display - scales quiet audio to be visible
+function normalizePeaks(peaks: { min: number; max: number }[]): { min: number; max: number }[] {
+  if (peaks.length === 0) return peaks;
+
+  // Find the maximum amplitude in the waveform
+  let maxAmplitude = 0;
+  for (const peak of peaks) {
+    const peakMax = Math.max(Math.abs(peak.min), Math.abs(peak.max));
+    if (peakMax > maxAmplitude) {
+      maxAmplitude = peakMax;
+    }
+  }
+
+  // If waveform is already loud enough (>50% of full scale), don't normalize
+  if (maxAmplitude >= 0.5 || maxAmplitude === 0) {
+    return peaks;
+  }
+
+  // Calculate scale factor to bring max amplitude to ~85% of full scale
+  // This leaves headroom while making quiet audio visible
+  const targetAmplitude = 0.85;
+  const scaleFactor = targetAmplitude / maxAmplitude;
+
+  // Apply normalization (cap at reasonable max to avoid over-amplification of noise)
+  const maxScale = 10; // Don't amplify more than 10x
+  const finalScale = Math.min(scaleFactor, maxScale);
+
+  return peaks.map((peak) => ({
+    min: peak.min * finalScale,
+    max: peak.max * finalScale,
+  }));
 }
+
+// Canvas ref management
+function setWaveformCanvasRef(el: any, key: string) {
+  if (el && el instanceof HTMLCanvasElement) {
+    waveformCanvasRefs.value.set(key, el);
+    
+    // Observe this canvas for resize events
+    if (resizeObserver) {
+      resizeObserver.observe(el);
+    }
+    
+    // Render after canvas is in DOM and sized
+    nextTick(() => {
+      // Use setTimeout to ensure canvas has dimensions
+      setTimeout(() => renderWaveformForKey(key), 0);
+    });
+  } else {
+    waveformCanvasRefs.value.delete(key);
+  }
+}
+
+// Render waveform for a specific canvas by key
+async function renderWaveformForKey(key: string) {
+  // Prevent duplicate renders for the same key
+  if (renderingKeys.has(key)) {
+    console.log(`[ClipEditorTimeline] Already rendering ${key}, skipping...`);
+    return;
+  }
+
+  const canvas = waveformCanvasRefs.value.get(key);
+  if (!canvas) {
+    console.log(`[ClipEditorTimeline] No canvas found for key: ${key}`);
+    return;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) {
+    console.log(`[ClipEditorTimeline] Canvas ${key} has zero dimensions:`, rect.width, 'x', rect.height);
+    return;
+  }
+
+  renderingKeys.add(key);
+  
+  try {
+    let startTime = 0;
+    let duration = 0;
+    let filePath: string | null = null;
+
+    // Determine segment time range and file path based on key
+    if (key === 'intro' && props.introRef) {
+      startTime = 0;
+      duration = props.introRef.duration || 0;
+      filePath = props.videoSourcePath || null;
+    } else if (key === 'outro' && props.outroRef) {
+      startTime = props.duration - (props.outroRef.duration || 0);
+      duration = props.outroRef.duration || 0;
+      filePath = props.videoSourcePath || null;
+    } else if (key.startsWith('source-')) {
+      const sourceId = key.replace('source-', '');
+      const source = props.videoSources?.find(s => s.id === sourceId);
+      if (source) {
+        startTime = source.start_time;
+        duration = source.end_time - source.start_time;
+        filePath = props.videoSourcePath || null;
+      }
+    } else if (key.startsWith('audio-')) {
+      const audioId = key.replace('audio-', '');
+      const audioTrack = audioTracks.value.find(t => t.id === audioId);
+      if (audioTrack) {
+        startTime = audioTrack.start_time;
+        duration = audioTrack.end_time - audioTrack.start_time;
+        filePath = audioTrack.file_path;
+      }
+    }
+
+    if (duration <= 0 || !filePath) {
+      console.log(`[ClipEditorTimeline] Invalid duration or filePath for ${key}:`, { duration, filePath });
+      return;
+    }
+
+    console.log(`[ClipEditorTimeline] Rendering waveform for ${key}:`, {
+      filePath,
+      startTime,
+      duration,
+      canvasSize: `${rect.width}x${rect.height}`
+    });
+
+    // Get peaks from waveform service
+    const peaks = await waveformService.getPeaksForRange(filePath, {
+      startTime,
+      endTime: startTime + duration,
+      pixelWidth: Math.floor(rect.width),
+    });
+
+    if (peaks.length === 0) {
+      console.warn(`[ClipEditorTimeline] No peaks returned for ${key}`);
+      return;
+    }
+
+    console.log(`[ClipEditorTimeline] Got ${peaks.length} peaks for ${key}, rendering...`);
+
+    // Normalize peaks for display (makes quiet audio visible)
+    const normalizedPeaks = normalizePeaks(peaks);
+
+    // Render waveform on canvas
+    renderWaveform(canvas, {
+      width: rect.width,
+      height: rect.height,
+      peaks: normalizedPeaks,
+      style: 'bars',
+      baseline: 1, // Bars grow upward from bottom
+      useGradientColors: false, // Simple teal color for timeline segments
+      baseColor: '#5eead4',
+      amplitude: 0.85,
+    });
+
+    console.log(`[ClipEditorTimeline] Successfully rendered waveform for ${key}`);
+  } catch (error) {
+    console.error(`[ClipEditorTimeline] Error rendering waveform for ${key}:`, error);
+  } finally {
+    renderingKeys.delete(key);
+  }
+}
+
+// Render all visible waveforms (debounced)
+let renderDebounceTimer: number | null = null;
+function renderAllWaveforms() {
+  if (renderDebounceTimer !== null) {
+    clearTimeout(renderDebounceTimer);
+  }
+  
+  renderDebounceTimer = window.setTimeout(async () => {
+    console.log(`[ClipEditorTimeline] Rendering all waveforms (${waveformCanvasRefs.value.size} canvases)`);
+    for (const key of waveformCanvasRefs.value.keys()) {
+      await renderWaveformForKey(key);
+    }
+    renderDebounceTimer = null;
+  }, 300);
+}
+
+// Setup resize observer for canvas elements
+let resizeDebounceTimer: number | null = null;
+function setupResizeObserver() {
+  if (resizeObserver) return;
+  
+  resizeObserver = new ResizeObserver(() => {
+    // Debounce resize events to prevent rapid re-renders
+    if (resizeDebounceTimer !== null) {
+      clearTimeout(resizeDebounceTimer);
+    }
+    
+    resizeDebounceTimer = window.setTimeout(() => {
+      console.log('[ClipEditorTimeline] ResizeObserver triggered, rendering waveforms...');
+      renderAllWaveforms();
+      resizeDebounceTimer = null;
+    }, 500);
+  });
+
+  // Observe all existing canvases
+  for (const canvas of waveformCanvasRefs.value.values()) {
+    resizeObserver.observe(canvas);
+  }
+}
+
+// Cleanup resize observer
+function cleanupResizeObserver() {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+}
+
+// Lifecycle hooks
+onMounted(() => {
+  console.log('[ClipEditorTimeline] Component mounted, setting up waveforms...');
+  setupResizeObserver();
+  
+  nextTick(async () => {
+    // Pre-load audio for video source
+    if (props.videoSourcePath) {
+      console.log('[ClipEditorTimeline] Pre-loading video audio:', props.videoSourcePath);
+      await waveformService.loadAudio(props.videoSourcePath);
+    }
+    
+    // Pre-load audio for all audio tracks
+    for (const track of audioTracks.value) {
+      if (track.file_path) {
+        console.log('[ClipEditorTimeline] Pre-loading audio track:', track.file_path);
+        await waveformService.loadAudio(track.file_path);
+      }
+    }
+    
+    console.log('[ClipEditorTimeline] Audio pre-loading complete, canvases will render individually');
+  });
+});
+
+onUnmounted(() => {
+  cleanupResizeObserver();
+});
 </script>
 
 <style scoped>

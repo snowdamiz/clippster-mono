@@ -38,7 +38,7 @@ export interface WaveformRendererReturn {
   /** Load waveform data for the video source */
   loadWaveform: () => Promise<void>;
   /** Get peaks for a specific time range */
-  getPeaksForRange: (startTime: number, segmentDuration: number) => WaveformPeak[];
+  getPeaksForRange: (startTime: number, segmentDuration: number) => Promise<WaveformPeak[]>;
   /** Invalidate the peak cache (e.g., on zoom change) */
   invalidateCache: () => void;
 }
@@ -130,7 +130,7 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
   /**
    * Get waveform peaks for a segment (with caching)
    */
-  function getSegmentPeaks(startTime: number, segmentDuration: number): Array<{ min: number; max: number }> {
+  async function getSegmentPeaks(startTime: number, segmentDuration: number): Promise<Array<{ min: number; max: number }>> {
     const path = videoSourcePath.value;
     const cacheKey = `${startTime}-${segmentDuration}`;
 
@@ -146,7 +146,7 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
 
     // Get peaks from waveform service
     const numBars = getWaveformBars(segmentDuration);
-    const peaks = waveformService.getPeaksForRange(path, {
+    const peaks = await waveformService.getPeaksForRange(path, {
       startTime,
       endTime: startTime + segmentDuration,
       pixelWidth: numBars,
@@ -182,47 +182,21 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
 
   /**
    * Generate waveform height from real peak data (for video segments)
+   * Note: This is now deprecated in favor of canvas-based rendering
+   * Returns placeholder pattern for backward compatibility
    */
   function getWaveformHeight(index: number, startTime: number, segmentDuration: number): string {
-    const peaks = getSegmentPeaks(startTime, segmentDuration);
-
-    if (peaks.length === 0 || index >= peaks.length) {
-      // Fallback to placeholder pattern if no data
-      return getPlaceholderHeight(index, 'video');
-    }
-
-    const peak = peaks[index];
-    // Calculate amplitude from min/max (use the larger absolute value)
-    const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
-
-    // Scale to percentage (with minimum height for visibility)
-    const heightPercent = Math.max(10, amplitude * 100);
-
-    return `${heightPercent}%`;
+    // Return placeholder pattern - canvas rendering should be used instead
+    return getPlaceholderHeight(index, 'video');
   }
 
   /**
    * Generate waveform height for audio tracks (uses audio file path)
+   * Note: This is now deprecated in favor of canvas-based rendering
+   * Returns placeholder pattern for backward compatibility
    */
   function getAudioWaveformHeight(audioFilePath: string, index: number, startTime: number, segmentDuration: number): string {
-    // Check if waveform is loaded for this audio file
-    if (waveformService.isLoaded(audioFilePath)) {
-      const numBars = getWaveformBars(segmentDuration);
-      const peaks = waveformService.getPeaksForRange(audioFilePath, {
-        startTime,
-        endTime: startTime + segmentDuration,
-        pixelWidth: numBars,
-      });
-
-      if (peaks.length > 0 && index < peaks.length) {
-        const peak = peaks[index];
-        const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
-        const heightPercent = Math.max(10, amplitude * 100);
-        return `${heightPercent}%`;
-      }
-    }
-
-    // Fallback to procedural waveform pattern
+    // Return placeholder pattern - canvas rendering should be used instead
     return getPlaceholderHeight(index, 'audio');
   }
 
@@ -250,8 +224,8 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
   /**
    * Get peaks for a specific time range (public API for getSegmentPeaks)
    */
-  function getPeaksForRange(startTime: number, segmentDuration: number): WaveformPeak[] {
-    return getSegmentPeaks(startTime, segmentDuration);
+  async function getPeaksForRange(startTime: number, segmentDuration: number): Promise<WaveformPeak[]> {
+    return await getSegmentPeaks(startTime, segmentDuration);
   }
 
   return {
