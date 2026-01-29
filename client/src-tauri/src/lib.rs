@@ -541,6 +541,12 @@ pub fn run() {
                             sql: include_str!("../migrations/079_add_creator_profile_to_projects.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 81,
+                            description: "add_source_start_time_to_audio_tracks",
+                            sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

@@ -12,6 +12,7 @@ export interface TimelineVideoSource {
   trim_start: number;
   trim_end: number | null;
   original_duration: number;
+  order_index: number;
 }
 
 /**
@@ -22,6 +23,7 @@ export interface TimelineAudioTrack {
   filePath: string;
   startTime: number;
   endTime: number;
+  sourceStartTime: number;
   volume: number;
   isMuted: boolean;
   fadeInDuration: number;
@@ -154,6 +156,7 @@ export function useTimelineReload(options: TimelineReloadOptions): TimelineReloa
         trim_start: s.trim_start,
         trim_end: s.trim_end,
         original_duration: s.source_duration || (s.end_time - s.start_time),
+        order_index: s.order_index,
       }));
 
       // Transform audio tracks for playback engine
@@ -162,6 +165,7 @@ export function useTimelineReload(options: TimelineReloadOptions): TimelineReloa
         filePath: track.file_path,
         startTime: track.start_time,
         endTime: track.end_time,
+        sourceStartTime: track.source_start_time,
         volume: track.volume,
         isMuted: track.is_muted === 1,
         fadeInDuration: track.fade_in,

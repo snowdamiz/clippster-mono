@@ -593,7 +593,7 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
   /**
    * Add media item to timeline
    * For audio: creates audio track with duration
-   * For video/image: emits event for future implementation
+   * For video/image: creates video source (video track)
    */
   async function addToTimeline(item: MediaItem): Promise<void> {
     if (!editId.value || !projectId.value) {
@@ -603,19 +603,39 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
 
     console.log('[useMediaCRUD] Adding media to timeline:', item);
 
-    // For audio files, create an audio track
-    if (item.media_type === 'audio') {
-      try {
-        const { convertFileSrc } = await import('@tauri-apps/api/core');
+    try {
+      const { convertFileSrc } = await import('@tauri-apps/api/core');
+      const { updateProjectMedia } = await import('@/services/database/project-media');
+      const { getVideoEditorProjectWithSources, updateVideoEditorProject, getVideoEditorSourcesByProjectId, createVideoEditorSource } = await import(
+        '@/services/database/video-editor-projects'
+      );
 
-        // Get actual audio duration from the file
-        const audioUrl = convertFileSrc(item.file_path);
-        const audio = new Audio(audioUrl);
+      // For audio files, create an audio track
+      if (item.media_type === 'audio') {
+        // Get actual audio duration from the file using streaming server
+        const { invoke } = await import('@tauri-apps/api/core');
+        let videoServerPort = 48276; // Default fallback
+        try {
+          videoServerPort = await invoke<number>('get_video_server_port');
+        } catch (error) {
+          console.warn('[useMediaCRUD] Failed to get video server port, using default:', error);
+        }
+        
+        // Encode the path as base64 for the streaming server
+        const encodedPath = btoa(unescape(encodeURIComponent(item.file_path)));
+        const audioUrl = `http://localhost:${videoServerPort}/video/${encodedPath}`;
+        
+        const audio = new Audio();
+        audio.crossOrigin = 'anonymous';
 
         // Wait for metadata to load to get duration
         await new Promise<void>((resolve, reject) => {
           audio.addEventListener('loadedmetadata', () => resolve());
-          audio.addEventListener('error', () => reject(new Error('Failed to load audio')));
+          audio.addEventListener('error', (e) => {
+            console.error('[useMediaCRUD] Audio load error:', e, audio.error);
+            reject(new Error('Failed to load audio'));
+          });
+          audio.src = audioUrl;
         });
 
         const audioDuration = audio.duration;
@@ -623,10 +643,6 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
 
         const { createVideoEditorAudioTrack } = await import(
           '@/services/database/video-editor-edits'
-        );
-        const { updateProjectMedia } = await import('@/services/database/project-media');
-        const { getVideoEditorProjectWithSources, updateVideoEditorProject } = await import(
-          '@/services/database/video-editor-projects'
         );
 
         // Update the media item with the actual duration
@@ -638,6 +654,7 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
           name: item.file_name,
           start_time: 0,
           end_time: audioDuration,
+          source_start_time: 0,
           volume: 1.0,
           pan: 0,
           fade_in: 0,
@@ -658,13 +675,106 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
 
         onMediaAdded?.(item.id);
         console.log('[useMediaCRUD] Audio track created successfully with duration:', audioDuration);
-      } catch (error) {
-        console.error('[useMediaCRUD] Failed to create audio track:', error);
+      } 
+      // For video/image files, create a video source (video track)
+      else if (item.media_type === 'video' || item.media_type === 'image') {
+        let mediaDuration = item.duration;
+
+        // For videos without duration, get it from the file
+        if (item.media_type === 'video' && !mediaDuration) {
+          const videoUrl = convertFileSrc(item.file_path);
+          const video = document.createElement('video');
+          video.src = videoUrl;
+
+          // Wait for metadata to load to get duration
+          await new Promise<void>((resolve, reject) => {
+            video.addEventListener('loadedmetadata', () => resolve());
+            video.addEventListener('error', () => reject(new Error('Failed to load video')));
+          });
+
+          mediaDuration = video.duration;
+          console.log('[useMediaCRUD] Video duration:', mediaDuration, 'seconds');
+
+          // Update the media item with the actual duration
+          await updateProjectMedia(item.id, { duration: mediaDuration });
+        }
+
+        // For images, use a default duration of 5 seconds
+        if (item.media_type === 'image' && !mediaDuration) {
+          mediaDuration = 5.0;
+          await updateProjectMedia(item.id, { duration: mediaDuration });
+        }
+
+        // Get existing sources to determine order_index and start_time
+        const existingSources = await getVideoEditorSourcesByProjectId(projectId.value);
+        
+        console.log('[useMediaCRUD] Existing sources:', JSON.stringify(existingSources.map(s => ({
+          id: s.id,
+          name: s.source_name,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          order_index: s.order_index,
+        })), null, 2));
+        
+        // Find the maximum end_time across ALL sources (not just track 0)
+        // This is because split segments may be on different order_index values
+        const maxEndTime = existingSources.length > 0
+          ? Math.max(...existingSources.map(s => s.end_time))
+          : 0;
+        
+        console.log('[useMediaCRUD] Calculated maxEndTime across all sources:', maxEndTime);
+
+        // Find the highest order_index to place the new source after all existing sources
+        const maxOrderIndex = existingSources.length > 0
+          ? Math.max(...existingSources.map(s => s.order_index))
+          : -1;
+        
+        const newOrderIndex = maxOrderIndex + 1;
+        const newStartTime = maxEndTime;
+        const newEndTime = newStartTime + (mediaDuration || 5.0);
+        
+        console.log('[useMediaCRUD] New video will be added:', {
+          startTime: newStartTime,
+          endTime: newEndTime,
+          duration: mediaDuration,
+          orderIndex: newOrderIndex,
+        });
+
+        // Create video source (video track) with the media
+        await createVideoEditorSource(projectId.value, {
+          sourceType: 'imported',
+          sourceId: item.id,
+          sourcePath: item.file_path,
+          sourceName: item.file_name,
+          sourceThumbnail: item.thumbnail_path,
+          sourceDuration: mediaDuration,
+          startTime: newStartTime,
+          endTime: newEndTime,
+          trimStart: 0,
+          trimEnd: null,
+          orderIndex: newOrderIndex,
+        });
+
+        // Update project duration to include the new video
+        const project = await getVideoEditorProjectWithSources(projectId.value);
+        if (project && newEndTime > project.total_duration) {
+          await updateVideoEditorProject(projectId.value, {
+            total_duration: newEndTime,
+          });
+          console.log('[useMediaCRUD] Extended project duration to', newEndTime, 'seconds');
+        }
+
+        onMediaAdded?.(item.id);
+        console.log('[useMediaCRUD] Video/Image source created successfully:', {
+          fileName: item.file_name,
+          duration: mediaDuration,
+          startTime: newStartTime,
+          endTime: newEndTime,
+          orderIndex: newOrderIndex,
+        });
       }
-    } else {
-      // For video/image, emit event for future implementation
-      onMediaAdded?.(item.id);
-      console.log('[useMediaCRUD] Video/Image timeline integration coming soon');
+    } catch (error) {
+      console.error('[useMediaCRUD] Failed to add media to timeline:', error);
     }
   }
 

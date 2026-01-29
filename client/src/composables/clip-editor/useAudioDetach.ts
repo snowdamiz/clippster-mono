@@ -138,6 +138,7 @@ export function useAudioDetach(options: AudioDetachOptions): AudioDetachReturn {
         name: 'Extracted Audio',
         start_time: 0,
         end_time: result.duration,
+        source_start_time: 0,
         volume: 1.0,
         pan: 0,
         fade_in: 0,
