@@ -189,7 +189,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, toRef } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, toRef, provide } from 'vue';
 import { Play, Pause, Volume2, VolumeX, Maximize2, Minimize2 } from 'lucide-vue-next';
 import type { FullVideoEditorEdit } from '@/services/database/video-editor-edits';
 import { useAudioMixer } from '@/composables/useAudioMixer';
@@ -339,6 +339,8 @@ function toggleMute() {
   if (videoRef.value) {
     videoRef.value.muted = isMuted.value;
   }
+  // Also toggle audio mixer mute
+  audioMixer.setMuted(isMuted.value);
 }
 
 function updateVolume() {
@@ -347,8 +349,11 @@ function updateVolume() {
     if (volume.value > 0 && isMuted.value) {
       isMuted.value = false;
       videoRef.value.muted = false;
+      audioMixer.setMuted(false);
     }
   }
+  // Also update audio mixer volume
+  audioMixer.setMasterVolume(volume.value);
 }
 
 // Fullscreen controls
@@ -485,6 +490,11 @@ onUnmounted(() => {
   
   // Dispose audio mixer
   audioMixer.dispose();
+});
+
+// Expose audio mixer to parent component
+defineExpose({
+  audioMixer,
 });
 </script>
 

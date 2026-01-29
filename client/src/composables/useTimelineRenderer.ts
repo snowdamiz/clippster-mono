@@ -307,7 +307,8 @@ export function useTimelineRenderer(
       volume *= remaining / track.fadeOutDuration;
     }
 
-    return Math.max(0, Math.min(1, volume));
+    // Clamp to 0-2 range (allow up to 200% volume)
+    return Math.max(0, Math.min(2, volume));
   }
 
   /**

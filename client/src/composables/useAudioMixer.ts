@@ -69,6 +69,11 @@ export interface AudioMixerReturn {
   setVideoVolume: (volume: number) => void;
   setVideoMuted: (muted: boolean) => void;
 
+  // Individual track control
+  setTrackVolume: (trackId: string, volume: number) => void;
+  clearTrackVolumeOverride: (trackId: string) => void;
+  setTrackMuted: (trackId: string, muted: boolean) => void;
+
   // Cleanup
   dispose: () => void;
 }
@@ -106,6 +111,9 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
 
   // Audio track sources
   const audioSources = new Map<string, AudioSourceEntry>();
+  
+  // Manual volume overrides (prevents syncToTime from overwriting user changes)
+  const manualVolumeOverrides = new Map<string, number>();
 
   /**
    * Initialize the audio context
@@ -228,18 +236,21 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
 
       // Create new audio element
       const element = new Audio();
-      
-      // Get streaming URL asynchronously - set src after we have it
-      // Use the streaming server to bypass asset protocol scope restrictions
-      getStreamingUrl(track.filePath).then(audioUrl => {
-        element.src = audioUrl;
-        console.log('[AudioMixer] Loading audio track:', track.id, 'from', audioUrl);
-      }).catch(err => {
-        console.error('[AudioMixer] Failed to get streaming URL for track:', track.id, err);
-      });
-      
       element.preload = 'auto';
       element.crossOrigin = 'anonymous';
+      
+      // Listen for load events to debug
+      element.addEventListener('loadeddata', () => {
+        console.log('[AudioMixer] Audio loaded successfully:', track.id, 'duration:', element.duration);
+      });
+      
+      element.addEventListener('canplaythrough', () => {
+        console.log('[AudioMixer] Audio can play through:', track.id);
+      });
+      
+      element.addEventListener('error', (e) => {
+        console.error('[AudioMixer] Failed to load audio:', track.id, 'error:', element.error?.message || 'unknown', e);
+      });
 
       entry = {
         id: track.id,
@@ -252,13 +263,13 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
 
       audioSources.set(track.id, entry);
       
-      // Listen for load events to debug
-      element.addEventListener('loadeddata', () => {
-        console.log('[AudioMixer] Audio loaded successfully:', track.id, 'duration:', element.duration);
-      });
-      
-      element.addEventListener('error', (e) => {
-        console.error('[AudioMixer] Failed to load audio:', track.id, e);
+      // Get streaming URL and set src - this triggers loading
+      getStreamingUrl(track.filePath).then(audioUrl => {
+        console.log('[AudioMixer] Setting audio src:', track.id, 'from', audioUrl);
+        element.src = audioUrl;
+        element.load(); // Explicitly trigger loading
+      }).catch(err => {
+        console.error('[AudioMixer] Failed to get streaming URL for track:', track.id, err);
       });
     }
 
@@ -308,19 +319,28 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
       audioContext.resume();
     }
 
-    // Log active tracks for debugging
-    if (activeTracks.length > 0) {
-      console.log('[AudioMixer] Syncing', activeTracks.length, 'active tracks at time', time, 'isPlaying:', isPlaying);
+    // Log active tracks for debugging (only occasionally to reduce spam)
+    if (activeTracks.length > 0 && Math.floor(time * 2) !== Math.floor((time - 0.5) * 2)) {
+      console.log('[AudioMixer] Syncing', activeTracks.length, 'active tracks at time', time.toFixed(2), 'isPlaying:', isPlaying);
+      // Log each track's status
+      for (const track of activeTracks) {
+        const entry = audioSources.get(track.id);
+        console.log(`[AudioMixer]   Track ${track.id.slice(0, 8)}... readyState=${entry?.element.readyState ?? 'N/A'} src=${entry?.element.src ? 'SET' : 'EMPTY'} volume=${track.computedVolume.toFixed(2)}`);
+      }
     }
 
     // Track which sources are still active
     const activeIds = new Set(activeTracks.map((t) => t.id));
 
-    // Pause sources that are no longer active
+    // Pause sources that are no longer active and clear manual overrides
     for (const [id, entry] of audioSources) {
-      if (!activeIds.has(id) && !entry.element.paused) {
-        console.log('[AudioMixer] Pausing inactive track:', id);
-        entry.element.pause();
+      if (!activeIds.has(id)) {
+        if (!entry.element.paused) {
+          console.log('[AudioMixer] Pausing inactive track:', id);
+          entry.element.pause();
+        }
+        // Clear manual volume override when track becomes inactive
+        manualVolumeOverrides.delete(id);
       }
     }
 
@@ -334,9 +354,26 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
 
       console.log('[AudioMixer] Track', track.id, '- readyState:', entry.element.readyState, 'paused:', entry.element.paused, 'audioTime:', track.audioTime);
 
-      // Update gain
-      if (entry.gainNode) {
-        entry.gainNode.gain.value = track.computedVolume;
+      // Update gain (skip entirely if manual override is active to avoid interference)
+      if (entry.gainNode && audioContext) {
+        const manualVolume = manualVolumeOverrides.get(track.id);
+        const currentGain = entry.gainNode.gain.value;
+        
+        // If there's a manual override, don't touch the gain at all
+        // The manual override from setTrackVolume() is controlling it
+        if (manualVolume === undefined) {
+          // No manual override - use computed volume from timeline
+          const targetVolume = track.computedVolume;
+          
+          // Only update if the volume has changed significantly (avoid unnecessary updates)
+          if (Math.abs(currentGain - targetVolume) > 0.001) {
+            console.log(`[AudioMixer] syncToTime updating gain: ${track.id.slice(0,8)} from ${currentGain.toFixed(3)} to ${targetVolume.toFixed(3)} (NO OVERRIDE)`);
+            // Set directly without ramping since this is from timeline data
+            entry.gainNode.gain.value = targetVolume;
+          }
+        } else {
+          console.log(`[AudioMixer] syncToTime SKIPPING gain update: ${track.id.slice(0,8)} has manual override=${manualVolume.toFixed(3)}, current=${currentGain.toFixed(3)}`);
+        }
       }
 
       // Sync time if drifted too far
@@ -389,6 +426,55 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
   }
 
   /**
+   * Update a specific track's volume in real-time
+   * This allows immediate volume changes during playback without waiting for syncToTime
+   * Sets a manual override that persists until the track becomes inactive or is cleared
+   */
+  function setTrackVolume(trackId: string, volume: number): void {
+    const clampedVolume = Math.max(0, Math.min(2, volume));
+    
+    // Store manual override to prevent syncToTime from overwriting
+    manualVolumeOverrides.set(trackId, clampedVolume);
+    
+    // Apply immediately if track is loaded
+    const entry = audioSources.get(trackId);
+    if (entry && entry.gainNode) {
+      // Set volume instantly - no ramping, no automation
+      // This ensures real-time response as the user drags the slider
+      entry.gainNode.gain.value = clampedVolume;
+      console.log('[AudioMixer] Set track volume:', trackId, 'to', clampedVolume);
+    } else {
+      console.log('[AudioMixer] Queued track volume:', trackId, 'to', clampedVolume, '(track not loaded yet)');
+    }
+  }
+
+  /**
+   * Clear a manual volume override for a track
+   * After this, the track will use the computed volume from the timeline
+   */
+  function clearTrackVolumeOverride(trackId: string): void {
+    const hadOverride = manualVolumeOverrides.has(trackId);
+    const overrideValue = manualVolumeOverrides.get(trackId);
+    if (manualVolumeOverrides.delete(trackId)) {
+      console.log(`[AudioMixer] ⚠️ CLEARED volume override for track: ${trackId.slice(0,8)} (was ${overrideValue?.toFixed(3)})`);
+      console.trace('[AudioMixer] Clear override called from:');
+    }
+  }
+
+  /**
+   * Update a specific track's muted state in real-time
+   */
+  function setTrackMuted(trackId: string, muted: boolean): void {
+    const entry = audioSources.get(trackId);
+    if (entry && entry.gainNode) {
+      // Store the current volume to restore later
+      const currentVolume = entry.gainNode.gain.value;
+      entry.gainNode.gain.value = muted ? 0 : currentVolume;
+      console.log('[AudioMixer] Set track muted:', trackId, 'to', muted);
+    }
+  }
+
+  /**
    * Cleanup all resources
    */
   function dispose(): void {
@@ -397,6 +483,9 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
       cleanupAudioSource(entry);
     }
     audioSources.clear();
+    
+    // Clear manual overrides
+    manualVolumeOverrides.clear();
 
     // Disconnect video
     disconnectVideoElement();
@@ -434,6 +523,11 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
     disconnectVideoElement,
     setVideoVolume,
     setVideoMuted,
+
+    // Individual track control
+    setTrackVolume,
+    clearTrackVolumeOverride,
+    setTrackMuted,
 
     // Cleanup
     dispose,
