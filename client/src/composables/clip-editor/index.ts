@@ -433,3 +433,9 @@ export {
   type FadeHandleOptions,
   type FadeHandleReturn,
 } from './useTimelineFadeHandles';
+
+export {
+  useAudioSegmentDrag,
+  type AudioSegmentDragOptions,
+  type AudioSegmentDragReturn,
+} from './useAudioSegmentDrag';

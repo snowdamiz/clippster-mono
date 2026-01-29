@@ -111,6 +111,7 @@
                 @itemDeselected="handleInspectorClose"
                 @updateFade="handleFadeUpdate"
                 @tempFadeValuesUpdate="handleTempFadeValuesUpdate"
+                @reload="handleTimelineReload"
               />
             </div>
           </div>
@@ -376,6 +377,12 @@ const createSelectionHandler = (type: 'text' | 'sticker' | 'audio' | 'video') =>
 const handleTracksUpdated = createReloadHandler('Tracks updated');
 const handleTextAdded = createReloadHandler('Text added');
 const handleStickerAdded = createReloadHandler('Sticker added');
+
+// Timeline reload handler (for audio segment dragging)
+async function handleTimelineReload() {
+  await loadEditorData(projectId.value);
+  await reloadTimeline();
+}
 const handleWatermarkUpdated = createReloadHandler('Watermark updated');
 
 // Selection handlers

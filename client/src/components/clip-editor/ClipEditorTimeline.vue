@@ -113,10 +113,16 @@
           <div
             v-for="audioTrack in trackGroup.segments"
             :key="audioTrack.id"
-            class="absolute top-1 h-10 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-cyan-500/30 to-cyan-500/20 border-cyan-500/40"
-            :class="{ 'ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--editor-bg)] z-[2]': selectedItem?.id === audioTrack.id }"
-            :style="getSegmentStyle(audioTrack.start_time, audioTrack.end_time - audioTrack.start_time)"
+            class="absolute top-1 h-10 rounded border transition-all ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-cyan-500/30 to-cyan-500/20 border-cyan-500/40"
+            :class="{ 
+              'ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--editor-bg)] z-[2]': selectedItem?.id === audioTrack.id,
+              'cursor-grabbing': isDraggingAudioSegment && draggingSegmentId === audioTrack.id,
+              'cursor-grab': !isDraggingAudioSegment,
+              'duration-0': isDraggingAudioSegment && draggingSegmentId === audioTrack.id
+            }"
+            :style="getAudioSegmentStyle(audioTrack)"
             @click.stop="selectItem(audioTrack, 'audio')"
+            @mousedown="(e) => startAudioSegmentDrag(e, audioTrack)"
           >
             <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">{{ audioTrack.name }}</span>
             
@@ -285,6 +291,7 @@ import {
   useTimelineRuler,
   useTimelineSegmentStyles,
   useTimelineFadeHandles,
+  useAudioSegmentDrag,
   TRACK_LABEL_WIDTH,
   type VideoSource,
 } from '@/composables/clip-editor';
@@ -308,6 +315,7 @@ const emit = defineEmits<{
   (e: 'itemDeselected'): void;
   (e: 'updateFade', payload: { itemId: string; itemType: 'audio' | 'video'; fadeIn: number; fadeOut: number }): void;
   (e: 'tempFadeValuesUpdate', values: Record<string, { fadeIn: number; fadeOut: number }>): void;
+  (e: 'reload'): void;
 }>();
 
 // Scroll container ref
@@ -405,6 +413,23 @@ const {
   },
 });
 
+// Audio segment drag composable
+const {
+  isDragging: isDraggingAudioSegment,
+  draggingSegmentId,
+  dragOffset,
+  startDragging: startAudioSegmentDrag,
+  getSegmentVisualPosition,
+} = useAudioSegmentDrag({
+  containerRef: tracksContainer,
+  scrollLeft,
+  pixelsPerSecond,
+  audioTracks,
+  onDragComplete: async () => {
+    emit('reload');
+  },
+});
+
 // Computed map of effective fade values for all tracks
 const effectiveFadeValues = computed(() => {
   const result: Record<string, { fadeIn: number; fadeOut: number }> = {};
@@ -467,6 +492,13 @@ function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: 
   const audioTrack = audioTracks.value.find(t => t.id === audioTrackId);
   if (!audioTrack) return '50%';
   return getAudioWaveformHeightFromPath(audioTrack.file_path, index, startTime, segmentDuration);
+}
+
+// Get segment style with drag offset for real-time visual feedback
+function getAudioSegmentStyle(audioTrack: any): Record<string, string> {
+  const visualStartTime = getSegmentVisualPosition(audioTrack.id, audioTrack.start_time);
+  const duration = audioTrack.end_time - audioTrack.start_time;
+  return getSegmentStyle(visualStartTime, duration);
 }
 </script>
 
