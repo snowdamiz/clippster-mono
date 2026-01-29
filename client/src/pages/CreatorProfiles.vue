@@ -1076,12 +1076,26 @@
       });
 
       try {
+        const previousStatus = liveStatusMap.value.get(platformId);
+        const wasLive = previousStatus?.isLive ?? false;
+        
         const status = await fetchLiveStatus(mintId);
         liveStatusMap.value.set(platformId, {
           isLive: status.isLive,
           viewerCount: status.numParticipants,
           isChecking: false,
         });
+        
+        // Show toast if streamer just went live (offline → live transition)
+        if (!wasLive && status.isLive) {
+          // Find creator name for this platform link
+          const creator = creators.value.find(c => 
+            c.platform_links.some(l => l.platform_id === platformId)
+          );
+          if (creator) {
+            success(`${creator.name} is now live!`, undefined, 7000);
+          }
+        }
       } catch (error) {
         console.error('[CreatorProfiles] Failed to check PumpFun live status for', mintId, error);
         liveStatusMap.value.set(platformId, {
@@ -1101,6 +1115,9 @@
         });
 
         try {
+          const previousStatus = liveStatusMap.value.get(platformId);
+          const wasLive = previousStatus?.isLive ?? false;
+          
           const status = await checkKickLivestream(channelSlug);
           liveStatusMap.value.set(platformId, {
             isLive: status.isLive,
@@ -1108,6 +1125,17 @@
             profileImageUrl: status.profileImageUrl,
             isChecking: false,
           });
+          
+          // Show toast if streamer just went live (offline → live transition)
+          if (!wasLive && status.isLive) {
+            // Find creator name for this platform link
+            const creator = creators.value.find(c => 
+              c.platform_links.some(l => l.platform_id === platformId)
+            );
+            if (creator) {
+              success(`${creator.name} is now live!`, undefined, 7000);
+            }
+          }
 
           // Persist profile image if we got one and don't have one stored
           if (status.profileImageUrl && !hasProfileImage) {
@@ -1154,6 +1182,9 @@
         });
 
         try {
+          const previousStatus = liveStatusMap.value.get(platformId);
+          const wasLive = previousStatus?.isLive ?? false;
+          
           const status = await checkTwitchLivestream(channelName);
           liveStatusMap.value.set(platformId, {
             isLive: status.isLive,
@@ -1161,6 +1192,17 @@
             profileImageUrl: status.profileImageUrl,
             isChecking: false,
           });
+          
+          // Show toast if streamer just went live (offline → live transition)
+          if (!wasLive && status.isLive) {
+            // Find creator name for this platform link
+            const creator = creators.value.find(c => 
+              c.platform_links.some(l => l.platform_id === platformId)
+            );
+            if (creator) {
+              success(`${creator.name} is now live!`, undefined, 7000);
+            }
+          }
 
           // Persist profile image if we got one and don't have one stored
           if (status.profileImageUrl && !hasProfileImage) {

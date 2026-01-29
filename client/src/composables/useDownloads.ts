@@ -992,6 +992,17 @@ export function useDownloads() {
     }
   }
 
+  // Cancel all active and queued downloads
+  async function cancelAllDownloads(): Promise<void> {
+    const allDownloads = getAllDownloads().filter((d) => !d.result);
+    console.log(`[Downloads] Canceling all downloads (${allDownloads.length} total)`);
+    
+    // Cancel all downloads in parallel for faster execution
+    await Promise.all(allDownloads.map((d) => cancelDownload(d.id)));
+    
+    console.log('[Downloads] All downloads cancelled');
+  }
+
   // Register a callback for download completion events
   function onDownloadComplete(callback: (download: ActiveDownload) => void): () => void {
     completionCallbacks.add(callback);
@@ -1102,6 +1113,7 @@ export function useDownloads() {
     cleanupOldDownloads,
     cancelDownload,
     cancelGroup,
+    cancelAllDownloads,
     onDownloadComplete,
     validateDownloadedVideo,
     cleanupCorruptedDownload,

@@ -16,11 +16,11 @@
                 <component :is="isEditing ? Pencil : MessageSquarePlus" :size="24" />
               </div>
               <h2 class="prompt-modal__title">
-                {{ isEditing ? 'Edit Prompt' : 'Create Prompt' }}
+                {{ isSystemPrompt ? 'View System Prompt' : isEditing ? 'Edit Prompt' : 'Create Prompt' }}
               </h2>
               <p class="prompt-modal__subtitle">
                 {{
-                  isEditing ? 'Update your AI prompt template' : 'Create a new AI prompt template for clip detection'
+                  isSystemPrompt ? 'System prompts are read-only and cannot be modified' : isEditing ? 'Update your AI prompt template' : 'Create a new AI prompt template for clip detection'
                 }}
               </p>
             </div>
@@ -47,6 +47,8 @@
                       maxlength="100"
                       placeholder="e.g., Viral Shorts Creator"
                       class="prompt-field__input"
+                      :readonly="isSystemPrompt"
+                      :disabled="isSystemPrompt"
                     />
                   </div>
 
@@ -61,13 +63,15 @@
                       rows="10"
                       placeholder="Write your AI prompt here... Be specific about the task and desired output."
                       class="prompt-field__textarea"
+                      :readonly="isSystemPrompt"
+                      :disabled="isSystemPrompt"
                     />
                   </div>
                 </div>
               </div>
 
               <!-- Quick Templates -->
-              <div class="prompt-section">
+              <div v-if="!isSystemPrompt" class="prompt-section">
                 <h3 class="prompt-section__title">Quick Templates</h3>
                 <div class="prompt-templates">
                   <button
@@ -87,7 +91,7 @@
               </div>
 
               <!-- Tips -->
-              <div class="prompt-tips">
+              <div v-if="!isSystemPrompt" class="prompt-tips">
                 <div class="prompt-tips__icon">
                   <Lightbulb :size="14" />
                 </div>
@@ -101,9 +105,9 @@
             <!-- Footer -->
             <div class="prompt-modal__footer">
               <button type="button" @click="closeDialog" :disabled="saving" class="prompt-btn prompt-btn--secondary">
-                Cancel
+                {{ isSystemPrompt ? 'Close' : 'Cancel' }}
               </button>
-              <button @click="handleSubmit" :disabled="!isValid || saving" class="prompt-btn prompt-btn--primary">
+              <button v-if="!isSystemPrompt" @click="handleSubmit" :disabled="!isValid || saving" class="prompt-btn prompt-btn--primary">
                 <Loader2 v-if="saving" :size="16" class="animate-spin" />
                 <Save v-else :size="16" />
                 {{ saving ? 'Saving...' : isEditing ? 'Update Prompt' : 'Create Prompt' }}
@@ -143,6 +147,14 @@
   });
 
   const isEditing = computed(() => !!props.prompt);
+
+  const isSystemPrompt = computed(() => {
+    if (!props.prompt) return false;
+    return props.prompt.name === 'Default Clip Detector' || 
+           props.prompt.name === 'Gaming Stream Clip Detector' || 
+           props.prompt.name === 'Gambling Stream Clip Detector' ||
+           props.prompt.name === 'Breaking News & Trending Viral';
+  });
 
   const isValid = computed(() => {
     return formData.value.name.trim().length > 0 && formData.value.content.trim().length > 0;
@@ -193,6 +205,103 @@
 **WHAT TO LOOK FOR:**
 - Strong emotions or shifts; humor/awkwardness; drama/tension/conflict; surprises/reveals; bold claims; unusual behavior; struggle/vulnerability; high energy; relatable/resonant lines; quotable statements; notable reactions or audience moments.
 - ANY interaction that feels "human" or "authentic".`,
+    },
+    {
+      name: 'Breaking News & Trending Viral',
+      content: `Detect ULTRA-VIRAL, time-sensitive content that capitalizes on breaking news, trending topics, and cultural zeitgeist.
+
+**PRIORITY DETECTION SIGNALS:**
+
+**1. BREAKING NEWS & CURRENT EVENTS:**
+- Stock market crashes/surges mentioned within minutes/hours
+- Political events, elections, policy announcements in real-time
+- Natural disasters, major accidents, global crises as they unfold
+- Sports events (game-winning plays, upsets, records) discussed live
+- Tech announcements (launches, failures, CEO drama)
+- Signal phrases: "just happened", "breaking", "literally right now", "5 seconds ago", "just saw", "holy shit did you see"
+
+**2. CELEBRITY & INFLUENCER MENTIONS:**
+- Reactions to celebrity drama, scandals, controversies
+- Commentary on famous people's tweets/posts/statements
+- Celebrity deaths, marriages, breakups, arrests
+- Influencer beef, call-outs, exposés
+- Signal: Names of A-list celebrities, politicians, athletes
+
+**3. VIRAL TREND PARTICIPATION:**
+- References to trending hashtags, challenges, memes
+- "This is blowing up on X/TikTok right now"
+- Reactions to viral videos, tweets, posts
+- Signal phrases: "going viral", "trending on", "everyone's talking about"
+
+**4. CONTROVERSIAL TAKES ON HOT TOPICS:**
+- Bold predictions about trending events ("I told you so")
+- Contrarian opinions on popular topics
+- Hot takes aligning with/opposing trending narratives
+- Insider knowledge or leaked information
+
+**5. REAL-TIME MARKET/CRYPTO REACTIONS:**
+- Live reactions to price movements, rug pulls, pumps/dumps
+- Breaking news about coins, NFTs, tokens
+- Scam exposures, hack announcements
+- Major whale movements or exchange drama
+
+**VIRALITY MULTIPLIERS (+20-30 to score):**
+✅ Mentioned within 1 hour of event occurring
+✅ Unique angle or first-mover commentary
+✅ Emotional authenticity (genuine shock, anger, excitement)
+✅ Includes specific names, numbers, verifiable details
+✅ "Receipts" or proof mentioned
+✅ Prediction that came true or was proven wrong
+✅ Insider perspective or exclusive information
+
+**CONTENT STRUCTURE:**
+
+**Hook (First 3 seconds) - CRITICAL:**
+- Immediately reference the trending topic/person/event
+- Use urgency: "BREAKING", "JUST IN", "WAIT WHAT"
+- Name-drop celebrity/event/trend in first sentence
+
+**Body:** Streamer's take, reaction, analysis with unique insights
+
+**Payoff (Final 3 seconds):** Strong closing, quotable soundbite
+
+**TIMESTAMP PRECISION:**
+- Start 0.5-1.0s BEFORE topic mentioned (capture energy shift)
+- Include FULL context of what they're reacting to
+- End 0.5-1.0s AFTER final statement (let it land)
+- Duration: 15-60s (shorter = more shareable)
+
+**VIRALITY SCORING:**
+- Base: 70-100 (trending content starts high)
+- +30 if within 1 hour of event
+- +20 if unique/contrarian take
+- +15 if celebrity name-dropped
+- +15 if specific details/numbers
+- +10 if high emotional authenticity
+- -20 if requires too much background
+- -15 if trend is stale (>24 hours)
+
+**DETECTION KEYWORDS:**
+Breaking: "just broke", "breaking news", "just announced", "literally just", "seconds ago"
+Trending: "trending", "viral", "blowing up", "everyone's talking", "all over my feed"
+Celebrity: Actual names (Elon Musk, Trump, Drake, MrBeast, etc.)
+Market: "crashed", "mooned", "rug pull", "just pumped", "whale alert"
+Urgency: "holy shit", "no way", "wait what", "are you serious", "did you see"
+
+**CRITICAL RULES:**
+1. Prioritize recency - "just happened" gets highest scores
+2. Name recognition matters - celebrity/brand mentions boost virality
+3. Emotion is key - authentic reactions > analysis
+4. Context completeness - viewer must understand what they're reacting to
+5. Shareability - clip must work standalone
+6. Time-sensitive - if trend is dead, clip won't perform
+
+**AVOID:**
+❌ Generic commentary without specific references
+❌ Stale trends (>48 hours unless evergreen)
+❌ Inside jokes requiring deep community knowledge
+❌ Reactions without showing what they're reacting to
+❌ Long setup - get to trending topic FAST`,
     },
   ];
 

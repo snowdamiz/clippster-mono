@@ -295,3 +295,50 @@ export async function hasClipsReferencingRawVideo(rawVideoId: string): Promise<b
   );
   return (result[0]?.count || 0) > 0;
 }
+
+/**
+ * Check if a VOD has already been downloaded by checking for raw_videos with matching source_clip_id.
+ * Returns true if any raw video exists with this source_clip_id.
+ */
+export async function isVodDownloaded(sourceClipId: string): Promise<boolean> {
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  // Check if any raw video exists with this source_clip_id for current user
+  if (userId === null) {
+    const result = await db.select<{ count: number }[]>(
+      'SELECT COUNT(*) as count FROM raw_videos WHERE source_clip_id = ? AND user_id IS NULL',
+      [sourceClipId]
+    );
+    return (result[0]?.count || 0) > 0;
+  }
+
+  const result = await db.select<{ count: number }[]>(
+    'SELECT COUNT(*) as count FROM raw_videos WHERE source_clip_id = ? AND (user_id = ? OR user_id IS NULL)',
+    [sourceClipId, userId]
+  );
+  return (result[0]?.count || 0) > 0;
+}
+
+/**
+ * Get all downloaded VOD IDs (source_clip_ids) for the current user.
+ * Returns a Set of source_clip_ids that have been downloaded.
+ */
+export async function getDownloadedVodIds(): Promise<Set<string>> {
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  let result: { source_clip_id: string }[];
+  if (userId === null) {
+    result = await db.select<{ source_clip_id: string }[]>(
+      'SELECT DISTINCT source_clip_id FROM raw_videos WHERE source_clip_id IS NOT NULL AND user_id IS NULL'
+    );
+  } else {
+    result = await db.select<{ source_clip_id: string }[]>(
+      'SELECT DISTINCT source_clip_id FROM raw_videos WHERE source_clip_id IS NOT NULL AND (user_id = ? OR user_id IS NULL)',
+      [userId]
+    );
+  }
+
+  return new Set(result.map(r => r.source_clip_id));
+}

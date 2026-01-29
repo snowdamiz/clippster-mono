@@ -933,6 +933,9 @@ pub async fn download_twitch_vod(
             return Err("Download completed but file not found".to_string());
         }
 
+        // Wait a moment for file system to flush and release locks
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
         // Get file metadata
         let metadata = std::fs::metadata(&video_path)
             .map_err(|e| format!("Failed to get file metadata: {}", e))?;
@@ -965,15 +968,27 @@ pub async fn download_twitch_vod(
             }
         };
 
-        // Get video info
+        // Get video info with timeout to prevent hanging
         println!("[Twitch] Getting video info...");
-        let video_info = get_video_info(&app_clone, &video_path).await.ok();
-        let (width, height, codec, duration) = if let Some(ref info) = video_info {
-            println!("[Twitch] Video info - width: {}, height: {}, codec: {}, duration: {:?}", 
-                info.width, info.height, info.codec, info.duration);
-            (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
-        } else {
-            (None, None, None, None)
+        let video_info = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            get_video_info(&app_clone, &video_path)
+        ).await;
+        
+        let (width, height, codec, duration) = match video_info {
+            Ok(Ok(info)) => {
+                println!("[Twitch] Video info - width: {}, height: {}, codec: {}, duration: {:?}", 
+                    info.width, info.height, info.codec, info.duration);
+                (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
+            }
+            Ok(Err(e)) => {
+                println!("[Twitch] Failed to get video info: {}", e);
+                (None, None, None, None)
+            }
+            Err(_) => {
+                println!("[Twitch] Video info timed out after 30 seconds");
+                (None, None, None, None)
+            }
         };
 
         println!("[Twitch] Download task completed successfully");
@@ -1327,15 +1342,27 @@ pub async fn download_twitch_vod_segment(
             }
         };
 
-        // Get video info
+        // Get video info with timeout to prevent hanging
         println!("[Twitch] Getting segment video info...");
-        let video_info = get_video_info(&app_clone, &video_path).await.ok();
-        let (width, height, codec, actual_duration) = if let Some(ref info) = video_info {
-            println!("[Twitch] Segment video info - width: {}, height: {}, codec: {}, duration: {:?}", 
-                info.width, info.height, info.codec, info.duration);
-            (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
-        } else {
-            (None, None, None, None)
+        let video_info = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            get_video_info(&app_clone, &video_path)
+        ).await;
+        
+        let (width, height, codec, actual_duration) = match video_info {
+            Ok(Ok(info)) => {
+                println!("[Twitch] Segment video info - width: {}, height: {}, codec: {}, duration: {:?}", 
+                    info.width, info.height, info.codec, info.duration);
+                (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
+            }
+            Ok(Err(e)) => {
+                println!("[Twitch] Failed to get segment video info: {}", e);
+                (None, None, None, None)
+            }
+            Err(_) => {
+                println!("[Twitch] Segment video info timed out after 30 seconds");
+                (None, None, None, None)
+            }
         };
 
         // Use actual duration from file if available

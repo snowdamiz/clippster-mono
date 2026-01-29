@@ -648,7 +648,6 @@ pub fn run() {
             pumpfun::start_livestream_recording,
             pumpfun::stop_livestream_recording,
             pumpfun::stop_all_livestream_recordings,
-            pumpfun::get_active_pumpfun_recordings,
 
             // Kick commands
             kick::check_kick_livestream,
@@ -689,6 +688,7 @@ pub fn run() {
             waveform::get_cached_waveform,
             waveform::save_waveform_to_cache,
             waveform::clear_waveform_cache,
+            waveform::extract_audio_peaks_for_range,
 
             // Storage commands
             storage::get_storage_paths,
@@ -701,6 +701,7 @@ pub fn run() {
             storage::save_temp_file,
             storage::read_file_as_data_url,
             storage::delete_video_file,
+            storage::delete_raw_video_files,
             storage::get_video_duration,
             storage::get_video_metadata,
             storage::get_audio_metadata,
@@ -746,36 +747,35 @@ pub fn run() {
             // File operations
             copy_file,
 
-            // PIP control window commands
-            create_pip_control_window,
-            close_pip_control_window,
+    // PIP control window commands
+    create_pip_control_window,
+    close_pip_control_window,
 
-            // DVR commands
-            dvr::save_dvr_chunk,
-            dvr::get_dvr_chunk_path,
-            dvr::cleanup_dvr_chunks,
-            dvr::list_dvr_chunks,
-            dvr::get_dvr_directory,
-            dvr::has_dvr_chunks,
-            dvr::read_all_dvr_chunks,
-            dvr::read_dvr_chunk,
-            dvr::read_dvr_init_segment,
-            dvr::read_dvr_cluster,
-            dvr::build_vod_from_dvr,
-            dvr::build_segment_from_dvr_chunks,
-            dvr::convert_dvr_chunk_to_hls,
-            
-            // HLS commands
-            hls::start_hls_recording,
-            hls::stop_hls_recording,
-            hls::cleanup_hls_recordings,
-            hls::get_recording_output_dir,
-            hls::get_hls_segments,
+    // DVR commands
+    dvr::save_dvr_chunk,
+    dvr::get_dvr_chunk_path,
+    dvr::cleanup_dvr_chunks,
+    dvr::list_dvr_chunks,
+    dvr::get_dvr_directory,
+    dvr::has_dvr_chunks,
+    dvr::read_all_dvr_chunks,
+    dvr::read_dvr_chunk,
+    dvr::read_dvr_init_segment,
+    dvr::read_dvr_cluster,
+    dvr::build_vod_from_dvr,
+    dvr::build_segment_from_dvr_chunks,
 
-            // Video Editor Export commands
-            video_editor_export::export_video_editor_project_simple,
-            video_editor_export::export_video_editor_project,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    // HLS commands
+    hls::start_hls_recording,
+    hls::stop_hls_recording,
+    hls::cleanup_hls_recordings,
+    hls::get_recording_output_dir,
+    hls::get_hls_segments,
+
+    // Video Editor Export commands
+    video_editor_export::export_video_editor_project_simple,
+    video_editor_export::export_video_editor_project,
+])
+.run(tauri::generate_context!())
+.expect("error while running tauri application");
 }

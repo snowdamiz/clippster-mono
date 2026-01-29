@@ -155,7 +155,7 @@ export function useLivestreamSegmentProcessing() {
         segmentProjectName,
         parentProject?.description || undefined,
         job.projectId,
-        parentProject?.platform || 'PumpFun'
+        'PumpFun'
       );
 
       // Generate thumbnail for the segment video
@@ -243,35 +243,24 @@ export function useLivestreamSegmentProcessing() {
             throw new Error(response.data?.error || 'Clip detection failed');
           }
         } catch (apiError: any) {
-          const status = apiError?.response?.status;
-
           // Handle 402 Payment Required (Insufficient Credits) gracefully
-          if (status === 402) {
+          if (apiError.response && apiError.response.status === 402) {
             console.warn(
               '[LiveSegments] Insufficient credits for detection. Switching to recording only.'
             );
 
+            // Mark this segment as completed (recorded only) instead of error
             job.onProgress?.('Insufficient credits - Detection skipped');
             await updateSegmentStatus(job.segmentId, 'completed');
             await updateLivestreamSessionProgress(job.sessionId, { processedSegmentsDelta: 1 });
 
+            // Update the session status via event so the main monitor knows to stop trying to detect
             window.dispatchEvent(
               new CustomEvent('livestream-credit-exhausted', {
                 detail: { sessionId: job.sessionId, streamerId: job.streamerId },
               })
             );
 
-            return;
-          }
-
-          // Handle server-side errors gracefully by keeping the recording
-          if (status && status >= 500) {
-            console.warn(
-              `[LiveSegments] Server error (${status}) during detection. Keeping recording and marking segment completed.`
-            );
-            job.onProgress?.(`Error: Server ${status} - recording kept (detection skipped)`);
-            await updateSegmentStatus(job.segmentId, 'completed');
-            await updateLivestreamSessionProgress(job.sessionId, { processedSegmentsDelta: 1 });
             return;
           }
 
