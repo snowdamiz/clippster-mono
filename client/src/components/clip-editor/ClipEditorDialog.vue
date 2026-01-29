@@ -67,6 +67,7 @@
                 :selected-item="selectedItem"
                 :selected-item-type="selectedItemType"
                 :edit-id="editId"
+                :temp-fade-values="tempFadeValues"
                 @update="handleInspectorUpdate"
                 @realtimeUpdate="handleRealtimeUpdate"
                 @itemDeleted="handleItemDeleted"
@@ -108,6 +109,8 @@
                 @selectItem="handleSelectItem"
                 @updateItem="handleUpdateItem"
                 @itemDeselected="handleInspectorClose"
+                @updateFade="handleFadeUpdate"
+                @tempFadeValuesUpdate="handleTempFadeValuesUpdate"
               />
             </div>
           </div>
@@ -396,6 +399,37 @@ function handleSelectItem(item: any, type: string) {
 function handleUpdateItem(item: any) {
   console.log('[ClipEditorDialog] Update item:', item);
   // TODO: Implement update command
+}
+
+// ===== Fade Updates =====
+const tempFadeValues = ref<Record<string, { fadeIn: number; fadeOut: number }>>({});
+
+function handleTempFadeValuesUpdate(values: Record<string, { fadeIn: number; fadeOut: number }>) {
+  tempFadeValues.value = values;
+}
+
+async function handleFadeUpdate(payload: { itemId: string; itemType: 'audio' | 'video'; fadeIn: number; fadeOut: number }) {
+  console.log('[ClipEditorDialog] Fade update received:', payload);
+  
+  try {
+    if (payload.itemType === 'audio') {
+      // Update audio track fade
+      console.log('[ClipEditorDialog] Updating audio track in database...');
+      const { updateVideoEditorAudioTrack } = await import('@/services/database/video-editor-edits');
+      await updateVideoEditorAudioTrack(payload.itemId, {
+        fade_in: payload.fadeIn,
+        fade_out: payload.fadeOut,
+      });
+      console.log('[ClipEditorDialog] Database updated successfully');
+      
+      // Reload editor data to reflect changes
+      console.log('[ClipEditorDialog] Reloading editor data...');
+      await loadEditorData(projectId.value);
+      console.log('[ClipEditorDialog] Editor data reloaded - fade should now be applied to playback');
+    }
+  } catch (error) {
+    console.error('[ClipEditorDialog] Failed to update fade:', error);
+  }
 }
 
 // ===== Inspector Updates =====

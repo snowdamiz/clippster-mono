@@ -137,6 +137,44 @@
               <span v-if="audioTrack.is_muted" class="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[3px] text-[0.625rem] font-bold tracking-wider bg-zinc-600 text-white border border-zinc-500">M</span>
               <span v-if="audioTrack.is_solo" class="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[3px] text-[0.625rem] font-bold tracking-wider bg-sky-500 text-white border border-sky-400">S</span>
             </div>
+            
+            <!-- Fade In Overlay (always rendered, width changes with fade value) -->
+            <div
+              class="absolute left-0 top-0 bottom-0 pointer-events-none z-[3]"
+              :style="`width: ${renderFadeOverlay(getEffectiveFadeIn(audioTrack.id, audioTrack.fade_in), getEffectiveFadeOut(audioTrack.id, audioTrack.fade_out), audioTrack.end_time - audioTrack.start_time).fadeInWidth}`"
+            >
+              <div v-if="getEffectiveFadeIn(audioTrack.id, audioTrack.fade_in) > 0" class="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent"></div>
+            </div>
+            
+            <!-- Fade In Handle (positioned at end of fade overlay, or left corner if no fade) -->
+            <div
+              class="absolute bottom-0 w-4 h-4 cursor-ew-resize pointer-events-auto z-[4]"
+              :class="{ 'bg-cyan-400': activeFadeHandle?.itemId === audioTrack.id && activeFadeHandle?.type === 'fadeIn', 'bg-white/30 hover:bg-white/50': !(activeFadeHandle?.itemId === audioTrack.id && activeFadeHandle?.type === 'fadeIn') }"
+              :style="getEffectiveFadeIn(audioTrack.id, audioTrack.fade_in) > 0 
+                ? `left: ${renderFadeOverlay(getEffectiveFadeIn(audioTrack.id, audioTrack.fade_in), getEffectiveFadeOut(audioTrack.id, audioTrack.fade_out), audioTrack.end_time - audioTrack.start_time).fadeInWidth}; transform: translateX(-100%); clip-path: polygon(100% 0, 0 0, 0 100%); border-bottom-left-radius: 4px;`
+                : 'left: 0; clip-path: polygon(100% 0, 0 0, 0 100%); border-bottom-left-radius: 4px;'"
+              @mousedown.stop="(e) => startFadeDrag(e, audioTrack.id, 'fadeIn', 'audio', audioTrack.fade_in, audioTrack.fade_out, audioTrack.end_time - audioTrack.start_time)"
+              title="Drag to adjust fade in"
+            ></div>
+            
+            <!-- Fade Out Overlay (always rendered, width changes with fade value) -->
+            <div
+              class="absolute right-0 top-0 bottom-0 pointer-events-none z-[3]"
+              :style="`width: ${renderFadeOverlay(getEffectiveFadeIn(audioTrack.id, audioTrack.fade_in), getEffectiveFadeOut(audioTrack.id, audioTrack.fade_out), audioTrack.end_time - audioTrack.start_time).fadeOutWidth}`"
+            >
+              <div v-if="getEffectiveFadeOut(audioTrack.id, audioTrack.fade_out) > 0" class="absolute inset-0 bg-gradient-to-l from-black/60 to-transparent"></div>
+            </div>
+            
+            <!-- Fade Out Handle (positioned at start of fade out overlay, or right corner if no fade) -->
+            <div
+              class="absolute bottom-0 w-4 h-4 cursor-ew-resize pointer-events-auto z-[4]"
+              :class="{ 'bg-cyan-400': activeFadeHandle?.itemId === audioTrack.id && activeFadeHandle?.type === 'fadeOut', 'bg-white/30 hover:bg-white/50': !(activeFadeHandle?.itemId === audioTrack.id && activeFadeHandle?.type === 'fadeOut') }"
+              :style="getEffectiveFadeOut(audioTrack.id, audioTrack.fade_out) > 0
+                ? `right: ${renderFadeOverlay(getEffectiveFadeIn(audioTrack.id, audioTrack.fade_in), getEffectiveFadeOut(audioTrack.id, audioTrack.fade_out), audioTrack.end_time - audioTrack.start_time).fadeOutWidth}; transform: translateX(100%); clip-path: polygon(0 0, 100% 0, 100% 100%); border-bottom-right-radius: 4px;`
+                : 'right: 0; clip-path: polygon(0 0, 100% 0, 100% 100%); border-bottom-right-radius: 4px;'"
+              @mousedown.stop="(e) => startFadeDrag(e, audioTrack.id, 'fadeOut', 'audio', audioTrack.fade_in, audioTrack.fade_out, audioTrack.end_time - audioTrack.start_time)"
+              title="Drag to adjust fade out"
+            ></div>
           </div>
         </div>
       </div>
@@ -246,6 +284,7 @@ import {
   useTimelineZoom,
   useTimelineRuler,
   useTimelineSegmentStyles,
+  useTimelineFadeHandles,
   TRACK_LABEL_WIDTH,
   type VideoSource,
 } from '@/composables/clip-editor';
@@ -267,6 +306,8 @@ const emit = defineEmits<{
   (e: 'selectItem', item: any, type: string): void;
   (e: 'updateItem', item: any): void;
   (e: 'itemDeselected'): void;
+  (e: 'updateFade', payload: { itemId: string; itemType: 'audio' | 'video'; fadeIn: number; fadeOut: number }): void;
+  (e: 'tempFadeValuesUpdate', values: Record<string, { fadeIn: number; fadeOut: number }>): void;
 }>();
 
 // Scroll container ref
@@ -349,6 +390,56 @@ const {
 const { getSegmentStyle, formatSourceLabel } = useTimelineSegmentStyles({
   pixelsPerSecond,
 });
+
+// Fade handles composable
+const {
+  isDraggingFade,
+  activeFadeHandle,
+  tempFadeValues,
+  startFadeDrag,
+  renderFadeOverlay,
+} = useTimelineFadeHandles({
+  pixelsPerSecond,
+  onFadeUpdate: (itemId, itemType, fadeIn, fadeOut) => {
+    emit('updateFade', { itemId, itemType, fadeIn, fadeOut });
+  },
+});
+
+// Computed map of effective fade values for all tracks
+const effectiveFadeValues = computed(() => {
+  const result: Record<string, { fadeIn: number; fadeOut: number }> = {};
+  
+  // Start with actual values from all audio tracks
+  audioTracks.value.forEach(track => {
+    result[track.id] = {
+      fadeIn: track.fade_in,
+      fadeOut: track.fade_out,
+    };
+  });
+  
+  // Override with temp values during drag
+  Object.keys(tempFadeValues.value).forEach(trackId => {
+    if (tempFadeValues.value[trackId]) {
+      result[trackId] = tempFadeValues.value[trackId];
+    }
+  });
+  
+  return result;
+});
+
+// Watch tempFadeValues and emit to parent so inspector can update in real-time
+watch(tempFadeValues, (newValues) => {
+  emit('tempFadeValuesUpdate', newValues);
+}, { deep: true });
+
+// Helper to get effective fade values (temp during drag, actual otherwise)
+function getEffectiveFadeIn(trackId: string, actualFadeIn: number): number {
+  return effectiveFadeValues.value[trackId]?.fadeIn ?? actualFadeIn;
+}
+
+function getEffectiveFadeOut(trackId: string, actualFadeOut: number): number {
+  return effectiveFadeValues.value[trackId]?.fadeOut ?? actualFadeOut;
+}
 
 // Handle track click to seek and deselect items
 function handleTrackClick(event: MouseEvent) {

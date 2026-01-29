@@ -427,3 +427,9 @@ export {
   type TitleManagementOptions,
   type TitleManagementReturn,
 } from './useTitleManagement';
+
+export {
+  useTimelineFadeHandles,
+  type FadeHandleOptions,
+  type FadeHandleReturn,
+} from './useTimelineFadeHandles';

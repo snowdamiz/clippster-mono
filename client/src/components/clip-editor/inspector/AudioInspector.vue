@@ -153,6 +153,7 @@
 
   const props = defineProps<{
     audioTrack: VideoEditorAudioTrackRecord;
+    tempFadeValues?: Record<string, { fadeIn: number; fadeOut: number }>;
   }>();
 
   const emit = defineEmits<{
@@ -165,11 +166,32 @@
   const audioMixerRef = inject<ComputedRef<AudioMixerReturn | undefined>>('audioMixer');
   const audioMixer = computed(() => audioMixerRef?.value);
 
+  // Computed effective fade values (temp during drag, actual otherwise)
+  const effectiveFadeIn = computed(() => {
+    return props.tempFadeValues?.[props.audioTrack.id]?.fadeIn ?? props.audioTrack.fade_in;
+  });
+  
+  const effectiveFadeOut = computed(() => {
+    return props.tempFadeValues?.[props.audioTrack.id]?.fadeOut ?? props.audioTrack.fade_out;
+  });
+
   // Local reactive state for immediate UI updates
   const localVolume = ref(props.audioTrack.volume);
   const localPan = ref(props.audioTrack.pan);
-  const localFadeIn = ref(props.audioTrack.fade_in);
-  const localFadeOut = ref(props.audioTrack.fade_out);
+  const localFadeIn = computed({
+    get: () => effectiveFadeIn.value,
+    set: (val) => {
+      // When user types, update immediately
+      updateFadeInImmediate(val);
+    }
+  });
+  const localFadeOut = computed({
+    get: () => effectiveFadeOut.value,
+    set: (val) => {
+      // When user types, update immediately
+      updateFadeOutImmediate(val);
+    }
+  });
   const localName = ref(props.audioTrack.name);
   const localStartTime = ref(props.audioTrack.start_time);
   const localEndTime = ref(props.audioTrack.end_time);
@@ -180,8 +202,7 @@
   watch(() => props.audioTrack, (newTrack) => {
     localVolume.value = newTrack.volume;
     localPan.value = newTrack.pan;
-    localFadeIn.value = newTrack.fade_in;
-    localFadeOut.value = newTrack.fade_out;
+    // localFadeIn and localFadeOut are now computed properties that use effectiveFadeIn/Out
     localName.value = newTrack.name;
     localStartTime.value = newTrack.start_time;
     localEndTime.value = newTrack.end_time;
@@ -234,13 +255,11 @@
     }
     // Debounce database update
     volumeTimer = setTimeout(() => {
-      console.log(`[AudioInspector] ⏰ 150ms timer expired - updating database and clearing override for track ${props.audioTrack.id.slice(0,8)}`);
+      console.log(`[AudioInspector] ⏰ 150ms timer expired - updating database for track ${props.audioTrack.id.slice(0,8)}`);
       updateProperty('volume', value);
-      // Clear the manual override after database update completes
-      // This allows the track to return to using computed volume from the timeline
-      if (audioMixer.value) {
-        audioMixer.value.clearTrackVolumeOverride(props.audioTrack.id);
-      }
+      // DON'T clear the manual override - let it persist
+      // The override will be cleared when the track becomes inactive (stops playing)
+      // This prevents the roller coaster effect where the old database value briefly plays
     }, 150);
   }
 
@@ -257,23 +276,27 @@
   }
 
   function updateFadeInImmediate(value: number) {
+    console.log('[AudioInspector] Fade in value changed:', value);
     localFadeIn.value = value;
     
     // Fade updates will be handled by the next syncToTime call
     
     if (fadeTimer) clearTimeout(fadeTimer);
     fadeTimer = setTimeout(() => {
+      console.log('[AudioInspector] Updating fade_in property in database:', value);
       updateProperty('fade_in', value);
     }, 300);
   }
 
   function updateFadeOutImmediate(value: number) {
+    console.log('[AudioInspector] Fade out value changed:', value);
     localFadeOut.value = value;
     
     // Fade updates will be handled by the next syncToTime call
     
     if (fadeTimer) clearTimeout(fadeTimer);
     fadeTimer = setTimeout(() => {
+      console.log('[AudioInspector] Updating fade_out property in database:', value);
       updateProperty('fade_out', value);
     }, 300);
   }

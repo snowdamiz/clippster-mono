@@ -19,6 +19,7 @@
           <AudioInspector
             v-if="selectedItemType === 'audio' && selectedItem"
             :audio-track="selectedItem"
+            :temp-fade-values="tempFadeValues"
             @update="handlePropertyUpdate"
             @delete="handleDelete"
           />
@@ -69,6 +70,7 @@ const props = defineProps<{
   selectedItem: any;
   selectedItemType: string | null;
   editId: string | null;
+  tempFadeValues?: Record<string, { fadeIn: number; fadeOut: number }>;
 }>();
 
 const emit = defineEmits<{
