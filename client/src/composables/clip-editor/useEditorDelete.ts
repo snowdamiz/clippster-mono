@@ -6,6 +6,7 @@ import {
   deleteVideoEditorSticker,
   deleteVideoEditorWatermark,
 } from '@/services/database/video-editor-edits';
+import { deleteVideoEditorSource } from '@/services/database/video-editor-projects';
 
 /**
  * Options for useEditorDelete
@@ -49,6 +50,11 @@ export interface EditorDeleteReturn {
    * Delete a watermark by ID
    */
   deleteWatermark: (id: string) => Promise<void>;
+
+  /**
+   * Delete a video source by ID
+   */
+  deleteVideoSource: (id: string) => Promise<void>;
 
   /**
    * Check if there's something selected that can be deleted
@@ -121,6 +127,14 @@ export function useEditorDelete(options: EditorDeleteOptions): EditorDeleteRetur
   }
 
   /**
+   * Delete a video source by ID
+   */
+  async function deleteVideoSource(id: string): Promise<void> {
+    await deleteVideoEditorSource(id);
+    console.log('[useEditorDelete] Video source deleted:', id);
+  }
+
+  /**
    * Check if there's something selected that can be deleted
    */
   function canDelete(): boolean {
@@ -156,9 +170,8 @@ export function useEditorDelete(options: EditorDeleteOptions): EditorDeleteRetur
           await deleteWatermark(itemId);
           break;
         case 'video':
-          // Video source deletion is handled differently (via commands)
-          console.warn('[useEditorDelete] Video source deletion not implemented');
-          return;
+          await deleteVideoSource(itemId);
+          break;
         default:
           console.warn('[useEditorDelete] Unknown item type:', type);
           return;
@@ -187,6 +200,7 @@ export function useEditorDelete(options: EditorDeleteOptions): EditorDeleteRetur
     deleteTextOverlay,
     deleteSticker,
     deleteWatermark,
+    deleteVideoSource,
     canDelete,
   };
 }

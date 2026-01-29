@@ -429,11 +429,61 @@ function handleOverlayClick(event: MouseEvent) {
 }
 
 // Watch for video source changes
-watch(() => props.videoSrc, (newSrc) => {
+watch(() => props.videoSrc, async (newSrc, oldSrc) => {
   console.log('[ClipEditorPreview] Video src changed to:', newSrc);
-  if (videoRef.value && newSrc) {
+  if (videoRef.value && newSrc && newSrc !== oldSrc) {
+    const wasPlaying = props.isPlaying;
+    const currentSourceTime = getVideoSourceTime(props.currentTime);
+    
+    // Pause during reload to prevent audio glitches
+    if (wasPlaying) {
+      videoRef.value.pause();
+    }
+    
+    // Load new source
     videoRef.value.src = newSrc;
     videoRef.value.load();
+    
+    // Wait for metadata to load (with timeout)
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        videoRef.value?.removeEventListener('loadedmetadata', onLoaded);
+        console.warn('[ClipEditorPreview] Metadata load timeout, proceeding anyway');
+        resolve();
+      }, 3000);
+      
+      const onLoaded = () => {
+        clearTimeout(timeout);
+        videoRef.value?.removeEventListener('loadedmetadata', onLoaded);
+        resolve();
+      };
+      
+      if (videoRef.value && videoRef.value.readyState >= 1) {
+        // Already loaded
+        clearTimeout(timeout);
+        resolve();
+      } else {
+        videoRef.value?.addEventListener('loadedmetadata', onLoaded);
+      }
+    });
+    
+    // Restore volume and muted state
+    if (videoRef.value) {
+      videoRef.value.volume = volume.value;
+      videoRef.value.muted = false; // Never mute the video element itself
+      
+      // Seek to correct position
+      videoRef.value.currentTime = currentSourceTime;
+      
+      // Resume playback if it was playing
+      if (wasPlaying) {
+        try {
+          await videoRef.value.play();
+        } catch (err) {
+          console.error('[ClipEditorPreview] Failed to resume playback after source change:', err);
+        }
+      }
+    }
   }
 }, { immediate: true });
 
@@ -474,6 +524,8 @@ onMounted(async () => {
   try {
     await audioMixer.initialize();
     console.log('[ClipEditorPreview] Audio mixer initialized');
+    // Note: Video element plays its own audio directly (not through mixer)
+    // to avoid CORS issues with Web Audio API MediaElementAudioSource
   } catch (error) {
     console.error('[ClipEditorPreview] Failed to initialize audio mixer:', error);
   }

@@ -439,3 +439,9 @@ export {
   type AudioSegmentDragOptions,
   type AudioSegmentDragReturn,
 } from './useAudioSegmentDrag';
+
+export {
+  useVideoSourceDrag,
+  type VideoSourceDragOptions,
+  type VideoSourceDragReturn,
+} from './useVideoSourceDrag';

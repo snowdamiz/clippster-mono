@@ -239,6 +239,7 @@ const {
   videoContentDuration,
 } = useVideoUrlBuilder({
   getTimeline: () => playbackEngine.getTimeline(),
+  currentTime,
 });
 
 // ===== View State =====

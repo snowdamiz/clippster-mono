@@ -705,10 +705,40 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
           await updateProjectMedia(item.id, { duration: mediaDuration });
         }
 
-        // Get existing sources to determine order_index
+        // Get existing sources to determine order_index and start_time
         const existingSources = await getVideoEditorSourcesByProjectId(projectId.value);
-        const maxOrderIndex = existingSources.reduce((max, source) => Math.max(max, source.order_index), -1);
+        
+        console.log('[useMediaCRUD] Existing sources:', JSON.stringify(existingSources.map(s => ({
+          id: s.id,
+          name: s.source_name,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          order_index: s.order_index,
+        })), null, 2));
+        
+        // Find the maximum end_time across ALL sources (not just track 0)
+        // This is because split segments may be on different order_index values
+        const maxEndTime = existingSources.length > 0
+          ? Math.max(...existingSources.map(s => s.end_time))
+          : 0;
+        
+        console.log('[useMediaCRUD] Calculated maxEndTime across all sources:', maxEndTime);
+
+        // Find the highest order_index to place the new source after all existing sources
+        const maxOrderIndex = existingSources.length > 0
+          ? Math.max(...existingSources.map(s => s.order_index))
+          : -1;
+        
         const newOrderIndex = maxOrderIndex + 1;
+        const newStartTime = maxEndTime;
+        const newEndTime = newStartTime + (mediaDuration || 5.0);
+        
+        console.log('[useMediaCRUD] New video will be added:', {
+          startTime: newStartTime,
+          endTime: newEndTime,
+          duration: mediaDuration,
+          orderIndex: newOrderIndex,
+        });
 
         // Create video source (video track) with the media
         await createVideoEditorSource(projectId.value, {
@@ -718,24 +748,30 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
           sourceName: item.file_name,
           sourceThumbnail: item.thumbnail_path,
           sourceDuration: mediaDuration,
-          startTime: 0,
-          endTime: mediaDuration || 5.0,
+          startTime: newStartTime,
+          endTime: newEndTime,
           trimStart: 0,
           trimEnd: null,
           orderIndex: newOrderIndex,
         });
 
-        // Extend project duration if media is longer
+        // Update project duration to include the new video
         const project = await getVideoEditorProjectWithSources(projectId.value);
-        if (project && mediaDuration && mediaDuration > project.total_duration) {
+        if (project && newEndTime > project.total_duration) {
           await updateVideoEditorProject(projectId.value, {
-            total_duration: mediaDuration,
+            total_duration: newEndTime,
           });
-          console.log('[useMediaCRUD] Extended project duration to', mediaDuration, 'seconds');
+          console.log('[useMediaCRUD] Extended project duration to', newEndTime, 'seconds');
         }
 
         onMediaAdded?.(item.id);
-        console.log('[useMediaCRUD] Video/Image track created successfully with duration:', mediaDuration);
+        console.log('[useMediaCRUD] Video/Image source created successfully:', {
+          fileName: item.file_name,
+          duration: mediaDuration,
+          startTime: newStartTime,
+          endTime: newEndTime,
+          orderIndex: newOrderIndex,
+        });
       }
     } catch (error) {
       console.error('[useMediaCRUD] Failed to add media to timeline:', error);

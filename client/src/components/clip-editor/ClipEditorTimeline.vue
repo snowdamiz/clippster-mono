@@ -22,18 +22,22 @@
       @scroll="handleScroll"
     >
       <div class="flex flex-col min-h-full" :style="{ width: timelineWidth + 'px' }">
-      <!-- Video Track (with embedded audio waveform) -->
-      <div class="flex border-b border-[var(--editor-border)] min-h-[64px] relative">
+      <!-- Video Tracks (grouped by order_index) -->
+      <div
+        v-for="(trackGroup, index) in groupedVideoTracks"
+        :key="`video-track-${trackGroup.trackIndex}`"
+        class="flex border-b border-[var(--editor-border)] min-h-[64px] relative"
+      >
         <div class="sticky left-0 flex items-center gap-2 w-[100px] px-3 bg-[var(--editor-surface-elevated)] border-r border-[var(--editor-border)] text-[var(--editor-text-muted)] text-[0.75rem] font-medium shrink-0 z-[2] backdrop-blur overflow-hidden">
           <Film :size="14" class="shrink-0" />
           <div class="track-label-scroll">
-            <span class="track-label-text">{{ videoSourceName }}<span class="track-label-spacer">&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;</span>{{ videoSourceName }}<span class="track-label-spacer">&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;</span></span>
+            <span class="track-label-text">{{ trackGroup.trackIndex === 0 ? videoSourceName : `Overlay ${trackGroup.trackIndex}` }}<span class="track-label-spacer">&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;</span>{{ trackGroup.trackIndex === 0 ? videoSourceName : `Overlay ${trackGroup.trackIndex}` }}<span class="track-label-spacer">&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;</span></span>
           </div>
         </div>
         <div class="relative flex-1 min-h-[48px] cursor-pointer" @click="handleTrackClick">
-          <!-- Intro segment (if present) -->
+          <!-- Intro segment (only on base track) -->
           <div
-            v-if="introRef"
+            v-if="introRef && trackGroup.trackIndex === 0"
             class="absolute top-1 h-14 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-indigo-500/30 to-indigo-500/20 border-indigo-500/40"
             :style="getSegmentStyle(0, introRef.duration || 0)"
           >
@@ -51,14 +55,21 @@
             </div>
           </div>
 
-          <!-- Video source segments (from splits/edits) -->
+          <!-- Video source segments for this track -->
           <div
-            v-for="source in videoSources"
+            v-for="source in trackGroup.sources"
             :key="source.id"
-            class="absolute top-1 h-14 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-sky-500/30 to-sky-500/20 border-sky-500/40"
-            :class="{ 'ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--editor-bg)] z-[2]': selectedItem?.id === source.id }"
-            :style="getSegmentStyle(source.start_time, source.end_time - source.start_time)"
+            class="absolute top-1 h-14 rounded border ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-sky-500/30 to-sky-500/20 border-sky-500/40"
+            :class="{ 
+              'ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--editor-bg)] z-[2]': selectedItem?.id === source.id,
+              'cursor-grabbing': isDraggingVideoSource && draggingVideoSource?.id === source.id,
+              'cursor-grab': !isDraggingVideoSource,
+              'duration-0': isDraggingVideoSource && draggingVideoSource?.id === source.id,
+              'transition-all': !isDraggingVideoSource || draggingVideoSource?.id !== source.id
+            }"
+            :style="getVideoSourceStyle(source)"
             @click.stop="selectItem(source, 'video')"
+            @mousedown.stop="startVideoSourceDrag($event, source as any)"
           >
             <span class="text-[0.75rem] font-medium text-white/90 whitespace-nowrap overflow-hidden text-ellipsis relative z-[1]">
               {{ formatSourceLabel(source) }}
@@ -76,9 +87,9 @@
             </div>
           </div>
 
-          <!-- Outro segment (if present) -->
+          <!-- Outro segment (only on base track) -->
           <div
-            v-if="outroRef"
+            v-if="outroRef && trackGroup.trackIndex === 0"
             class="absolute top-1 h-14 rounded border cursor-pointer transition-all duration-150 ease-in-out flex items-center px-2 overflow-hidden hover:border-white/40 hover:z-[1] bg-gradient-to-br from-indigo-500/30 to-indigo-500/20 border-indigo-500/40"
             :style="getSegmentStyle(duration - outroOffset, outroRef.duration || 0)"
           >
@@ -292,6 +303,7 @@ import {
   useTimelineSegmentStyles,
   useTimelineFadeHandles,
   useAudioSegmentDrag,
+  useVideoSourceDrag,
   TRACK_LABEL_WIDTH,
   type VideoSource,
 } from '@/composables/clip-editor';
@@ -335,6 +347,57 @@ const videoSourceName = computed(() => {
   return nameWithoutExt
     .replace(/[_-]+/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase());
+});
+
+// Calculate the number of video track layers based on order_index
+const videoTrackLayers = computed(() => {
+  if (!props.videoSources || props.videoSources.length === 0) return 1;
+  
+  // Find the maximum order_index to determine how many layers we need
+  const maxOrderIndex = Math.max(...props.videoSources.map((s: any) => s.order_index || 0));
+  
+  // Add 1 because order_index is 0-based, and ensure at least 1 layer
+  return Math.max(1, maxOrderIndex + 1);
+});
+
+// Group video sources by track layer (order_index) for rendering separate lanes
+const groupedVideoTracks = computed(() => {
+  if (!props.videoSources || props.videoSources.length === 0) {
+    return [{ trackIndex: 0, visualIndex: 0, sources: [] }];
+  }
+
+  // Group sources by order_index
+  const groups: Record<number, any[]> = {};
+  props.videoSources.forEach((source: any) => {
+    const trackIndex = source.order_index ?? 0;
+    if (!groups[trackIndex]) {
+      groups[trackIndex] = [];
+    }
+    groups[trackIndex].push(source);
+  });
+
+  // Find max order_index
+  const maxOrderIndex = Math.max(...Object.keys(groups).map(Number), 0);
+  
+  // Create array with all tracks from 0 to maxOrderIndex (fill gaps)
+  const result = [];
+  for (let i = 0; i <= maxOrderIndex; i++) {
+    result.push({
+      trackIndex: i,
+      visualIndex: maxOrderIndex - i, // Invert for visual ordering (higher index = visually above)
+      sources: groups[i] || [], // Empty array if no sources on this track
+    });
+  }
+  
+  // Sort by visual index (top to bottom)
+  return result.sort((a, b) => a.visualIndex - b.visualIndex);
+});
+
+// Calculate video track height based on number of layers
+const videoTrackHeight = computed(() => {
+  const TRACK_HEIGHT = 48;
+  const PADDING = 16; // Top and bottom padding
+  return videoTrackLayers.value * TRACK_HEIGHT + PADDING;
 });
 
 // Timeline zoom composable
@@ -432,6 +495,23 @@ const {
   },
 });
 
+// Video source drag composable
+const {
+  isDragging: isDraggingVideoSource,
+  dragOffset: videoSourceDragOffset,
+  dragOffsetY: videoSourceDragOffsetY,
+  targetTrackIndex: videoSourceTargetTrack,
+  draggingSource: draggingVideoSource,
+  startDragging: startVideoSourceDrag,
+  getSourceVisualPosition,
+} = useVideoSourceDrag({
+  videoSources: computed(() => (props.videoSources || []) as any[]),
+  pixelsPerSecond,
+  onDragComplete: () => {
+    emit('reload');
+  },
+});
+
 // Computed map of effective fade values for all tracks
 const effectiveFadeValues = computed(() => {
   const result: Record<string, { fadeIn: number; fadeOut: number }> = {};
@@ -508,6 +588,30 @@ function getAudioSegmentStyle(audioTrack: any): Record<string, string> {
       ...baseStyle,
       transform: `translateY(${dragOffsetY.value}px)`,
       zIndex: '10', // Ensure dragged segment is on top
+    };
+  }
+  
+  return baseStyle;
+}
+
+// Get video source style with drag offset for real-time visual feedback
+function getVideoSourceStyle(source: any): Record<string, string> {
+  const isBeingDragged = isDraggingVideoSource.value && draggingVideoSource.value?.id === source.id;
+  
+  // Calculate horizontal position with drag offset
+  const visualStartTime = isBeingDragged 
+    ? source.start_time + (videoSourceDragOffset.value / pixelsPerSecond.value)
+    : source.start_time;
+  
+  const duration = source.end_time - source.start_time;
+  const baseStyle = getSegmentStyle(visualStartTime, duration);
+  
+  // Add vertical transform if this source is being dragged
+  if (isBeingDragged) {
+    return {
+      ...baseStyle,
+      transform: `translateY(${videoSourceDragOffsetY.value}px)`,
+      zIndex: '10', // Ensure dragged source is on top
     };
   }
   

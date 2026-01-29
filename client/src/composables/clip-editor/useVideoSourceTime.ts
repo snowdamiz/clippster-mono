@@ -11,6 +11,7 @@ export interface VideoSource {
   trim_start: number;
   trim_end: number | null;
   original_duration: number;
+  order_index: number; // Track layer: 0 = base, 1+ = overlays
 }
 
 /**
