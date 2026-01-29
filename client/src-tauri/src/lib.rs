@@ -19,6 +19,7 @@ mod commands;
 mod dvr;
 mod hls;
 mod video_editor_export;
+mod video;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -558,6 +559,7 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -773,14 +775,21 @@ pub fn run() {
 
     // HLS commands
     hls::start_hls_recording,
-    hls::stop_hls_recording,
-    hls::cleanup_hls_recordings,
-    hls::get_recording_output_dir,
-    hls::get_hls_segments,
 
-    // Video Editor Export commands
-    video_editor_export::export_video_editor_project_simple,
-    video_editor_export::export_video_editor_project,
+// Video Editor Export commands
+video_editor_export::export_video_editor_project_simple,
+video_editor_export::export_video_editor_project,
+
+// Video Frame Decoder commands
+video::get_video_frame,
+video::get_video_frame_with_dimensions,
+video::prefetch_video_frames,
+video::clear_video_decoder,
+video::clear_all_video_decoders,
+video::clear_frame_cache,
+video::get_frame_cache_stats,
+video::get_decoder_info,
+
 ])
 .run(tauri::generate_context!())
 .expect("error while running tauri application");

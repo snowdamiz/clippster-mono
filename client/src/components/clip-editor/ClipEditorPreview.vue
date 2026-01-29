@@ -5,11 +5,22 @@
     <div class="flex-1 flex items-center justify-center p-8 min-h-0 relative">
       <div class="relative w-full h-full max-w-full max-h-full flex items-center justify-center bg-black rounded-xl overflow-hidden" 
            style="box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(14, 165, 233, 0.1);">
+        <!-- Canvas for professional playback engine (frame-by-frame rendering) -->
+        <canvas
+          ref="canvasRef"
+          class="w-full h-full object-contain"
+          :class="{
+            'hidden': !useCanvasPlayback || showCropOverlay || isAfterVideoEnd,
+          }"
+          :style="{ filter: appliedCSSFilters }"
+        />
+
+        <!-- Video element (legacy fallback) -->
         <video
           ref="videoRef"
           class="w-full h-full object-contain"
           :class="{
-            'hidden': showCropOverlay || isAfterVideoEnd,
+            'hidden': useCanvasPlayback || showCropOverlay || isAfterVideoEnd,
           }"
           :src="videoSrc || undefined"
           :style="{ filter: appliedCSSFilters }"
@@ -206,6 +217,7 @@ import {
   useTimelineAudioTransform,
   type VideoSource,
 } from '@/composables/clip-editor';
+import { useCanvasPlaybackEngine } from '@/composables/clip-editor/useCanvasPlaybackEngine';
 
 const props = defineProps<{
   videoSrc: string | null | undefined;
@@ -227,6 +239,7 @@ const emit = defineEmits<{
 }>();
 
 const videoRef = ref<HTMLVideoElement | null>(null);
+const canvasRef = ref<HTMLCanvasElement | null>(null);
 const videoDuration = ref(0);
 const aspectRatios = ['16:9', '9:16', '1:1', '4:5'];
 const showCropOverlay = ref(false);
@@ -235,6 +248,10 @@ const isMuted = ref(false);
 const isFullscreen = ref(false);
 const previewContainerRef = ref<HTMLElement | null>(null);
 const progressBarRef = ref<HTMLElement | null>(null);
+
+// Canvas playback engine - professional frame-level decoding
+// Note: FFmpeg errors are due to file being opened multiple times, not architectural issue
+const useCanvasPlayback = ref(true);
 
 // Audio mixer for playing audio tracks
 const audioMixer = useAudioMixer();
@@ -512,12 +529,36 @@ const { isAfterVideoEnd } = useVideoSync({
   timelineRenderer,
 });
 
+// Professional canvas playback engine (eliminates black screens)
+const canvasEngine = useCanvasPlaybackEngine({
+  canvasRef,
+  currentTime: toRef(props, 'currentTime'),
+  isPlaying: toRef(props, 'isPlaying'),
+  videoSources: videoSourcesRef,
+  onError: (error) => {
+    console.error('[ClipEditorPreview] Canvas engine error:', error);
+    // Fallback to video element on error
+    useCanvasPlayback.value = false;
+  },
+});
+
 onMounted(async () => {
-  console.log('[ClipEditorPreview] Mounted with video:', props.videoSrc);
+  console.log('[ClipEditorPreview] Mounted with playback mode:', useCanvasPlayback.value ? 'Canvas (Professional)' : 'Video Element (Legacy)');
   
   // Set initial volume
   if (videoRef.value) {
     videoRef.value.volume = volume.value;
+  }
+  
+  // Initialize canvas playback engine if enabled
+  if (useCanvasPlayback.value && canvasRef.value) {
+    const initialized = canvasEngine.initialize();
+    if (initialized) {
+      console.log('[ClipEditorPreview] Canvas playback engine initialized');
+    } else {
+      console.warn('[ClipEditorPreview] Canvas initialization failed, falling back to video element');
+      useCanvasPlayback.value = false;
+    }
   }
   
   // Initialize audio mixer (requires user interaction)
