@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 
 use super::types::{AspectRatio, WatermarkSettings, AudioSettings, MusicTrackSettings, VideoFilterSegment, build_time_based_filter_string, StickerSettings};
-use super::encoder::{detect_hardware_encoder, get_quality_settings, run_ffmpeg_with_fallback};
+use super::encoder::{detect_hardware_encoder, get_quality_settings, run_ffmpeg_with_fallback, build_hwaccel_args};
 use super::video_info::{get_video_info, calculate_crop_params, IntroOutroCache};
 use super::font_manager::get_fonts_dir;
 
@@ -319,7 +319,7 @@ async fn probe_image_dimensions(app: &tauri::AppHandle, image_path: &str) -> (Op
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))
     {
         Ok(cmd) => {
-            match cmd.args(["-i", image_path, "-f", "null", "-"]).output().await {
+            match cmd.args(["-nostdin", "-i", image_path, "-f", "null", "-"]).output().await {
                 Ok(out) => out,
                 Err(e) => {
                     println!("[Rust] Failed to probe image dimensions: {}", e);
@@ -626,13 +626,15 @@ async fn apply_watermark_to_video_with_ratio(
     
     println!("[Rust] Watermark position: x={}%, y={}%", pos_x, pos_y);
     
-    // Build encoder-specific args
-    let mut args = vec![
+    // Build encoder-specific args with hardware acceleration
+    let mut args = build_hwaccel_args(&encoder, true);
+    
+    args.extend(vec![
         "-i".to_string(), input_path.to_string_lossy().to_string(),
         "-i".to_string(), watermark_file_path.clone(),
         "-filter_complex".to_string(), filter_complex,
         "-c:v".to_string(), encoder.codec.clone(),
-    ];
+    ]);
     
     // Add preset if applicable
     if let Some(preset) = &encoder.preset {
@@ -696,10 +698,13 @@ pub async fn build_single_segment_clip_with_settings(
     let end_time: f64 = segment["end_time"].as_f64().ok_or("Invalid end_time")?;
     let duration = end_time - start_time;
 
+    println!("[Rust] ===== SINGLE-SEGMENT FUNCTION ENTERED =====");
+    println!("[Rust] intro_path: {:?}, outro_path: {:?}", intro_path, outro_path);
     println!("[Rust] Building single segment with aspect ratio {}:{}", aspect_ratio.width, aspect_ratio.height);
 
     // Get video info for cropping
     let video_info = get_video_info(app, video_path).await?;
+    println!("[Rust] Video info retrieved: {}x{}", video_info.width, video_info.height);
     let (crop_w, crop_h, crop_x, crop_y) = calculate_crop_params(video_info.width, video_info.height, aspect_ratio);
     
     // Get quality settings (unused in this path, but kept for reference)
@@ -712,8 +717,10 @@ pub async fn build_single_segment_clip_with_settings(
     // Build combined audio filter string (audio settings + audio effects)
     let audio_filter_str = build_combined_audio_filter(audio_settings, audio_effects_filter_chain);
     
+    println!("[Rust] About to check intro/outro condition...");
     // If intro or outro is present, we need to use the concat approach
     if intro_path.is_some() || outro_path.is_some() {
+        println!("[Rust] ===== INTRO/OUTRO PATH DETECTED =====");
         println!("[Rust] Intro or outro detected, using concat approach for single segment");
         
         // Get storage paths for temporary files
@@ -725,7 +732,9 @@ pub async fn build_single_segment_clip_with_settings(
             .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
         // Detect hardware encoder for better performance
+        println!("[Rust] ABOUT TO CALL detect_hardware_encoder (intro/outro path) with quality: {}", quality);
         let encoder = detect_hardware_encoder(app, quality).await;
+        println!("[Rust] RETURNED FROM detect_hardware_encoder (intro/outro path), codec: {}", encoder.codec);
 
         // Extract the main segment without subtitles (we'll add them later if needed)
         let segment_file = temp_dir.join("main_segment.mp4");
@@ -738,14 +747,23 @@ pub async fn build_single_segment_clip_with_settings(
             format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y)
         };
 
-        // Build encoder-specific args
-        let mut args = vec![
-            "-ss".to_string(), format!("{:.3}", start_time),
+        // Build encoder-specific args with hardware acceleration
+        // Crop filter is CPU-based, so we disable GPU decode to avoid transfer overhead
+        let mut args = build_hwaccel_args(&encoder, true);
+        
+        // Combined seeking: input seek (fast) to ~5s before, then output seek (accurate) to exact frame
+        // This avoids both slow full-decode AND frozen/stuttering first frames
+        let input_seek = (start_time - 5.0).max(0.0);
+        let output_seek = start_time - input_seek;
+        
+        args.extend(vec![
+            "-ss".to_string(), format!("{:.3}", input_seek),
             "-i".to_string(), video_path.to_string(),
+            "-ss".to_string(), format!("{:.3}", output_seek),
             "-t".to_string(), format!("{:.3}", duration),
             "-vf".to_string(), crop_filter.clone(),
             "-c:v".to_string(), encoder.codec.clone(),
-        ];
+        ]);
         
         // Add preset if applicable
         if let Some(enc_preset) = &encoder.preset {
@@ -757,13 +775,31 @@ pub async fn build_single_segment_clip_with_settings(
         args.push(encoder.quality_param.clone());
         args.push(encoder.quality_value.clone());
         
+        // Force keyframe at start to prevent frozen/laggy frames
+        args.extend_from_slice(&[
+            "-g".to_string(), "60".to_string(),
+            "-force_key_frames".to_string(), "expr:gte(t,0)".to_string(),
+        ]);
+        
+        let copy_audio = audio_filter_str.is_none();
+
         // Add common parameters
         // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
         args.extend_from_slice(&[
             "-fps_mode".to_string(), "cfr".to_string(),
             "-r".to_string(), frame_rate.to_string(),
-            "-c:a".to_string(), "aac".to_string(),
-            "-b:a".to_string(), "192k".to_string(),
+        ]);
+        if copy_audio {
+            args.extend_from_slice(&[
+                "-c:a".to_string(), "copy".to_string(),
+            ]);
+        } else {
+            args.extend_from_slice(&[
+                "-c:a".to_string(), "aac".to_string(),
+                "-b:a".to_string(), "192k".to_string(),
+            ]);
+        }
+        args.extend_from_slice(&[
             "-pix_fmt".to_string(), "yuv420p".to_string(),
             "-avoid_negative_ts".to_string(), "make_zero".to_string(),
             "-y".to_string(),
@@ -850,6 +886,7 @@ pub async fn build_single_segment_clip_with_settings(
         let output = shell.sidecar("ffmpeg")
             .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
             .args([
+                "-nostdin",
                 "-f", "concat",
                 "-safe", "0",
                 "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
@@ -887,12 +924,14 @@ pub async fn build_single_segment_clip_with_settings(
             // Set fontconfig path for FFmpeg to find our custom fonts
             let fontconfig_path = paths.temp.join("fonts.conf");
             
-            // Build encoder-specific args
-            let mut subtitle_args = vec![
+            // Build encoder-specific args with hardware acceleration
+            let mut subtitle_args = build_hwaccel_args(&encoder, true);
+            
+            subtitle_args.extend(vec![
                 "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
                 "-vf".to_string(), vf_arg.clone(),
                 "-c:v".to_string(), encoder.codec.clone(),
-            ];
+            ]);
             
             // Add preset if applicable
             if let Some(enc_preset) = &encoder.preset {
@@ -910,17 +949,26 @@ pub async fn build_single_segment_clip_with_settings(
                 subtitle_args.push("-af".to_string());
                 subtitle_args.push(af.clone());
             }
-            
+
             // Add common parameters
             subtitle_args.extend_from_slice(&[
-                "-c:a".to_string(), "aac".to_string(),
-                "-b:a".to_string(), "192k".to_string(),
+                "-c:a".to_string(),
+                if audio_filter_str.is_none() { "copy".to_string() } else { "aac".to_string() },
                 "-pix_fmt".to_string(), "yuv420p".to_string(),
                 "-movflags".to_string(), "+faststart".to_string(),
                 "-y".to_string(),
                 output_path.to_string_lossy().to_string(),
             ]);
 
+            if audio_filter_str.is_some() {
+                subtitle_args.extend_from_slice(&[
+                    "-b:a".to_string(), "192k".to_string(),
+                ]);
+            }
+
+            // Add -nostdin to subtitle_args at the beginning
+            subtitle_args.insert(0, "-nostdin".to_string());
+            
             let output = shell.sidecar("ffmpeg")
                 .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
                 .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
@@ -940,6 +988,7 @@ pub async fn build_single_segment_clip_with_settings(
             
             if let Some(ref af) = audio_filter_str {
                 let audio_args = vec![
+                    "-nostdin".to_string(),
                     "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
                     "-c:v".to_string(), "copy".to_string(),
                     "-af".to_string(), af.clone(),
@@ -974,16 +1023,26 @@ pub async fn build_single_segment_clip_with_settings(
 
     // Original single-segment path (no intro/outro)
     // Detect hardware encoder for better performance
+    println!("[Rust] ABOUT TO CALL detect_hardware_encoder with quality: {}", quality);
     let encoder = detect_hardware_encoder(app, quality).await;
+    println!("[Rust] RETURNED FROM detect_hardware_encoder, codec: {}", encoder.codec);
     
     // Get fonts directory for subtitle rendering
     let fonts_dir = get_fonts_dir(app).ok();
 
     // Build video filter combining crop + color grading + subtitles in ONE PASS
     // Only Force RGB24 if using subtitles for accurate color rendering
-    let mut vf_parts = vec![
-        format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y)
-    ];
+    let mut vf_parts = Vec::new();
+    
+    // Only add crop filter if actual cropping is needed
+    let needs_crop = crop_w != video_info.width || crop_h != video_info.height || crop_x != 0 || crop_y != 0;
+    if needs_crop {
+        println!("[Rust] Crop needed: {}x{} from {}x{} at ({}, {})", 
+                 crop_w, crop_h, video_info.width, video_info.height, crop_x, crop_y);
+        vf_parts.push(format!("crop={}:{}:{}:{}", crop_w, crop_h, crop_x, crop_y));
+    } else {
+        println!("[Rust] No crop needed - video already matches target aspect ratio");
+    }
     
     // Apply time-based color grading filters (eq, hue, vignette, etc.) after crop
     if let Some(ref filter_str) = video_filter_str {
@@ -1004,16 +1063,34 @@ pub async fn build_single_segment_clip_with_settings(
         }
     }
     
-    let vf_arg = vf_parts.join(",");
-
-    // Build encoder-specific args
-    let mut args = vec![
-        "-ss".to_string(), format!("{:.3}", start_time),
+    // Determine if we're using CPU filters
+    let uses_cpu_filters = !vf_parts.is_empty();
+    
+    // Build encoder-specific args with hardware acceleration
+    let mut args = build_hwaccel_args(&encoder, uses_cpu_filters);
+    
+    // Combined seeking: input seek (fast) to ~5s before, then output seek (accurate) to exact frame
+    // This avoids both slow full-decode AND frozen/stuttering first frames
+    let input_seek = (start_time - 5.0).max(0.0);
+    let output_seek = start_time - input_seek;
+    
+    args.extend(vec![
+        "-ss".to_string(), format!("{:.3}", input_seek),
         "-i".to_string(), video_path.to_string(),
+        "-ss".to_string(), format!("{:.3}", output_seek),
         "-t".to_string(), format!("{:.3}", duration),
-        "-vf".to_string(), vf_arg,
+    ]);
+    
+    // Only add -vf if we have filters to apply
+    if !vf_parts.is_empty() {
+        let vf_arg = vf_parts.join(",");
+        args.push("-vf".to_string());
+        args.push(vf_arg);
+    }
+    
+    args.extend(vec![
         "-c:v".to_string(), encoder.codec.clone(),
-    ];
+    ]);
     
     // Add preset if applicable
     if let Some(preset) = &encoder.preset {
@@ -1025,6 +1102,13 @@ pub async fn build_single_segment_clip_with_settings(
     args.push(encoder.quality_param.clone());
     args.push(encoder.quality_value.clone());
     
+    // Force keyframe at start to prevent frozen/laggy frames
+    // GOP size of 60 frames = 1 keyframe per second at 60fps
+    args.extend_from_slice(&[
+        "-g".to_string(), "60".to_string(),
+        "-force_key_frames".to_string(), "expr:gte(t,0)".to_string(),
+    ]);
+    
     // Add audio filter if audio settings or audio effects are provided
     if let Some(ref af) = audio_filter_str {
         println!("[Rust] Applying audio filter: {}", af);
@@ -1032,14 +1116,26 @@ pub async fn build_single_segment_clip_with_settings(
         args.push(af.clone());
     }
     
+    let copy_audio = audio_filter_str.is_none();
+
     // Add common parameters
     // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
     // when using input seeking with crop/filter operations
     args.extend_from_slice(&[
         "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "192k".to_string(),
+    ]);
+    if copy_audio {
+        args.extend_from_slice(&[
+            "-c:a".to_string(), "copy".to_string(),
+        ]);
+    } else {
+        args.extend_from_slice(&[
+            "-c:a".to_string(), "aac".to_string(),
+            "-b:a".to_string(), "192k".to_string(),
+        ]);
+    }
+    args.extend_from_slice(&[
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
         "-avoid_negative_ts".to_string(), "make_zero".to_string(),
@@ -1108,7 +1204,10 @@ pub async fn build_multi_segment_clip_with_settings(
     let (_preset, _crf) = get_quality_settings(quality);
     
     // Detect hardware encoder for better performance
+    println!("[Rust] ===== MULTI-SEGMENT PATH DETECTED ({} segments) =====", segments.len());
+    println!("[Rust] ABOUT TO CALL detect_hardware_encoder (multi-segment path) with quality: {}", quality);
     let encoder = detect_hardware_encoder(app, quality).await;
+    println!("[Rust] RETURNED FROM detect_hardware_encoder (multi-segment path), codec: {}", encoder.codec);
 
     // Calculate output time offsets for each segment (used for time-based filters)
     // Each segment's filters need to be adjusted relative to where it appears in the final output
@@ -1179,14 +1278,21 @@ pub async fn build_multi_segment_clip_with_settings(
         async move {
             let _shell = app.shell();
             
-            // Build encoder-specific args
-            let mut args = vec![
-                "-ss".to_string(), format!("{:.3}", start_time),
+            // Build encoder-specific args with hardware acceleration
+            let mut args = build_hwaccel_args(&encoder, true);
+            
+            // Combined seeking: input seek (fast) to ~5s before, then output seek (accurate)
+            let input_seek = (start_time - 5.0).max(0.0);
+            let output_seek = start_time - input_seek;
+            
+            args.extend(vec![
+                "-ss".to_string(), format!("{:.3}", input_seek),
                 "-i".to_string(), video_path.clone(),
+                "-ss".to_string(), format!("{:.3}", output_seek),
                 "-t".to_string(), format!("{:.3}", duration),
                 "-vf".to_string(), crop_filter.clone(),
                 "-c:v".to_string(), encoder.codec.clone(),
-            ];
+            ]);
             
             // Add preset if applicable
             if let Some(preset) = &encoder.preset {
@@ -1205,8 +1311,7 @@ pub async fn build_multi_segment_clip_with_settings(
                 ]);
             } else {
                 args.extend_from_slice(&[
-                    "-c:a".to_string(), "aac".to_string(),
-                    "-b:a".to_string(), "192k".to_string(),
+                    "-c:a".to_string(), "copy".to_string(),
                 ]);
             }
             
@@ -1323,6 +1428,7 @@ pub async fn build_multi_segment_clip_with_settings(
     let output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
+            "-nostdin",
             "-f", "concat",
             "-safe", "0",
             "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
@@ -1361,12 +1467,14 @@ pub async fn build_multi_segment_clip_with_settings(
         // Set fontconfig path for FFmpeg to find our custom fonts
         let fontconfig_path = paths.temp.join("fonts.conf");
         
-        // Build encoder-specific args
-        let mut subtitle_args = vec![
+        // Build encoder-specific args with hardware acceleration
+        let mut subtitle_args = build_hwaccel_args(&encoder, true);
+        
+        subtitle_args.extend(vec![
             "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
             "-vf".to_string(), vf_arg.clone(),
             "-c:v".to_string(), encoder.codec.clone(),
-        ];
+        ]);
         
         // Add preset if applicable
         if let Some(enc_preset) = &encoder.preset {
@@ -1378,8 +1486,11 @@ pub async fn build_multi_segment_clip_with_settings(
         subtitle_args.push(encoder.quality_param.clone());
         subtitle_args.push(encoder.quality_value.clone());
         
+        let audio_filter = build_audio_filter(audio_settings);
+        let copy_audio = audio_filter.is_none();
+
         // Add audio filter if audio settings are provided
-        if let Some(af) = build_audio_filter(audio_settings) {
+        if let Some(af) = audio_filter {
             println!("[Rust] Applying audio filter (multi-segment with subtitles): {}", af);
             subtitle_args.push("-af".to_string());
             subtitle_args.push(af);
@@ -1387,14 +1498,22 @@ pub async fn build_multi_segment_clip_with_settings(
         
         // Add common parameters
         subtitle_args.extend_from_slice(&[
-            "-c:a".to_string(), "aac".to_string(),
-            "-b:a".to_string(), "192k".to_string(),
+            "-c:a".to_string(),
+            if copy_audio { "copy".to_string() } else { "aac".to_string() },
             "-pix_fmt".to_string(), "yuv420p".to_string(),
             "-movflags".to_string(), "+faststart".to_string(),
             "-y".to_string(),
             output_path.to_string_lossy().to_string(),
         ]);
+        if !copy_audio {
+            subtitle_args.extend_from_slice(&[
+                "-b:a".to_string(), "192k".to_string(),
+            ]);
+        }
 
+        // Add -nostdin to subtitle_args at the beginning
+        subtitle_args.insert(0, "-nostdin".to_string());
+        
         let output = shell.sidecar("ffmpeg")
             .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
             .env("FONTCONFIG_FILE", fontconfig_path.to_string_lossy().to_string())
@@ -1413,9 +1532,10 @@ pub async fn build_multi_segment_clip_with_settings(
         
         if let Some(af) = build_audio_filter(audio_settings) {
             let audio_args = vec![
+                "-nostdin".to_string(),
                 "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
                 "-c:v".to_string(), "copy".to_string(),
-                "-af".to_string(), af,
+                "-af".to_string(), af.clone(),
                 "-c:a".to_string(), "aac".to_string(),
                 "-b:a".to_string(), "192k".to_string(),
                 "-y".to_string(),
@@ -1497,12 +1617,14 @@ pub async fn prepare_intro_outro_for_concat(
         crop_w, crop_h, crop_w, crop_h
     );
 
-    // Build encoder-specific args
-    let mut args = vec![
+    // Build encoder-specific args with hardware acceleration
+    let mut args = build_hwaccel_args(&encoder, true);
+    
+    args.extend(vec![
         "-i".to_string(), intro_outro_path.to_string(),
         "-vf".to_string(), scale_pad_filter,
         "-c:v".to_string(), encoder.codec.clone(),
-    ];
+    ]);
     
     // Add preset if applicable
     if let Some(preset) = &encoder.preset {
@@ -1744,16 +1866,24 @@ pub async fn build_split_screen_clip(
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
 
-    // Build FFmpeg args
-    let mut args = vec![
-        "-ss".to_string(), format!("{:.3}", start_time),
+    // Build FFmpeg args with hardware acceleration
+    // filter_complex uses CPU filters, so disable GPU decode
+    let mut args = build_hwaccel_args(&encoder, true);
+    
+    // Combined seeking: input seek (fast) to ~5s before, then output seek (accurate)
+    let input_seek = (start_time - 5.0).max(0.0);
+    let output_seek = start_time - input_seek;
+    
+    args.extend(vec![
+        "-ss".to_string(), format!("{:.3}", input_seek),
         "-i".to_string(), video_path.to_string(),
+        "-ss".to_string(), format!("{:.3}", output_seek),
         "-t".to_string(), format!("{:.3}", duration),
         "-filter_complex".to_string(), filter_complex,
         "-map".to_string(), "[outv]".to_string(),
         "-map".to_string(), "0:a?".to_string(),
         "-c:v".to_string(), encoder.codec.clone(),
-    ];
+    ]);
 
     // Add encoder preset
     if let Some(preset) = &encoder.preset {
@@ -1765,8 +1895,11 @@ pub async fn build_split_screen_clip(
     args.push(encoder.quality_param.clone());
     args.push(encoder.quality_value.clone());
 
+    let audio_filter = build_audio_filter(audio_settings);
+    let copy_audio = audio_filter.is_none();
+
     // Add audio filter if settings provided
-    if let Some(af) = build_audio_filter(audio_settings) {
+    if let Some(af) = audio_filter {
         args.push("-af".to_string());
         args.push(af);
     }
@@ -1777,14 +1910,19 @@ pub async fn build_split_screen_clip(
     args.extend_from_slice(&[
         "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "192k".to_string(),
+        "-c:a".to_string(),
+        if copy_audio { "copy".to_string() } else { "aac".to_string() },
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
         "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
+    if !copy_audio {
+        args.extend_from_slice(&[
+            "-b:a".to_string(), "192k".to_string(),
+        ]);
+    }
 
     println!("[Rust] Running split screen FFmpeg command...");
 
@@ -1919,14 +2057,22 @@ pub async fn build_dynamic_pan_clip(
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
 
-    // Build FFmpeg args
-    let mut args = vec![
-        "-ss".to_string(), format!("{:.3}", start_time),
+    // Build FFmpeg args with hardware acceleration
+    // Crop filter is CPU-based, so disable GPU decode
+    let mut args = build_hwaccel_args(&encoder, true);
+    
+    // Combined seeking: input seek (fast) to ~5s before, then output seek (accurate)
+    let input_seek = (start_time - 5.0).max(0.0);
+    let output_seek = start_time - input_seek;
+    
+    args.extend(vec![
+        "-ss".to_string(), format!("{:.3}", input_seek),
         "-i".to_string(), video_path.to_string(),
+        "-ss".to_string(), format!("{:.3}", output_seek),
         "-t".to_string(), format!("{:.3}", duration),
         "-vf".to_string(), vf,
         "-c:v".to_string(), encoder.codec.clone(),
-    ];
+    ]);
 
     // Add encoder preset
     if let Some(preset) = &encoder.preset {
@@ -1938,8 +2084,11 @@ pub async fn build_dynamic_pan_clip(
     args.push(encoder.quality_param.clone());
     args.push(encoder.quality_value.clone());
 
+    let audio_filter = build_audio_filter(audio_settings);
+    let copy_audio = audio_filter.is_none();
+
     // Add audio filter if settings provided
-    if let Some(af) = build_audio_filter(audio_settings) {
+    if let Some(af) = audio_filter {
         args.push("-af".to_string());
         args.push(af);
     }
@@ -1950,14 +2099,19 @@ pub async fn build_dynamic_pan_clip(
     args.extend_from_slice(&[
         "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "192k".to_string(),
+        "-c:a".to_string(),
+        if copy_audio { "copy".to_string() } else { "aac".to_string() },
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
         "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
+    if !copy_audio {
+        args.extend_from_slice(&[
+            "-b:a".to_string(), "192k".to_string(),
+        ]);
+    }
 
     println!("[Rust] Running dynamic pan FFmpeg command...");
 
@@ -2166,12 +2320,19 @@ pub async fn build_multi_region_clip(
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, quality).await;
 
-    // Build FFmpeg args
+    // Build FFmpeg args with hardware acceleration
     // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
     // when using input seeking with complex filter graphs
-    let mut args = vec![
-        "-ss".to_string(), format!("{:.3}", start_time),
+    let mut args = build_hwaccel_args(&encoder, true);
+    
+    // Combined seeking: input seek (fast) to ~5s before, then output seek (accurate)
+    let input_seek = (start_time - 5.0).max(0.0);
+    let output_seek = start_time - input_seek;
+    
+    args.extend(vec![
+        "-ss".to_string(), format!("{:.3}", input_seek),
         "-i".to_string(), video_path.to_string(),
+        "-ss".to_string(), format!("{:.3}", output_seek),
         "-t".to_string(), format!("{:.3}", duration),
         "-filter_complex".to_string(), filter_complex,
         "-map".to_string(), map_label.to_string(),
@@ -2179,7 +2340,7 @@ pub async fn build_multi_region_clip(
         "-c:v".to_string(), encoder.codec.clone(),
         "-fps_mode".to_string(), "cfr".to_string(),
         "-r".to_string(), frame_rate.to_string(),
-    ];
+    ]);
 
     // Add encoder preset
     if let Some(preset) = &encoder.preset {
@@ -2191,19 +2352,21 @@ pub async fn build_multi_region_clip(
     args.push(encoder.quality_param.clone());
     args.push(encoder.quality_value.clone());
 
-    // Add audio settings
-    args.push("-c:a".to_string());
-    args.push("aac".to_string());
-    args.push("-b:a".to_string());
-    args.push("192k".to_string());
+    let audio_filter = build_audio_filter(audio_settings);
+    let copy_audio = audio_filter.is_none();
 
-    // Add audio gain if specified
-    if let Some(audio) = audio_settings {
-        if audio.volume != 0.0 {
-            let af = format!("volume={}dB", audio.volume);
-            args.push("-af".to_string());
-            args.push(af);
-        }
+    if let Some(af) = audio_filter {
+        args.push("-af".to_string());
+        args.push(af);
+    }
+
+    args.push("-c:a".to_string());
+    if copy_audio {
+        args.push("copy".to_string());
+    } else {
+        args.push("aac".to_string());
+        args.push("-b:a".to_string());
+        args.push("192k".to_string());
     }
 
     // Output - add avoid_negative_ts to prevent black frames at start
@@ -2484,12 +2647,14 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
     let _shell = app.shell();
     let encoder = detect_hardware_encoder(app, quality).await;
     
-    let mut args = vec![
+    let mut args = build_hwaccel_args(&encoder, false);
+    
+    args.extend(vec![
         "-f".to_string(), "concat".to_string(),
         "-safe".to_string(), "0".to_string(),
         "-i".to_string(), concat_file.to_string_lossy().to_string(),
         "-c:v".to_string(), encoder.codec.clone(),
-    ];
+    ]);
 
     if let Some(preset) = &encoder.preset {
         args.push("-preset".to_string());
@@ -2500,8 +2665,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
     args.push(encoder.quality_value.clone());
     
     args.extend_from_slice(&[
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "192k".to_string(),
+        "-c:a".to_string(), "copy".to_string(),
         "-r".to_string(), frame_rate.to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
@@ -2592,13 +2756,20 @@ async fn extract_segment_with_crop(
         format!("{},{}", crop_filter, scale_filter)
     };
 
-    let mut args = vec![
-        "-ss".to_string(), start.to_string(),
+    let mut args = build_hwaccel_args(&encoder, true);
+    
+    // Combined seeking: input seek (fast) to ~5s before, then output seek (accurate)
+    let input_seek = (start - 5.0).max(0.0);
+    let output_seek = start - input_seek;
+    
+    args.extend(vec![
+        "-ss".to_string(), format!("{:.3}", input_seek),
         "-i".to_string(), video_path.to_string(),
+        "-ss".to_string(), format!("{:.3}", output_seek),
         "-t".to_string(), duration.to_string(),
         "-vf".to_string(), vf,
         "-c:v".to_string(), encoder.codec.clone(),
-    ];
+    ]);
 
     if let Some(preset) = &encoder.preset {
         args.push("-preset".to_string());
@@ -2621,15 +2792,21 @@ async fn extract_segment_with_crop(
         args.push(af_parts.join(","));
     }
 
+    let has_audio_filter = !af_parts.is_empty();
     args.extend_from_slice(&[
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "192k".to_string(),
+        "-c:a".to_string(),
+        if has_audio_filter { "aac".to_string() } else { "copy".to_string() },
         "-r".to_string(), frame_rate.to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-movflags".to_string(), "+faststart".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
+    if has_audio_filter {
+        args.extend_from_slice(&[
+            "-b:a".to_string(), "192k".to_string(),
+        ]);
+    }
 
     // Use fallback helper for hardware encoder resilience
     run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
@@ -2656,11 +2833,13 @@ async fn burn_subtitles_to_video(
         .map_err(|e| format!("Failed to get storage paths: {}", e))?;
     let fontconfig_path = paths.temp.join("fonts.conf");
 
-    let mut args = vec![
+    let mut args = build_hwaccel_args(&encoder, true);
+    
+    args.extend(vec![
         "-i".to_string(), input_path.to_string_lossy().to_string(),
         "-vf".to_string(), vf_arg,
         "-c:v".to_string(), encoder.codec.clone(),
-    ];
+    ]);
 
     if let Some(preset) = &encoder.preset {
         args.push("-preset".to_string());
@@ -2876,7 +3055,7 @@ pub async fn apply_stickers_to_video(
     
     // Add audio settings
     args.push("-c:a".to_string());
-    args.push("aac".to_string());
+    args.push("copy".to_string());
     args.push("-y".to_string());
     args.push(temp_output.to_string_lossy().to_string());
     
@@ -3018,10 +3197,12 @@ pub async fn apply_clip_watermarks_to_video(
         return Ok(());
     }
     
-    // Build FFmpeg args
-    let mut args = vec![
+    // Build FFmpeg args with hardware acceleration
+    let mut args = build_hwaccel_args(&encoder, true);
+    
+    args.extend(vec![
         "-i".to_string(), input_path.to_string_lossy().to_string(),
-    ];
+    ]);
     
     // Add watermark image inputs
     for watermark_path in &overlay_inputs {
@@ -3051,7 +3232,7 @@ pub async fn apply_clip_watermarks_to_video(
     
     // Add audio settings
     args.push("-c:a".to_string());
-    args.push("aac".to_string());
+    args.push("copy".to_string());
     args.push("-y".to_string());
     args.push(temp_output.to_string_lossy().to_string());
     
@@ -3189,7 +3370,7 @@ pub async fn apply_rendered_text_overlays_to_video(
     
     // Add audio settings
     args.push("-c:a".to_string());
-    args.push("aac".to_string());
+    args.push("copy".to_string());
     args.push("-y".to_string());
     args.push(temp_output.to_string_lossy().to_string());
     
@@ -3306,6 +3487,7 @@ pub async fn generate_segment_preview(
         // Build FFmpeg args for fast preview generation
         // Use input seeking (-ss before -i) for faster seeking
         let args = vec![
+            "-nostdin".to_string(),
             "-ss".to_string(), seg.start_time.to_string(),
             "-i".to_string(), video_path.clone(),
             "-t".to_string(), duration.to_string(),
@@ -3364,6 +3546,7 @@ pub async fn generate_segment_preview(
                      i, start_time, end_time, duration);
             
             let args = vec![
+                "-nostdin".to_string(),
                 "-ss".to_string(), start_time.to_string(),
                 "-i".to_string(), video_path_clone,
                 "-t".to_string(), duration.to_string(),
@@ -3431,6 +3614,7 @@ pub async fn generate_segment_preview(
     let output_path = preview_output_dir.join(format!("{}.mp4", output_filename));
     
     let concat_args = vec![
+        "-nostdin".to_string(),
         "-f".to_string(), "concat".to_string(),
         "-safe".to_string(), "0".to_string(),
         "-i".to_string(), concat_file.to_string_lossy().to_string(),
@@ -4061,6 +4245,7 @@ pub async fn generate_preview_chunk(
             } else {
                 // No overlays, use simple scaling
                 vec![
+                    "-nostdin".to_string(),
                     "-ss".to_string(), source_start.to_string(),
                     "-i".to_string(), video_path.clone(),
                     "-t".to_string(), duration.to_string(),
@@ -4078,6 +4263,7 @@ pub async fn generate_preview_chunk(
         } else {
             // No edit data, use simple scaling
             vec![
+                "-nostdin".to_string(),
                 "-ss".to_string(), source_start.to_string(),
                 "-i".to_string(), video_path.clone(),
                 "-t".to_string(), duration.to_string(),
@@ -4131,6 +4317,7 @@ pub async fn generate_preview_chunk(
         let segment_file = temp_dir.join(format!("part_{:03}.ts", i));
         
         let args = vec![
+            "-nostdin".to_string(),
             "-ss".to_string(), source_start.to_string(),
             "-i".to_string(), video_path.clone(),
             "-t".to_string(), duration.to_string(),
@@ -4168,6 +4355,7 @@ pub async fn generate_preview_chunk(
         .join("|");
     
     let concat_args = vec![
+        "-nostdin".to_string(),
         "-i".to_string(), format!("concat:{}", concat_input),
         "-c".to_string(), "copy".to_string(),
         "-y".to_string(),

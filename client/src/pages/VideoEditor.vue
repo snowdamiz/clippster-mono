@@ -218,7 +218,7 @@
     <!-- Create/Edit Dialog -->
     <VideoEditorProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
 
-    <!-- Video Editor Dialog (using ClipEditorDialog in editor mode) -->
+    <!-- Video Editor Dialog (placeholder during rebuild) -->
     <ClipEditorDialog
       v-model="showEditorDialog"
       :editor-mode="true"

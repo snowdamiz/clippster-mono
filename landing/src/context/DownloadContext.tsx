@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from 'react'
 
 interface DownloadContextType {
   downloadsEnabled: boolean
@@ -9,39 +10,35 @@ interface DownloadContextType {
 
 const DownloadContext = createContext<DownloadContextType | undefined>(undefined)
 
+// Check access at module load time to avoid useEffect setState
+function checkInitialAccess(): boolean {
+  if (typeof window === 'undefined') return false
+  const urlParams = new URLSearchParams(window.location.search)
+  return urlParams.get('access') === 'beta'
+}
+
 export function DownloadProvider({ children }: { children: ReactNode }) {
-  const [downloadsEnabled, setDownloadsEnabled] = useState(false)
+  // Initialize state with computed values to avoid useEffect setState
+  const initialAccess = useMemo(() => checkInitialAccess(), [])
+  const [downloadsEnabled] = useState(initialAccess)
   const [showWaitlistModal, setShowWaitlistModal] = useState(false)
-  const [hasCheckedBypass, setHasCheckedBypass] = useState(false)
 
   useEffect(() => {
-    // Check for bypass query parameter
-    const urlParams = new URLSearchParams(window.location.search)
-    const hasAccess = urlParams.get('access') === 'beta'
-    
     // Check if user has already joined the waitlist
     const hasJoinedWaitlist = localStorage.getItem('clippster_waitlist_joined') === 'true'
     
-    setDownloadsEnabled(hasAccess)
-    setHasCheckedBypass(true)
-    
     // Show waitlist modal on load if downloads are not enabled AND user hasn't already joined
-    if (!hasAccess && !hasJoinedWaitlist) {
+    if (!downloadsEnabled && !hasJoinedWaitlist) {
       // Small delay for better UX
       const timer = setTimeout(() => {
         setShowWaitlistModal(true)
       }, 500)
       return () => clearTimeout(timer)
     }
-  }, [])
+  }, [downloadsEnabled])
 
   const openWaitlistModal = () => {
     setShowWaitlistModal(true)
-  }
-
-  // Don't render until we've checked the bypass parameter
-  if (!hasCheckedBypass) {
-    return null
   }
 
   return (

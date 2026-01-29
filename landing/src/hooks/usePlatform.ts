@@ -135,19 +135,16 @@ function detectArchitecture(): Architecture {
 }
 
 export function usePlatform(): Platform {
-  const [platform, setPlatform] = useState<Platform>({ os: 'unknown', arch: 'unknown' })
-
-  useEffect(() => {
-    setPlatform({
-      os: detectOS(),
-      arch: detectArchitecture()
-    })
-  }, [])
+  // Use useMemo to compute platform once on mount instead of useEffect + setState
+  const platform = useMemo<Platform>(() => ({
+    os: detectOS(),
+    arch: detectArchitecture()
+  }), [])
 
   return platform
 }
 
-export function getDownloadLabel(_os: OS, _arch: Architecture): string {
+export function getDownloadLabel(): string {
   return 'Download'
 }
 

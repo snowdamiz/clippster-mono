@@ -151,7 +151,7 @@ async fn concatenate_videos(
     let output = app.shell()
         .sidecar("ffmpeg")
         .unwrap()
-        .args(["-f", "concat", "-safe", "0", "-i", &concat_list_path.to_string_lossy(), "-c", "copy", "-y", &output_path.to_string_lossy()])
+        .args(["-nostdin", "-f", "concat", "-safe", "0", "-i", &concat_list_path.to_string_lossy(), "-c", "copy", "-y", &output_path.to_string_lossy()])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
@@ -181,7 +181,7 @@ async fn apply_subtitles_to_video(
     let output = app.shell()
         .sidecar("ffmpeg")
         .unwrap()
-        .args(["-i", &input_path.to_string_lossy(), "-vf", &subtitle_filter, "-c:a", "copy", "-y", &output_path.to_string_lossy()])
+        .args(["-nostdin", "-i", &input_path.to_string_lossy(), "-vf", &subtitle_filter, "-c:a", "copy", "-y", &output_path.to_string_lossy()])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;

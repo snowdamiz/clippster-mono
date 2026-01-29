@@ -48,7 +48,6 @@ export interface LiveSession {
   segmentDurationMinutes?: number;
   promptId?: string;
   promptContent?: string;
-  offlineSince?: number;
 }
 
 export interface SegmentEventPayload {

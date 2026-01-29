@@ -9,11 +9,11 @@
     <template #actions>
       <div v-if="isAdmin" class="org-members__actions-container">
         <!-- Seat limit warning -->
-        <div v-if="hasActiveSubscription && seatsRemaining !== null" class="org-members__seat-info">
+        <div v-if="hasActiveSubscription && seatsRemaining != null" class="org-members__seat-info">
           <span
             class="org-members__seat-badge"
             :class="{
-              'org-members__seat-badge--warning': seatsRemaining <= 2 && seatsRemaining > 0,
+              'org-members__seat-badge--warning': seatsRemaining! <= 2 && seatsRemaining! > 0,
               'org-members__seat-badge--danger': seatsRemaining === 0,
             }"
           >

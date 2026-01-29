@@ -343,48 +343,51 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
         }
     }
 
-    // ALWAYS scan directory for .ts files to handle Windows file locking issues
-    // where FFmpeg may hold a lock on the playlist file during writes.
-    // Use the larger of: parsed playlist segments OR actual files on disk.
-    let mut entries: Vec<_> = std::fs::read_dir(&output_dir)
-        .map_err(|e| format!("Failed to read HLS output dir: {}", e))?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            if let Ok(name) = e.file_name().into_string() {
-                name.starts_with("segment_") && name.ends_with(".ts")
+    // Fallback: if the parsed playlist yields <= 1 segment but the directory
+    // contains multiple TS files (e.g., tmp playlist not finalized or short sliding window),
+    // synthesize a contiguous timeline from the files on disk.
+    if segments.len() <= 1 {
+        let mut entries: Vec<_> = std::fs::read_dir(&output_dir)
+            .map_err(|e| format!("Failed to read HLS output dir: {}", e))?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                if let Ok(name) = e.file_name().into_string() {
+                    name.starts_with("segment_") && name.ends_with(".ts")
+                } else {
+                    false
+                }
+            })
+            .collect();
+
+        entries.sort_by_key(|e| e.file_name());
+
+        if entries.len() > 1 {
+            let assumed_duration = if first_duration > 0.0 {
+                first_duration
+            } else if current_duration > 0.0 {
+                current_duration
             } else {
-                false
+                4.0
+            };
+
+            let mut fallback_segments = Vec::with_capacity(entries.len());
+            let mut start = 0.0;
+            for (idx, entry) in entries.iter().enumerate() {
+                let path = entry.path();
+                fallback_segments.push(HlsSegmentInfo {
+                    segment_number: idx as u32,
+                    file_path: path.to_string_lossy().to_string(),
+                    start_time: start,
+                    duration: assumed_duration,
+                    end_time: start + assumed_duration,
+                });
+                start += assumed_duration;
             }
-        })
-        .collect();
 
-    entries.sort_by_key(|e| e.file_name());
-
-    // If there are more files on disk than in the parsed playlist, use file-based segments
-    if entries.len() > segments.len() {
-        let assumed_duration = if first_duration > 0.0 {
-            first_duration
-        } else if current_duration > 0.0 {
-            current_duration
-        } else {
-            4.0
-        };
-
-        let mut fallback_segments = Vec::with_capacity(entries.len());
-        let mut start = 0.0;
-        for (idx, entry) in entries.iter().enumerate() {
-            let path = entry.path();
-            fallback_segments.push(HlsSegmentInfo {
-                segment_number: idx as u32,
-                file_path: path.to_string_lossy().to_string(),
-                start_time: start,
-                duration: assumed_duration,
-                end_time: start + assumed_duration,
-            });
-            start += assumed_duration;
+            if fallback_segments.len() > segments.len() {
+                segments = fallback_segments;
+            }
         }
-
-        segments = fallback_segments;
     }
 
     Ok(segments)
@@ -454,17 +457,19 @@ async fn run_hls_recorder(
                                         if let (Some(segment), Some(path), Some(duration)) = 
                                             (recorder_event.segment, recorder_event.path, recorder_event.duration) 
                                         {
-                                            let _ = app.emit(
-                                                "hls-segment-ready",
-                                                SegmentReadyPayload {
-                                                    streamer_id: streamer_id.clone(),
-                                                    session_id: session_id.clone(),
-                                                    mint_id: mint_id.clone(),
-                                                    segment,
-                                                    path,
-                                                    duration,
-                                                },
-                                            );
+                                            let payload = SegmentReadyPayload {
+                                                streamer_id: streamer_id.clone(),
+                                                session_id: session_id.clone(),
+                                                mint_id: mint_id.clone(),
+                                                segment,
+                                                path: path.clone(),
+                                                duration,
+                                            };
+                                            
+                                            match app.emit("hls-segment-ready", payload) {
+                                                Ok(_) => println!("[HLS Recorder] Emitted hls-segment-ready event for segment {}", segment),
+                                                Err(e) => eprintln!("[HLS Recorder] Failed to emit hls-segment-ready: {:?}", e),
+                                            }
                                         }
                                     }
                                     "started" => {

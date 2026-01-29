@@ -24,7 +24,7 @@ interface CreatorProfile {
     id: string;
     platform: string;
     platform_id: string;
-    display_name?: string;
+    display_name?: string | null;
   }>;
 }
 
@@ -51,7 +51,7 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
           const kickStatus = await checkKickLivestream(platformId);
           return {
             isLive: kickStatus.isLive,
-            streamId: kickStatus.channelId,
+            streamId: kickStatus.channelId?.toString(),
             streamStartTimestamp: kickStatus.startedAt
               ? new Date(kickStatus.startedAt).getTime()
               : undefined,
@@ -96,7 +96,7 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
   }
 
   // Fetch live count for all monitored streamers
-  async function fetchLiveCount(): Promise<number> {
+  async function fetchLiveCount(includeKick: boolean = true): Promise<number> {
     const now = Date.now();
     
     // Skip if polled recently (within 30 seconds)
@@ -116,6 +116,14 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
       // Check live status for each streamer
       const statusChecks = streamers.map(async (streamer) => {
         const platform = streamer.platform.toLowerCase() as 'pumpfun' | 'kick' | 'twitch';
+        
+        // Skip Kick streamers on interval polling to save API requests
+        // Kick status is only checked on app open and manual refresh
+        if (!includeKick && platform === 'kick') {
+          // Return cached live status from database
+          return streamer.is_currently_live === 1;
+        }
+        
         const platformType: SupportedLivestreamPlatform = 
           platform === 'kick' ? 'Kick' : 
           platform === 'twitch' ? 'Twitch' : 
@@ -153,12 +161,12 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
 
     isPolling.value = true;
 
-    // Initial fetch
-    fetchLiveCount();
+    // Initial fetch (include Kick on first load)
+    fetchLiveCount(true);
 
-    // Poll every 60 seconds
+    // Poll every 60 seconds (skip Kick to save API requests)
     pollingInterval = setInterval(() => {
-      fetchLiveCount();
+      fetchLiveCount(false);
     }, 60000);
   }
 
@@ -172,7 +180,7 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
   }
 
   // Fetch live count for creator profiles
-  async function fetchLiveCreatorsCount(): Promise<number> {
+  async function fetchLiveCreatorsCount(includeKick: boolean = true): Promise<number> {
     const now = Date.now();
     
     // Skip if polled recently (within 30 seconds)
@@ -226,6 +234,13 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
           const linkChecks = await Promise.all(
             creator.platform_links.map(async (link) => {
               const platform = link.platform.toLowerCase() as 'pumpfun' | 'kick' | 'twitch';
+              
+              // Skip Kick platform links on interval polling to save API requests
+              // Kick status is only checked on app open and manual refresh
+              if (!includeKick && platform === 'kick') {
+                return false;
+              }
+              
               const platformType: SupportedLivestreamPlatform = 
                 platform === 'kick' ? 'Kick' : 
                 platform === 'twitch' ? 'Twitch' : 
@@ -264,27 +279,27 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
 
     isPolling.value = true;
 
-    // Initial fetch for both - use refresh to bypass throttle and ensure immediate fetch
-    refresh();
-    refreshCreators();
+    // Initial fetch for both - include Kick on first load
+    fetchLiveCount(true);
+    fetchLiveCreatorsCount(true);
 
-    // Poll every 60 seconds
+    // Poll every 60 seconds (skip Kick to save API requests)
     pollingInterval = setInterval(() => {
-      fetchLiveCount();
-      fetchLiveCreatorsCount();
+      fetchLiveCount(false);
+      fetchLiveCreatorsCount(false);
     }, 60000);
   }
 
   // Force refresh (useful for when user navigates to Live page)
   async function refresh() {
     lastPollTime.value = 0; // Reset to force fetch
-    return await fetchLiveCount();
+    return await fetchLiveCount(true); // Include Kick on manual refresh
   }
 
   // Force refresh creators
   async function refreshCreators() {
     lastCreatorsPollTime.value = 0; // Reset to force fetch
-    return await fetchLiveCreatorsCount();
+    return await fetchLiveCreatorsCount(true); // Include Kick on manual refresh
   }
 
   return {

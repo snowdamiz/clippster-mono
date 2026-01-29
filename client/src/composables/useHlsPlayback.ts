@@ -51,7 +51,7 @@ export interface HlsPlaybackState {
 }
 
 // Configuration - optimized for 4-second segments
-const LIVE_EDGE_THRESHOLD = 12; // seconds behind live to consider "at live edge" (3 segments)
+const LIVE_EDGE_THRESHOLD = 15; // seconds behind live to consider "at live edge" (allows ~3-4 segments buffer)
 const SAFE_SEEK_PADDING = 0.25; // Avoid seeking exactly to the start of first fragment
 
 /**
@@ -101,6 +101,9 @@ export function useHlsPlayback() {
   let lastProgressPosition: number = 0;
   let reinitAttempts = 0;
   let cachedOutputDirOrUrl: string | null = null;
+  
+  // Stream end state
+  let streamHasEnded = false;
 
   // Computed
   const isAtLiveEdge = computed(() => {
@@ -230,8 +233,11 @@ export function useHlsPlayback() {
       // Create HLS instance with live streaming config optimized for DVR playback
       hls = new Hls({
         // Live streaming optimizations for 4-second segments
-        // We use a larger buffer to ensure smooth playback and avoid stalling
-        liveSyncDurationCount: 5, // Stay 5 segments (20s) behind live edge for safety
+        // CRITICAL: Stay far enough behind live edge to ensure smooth playback
+        // With 4-second segments, we need at least 6 segments (24s) of buffer
+        liveSyncDurationCount: 6, // Stay 6 segments (24s) behind live edge
+        // CRITICAL: Prevent catch-up speed adjustments - always play at 1.0x speed
+        maxLiveSyncPlaybackRate: 1.0, // Never speed up to catch up to live edge
         // Do NOT auto-jump forward when far behind (e.g., paused DVR). Large value disables catch-up seeks.
         liveMaxLatencyDurationCount: Number.POSITIVE_INFINITY,
         liveDurationInfinity: true, // Enable DVR mode (infinite duration)
@@ -343,15 +349,27 @@ export function useHlsPlayback() {
 
         const offset = timelineOffset ?? 0;
         state.value.duration = Math.max(0, levelDetails.totalduration - offset);
-        state.value.liveEdgeTime = state.value.duration;
+        
+        // Calculate TRUE live edge from the last fragment's end time
+        // This is the actual end of available content, not the target playback position
+        const lastFragment = levelDetails.fragments?.[levelDetails.fragments.length - 1];
+        if (lastFragment && typeof lastFragment.start === 'number' && typeof lastFragment.duration === 'number') {
+          const trueLiveEdge = lastFragment.start + lastFragment.duration;
+          state.value.liveEdgeTime = Math.max(0, trueLiveEdge - offset);
+        } else {
+          state.value.liveEdgeTime = state.value.duration;
+        }
       }
     });
 
-    hlsInstance.on(Hls.Events.FRAG_LOADED, () => {
+    hlsInstance.on(Hls.Events.FRAG_LOADED, (event, data) => {
       updateBufferedRanges();
-      if (hls?.liveSyncPosition) {
+      // Update live edge from the loaded fragment
+      // Use the fragment's end time as the live edge, not liveSyncPosition
+      if (data.frag && typeof data.frag.start === 'number' && typeof data.frag.duration === 'number') {
         const offset = timelineOffset ?? 0;
-        state.value.liveEdgeTime = Math.max(0, hls.liveSyncPosition - offset);
+        const fragEnd = data.frag.start + data.frag.duration;
+        state.value.liveEdgeTime = Math.max(state.value.liveEdgeTime, fragEnd - offset);
       }
     });
 
@@ -567,6 +585,11 @@ export function useHlsPlayback() {
    * Handle buffer stall with recovery timeout
    */
   function handleBufferStall() {
+    // Don't attempt recovery if stream has ended - just let it finish playing
+    if (streamHasEnded) {
+      console.log('[HlsPlayback] Stream ended, skipping buffer stall recovery');
+      return;
+    }
     state.value.isBuffering = true;
 
     if (!bufferStallStart) {
@@ -660,6 +683,16 @@ export function useHlsPlayback() {
   }
 
   /**
+   * Set stream ended flag to disable buffer recovery
+   */
+  function setStreamEnded(ended: boolean) {
+    streamHasEnded = ended;
+    if (ended) {
+      console.log('[HlsPlayback] Stream ended - disabling buffer recovery');
+    }
+  }
+
+  /**
    * Set up video element event handlers
    */
   function setupVideoEventHandlers(video: HTMLVideoElement) {
@@ -695,8 +728,9 @@ export function useHlsPlayback() {
       state.value.currentTime = Math.max(0, video.currentTime - offset);
       state.value.isAtLiveEdge = isAtLiveEdge.value;
 
-      if (state.value.isLive && hls?.liveSyncPosition) {
-        state.value.latency = hls.liveSyncPosition - video.currentTime;
+      // Calculate latency from true live edge, not liveSyncPosition
+      if (state.value.isLive && state.value.liveEdgeTime > 0) {
+        state.value.latency = state.value.liveEdgeTime - state.value.currentTime;
       }
     });
 
@@ -733,10 +767,8 @@ export function useHlsPlayback() {
         state.value.currentTime = Math.max(0, videoElement.currentTime - offset);
         updateBufferedRanges();
 
-        // Update live edge from HLS
-        if (hls?.liveSyncPosition) {
-          state.value.liveEdgeTime = Math.max(0, hls.liveSyncPosition - offset);
-        }
+        // Live edge is updated via LEVEL_LOADED and FRAG_LOADED events
+        // Don't overwrite it here with liveSyncPosition (which is the target playback position, not live edge)
 
         state.value.isAtLiveEdge = isAtLiveEdge.value;
       }
@@ -774,11 +806,8 @@ export function useHlsPlayback() {
     // NOT what's currently buffered. HLS.js will load necessary segments when seeking.
     const minAvailableOffset = Math.max(0, availableStartTime - offset);
     const safeFloor = minAvailableOffset > 0 ? minAvailableOffset + SAFE_SEEK_PADDING : 0;
-    // Use duration as the upper bound for seeking, NOT liveEdgeTime.
-    // liveEdgeTime represents the "safe" live sync position (a few segments behind),
-    // but users should be able to seek anywhere within the available duration.
-    const maxSeekable = state.value.duration || 0;
-    const clampedTime = Math.max(safeFloor, Math.min(time, maxSeekable));
+    const liveEdge = state.value.liveEdgeTime || state.value.duration || 0;
+    const clampedTime = Math.max(safeFloor, Math.min(time, liveEdge));
 
     // Map back to absolute player time
     const targetAbsolute = clampedTime + offset;
@@ -997,6 +1026,7 @@ export function useHlsPlayback() {
     cleanup,
     refreshPlaylist,
     waitForPlaylistReady,
+    setStreamEnded,
 
     // Utility
     getHlsUrl,

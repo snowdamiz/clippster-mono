@@ -565,7 +565,7 @@
     showDeleteConfirm.value = false;
   }
 
-  function toggleRestriction(key: string) {
+  function toggleRestriction(key: keyof typeof editData.value.restriction_defaults) {
     if (editData.value.restriction_defaults) {
       editData.value.restriction_defaults[key] = !editData.value.restriction_defaults[key];
     }
