@@ -180,16 +180,25 @@ If a component exceeds the max, extract logic into a composable. If a composable
 4. **Update `useEditorKeyboardShortcuts`** if the feature has shortcuts
 5. **Ensure undo/redo works** by testing the CommandHistory integration
 
-### Phase 5: Verify
+### Phase 5: Provide UI Testing Instructions
+
+Required Step: You must provide a clear, step-by-step guide for the user to verify the new feature in the UI. Format this as a markdown list in your final response.
+
+**The guide must include:**
+1. **How to access**: Where to click/navigate to find the new feature
+2. **Action steps**: Specific interactions (e.g., "Drag the playhead to 00:05", "Click the 'Add Text' button")
+3. **Expected result**: What should visually happen (e.g., "A new text overlay appears on the canvas and timeline")
+4. **Edge cases**: One or two checks for boundary conditions (e.g., "Undo the action", "Try adding with no selection")
+
+### Phase 6: Verify
 
 After implementation:
 
 1. **Type-check**: `cd client && yarn vue-tsc --noEmit`
 2. **Visual check**: Verify the feature renders correctly in the editor
-3. **Undo/redo**: If the feature creates commands, verify undo and redo work
-4. **No regressions**: Existing features still work (playback, selection, timeline)
-5. **File sizes**: No component exceeds the max line limits above
-6. **DRY check**: No duplicated logic — extract to composables if needed
+3. **No regressions**: Existing features still work (playback, selection, timeline)
+4. **File sizes**: No component exceeds the max line limits above
+5. **DRY check**: No duplicated logic — extract to composables if needed
 
 ## Code Quality Checklist
 

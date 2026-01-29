@@ -209,7 +209,16 @@ After applying the fix:
 4. **Related features**: Test adjacent features that share the same composables
 5. **Edge cases**: Test with no items, one item, and many items
 
-### Phase 5: Report
+### Phase 5: Provide UI Verification Steps
+
+Required Step: You must provide a clear, step-by-step guide for the user to verify the fix in the UI. Format this as a markdown list in your final response.
+
+**The guide must include:**
+1. **Reproduction check**: How to confirm the bug is gone (e.g., "Repeat the steps that caused the crash")
+2. **Verification steps**: Specific actions to validate the correct behavior
+3. **Regression check**: Quick check of related features (e.g., "Verify standard playback still works")
+
+### Phase 6: Report
 
 Provide a clear summary:
 
