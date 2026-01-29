@@ -100,7 +100,7 @@
 
       <!-- Grouped Audio Tracks -->
       <div
-        v-for="(trackGroup, index) in groupedAudioTracks"
+        v-for="(trackGroup, index) in visualGroupedAudioTracks"
         :key="`audio-track-${trackGroup.order}`"
         class="flex border-b border-[var(--editor-border)] min-h-[48px] relative"
       >
@@ -418,6 +418,8 @@ const {
   isDragging: isDraggingAudioSegment,
   draggingSegmentId,
   dragOffset,
+  dragOffsetY,
+  targetTrackOrder,
   startDragging: startAudioSegmentDrag,
   getSegmentVisualPosition,
 } = useAudioSegmentDrag({
@@ -498,8 +500,52 @@ function getAudioWaveformHeight(audioTrackId: string, index: number, startTime: 
 function getAudioSegmentStyle(audioTrack: any): Record<string, string> {
   const visualStartTime = getSegmentVisualPosition(audioTrack.id, audioTrack.start_time);
   const duration = audioTrack.end_time - audioTrack.start_time;
-  return getSegmentStyle(visualStartTime, duration);
+  const baseStyle = getSegmentStyle(visualStartTime, duration);
+  
+  // Add vertical transform if this segment is being dragged
+  if (isDraggingAudioSegment.value && draggingSegmentId.value === audioTrack.id) {
+    return {
+      ...baseStyle,
+      transform: `translateY(${dragOffsetY.value}px)`,
+      zIndex: '10', // Ensure dragged segment is on top
+    };
+  }
+  
+  return baseStyle;
 }
+
+// Check if a segment should be rendered on a specific track during drag
+function shouldRenderSegmentOnTrack(audioTrack: any, trackOrder: number): boolean {
+  // If segment is being dragged, render it on the target track
+  if (isDraggingAudioSegment.value && draggingSegmentId.value === audioTrack.id) {
+    return targetTrackOrder.value === trackOrder;
+  }
+  // Otherwise, render on its actual track
+  return audioTrack.track_order === trackOrder;
+}
+
+// Get the visual grouped tracks (accounts for dragging to new tracks)
+const visualGroupedAudioTracks = computed(() => {
+  // Start with existing grouped tracks
+  const groups = [...groupedAudioTracks.value];
+  
+  // If dragging and target track doesn't exist, add a placeholder
+  if (isDraggingAudioSegment.value && targetTrackOrder.value >= groups.length) {
+    // Add empty tracks up to the target track
+    for (let i = groups.length; i <= targetTrackOrder.value; i++) {
+      groups.push({
+        order: i,
+        segments: []
+      });
+    }
+  }
+  
+  // Redistribute segments based on drag state
+  return groups.map(group => ({
+    ...group,
+    segments: audioTracks.value.filter(track => shouldRenderSegmentOnTrack(track, group.order))
+  }));
+});
 </script>
 
 <style scoped>

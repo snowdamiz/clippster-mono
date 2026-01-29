@@ -28,6 +28,10 @@ export interface AudioSegmentDragReturn {
   draggingSegmentId: Ref<string | null>;
   /** Temporary drag offset in pixels for visual feedback */
   dragOffset: Ref<number>;
+  /** Temporary vertical offset in pixels */
+  dragOffsetY: Ref<number>;
+  /** Target track order during drag */
+  targetTrackOrder: Ref<number>;
   /** Start dragging an audio segment */
   startDragging: (event: MouseEvent, segment: VideoEditorAudioTrackRecord) => void;
   /** Get the visual position for a segment (accounts for drag offset) */
@@ -62,11 +66,18 @@ export function useAudioSegmentDrag(options: AudioSegmentDragOptions): AudioSegm
   const isDragging = ref(false);
   const draggingSegmentId = ref<string | null>(null);
   const dragOffset = ref(0);
+  const dragOffsetY = ref(0);
+  const targetTrackOrder = ref(0);
   
   let dragStartX = 0;
+  let dragStartY = 0;
   let dragStartTime = 0;
   let segmentDuration = 0;
+  let originalTrackOrder = 0;
   let currentSegment: VideoEditorAudioTrackRecord | null = null;
+
+  // Track height constant (should match the min-h-[48px] in the template)
+  const TRACK_HEIGHT = 48;
 
   /**
    * Calculate time from mouse X position
@@ -156,6 +167,14 @@ export function useAudioSegmentDrag(options: AudioSegmentDragOptions): AudioSegm
   }
 
   /**
+   * Calculate target track order from Y offset
+   */
+  function calculateTargetTrack(yOffset: number): number {
+    const trackDelta = Math.round(yOffset / TRACK_HEIGHT);
+    return Math.max(0, originalTrackOrder + trackDelta);
+  }
+
+  /**
    * Get the visual position for a segment (accounts for drag offset)
    */
   function getSegmentVisualPosition(segmentId: string, actualStartTime: number): number {
@@ -183,8 +202,11 @@ export function useAudioSegmentDrag(options: AudioSegmentDragOptions): AudioSegm
     currentSegment = segment;
     
     dragStartX = event.clientX;
+    dragStartY = event.clientY;
     dragStartTime = segment.start_time;
     segmentDuration = segment.end_time - segment.start_time;
+    originalTrackOrder = segment.track_order;
+    targetTrackOrder.value = originalTrackOrder;
 
     let lastNewStartTime = dragStartTime;
     let lastNewEndTime = segment.end_time;
@@ -196,15 +218,20 @@ export function useAudioSegmentDrag(options: AudioSegmentDragOptions): AudioSegm
       const startTime = getTimeFromPosition(dragStartX);
       const deltaTime = currentTime - startTime;
       
+      // Calculate Y offset and target track
+      const deltaY = e.clientY - dragStartY;
+      dragOffsetY.value = deltaY;
+      targetTrackOrder.value = calculateTargetTrack(deltaY);
+      
       // Calculate desired new start time
       const desiredStartTime = Math.max(0, dragStartTime + deltaTime);
       
-      // Apply collision detection to prevent overlapping
+      // Apply collision detection to prevent overlapping (check against target track)
       const clampedStartTime = clampToAvoidCollisions(
         currentSegment.id,
         desiredStartTime,
         segmentDuration,
-        currentSegment.track_order
+        targetTrackOrder.value
       );
       
       lastNewStartTime = clampedStartTime;
@@ -217,16 +244,18 @@ export function useAudioSegmentDrag(options: AudioSegmentDragOptions): AudioSegm
     const handleMouseUp = async () => {
       isDragging.value = false;
       draggingSegmentId.value = null;
-      dragOffset.value = 0; // Reset drag offset
+      dragOffset.value = 0;
+      dragOffsetY.value = 0;
 
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
 
       // Only update database once when drag completes
-      if (currentSegment && (lastNewStartTime !== dragStartTime)) {
+      if (currentSegment && (lastNewStartTime !== dragStartTime || targetTrackOrder.value !== originalTrackOrder)) {
         await updateVideoEditorAudioTrack(currentSegment.id, {
           start_time: lastNewStartTime,
           end_time: lastNewEndTime,
+          track_order: targetTrackOrder.value,
         });
 
         // Trigger reload after drag completes
@@ -235,6 +264,8 @@ export function useAudioSegmentDrag(options: AudioSegmentDragOptions): AudioSegm
         }
       }
 
+      // Reset target track order
+      targetTrackOrder.value = 0;
       currentSegment = null;
     };
 
@@ -246,6 +277,8 @@ export function useAudioSegmentDrag(options: AudioSegmentDragOptions): AudioSegm
     isDragging,
     draggingSegmentId,
     dragOffset,
+    dragOffsetY,
+    targetTrackOrder,
     startDragging,
     getSegmentVisualPosition,
   };
