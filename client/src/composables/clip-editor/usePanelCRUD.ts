@@ -654,6 +654,7 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
           name: item.file_name,
           start_time: 0,
           end_time: audioDuration,
+          source_start_time: 0,
           volume: 1.0,
           pan: 0,
           fade_in: 0,

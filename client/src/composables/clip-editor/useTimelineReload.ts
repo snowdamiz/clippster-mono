@@ -22,6 +22,7 @@ export interface TimelineAudioTrack {
   filePath: string;
   startTime: number;
   endTime: number;
+  sourceStartTime: number;
   volume: number;
   isMuted: boolean;
   fadeInDuration: number;
@@ -162,6 +163,7 @@ export function useTimelineReload(options: TimelineReloadOptions): TimelineReloa
         filePath: track.file_path,
         startTime: track.start_time,
         endTime: track.end_time,
+        sourceStartTime: track.source_start_time,
         volume: track.volume,
         isMuted: track.is_muted === 1,
         fadeInDuration: track.fade_in,

@@ -13,6 +13,7 @@ export interface AudioTrackRecord {
   file_path: string;
   start_time: number;
   end_time: number;
+  source_start_time: number;
   volume: number;
   is_muted: number; // Database stores as 0/1
   fade_in: number;
@@ -25,6 +26,7 @@ export interface PlayerAudioTrack {
   filePath: string;
   startTime: number;
   endTime: number;
+  sourceStartTime: number;
   volume: number;
   isMuted: boolean;
   fadeInDuration: number;
@@ -63,6 +65,7 @@ export function transformAudioTrack(track: AudioTrackRecord): PlayerAudioTrack {
     filePath: track.file_path,
     startTime: track.start_time,
     endTime: track.end_time,
+    sourceStartTime: track.source_start_time,
     volume: track.volume,
     isMuted: track.is_muted === 1,
     fadeInDuration: track.fade_in,

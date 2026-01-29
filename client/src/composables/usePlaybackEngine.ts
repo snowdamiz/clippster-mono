@@ -39,6 +39,7 @@ export interface AudioTrackInfo {
   filePath: string;
   startTime: number;
   endTime: number;
+  sourceStartTime: number;
   volume: number;
   isMuted: boolean;
   fadeInDuration?: number;
