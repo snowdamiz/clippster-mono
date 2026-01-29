@@ -148,12 +148,49 @@ Alternative for simple bodies on Windows:
 gh issue create --title "Issue title" --body "Line 1`n`nLine 2"
 ```
 
-### 4. Report Results
+### 4. Create a Branch for the Issue
 
-After creating the issue:
+After the issue is created successfully, create a corresponding Git branch:
+
+**Extract the issue number** from the `gh issue create` output. The output typically includes:
+```
+Creating issue in owner/repo
+
+https://github.com/owner/repo/issues/123
+```
+
+**Branch Naming Convention**:
+- Format: `issue-{number}-{brief-description}`
+- Example: `issue-123-fix-timeline-crash`
+- Keep description lowercase with hyphens
+- Limit to 3-5 words for the description
+
+**Create the branch**:
+```bash
+# Get the issue number from the previous command output
+# Then create and checkout the branch
+git checkout -b issue-{number}-{brief-description}
+```
+
+**Example**:
+```bash
+# After creating issue #123 about timeline crashes
+git checkout -b issue-123-fix-timeline-crash
+```
+
+**Push the branch to remote** (optional but recommended):
+```bash
+git push -u origin issue-{number}-{brief-description}
+```
+
+### 5. Report Results
+
+After creating the issue and branch:
 1. Show the user the issue URL
 2. Confirm the issue was created successfully
 3. Display the issue number for reference
+4. Confirm the branch was created and checked out
+5. Show the branch name
 
 ## Common Labels
 
@@ -175,6 +212,7 @@ User discussed a bug where the timeline editor crashes when dragging segments to
 
 **macOS/Linux**:
 ```bash
+# Create the issue
 gh issue create \
   --title "Timeline editor crashes on rapid segment dragging" \
   --body "$(cat <<'EOF'
@@ -197,10 +235,17 @@ Discovered during conversation about timeline performance.
 EOF
 )" \
   --label "bug"
+
+# After getting issue #123, create the branch
+git checkout -b issue-123-timeline-drag-crash
+
+# Optionally push to remote
+git push -u origin issue-123-timeline-drag-crash
 ```
 
 **Windows (PowerShell)**:
 ```powershell
+# Create the issue
 $body = @"
 ## Description
 The timeline editor crashes when users drag segments too quickly across the timeline.
@@ -220,6 +265,12 @@ Application freezes and crashes with no error message.
 Discovered during conversation about timeline performance.
 "@
 gh issue create --title "Timeline editor crashes on rapid segment dragging" --body $body --label "bug"
+
+# After getting issue #123, create the branch
+git checkout -b issue-123-timeline-drag-crash
+
+# Optionally push to remote
+git push -u origin issue-123-timeline-drag-crash
 ```
 
 ### Example 2: Feature Request
@@ -228,6 +279,7 @@ User requested a dark mode toggle in settings.
 
 **macOS/Linux**:
 ```bash
+# Create the issue
 gh issue create \
   --title "Add dark mode toggle to settings" \
   --body "$(cat <<'EOF'
@@ -245,10 +297,17 @@ Requested during user feedback session.
 EOF
 )" \
   --label "enhancement"
+
+# After getting issue #456, create the branch
+git checkout -b issue-456-dark-mode-toggle
+
+# Optionally push to remote
+git push -u origin issue-456-dark-mode-toggle
 ```
 
 **Windows (PowerShell)**:
 ```powershell
+# Create the issue
 $body = @"
 ## Summary
 Add a dark mode option to the application settings.
@@ -263,6 +322,12 @@ Add a toggle in Settings > Appearance that switches between light, dark, and sys
 Requested during user feedback session.
 "@
 gh issue create --title "Add dark mode toggle to settings" --body $body --label "enhancement"
+
+# After getting issue #456, create the branch
+git checkout -b issue-456-dark-mode-toggle
+
+# Optionally push to remote
+git push -u origin issue-456-dark-mode-toggle
 ```
 
 ### Example 3: Task from Discussion
@@ -271,6 +336,7 @@ User identified a refactoring task during code review.
 
 **macOS/Linux**:
 ```bash
+# Create the issue
 gh issue create \
   --title "Refactor authentication flow to use async/await" \
   --body "$(cat <<'EOF'
@@ -288,10 +354,17 @@ Identified during code review that the auth flow uses nested callbacks making it
 EOF
 )" \
   --label "refactor,tech-debt"
+
+# After getting issue #789, create the branch
+git checkout -b issue-789-refactor-auth-async
+
+# Optionally push to remote
+git push -u origin issue-789-refactor-auth-async
 ```
 
 **Windows (PowerShell)**:
 ```powershell
+# Create the issue
 $body = @"
 ## Description
 Refactor the authentication module to use modern async/await patterns instead of callback chains.
@@ -306,6 +379,12 @@ Identified during code review that the auth flow uses nested callbacks making it
 - [ ] No breaking changes to API
 "@
 gh issue create --title "Refactor authentication flow to use async/await" --body $body --label "refactor,tech-debt"
+
+# After getting issue #789, create the branch
+git checkout -b issue-789-refactor-auth-async
+
+# Optionally push to remote
+git push -u origin issue-789-refactor-auth-async
 ```
 
 ## Error Handling
