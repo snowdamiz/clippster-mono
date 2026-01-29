@@ -73,7 +73,7 @@
                   <component v-else :is="getMediaIcon(item.type)" :size="20" />
                 </div>
                 
-                <div class="media-info">
+                <div class="media-info" @click="selectMediaForTranscriptEdit(item)">
                   <span class="media-name">{{ item.name }}</span>
                   <div class="media-meta-row">
                     <span class="media-meta">
@@ -83,10 +83,14 @@
                       <Loader2 :size="10" class="animate-spin" />
                       Transcribing
                     </span>
+                    <span v-else-if="item.transcript" class="transcript-badge" title="Click to edit transcript">
+                      <FileText :size="10" />
+                      Transcript
+                    </span>
                   </div>
                 </div>
 
-                <button @click="removeMedia(item.id)" class="media-remove-btn">
+                <button @click.stop="removeMedia(item.id)" class="media-remove-btn">
                   <X :size="14" />
                 </button>
               </div>
@@ -105,6 +109,43 @@
                   <span>Assets</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transcript Editor Panel -->
+        <div v-if="editingTranscript" class="ai-sidebar-panel transcript-editor-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <FileText :size="16" class="text-primary" />
+              <span>Edit Transcript</span>
+            </div>
+            <button @click="closeTranscriptEditor" class="panel-action-btn">
+              <X :size="16" />
+            </button>
+          </div>
+
+          <div class="panel-content">
+            <div class="transcript-editor-info">
+              <span class="transcript-media-name">{{ editingTranscript.name }}</span>
+              <span class="transcript-tip">💡 Fix any transcription errors before generating</span>
+            </div>
+            
+            <textarea
+              v-model="editingTranscriptText"
+              class="transcript-textarea custom-scrollbar"
+              placeholder="Transcript will appear here..."
+              rows="15"
+            />
+            
+            <div class="transcript-actions">
+              <button @click="closeTranscriptEditor" class="transcript-btn transcript-btn--secondary">
+                Cancel
+              </button>
+              <button @click="saveTranscript" class="transcript-btn transcript-btn--primary">
+                <Check :size="14" />
+                Save Changes
+              </button>
             </div>
           </div>
         </div>
@@ -273,7 +314,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { 
   Wand2, Plus, Upload, X, Play, Pause, Video, 
   Music, Image as ImageIcon, Loader2, Download, 
-  AlertCircle, Lightbulb, Sparkles, ListMusic 
+  AlertCircle, Lightbulb, Sparkles, ListMusic, FileText, Check
 } from 'lucide-vue-next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
@@ -293,6 +334,10 @@ const prompt = ref('');
 const showPromptExamples = ref(false);
 const promptFocused = ref(false);
 const transcriptGenerationStatus = ref<Map<string, { status: 'generating' | 'complete' | 'error', progress?: string }>>(new Map());
+
+// Transcript editing state
+const editingTranscript = ref<AIVideoMediaItem | null>(null);
+const editingTranscriptText = ref('');
 
 // Dialog state
 const showClipPicker = ref(false);
@@ -487,6 +532,17 @@ function usePromptExample(p: string) {
 }
 
 async function handleClipsSelected(clips: any[]) {
+  console.log(`[AIVideoCreator] handleClipsSelected called with ${clips.length} clips`);
+  clips.forEach((clip, idx) => {
+    console.log(`[AIVideoCreator] Clip[${idx}]:`, {
+      id: clip.id,
+      name: clip.name,
+      videoPath: clip.videoPath,
+      builtFilePath: clip.builtFilePath,
+      duration: clip.duration,
+    });
+  });
+  
   const items: AIVideoMediaItem[] = clips.map(clip => ({
     id: clip.id,
     name: clip.name || 'Untitled Clip',
@@ -501,7 +557,7 @@ async function handleClipsSelected(clips: any[]) {
   mediaItems.value.push(...items);
   showClipPicker.value = false;
   
-  // Fetch transcripts from clip segments for built clips
+  // Fetch transcripts and audio peaks from clip segments for built clips
   for (const item of items) {
     fetchClipTranscript(item);
   }
@@ -513,6 +569,7 @@ function handleAssetsSelected(assets: AIVideoMediaItem[]) {
 
 async function fetchClipTranscript(item: AIVideoMediaItem) {
   console.log(`[AIVideoCreator] Fetching transcript for clip: ${item.name} (${item.id})`);
+  console.log(`[AIVideoCreator] Item source:`, item.source);
   
   try {
     transcriptGenerationStatus.value.set(item.id, { status: 'generating', progress: 'Loading...' });
@@ -524,6 +581,25 @@ async function fetchClipTranscript(item: AIVideoMediaItem) {
     // Extract actual clip ID from composite ID (format: clipId_buildId_aspectRatio)
     const actualClipId = item.source?.clipId || item.id.split('_')[0];
     console.log(`[AIVideoCreator] Using clip ID: ${actualClipId} (from composite: ${item.id})`);
+    
+    // Get the video path for audio peak detection
+    let videoPath = item.source?.path;
+    console.log(`[AIVideoCreator] Initial video path: ${videoPath}`);
+    
+    // If no video path from source, try to get it from the clip database
+    if (!videoPath || videoPath === '') {
+      console.log(`[AIVideoCreator] No video path in source, fetching from database...`);
+      try {
+        const { getClip } = await import('../services/database/clips');
+        const clip = await getClip(actualClipId);
+        if (clip) {
+          videoPath = clip.built_file_path || clip.file_path;
+          console.log(`[AIVideoCreator] Got video path from database: ${videoPath}`);
+        }
+      } catch (e) {
+        console.warn(`[AIVideoCreator] Failed to get clip from database:`, e);
+      }
+    }
     
     // Fetch clip segments which contain the transcript
     const segments = await getClipSegmentsByClipId(actualClipId);
@@ -607,6 +683,7 @@ async function fetchClipTranscript(item: AIVideoMediaItem) {
         .join(' ');
       
       console.log(`[AIVideoCreator] Combined transcript length: ${fullTranscript.length} characters`);
+      console.log(`[AIVideoCreator] FULL TRANSCRIPT:`, fullTranscript);
       
       const m = mediaItems.value.find(x => x.id === item.id);
       if (m) {
@@ -629,7 +706,24 @@ async function fetchClipTranscript(item: AIVideoMediaItem) {
         
         if (audioPeaks.length > 0) {
           m.audioPeaks = audioPeaks;
-          console.log(`[AIVideoCreator] ✅ Loaded ${audioPeaks.length} audio peaks`);
+          console.log(`[AIVideoCreator] ✅ Loaded ${audioPeaks.length} audio peaks from segments`);
+        } else if (videoPath) {
+          // No audio peaks in segments, calculate from video file
+          console.log(`[AIVideoCreator] No audio peaks in segments, calculating from video file...`);
+          try {
+            const peaks = await invoke<Array<{ time: number; amplitude: number }>>('detect_audio_peaks', {
+              videoPath,
+              threshold: 0.3,
+              minInterval: 0.5
+            });
+            
+            if (peaks && peaks.length > 0) {
+              m.audioPeaks = peaks;
+              console.log(`[AIVideoCreator] ✅ Calculated ${peaks.length} audio peaks from video`);
+            }
+          } catch (peakErr) {
+            console.warn(`[AIVideoCreator] Failed to calculate audio peaks:`, peakErr);
+          }
         }
         
         console.log(`[AIVideoCreator] ✅ Loaded transcript for ${item.name}: ${fullTranscript.substring(0, 100)}...`);
@@ -638,6 +732,26 @@ async function fetchClipTranscript(item: AIVideoMediaItem) {
       }
     } else {
       console.warn(`[AIVideoCreator] No segments found for clip ${item.name}`);
+    }
+    
+    // Final fallback: If we still don't have audio peaks, try to calculate them
+    const finalItem = mediaItems.value.find(x => x.id === item.id);
+    if (finalItem && (!finalItem.audioPeaks || finalItem.audioPeaks.length === 0) && videoPath) {
+      console.log(`[AIVideoCreator] Final fallback: calculating audio peaks for ${item.name}...`);
+      try {
+        const peaks = await invoke<Array<{ time: number; amplitude: number }>>('detect_audio_peaks', {
+          videoPath,
+          threshold: 0.3,
+          minInterval: 0.5
+        });
+        
+        if (peaks && peaks.length > 0) {
+          finalItem.audioPeaks = peaks;
+          console.log(`[AIVideoCreator] ✅ Final fallback: calculated ${peaks.length} audio peaks`);
+        }
+      } catch (peakErr) {
+        console.warn(`[AIVideoCreator] Final fallback failed to calculate audio peaks:`, peakErr);
+      }
     }
     
     transcriptGenerationStatus.value.delete(item.id);
@@ -687,6 +801,29 @@ function formatDuration(s?: number) {
   return `${m}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 }
 function formatTime(s: number) { return formatDuration(s); }
+
+function selectMediaForTranscriptEdit(item: AIVideoMediaItem) {
+  if (!item.transcript) return;
+  editingTranscript.value = item;
+  editingTranscriptText.value = item.transcript;
+}
+
+function closeTranscriptEditor() {
+  editingTranscript.value = null;
+  editingTranscriptText.value = '';
+}
+
+function saveTranscript() {
+  if (!editingTranscript.value) return;
+  
+  const item = mediaItems.value.find(m => m.id === editingTranscript.value!.id);
+  if (item) {
+    item.transcript = editingTranscriptText.value;
+    console.log(`[AIVideoCreator] ✅ Updated transcript for ${item.name}`);
+  }
+  
+  closeTranscriptEditor();
+}
 </script>
 
 <style scoped>
@@ -722,6 +859,94 @@ function formatTime(s: number) { return formatDuration(s); }
   border-top: 1px solid var(--border);
   background-color: var(--sidebar-bg);
   padding-bottom: 1rem;
+}
+
+.transcript-editor-panel {
+  border-top: 1px solid var(--border);
+  background-color: var(--sidebar-bg);
+  padding-bottom: 1rem;
+}
+
+.transcript-editor-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: var(--sidebar-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.transcript-media-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.transcript-tip {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.transcript-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--sidebar-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.transcript-textarea:focus {
+  outline: none;
+  border-color: var(--sidebar-accent);
+}
+
+.transcript-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.transcript-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.625rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--border);
+}
+
+.transcript-btn--secondary {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+.transcript-btn--secondary:hover {
+  background: var(--accent);
+}
+
+.transcript-btn--primary {
+  background: var(--sidebar-accent);
+  color: white;
+  border-color: var(--sidebar-accent);
+}
+
+.transcript-btn--primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 .panel-header {
@@ -824,13 +1049,6 @@ function formatTime(s: number) { return formatDuration(s); }
 }
 
 
-.media-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
 
 .media-name {
   font-size: 0.8125rem;
@@ -855,7 +1073,7 @@ function formatTime(s: number) { return formatDuration(s); }
   line-height: 1.2;
 }
 
-.transcribing-badge {
+.transcribing-badge, .transcript-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -867,6 +1085,20 @@ function formatTime(s: number) { return formatDuration(s); }
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+}
+
+.transcript-badge {
+  background: rgba(34, 197, 94, 0.1);
+  color: rgb(34, 197, 94);
+  cursor: pointer;
+}
+
+.transcript-badge:hover {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.media-info {
+  cursor: pointer;
 }
 
 .media-remove-btn {

@@ -131,6 +131,7 @@ export interface AIVideoMediaItem {
   };
   thumbnailUrl?: string;
   duration?: number;
+  dimensions?: { width: number; height: number };
   transcript?: string;
   audioPeaks?: Array<{ time: number; amplitude: number }>;
   addedAt: Date;

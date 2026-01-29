@@ -41,6 +41,12 @@ export const ImpactEffects: React.FC<ImpactEffectsProps> = ({ track, children })
   const particles: any[] = [];
   const impactLines: any[] = [];
   const filters: string[] = [];
+  let splitScreenConfig: any = null;
+  let kaleidoscopeConfig: any = null;
+  let prismConfig: any = null;
+  let shatterConfig: any = null;
+  let zoomTrailsConfig: any = null;
+  let holographicConfig: any = null;
   
   activeEffects.forEach((effect: any) => {
     const effectProgress = (currentTime - effect.time) / effect.duration;
@@ -237,6 +243,137 @@ export const ImpactEffects: React.FC<ImpactEffectsProps> = ({ track, children })
         }
         break;
       }
+      
+      case 'splitScreen':
+      case 'slice': {
+        // Create layered angled segments like the screenshot
+        const segments = effect.segments || 3;
+        const angle = effect.angle || -15; // Degrees
+        const offset = interpolate(
+          effectProgress,
+          [0, 0.3, 1],
+          [0, intensity * 30, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        const opacity = interpolate(
+          effectProgress,
+          [0, 0.2, 0.8, 1],
+          [0, 1, 1, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        
+        splitScreenConfig = {
+          segments,
+          angle,
+          offset,
+          opacity,
+          color: effect.color || 'rgba(0, 0, 0, 0.3)',
+        };
+        break;
+      }
+      
+      case 'kaleidoscope': {
+        // Mirrored segments radiating from center
+        const segments = effect.segments || 6;
+        const rotation = interpolate(
+          effectProgress,
+          [0, 1],
+          [0, 360],
+          { extrapolateRight: 'clamp' }
+        );
+        const scale = interpolate(
+          effectProgress,
+          [0, 0.5, 1],
+          [1, 1.2, 1],
+          { extrapolateRight: 'clamp' }
+        );
+        const opacity = interpolate(
+          effectProgress,
+          [0, 0.2, 0.8, 1],
+          [0, intensity, intensity, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        
+        kaleidoscopeConfig = { segments, rotation, scale, opacity };
+        break;
+      }
+      
+      case 'prism':
+      case 'rainbowSplit': {
+        // Rainbow refraction effect
+        const spread = interpolate(
+          effectProgress,
+          [0, 0.5, 1],
+          [0, intensity * 40, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        const opacity = interpolate(
+          effectProgress,
+          [0, 0.3, 0.7, 1],
+          [0, 0.8, 0.8, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        
+        prismConfig = { spread, opacity };
+        break;
+      }
+      
+      case 'shatter':
+      case 'brokenGlass': {
+        // Shattered glass effect
+        const pieces = effect.pieces || 20;
+        const spread = interpolate(
+          effectProgress,
+          [0, 1],
+          [0, 100],
+          { extrapolateRight: 'clamp' }
+        );
+        const opacity = interpolate(
+          effectProgress,
+          [0, 0.1, 0.9, 1],
+          [0, 1, 1, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        
+        shatterConfig = { pieces, spread, opacity, intensity };
+        break;
+      }
+      
+      case 'zoomTrails':
+      case 'echoZoom': {
+        // Motion echo/trail effect
+        const trailCount = effect.trails || 5;
+        const maxScale = 1 + (intensity * 0.5);
+        const opacity = interpolate(
+          effectProgress,
+          [0, 0.2, 0.8, 1],
+          [0, 0.6, 0.6, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        
+        zoomTrailsConfig = { trailCount, maxScale, opacity, effectProgress };
+        break;
+      }
+      
+      case 'holographic':
+      case 'iridescent': {
+        // Holographic/iridescent overlay
+        const hue = interpolate(
+          effectProgress,
+          [0, 1],
+          [0, 360],
+          { extrapolateRight: 'clamp' }
+        );
+        const opacity = interpolate(
+          effectProgress,
+          [0, 0.3, 0.7, 1],
+          [0, intensity * 0.5, intensity * 0.5, 0],
+          { extrapolateRight: 'clamp' }
+        );
+        
+        holographicConfig = { hue, opacity };
+        break;
+      }
     }
   });
   
@@ -381,6 +518,167 @@ export const ImpactEffects: React.FC<ImpactEffectsProps> = ({ track, children })
           }}
         />
       ))}
+      
+      {/* Split Screen / Slice Effect */}
+      {splitScreenConfig && (
+        <AbsoluteFill style={{ pointerEvents: 'none', overflow: 'hidden' }}>
+          {Array.from({ length: splitScreenConfig.segments }).map((_, i) => {
+            const segmentWidth = 100 / splitScreenConfig.segments;
+            const xOffset = i * segmentWidth;
+            const layerOffset = (i - Math.floor(splitScreenConfig.segments / 2)) * splitScreenConfig.offset;
+            
+            return (
+              <div
+                key={`split-${i}`}
+                style={{
+                  position: 'absolute',
+                  left: `${xOffset}%`,
+                  top: 0,
+                  width: `${segmentWidth}%`,
+                  height: '100%',
+                  transform: `skewY(${splitScreenConfig.angle}deg) translateX(${layerOffset}px)`,
+                  opacity: splitScreenConfig.opacity,
+                  clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%)`,
+                  backgroundColor: splitScreenConfig.color,
+                  borderLeft: i > 0 ? '2px solid rgba(255, 255, 255, 0.3)' : 'none',
+                  borderRight: i < splitScreenConfig.segments - 1 ? '2px solid rgba(255, 255, 255, 0.3)' : 'none',
+                  boxShadow: '0 0 20px rgba(0, 0, 0, 0.5)',
+                }}
+              />
+            );
+          })}
+        </AbsoluteFill>
+      )}
+      
+      {/* Kaleidoscope Effect */}
+      {kaleidoscopeConfig && (
+        <AbsoluteFill style={{ pointerEvents: 'none', overflow: 'hidden', mixBlendMode: 'screen' }}>
+          {Array.from({ length: kaleidoscopeConfig.segments }).map((_, i) => {
+            const angle = (360 / kaleidoscopeConfig.segments) * i + kaleidoscopeConfig.rotation;
+            return (
+              <div
+                key={`kaleidoscope-${i}`}
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  width: '100%',
+                  height: '100%',
+                  transform: `translate(-50%, -50%) rotate(${angle}deg) scale(${kaleidoscopeConfig.scale})`,
+                  opacity: kaleidoscopeConfig.opacity * 0.3,
+                  background: `linear-gradient(90deg, transparent 48%, rgba(255,255,255,0.2) 50%, transparent 52%)`,
+                  transformOrigin: 'center center',
+                }}
+              />
+            );
+          })}
+        </AbsoluteFill>
+      )}
+      
+      {/* Prism / Rainbow Split Effect */}
+      {prismConfig && (
+        <AbsoluteFill style={{ pointerEvents: 'none', mixBlendMode: 'screen' }}>
+          {['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'].map((color, i) => (
+            <div
+              key={`prism-${i}`}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: `radial-gradient(circle, ${color}40 0%, transparent 70%)`,
+                transform: `translateX(${(i - 3) * prismConfig.spread * 0.3}px)`,
+                opacity: prismConfig.opacity * 0.4,
+              }}
+            />
+          ))}
+        </AbsoluteFill>
+      )}
+      
+      {/* Shatter / Broken Glass Effect */}
+      {shatterConfig && (
+        <AbsoluteFill style={{ pointerEvents: 'none', overflow: 'hidden' }}>
+          {Array.from({ length: shatterConfig.pieces }).map((_, i) => {
+            const angle = Math.random() * 360;
+            const distance = shatterConfig.spread * (0.5 + Math.random() * 0.5);
+            const size = 10 + Math.random() * 20;
+            const rotation = Math.random() * 360;
+            const x = 50 + Math.cos(angle * Math.PI / 180) * distance * 0.5;
+            const y = 50 + Math.sin(angle * Math.PI / 180) * distance * 0.5;
+            
+            return (
+              <div
+                key={`shatter-${i}`}
+                style={{
+                  position: 'absolute',
+                  left: `${x}%`,
+                  top: `${y}%`,
+                  width: size,
+                  height: size,
+                  transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+                  opacity: shatterConfig.opacity * 0.6,
+                  background: 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(200,200,255,0.4) 100%)',
+                  border: '1px solid rgba(255,255,255,0.5)',
+                  boxShadow: '0 0 10px rgba(255,255,255,0.3)',
+                  clipPath: 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)',
+                }}
+              />
+            );
+          })}
+        </AbsoluteFill>
+      )}
+      
+      {/* Zoom Trails / Echo Effect */}
+      {zoomTrailsConfig && (
+        <AbsoluteFill style={{ pointerEvents: 'none', mixBlendMode: 'screen' }}>
+          {Array.from({ length: zoomTrailsConfig.trailCount }).map((_, i) => {
+            const delay = i / zoomTrailsConfig.trailCount;
+            const trailProgress = Math.max(0, zoomTrailsConfig.effectProgress - delay * 0.2);
+            const scale = interpolate(
+              trailProgress,
+              [0, 1],
+              [1, zoomTrailsConfig.maxScale],
+              { extrapolateRight: 'clamp' }
+            );
+            const opacity = zoomTrailsConfig.opacity * (1 - i / zoomTrailsConfig.trailCount) * 0.3;
+            
+            return (
+              <div
+                key={`trail-${i}`}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  transform: `scale(${scale})`,
+                  opacity: opacity,
+                  border: '2px solid rgba(255,255,255,0.5)',
+                  borderRadius: '8px',
+                }}
+              />
+            );
+          })}
+        </AbsoluteFill>
+      )}
+      
+      {/* Holographic / Iridescent Overlay */}
+      {holographicConfig && (
+        <AbsoluteFill style={{ pointerEvents: 'none', mixBlendMode: 'screen' }}>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: `
+                linear-gradient(45deg, 
+                  hsl(${holographicConfig.hue}, 100%, 50%) 0%,
+                  hsl(${holographicConfig.hue + 60}, 100%, 50%) 25%,
+                  hsl(${holographicConfig.hue + 120}, 100%, 50%) 50%,
+                  hsl(${holographicConfig.hue + 180}, 100%, 50%) 75%,
+                  hsl(${holographicConfig.hue + 240}, 100%, 50%) 100%
+                )
+              `,
+              opacity: holographicConfig.opacity,
+              mixBlendMode: 'color-dodge',
+            }}
+          />
+        </AbsoluteFill>
+      )}
     </>
   );
 };

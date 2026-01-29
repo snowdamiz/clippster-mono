@@ -105,7 +105,7 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({ track }) => {
   };
   
   const textStyle: React.CSSProperties = {
-    fontFamily: textProps.fontFamily || 'Inter',
+    fontFamily: textProps.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     fontSize: `${textProps.fontSize}px`,
     fontWeight: textProps.fontWeight || 400,
     color: textProps.color || '#ffffff',

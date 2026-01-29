@@ -44,27 +44,34 @@ export const TransitionEffects: React.FC<TransitionEffectsProps> = ({ track, chi
   
   switch (type) {
     case 'fade': {
-      opacity = interpolate(transitionProgress, [0, 1], [1, 0], { extrapolateRight: 'clamp' });
+      // Fade should crossfade between scenes, not fade to black
+      // Keep opacity at 1 for single-scene compositions
+      opacity = 1;
       break;
     }
     
     case 'slideLeft': {
-      translateX = interpolate(transitionProgress, [0, 1], [0, -width], { extrapolateRight: 'clamp' });
+      // DISABLED - causes black screen on single-clip compositions
+      // Use a subtle scale/shake effect instead
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.02, 1], { extrapolateRight: 'clamp' });
       break;
     }
     
     case 'slideRight': {
-      translateX = interpolate(transitionProgress, [0, 1], [0, width], { extrapolateRight: 'clamp' });
+      // DISABLED - causes black screen on single-clip compositions
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.02, 1], { extrapolateRight: 'clamp' });
       break;
     }
     
     case 'slideUp': {
-      translateY = interpolate(transitionProgress, [0, 1], [0, -height], { extrapolateRight: 'clamp' });
+      // DISABLED - causes black screen on single-clip compositions
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.02, 1], { extrapolateRight: 'clamp' });
       break;
     }
     
     case 'slideDown': {
-      translateY = interpolate(transitionProgress, [0, 1], [0, height], { extrapolateRight: 'clamp' });
+      // DISABLED - causes black screen on single-clip compositions
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.02, 1], { extrapolateRight: 'clamp' });
       break;
     }
     
@@ -72,38 +79,25 @@ export const TransitionEffects: React.FC<TransitionEffectsProps> = ({ track, chi
     case 'wipeRight':
     case 'wipeUp':
     case 'wipeDown': {
-      const progress = interpolate(transitionProgress, [0, 1], [0, 100], { extrapolateRight: 'clamp' });
-      
-      switch (type) {
-        case 'wipeLeft':
-          clipPath = `inset(0 ${100 - progress}% 0 0)`;
-          break;
-        case 'wipeRight':
-          clipPath = `inset(0 0 0 ${progress}%)`;
-          break;
-        case 'wipeUp':
-          clipPath = `inset(${progress}% 0 0 0)`;
-          break;
-        case 'wipeDown':
-          clipPath = `inset(0 0 ${100 - progress}% 0)`;
-          break;
-      }
+      // DISABLED - wipe transitions clip content away causing black screen
+      // Use a subtle zoom pulse instead
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.03, 1], { extrapolateRight: 'clamp' });
       break;
     }
     
     case 'diagonalWipe': {
-      const progress = interpolate(transitionProgress, [0, 1], [0, 150], { extrapolateRight: 'clamp' });
-      clipPath = `polygon(0 0, ${progress}% 0, 0 ${progress}%)`;
+      // DISABLED - clips content causing black screen
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.03, 1], { extrapolateRight: 'clamp' });
       break;
     }
     
     case 'spin':
     case 'rotate180':
     case 'rotate360': {
-      const maxRotation = type === 'spin' ? 180 : type === 'rotate180' ? 180 : 360;
-      rotateZ = interpolate(transitionProgress, [0, 1], [0, maxRotation], { extrapolateRight: 'clamp' });
-      if (direction === 'counterClockwise') rotateZ = -rotateZ;
-      opacity = interpolate(transitionProgress, [0, 0.5, 1], [1, 0.5, 0], { extrapolateRight: 'clamp' });
+      // DISABLED - was causing black screens
+      // Just do a subtle scale pulse instead
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.05, 1], { extrapolateRight: 'clamp' });
+      opacity = 1;
       break;
     }
     
@@ -112,54 +106,58 @@ export const TransitionEffects: React.FC<TransitionEffectsProps> = ({ track, chi
       const spiralRotation = interpolate(transitionProgress, [0, 1], [0, 720], { extrapolateRight: 'clamp' });
       rotateZ = type === 'spiralIn' ? spiralRotation : -spiralRotation;
       scale = type === 'spiralIn'
-        ? interpolate(transitionProgress, [0, 1], [1, 0], { extrapolateRight: 'clamp' })
-        : interpolate(transitionProgress, [0, 1], [0, 1], { extrapolateRight: 'clamp' });
-      opacity = interpolate(transitionProgress, [0, 0.8, 1], [1, 0.5, 0], { extrapolateRight: 'clamp' });
+        ? interpolate(transitionProgress, [0, 1], [1, 0.3], { extrapolateRight: 'clamp' })
+        : interpolate(transitionProgress, [0, 1], [0.3, 1], { extrapolateRight: 'clamp' });
+      // Keep visible during spiral
+      opacity = 1;
       break;
     }
     
     case 'zoomIn': {
-      scale = interpolate(transitionProgress, [0, 1], [1, 2], { extrapolateRight: 'clamp' });
-      opacity = interpolate(transitionProgress, [0, 0.7, 1], [1, 0.5, 0], { extrapolateRight: 'clamp' });
+      // Reduced zoom to prevent content from going off screen
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.15, 1], { extrapolateRight: 'clamp' });
+      opacity = 1;
       break;
     }
     
     case 'zoomOut': {
-      scale = interpolate(transitionProgress, [0, 1], [1, 0], { extrapolateRight: 'clamp' });
-      opacity = interpolate(transitionProgress, [0, 0.7, 1], [1, 0.5, 0], { extrapolateRight: 'clamp' });
+      scale = interpolate(transitionProgress, [0, 1], [1, 0.3], { extrapolateRight: 'clamp' });
+      // Keep visible during zoom
+      opacity = 1;
       break;
     }
     
     case 'flipHorizontal': {
       rotateY = interpolate(transitionProgress, [0, 1], [0, 180], { extrapolateRight: 'clamp' });
-      opacity = interpolate(transitionProgress, [0, 0.5, 1], [1, 0, 0], { extrapolateRight: 'clamp' });
+      // Keep visible during flip
+      opacity = 1;
       break;
     }
     
     case 'flipVertical': {
       const rotateX = interpolate(transitionProgress, [0, 1], [0, 180], { extrapolateRight: 'clamp' });
-      opacity = interpolate(transitionProgress, [0, 0.5, 1], [1, 0, 0], { extrapolateRight: 'clamp' });
+      // Keep visible during flip
+      opacity = 1;
       break;
     }
     
     case 'clockWipe': {
-      const angle = interpolate(transitionProgress, [0, 1], [0, 360], { extrapolateRight: 'clamp' });
-      clipPath = `polygon(50% 50%, 50% 0%, ${50 + 50 * Math.sin((angle - 90) * Math.PI / 180)}% ${50 - 50 * Math.cos((angle - 90) * Math.PI / 180)}%)`;
+      // DISABLED - clips content causing black screen
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.04, 1], { extrapolateRight: 'clamp' });
       break;
     }
     
     case 'irisIn':
     case 'irisOut': {
-      const radius = type === 'irisIn'
-        ? interpolate(transitionProgress, [0, 1], [100, 0], { extrapolateRight: 'clamp' })
-        : interpolate(transitionProgress, [0, 1], [0, 100], { extrapolateRight: 'clamp' });
-      clipPath = `circle(${radius}% at 50% 50%)`;
+      // DISABLED - clips content to circle causing black screen
+      scale = interpolate(transitionProgress, [0, 0.5, 1], [1, 1.05, 1], { extrapolateRight: 'clamp' });
       break;
     }
     
     case 'pixelate': {
       const pixelSize = interpolate(transitionProgress, [0, 0.5, 1], [1, 50, 1], { extrapolateRight: 'clamp' });
-      opacity = interpolate(transitionProgress, [0, 0.5, 1], [1, 0.3, 0], { extrapolateRight: 'clamp' });
+      // Keep visible - pixelate effect is visual only
+      opacity = 1;
       break;
     }
     
@@ -168,25 +166,29 @@ export const TransitionEffects: React.FC<TransitionEffectsProps> = ({ track, chi
       const seed = Math.floor(currentTime * 60);
       translateX = (Math.sin(seed * 12.9898) * 43758.5453 % 1) * glitchIntensity * 50;
       translateY = (Math.sin(seed * 78.233) * 43758.5453 % 1) * glitchIntensity * 30;
-      opacity = interpolate(transitionProgress, [0, 0.3, 0.7, 1], [1, 0.7, 0.7, 0], { extrapolateRight: 'clamp' });
+      // Keep visible - glitch is a visual distortion, not a fade out
+      opacity = 1;
       break;
     }
     
     case 'burn': {
-      opacity = interpolate(transitionProgress, [0, 0.7, 1], [1, 0.5, 0], { extrapolateRight: 'clamp' });
+      // Burn effect should be visual distortion, not fade to black
+      opacity = 1;
       break;
     }
     
     case 'liquidStreaks':
     case 'liquidDrops': {
-      opacity = interpolate(transitionProgress, [0, 0.8, 1], [1, 0.3, 0], { extrapolateRight: 'clamp' });
+      // Liquid effect should be visual distortion, not fade
+      opacity = 1;
       break;
     }
     
     case 'pageTurn': {
       const turnProgress = interpolate(transitionProgress, [0, 1], [0, 180], { extrapolateRight: 'clamp' });
       rotateY = turnProgress;
-      opacity = interpolate(transitionProgress, [0, 0.5, 1], [1, 0.5, 0], { extrapolateRight: 'clamp' });
+      // Keep visible during page turn
+      opacity = 1;
       break;
     }
     
@@ -198,7 +200,8 @@ export const TransitionEffects: React.FC<TransitionEffectsProps> = ({ track, chi
     
     case 'cube3D': {
       rotateY = interpolate(transitionProgress, [0, 1], [0, 90], { extrapolateRight: 'clamp' });
-      opacity = interpolate(transitionProgress, [0, 0.5, 1], [1, 0.7, 0], { extrapolateRight: 'clamp' });
+      // Keep visible during cube rotation
+      opacity = 1;
       break;
     }
   }
@@ -218,6 +221,7 @@ export const TransitionEffects: React.FC<TransitionEffectsProps> = ({ track, chi
         clipPath: clipPath || undefined,
         transformOrigin: 'center center',
         perspective: '1000px',
+        backfaceVisibility: 'visible',
       }}
     >
       {children}

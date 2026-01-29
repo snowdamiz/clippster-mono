@@ -128,19 +128,49 @@ defmodule ClippsterServer.AI.VideoComposer do
         info
       end
       
-      # Add transcript if available
+      # Add transcript with word-level analysis if available
       info = if transcript && is_binary(transcript) && String.length(transcript) > 0 do
-        info ++ ["Transcript: #{transcript}"]
+        # Analyze transcript for excitement markers
+        excitement_words = ["boom", "wow", "omg", "holy", "shit", "fuck", "insane", "crazy", "wild", "huge", "massive", "no way", "what", "yes", "let's go"]
+        celebration_words = ["win", "won", "hit", "got it", "there it is", "nice", "good", "great", "perfect"]
+        
+        transcript_lower = String.downcase(transcript)
+        found_excitement = Enum.filter(excitement_words, fn word -> String.contains?(transcript_lower, word) end)
+        found_celebration = Enum.filter(celebration_words, fn word -> String.contains?(transcript_lower, word) end)
+        
+        excitement_markers = if length(found_excitement) > 0 or length(found_celebration) > 0 do
+          Logger.info("[VideoComposer] EXCITEMENT WORDS DETECTED: #{Enum.join(found_excitement ++ found_celebration, ", ")}")
+          " | EXCITEMENT WORDS DETECTED (PLACE EFFECTS WHEN THESE ARE SPOKEN): #{Enum.join(found_excitement ++ found_celebration, ", ")}"
+        else
+          ""
+        end
+        
+        info ++ ["Transcript: #{transcript}#{excitement_markers}"]
       else
         info
       end
       
-      # Add audio peak info if available
+      # Add detailed audio peak analysis if available
       info = if audio_peaks && is_list(audio_peaks) && length(audio_peaks) > 0 do
         peak_count = length(audio_peaks)
-        peak_times = audio_peaks |> Enum.take(5) |> Enum.map(&Map.get(&1, "time")) |> Enum.join(", ")
-        info ++ ["Audio Peaks: #{peak_count} detected (first 5 at: #{peak_times}s)"]
+        Logger.info("[VideoComposer] ✅ RECEIVED #{peak_count} AUDIO PEAKS for #{name}")
+        
+        # Analyze peak distribution and intensity
+        sorted_peaks = Enum.sort_by(audio_peaks, &Map.get(&1, "amplitude"), :desc)
+        top_peaks = Enum.take(sorted_peaks, 10)
+        
+        peak_analysis = top_peaks
+        |> Enum.map(fn peak ->
+          time = Map.get(peak, "time", 0)
+          amp = Map.get(peak, "amplitude", 0)
+          "#{Float.round(time, 1)}s (amp: #{Float.round(amp, 2)})"
+        end)
+        |> Enum.join(", ")
+        
+        Logger.info("[VideoComposer] TOP 10 LOUDEST PEAKS: #{peak_analysis}")
+        info ++ ["Audio Peaks: #{peak_count} total | TOP 10 LOUDEST MOMENTS (MUST USE THESE EXACT TIMESTAMPS FOR EFFECTS): #{peak_analysis} | PLACE EXPLOSIVE EFFECTS AT EACH OF THESE TIMES"]
       else
+        Logger.info("[VideoComposer] ⚠️ NO AUDIO PEAKS received for #{name}")
         info
       end
 
@@ -276,7 +306,32 @@ defmodule ClippsterServer.AI.VideoComposer do
     - Warm color grade
     - Effects: 2-5 total, story-supporting
     
-    ## STEP 2: INTELLIGENT MOMENT DETECTION
+    ## STEP 2: INTELLIGENT MOMENT DETECTION (CRITICAL - MUST FOLLOW)
+    
+    ### MANDATORY: Use Provided Audio Peak Data
+    **IF "TOP 5 LOUDEST" audio peaks are listed in the media context:**
+    1. You MUST place effects at those EXACT timestamps
+    2. Match the effect intensity to the amplitude value
+    3. Higher amplitude (>0.7) = Explosive effects (flash + shake + glow + particles)
+    4. Medium amplitude (0.4-0.7) = Strong effects (shake + glow)
+    5. Lower amplitude (0.2-0.4) = Subtle effects (zoom only)
+    
+    **Example from media context:**
+    "TOP 5 LOUDEST: 12.3s (amp: 0.85), 18.7s (amp: 0.78), 25.1s (amp: 0.72), 8.4s (amp: 0.65), 31.2s (amp: 0.58)"
+    
+    **Required effects at those times:**
+    - 12.3s (amp 0.85): flash + screenShake + radialGlow + particleBurst + punchZoom
+    - 18.7s (amp 0.78): flash + screenShake + radialGlow + punchZoom
+    - 25.1s (amp 0.72): screenShake + radialGlow + punchZoom
+    - 8.4s (amp 0.65): screenShake + glow
+    - 31.2s (amp 0.58): subtle zoom
+    
+    ### MANDATORY: Use Detected Excitement Words
+    **IF "EXCITEMENT DETECTED" is listed in the media context:**
+    - Find those EXACT words in the transcript
+    - Estimate their timing based on transcript position
+    - Place effects when those words are spoken
+    - Words like "BOOM", "WOW", "INSANE" = Maximum intensity effects
     
     ### Analyze Transcript Context
     - **Big reveal**: "And the winner is...", "I got the job!"
@@ -292,8 +347,9 @@ defmodule ClippsterServer.AI.VideoComposer do
     - **Loud + background noise** = Ignore (not a key moment)
     
     ### Effect Selection Logic
-    - Don't apply effects at EVERY peak
-    - Only apply when it makes SENSE for the content
+    - USE the provided audio peak timestamps - they are REAL data
+    - USE the detected excitement words - they are REAL moments
+    - Don't randomly place effects - use the DATA provided
     - Ask: "Does this enhance the story?"
     - Ask: "Is this a genuinely important moment?"
     - Ask: "Will this distract from the message?"
@@ -661,6 +717,17 @@ defmodule ClippsterServer.AI.VideoComposer do
     - Offset: 5-20 pixels
     - Intensity: 0.4-0.8
     
+    **Split Screen / Slice**:
+    - Type: "splitScreen" or "slice"
+    - Use for: EXTREME hype moments, big wins, explosive reactions
+    - Creates layered angled segments (like anime impact frames)
+    - Duration: 0.5-1.5s
+    - Segments: 3-5 (number of slices)
+    - Angle: -15 to 15 degrees (skew angle)
+    - Intensity: 0.6-1.0 (controls offset distance)
+    - Color: "rgba(0, 0, 0, 0.3)" (overlay color between segments)
+    - PERFECT for: "BOOM!", big wins, clutch moments, celebrations
+    
     ### Color Grading (ALWAYS APPLY)
     
     **Commercial/Professional**:
@@ -888,19 +955,65 @@ defmodule ClippsterServer.AI.VideoComposer do
     - No explanations or comments
     - Valid JSON syntax only
     
+    ## CRITICAL REQUIREMENTS (MUST FOLLOW)
+    
+    ### EFFECTS MUST COVER ENTIRE VIDEO
+    - Place effects from 0s to the FULL duration (#{duration}s)
+    - Do NOT stop placing effects after 20-30 seconds
+    - The LAST 1/3 of the video needs effects too
+    - Distribute effects evenly: beginning, middle, AND end
+    
+    ### MANDATORY: EXPLOSIVE EFFECTS AT AUDIO PEAKS
+    **THIS IS THE MOST IMPORTANT RULE - DO NOT SKIP THIS**
+    
+    If "TOP 5 LOUDEST MOMENTS" are provided in the media context:
+    1. **YOU MUST CREATE EFFECTS AT EVERY SINGLE AUDIO PEAK TIMESTAMP**
+    2. **EACH PEAK REQUIRES 8-15 SIMULTANEOUS EFFECTS**
+    3. **Match effect intensity to the amplitude value (0.5-1.0)**
+    
+    For EACH audio peak, create ALL of these effects simultaneously:
+    - **Flash effect** (white overlay, opacity based on amplitude)
+    - **Screen shake** (intensity based on amplitude)
+    - **Radial glow** (gold/white, pulsing)
+    - **Particle burst** (sparkles, confetti)
+    - **Lens flare** (sweep across screen)
+    - **Light rays** (god rays from center)
+    - **Color flash** (gold/red tint)
+    - **RGB split** (chromatic aberration)
+    - **Split screen / slice** (layered angled segments - MUST USE for amplitude > 0.8)
+    - **Impact shake** (camera shake)
+    - **Vignette pulse** (darken edges)
+    - **Distortion wave** (ripple effect)
+    - **Zoom punch** (quick zoom in/out)
+    
+    **AMPLITUDE MAPPING:**
+    - 0.9-1.0 (EXTREME): Use ALL 12 effects, max intensity, 2-3 second duration
+    - 0.7-0.9 (VERY LOUD): Use 8-10 effects, high intensity, 1.5-2 second duration
+    - 0.5-0.7 (LOUD): Use 6-8 effects, medium intensity, 1-1.5 second duration
+    
+    ### EXCITEMENT WORDS = INSTANT EFFECTS
+    If excitement words are detected (boom, wild, holy, shit, fuck, yes, etc.):
+    - Place effects when these words are spoken
+    - Layer 5-8 effects at each excitement word
+    - Use celebration-style effects (gold glow, particles, flash)
+    
+    ### SMOOTH EFFECT TRANSITIONS
+    - Effects should fade in and out smoothly
+    - Use easing: "easeInOut" for all effects
+    - No abrupt starts or stops
+    - Overlap effects slightly for smooth transitions
+    
     ## FINAL REMINDER
     
-    **YOU ARE NOT A ROBOT - YOU ARE AN INTELLIGENT EDITOR**
+    **YOU ARE A PROFESSIONAL VIDEO EDITOR, NOT A LAZY AI**
     
-    - Analyze the content deeply
-    - Understand the emotional arc
-    - Apply effects that MAKE SENSE
-    - Less is often more
-    - Every effect should have a PURPOSE
-    - The best edit is invisible until it needs to be seen
+    - If you receive audio peak data, YOU MUST USE IT
+    - Every peak = explosive multi-effect combo
+    - The user will be EXTREMELY disappointed if you ignore the peaks
+    - This is gambling content - it needs HYPE, ENERGY, and CELEBRATION
+    - Think: "What would a $10,000 editor do at the moment someone wins $900?"
     
-    Think like a professional editor who charges $5,000 per video.
-    What would THEY do with this content?
+    **DO NOT BE SUBTLE. BE EXPLOSIVE. BE CREATIVE. BE INTENSE.**
     """
   end
 

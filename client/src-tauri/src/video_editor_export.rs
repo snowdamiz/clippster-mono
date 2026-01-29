@@ -109,31 +109,50 @@ pub async fn export_video_editor_project(
     if config.video_sources.len() == 1 {
         let source = &config.video_sources[0];
         let trim_start = source.trim_start.unwrap_or(0.0);
+        let trim_end = source.trim_end;
         let duration = source.end_time - source.start_time;
         
-        // Trim video from source trim_start for exact duration
+        // Build trim filter with optional end parameter
+        let trim_filter = if let Some(end) = trim_end {
+            format!("trim=start={}:end={}", trim_start, end)
+        } else {
+            format!("trim=start={}:duration={}", trim_start, duration)
+        };
+        
+        // Trim video from source trim_start to trim_end (or duration)
         if needs_black_padding {
             // Pad with black frames at the end using tpad filter
             filters.push(format!(
-                "[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,tpad=stop_mode=add:stop_duration={}:color=black[v]",
-                trim_start, duration, black_padding_duration
+                "[0:v]{},setpts=PTS-STARTPTS,tpad=stop_mode=add:stop_duration={}:color=black[v]",
+                trim_filter, black_padding_duration
             ));
         } else {
-            filters.push(format!("[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS[v]", trim_start, duration));
+            filters.push(format!("[0:v]{},setpts=PTS-STARTPTS[v]", trim_filter));
         }
         
         // Also trim video audio if it exists
-        filters.push(format!("[0:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS[va]", trim_start, duration));
+        let audio_trim_filter = if let Some(end) = trim_end {
+            format!("atrim=start={}:end={}", trim_start, end)
+        } else {
+            format!("atrim=start={}:duration={}", trim_start, duration)
+        };
+        filters.push(format!("[0:a]{},asetpts=PTS-STARTPTS[va]", audio_trim_filter));
     } else if config.video_sources.len() > 1 {
         // Concat multiple video sources
         let mut concat_inputs = String::new();
         for i in 0..config.video_sources.len() {
             let source = &config.video_sources[i];
             let trim_start = source.trim_start.unwrap_or(0.0);
+            let trim_end = source.trim_end;
             let duration = source.end_time - source.start_time;
             
-            // Trim each segment from trim_start
-            filters.push(format!("[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS[v{}]", i, trim_start, duration, i));
+            // Trim each segment from trim_start to trim_end (or duration)
+            let trim_filter = if let Some(end) = trim_end {
+                format!("trim=start={}:end={}", trim_start, end)
+            } else {
+                format!("trim=start={}:duration={}", trim_start, duration)
+            };
+            filters.push(format!("[{}:v]{},setpts=PTS-STARTPTS[v{}]", i, trim_filter, i));
             concat_inputs.push_str(&format!("[v{}]", i));
         }
         
@@ -152,8 +171,15 @@ pub async fn export_video_editor_project(
         for i in 0..config.video_sources.len() {
             let source = &config.video_sources[i];
             let trim_start = source.trim_start.unwrap_or(0.0);
+            let trim_end = source.trim_end;
             let duration = source.end_time - source.start_time;
-            filters.push(format!("[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS[va{}]", i, trim_start, duration, i));
+            
+            let audio_trim_filter = if let Some(end) = trim_end {
+                format!("atrim=start={}:end={}", trim_start, end)
+            } else {
+                format!("atrim=start={}:duration={}", trim_start, duration)
+            };
+            filters.push(format!("[{}:a]{},asetpts=PTS-STARTPTS[va{}]", i, audio_trim_filter, i));
             audio_concat_inputs.push_str(&format!("[va{}]", i));
         }
         filters.push(format!("{}concat=n={}:v=0:a=1[va]", audio_concat_inputs, config.video_sources.len()));

@@ -23,16 +23,6 @@ export function useAIVideoGeneration() {
     progress.value = 0;
 
     try {
-      // Prepare media data for backend
-      const mediaData = media.map(item => ({
-        id: item.id,
-        name: item.name,
-        type: item.type,
-        path: item.source.path,
-        duration: item.duration,
-        dimensions: item.dimensions,
-      }));
-
       const request: AIGenerationRequest = {
         prompt,
         media: media,
@@ -44,7 +34,24 @@ export function useAIVideoGeneration() {
 
       progress.value = 10;
 
-      console.log('[AIVideoGen] Request:', JSON.stringify(request, null, 2));
+      // Log critical data being sent to backend
+      console.log('[AIVideoGen] Request prompt:', prompt);
+      console.log('[AIVideoGen] Media items count:', media.length);
+      media.forEach((item, idx) => {
+        console.log(`[AIVideoGen] Media[${idx}]:`, {
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          path: item.source?.path,
+          duration: item.duration,
+          hasTranscript: !!item.transcript,
+          transcriptLength: item.transcript?.length || 0,
+          hasAudioPeaks: !!item.audioPeaks,
+          audioPeaksCount: item.audioPeaks?.length || 0,
+          audioPeaksSample: item.audioPeaks?.slice(0, 3),
+        });
+      });
+      console.log('[AIVideoGen] Full request:', JSON.stringify(request, null, 2));
 
       // Call backend API
       const response = await generateVideoComposition(request);
