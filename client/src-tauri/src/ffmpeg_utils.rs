@@ -52,7 +52,15 @@ pub fn parse_duration_string(duration_str: &str) -> Option<f64> {
 }
 
 /// Parse FFmpeg time output in HH:MM:SS.ms format
+/// Handles negative times (e.g., "-00:00:00.001234") that FFmpeg outputs at start of HLS downloads
 pub fn parse_ffmpeg_time(time_str: &str) -> Option<f64> {
+    // Check for negative time (FFmpeg outputs this at start of HLS streams)
+    let (is_negative, time_str) = if time_str.starts_with('-') {
+        (true, &time_str[1..])
+    } else {
+        (false, time_str)
+    };
+    
     // Parse format HH:MM:SS.ms or HH:MM:SS
     let parts: Vec<&str> = time_str.split(':').collect();
     if parts.len() != 3 {
@@ -63,7 +71,13 @@ pub fn parse_ffmpeg_time(time_str: &str) -> Option<f64> {
     let minutes: f64 = parts[1].parse().ok()?;
     let seconds: f64 = parts[2].parse().ok()?;
 
-    Some(hours * 3600.0 + minutes * 60.0 + seconds)
+    let total = hours * 3600.0 + minutes * 60.0 + seconds;
+    
+    if is_negative {
+        Some(-total)
+    } else {
+        Some(total)
+    }
 }
 
 /// Parse video information from FFmpeg output
