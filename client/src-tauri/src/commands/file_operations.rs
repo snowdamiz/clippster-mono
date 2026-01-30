@@ -7,6 +7,110 @@ use crate::ffmpeg_utils::{
     parse_video_info_from_ffmpeg_output,
     VideoValidationResult
 };
+use crate::storage;
+
+#[derive(serde::Serialize)]
+pub struct ProxyGenerationResult {
+    pub proxy_path: String,
+}
+
+/// Generate a proxy file for a source video.
+/// Uses intraframe-friendly codecs by default for fast seeking.
+#[tauri::command]
+pub async fn generate_proxy_file(
+    app: AppHandle,
+    source_path: String,
+    source_id: String,
+    width: u32,
+    height: u32,
+    codec: String,
+    quality: String,
+) -> Result<ProxyGenerationResult, String> {
+    let source = Path::new(&source_path);
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    let proxy_dir = paths.temp.join("proxies");
+    std::fs::create_dir_all(&proxy_dir)
+        .map_err(|e| format!("Failed to create proxy dir: {}", e))?;
+
+    let extension = if codec == "prores_proxy" { "mov" } else { "mp4" };
+    let proxy_path = proxy_dir.join(format!(
+        "proxy_{}_{}x{}_{}.{}",
+        source_id, width, height, codec, extension
+    ));
+
+    if proxy_path.exists() {
+        return Ok(ProxyGenerationResult {
+            proxy_path: proxy_path.to_string_lossy().to_string(),
+        });
+    }
+
+    let scale_filter = format!(
+        "scale=w={}:h={}:force_original_aspect_ratio=decrease",
+        width, height
+    );
+
+    let mut args = vec![
+        "-y".to_string(),
+        "-i".to_string(),
+        source_path.clone(),
+        "-vf".to_string(),
+        scale_filter,
+    ];
+
+    if codec == "prores_proxy" {
+        let qscale = match quality.as_str() {
+            "high" => "7",
+            "low" => "11",
+            _ => "9",
+        };
+        args.extend([
+            "-c:v".to_string(), "prores_ks".to_string(),
+            "-profile:v".to_string(), "0".to_string(),
+            "-pix_fmt".to_string(), "yuv422p10le".to_string(),
+            "-qscale:v".to_string(), qscale.to_string(),
+        ]);
+    } else {
+        let crf = match quality.as_str() {
+            "high" => "24",
+            "low" => "30",
+            _ => "28",
+        };
+        args.extend([
+            "-c:v".to_string(), "libx264".to_string(),
+            "-preset".to_string(), "veryfast".to_string(),
+            "-crf".to_string(), crf.to_string(),
+        ]);
+    }
+
+    args.extend([
+        "-c:a".to_string(), "aac".to_string(),
+        "-b:a".to_string(), "128k".to_string(),
+        "-movflags".to_string(), "+faststart".to_string(),
+        proxy_path.to_string_lossy().to_string(),
+    ]);
+
+    let output = app.shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Proxy generation failed: {}", stderr));
+    }
+
+    Ok(ProxyGenerationResult {
+        proxy_path: proxy_path.to_string_lossy().to_string(),
+    })
+}
 
 /// Checks if a file exists at the given path
 ///

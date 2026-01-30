@@ -13,24 +13,29 @@ export interface ProxyFile {
   sourcePath: string;
   proxyPath: string;
   resolution: string;
-  status: 'pending' | 'generating' | 'ready' | 'error';
+  status: 'pending' | 'generating' | 'ready' | 'error' | 'skipped';
   progress: number;
+  width?: number;
+  height?: number;
+  codec?: string;
+  fileSize?: number;
   error?: string;
 }
 
 const defaultSettings: ProxySettings = {
-  enabled: false,
+  enabled: true,
   resolution: '720p',
-  codec: 'h264',
+  codec: 'h264', // Use h264 for browser compatibility (ProRes not playable in browsers)
   quality: 'medium',
 };
 
-export function useProxyWorkflow() {
-  const settings = ref<ProxySettings>({ ...defaultSettings });
-  const proxyFiles = ref<Map<string, ProxyFile>>(new Map());
-  const isGenerating = ref(false);
-  const generationQueue = ref<string[]>([]);
+const settings = ref<ProxySettings>({ ...defaultSettings });
+const proxyFiles = ref<Map<string, ProxyFile>>(new Map());
+const isGenerating = ref(false);
+const generationQueue = ref<string[]>([]);
+let settingsLoaded = false;
 
+export function useProxyWorkflow() {
   const proxyEnabled = computed(() => settings.value.enabled);
   
   const pendingProxies = computed(() => 
@@ -57,8 +62,7 @@ export function useProxyWorkflow() {
 
   function updateSettings(newSettings: Partial<ProxySettings>) {
     settings.value = { ...settings.value, ...newSettings };
-    
-    // Persist settings to localStorage
+    settings.value.enabled = true;
     try {
       localStorage.setItem('proxy_workflow_settings', JSON.stringify(settings.value));
     } catch (e) {
@@ -67,10 +71,17 @@ export function useProxyWorkflow() {
   }
 
   function loadSettings() {
+    if (settingsLoaded) return;
+    settingsLoaded = true;
     try {
       const saved = localStorage.getItem('proxy_workflow_settings');
       if (saved) {
         settings.value = { ...defaultSettings, ...JSON.parse(saved) };
+        settings.value.enabled = true;
+        // Force h264 codec for browser compatibility (ProRes not playable in browsers)
+        if (settings.value.codec === 'prores_proxy') {
+          settings.value.codec = 'h264';
+        }
       }
     } catch (e) {
       console.warn('[useProxyWorkflow] Failed to load settings:', e);
@@ -88,6 +99,66 @@ export function useProxyWorkflow() {
       status: 'pending',
       progress: 0,
     });
+  }
+
+  async function shouldGenerateProxy(sourcePath: string): Promise<ProxyFile | null> {
+    try {
+      const result = await invoke<{ width?: number; height?: number; codec?: string; file_size?: number }>(
+        'validate_video_file',
+        { filePath: sourcePath }
+      );
+
+      const width = result.width ?? 0;
+      const height = result.height ?? 0;
+      const fileSize = result.file_size ?? 0;
+      const codec = result.codec ?? '';
+
+      const isHighRes = width > 1920 || height > 1080;
+      const isLargeFile = fileSize > 50 * 1024 * 1024;
+      const isLongGop = /h264|hevc|h265|avc/i.test(codec);
+
+      return {
+        sourceId: '',
+        sourcePath,
+        proxyPath: '',
+        resolution: settings.value.resolution,
+        status: isHighRes || isLargeFile || isLongGop ? 'pending' : 'skipped',
+        progress: 0,
+        width,
+        height,
+        codec,
+        fileSize,
+      };
+    } catch (error) {
+      console.warn('[useProxyWorkflow] validate_video_file failed, defaulting to proxy:', error);
+      return {
+        sourceId: '',
+        sourcePath,
+        proxyPath: '',
+        resolution: settings.value.resolution,
+        status: 'pending',
+        progress: 0,
+      };
+    }
+  }
+
+  async function ensureProxyForSource(sourceId: string, sourcePath: string): Promise<void> {
+    registerSource(sourceId, sourcePath);
+    const proxy = proxyFiles.value.get(sourceId);
+    if (!proxy || proxy.status === 'ready' || proxy.status === 'generating') return;
+
+    const meta = await shouldGenerateProxy(sourcePath);
+    if (!meta) return;
+    proxy.width = meta.width;
+    proxy.height = meta.height;
+    proxy.codec = meta.codec;
+    proxy.fileSize = meta.fileSize;
+    if (meta.status === 'skipped') {
+      proxy.status = 'skipped';
+      return;
+    }
+
+    await generateProxy(sourceId);
   }
 
   async function generateProxy(sourceId: string): Promise<boolean> {
@@ -167,6 +238,11 @@ export function useProxyWorkflow() {
     
     const proxy = proxyFiles.value.get(sourceId);
     if (proxy?.status === 'ready' && proxy.proxyPath) {
+      // Skip ProRes proxies - browsers can't play them, fall back to original
+      if (proxy.proxyPath.toLowerCase().endsWith('.mov') && proxy.proxyPath.includes('prores')) {
+        console.warn('[useProxyWorkflow] Skipping ProRes proxy (not browser-compatible):', proxy.proxyPath);
+        return null;
+      }
       return proxy.proxyPath;
     }
     return null;
@@ -208,6 +284,7 @@ export function useProxyWorkflow() {
     generateProxy,
     generateAllProxies,
     cancelGeneration,
+    ensureProxyForSource,
     getProxyPath,
     getEffectivePath,
     clearProxies,

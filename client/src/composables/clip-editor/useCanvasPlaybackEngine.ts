@@ -19,11 +19,25 @@ interface CanvasPlaybackEngineOptions {
   currentTime: Ref<number>;
   isPlaying: Ref<boolean>;
   videoSources: Ref<VideoSource[]>;
+  enabled?: Ref<boolean>;
+  /** Function to resolve proxy path for a source (returns proxy path or original path) */
+  getEffectivePath?: (sourceId: string, originalPath: string) => string;
   onError?: (error: string) => void;
 }
 
 export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
-  const { canvasRef, currentTime, isPlaying, videoSources, onError } = options;
+  const { canvasRef, currentTime, isPlaying, videoSources, enabled, getEffectivePath, onError } = options;
+  
+  // Helper to check if engine is enabled (defaults to true if not provided)
+  const isEnabled = () => enabled?.value !== false;
+  
+  // Helper to resolve video path (use proxy if available)
+  const resolveVideoPath = (source: VideoSource): string => {
+    if (getEffectivePath) {
+      return getEffectivePath(source.id, source.file_path);
+    }
+    return source.file_path;
+  };
 
   const frameCache = new Map<string, CachedFrame>();
   const maxCacheSize = 120; // 4 seconds at 30fps - reduce FFmpeg file access
@@ -98,15 +112,6 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
         }),
       ]);
 
-      console.log('[CanvasPlaybackEngine] Frame data received:', {
-        sourceId,
-        timestamp,
-        width: frameData.width,
-        height: frameData.height,
-        rgbLength: frameData.rgb_data.length,
-        frameTimestamp: frameData.timestamp,
-      });
-
       const rgbaData = rgbToRgba(frameData.rgb_data, frameData.width, frameData.height);
       const imageData = new ImageData(new Uint8ClampedArray(rgbaData), frameData.width, frameData.height);
 
@@ -154,8 +159,7 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
   }
 
   async function renderFrame(timestamp: number) {
-    if (!ctx || !canvasRef.value) {
-      console.log('[CanvasPlaybackEngine] renderFrame called but no context:', { ctx: !!ctx, canvas: !!canvasRef.value });
+    if (!ctx || !canvasRef.value || !isEnabled()) {
       return;
     }
 
@@ -163,14 +167,12 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
     
     if (!source) {
       // No source at this time - render black (gap in timeline)
-      console.log('[CanvasPlaybackEngine] No source at time:', timestamp);
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, canvasRef.value.width, canvasRef.value.height);
       return;
     }
 
     const sourceTime = getSourceTime(timestamp, source);
-    console.log('[CanvasPlaybackEngine] Rendering frame:', { timestamp, sourceId: source.id, sourceTime, filePath: source.file_path });
 
     if (fetchInFlight) {
       if (lastSuccessfulFrame && ctx && canvasRef.value) {
@@ -187,7 +189,8 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
     fetchInFlight = true;
     let frame: CachedFrame | null = null;
     try {
-      frame = await fetchFrame(source.id, source.file_path, sourceTime);
+      const videoPath = resolveVideoPath(source);
+      frame = await fetchFrame(source.id, videoPath, sourceTime);
     } finally {
       fetchInFlight = false;
     }
@@ -214,18 +217,11 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
         canvasRef.value.height = lastSuccessfulFrame.imageData.height;
       }
       ctx.putImageData(lastSuccessfulFrame.imageData, 0, 0);
-    } else if (!frame) {
-      console.warn('[CanvasPlaybackEngine] No frame available to render', {
-        timestamp,
-        sourceId: source.id,
-        sourceTime,
-        hasLastFrame: !!lastSuccessfulFrame,
-      });
     }
   }
 
   function tick(timestamp: number) {
-    if (!isPlaying.value) {
+    if (!isPlaying.value || !isEnabled()) {
       rafId = null;
       return;
     }
@@ -248,12 +244,10 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
   }
 
   function startRendering() {
-    if (rafId !== null) {
-      console.log('[CanvasPlaybackEngine] startRendering called but already running');
+    if (rafId !== null || !isEnabled()) {
       return;
     }
     
-    console.log('[CanvasPlaybackEngine] Starting RAF loop');
     lastRenderTime = performance.now();
     rafId = requestAnimationFrame(tick);
   }
@@ -267,7 +261,6 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
 
   function initialize() {
     if (!canvasRef.value) {
-      console.warn('[CanvasPlaybackEngine] Canvas ref not available');
       return false;
     }
 
@@ -282,7 +275,6 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
     }
 
     isInitialized.value = true;
-    console.log('[CanvasPlaybackEngine] Initialized');
     return true;
   }
 
@@ -296,10 +288,9 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
   }
 
   watch(isPlaying, (playing) => {
-    console.log('[CanvasPlaybackEngine] isPlaying changed:', playing, 'initialized:', isInitialized.value);
+    if (!isEnabled()) return; // Skip if disabled
     if (playing) {
       if (!isInitialized.value) {
-        console.log('[CanvasPlaybackEngine] Initializing before starting rendering');
         initialize();
       }
       startRendering();
@@ -309,12 +300,14 @@ export function useCanvasPlaybackEngine(options: CanvasPlaybackEngineOptions) {
   });
 
   watch(currentTime, async (time) => {
+    if (!isEnabled()) return; // Skip if disabled
     if (!isPlaying.value && isInitialized.value) {
       await renderFrame(time);
     }
   });
 
   watch(canvasRef, (canvas) => {
+    if (!isEnabled()) return; // Skip if disabled
     if (canvas && !isInitialized.value) {
       initialize();
       if (currentTime.value > 0) {

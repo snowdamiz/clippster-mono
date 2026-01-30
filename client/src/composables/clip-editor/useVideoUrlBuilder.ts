@@ -1,6 +1,7 @@
-import { ref, computed, type Ref, type ComputedRef } from 'vue';
+import { ref, computed, watch, type Ref, type ComputedRef } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { VideoSource } from './useVideoSourceTime';
+import { useProxyWorkflow } from '../useProxyWorkflow';
 
 /**
  * Timeline data interface (matches playback engine timeline state)
@@ -78,6 +79,8 @@ export function useVideoUrlBuilder(
 ): VideoUrlBuilderReturn {
   const { getTimeline, currentTime } = options;
 
+  const proxyWorkflow = useProxyWorkflow();
+
   const serverPort = ref<number | null>(null);
 
   /**
@@ -86,7 +89,6 @@ export function useVideoUrlBuilder(
   async function initServer(): Promise<void> {
     try {
       serverPort.value = await invoke<number>('get_video_server_port');
-      console.log('[useVideoUrlBuilder] Video server port:', serverPort.value);
     } catch (error) {
       console.error('[useVideoUrlBuilder] Failed to get video server port:', error);
     }
@@ -141,15 +143,10 @@ export function useVideoUrlBuilder(
       return null;
     }
 
-    const url = buildVideoUrl(activeSource.file_path);
-    const isTsFile = activeSource.file_path.toLowerCase().endsWith('.ts');
+    const effectivePath = proxyWorkflow.getEffectivePath(activeSource.id, activeSource.file_path);
+    const url = buildVideoUrl(effectivePath);
+    const isTsFile = effectivePath.toLowerCase().endsWith('.ts');
 
-    console.log(
-      '[useVideoUrlBuilder] Active video URL:',
-      url,
-      isTsFile ? '(HLS)' : '(Direct)',
-      `at timeline ${currentTime.value.toFixed(2)}s`
-    );
     return url;
   });
 
@@ -164,7 +161,8 @@ export function useVideoUrlBuilder(
     }
 
     const firstSource = timeline.videoSources[0];
-    return firstSource?.file_path || null;
+    if (!firstSource?.file_path) return null;
+    return proxyWorkflow.getEffectivePath(firstSource.id, firstSource.file_path);
   });
 
   /**
@@ -172,7 +170,11 @@ export function useVideoUrlBuilder(
    */
   const videoSources = computed((): VideoSource[] => {
     const timeline = getTimeline();
-    return timeline?.videoSources || [];
+    if (!timeline) return [];
+    return timeline.videoSources.map((source) => ({
+      ...source,
+      file_path: proxyWorkflow.getEffectivePath(source.id, source.file_path),
+    }));
   });
 
   /**
@@ -187,6 +189,19 @@ export function useVideoUrlBuilder(
     // Get the maximum end time of all video sources
     return Math.max(...timeline.videoSources.map((s) => s.end_time));
   });
+
+  watch(
+    () => getTimeline()?.videoSources,
+    (sources) => {
+      if (!sources) return;
+      sources.forEach((source) => {
+        proxyWorkflow.ensureProxyForSource(source.id, source.file_path).catch((error) => {
+          console.warn('[useVideoUrlBuilder] Failed to ensure proxy:', error);
+        });
+      });
+    },
+    { immediate: true, deep: true }
+  );
 
   return {
     serverPort,

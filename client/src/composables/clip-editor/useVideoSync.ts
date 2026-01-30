@@ -39,6 +39,8 @@ export interface VideoSyncOptions {
   videoSources: ComputedRef<VideoSource[]>;
   /** Function to convert timeline time to video source time */
   getVideoSourceTime: (time: number) => number;
+  /** Currently loaded video source URL (to track which source is active) */
+  currentVideoSrc?: Ref<string | null>;
   /** Audio mixer for syncing audio tracks */
   audioMixer?: AudioMixerInterface;
   /** Timeline renderer for getting active audio tracks */
@@ -88,10 +90,41 @@ export function useVideoSync(options: VideoSyncOptions): VideoSyncReturn {
     isPlaying,
     videoContentDuration,
     duration,
+    videoSources,
     getVideoSourceTime,
+    currentVideoSrc,
     audioMixer,
     timelineRenderer,
   } = options;
+
+  // Track which source is currently loaded in the video element
+  // Initialize immediately with the source at current time
+  function updateCurrentlyLoadedSource() {
+    const sources = videoSources.value;
+    if (!sources || sources.length === 0) {
+      return null;
+    }
+
+    // Find source at current timeline position
+    for (const source of sources) {
+      if (currentTime.value >= source.start_time && currentTime.value < source.end_time) {
+        return source;
+      }
+    }
+
+    // If not found, use first source
+    return sources[0] || null;
+  }
+
+  let currentlyLoadedSource: VideoSource | null = updateCurrentlyLoadedSource();
+
+  // Update currently loaded source when video src changes
+  if (currentVideoSrc) {
+    watch(currentVideoSrc, () => {
+      currentlyLoadedSource = updateCurrentlyLoadedSource();
+      console.log(`[useVideoSync] Video source changed, loaded source:`, currentlyLoadedSource?.id);
+    }, { immediate: true });
+  }
 
   /**
    * Get effective video duration (videoContentDuration or fallback to duration)
@@ -124,14 +157,32 @@ export function useVideoSync(options: VideoSyncOptions): VideoSyncReturn {
       // Don't set currentTime - let it stay wherever it naturally ended
       // This prevents the seek loop
     } else {
-      // Calculate the actual video source time with trim offset
-      const videoSourceTime = getVideoSourceTime(newTime);
-
-      // Normal video sync when within video duration
-      if (Math.abs(video.currentTime - videoSourceTime) > 0.1) {
-        console.log(`[useVideoSync] Seeking video: timeline=${newTime.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
-        video.currentTime = videoSourceTime;
+      // Find which source should be active at this timeline time
+      const sources = videoSources.value;
+      let targetSource: VideoSource | null = null;
+      
+      for (const source of sources) {
+        if (newTime >= source.start_time && newTime < source.end_time) {
+          targetSource = source;
+          break;
+        }
       }
+
+      // Only seek if the target source matches the currently loaded source
+      // This prevents seeking to wrong timestamps during source transitions
+      // Allow seeking when currentlyLoadedSource is null (initial state)
+      if (targetSource && (!currentlyLoadedSource || targetSource.id === currentlyLoadedSource.id)) {
+        // Calculate the actual video source time with trim offset
+        const offsetInSource = newTime - targetSource.start_time;
+        const videoSourceTime = targetSource.trim_start + offsetInSource;
+
+        // Normal video sync when within video duration
+        if (Math.abs(video.currentTime - videoSourceTime) > 0.1) {
+          console.log(`[useVideoSync] Seeking video: timeline=${newTime.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
+          video.currentTime = videoSourceTime;
+        }
+      }
+      // If sources don't match, let the video src change handler deal with it
     }
 
     // Sync audio mixer with current time
@@ -152,11 +203,28 @@ export function useVideoSync(options: VideoSyncOptions): VideoSyncReturn {
 
     // Only play video if we're within the video content duration
     if (playing && currentTime.value <= videoDur) {
-      // Ensure video is at correct source time before playing
-      const videoSourceTime = getVideoSourceTime(currentTime.value);
-      if (Math.abs(video.currentTime - videoSourceTime) > 0.1) {
-        console.log(`[useVideoSync] Pre-play seek: timeline=${currentTime.value.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
-        video.currentTime = videoSourceTime;
+      // Find which source should be active at this timeline time
+      const sources = videoSources.value;
+      let targetSource: VideoSource | null = null;
+      
+      for (const source of sources) {
+        if (currentTime.value >= source.start_time && currentTime.value < source.end_time) {
+          targetSource = source;
+          break;
+        }
+      }
+
+      // Only seek if the target source matches the currently loaded source
+      // Allow seeking when currentlyLoadedSource is null (initial state)
+      if (targetSource && (!currentlyLoadedSource || targetSource.id === currentlyLoadedSource.id)) {
+        // Ensure video is at correct source time before playing
+        const offsetInSource = currentTime.value - targetSource.start_time;
+        const videoSourceTime = targetSource.trim_start + offsetInSource;
+        
+        if (Math.abs(video.currentTime - videoSourceTime) > 0.1) {
+          console.log(`[useVideoSync] Pre-play seek: timeline=${currentTime.value.toFixed(2)}s -> source=${videoSourceTime.toFixed(2)}s`);
+          video.currentTime = videoSourceTime;
+        }
       }
 
       video.play().catch(err => {

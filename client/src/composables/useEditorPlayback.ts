@@ -2,6 +2,7 @@ import { ref, computed, watch, onUnmounted, type Ref, type ComputedRef } from 'v
 import { usePlaybackEngine, type TimelineState, type VideoSource, type AudioTrackInfo } from './usePlaybackEngine';
 import { useTimelineRenderer, type ActiveVideoSource, type ActiveAudioTrack } from './useTimelineRenderer';
 import { useAudioMixer } from './useAudioMixer';
+import { useProxyWorkflow } from './useProxyWorkflow';
 import type { VideoEditorSource, AudioTrack } from '@/types';
 
 export type { VideoEditorSource };
@@ -83,6 +84,8 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     onSourceChange,
   } = options;
 
+  const proxyWorkflow = useProxyWorkflow();
+
   // Video element reference
   let videoElement: HTMLVideoElement | null = null;
   const SYNC_TOLERANCE = 0.15; // 150ms drift tolerance
@@ -90,17 +93,29 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
   // Convert video sources to timeline format
   const timelineVideoSources = computed<VideoSource[]>(() => {
     const sources = videoSources.value;
-    console.log('[useEditorPlayback] Converting video sources:', sources.length, 'sources');
     return sources.map((s) => ({
       id: s.id,
-      file_path: s.source_path,
+      file_path: proxyWorkflow.getEffectivePath(s.id, s.source_path),
       start_time: s.start_time,
       end_time: s.end_time,
       trim_start: s.trim_start,
       trim_end: s.trim_end,
       original_duration: s.source_duration ?? (s.end_time - s.start_time),
+      order_index: s.order_index ?? 0,
     }));
   });
+
+  watch(
+    videoSources,
+    (sources) => {
+      sources.forEach((source) => {
+        proxyWorkflow.ensureProxyForSource(source.id, source.source_path).catch((error) => {
+          console.warn('[useEditorPlayback] Failed to ensure proxy:', error);
+        });
+      });
+    },
+    { immediate: true }
+  );
 
   // Convert audio tracks to timeline format
   const timelineAudioTracks = computed<AudioTrackInfo[]>(() => {
@@ -114,6 +129,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
         filePath: buildAudioUrl(t.filePath),
         startTime: t.startTime,
         endTime: t.endTime,
+        sourceStartTime: 0,
         volume: t.volume,
         isMuted: t.isMuted,
         fadeInDuration: t.fadeIn,

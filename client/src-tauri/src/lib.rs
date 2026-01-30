@@ -623,16 +623,17 @@ pub fn run() {
             set_clip_generation_in_progress,
             is_clip_generation_in_progress,
 
-            // Download management commands
-            cancel_all_downloads,
-            cancel_download,
-            cleanup_completed_download,
+// Download management commands
+cancel_all_downloads,
+cancel_download,
+cleanup_completed_download,
 
-            // File operations commands
-            check_file_exists,
-            validate_video_file,
+// File operations commands
+check_file_exists,
+validate_video_file,
+generate_proxy_file,
 
-            // Auth commands
+// Auth commands
             auth::open_wallet_auth_window,
             auth::open_wallet_payment_window,
             auth::close_auth_window,

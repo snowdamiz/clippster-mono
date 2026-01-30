@@ -1,11 +1,14 @@
 use super::frame_cache::{CachedFrame, FrameCache, FrameCacheKey};
 use super::frame_decoder::{VideoDecoder, DecoderError};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct DecoderPool {
     decoders: Arc<RwLock<HashMap<String, Arc<VideoDecoder>>>>,
+    /// Track which video path each source_id is using
+    decoder_paths: Arc<RwLock<HashMap<String, String>>>,
+    source_locks: Arc<RwLock<HashMap<String, Arc<Mutex<()>>>>>,
     frame_cache: FrameCache,
 }
 
@@ -13,24 +16,63 @@ impl DecoderPool {
     pub fn new(cache_capacity: usize) -> Self {
         Self {
             decoders: Arc::new(RwLock::new(HashMap::new())),
+            decoder_paths: Arc::new(RwLock::new(HashMap::new())),
+            source_locks: Arc::new(RwLock::new(HashMap::new())),
             frame_cache: FrameCache::new(cache_capacity),
         }
     }
 
+    fn get_source_lock(&self, source_id: &str) -> Arc<Mutex<()>> {
+        {
+            let locks = self.source_locks.read();
+            if let Some(lock) = locks.get(source_id) {
+                return Arc::clone(lock);
+            }
+        }
+
+        let lock = Arc::new(Mutex::new(()));
+        let mut locks = self.source_locks.write();
+        let entry = locks.entry(source_id.to_string()).or_insert_with(|| Arc::clone(&lock));
+        Arc::clone(entry)
+    }
+
     pub fn get_or_create_decoder(&self, source_id: &str, video_path: &str) -> Result<Arc<VideoDecoder>, DecoderError> {
+        // Check if we have a cached decoder AND if the path matches
         {
             let decoders = self.decoders.read();
+            let paths = self.decoder_paths.read();
+            
             if let Some(decoder) = decoders.get(source_id) {
-                return Ok(Arc::clone(decoder));
+                // Check if the path matches - if not, we need to recreate the decoder
+                if let Some(cached_path) = paths.get(source_id) {
+                    if cached_path == video_path {
+                        return Ok(Arc::clone(decoder));
+                    }
+                    // Path changed (e.g., original -> proxy), need to recreate
+                    eprintln!("[DecoderPool] Path changed for {}: {} -> {}", source_id, cached_path, video_path);
+                } else {
+                    // No path recorded but decoder exists - use it
+                    return Ok(Arc::clone(decoder));
+                }
             }
+        }
+
+        // Remove old decoder if path changed
+        {
+            let mut decoders = self.decoders.write();
+            decoders.remove(source_id);
         }
 
         let decoder = Arc::new(VideoDecoder::new(video_path)?);
         
         {
             let mut decoders = self.decoders.write();
+            let mut paths = self.decoder_paths.write();
             decoders.insert(source_id.to_string(), Arc::clone(&decoder));
+            paths.insert(source_id.to_string(), video_path.to_string());
         }
+
+        self.get_source_lock(source_id);
 
         Ok(decoder)
     }
@@ -41,6 +83,9 @@ impl DecoderPool {
         if let Some(cached_frame) = self.frame_cache.get(&cache_key) {
             return Ok(cached_frame);
         }
+
+        let decode_lock = self.get_source_lock(source_id);
+        let _guard = decode_lock.lock();
 
         let decoder = self.get_or_create_decoder(source_id, video_path)?;
         let decoded_frame = decoder.decode_frame_at(timestamp)?;
@@ -82,11 +127,19 @@ impl DecoderPool {
     pub fn clear_decoder(&self, source_id: &str) {
         let mut decoders = self.decoders.write();
         decoders.remove(source_id);
+        let mut paths = self.decoder_paths.write();
+        paths.remove(source_id);
+        let mut locks = self.source_locks.write();
+        locks.remove(source_id);
     }
 
     pub fn clear_all_decoders(&self) {
         let mut decoders = self.decoders.write();
         decoders.clear();
+        let mut paths = self.decoder_paths.write();
+        paths.clear();
+        let mut locks = self.source_locks.write();
+        locks.clear();
     }
 
     pub fn clear_cache(&self) {
@@ -116,6 +169,8 @@ impl Clone for DecoderPool {
     fn clone(&self) -> Self {
         Self {
             decoders: Arc::clone(&self.decoders),
+            decoder_paths: Arc::clone(&self.decoder_paths),
+            source_locks: Arc::clone(&self.source_locks),
             frame_cache: self.frame_cache.clone(),
         }
     }
