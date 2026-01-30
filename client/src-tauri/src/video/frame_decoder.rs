@@ -44,18 +44,6 @@ pub struct DecodedFrame {
     pub timestamp: f64,
 }
 
-struct DecoderState {
-    input: ffmpeg::format::context::Input,
-    decoder: ffmpeg::decoder::Video,
-    scaler: ffmpeg::software::scaling::Context,
-    time_base: ffmpeg::Rational,
-}
-
-// SAFETY: DecoderState is protected by a Mutex in VideoDecoder, ensuring single-threaded access.
-// FFmpeg contexts are not thread-safe themselves, but the Mutex guarantees exclusive access.
-unsafe impl Send for DecoderState {}
-unsafe impl Sync for DecoderState {}
-
 pub struct VideoDecoder {
     video_path: String,
     width: u32,
@@ -63,7 +51,6 @@ pub struct VideoDecoder {
     duration: f64,
     fps: f64,
     video_stream_index: usize,
-    state: Mutex<DecoderState>,
 }
 
 impl VideoDecoder {
@@ -114,12 +101,6 @@ impl VideoDecoder {
             duration,
             fps,
             video_stream_index,
-            state: Mutex::new(DecoderState {
-                input,
-                decoder,
-                scaler,
-                time_base,
-            }),
         })
     }
     
@@ -150,44 +131,69 @@ impl VideoDecoder {
     }
     
     fn try_decode_frame_at(&self, seek_timestamp: f64, target_timestamp: f64) -> Result<DecodedFrame, DecoderError> {
-        let mut state = self.state.lock();
+        let mut input = ffmpeg::format::input(&self.video_path)?;
+        
+        let video_stream = input.stream(self.video_stream_index)
+            .ok_or(DecoderError::NoVideoStream)?;
+        let time_base = video_stream.time_base();
 
-        let seek_ts = (seek_timestamp / f64::from(state.time_base)) as i64;
-        state.input.seek(seek_ts, ..)?;
-        state.decoder.flush();
+        let seek_ts = (seek_timestamp / f64::from(time_base)) as i64;
+        input.seek(seek_ts, ..)?;
+
+        let video_stream = input.stream(self.video_stream_index)
+            .ok_or(DecoderError::NoVideoStream)?;
+        let time_base = video_stream.time_base();
+
+        let mut decoder = ffmpeg::codec::context::Context::from_parameters(video_stream.parameters())?
+            .decoder()
+            .video()?;
+
+        let mut scaler = ffmpeg::software::scaling::Context::get(
+            decoder.format(),
+            decoder.width(),
+            decoder.height(),
+            ffmpeg::format::Pixel::RGB24,
+            decoder.width(),
+            decoder.height(),
+            ffmpeg::software::scaling::Flags::BILINEAR,
+        )?;
 
         let mut target_frame_found = false;
         let mut decoded_frame: Option<DecodedFrame> = None;
         let mut packets_processed = 0;
-        const MAX_PACKETS: usize = 300; // Limit packet iteration to ~10 seconds at 30fps
+        let mut frames_decoded = 0;
+        let mut first_frame_ts = None;
+        let mut last_frame_ts = None;
         
-        // Collect packets first to avoid borrow checker issues
-        let mut packets_to_process = Vec::new();
-        for result in state.input.packets() {
-            packets_processed += 1;
-            if packets_processed > MAX_PACKETS {
-                break; // Timeout - prevent infinite loops
-            }
+        eprintln!("[FrameDecoder] Seeking to {:.3}s, looking for frame at {:.3}s", seek_timestamp, target_timestamp);
+        
+        for result in input.packets() {
             let (stream, packet) = result?;
-            if stream.index() == self.video_stream_index {
-                packets_to_process.push(packet);
+            packets_processed += 1;
+            if stream.index() != self.video_stream_index {
+                continue;
             }
-        }
-        
-        // Process collected packets
-        let time_base = state.time_base;
-        for packet in packets_to_process {
-            state.decoder.send_packet(&packet)?;
-            
+
+            decoder.send_packet(&packet)?;
+
             let mut frame = ffmpeg::frame::Video::empty();
-            while state.decoder.receive_frame(&mut frame).is_ok() {
+            while decoder.receive_frame(&mut frame).is_ok() {
                 let frame_pts = frame.pts().unwrap_or(0);
                 let frame_timestamp = frame_pts as f64 * f64::from(time_base);
+                frames_decoded += 1;
+                
+                if first_frame_ts.is_none() {
+                    first_frame_ts = Some(frame_timestamp);
+                }
+                last_frame_ts = Some(frame_timestamp);
                 
                 if frame_timestamp >= target_timestamp {
-                    let mut rgb_frame = ffmpeg::frame::Video::empty();
-                    state.scaler.run(&frame, &mut rgb_frame)?;
+                    eprintln!("[FrameDecoder] FOUND frame at {:.3}s (target: {:.3}s, packets: {}, frames: {})", 
+                        frame_timestamp, target_timestamp, packets_processed, frames_decoded);
                     
+                    let mut rgb_frame = ffmpeg::frame::Video::empty();
+                    scaler.run(&frame, &mut rgb_frame)?;
+
                     let rgb_data = rgb_frame.data(0).to_vec();
                     
                     decoded_frame = Some(DecodedFrame {
@@ -196,29 +202,38 @@ impl VideoDecoder {
                         rgb_data,
                         timestamp: frame_timestamp,
                     });
-                    
+
                     target_frame_found = true;
                     break;
                 }
             }
-            
+
             if target_frame_found {
                 break;
             }
         }
-        
-        state.decoder.send_eof()?;
-        
+
+        decoder.send_eof()?;
+
         let mut frame = ffmpeg::frame::Video::empty();
-        while state.decoder.receive_frame(&mut frame).is_ok() {
+        while decoder.receive_frame(&mut frame).is_ok() {
             if decoded_frame.is_none() {
                 let frame_pts = frame.pts().unwrap_or(0);
-                let frame_timestamp = frame_pts as f64 * f64::from(state.time_base);
+                let frame_timestamp = frame_pts as f64 * f64::from(time_base);
+                frames_decoded += 1;
+                
+                if first_frame_ts.is_none() {
+                    first_frame_ts = Some(frame_timestamp);
+                }
+                last_frame_ts = Some(frame_timestamp);
                 
                 if frame_timestamp >= target_timestamp {
-                    let mut rgb_frame = ffmpeg::frame::Video::empty();
-                    state.scaler.run(&frame, &mut rgb_frame)?;
+                    eprintln!("[FrameDecoder] FOUND frame in flush at {:.3}s (target: {:.3}s)", 
+                        frame_timestamp, target_timestamp);
                     
+                    let mut rgb_frame = ffmpeg::frame::Video::empty();
+                    scaler.run(&frame, &mut rgb_frame)?;
+
                     let rgb_data = rgb_frame.data(0).to_vec();
                     
                     decoded_frame = Some(DecodedFrame {
@@ -231,7 +246,12 @@ impl VideoDecoder {
                 }
             }
         }
-        
+
+        if decoded_frame.is_none() {
+            eprintln!("[FrameDecoder] FAILED to find frame at {:.3}s. Processed {} packets, decoded {} frames. First frame: {:?}, Last frame: {:?}", 
+                target_timestamp, packets_processed, frames_decoded, first_frame_ts, last_frame_ts);
+        }
+
         decoded_frame.ok_or_else(|| {
             DecoderError::DecodingFailed(format!("No frame found at timestamp {}", target_timestamp))
         })

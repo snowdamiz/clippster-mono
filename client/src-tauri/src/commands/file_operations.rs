@@ -15,6 +15,7 @@ pub struct ProxyGenerationResult {
 }
 
 /// Generate a proxy file for a source video.
+/// Supports trimmed proxy generation - only encodes the portion needed.
 /// Uses intraframe-friendly codecs by default for fast seeking.
 #[tauri::command]
 pub async fn generate_proxy_file(
@@ -25,6 +26,8 @@ pub async fn generate_proxy_file(
     height: u32,
     codec: String,
     quality: String,
+    trim_start: Option<f64>,
+    trim_duration: Option<f64>,
 ) -> Result<ProxyGenerationResult, String> {
     let source = Path::new(&source_path);
     if !source.exists() {
@@ -37,16 +40,40 @@ pub async fn generate_proxy_file(
     std::fs::create_dir_all(&proxy_dir)
         .map_err(|e| format!("Failed to create proxy dir: {}", e))?;
 
+    // Include trim info in filename to differentiate trimmed proxies
     let extension = if codec == "prores_proxy" { "mov" } else { "mp4" };
+    let trim_suffix = match (trim_start, trim_duration) {
+        (Some(start), Some(dur)) => format!("_t{:.0}_{:.0}", start, dur),
+        (Some(start), None) => format!("_t{:.0}", start),
+        _ => String::new(),
+    };
     let proxy_path = proxy_dir.join(format!(
-        "proxy_{}_{}x{}_{}.{}",
-        source_id, width, height, codec, extension
+        "proxy_{}_{}x{}_{}{}.{}",
+        source_id, width, height, codec, trim_suffix, extension
     ));
 
+    // Check if valid proxy already exists
     if proxy_path.exists() {
-        return Ok(ProxyGenerationResult {
-            proxy_path: proxy_path.to_string_lossy().to_string(),
-        });
+        let proxy_path_str = proxy_path.to_string_lossy().to_string();
+        // Validate by checking if FFmpeg can read it (has valid moov atom)
+        let validate_output = app.shell()
+            .sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args(["-i", &proxy_path_str, "-f", "null", "-t", "0.1", "-"])
+            .output()
+            .await;
+        
+        if let Ok(output) = validate_output {
+            if output.status.success() {
+                eprintln!("[generate_proxy_file] Using existing valid proxy: {}", proxy_path_str);
+                return Ok(ProxyGenerationResult {
+                    proxy_path: proxy_path_str,
+                });
+            }
+        }
+        // Proxy is invalid, delete and regenerate
+        eprintln!("[generate_proxy_file] Existing proxy invalid, regenerating");
+        let _ = std::fs::remove_file(&proxy_path);
     }
 
     let scale_filter = format!(
@@ -54,13 +81,26 @@ pub async fn generate_proxy_file(
         width, height
     );
 
-    let mut args = vec![
-        "-y".to_string(),
-        "-i".to_string(),
-        source_path.clone(),
-        "-vf".to_string(),
-        scale_filter,
-    ];
+    // Build FFmpeg args with optional trim
+    let mut args = vec!["-y".to_string()];
+    
+    // Add seek BEFORE input for fast seeking (uses keyframes)
+    if let Some(start) = trim_start {
+        if start > 0.0 {
+            args.extend(["-ss".to_string(), format!("{:.3}", start)]);
+        }
+    }
+    
+    args.extend(["-i".to_string(), source_path.clone()]);
+    
+    // Add duration limit AFTER input
+    if let Some(duration) = trim_duration {
+        if duration > 0.0 {
+            args.extend(["-t".to_string(), format!("{:.3}", duration)]);
+        }
+    }
+    
+    args.extend(["-vf".to_string(), scale_filter]);
 
     if codec == "prores_proxy" {
         let qscale = match quality.as_str() {
@@ -75,16 +115,59 @@ pub async fn generate_proxy_file(
             "-qscale:v".to_string(), qscale.to_string(),
         ]);
     } else {
-        let crf = match quality.as_str() {
-            "high" => "24",
-            "low" => "30",
-            _ => "28",
+        // Use I-frame only H.264 for instant frame-accurate seeking
+        // Every frame is a keyframe, so seeking to any frame requires decoding only 1-2 packets
+        // This is how professional editors achieve instant scrubbing
+        let (encoder, encoder_args) = if cfg!(target_os = "windows") {
+            let crf = match quality.as_str() {
+                "high" => "18",
+                "low" => "26",
+                _ => "22",
+            };
+            
+            // Use software libx264 for I-frame only mode (NVENC doesn't support GOP=1)
+            // I-frame only = instant seeking like ProRes
+            ("libx264", vec![
+                "-preset".to_string(), "ultrafast".to_string(), // Fast encoding
+                "-crf".to_string(), crf.to_string(),
+                "-g".to_string(), "1".to_string(), // Every frame is a keyframe
+                "-bf".to_string(), "0".to_string(), // No B-frames
+                "-pix_fmt".to_string(), "yuv420p".to_string(),
+            ])
+        } else if cfg!(target_os = "macos") {
+            // macOS - use I-frame only for instant seeking
+            let crf = match quality.as_str() {
+                "high" => "18",
+                "low" => "26",
+                _ => "22",
+            };
+            
+            ("libx264", vec![
+                "-preset".to_string(), "ultrafast".to_string(),
+                "-crf".to_string(), crf.to_string(),
+                "-g".to_string(), "1".to_string(), // Every frame is a keyframe
+                "-bf".to_string(), "0".to_string(), // No B-frames
+                "-pix_fmt".to_string(), "yuv420p".to_string(),
+            ])
+        } else {
+            // Linux - try VAAPI, fallback to software
+            let crf = match quality.as_str() {
+                "high" => "24",
+                "low" => "30",
+                _ => "28",
+            };
+            
+            ("libx264", vec![
+                "-preset".to_string(), "veryfast".to_string(),
+                "-crf".to_string(), crf.to_string(),
+                "-g".to_string(), "30".to_string(),
+                "-keyint_min".to_string(), "30".to_string(),
+                "-pix_fmt".to_string(), "yuv420p".to_string(),
+            ])
         };
-        args.extend([
-            "-c:v".to_string(), "libx264".to_string(),
-            "-preset".to_string(), "veryfast".to_string(),
-            "-crf".to_string(), crf.to_string(),
-        ]);
+        
+        args.extend(["-c:v".to_string(), encoder.to_string()]);
+        args.extend(encoder_args);
     }
 
     args.extend([
@@ -93,6 +176,8 @@ pub async fn generate_proxy_file(
         "-movflags".to_string(), "+faststart".to_string(),
         proxy_path.to_string_lossy().to_string(),
     ]);
+
+    eprintln!("[generate_proxy_file] Generating proxy with args: {:?}", args);
 
     let output = app.shell()
         .sidecar("ffmpeg")
@@ -106,6 +191,8 @@ pub async fn generate_proxy_file(
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("Proxy generation failed: {}", stderr));
     }
+
+    eprintln!("[generate_proxy_file] Proxy generated successfully: {}", proxy_path.display());
 
     Ok(ProxyGenerationResult {
         proxy_path: proxy_path.to_string_lossy().to_string(),

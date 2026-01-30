@@ -45,6 +45,20 @@ async fn copy_file(source: String, destination: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Read video file as bytes for WebCodecs playback
+#[tauri::command]
+async fn read_video_file(file_path: String) -> Result<Vec<u8>, String> {
+    use std::fs;
+    
+    println!("[Rust] Reading video file: {}", file_path);
+    
+    let bytes = fs::read(&file_path)
+        .map_err(|e| format!("Failed to read video file: {}", e))?;
+    
+    println!("[Rust] Video file read successfully: {} bytes", bytes.len());
+    Ok(bytes)
+}
+
 /// Create an always-on-top PIP window with video and controls
 #[tauri::command]
 async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> {
@@ -755,6 +769,7 @@ generate_proxy_file,
             
             // File operations
             copy_file,
+            read_video_file,
 
     // PIP control window commands
     create_pip_control_window,

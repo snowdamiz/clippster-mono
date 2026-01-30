@@ -41,11 +41,14 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   const decoders = new Map<string, DecoderState>();
   const initializingDecoders = new Map<string, Promise<DecoderState | null>>();
   let currentSourceId: string | null = null;
+  let cacheDebugCounter = 0;
   
   // Rendering state
   let rafId: number | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
   let lastRenderedFrame: VideoFrame | null = null;
+  let lastRenderTime = 0;
+  let lastRenderSourceId: string | null = null;
   
   // Performance metrics
   const isInitialized = ref(false);
@@ -53,6 +56,292 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   const cacheSize = ref(0);
   let fpsFrameCount = 0;
   let fpsLastTime = performance.now();
+
+  const normalizeCodecDescription = (description: unknown): ArrayBuffer | undefined => {
+    if (!description) return undefined;
+    if (description instanceof ArrayBuffer) return description;
+    if (ArrayBuffer.isView(description)) {
+      return new Uint8Array(description.buffer, description.byteOffset, description.byteLength).slice().buffer;
+    }
+    if (Array.isArray(description)) {
+      return new Uint8Array(description).buffer;
+    }
+    if (typeof description === 'object') {
+      const record = description as Record<string, unknown>;
+      // Handle rawData from extradata
+      const wrapped = record.rawData ?? record.data ?? record.bytes ?? record.buffer;
+      if (wrapped) {
+        return normalizeCodecDescription(wrapped);
+      }
+    }
+    return undefined;
+  };
+
+  const normalizeUint8Array = (value: unknown): Uint8Array | null => {
+    if (!value) return null;
+    if (value instanceof Uint8Array) return value;
+    if (ArrayBuffer.isView(value)) {
+      return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    }
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    if (Array.isArray(value)) return new Uint8Array(value);
+    return null;
+  };
+
+  const buildAvcConfigRecord = (options: {
+    spsList: Uint8Array[];
+    ppsList: Uint8Array[];
+    profile?: number;
+    compatibility?: number;
+    level?: number;
+    lengthSizeMinusOne?: number;
+  }): ArrayBuffer | undefined => {
+    const { spsList, ppsList } = options;
+    if (!spsList.length || !ppsList.length) {
+      return undefined;
+    }
+
+    const configurationVersion = 1;
+    const profile = options.profile ?? 0;
+    const compatibility = options.compatibility ?? 0;
+    const level = options.level ?? 0;
+    const lengthSizeMinusOne = options.lengthSizeMinusOne ?? 3;
+
+    const totalSize =
+      7 +
+      spsList.reduce((sum, sps) => sum + 2 + sps.byteLength, 0) +
+      1 +
+      ppsList.reduce((sum, pps) => sum + 2 + pps.byteLength, 0);
+
+    const buffer = new Uint8Array(totalSize);
+    let offset = 0;
+    buffer[offset++] = configurationVersion & 0xff;
+    buffer[offset++] = profile & 0xff;
+    buffer[offset++] = compatibility & 0xff;
+    buffer[offset++] = level & 0xff;
+    buffer[offset++] = 0xfc | (lengthSizeMinusOne & 0x03);
+    buffer[offset++] = 0xe0 | (spsList.length & 0x1f);
+
+    for (const sps of spsList) {
+      buffer[offset++] = (sps.byteLength >> 8) & 0xff;
+      buffer[offset++] = sps.byteLength & 0xff;
+      buffer.set(sps, offset);
+      offset += sps.byteLength;
+    }
+
+    buffer[offset++] = ppsList.length & 0xff;
+    for (const pps of ppsList) {
+      buffer[offset++] = (pps.byteLength >> 8) & 0xff;
+      buffer[offset++] = pps.byteLength & 0xff;
+      buffer.set(pps, offset);
+      offset += pps.byteLength;
+    }
+
+    return buffer.buffer;
+  };
+
+  const extractNaluArray = (arr: any[]): Uint8Array[] => {
+    if (!Array.isArray(arr)) return [];
+    return arr.map((item) => {
+      // Handle MP4Box format where SPS/PPS are objects with nalu property
+      if (item?.nalu) return normalizeUint8Array(item.nalu);
+      if (item?.data) return normalizeUint8Array(item.data);
+      return normalizeUint8Array(item);
+    }).filter(Boolean) as Uint8Array[];
+  };
+
+  const buildAvcConfig = (trackOrAvcC: any): ArrayBuffer | undefined => {
+    const avcC = trackOrAvcC?.avcC ?? trackOrAvcC?.avcc ?? trackOrAvcC;
+    if (!avcC) return undefined;
+    const spsList = extractNaluArray(avcC.SPS ?? avcC.sps ?? []);
+    const ppsList = extractNaluArray(avcC.PPS ?? avcC.pps ?? []);
+    const profile = avcC.AVCProfileIndication ?? avcC.profile ?? spsList[0]?.[1] ?? 0;
+    const compatibility = avcC.profile_compatibility ?? avcC.compatibility ?? spsList[0]?.[2] ?? 0;
+    const level = avcC.AVCLevelIndication ?? avcC.level ?? spsList[0]?.[3] ?? 0;
+    const lengthSizeMinusOne = avcC.lengthSizeMinusOne ?? 3;
+    
+    console.log('[WebCodecsPlayback] buildAvcConfig input:', {
+      hasAvcC: !!avcC,
+      avcCKeys: avcC ? Object.keys(avcC) : [],
+      spsCount: spsList.length,
+      ppsCount: ppsList.length,
+      profile,
+      level,
+    });
+    
+    return buildAvcConfigRecord({ spsList, ppsList, profile, compatibility, level, lengthSizeMinusOne });
+  };
+
+  const extractAvcParameterSets = (data: Uint8Array): { sps: Uint8Array[]; pps: Uint8Array[] } | null => {
+    const sps: Uint8Array[] = [];
+    const pps: Uint8Array[] = [];
+
+    const pushNal = (nal: Uint8Array) => {
+      if (!nal.length) return;
+      const nalType = nal[0] & 0x1f;
+      if (nalType === 7) sps.push(nal);
+      if (nalType === 8) pps.push(nal);
+    };
+
+    const startIndices: number[] = [];
+    for (let i = 0; i < data.length - 3; i += 1) {
+      if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 1) {
+        startIndices.push(i);
+        i += 2;
+        continue;
+      }
+      if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 0 && data[i + 3] === 1) {
+        startIndices.push(i);
+        i += 3;
+      }
+    }
+
+    if (startIndices.length) {
+      for (let i = 0; i < startIndices.length; i += 1) {
+        const startIndex = startIndices[i];
+        const startCodeLength = data[startIndex + 2] === 1 ? 3 : 4;
+        const nalStart = startIndex + startCodeLength;
+        const nextStart = i + 1 < startIndices.length ? startIndices[i + 1] : data.length;
+        if (nextStart > nalStart) {
+          pushNal(data.subarray(nalStart, nextStart));
+        }
+      }
+    } else {
+      let offset = 0;
+      while (offset + 4 <= data.length) {
+        const size =
+          (data[offset] << 24) |
+          (data[offset + 1] << 16) |
+          (data[offset + 2] << 8) |
+          data[offset + 3];
+        offset += 4;
+        if (size <= 0 || offset + size > data.length) {
+          break;
+        }
+        pushNal(data.subarray(offset, offset + size));
+        offset += size;
+      }
+    }
+
+    if (!sps.length || !pps.length) {
+      return null;
+    }
+
+    return { sps, pps };
+  };
+
+  const getAvcCFromTrackBoxes = (mp4boxFile: any, trackId: number): any => {
+    try {
+      // Try multiple paths to find avcC in MP4Box structure
+      // Path 1: via getTrackById
+      const trackById = mp4boxFile?.getTrackById?.(trackId);
+      const entry1 = trackById?.trak?.mdia?.minf?.stbl?.stsd?.entries?.[0];
+      if (entry1?.avcC || entry1?.avcc) {
+        console.log('[WebCodecsPlayback] Found avcC via getTrackById path');
+        return entry1.avcC ?? entry1.avcc;
+      }
+
+      // Path 2: via moov.traks array
+      const traks = mp4boxFile?.moov?.traks;
+      if (Array.isArray(traks)) {
+        for (const trak of traks) {
+          const trakId = trak?.tkhd?.track_id;
+          if (trakId === trackId) {
+            const entry2 = trak?.mdia?.minf?.stbl?.stsd?.entries?.[0];
+            if (entry2?.avcC || entry2?.avcc) {
+              console.log('[WebCodecsPlayback] Found avcC via moov.traks path');
+              return entry2.avcC ?? entry2.avcc;
+            }
+          }
+        }
+      }
+
+      // Path 3: Check if avcC is directly on the sample description
+      const info = mp4boxFile?.getInfo?.();
+      const videoTrack = info?.tracks?.find((t: any) => t.id === trackId);
+      if (videoTrack?.avcC || videoTrack?.avcc) {
+        console.log('[WebCodecsPlayback] Found avcC via getInfo track');
+        return videoTrack.avcC ?? videoTrack.avcc;
+      }
+
+      // Path 4: Look for avcC in boxes array of the sample entry
+      if (entry1?.boxes) {
+        for (const box of entry1.boxes) {
+          if (box.type === 'avcC' || box.type === 'avcc') {
+            console.log('[WebCodecsPlayback] Found avcC in entry1.boxes');
+            return box;
+          }
+        }
+      }
+
+      // Path 5: Try moov.traks entry boxes
+      if (Array.isArray(traks)) {
+        for (const trak of traks) {
+          const trakId = trak?.tkhd?.track_id;
+          if (trakId === trackId) {
+            const entry = trak?.mdia?.minf?.stbl?.stsd?.entries?.[0];
+            if (entry?.boxes) {
+              for (const box of entry.boxes) {
+                if (box.type === 'avcC' || box.type === 'avcc') {
+                  console.log('[WebCodecsPlayback] Found avcC in moov.traks entry.boxes');
+                  return box;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Path 6: Try to get raw avcC data buffer if the box has a write method
+      if (entry1) {
+        // Check if entry1 itself is the avc1/avc3 box with avcC inside
+        for (const key of Object.keys(entry1)) {
+          const val = entry1[key];
+          if (val && typeof val === 'object' && (val.type === 'avcC' || key === 'avcC' || key === 'avcc')) {
+            console.log('[WebCodecsPlayback] Found avcC as entry1 property:', key);
+            return val;
+          }
+        }
+        
+        // Check for extradata (raw codec config bytes)
+        if (entry1.extradata || entry1.extra_data) {
+          const extradata = entry1.extradata ?? entry1.extra_data;
+          console.log('[WebCodecsPlayback] Found extradata on entry1, length:', extradata?.byteLength ?? extradata?.length);
+          // Return as-is, it should be raw AVCDecoderConfigurationRecord
+          return { rawData: extradata };
+        }
+      }
+
+      // Path 7: Check track.extradata directly
+      if (trackById?.extradata) {
+        console.log('[WebCodecsPlayback] Found extradata on trackById');
+        return { rawData: trackById.extradata };
+      }
+
+      // Path 8: Check videoTrack from getInfo
+      if (videoTrack?.extradata) {
+        console.log('[WebCodecsPlayback] Found extradata on videoTrack');
+        return { rawData: videoTrack.extradata };
+      }
+
+      // Debug: log what we found
+      console.warn('[WebCodecsPlayback] avcC not found. Debug info:', {
+        hasGetTrackById: typeof mp4boxFile?.getTrackById === 'function',
+        trackByIdKeys: trackById ? Object.keys(trackById).slice(0, 20) : [],
+        hasMoov: !!mp4boxFile?.moov,
+        traksCount: traks?.length,
+        entry1Type: entry1?.type,
+        entry1Keys: entry1 ? Object.keys(entry1).slice(0, 20) : [],
+        entry1BoxTypes: entry1?.boxes?.map((b: any) => b.type) ?? [],
+        firstTrakStsdEntry: traks?.[0]?.mdia?.minf?.stbl?.stsd?.entries?.[0] ? Object.keys(traks[0].mdia.minf.stbl.stsd.entries[0]).slice(0, 20) : [],
+      });
+
+      return undefined;
+    } catch (error) {
+      console.warn('[WebCodecsPlayback] Failed to read avcC from MP4Box track boxes:', error);
+      return undefined;
+    }
+  };
 
   // Helper to resolve video path with proxy support
   const resolveVideoPath = (source: VideoSource): { path: string; trimOffset: number } => {
@@ -93,7 +382,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   }
 
   // Initialize decoder for a video source
-  async function initializeDecoder(source: VideoSource): Promise<DecoderState | null> {
+  async function initializeDecoder(source: VideoSource, startTime?: number): Promise<DecoderState | null> {
     const { path: videoPath, trimOffset } = resolveVideoPath(source);
     const cacheKey = `${source.id}:${videoPath}`;
 
@@ -155,12 +444,23 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       const initPromise = new Promise<DecoderState | null>((resolve, reject) => {
         let videoTrack: any = null;
         let decoder: VideoDecoder | null = null;
+        let decoderConfigDebug: {
+          codec?: string;
+          descriptionBytes?: number;
+          avcCBytes?: number;
+          spsCount?: number;
+          ppsCount?: number;
+        } | null = null;
         let isResolved = false;
+        let decoderConfigured = false;
+        let decodeErrorLogged = false;
         let totalSize: number | null = null;
         let nextOffset = 0;
         let streamingStarted = false;
         let initialBuffer: ArrayBuffer | null = null;
         let hasKeyframe = false;
+        let isReady = false;
+        let moovFetchAttempted = false;
 
         const appendBuffer = (data: ArrayBuffer, offset: number) => {
           const buffer = data as ArrayBuffer & { fileStart: number };
@@ -208,6 +508,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
         };
 
         mp4boxFile.onReady = (info: any) => {
+          isReady = true;
           console.log('[WebCodecsPlayback] MP4Box ready, tracks:', info.tracks.length);
           
           // Find video track
@@ -275,8 +576,50 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
           };
 
           // Add description (codec-specific data) if available
-          if (videoTrack.description) {
-            config.description = videoTrack.description;
+          const boxAvcC = getAvcCFromTrackBoxes(mp4boxFile, videoTrack.id);
+          const codecDescription =
+            normalizeCodecDescription(videoTrack.description) ||
+            normalizeCodecDescription(videoTrack.avcC) ||
+            normalizeCodecDescription(videoTrack.avcc) ||
+            normalizeCodecDescription(videoTrack.hvcC) ||
+            normalizeCodecDescription(videoTrack.vpcC) ||
+            normalizeCodecDescription(boxAvcC) ||
+            (videoTrack.codec?.startsWith('avc') ? buildAvcConfig(boxAvcC ?? videoTrack) : undefined);
+
+          const avcC = boxAvcC ?? videoTrack.avcC ?? videoTrack.avcc;
+          const spsCount = Array.isArray(avcC?.SPS ?? avcC?.sps) ? (avcC.SPS ?? avcC.sps).length : 0;
+          const ppsCount = Array.isArray(avcC?.PPS ?? avcC?.pps) ? (avcC.PPS ?? avcC.pps).length : 0;
+          const avcCData = normalizeCodecDescription(avcC);
+          decoderConfigDebug = {
+            codec: videoTrack.codec,
+            descriptionBytes: normalizeCodecDescription(videoTrack.description)?.byteLength ?? codecDescription?.byteLength,
+            avcCBytes: avcCData?.byteLength,
+            spsCount,
+            ppsCount,
+          };
+
+          console.log('[WebCodecsPlayback] Video track description details:', {
+            trackId: videoTrack.id,
+            ...decoderConfigDebug,
+          });
+
+          if (codecDescription) {
+            config.description = codecDescription;
+            if (videoTrack.codec?.startsWith('avc') && !normalizeCodecDescription(videoTrack.description)) {
+              console.log('[WebCodecsPlayback] AVC decoder description built from avcC.', {
+                trackId: videoTrack.id,
+                descriptionBytes: codecDescription.byteLength,
+              });
+            }
+          } else if (videoTrack.codec?.startsWith('avc')) {
+            console.warn('[WebCodecsPlayback] Missing AVC decoder description for track:', {
+              codec: videoTrack.codec,
+              trackId: videoTrack.id,
+              descriptionType: typeof videoTrack.description,
+              avcCType: typeof videoTrack.avcC,
+              avccType: typeof videoTrack.avcc,
+              hasAvcCData: Boolean((videoTrack.avcC as any)?.data),
+            });
           }
 
           console.log('[WebCodecsPlayback] Checking codec support:', config.codec);
@@ -292,9 +635,22 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
               return;
             }
 
-            console.log('[WebCodecsPlayback] Configuring decoder...');
-            decoder!.configure(config);
-            console.log('[WebCodecsPlayback] Decoder configured successfully');
+            if (config.description || !videoTrack.codec?.startsWith('avc')) {
+              console.log('[WebCodecsPlayback] Configuring decoder...');
+              decoder!.configure(config);
+              decoderConfigured = true;
+              console.log('[WebCodecsPlayback] Decoder configured successfully');
+            } else {
+              // Try configuring without description first - some browsers accept this
+              console.warn('[WebCodecsPlayback] AVC description missing, attempting configuration without it...');
+              try {
+                decoder!.configure(config);
+                decoderConfigured = true;
+                console.log('[WebCodecsPlayback] Decoder configured without description (browser accepted)');
+              } catch (configError) {
+                console.warn('[WebCodecsPlayback] Decoder rejected config without description, deferring until SPS/PPS extracted:', configError);
+              }
+            }
 
             // Set up sample processing - this enables extraction for future data
             console.log('[WebCodecsPlayback] Setting extraction options for track ID:', videoTrack.id);
@@ -313,7 +669,8 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
             // Seek to beginning to force sample extraction
             // This is needed because onReady fires during appendBuffer,
             // so samples were already parsed before start() was called
-            const seekResult = mp4boxFile.seek(0, true);
+            const initialSeekTime = Math.max(0, startTime ?? 0);
+            const seekResult = mp4boxFile.seek(initialSeekTime, true);
             console.log('[WebCodecsPlayback] Seek result:', seekResult);
 
             const seekOffset = typeof seekResult?.offset === 'number' ? seekResult.offset : 0;
@@ -371,6 +728,53 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
           
           // Decode samples into frames
           for (const sample of samples) {
+            if (!decoderConfigured && videoTrack?.codec?.startsWith('avc') && sample.is_sync) {
+              const extracted = extractAvcParameterSets(sample.data as Uint8Array);
+              if (extracted) {
+                const profile = extracted.sps[0]?.[1] ?? 0;
+                const compatibility = extracted.sps[0]?.[2] ?? 0;
+                const level = extracted.sps[0]?.[3] ?? 0;
+                const description = buildAvcConfigRecord({
+                  spsList: extracted.sps,
+                  ppsList: extracted.pps,
+                  profile,
+                  compatibility,
+                  level,
+                });
+                if (description && decoder) {
+                  const config: VideoDecoderConfig = {
+                    codec: videoTrack.codec,
+                    codedWidth: videoTrack.video?.width || 1920,
+                    codedHeight: videoTrack.video?.height || 1080,
+                    hardwareAcceleration: 'prefer-hardware',
+                    description,
+                  };
+                  decoder.configure(config);
+                  decoderConfigured = true;
+                  decoderConfigDebug = {
+                    codec: videoTrack.codec,
+                    descriptionBytes: description.byteLength,
+                    avcCBytes: undefined,
+                    spsCount: extracted.sps.length,
+                    ppsCount: extracted.pps.length,
+                  };
+                  console.log('[WebCodecsPlayback] Decoder configured from keyframe SPS/PPS.', {
+                    trackId: videoTrack.id,
+                    descriptionBytes: description.byteLength,
+                    spsCount: extracted.sps.length,
+                    ppsCount: extracted.pps.length,
+                  });
+                }
+              } else {
+                console.warn('[WebCodecsPlayback] Failed to extract SPS/PPS from keyframe sample.', {
+                  trackId: videoTrack.id,
+                  sampleSize: sample.data?.byteLength,
+                });
+              }
+            }
+            if (!decoderConfigured && videoTrack?.codec?.startsWith('avc')) {
+              continue;
+            }
             if (!hasKeyframe) {
               if (!sample.is_sync) {
                 continue;
@@ -388,7 +792,20 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
               try {
                 decoder.decode(chunk);
               } catch (error) {
-                console.error('[WebCodecsPlayback] Decoder decode failed:', error);
+                if (!decodeErrorLogged) {
+                  decodeErrorLogged = true;
+                  const errorMessage = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+                  const configMessage = decoderConfigDebug ? JSON.stringify(decoderConfigDebug) : 'null';
+                  const sampleMessage = JSON.stringify({
+                    isSync: sample.is_sync,
+                    cts: sample.cts,
+                    duration: sample.duration,
+                    size: sample.data?.byteLength,
+                  });
+                  console.error(
+                    `[WebCodecsPlayback] Decoder decode failed: ${errorMessage} | config=${configMessage} | sample=${sampleMessage}`,
+                  );
+                }
                 onError?.(error instanceof Error ? error.message : String(error));
               }
             }
@@ -410,6 +827,40 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
             initialBuffer = data;
             appendBuffer(data, 0);
             nextOffset = data.byteLength;
+
+            if (!isReady && totalSize !== null && !moovFetchAttempted) {
+              moovFetchAttempted = true;
+              const tailSize = Math.min(4 * 1024 * 1024, totalSize);
+              const tailStart = Math.max(0, totalSize - tailSize);
+              if (tailStart + tailSize > nextOffset) {
+                console.log('[WebCodecsPlayback] MP4Box not ready after init chunk, fetching tail range for moov:', {
+                  tailStart,
+                  tailEnd: totalSize - 1,
+                  tailSize,
+                });
+                fetchRange(tailStart, totalSize - 1)
+                  .then(({ data: tailData }) => {
+                    appendBuffer(tailData, tailStart);
+                    mp4boxFile.flush();
+                    console.log('[WebCodecsPlayback] Tail range appended for moov, MP4Box flushed');
+                  })
+                  .catch((e) => {
+                    console.error('[WebCodecsPlayback] Failed to fetch tail range for moov:', e);
+                  });
+              } else {
+                console.log('[WebCodecsPlayback] Skipping tail range fetch; tail already covered by initial chunk.', {
+                  tailStart,
+                  tailSize,
+                  nextOffset,
+                });
+              }
+            } else if (!moovFetchAttempted) {
+              console.log('[WebCodecsPlayback] Tail range fetch not attempted:', {
+                isReady,
+                totalSize,
+                nextOffset,
+              });
+            }
 
             if (totalSize !== null && nextOffset >= totalSize) {
               mp4boxFile.flush();
@@ -453,13 +904,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     if (source && currentSourceId !== source.id) {
       console.log(`[WebCodecsPlayback] Source transition: ${currentSourceId || 'none'} -> ${source.id}`);
       currentSourceId = source.id;
-      
-      // Clear last rendered frame on source change
-      if (lastRenderedFrame) {
-        lastRenderedFrame.close();
-        lastRenderedFrame = null;
-      }
-      
+
       // Initialize decoder for new source
       initializeDecoder(source);
     }
@@ -471,13 +916,58 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       return;
     }
 
+    // Calculate time within the source file (accounts for trim_start)
     const sourceTime = getSourceTime(timestamp, source);
     const { trimOffset } = resolveVideoPath(source);
+    // Frames from proxies are cached starting at 0s (proxy start)
     const adjustedTime = trimOffset > 0 ? sourceTime - trimOffset : sourceTime;
+
+    if (lastRenderSourceId !== source.id) {
+      lastRenderSourceId = source.id;
+      lastRenderTime = adjustedTime;
+    } else {
+      const timeJump = Math.abs(adjustedTime - lastRenderTime);
+      if (timeJump > 0.25) {
+        clearSourceCache(source);
+        resetDecoder(source);
+        initializeDecoder(source, adjustedTime);
+      }
+      lastRenderTime = adjustedTime;
+    }
+
+    if (isPlaying.value) {
+      const upcoming = videoSources.value.find(
+        (candidate) => candidate.start_time > timestamp && candidate.start_time - timestamp <= 3,
+      );
+      if (upcoming) {
+        initializeDecoder(upcoming, 0);
+      }
+    }
     
     // Look for cached frame
     const cacheKey = getCacheKey(source.id, adjustedTime);
-    const cachedFrame = frameCache.get(cacheKey);
+    let cachedFrame = frameCache.get(cacheKey);
+    if (!cachedFrame) {
+      let closestFrame: CachedFrame | null = null;
+      let closestDelta = Infinity;
+      let latestFrame: CachedFrame | null = null;
+      for (const frame of frameCache.values()) {
+        if (frame.sourceId !== source.id) continue;
+        const delta = Math.abs(frame.timestamp - adjustedTime);
+        if (delta < closestDelta) {
+          closestDelta = delta;
+          closestFrame = frame;
+        }
+        if (frame.timestamp <= adjustedTime && (!latestFrame || frame.timestamp > latestFrame.timestamp)) {
+          latestFrame = frame;
+        }
+      }
+      if (closestFrame && closestDelta <= 0.05) {
+        cachedFrame = closestFrame;
+      } else if (latestFrame) {
+        cachedFrame = latestFrame;
+      }
+    }
 
     if (cachedFrame) {
       // Render cached frame
@@ -499,6 +989,19 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       }
       lastRenderedFrame = frame;
     } else {
+      if (cacheDebugCounter % 60 === 0) {
+        const sampleFrames = Array.from(frameCache.values())
+          .filter((frame) => frame.sourceId === source.id)
+          .slice(0, 3)
+          .map((frame) => Number(frame.timestamp.toFixed(3)));
+        console.warn('[WebCodecsPlayback] No cached frame for time, debug:', {
+          sourceId: source.id,
+          adjustedTime: Number(adjustedTime.toFixed(3)),
+          cacheSize: frameCache.size,
+          sampleFrames,
+        });
+      }
+      cacheDebugCounter += 1;
       // Frame not in cache - hold last frame or show black
       if (lastRenderedFrame) {
         // Keep showing last frame while waiting for new one
@@ -596,6 +1099,29 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       lastRenderedFrame.close();
       lastRenderedFrame = null;
     }
+  }
+
+  function clearSourceCache(source: VideoSource) {
+    for (const [key, cached] of frameCache.entries()) {
+      if (cached.sourceId === source.id) {
+        cached.frame.close();
+        frameCache.delete(key);
+      }
+    }
+    cacheSize.value = frameCache.size;
+  }
+
+  function resetDecoder(source: VideoSource) {
+    const { path: videoPath } = resolveVideoPath(source);
+    const decoderKey = `${source.id}:${videoPath}`;
+    const existing = decoders.get(decoderKey);
+    if (existing) {
+      if (existing.decoder.state !== 'closed') {
+        existing.decoder.close();
+      }
+      decoders.delete(decoderKey);
+    }
+    initializingDecoders.delete(decoderKey);
   }
 
   // Watch for play/pause changes

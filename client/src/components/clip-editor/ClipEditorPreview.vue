@@ -5,25 +5,26 @@
     <div class="flex-1 flex items-center justify-center p-8 min-h-0 relative">
       <div class="relative w-full h-full max-w-full max-h-full flex items-center justify-center bg-black rounded-xl overflow-hidden" 
            style="box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(14, 165, 233, 0.1);">
-        <!-- Canvas for professional playback engine (frame-by-frame rendering) -->
+        <!-- Canvas for WebCodecs hardware-accelerated playback -->
         <canvas
           ref="canvasRef"
           class="w-full h-full object-contain"
           :class="{
-            'hidden': !useCanvasPlayback || showCropOverlay || isAfterVideoEnd,
+            'hidden': !webCodecsEnabled || showCropOverlay || isAfterVideoEnd,
           }"
           :style="{ filter: appliedCSSFilters }"
         />
 
-        <!-- Video element (legacy fallback) -->
+        <!-- Video element - provides audio only, visual hidden when canvas is active -->
         <video
           ref="videoRef"
           class="w-full h-full object-contain"
           :class="{
-            'hidden': useCanvasPlayback || showCropOverlay || isAfterVideoEnd,
+            'opacity-0 pointer-events-none absolute': webCodecsEnabled,
+            'hidden': showCropOverlay || isAfterVideoEnd,
           }"
           :src="videoSrc || undefined"
-          :style="{ filter: appliedCSSFilters }"
+          :style="webCodecsEnabled ? {} : { filter: appliedCSSFilters }"
           @loadedmetadata="onLoadedMetadata"
           @timeupdate="onTimeUpdate"
           @play="onPlay"
@@ -217,7 +218,7 @@ import {
   useTimelineAudioTransform,
   type VideoSource,
 } from '@/composables/clip-editor';
-import { useCanvasPlaybackEngine } from '@/composables/clip-editor/useCanvasPlaybackEngine';
+import { useWebCodecsPlayback } from '@/composables/clip-editor/useWebCodecsPlayback';
 import { useProxyWorkflow } from '@/composables/useProxyWorkflow';
 
 const props = defineProps<{
@@ -250,12 +251,12 @@ const isFullscreen = ref(false);
 const previewContainerRef = ref<HTMLElement | null>(null);
 const progressBarRef = ref<HTMLElement | null>(null);
 
-// Canvas playback engine - professional frame-level decoding
-// Note: FFmpeg errors are due to file being opened multiple times, not architectural issue
-const useCanvasPlayback = ref(true);
+// Enable WebCodecs playback engine - hardware-accelerated video decoding
+// Provides smooth 60fps playback with seamless multi-source transitions
+const webCodecsEnabled = computed(() => true);
 
 // Proxy workflow for using proxy files instead of original large files
-const { getEffectivePath } = useProxyWorkflow();
+const { getEffectivePath, getEffectivePathWithOffset } = useProxyWorkflow();
 
 // Audio mixer for playing audio tracks
 const audioMixer = useAudioMixer();
@@ -543,18 +544,16 @@ const { isAfterVideoEnd } = useVideoSync({
   timelineRenderer,
 });
 
-// Professional canvas playback engine (eliminates black screens)
-const canvasEngine = useCanvasPlaybackEngine({
+// WebCodecs playback engine - hardware-accelerated decoding for smooth 60fps playback
+// Uses browser's native GPU decoders (NVDEC/VideoToolbox/VAAPI) for instant frame decoding
+const webCodecsEngine = useWebCodecsPlayback({
   canvasRef,
   currentTime: toRef(props, 'currentTime'),
   isPlaying: toRef(props, 'isPlaying'),
   videoSources: videoSourcesRef,
-  enabled: useCanvasPlayback, // Pass the enabled flag to prevent auto-start when disabled
-  getEffectivePath, // Use proxy files instead of original large files for frame decoding
+  getEffectivePathWithOffset,
   onError: (error) => {
-    console.error('[ClipEditorPreview] Canvas engine error:', error);
-    // Fallback to video element on error
-    useCanvasPlayback.value = false;
+    console.error('[ClipEditorPreview] WebCodecs engine error:', error);
   },
 });
 
@@ -564,14 +563,13 @@ onMounted(async () => {
     videoRef.value.volume = volume.value;
   }
   
-  // Initialize canvas playback engine if enabled
-  if (useCanvasPlayback.value && canvasRef.value) {
-    const initialized = canvasEngine.initialize();
+  // Initialize WebCodecs playback engine for hardware-accelerated decoding
+  if (canvasRef.value) {
+    const initialized = webCodecsEngine.initialize();
     if (initialized) {
-      console.log('[ClipEditorPreview] Canvas playback engine initialized');
+      console.log('[ClipEditorPreview] WebCodecs playback engine initialized with hardware acceleration');
     } else {
-      console.warn('[ClipEditorPreview] Canvas initialization failed, falling back to video element');
-      useCanvasPlayback.value = false;
+      console.warn('[ClipEditorPreview] WebCodecs not supported - falling back to video element');
     }
   }
   

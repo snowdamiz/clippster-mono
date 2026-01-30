@@ -109,7 +109,17 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     videoSources,
     (sources) => {
       sources.forEach((source) => {
-        proxyWorkflow.ensureProxyForSource(source.id, source.source_path).catch((error) => {
+        // Calculate trim duration from the SOURCE video
+        // If trim_end is null (using full video), calculate from timeline duration
+        const trimDuration = source.trim_end != null 
+          ? source.trim_end - source.trim_start 
+          : (source.end_time - source.start_time);
+        proxyWorkflow.ensureProxyForSource(
+          source.id, 
+          source.source_path, 
+          source.trim_start, 
+          trimDuration
+        ).catch((error) => {
           console.warn('[useEditorPlayback] Failed to ensure proxy:', error);
         });
       });
