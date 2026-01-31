@@ -118,11 +118,17 @@ pub fn run() {
     println!("[Rust] Starting Tauri application");
     println!("[Rust] Registering SQL plugin...");
 
+    let db_name = if cfg!(debug_assertions) {
+        "sqlite:clippster_v25_dev.db"
+    } else {
+        "sqlite:clippster_v25.db"
+    };
+
     tauri::Builder::default()
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
-                    "sqlite:clippster_v25.db",
+                    db_name,
                     vec![
                         tauri_plugin_sql::Migration {
                             version: 1,

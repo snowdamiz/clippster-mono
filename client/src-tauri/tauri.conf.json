@@ -42,7 +42,7 @@
       ]
     },
     "sql": {
-      "preload": ["sqlite:clippster_v25.db"]
+      "preload": []
     },
     "updater": {
       "active": false,
