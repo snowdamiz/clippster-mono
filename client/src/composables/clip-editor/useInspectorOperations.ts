@@ -136,7 +136,12 @@ export function useInspectorOperations(options: InspectorOperationsOptions): Ins
     const item = selectedItem.value;
     const type = selectedItemType.value as InspectorItemType | null;
 
-    if (!item?.id || !type) return;
+    console.log('[useInspectorOperations] Delete requested for:', { type, itemId: item?.id });
+
+    if (!item?.id || !type) {
+      console.warn('[useInspectorOperations] Cannot delete: missing item or type');
+      return;
+    }
 
     const operations = ITEM_OPERATIONS[type];
     if (!operations) {
@@ -145,7 +150,9 @@ export function useInspectorOperations(options: InspectorOperationsOptions): Ins
     }
 
     try {
+      console.log(`[useInspectorOperations] Deleting ${type} with id:`, item.id);
       await operations.delete(item.id);
+      console.log(`[useInspectorOperations] Successfully deleted ${type}`);
       onDelete?.();
     } catch (error) {
       console.error(`[useInspectorOperations] Failed to delete ${type}:`, error);

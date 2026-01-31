@@ -106,3 +106,6 @@ analysis-output/
 .idea/
 *.iml
 nul
+client/src-tauri/ffmpeg-dev.zip
+client/src-tauri/ffmpeg-dev/
+client/src-tauri/pkg-config.zip

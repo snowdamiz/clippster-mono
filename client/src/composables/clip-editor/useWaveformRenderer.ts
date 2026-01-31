@@ -192,6 +192,11 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     }
 
     const peak = peaks[index];
+    // Safety check: if peak is undefined, use placeholder
+    if (!peak || typeof peak.min !== 'number' || typeof peak.max !== 'number') {
+      return getPlaceholderHeight(index, 'video');
+    }
+    
     // Calculate amplitude from min/max (use the larger absolute value)
     const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
 

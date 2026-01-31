@@ -427,3 +427,21 @@ export {
   type TitleManagementOptions,
   type TitleManagementReturn,
 } from './useTitleManagement';
+
+export {
+  useTimelineFadeHandles,
+  type FadeHandleOptions,
+  type FadeHandleReturn,
+} from './useTimelineFadeHandles';
+
+export {
+  useAudioSegmentDrag,
+  type AudioSegmentDragOptions,
+  type AudioSegmentDragReturn,
+} from './useAudioSegmentDrag';
+
+export {
+  useVideoSourceDrag,
+  type VideoSourceDragOptions,
+  type VideoSourceDragReturn,
+} from './useVideoSourceDrag';

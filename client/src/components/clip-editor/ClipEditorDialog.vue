@@ -45,6 +45,7 @@
             <!-- Center: Video Preview -->
             <div class="flex-1 flex flex-col min-w-0 bg-[linear-gradient(135deg,#0a0a0b_0%,#0d0d0e_100%)]">
               <ClipEditorPreview
+                ref="previewRef"
                 :video-src="activeVideoUrl"
                 :current-time="currentTime"
                 :is-playing="isPlaying"
@@ -66,7 +67,9 @@
                 :selected-item="selectedItem"
                 :selected-item-type="selectedItemType"
                 :edit-id="editId"
+                :temp-fade-values="tempFadeValues"
                 @update="handleInspectorUpdate"
+                @realtimeUpdate="handleRealtimeUpdate"
                 @itemDeleted="handleItemDeleted"
                 @close="handleInspectorClose"
               />
@@ -92,6 +95,7 @@
               />
               
               <ClipEditorTimeline
+                :key="`timeline-${editId}-${editorEdit?.audioTracks?.length ?? 0}`"
                 :editor-edit="editorEdit"
                 :current-time="currentTime"
                 :duration="duration"
@@ -105,6 +109,9 @@
                 @selectItem="handleSelectItem"
                 @updateItem="handleUpdateItem"
                 @itemDeselected="handleInspectorClose"
+                @updateFade="handleFadeUpdate"
+                @tempFadeValuesUpdate="handleTempFadeValuesUpdate"
+                @reload="handleTimelineReload"
               />
             </div>
           </div>
@@ -118,13 +125,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue';
 import { commandHistory } from '@/services/commands/CommandHistory';
 import type { IntroOutroRef } from '@/types';
-import { usePlaybackEngine } from '@/composables/usePlaybackEngine';
+import { useRouter } from 'vue-router';
 import {
   useEditorSelection,
-  useDurationCalculator,
   useEditorSplit,
   useEditorDelete,
   useEditorExport,
@@ -137,7 +143,9 @@ import {
   useEditorDataLoader,
   useEditorAutoSave,
   useTitleManagement,
+  useDurationCalculator,
 } from '@/composables/clip-editor';
+import { usePlaybackEngine } from '@/composables/usePlaybackEngine';
 
 import ClipEditorHeader from './ClipEditorHeader.vue';
 import ClipEditorSidebar from './ClipEditorSidebar.vue';
@@ -190,6 +198,12 @@ const {
 const activePanel = ref<string>('media');
 const showShortcutsModal = ref(false);
 
+// ===== Preview Component Ref =====
+const previewRef = ref<InstanceType<typeof ClipEditorPreview> | null>(null);
+
+// Provide audio mixer to inspector (from preview component)
+provide('audioMixer', computed(() => previewRef.value?.audioMixer));
+
 // ===== Selection (from composable) =====
 const {
   selectedItem,
@@ -225,6 +239,7 @@ const {
   videoContentDuration,
 } = useVideoUrlBuilder({
   getTimeline: () => playbackEngine.getTimeline(),
+  currentTime,
 });
 
 // ===== View State =====
@@ -363,6 +378,12 @@ const createSelectionHandler = (type: 'text' | 'sticker' | 'audio' | 'video') =>
 const handleTracksUpdated = createReloadHandler('Tracks updated');
 const handleTextAdded = createReloadHandler('Text added');
 const handleStickerAdded = createReloadHandler('Sticker added');
+
+// Timeline reload handler (for audio segment dragging)
+async function handleTimelineReload() {
+  await loadEditorData(projectId.value);
+  await reloadTimeline();
+}
 const handleWatermarkUpdated = createReloadHandler('Watermark updated');
 
 // Selection handlers
@@ -388,11 +409,60 @@ function handleUpdateItem(item: any) {
   // TODO: Implement update command
 }
 
+// ===== Fade Updates =====
+const tempFadeValues = ref<Record<string, { fadeIn: number; fadeOut: number }>>({});
+
+function handleTempFadeValuesUpdate(values: Record<string, { fadeIn: number; fadeOut: number }>) {
+  tempFadeValues.value = values;
+}
+
+async function handleFadeUpdate(payload: { itemId: string; itemType: 'audio' | 'video'; fadeIn: number; fadeOut: number }) {
+  console.log('[ClipEditorDialog] Fade update received:', payload);
+  
+  try {
+    if (payload.itemType === 'audio') {
+      // Update audio track fade
+      console.log('[ClipEditorDialog] Updating audio track in database...');
+      const { updateVideoEditorAudioTrack } = await import('@/services/database/video-editor-edits');
+      await updateVideoEditorAudioTrack(payload.itemId, {
+        fade_in: payload.fadeIn,
+        fade_out: payload.fadeOut,
+      });
+      console.log('[ClipEditorDialog] Database updated successfully');
+      
+      // Reload editor data to reflect changes
+      console.log('[ClipEditorDialog] Reloading editor data...');
+      await loadEditorData(projectId.value);
+      console.log('[ClipEditorDialog] Editor data reloaded - fade should now be applied to playback');
+    }
+  } catch (error) {
+    console.error('[ClipEditorDialog] Failed to update fade:', error);
+  }
+}
+
 // ===== Inspector Updates =====
+let inspectorUpdateTimer: ReturnType<typeof setTimeout> | null = null;
 async function handleInspectorUpdate(updates: any) {
   console.log('[ClipEditorDialog] Inspector update:', updates);
-  // Reload editor data to reflect changes
-  await loadEditorData(projectId.value);
+  
+  // Debounce editor data reload to avoid excessive database queries
+  // The inspector already has local state for immediate UI feedback
+  if (inspectorUpdateTimer) clearTimeout(inspectorUpdateTimer);
+  inspectorUpdateTimer = setTimeout(async () => {
+    await loadEditorData(projectId.value);
+  }, 500);
+}
+
+// Handle real-time updates (for audio playback during inspector changes)
+function handleRealtimeUpdate(data: { trackId: string; property: string; value: any }) {
+  console.log('[ClipEditorDialog] Real-time update:', data);
+  
+  // For now, we'll emit this to the preview component
+  // The preview will need to handle this via the audio mixer
+  // This is a temporary solution until we implement a better state management
+  
+  // TODO: Implement proper real-time audio mixer updates
+  // For now, just log it - the debounced database update will handle it
 }
 
 async function handleItemDeleted() {

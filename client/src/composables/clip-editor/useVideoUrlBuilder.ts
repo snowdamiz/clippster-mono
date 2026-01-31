@@ -17,6 +17,8 @@ export interface TimelineData {
 export interface VideoUrlBuilderOptions {
   /** Function to get current timeline state */
   getTimeline: () => TimelineData | null;
+  /** Current timeline time (for selecting active video source) */
+  currentTime: Ref<number>;
 }
 
 /**
@@ -44,8 +46,13 @@ export interface VideoUrlBuilderReturn {
  * Handles:
  * - Video server port initialization
  * - HLS vs direct video URL selection
+ * - Dynamic video source selection based on timeline position
  * - Video source path for waveform
  * - Video content duration calculation
+ *
+ * The activeVideoUrl is computed reactively based on currentTime, so when the
+ * timeline position changes to a different video source, the URL automatically
+ * updates to point to the correct video file.
  *
  * Usage:
  * ```ts
@@ -58,6 +65,7 @@ export interface VideoUrlBuilderReturn {
  *   videoContentDuration,
  * } = useVideoUrlBuilder({
  *   getTimeline: () => playbackEngine.getTimeline(),
+ *   currentTime: playbackEngine.currentTime,
  * });
  *
  * onMounted(async () => {
@@ -68,7 +76,7 @@ export interface VideoUrlBuilderReturn {
 export function useVideoUrlBuilder(
   options: VideoUrlBuilderOptions
 ): VideoUrlBuilderReturn {
-  const { getTimeline } = options;
+  const { getTimeline, currentTime } = options;
 
   const serverPort = ref<number | null>(null);
 
@@ -101,7 +109,20 @@ export function useVideoUrlBuilder(
   }
 
   /**
-   * Active video URL from timeline
+   * Find which video source contains the given timeline time
+   */
+  function findSourceAtTime(timelineTime: number, sources: VideoSource[]): VideoSource | null {
+    for (const source of sources) {
+      if (timelineTime >= source.start_time && timelineTime < source.end_time) {
+        return source;
+      }
+    }
+    // If past all sources, return the last source
+    return sources.length > 0 ? sources[sources.length - 1] : null;
+  }
+
+  /**
+   * Active video URL from timeline - dynamically selects source based on current time
    */
   const activeVideoUrl = computed((): string | null => {
     const timeline = getTimeline();
@@ -114,19 +135,20 @@ export function useVideoUrlBuilder(
       return null;
     }
 
-    // Always use the first source for now (single-source clips)
-    const firstSource = timeline.videoSources[0];
-    if (!firstSource || !firstSource.file_path) {
+    // Find the source at the current timeline position
+    const activeSource = findSourceAtTime(currentTime.value, timeline.videoSources);
+    if (!activeSource || !activeSource.file_path) {
       return null;
     }
 
-    const url = buildVideoUrl(firstSource.file_path);
-    const isTsFile = firstSource.file_path.toLowerCase().endsWith('.ts');
+    const url = buildVideoUrl(activeSource.file_path);
+    const isTsFile = activeSource.file_path.toLowerCase().endsWith('.ts');
 
     console.log(
       '[useVideoUrlBuilder] Active video URL:',
       url,
-      isTsFile ? '(HLS)' : '(Direct)'
+      isTsFile ? '(HLS)' : '(Direct)',
+      `at timeline ${currentTime.value.toFixed(2)}s`
     );
     return url;
   });

@@ -29,6 +29,8 @@ export interface VideoSource {
   trim_end: number | null;
   /** Original duration of the source video */
   original_duration: number;
+  /** Track layer: 0 = base, 1+ = overlays */
+  order_index: number;
 }
 
 /**
@@ -39,6 +41,7 @@ export interface AudioTrackInfo {
   filePath: string;
   startTime: number;
   endTime: number;
+  sourceStartTime: number;
   volume: number;
   isMuted: boolean;
   fadeInDuration?: number;

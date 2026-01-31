@@ -99,6 +99,25 @@ export function useEditorSplit(options: EditorSplitOptions): EditorSplitReturn {
   const { editId, projectId, selectedItem, selectedItemType, onComplete } = options;
 
   /**
+   * Find the audio track at a specific time
+   */
+  async function findAudioTrackAtTime(time: number): Promise<VideoEditorAudioTrackRecord | null> {
+    if (!editId.value) return null;
+
+    const { getDatabase } = await import('@/services/database/core');
+    const db = await getDatabase();
+    const result = await db.select<VideoEditorAudioTrackRecord[]>(
+      `SELECT * FROM video_editor_audio_tracks 
+       WHERE edit_id = ? AND start_time <= ? AND end_time > ?
+       ORDER BY track_order DESC
+       LIMIT 1`,
+      [editId.value, time, time]
+    );
+
+    return result.length > 0 ? result[0] : null;
+  }
+
+  /**
    * Check if split time is valid for the given item
    */
   function isValidSplitTime(item: { start_time: number; end_time: number }, time: number): boolean {
@@ -121,15 +140,42 @@ export function useEditorSplit(options: EditorSplitOptions): EditorSplitReturn {
       return;
     }
 
+    console.log('[useEditorSplit] Splitting audio track:', {
+      id: item.id,
+      start_time: item.start_time,
+      end_time: item.end_time,
+      source_start_time: item.source_start_time,
+      split_time: time
+    });
+
+    // Store original end time before updating
+    const originalEndTime = item.end_time;
+
+    // Calculate how far into the source audio file the split point is
+    // source_start_time is the offset into the audio file where this segment starts
+    // The split creates two segments:
+    // - Left segment: keeps original source_start_time
+    // - Right segment: source_start_time + (time - start_time)
+    const sourceOffsetAtSplit = item.source_start_time + (time - item.start_time);
+
+    console.log('[useEditorSplit] Calculated offsets:', {
+      sourceOffsetAtSplit,
+      leftSegment: { start: item.start_time, end: time, source_start: item.source_start_time },
+      rightSegment: { start: time, end: originalEndTime, source_start: sourceOffsetAtSplit }
+    });
+
     // Update original track to end at split time
     await updateVideoEditorAudioTrack(item.id, { end_time: time });
+    console.log('[useEditorSplit] Updated left segment:', item.id);
 
     // Create new track from split time to original end
-    await createVideoEditorAudioTrack(editId.value, {
+    // The new segment's source_start_time is the offset into the audio file at the split point
+    const newTrack = await createVideoEditorAudioTrack(editId.value, {
       file_path: item.file_path,
       name: item.name,
       start_time: time,
-      end_time: item.end_time,
+      end_time: originalEndTime,
+      source_start_time: sourceOffsetAtSplit,
       volume: item.volume,
       pan: item.pan || 0,
       fade_in: item.fade_in || 0,
@@ -140,6 +186,7 @@ export function useEditorSplit(options: EditorSplitOptions): EditorSplitReturn {
       source_id: item.source_id,
     });
 
+    console.log('[useEditorSplit] Created right segment:', newTrack.id);
     console.log('[useEditorSplit] Audio track split successfully at', time);
   }
 
@@ -308,7 +355,14 @@ export function useEditorSplit(options: EditorSplitOptions): EditorSplitReturn {
 
         switch (type) {
           case 'audio':
-            await splitAudioTrack(item, time);
+            // For audio tracks, always split the track under the playhead
+            // This prevents splitting the wrong segment when the playhead is over a different segment
+            const audioTrackAtPlayhead = await findAudioTrackAtTime(time);
+            if (audioTrackAtPlayhead) {
+              await splitAudioTrack(audioTrackAtPlayhead, time);
+            } else {
+              console.warn('[useEditorSplit] No audio track found at playhead position:', time);
+            }
             break;
           case 'text':
             await splitTextOverlay(item, time);

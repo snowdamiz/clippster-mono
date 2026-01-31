@@ -129,10 +129,22 @@ async fn run_segment_download_with_encoder(
                     // Look for out_time= lines (current time in HH:MM:SS.ms format)
                     if line.starts_with("out_time=") {
                         if let Some(time_str) = line.strip_prefix("out_time=") {
+                            // Log raw time string for debugging
+                            if lines_processed <= 5 {
+                                println!("[Rust] FFmpeg out_time raw: '{}'", time_str);
+                            }
                             if let Some(current_time) = parse_ffmpeg_time(time_str) {
-                                let progress = ((current_time / total_duration) * 100.0).min(95.0);
+                                // Skip negative times (happens at start of HLS downloads)
+                                if current_time < 0.0 {
+                                    if lines_processed <= 5 {
+                                        println!("[Rust] Skipping negative time: {}", current_time);
+                                    }
+                                    continue;
+                                }
+                                let progress = ((current_time / total_duration) * 100.0).clamp(0.0, 95.0);
 
                                 if last_progress_time.elapsed().as_secs() >= 1 {
+                                    println!("[Rust] Emitting progress: {}% (time: {}/{})", progress, current_time, total_duration);
                                     let _ = app_clone.emit("download-progress", DownloadProgress {
                                         download_id: download_id_owned.clone(),
                                         progress,
@@ -142,6 +154,8 @@ async fn run_segment_download_with_encoder(
                                     });
                                     last_progress_time = std::time::Instant::now();
                                 }
+                            } else if lines_processed <= 5 {
+                                println!("[Rust] Failed to parse time: '{}'", time_str);
                             }
                         }
                     } else if !line.starts_with("frame=") && !line.starts_with("fps=") 
@@ -289,15 +303,27 @@ async fn run_full_download_with_encoder(
 
                     if line.starts_with("out_time=") {
                         if let Some(time_str) = line.strip_prefix("out_time=") {
+                            // Log raw time string for debugging
+                            if lines_processed <= 5 {
+                                println!("[Rust] FFmpeg out_time raw: '{}'", time_str);
+                            }
                             if let Some(current_time) = parse_ffmpeg_time(time_str) {
+                                // Skip negative times (happens at start of HLS downloads)
+                                if current_time < 0.0 {
+                                    if lines_processed <= 5 {
+                                        println!("[Rust] Skipping negative time: {}", current_time);
+                                    }
+                                    continue;
+                                }
                                 // Update duration estimate if needed
                                 if current_time > total_duration {
                                     total_duration = current_time * 1.1;
                                 }
                                 
-                                let progress = ((current_time / total_duration) * 100.0).min(95.0);
+                                let progress = ((current_time / total_duration) * 100.0).clamp(0.0, 95.0);
 
                                 if last_progress_time.elapsed().as_secs() >= 1 {
+                                    println!("[Rust] Emitting progress: {}% (time: {}/{})", progress, current_time, total_duration);
                                     let _ = app_clone.emit("download-progress", DownloadProgress {
                                         download_id: download_id_owned.clone(),
                                         progress,
@@ -307,6 +333,8 @@ async fn run_full_download_with_encoder(
                                     });
                                     last_progress_time = std::time::Instant::now();
                                 }
+                            } else if lines_processed <= 5 {
+                                println!("[Rust] Failed to parse time: '{}'", time_str);
                             }
                         }
                     } else if !line.starts_with("frame=") && !line.starts_with("fps=") 
