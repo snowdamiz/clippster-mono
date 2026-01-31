@@ -49,7 +49,7 @@ fn generate_migrations(manifest_dir: &Path) {
     if let Ok(entries) = fs::read_dir(&migrations_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "sql") {
+            if path.extension().is_some_and(|ext| ext == "sql") {
                 let filename = path.file_stem().unwrap().to_string_lossy().to_string();
                 
                 // Parse version number from filename (e.g., "001_initial_schema" -> 1)
@@ -98,7 +98,7 @@ fn generate_migrations(manifest_dir: &Path) {
             .unwrap_or_else(|e| panic!("Failed to read migration file {:?}: {}", path, e));
         
         // Extract description from filename (remove version prefix and _fixed suffix)
-        let description = extract_description(&filename);
+        let description = extract_description(filename);
         
         // Escape the SQL content for Rust string literal
         let escaped_sql = escape_rust_string(&sql_content);

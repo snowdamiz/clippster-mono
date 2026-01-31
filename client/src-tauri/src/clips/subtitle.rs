@@ -47,7 +47,7 @@ pub fn embed_fonts_in_ass(
             writeln!(file, "{}", line).unwrap();
         }
         
-        writeln!(file, "").unwrap();
+        writeln!(file).unwrap();
     }
     
     Ok(())
@@ -122,7 +122,7 @@ fn uuencode_data(data: &[u8]) -> Vec<String> {
             let b1 = ((buf[0] >> 2) & 0x3f) + 32;
             let b2 = ((((buf[0] & 0x03) << 4) | ((buf[1] >> 4) & 0x0f)) & 0x3f) + 32;
             let b3 = ((((buf[1] & 0x0f) << 2) | ((buf[2] >> 6) & 0x03)) & 0x3f) + 32;
-            let b4 = ((buf[2] & 0x3f)) + 32;
+            let b4 = (buf[2] & 0x3f) + 32;
             
             line.push(b1 as char);
             line.push(b2 as char);
@@ -141,7 +141,8 @@ fn uuencode_data(data: &[u8]) -> Vec<String> {
     lines
 }
 
-// Helper to generate ASS file content  
+// Helper to generate ASS file content
+#[allow(clippy::too_many_arguments)]
 pub fn generate_ass_file(
     settings: &SubtitleSettings,
     all_words: &[WordInfo],
@@ -168,7 +169,7 @@ pub fn generate_ass_file(
     writeln!(file, "PlayResY: {}", play_res_y).unwrap();
     writeln!(file, "WrapStyle: 1").unwrap(); // Word wrapping
     writeln!(file, "ScaledBorderAndShadow: yes").unwrap();
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
     
     // Embed fonts if available
     if let Some(fonts_path) = fonts_dir {
@@ -183,7 +184,7 @@ pub fn generate_ass_file(
         println!("[Rust] WARNING: No fonts directory provided, fonts will not be embedded.");
     }
     
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
 
     // Generate Style
     writeln!(file, "[V4+ Styles]").unwrap();
@@ -344,13 +345,12 @@ pub fn generate_ass_file(
     ).unwrap();
 
     // Style 2: Border1Layer (top layer with smaller outline = border1 only)
-    writeln!(file, "Style: Border1Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},{},{},{},1",
+    writeln!(file, "Style: Border1Layer,{},{},{},{},{},&H00000000,{},0,0,0,100,100,{},0,1,{},{},{},{},{},{},1",
         font_name_for_style,
         adjusted_font_size,
         primary_color,
         primary_color, // SecondaryColour
-        border1_color, // OutlineColour (border1 color)
-        "&H00000000".to_string(), // No background for top layer
+        border1_color, // No background for top layer
         bold,
         adjusted_letter_spacing,
         adjusted_border1_width, // Outline (border1 only)
@@ -361,7 +361,7 @@ pub fn generate_ass_file(
         margin_v
     ).unwrap();
 
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
     writeln!(file, "[Events]").unwrap();
     writeln!(file, "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text").unwrap();
 
@@ -410,7 +410,7 @@ pub fn generate_ass_file(
     let _chunks: Vec<&[ClipWord]> = clip_timeline_words.chunks(max_words).collect();
 
     // 3. Generate events for each chunk
-    let chunk_count = (clip_timeline_words.len() + max_words - 1) / max_words;
+    let chunk_count = clip_timeline_words.len().div_ceil(max_words);
     
     for i in 0..chunk_count {
         let start_idx = i * max_words;
@@ -613,7 +613,7 @@ pub fn generate_text_overlay_ass_file(
     writeln!(file, "PlayResY: {}", play_res_y).unwrap();
     writeln!(file, "WrapStyle: 1").unwrap();
     writeln!(file, "ScaledBorderAndShadow: yes").unwrap();
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
 
     // Try to embed fonts if we have unique font families
     if let Some(fonts_path) = fonts_dir {
@@ -655,7 +655,7 @@ pub fn generate_text_overlay_ass_file(
         }
     }
 
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
 
     // Generate styles for each text overlay (each overlay can have unique styling)
     writeln!(file, "[V4+ Styles]").unwrap();
@@ -755,7 +755,7 @@ pub fn generate_text_overlay_ass_file(
         ).unwrap();
     }
 
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
 
     // Generate Events (dialogue lines)
     writeln!(file, "[Events]").unwrap();

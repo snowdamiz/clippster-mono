@@ -99,6 +99,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
       trim_start: s.trim_start,
       trim_end: s.trim_end,
       original_duration: s.source_duration ?? (s.end_time - s.start_time),
+      order_index: s.order_index,
     }));
   });
 
@@ -114,6 +115,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
         filePath: buildAudioUrl(t.filePath),
         startTime: t.startTime,
         endTime: t.endTime,
+        sourceStartTime: 0,
         volume: t.volume,
         isMuted: t.isMuted,
         fadeInDuration: t.fadeIn,

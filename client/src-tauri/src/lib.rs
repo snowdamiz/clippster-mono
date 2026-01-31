@@ -77,13 +77,11 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     .map_err(|e| format!("Failed to create PIP window: {}", e))?;
 
     // Position in bottom-right corner
-    if let Ok(monitor) = window.current_monitor() {
-        if let Some(monitor) = monitor {
-            let size = monitor.size();
-            let x = size.width as i32 - 420;
-            let y = size.height as i32 - 300;
-            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
-        }
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let size = monitor.size();
+        let x = size.width as i32 - 420;
+        let y = size.height as i32 - 300;
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
     }
 
     Ok(())

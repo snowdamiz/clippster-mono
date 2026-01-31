@@ -232,6 +232,7 @@ fn get_framing_for_segment(
 }
 
 // Simplified internal clip building implementation (without progress callbacks)
+#[allow(clippy::too_many_arguments)]
 pub async fn build_clip_internal_simple(
     app: &tauri::AppHandle,
     project_id: &str,
@@ -411,8 +412,6 @@ pub async fn build_clip_internal_simple(
         let stickers = stickers.clone();
         let clip_watermarks = clip_watermarks.clone();
         let cancel_rx = cancel_rx.clone();
-        let build_num = build_num;
-        
         async move {
             // Check for cancellation at the start of each task
             if is_build_cancelled(&cancel_rx) {
@@ -795,7 +794,7 @@ pub async fn build_clip_internal_simple(
             }
 
             // Apply stickers if present
-            if let Some(ref sticker_list) = stickers.as_ref() {
+            if let Some(sticker_list) = stickers.as_ref() {
                 if !sticker_list.is_empty() {
                     println!("[Rust] Applying {} stickers to {} clip", sticker_list.len(), aspect_ratio_str);
                     apply_stickers_to_video(
@@ -809,7 +808,7 @@ pub async fn build_clip_internal_simple(
             }
 
             // Apply clip watermarks if present (from clip editor)
-            if let Some(ref watermark_list) = clip_watermarks.as_ref() {
+            if let Some(watermark_list) = clip_watermarks.as_ref() {
                 if !watermark_list.is_empty() {
                     println!("[Rust] Applying {} clip watermarks to {} clip", watermark_list.len(), aspect_ratio_str);
                     apply_clip_watermarks_to_video(

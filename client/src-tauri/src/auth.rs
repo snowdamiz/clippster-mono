@@ -141,6 +141,7 @@ pub async fn open_wallet_auth_window(app: tauri::AppHandle, api_base: Option<Str
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn open_wallet_payment_window(
     app: tauri::AppHandle,

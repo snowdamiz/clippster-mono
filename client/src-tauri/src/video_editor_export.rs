@@ -7,6 +7,7 @@ pub struct VideoSource {
     pub start_time: f64,
     pub end_time: f64,
     pub trim_start: Option<f64>,
+    #[allow(dead_code)]
     pub trim_end: Option<f64>,
 }
 

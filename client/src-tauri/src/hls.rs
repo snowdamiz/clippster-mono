@@ -425,7 +425,7 @@ async fn run_hls_recorder(
         .shell()
         .sidecar("node")
         .map_err(|e| format!("Failed to create node sidecar: {}", e))?
-        .args(&args)
+        .args(args)
         .spawn()
         .map_err(|e| format!("Failed to spawn recorder: {}", e))?;
     

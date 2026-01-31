@@ -144,13 +144,17 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
       return [];
     }
 
-    // Get peaks from waveform service
+    // Get peaks from waveform service (sync for render path)
     const numBars = getWaveformBars(segmentDuration);
-    const peaks = waveformService.getPeaksForRange(path, {
+    const peaks = waveformService.getPeaksSync(path, {
       startTime,
       endTime: startTime + segmentDuration,
       pixelWidth: numBars,
     });
+
+    if (!peaks) {
+      return [];
+    }
 
     // Cache the result
     peaksCache.value.set(cacheKey, peaks);
@@ -213,13 +217,13 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     // Check if waveform is loaded for this audio file
     if (waveformService.isLoaded(audioFilePath)) {
       const numBars = getWaveformBars(segmentDuration);
-      const peaks = waveformService.getPeaksForRange(audioFilePath, {
+      const peaks = waveformService.getPeaksSync(audioFilePath, {
         startTime,
         endTime: startTime + segmentDuration,
         pixelWidth: numBars,
       });
 
-      if (peaks.length > 0 && index < peaks.length) {
+      if (peaks && peaks.length > 0 && index < peaks.length) {
         const peak = peaks[index];
         const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
         const heightPercent = Math.max(10, amplitude * 100);

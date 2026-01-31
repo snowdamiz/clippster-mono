@@ -1,11 +1,11 @@
 use warp::{Filter, Reply};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub static VIDEO_SERVER_PORT: u16 = 48276;
 
 /// Probe the duration of a .ts file using FFmpeg
-async fn probe_ts_duration(file_path: &PathBuf) -> Result<f64, String> {
+async fn probe_ts_duration(file_path: &Path) -> Result<f64, String> {
     use tokio::process::Command;
     use regex::Regex;
     
@@ -224,10 +224,10 @@ pub async fn start_video_server_impl() {
                     }
 
                     // If range parsing failed, return error
-                    return Ok(warp::reply::with_status(
+                    Ok(warp::reply::with_status(
                         warp::reply::json(&serde_json::json!({"error": "Invalid range header"})),
                         warp::http::StatusCode::RANGE_NOT_SATISFIABLE
-                    ).into_response());
+                    ).into_response())
                 }
                 None => {
                     // No range header - only serve small files entirely
@@ -267,10 +267,10 @@ pub async fn start_video_server_impl() {
                             "*"
                         );
 
-                        return Ok(response.into_response());
+                        Ok(response.into_response())
                     } else {
                         // Large file without range: require range request
-                        return Ok(warp::reply::with_status(
+                        Ok(warp::reply::with_status(
                             warp::reply::json(&serde_json::json!({
                                 "error": "Range header required",
                                 "message": "Files larger than 50MB require range requests",
@@ -278,7 +278,7 @@ pub async fn start_video_server_impl() {
                                 "content_type": content_type
                             })),
                             warp::http::StatusCode::RANGE_NOT_SATISFIABLE
-                        ).into_response());
+                        ).into_response())
                     }
                 }
             }
@@ -850,7 +850,7 @@ pub async fn start_video_server_impl() {
             const BYTE_RANGE_CHUNK_SIZE: u64 = 5 * 1024 * 1024; // 5MB
 
             let playlist = if file_size > BYTE_RANGE_THRESHOLD {
-                let segment_count = ((file_size + BYTE_RANGE_CHUNK_SIZE - 1) / BYTE_RANGE_CHUNK_SIZE).max(1);
+                let segment_count = file_size.div_ceil(BYTE_RANGE_CHUNK_SIZE).max(1);
                 let segment_duration = (duration / segment_count as f64).max(0.1);
                 let target_duration = (segment_duration.ceil() as u64).max(1);
 
@@ -979,7 +979,7 @@ pub async fn start_video_server_impl() {
 
                             match tokio::fs::File::open(&file_path).await {
                                 Ok(mut file) => {
-                                    if let Err(_) = file.seek(std::io::SeekFrom::Start(start)).await {
+                                    if (file.seek(std::io::SeekFrom::Start(start)).await).is_err() {
                                         return Ok(warp::reply::with_status(
                                             warp::reply::json(&serde_json::json!({"error": "Cannot seek in file"})),
                                             warp::http::StatusCode::INTERNAL_SERVER_ERROR
@@ -987,7 +987,7 @@ pub async fn start_video_server_impl() {
                                     }
 
                                     let mut buffer = vec![0u8; content_length as usize];
-                                    if let Err(_) = file.read_exact(&mut buffer).await {
+                                    if (file.read_exact(&mut buffer).await).is_err() {
                                         return Ok(warp::reply::with_status(
                                             warp::reply::json(&serde_json::json!({"error": "Cannot read file range"})),
                                             warp::http::StatusCode::INTERNAL_SERVER_ERROR
