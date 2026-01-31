@@ -120,7 +120,8 @@ export async function startUserInstagramOAuth(
 
   try {
     // Start OAuth - Tauri will open browser and handle callback
-    await invoke('start_user_instagram_oauth', { authToken });
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+    await invoke('start_user_instagram_oauth', { apiBase, authToken });
 
     // Listen for the result
     const unlisten = await listen<InstagramAuthResult>('instagram-auth-complete', (event) => {
