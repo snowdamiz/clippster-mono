@@ -925,13 +925,12 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     if (lastRenderSourceId !== source.id) {
       lastRenderSourceId = source.id;
       lastRenderTime = adjustedTime;
+    } else if (!isPlaying.value && Math.abs(adjustedTime - lastRenderTime) > 0.25) {
+      clearSourceCache(source);
+      resetDecoder(source);
+      initializeDecoder(source, adjustedTime);
+      lastRenderTime = adjustedTime;
     } else {
-      const timeJump = Math.abs(adjustedTime - lastRenderTime);
-      if (timeJump > 0.25) {
-        clearSourceCache(source);
-        resetDecoder(source);
-        initializeDecoder(source, adjustedTime);
-      }
       lastRenderTime = adjustedTime;
     }
 
