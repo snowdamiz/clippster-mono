@@ -45,7 +45,7 @@ export function useTimelineInteraction(
 ) {
   const {
     minZoom = 1.0,
-    maxZoom = 1000.0, // Nearly unlimited zoom
+    maxZoom = 46.4, // Capped so 100% zoom = previous 55% (waveform quality limit)
     zoomStep = 0.1,
     onZoomChange,
     onDragSelection,
