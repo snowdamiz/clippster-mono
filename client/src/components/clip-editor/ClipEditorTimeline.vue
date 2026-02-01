@@ -48,8 +48,8 @@
                 <div
                   v-for="i in getWaveformBars(introRef.duration || 0)"
                   :key="i"
-                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
-                  :style="{ height: getWaveformHeight(i - 1, 0, introRef.duration || 0) }"
+                  class="bg-[#5eead4] flex-shrink-0"
+                  :style="{ height: getWaveformHeight(i - 1, 0, introRef.duration || 0), width: getBarWidth() }"
                 ></div>
               </div>
             </div>
@@ -80,8 +80,8 @@
                 <div
                   v-for="i in getWaveformBars(source.end_time - source.start_time)"
                   :key="i"
-                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
-                  :style="{ height: getWaveformHeight(i - 1, source.start_time, source.end_time - source.start_time) }"
+                  class="bg-[#5eead4] flex-shrink-0"
+                  :style="{ height: getWaveformHeight(i - 1, source.start_time, source.end_time - source.start_time), width: getBarWidth() }"
                 ></div>
               </div>
             </div>
@@ -100,8 +100,8 @@
                 <div
                   v-for="i in getWaveformBars(outroRef.duration || 0)"
                   :key="i"
-                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
-                  :style="{ height: getWaveformHeight(i - 1, duration - outroOffset, outroRef.duration || 0) }"
+                  class="bg-[#5eead4] flex-shrink-0"
+                  :style="{ height: getWaveformHeight(i - 1, duration - outroOffset, outroRef.duration || 0), width: getBarWidth() }"
                 ></div>
               </div>
             </div>
@@ -143,8 +143,8 @@
                 <div
                   v-for="i in getWaveformBars(audioTrack.end_time - audioTrack.start_time)"
                   :key="i"
-                  class="flex-1 bg-[#5eead4] min-w-[1px] max-w-[2px]"
-                  :style="{ height: getAudioWaveformHeight(audioTrack.id, i - 1, audioTrack.start_time, audioTrack.end_time - audioTrack.start_time) }"
+                  class="bg-[#5eead4] flex-shrink-0"
+                  :style="{ height: getAudioWaveformHeight(audioTrack.id, i - 1, audioTrack.start_time, audioTrack.end_time - audioTrack.start_time), width: getBarWidth() }"
                 ></div>
               </div>
             </div>
@@ -426,6 +426,7 @@ const {
   isLoading: isWaveformLoading,
   isLoaded: isWaveformLoaded,
   getWaveformBars,
+  getBarWidth,
   getWaveformHeight,
   getAudioWaveformHeight: getAudioWaveformHeightFromPath,
 } = useWaveformRenderer({

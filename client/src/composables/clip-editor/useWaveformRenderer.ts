@@ -1,6 +1,15 @@
 import { ref, watch, computed, type Ref, type ComputedRef } from 'vue';
 import { waveformService } from '@/services/waveformService';
 
+// Debounce helper for zoom changes
+function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): (...args: Parameters<T>) => void {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+}
+
 /**
  * Options for useWaveformRenderer
  */
@@ -31,6 +40,8 @@ export interface WaveformRendererReturn {
   isLoaded: Ref<boolean>;
   /** Get number of waveform bars for a segment duration */
   getWaveformBars: (segmentDuration: number) => number;
+  /** Get dynamic bar width based on zoom level */
+  getBarWidth: () => string;
   /** Get waveform height for a specific bar in a video segment */
   getWaveformHeight: (index: number, startTime: number, segmentDuration: number) => string;
   /** Get waveform height for an audio track segment */
@@ -121,41 +132,147 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
    * Get number of waveform bars based on segment duration and zoom
    */
   function getWaveformBars(segmentDuration: number): number {
-    // More bars for longer segments and higher zoom levels
-    const baseBarCount = 50;
-    const scaledCount = Math.max(baseBarCount, Math.floor(segmentDuration * pixelsPerSecond.value / 4));
-    return Math.min(scaledCount, 500); // Cap at 500 bars for performance
+    // Calculate based on available pixels: 1 bar per 3 pixels
+    // This ensures bars scale with zoom - more zoom = more pixels = more bars = more detail
+    const segmentWidthPx = segmentDuration * pixelsPerSecond.value;
+    const barsPerPixel = 1 / 3; // 1 bar every 3 pixels
+    const barCount = Math.floor(segmentWidthPx * barsPerPixel);
+    
+    // Cap at 5000 bars max to prevent overlap and performance issues
+    // For a 72-min video at high zoom, this prevents 20k+ bars from overlapping
+    const cappedCount = Math.min(barCount, 5000);
+    
+    // Minimum 50 bars for very short segments
+    const finalCount = Math.max(50, cappedCount);
+    
+    console.log('[getWaveformBars]', {
+      segmentDuration,
+      pixelsPerSecond: pixelsPerSecond.value,
+      segmentWidthPx,
+      barCount,
+      cappedCount,
+      finalCount
+    });
+    return finalCount;
   }
 
   /**
-   * Get waveform peaks for a segment (with caching)
+   * Get dynamic bar width based on zoom level
+   * Returns CSS width value (e.g., "2px", "1px")
+   */
+  function getBarWidth(): string {
+    // At low zoom (< 1), use wider bars
+    // At high zoom (> 2), use thinner bars for more detail
+    let width: string;
+    if (pixelsPerSecond.value < 100) {
+      width = '3px';
+    } else if (pixelsPerSecond.value < 200) {
+      width = '2px';
+    } else {
+      width = '1px';
+    }
+    console.log('[getBarWidth]', {
+      pixelsPerSecond: pixelsPerSecond.value,
+      width
+    });
+    return width;
+  }
+
+  /**
+   * Get waveform peaks for a segment (with async caching)
+   * Returns cached peaks immediately if available, otherwise returns empty array
+   * and fetches peaks asynchronously to update cache
    */
   function getSegmentPeaks(startTime: number, segmentDuration: number): Array<{ min: number; max: number }> {
     const path = videoSourcePath.value;
-    const cacheKey = `${startTime}-${segmentDuration}`;
+    // Include pixelWidth in cache key for proper zoom handling
+    const numBars = getWaveformBars(segmentDuration);
+    const cacheKey = `${path}:${startTime.toFixed(3)}:${(startTime + segmentDuration).toFixed(3)}:${numBars}`;
 
     // Check cache first
     if (peaksCache.value.has(cacheKey)) {
-      return peaksCache.value.get(cacheKey)!;
+      const cached = peaksCache.value.get(cacheKey)!;
+      console.log('[getSegmentPeaks] Cache HIT', { cacheKey, peakCount: cached.length });
+      return cached;
     }
 
-    // If waveform not loaded yet, return empty array
+    // If waveform not loaded yet, return empty array (will use placeholder)
     if (!isLoaded.value || !path) {
+      console.log('[getSegmentPeaks] Not loaded or no path', { isLoaded: isLoaded.value, path });
       return [];
     }
 
-    // Get peaks from waveform service
-    const numBars = getWaveformBars(segmentDuration);
-    const peaks = waveformService.getPeaksForRange(path, {
+    // Check if service has cached peaks for this exact request
+    const servicePeaks = waveformService.getCachedPeaks?.(path, {
       startTime,
       endTime: startTime + segmentDuration,
       pixelWidth: numBars,
     });
 
-    // Cache the result
-    peaksCache.value.set(cacheKey, peaks);
+    if (servicePeaks) {
+      console.log('[getSegmentPeaks] Service cache HIT', { cacheKey, peakCount: servicePeaks.length });
+      peaksCache.value.set(cacheKey, servicePeaks);
+      return servicePeaks;
+    }
 
-    return peaks;
+    console.log('[getSegmentPeaks] Cache MISS - queueing fetch', { cacheKey, numBars });
+    // Trigger async fetch (don't await - return placeholder for now)
+    // Use requestAnimationFrame to batch multiple fetches in same render cycle
+    queuePeakFetch(path, startTime, segmentDuration, numBars, cacheKey);
+
+    return [];
+  }
+
+  // Queue of pending peak fetches to batch process
+  const pendingFetches = ref<Set<string>>(new Set());
+  let fetchQueued = false;
+
+  function queuePeakFetch(
+    path: string,
+    startTime: number,
+    segmentDuration: number,
+    numBars: number,
+    cacheKey: string
+  ): void {
+    // Mark this key as pending
+    pendingFetches.value.add(cacheKey);
+
+    if (!fetchQueued) {
+      fetchQueued = true;
+      requestAnimationFrame(async () => {
+        fetchQueued = false;
+        const fetches = Array.from(pendingFetches.value);
+        pendingFetches.value.clear();
+
+        // Process all queued fetches
+        await Promise.all(
+          fetches.map(async (key) => {
+            // Parse key to extract parameters (path:start:end:bars)
+            const parts = key.split(':');
+            if (parts.length < 4) return;
+
+            const fetchPath = parts[0];
+            const fetchStart = parseFloat(parts[1]);
+            const fetchEnd = parseFloat(parts[2]);
+            const fetchBars = parseInt(parts[3], 10);
+
+            try {
+              const peaks = await waveformService.getPeaksForRange(fetchPath, {
+                startTime: fetchStart,
+                endTime: fetchEnd,
+                pixelWidth: fetchBars,
+              });
+
+              if (peaks.length > 0) {
+                peaksCache.value.set(key, peaks);
+              }
+            } catch (error) {
+              console.error('[useWaveformRenderer] Peak fetch failed:', error);
+            }
+          })
+        );
+      });
+    }
   }
 
   /**
@@ -187,6 +304,14 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     const peaks = getSegmentPeaks(startTime, segmentDuration);
 
     if (peaks.length === 0 || index >= peaks.length) {
+      if (index === 0) {
+        console.log('[getWaveformHeight] No peaks or out of range - using placeholder', {
+          index,
+          peakCount: peaks.length,
+          startTime,
+          segmentDuration
+        });
+      }
       // Fallback to placeholder pattern if no data
       return getPlaceholderHeight(index, 'video');
     }
@@ -203,31 +328,84 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     // Scale to percentage (with minimum height for visibility)
     const heightPercent = Math.max(10, amplitude * 100);
 
+    if (index === 0) {
+      console.log('[getWaveformHeight] First bar with real peak', {
+        index,
+        startTime,
+        segmentDuration,
+        peakCount: peaks.length,
+        peak,
+        amplitude,
+        heightPercent
+      });
+    }
+
     return `${heightPercent}%`;
   }
 
   /**
    * Generate waveform height for audio tracks (uses audio file path)
+   * Returns cached peaks or placeholder - never triggers async fetch during render
    */
   function getAudioWaveformHeight(audioFilePath: string, index: number, startTime: number, segmentDuration: number): string {
     // Check if waveform is loaded for this audio file
     if (waveformService.isLoaded(audioFilePath)) {
       const numBars = getWaveformBars(segmentDuration);
-      const peaks = waveformService.getPeaksForRange(audioFilePath, {
+      const cacheKey = `${audioFilePath}:${startTime.toFixed(3)}:${(startTime + segmentDuration).toFixed(3)}:${numBars}`;
+
+      // Check local cache first
+      if (peaksCache.value.has(cacheKey)) {
+        const cached = peaksCache.value.get(cacheKey)!;
+        if (cached.length > 0 && index < cached.length) {
+          const peak = cached[index];
+          const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
+          const heightPercent = Math.max(10, amplitude * 100);
+          return `${heightPercent}%`;
+        }
+      }
+
+      // For cached mode, try sync peaks
+      const syncPeaks = waveformService.getPeaksSync(audioFilePath, {
         startTime,
         endTime: startTime + segmentDuration,
         pixelWidth: numBars,
       });
 
-      if (peaks.length > 0 && index < peaks.length) {
-        const peak = peaks[index];
+      if (syncPeaks && syncPeaks.length > 0 && index < syncPeaks.length) {
+        const peak = syncPeaks[index];
         const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
         const heightPercent = Math.max(10, amplitude * 100);
+        console.log('[getAudioWaveformHeight] Sync peak', {
+          index,
+          audioFilePath,
+          startTime,
+          segmentDuration,
+          peakCount: syncPeaks.length,
+          peak,
+          amplitude,
+          heightPercent
+        });
         return `${heightPercent}%`;
       }
+
+      console.log('[getAudioWaveformHeight] No cached or sync peaks', {
+        index,
+        audioFilePath,
+        startTime,
+        segmentDuration,
+        numBars
+      });
+      // Queue async fetch for next frame
+      queuePeakFetch(audioFilePath, startTime, segmentDuration, numBars, cacheKey);
     }
 
     // Fallback to procedural waveform pattern
+    console.log('[getAudioWaveformHeight] Fallback to placeholder', {
+      index,
+      audioFilePath,
+      startTime,
+      segmentDuration
+    });
     return getPlaceholderHeight(index, 'audio');
   }
 
@@ -236,13 +414,20 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     if (newPath) {
       isLoaded.value = false;
       peaksCache.value.clear();
+      pendingFetches.value.clear();
       loadWaveform();
     }
   }, { immediate: true });
 
-  // Watch for zoom level changes to invalidate peak cache
-  watch(zoomLevel, () => {
+  // Watch for zoom level changes with debounce to reduce cache invalidation
+  const debouncedInvalidateCache = debounce(() => {
+    console.log('[useWaveformRenderer] Debounced zoom cache clear');
     peaksCache.value.clear();
+    pendingFetches.value.clear();
+  }, 150); // 150ms debounce
+
+  watch(zoomLevel, () => {
+    debouncedInvalidateCache();
   });
 
   /**
@@ -263,6 +448,7 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     isLoading,
     isLoaded,
     getWaveformBars,
+    getBarWidth,
     getWaveformHeight,
     getAudioWaveformHeight,
     loadWaveform,
