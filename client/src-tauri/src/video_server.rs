@@ -206,6 +206,12 @@ pub async fn start_video_server_impl() {
                                             "*"
                                         );
 
+                                        let response = warp::reply::with_header(
+                                            response,
+                                            "Access-Control-Expose-Headers",
+                                            "Content-Range, Content-Length, Accept-Ranges"
+                                        );
+
                                         return Ok(warp::reply::with_status(
                                             response,
                                             warp::http::StatusCode::PARTIAL_CONTENT

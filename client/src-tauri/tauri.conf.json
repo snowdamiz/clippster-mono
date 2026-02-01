@@ -28,7 +28,9 @@
       "dangerousDisableAssetCspModification": [".*/.*"],
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPLOCALDATA/Clippster/**"]
+        "scope": [
+          "$APPLOCALDATA/Clippster/**/*"
+        ]
       }
     },
     "withGlobalTauri": true

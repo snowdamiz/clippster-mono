@@ -16,6 +16,30 @@ fn main() {
     let binaries_dir = manifest_dir.join("binaries");
     fs::create_dir_all(&binaries_dir).expect("Failed to create binaries directory");
 
+    // Configure FFmpeg paths for ffmpeg-sys-next
+    if target_os == "windows" {
+        let ffmpeg_dir = manifest_dir.join("ffmpeg-dev").join("ffmpeg-master-latest-win64-gpl-shared");
+        if ffmpeg_dir.exists() {
+            println!("cargo:warning=Found FFmpeg at: {}", ffmpeg_dir.display());
+            env::set_var("FFMPEG_DIR", &ffmpeg_dir);
+            env::set_var("FFMPEG_INCLUDE_DIR", ffmpeg_dir.join("include"));
+            env::set_var("FFMPEG_LIB_DIR", ffmpeg_dir.join("lib"));
+            
+            // Add to system paths for MSVC
+            if let Ok(include) = env::var("INCLUDE") {
+                env::set_var("INCLUDE", format!("{};{}", ffmpeg_dir.join("include").display(), include));
+            } else {
+                env::set_var("INCLUDE", ffmpeg_dir.join("include").display().to_string());
+            }
+            
+            if let Ok(lib) = env::var("LIB") {
+                env::set_var("LIB", format!("{};{}", ffmpeg_dir.join("lib").display(), lib));
+            } else {
+                env::set_var("LIB", ffmpeg_dir.join("lib").display().to_string());
+            }
+        }
+    }
+
     // Download ffmpeg
     download_ffmpeg(&binaries_dir, &target_os, &target_arch);
 

@@ -19,6 +19,7 @@ mod commands;
 mod dvr;
 mod hls;
 mod video_editor_export;
+mod video;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -42,6 +43,20 @@ async fn copy_file(source: String, destination: String) -> Result<(), String> {
     
     println!("[Rust] File copied successfully");
     Ok(())
+}
+
+/// Read video file as bytes for WebCodecs playback
+#[tauri::command]
+async fn read_video_file(file_path: String) -> Result<Vec<u8>, String> {
+    use std::fs;
+    
+    println!("[Rust] Reading video file: {}", file_path);
+    
+    let bytes = fs::read(&file_path)
+        .map_err(|e| format!("Failed to read video file: {}", e))?;
+    
+    println!("[Rust] Video file read successfully: {} bytes", bytes.len());
+    Ok(bytes)
 }
 
 /// Create an always-on-top PIP window with video and controls
@@ -564,6 +579,7 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -627,16 +643,17 @@ pub fn run() {
             set_clip_generation_in_progress,
             is_clip_generation_in_progress,
 
-            // Download management commands
-            cancel_all_downloads,
-            cancel_download,
-            cleanup_completed_download,
+// Download management commands
+cancel_all_downloads,
+cancel_download,
+cleanup_completed_download,
 
-            // File operations commands
-            check_file_exists,
-            validate_video_file,
+// File operations commands
+check_file_exists,
+validate_video_file,
+generate_proxy_file,
 
-            // Auth commands
+// Auth commands
             auth::open_wallet_auth_window,
             auth::open_wallet_payment_window,
             auth::close_auth_window,
@@ -758,6 +775,7 @@ pub fn run() {
             
             // File operations
             copy_file,
+            read_video_file,
 
     // PIP control window commands
     create_pip_control_window,
@@ -779,14 +797,21 @@ pub fn run() {
 
     // HLS commands
     hls::start_hls_recording,
-    hls::stop_hls_recording,
-    hls::cleanup_hls_recordings,
-    hls::get_recording_output_dir,
-    hls::get_hls_segments,
 
-    // Video Editor Export commands
-    video_editor_export::export_video_editor_project_simple,
-    video_editor_export::export_video_editor_project,
+// Video Editor Export commands
+video_editor_export::export_video_editor_project_simple,
+video_editor_export::export_video_editor_project,
+
+// Video Frame Decoder commands
+video::get_video_frame,
+video::get_video_frame_with_dimensions,
+video::prefetch_video_frames,
+video::clear_video_decoder,
+video::clear_all_video_decoders,
+video::clear_frame_cache,
+video::get_frame_cache_stats,
+video::get_decoder_info,
+
 ])
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
