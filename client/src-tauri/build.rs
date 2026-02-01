@@ -43,8 +43,15 @@ fn main() {
     // Download ffmpeg
     download_ffmpeg(&binaries_dir, &target_os, &target_arch);
 
-    // Download node
-    download_node(&binaries_dir, &target_os, &target_arch);
+    // Download node for ALL platforms (needed for cross-platform bundling)
+    // Windows
+    download_node(&binaries_dir, "windows", "x86_64");
+    // macOS Intel
+    download_node(&binaries_dir, "macos", "x86_64");
+    // macOS Apple Silicon
+    download_node(&binaries_dir, "macos", "aarch64");
+    // Linux
+    download_node(&binaries_dir, "linux", "x86_64");
 
     // Download yt-dlp (standalone binaries for all platforms)
     download_ytdlp(&binaries_dir, &target_os, &target_arch);
