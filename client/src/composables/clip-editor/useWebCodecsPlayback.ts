@@ -7,8 +7,10 @@ interface WebCodecsPlaybackOptions {
   currentTime: Ref<number>;
   isPlaying: Ref<boolean>;
   videoSources: Ref<VideoSource[]>;
+  projectId?: Ref<string | null>;
   getEffectivePathWithOffset?: (sourceId: string, originalPath: string, trimStart?: number) => { path: string; trimOffset: number };
   onError?: (error: string) => void;
+  onFirstFrameReady?: () => void;
 }
 
 interface DecoderState {
@@ -31,7 +33,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   console.log('[WebCodecsPlayback] COMPOSABLE CALLED - MODULE LOADED');
   console.log('[WebCodecsPlayback] ========================================');
   
-  const { canvasRef, currentTime, isPlaying, videoSources, getEffectivePathWithOffset, onError } = options;
+  const { canvasRef, currentTime, isPlaying, videoSources, projectId, getEffectivePathWithOffset, onError, onFirstFrameReady } = options;
 
   // Frame cache - keep decoded frames in memory for instant playback
   const frameCache = new Map<string, CachedFrame>();
@@ -49,6 +51,8 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   let lastRenderedFrame: VideoFrame | null = null;
   let lastRenderTime = 0;
   let lastRenderSourceId: string | null = null;
+  let lastFrameDecodedAt = 0;
+  let lastStallResetAt = 0;
   
   // Performance metrics
   const isInitialized = ref(false);
@@ -338,18 +342,36 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
 
       return undefined;
     } catch (error) {
-      console.warn('[WebCodecsPlayback] Failed to read avcC from MP4Box track boxes:', error);
+      console.error('[WebCodecsPlayback] getAvcCFromTrackBoxes error:', error);
       return undefined;
     }
   };
 
-  // Helper to resolve video path with proxy support
-  const resolveVideoPath = (source: VideoSource): { path: string; trimOffset: number } => {
+  /**
+   * Resolve video path - ALWAYS use proxy if available
+   * This is critical for performance - original VOD files are too large for WebCodecs
+   */
+  async function resolveVideoPath(source: VideoSource): Promise<{ path: string; trimOffset: number }> {
+    console.log('[WebCodecsPlayback] resolveVideoPath called:', { 
+      sourceId: source.id, 
+      originalPath: source.file_path,
+      hasGetEffectivePath: !!getEffectivePathWithOffset 
+    });
+    
     if (getEffectivePathWithOffset) {
-      return getEffectivePathWithOffset(source.id, source.file_path, source.trim_start);
+      const result = await getEffectivePathWithOffset(source.id, source.file_path, source.trim_start);
+      console.log('[WebCodecsPlayback] Resolved video path:', {
+        sourceId: source.id,
+        originalPath: source.file_path,
+        effectivePath: result.path,
+        isProxy: result.path !== source.file_path,
+        trimOffset: result.trimOffset,
+      });
+      return result;
     }
-    return { path: source.file_path, trimOffset: 0 };
-  };
+    console.warn('[WebCodecsPlayback] No getEffectivePathWithOffset provided, using original path');
+    return { path: source.file_path, trimOffset: source.trim_start || 0 };
+  }
 
   // Find which source is active at given timeline time
   function findSourceAtTime(time: number): VideoSource | null {
@@ -383,7 +405,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
 
   // Initialize decoder for a video source
   async function initializeDecoder(source: VideoSource, startTime?: number): Promise<DecoderState | null> {
-    const { path: videoPath, trimOffset } = resolveVideoPath(source);
+    const { path: videoPath, trimOffset } = await resolveVideoPath(source);
     const cacheKey = `${source.id}:${videoPath}`;
 
     // Return existing decoder if already initialized
@@ -532,6 +554,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
           decoder = new VideoDecoder({
             output: (frame: VideoFrame) => {
               console.log(`[WebCodecsPlayback] ✅ Frame decoded! timestamp=${(frame.timestamp / 1_000_000).toFixed(3)}s`);
+              lastFrameDecodedAt = performance.now();
               
               // Clone the frame for caching
               const clonedFrame = new VideoFrame(frame, {
@@ -895,10 +918,16 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   }
 
   // Render a frame to canvas
-  function renderFrame(timestamp: number) {
-    if (!ctx || !canvasRef.value) return;
+  async function renderFrame(timestamp: number) {
+    console.log('[WebCodecsPlayback] renderFrame called:', { timestamp, hasCtx: !!ctx, hasCanvas: !!canvasRef.value });
+    
+    if (!ctx || !canvasRef.value) {
+      console.warn('[WebCodecsPlayback] Cannot render: missing context or canvas');
+      return;
+    }
 
     const source = findSourceAtTime(timestamp);
+    console.log('[WebCodecsPlayback] Source at time:', { timestamp, sourceId: source?.id, hasSource: !!source });
     
     // Handle source transitions
     if (source && currentSourceId !== source.id) {
@@ -918,7 +947,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
 
     // Calculate time within the source file (accounts for trim_start)
     const sourceTime = getSourceTime(timestamp, source);
-    const { trimOffset } = resolveVideoPath(source);
+    const { trimOffset } = await resolveVideoPath(source);
     // Frames from proxies are cached starting at 0s (proxy start)
     const adjustedTime = trimOffset > 0 ? sourceTime - trimOffset : sourceTime;
 
@@ -1025,6 +1054,20 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
 
     renderFrame(currentTime.value);
 
+    const source = findSourceAtTime(currentTime.value);
+    if (source) {
+      const now = performance.now();
+      if (now - lastFrameDecodedAt > 1500 && now - lastStallResetAt > 2000) {
+        console.warn('[WebCodecsPlayback] Frame stall detected - resetting playback state', {
+          sourceId: source.id,
+          currentTime: Number(currentTime.value.toFixed(3)),
+          lastFrameDecodedAt: Number(lastFrameDecodedAt.toFixed(0)),
+        });
+        lastStallResetAt = now;
+        resetPlaybackState(source, currentTime.value);
+      }
+    }
+
     // Update FPS counter
     fpsFrameCount++;
     if (timestamp - fpsLastTime >= 1000) {
@@ -1039,6 +1082,9 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   // Start rendering loop
   function startRendering() {
     if (rafId !== null) return;
+    if (lastFrameDecodedAt === 0) {
+      lastFrameDecodedAt = performance.now();
+    }
     rafId = requestAnimationFrame(tick);
   }
 
@@ -1052,6 +1098,8 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
 
   // Initialize canvas context
   function initialize(): boolean {
+    console.log('[WebCodecsPlayback] initialize() called, canvas:', !!canvasRef.value);
+    
     if (!canvasRef.value) {
       console.warn('[WebCodecsPlayback] Cannot initialize: canvas ref is null');
       return false;
@@ -1111,7 +1159,9 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   }
 
   function resetDecoder(source: VideoSource) {
-    const { path: videoPath } = resolveVideoPath(source);
+    // Note: resetDecoder can't be async, so we use the original path
+    // The decoder will be recreated with proxy path on next initializeDecoder call
+    const videoPath = source.file_path;
     const decoderKey = `${source.id}:${videoPath}`;
     const existing = decoders.get(decoderKey);
     if (existing) {
@@ -1121,6 +1171,20 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       decoders.delete(decoderKey);
     }
     initializingDecoders.delete(decoderKey);
+  }
+
+  async function resetPlaybackState(source: VideoSource, startTime: number) {
+    clearSourceCache(source);
+    resetDecoder(source);
+    currentSourceId = null;
+    lastRenderSourceId = null;
+    lastRenderTime = startTime;
+    if (lastRenderedFrame) {
+      lastRenderedFrame.close();
+      lastRenderedFrame = null;
+    }
+    await initializeDecoder(source, startTime);
+    renderFrame(startTime);
   }
 
   // Watch for play/pause changes
@@ -1136,37 +1200,120 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   });
 
   // Watch for scrubbing (time changes while paused)
-  watch(currentTime, (time) => {
-    if (!isPlaying.value && isInitialized.value) {
-      renderFrame(time);
+  watch(currentTime, async (time) => {
+    if (!isInitialized.value) return;
+
+    if (!isPlaying.value) {
+      await renderFrame(time);
+      return;
+    }
+
+    if (time < lastRenderTime - 0.1) {
+      const source = findSourceAtTime(time);
+      if (source) {
+        console.log('[WebCodecsPlayback] Detected backward seek during playback - resetting playback state');
+        await resetPlaybackState(source, time);
+      }
     }
   });
 
   // Watch for canvas ref changes
   watch(canvasRef, (canvas) => {
+    console.log('[WebCodecsPlayback] Canvas ref changed:', { hasCanvas: !!canvas, isInitialized: isInitialized.value });
     if (canvas && !isInitialized.value) {
       initialize();
       renderFrame(currentTime.value);
     }
   });
 
-  // Watch for video sources changes - initialize decoder for current source
-  watch(videoSources, (sources) => {
-    if (!sources || sources.length === 0 || !isInitialized.value) return;
+  // Watch for video sources changes - pre-load first frame
+  watch(videoSources, async (sources) => {
+    console.log('[WebCodecsPlayback] videoSources changed:', { 
+      count: sources?.length || 0, 
+      isInitialized: isInitialized.value,
+      sourceIds: sources?.map(s => s.id) || []
+    });
+    
+    if (!sources || sources.length === 0 || !isInitialized.value) {
+      console.log('[WebCodecsPlayback] Skipping preload - no sources or not initialized');
+      return;
+    }
+    
+    // Check if cache should be cleared (project exported)
+    await checkProjectCacheStatus();
     
     const source = findSourceAtTime(currentTime.value);
     if (source && !decoders.has(source.id)) {
-      console.log(`[WebCodecsPlayback] Video sources loaded, initializing decoder for source ${source.id}`);
-      initializeDecoder(source);
-      // Render initial frame
-      renderFrame(currentTime.value);
+      console.log(`[WebCodecsPlayback] Video sources loaded, pre-loading first frame`);
+      await preloadFirstFrame();
     }
   }, { immediate: true });
 
-  // Cleanup on unmount
+  /**
+   * Pre-load first frame for instant playback
+   * Eliminates black screen on editor open
+   */
+  async function preloadFirstFrame(): Promise<void> {
+    if (videoSources.value.length === 0) return;
+    
+    const firstSource = videoSources.value[0];
+    console.log('[WebCodecsPlayback] Pre-loading first frame for instant playback');
+    
+    try {
+      const decoderState = await initializeDecoder(firstSource, 0);
+      if (!decoderState) {
+        console.warn('[WebCodecsPlayback] Failed to initialize decoder for first frame');
+        return;
+      }
+
+      // Wait for first frame to be decoded (max 3 seconds)
+      const timeout = 3000;
+      const startTime = Date.now();
+      
+      while (Date.now() - startTime < timeout) {
+        const { path: videoPath } = await resolveVideoPath(firstSource);
+        const cacheKey = getCacheKey(firstSource.id, 0);
+        const frame = frameCache.get(cacheKey);
+        
+        if (frame) {
+          console.log('[WebCodecsPlayback] ✅ First frame ready!');
+          renderFrame(0);
+          onFirstFrameReady?.();
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      
+      console.warn('[WebCodecsPlayback] First frame timeout after 3s');
+    } catch (error) {
+      console.error('[WebCodecsPlayback] Failed to preload first frame:', error);
+    }
+  }
+
+  /**
+   * Check if project cache should be cleared (after export)
+   */
+  async function checkProjectCacheStatus(): Promise<void> {
+    if (!projectId?.value) return;
+    
+    try {
+      const { projectCacheManager } = await import('@/services/projectCacheManager');
+      const shouldClear = await projectCacheManager.shouldClearCache(projectId.value);
+      
+      if (shouldClear) {
+        console.log('[WebCodecsPlayback] Project was exported, clearing cache');
+        clearCache();
+        await projectCacheManager.clearProjectCache(projectId.value);
+      }
+    } catch (error) {
+      console.warn('[WebCodecsPlayback] Failed to check project cache status:', error);
+    }
+  }
+
+  // Cleanup on unmount - DON'T clear cache (persist for next session)
   onUnmounted(() => {
     stopRendering();
-    clearCache();
+    // Cache persists until export
   });
 
   return {
@@ -1176,5 +1323,6 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     initialize,
     clearCache,
     renderFrame,
+    preloadFirstFrame,
   };
 }

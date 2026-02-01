@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { projectCacheManager } from '@/services/projectCacheManager';
 
 export interface ProxySettings {
   enabled: boolean;
@@ -88,22 +89,72 @@ export function useProxyWorkflow() {
     }
   }
 
-  function registerSource(sourceId: string, sourcePath: string, trimStart?: number, trimDuration?: number) {
-    // Create a unique key that includes trim info to support multiple trims of same source
-    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+  /**
+   * Get stable proxy path based on file content hash
+   * This ensures the same file always gets the same proxy path
+   */
+  async function getStableProxyPath(
+    sourcePath: string,
+    trimStart?: number,
+    trimDuration?: number
+  ): Promise<string> {
+    try {
+      // Get file hash for content-based naming
+      const fileHash = await invoke<string>('get_file_hash', { filePath: sourcePath });
+      
+      // Get proxy directory
+      const proxyDir = await invoke<string>('get_proxy_directory');
+      
+      // Build stable path: hash + trim info + resolution
+      const trimSuffix = trimStart !== undefined 
+        ? `_t${Math.floor(trimStart)}_d${Math.floor(trimDuration || 0)}` 
+        : '';
+      const resolution = settings.value.resolution;
+      
+      return `${proxyDir}\\${fileHash}${trimSuffix}_${resolution}.mp4`;
+    } catch (error) {
+      console.warn('[useProxyWorkflow] Failed to get stable proxy path:', error);
+      // Fallback to temp path
+      const proxyDir = await invoke<string>('get_proxy_directory');
+      const timestamp = Date.now();
+      return `${proxyDir}\\proxy_${timestamp}.mp4`;
+    }
+  }
+
+  function getProxyKey(sourceId: string, trimStart?: number): string {
+    return trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+  }
+
+  async function registerSource(
+    sourceId: string,
+    sourcePath: string,
+    trimStart?: number,
+    trimDuration?: number,
+    projectId?: string
+  ): Promise<string> {
+    // Generate stable proxy path based on content hash
+    const proxyPath = await getStableProxyPath(sourcePath, trimStart, trimDuration);
+    
+    // Use sourceId-based key for lookup, while keeping stable proxyPath on disk
+    const proxyKey = getProxyKey(sourceId, trimStart);
     
     if (proxyFiles.value.has(proxyKey)) return proxyKey;
     
     proxyFiles.value.set(proxyKey, {
       sourceId: proxyKey,
       sourcePath,
-      proxyPath: '',
+      proxyPath,
       resolution: settings.value.resolution,
       status: 'pending',
       progress: 0,
       trimStart,
       trimDuration,
     });
+    
+    // Register proxy with project cache manager
+    if (projectId) {
+      await projectCacheManager.addProxyFile(projectId, proxyPath);
+    }
     
     return proxyKey;
   }
@@ -153,13 +204,29 @@ export function useProxyWorkflow() {
     sourceId: string, 
     sourcePath: string, 
     trimStart?: number, 
-    trimDuration?: number
+    trimDuration?: number,
+    projectId?: string
   ): Promise<string | undefined> {
-    const proxyKey = registerSource(sourceId, sourcePath, trimStart, trimDuration);
+    const proxyKey = await registerSource(sourceId, sourcePath, trimStart, trimDuration, projectId);
     if (!proxyKey) return undefined;
     
     const proxy = proxyFiles.value.get(proxyKey);
-    if (!proxy || proxy.status === 'ready' || proxy.status === 'generating') {
+    if (!proxy) return undefined;
+    
+    // Check if proxy already exists on disk (from previous session)
+    try {
+      const exists = await invoke<boolean>('file_exists', { path: proxy.proxyPath });
+      if (exists) {
+        console.log(`[useProxyWorkflow] Using existing proxy: ${proxy.proxyPath}`);
+        proxy.status = 'ready';
+        proxy.progress = 100;
+        return proxyKey;
+      }
+    } catch (error) {
+      console.warn('[useProxyWorkflow] Failed to check proxy existence:', error);
+    }
+    
+    if (proxy.status === 'ready' || proxy.status === 'generating') {
       return proxyKey;
     }
 
@@ -195,10 +262,11 @@ export function useProxyWorkflow() {
     try {
       const dimensions = getResolutionDimensions(settings.value.resolution);
       
-      // Call Rust backend to generate proxy with trim info
+      // Call Rust backend to generate proxy with stable output path
       const result = await invoke<{ proxy_path: string }>('generate_proxy_file', {
         sourcePath: proxy.sourcePath,
         sourceId: sourceId,
+        outputPath: proxy.proxyPath, // Use stable path
         width: dimensions.width,
         height: dimensions.height,
         codec: settings.value.codec,
@@ -211,7 +279,7 @@ export function useProxyWorkflow() {
       proxy.status = 'ready';
       proxy.progress = 100;
       
-      console.log(`[useProxyWorkflow] Proxy generated for ${sourceId}:`, result.proxy_path, 
+      console.log(`[useProxyWorkflow] Proxy generated at stable path:`, result.proxy_path, 
         proxy.trimStart !== undefined ? `(trimmed from ${proxy.trimStart}s)` : '(full file)');
       return true;
     } catch (error) {
@@ -257,7 +325,7 @@ export function useProxyWorkflow() {
     if (!settings.value.enabled) return null;
     
     // Try trimmed proxy key first if trimStart provided
-    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+    const proxyKey = getProxyKey(sourceId, trimStart);
     const proxy = proxyFiles.value.get(proxyKey);
     
     if (proxy?.status === 'ready' && proxy.proxyPath) {
@@ -271,7 +339,7 @@ export function useProxyWorkflow() {
     if (!settings.value.enabled) return null;
     
     // Use same flooring logic as registerSource for consistent key generation
-    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+    const proxyKey = getProxyKey(sourceId, trimStart);
     const proxy = proxyFiles.value.get(proxyKey);
     
     if (proxy?.status === 'ready' && proxy.proxyPath) {
@@ -291,16 +359,43 @@ export function useProxyWorkflow() {
   }
   
   /** Get effective path and trim offset for canvas engine timestamp mapping */
-  function getEffectivePathWithOffset(
+  async function getEffectivePathWithOffset(
     sourceId: string, 
     originalPath: string, 
     trimStart?: number
-  ): { path: string; trimOffset: number } {
+  ): Promise<{ path: string; trimOffset: number }> {
+    // First check memory cache
     const proxyInfo = getProxyInfo(sourceId, trimStart);
     if (proxyInfo) {
-      console.log(`[useProxyWorkflow] Using trimmed proxy for ${sourceId}: trimOffset=${proxyInfo.trimOffset.toFixed(2)}s, path=${proxyInfo.path.split('\\').pop()}`);
+      console.log(`[useProxyWorkflow] Using cached proxy for ${sourceId}: trimOffset=${proxyInfo.trimOffset.toFixed(2)}s`);
       return proxyInfo;
     }
+    
+    // Proxy not in memory - check if it exists on disk and register it
+    if (settings.value.enabled) {
+      try {
+        const proxyPath = await getStableProxyPath(originalPath, trimStart);
+        const exists = await invoke<boolean>('file_exists', { path: proxyPath });
+        if (exists) {
+          // Register the existing proxy
+          const proxyKey = getProxyKey(sourceId, trimStart);
+          proxyFiles.value.set(proxyKey, {
+            sourceId: proxyKey,
+            sourcePath: originalPath,
+            proxyPath,
+            resolution: settings.value.resolution,
+            status: 'ready',
+            progress: 100,
+            trimStart,
+          });
+          console.log(`[useProxyWorkflow] Registered existing proxy from disk for ${sourceId}: ${proxyPath.split('\\').pop()}`);
+          return { path: proxyPath, trimOffset: trimStart ?? 0 };
+        }
+      } catch (error) {
+        console.warn('[useProxyWorkflow] Failed to check/register existing proxy:', error);
+      }
+    }
+    
     return { path: originalPath, trimOffset: 0 };
   }
 
@@ -340,6 +435,7 @@ export function useProxyWorkflow() {
     getProxyInfo,
     getEffectivePath,
     getEffectivePathWithOffset,
+    getProxyKey,
     clearProxies,
     removeProxy,
     getResolutionDimensions,

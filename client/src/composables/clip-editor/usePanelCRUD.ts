@@ -591,6 +591,52 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
   }
 
   /**
+   * Trigger background processing for uploaded media
+   * - Proxy generation for videos
+   * - Waveform extraction for videos/audio
+   */
+  async function triggerBackgroundProcessing(
+    item: MediaItem,
+    projectId: string
+  ): Promise<void> {
+    try {
+      if (item.media_type === 'video') {
+        // Generate proxy in background
+        const { useProxyWorkflow } = await import('@/composables/useProxyWorkflow');
+        const proxyWorkflow = useProxyWorkflow();
+        
+        proxyWorkflow.ensureProxyForSource(
+          item.id,
+          item.file_path,
+          0,
+          item.duration || 0,
+          projectId
+        ).catch(err => {
+          console.warn('[useMediaCRUD] Background proxy generation failed:', err);
+        });
+
+        // Extract waveform in background
+        const { waveformService } = await import('@/services/waveformService');
+        waveformService.loadAudio(item.file_path).catch(err => {
+          console.warn('[useMediaCRUD] Background waveform extraction failed:', err);
+        });
+      } else if (item.media_type === 'audio') {
+        // Extract waveform for audio files
+        const { waveformService } = await import('@/services/waveformService');
+        waveformService.loadAudio(item.file_path).catch(err => {
+          console.warn('[useMediaCRUD] Background waveform extraction failed:', err);
+        });
+      }
+
+      // Register with project cache manager
+      const { projectCacheManager } = await import('@/services/projectCacheManager');
+      await projectCacheManager.registerProject(projectId);
+    } catch (error) {
+      console.error('[useMediaCRUD] Background processing failed:', error);
+    }
+  }
+
+  /**
    * Add media item to timeline
    * For audio: creates audio track with duration
    * For video/image: creates video source (video track)
@@ -675,6 +721,9 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
 
         onMediaAdded?.(item.id);
         console.log('[useMediaCRUD] Audio track created successfully with duration:', audioDuration);
+        
+        // Trigger background processing
+        await triggerBackgroundProcessing(item, projectId.value);
       } 
       // For video/image files, create a video source (video track)
       else if (item.media_type === 'video' || item.media_type === 'image') {
@@ -772,6 +821,9 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
           endTime: newEndTime,
           orderIndex: newOrderIndex,
         });
+        
+        // Trigger background processing
+        await triggerBackgroundProcessing(item, projectId.value);
       }
     } catch (error) {
       console.error('[useMediaCRUD] Failed to add media to timeline:', error);

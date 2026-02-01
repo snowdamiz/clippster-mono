@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
@@ -22,6 +22,7 @@ pub async fn generate_proxy_file(
     app: AppHandle,
     source_path: String,
     source_id: String,
+    output_path: Option<String>,
     width: u32,
     height: u32,
     codec: String,
@@ -34,23 +35,35 @@ pub async fn generate_proxy_file(
         return Err("Source file does not exist".to_string());
     }
 
-    let paths = storage::init_storage_dirs()
-        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
-    let proxy_dir = paths.temp.join("proxies");
-    std::fs::create_dir_all(&proxy_dir)
-        .map_err(|e| format!("Failed to create proxy dir: {}", e))?;
+    // Use provided output path or generate one
+    let proxy_path = if let Some(output) = output_path {
+        let path = PathBuf::from(output);
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create proxy directory: {}", e))?;
+        }
+        path
+    } else {
+        // Fallback to temp directory if no output path provided
+        let paths = storage::init_storage_dirs()
+            .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+        let proxy_dir = paths.temp.join("proxies");
+        std::fs::create_dir_all(&proxy_dir)
+            .map_err(|e| format!("Failed to create proxy dir: {}", e))?;
 
-    // Include trim info in filename to differentiate trimmed proxies
-    let extension = if codec == "prores_proxy" { "mov" } else { "mp4" };
-    let trim_suffix = match (trim_start, trim_duration) {
-        (Some(start), Some(dur)) => format!("_t{:.0}_{:.0}", start, dur),
-        (Some(start), None) => format!("_t{:.0}", start),
-        _ => String::new(),
+        // Include trim info in filename to differentiate trimmed proxies
+        let extension = if codec == "prores_proxy" { "mov" } else { "mp4" };
+        let trim_suffix = match (trim_start, trim_duration) {
+            (Some(start), Some(dur)) => format!("_t{:.0}_{:.0}", start, dur),
+            (Some(start), None) => format!("_t{:.0}", start),
+            _ => String::new(),
+        };
+        proxy_dir.join(format!(
+            "proxy_{}_{}x{}_{}{}.{}",
+            source_id, width, height, codec, trim_suffix, extension
+        ))
     };
-    let proxy_path = proxy_dir.join(format!(
-        "proxy_{}_{}x{}_{}{}.{}",
-        source_id, width, height, codec, trim_suffix, extension
-    ));
 
     // Check if valid proxy already exists
     if proxy_path.exists() {

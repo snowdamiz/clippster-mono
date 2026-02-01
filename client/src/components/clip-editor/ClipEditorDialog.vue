@@ -195,6 +195,19 @@ const {
   secondaryFallbackTitle: props.editorProjectName,
 });
 
+// Register project with cache manager for lifecycle tracking
+watch(projectId, async (id) => {
+  if (id) {
+    try {
+      const { projectCacheManager } = await import('@/services/projectCacheManager');
+      await projectCacheManager.registerProject(id);
+      console.log('[ClipEditorDialog] Project registered for cache tracking:', id);
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to register project:', error);
+    }
+  }
+}, { immediate: true });
+
 const activePanel = ref<string>('media');
 const showShortcutsModal = ref(false);
 

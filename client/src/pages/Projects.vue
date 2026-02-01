@@ -1246,6 +1246,7 @@
     getIntroOutroById,
     getWatermarkByServerId,
     getVideoEditorProjectsForClip,
+    getVideoEditorSourcesByProjectId,
     type Project,
     type RawVideo,
     type ClipWithVersion,
@@ -1313,7 +1314,7 @@
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const clipThumbnailCache = ref<Map<string, string>>(new Map());
   const { getRelativeTime, formatDuration } = useFormatters();
-  const { success, error } = useToast();
+  const { success, error, loading: showLoadingToast, updateToast } = useToast();
   const { activeSessions } = useLivestreamMonitoring();
   const inEditorStore = useInEditorClips();
   inEditorStore.hydrate();
@@ -3164,6 +3165,67 @@
     }
   }
 
+  /**
+   * Ensure proxy files are ready for all video segments
+   * Shows toast notification during generation
+   */
+  async function ensureProxiesReadyForSources(
+    sources: { id: string; source_path: string; trim_start?: number; trim_end?: number | null; start_time: number; end_time: number }[],
+    projectId: string
+  ): Promise<boolean> {
+    try {
+      if (!sources.length) {
+        console.warn('[Projects] No sources found for proxy generation');
+        return true;
+      }
+
+      console.log('[Projects] Ensuring proxies ready for sources:', sources.length);
+
+      // Show loading toast notification (stays until we update it)
+      const toastId = showLoadingToast('Preparing Video', 'Generating optimized proxy for smooth playback...');
+
+      // Import proxy workflow
+      const { useProxyWorkflow } = await import('@/composables/useProxyWorkflow');
+      const proxyWorkflow = useProxyWorkflow();
+
+      // Generate proxies for each video editor source
+      for (let i = 0; i < sources.length; i++) {
+        const source = sources[i];
+        const trimStart = source.trim_start ?? 0;
+        const trimDuration = source.trim_end != null ? source.trim_end - trimStart : source.end_time - source.start_time;
+
+        console.log(`[Projects] Generating proxy for source ${i + 1}/${sources.length}:`, {
+          sourceId: source.id,
+          trimStart,
+          trimDuration,
+        });
+
+        // Ensure proxy exists (will generate if needed)
+        await proxyWorkflow.ensureProxyForSource(
+          source.id,
+          source.source_path,
+          trimStart,
+          trimDuration,
+          projectId
+        );
+      }
+
+      // Update toast to success and auto-dismiss
+      updateToast(toastId, {
+        type: 'success',
+        title: 'Video Ready!',
+        description: 'Opening editor with optimized playback...',
+        duration: 3000,
+      });
+      console.log('[Projects] All proxies ready');
+      return true;
+    } catch (err) {
+      console.error('[Projects] Failed to generate proxies:', err);
+      error('Proxy Generation Failed', 'Could not prepare video for editing. Opening with original file...');
+      return false; // Continue anyway with original file
+    }
+  }
+
   async function openClipInNewProject(
     clipId: string,
     clipTitle: string,
@@ -3179,6 +3241,9 @@
         clipEndTime: endTime,
         clipSegments: segments,
       });
+
+      // Generate proxies using video editor source IDs BEFORE opening editor
+      await ensureProxiesReadyForSources(result.sources, result.projectId);
 
       clipEditorClipId.value = clipId;
       clipEditorStartTime.value = startTime;
@@ -3198,9 +3263,13 @@
     }
   }
 
-  function openClipInExistingProject(project: VideoEditorProject) {
+  async function openClipInExistingProject(project: VideoEditorProject) {
     const pending = pendingClipToEdit.value;
     if (!pending) return;
+
+    // Generate proxies using video editor source IDs BEFORE opening editor
+    const sources = await getVideoEditorSourcesByProjectId(project.id);
+    await ensureProxiesReadyForSources(sources, project.id);
 
     clipEditorClipId.value = pending.clipId;
     clipEditorStartTime.value = pending.startTime;

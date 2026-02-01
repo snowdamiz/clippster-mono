@@ -551,9 +551,13 @@ const webCodecsEngine = useWebCodecsPlayback({
   currentTime: toRef(props, 'currentTime'),
   isPlaying: toRef(props, 'isPlaying'),
   videoSources: videoSourcesRef,
+  projectId: computed(() => props.editorEdit?.edit.project_id || null),
   getEffectivePathWithOffset,
   onError: (error) => {
     console.error('[ClipEditorPreview] WebCodecs engine error:', error);
+  },
+  onFirstFrameReady: () => {
+    console.log('[ClipEditorPreview] ✅ First frame ready - no more black screen!');
   },
 });
 
@@ -568,6 +572,8 @@ onMounted(async () => {
     const initialized = webCodecsEngine.initialize();
     if (initialized) {
       console.log('[ClipEditorPreview] WebCodecs playback engine initialized with hardware acceleration');
+      // Pre-load first frame for instant playback (no black screen)
+      await webCodecsEngine.preloadFirstFrame();
     } else {
       console.warn('[ClipEditorPreview] WebCodecs not supported - falling back to video element');
     }

@@ -1,5 +1,6 @@
 <template>
-  <ToastProvider>
+  <Teleport to="body">
+    <ToastProvider>
     <ToastRoot
       v-for="toast in toasts"
       :key="toast.id"
@@ -36,10 +37,11 @@
         </ToastClose>
       </div>
     </ToastRoot>
-    <ToastViewport
-      class="fixed bottom-6 right-6 flex flex-col gap-3 w-[380px] max-w-[calc(100vw-3rem)] z-[9999] outline-none"
-    />
-  </ToastProvider>
+      <ToastViewport
+        class="fixed bottom-6 right-6 flex flex-col gap-3 w-[380px] max-w-[calc(100vw-3rem)] z-[20000] outline-none"
+      />
+    </ToastProvider>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

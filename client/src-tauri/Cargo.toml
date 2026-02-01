@@ -57,6 +57,7 @@ ffmpeg-the-third = { version = "4.0", default-features = false, features = ["cod
 lru = "0.12"
 image = "0.25"
 parking_lot = "0.12"
+sha2 = "0.10"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"

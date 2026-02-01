@@ -59,6 +59,63 @@ async fn read_video_file(file_path: String) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// Get SHA256 hash of a file (first 16 chars for cache keys)
+#[tauri::command]
+async fn get_file_hash(file_path: String) -> Result<String, String> {
+    use sha2::{Sha256, Digest};
+    use std::fs::File;
+    use std::io::Read;
+
+    let mut file = File::open(&file_path)
+        .map_err(|e| format!("Failed to open file: {}", e))?;
+    
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 8192];
+    
+    loop {
+        let n = file.read(&mut buffer)
+            .map_err(|e| format!("Failed to read file: {}", e))?;
+        if n == 0 { break; }
+        hasher.update(&buffer[..n]);
+    }
+    
+    let result = hasher.finalize();
+    let hash = format!("{:x}", result);
+    Ok(hash[..16].to_string())
+}
+
+/// Check if a file exists
+#[tauri::command]
+async fn file_exists(path: String) -> Result<bool, String> {
+    Ok(std::path::Path::new(&path).exists())
+}
+
+/// Delete a file
+#[tauri::command]
+async fn delete_file(path: String) -> Result<(), String> {
+    std::fs::remove_file(&path)
+        .map_err(|e| format!("Failed to delete file: {}", e))
+}
+
+/// Get the proxy directory path (creates if doesn't exist)
+#[tauri::command]
+async fn get_proxy_directory() -> Result<String, String> {
+    use std::path::PathBuf;
+    
+    let app_data = std::env::var("APPDATA")
+        .or_else(|_| std::env::var("HOME"))
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    
+    let proxy_dir = PathBuf::from(app_data)
+        .join("Clippster")
+        .join("proxies");
+    
+    std::fs::create_dir_all(&proxy_dir)
+        .map_err(|e| format!("Failed to create proxy dir: {}", e))?;
+    
+    Ok(proxy_dir.to_string_lossy().to_string())
+}
+
 /// Create an always-on-top PIP window with video and controls
 #[tauri::command]
 async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> {
@@ -776,6 +833,10 @@ generate_proxy_file,
             // File operations
             copy_file,
             read_video_file,
+            get_file_hash,
+            file_exists,
+            delete_file,
+            get_proxy_directory,
 
     // PIP control window commands
     create_pip_control_window,

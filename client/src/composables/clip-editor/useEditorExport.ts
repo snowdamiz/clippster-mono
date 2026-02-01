@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import type { FullVideoEditorEdit } from '@/services/database/video-editor-edits';
 import { getVideoEditorProjectWithSources } from '@/services/database/video-editor-projects';
+import { projectCacheManager } from '@/services/projectCacheManager';
 
 /**
  * Export configuration sent to the backend
@@ -204,6 +205,26 @@ export function useEditorExport(options: EditorExportOptions): EditorExportRetur
 
       exportProgress.value = 100;
       console.log('[useEditorExport] Export completed successfully');
+
+      // Mark project as exported and schedule cache cleanup
+      if (projectId.value) {
+        try {
+          await projectCacheManager.markAsExported(projectId.value);
+          console.log('[useEditorExport] Project marked as exported');
+          
+          // Clear all caches after a short delay (allow user to see success message)
+          setTimeout(async () => {
+            try {
+              await projectCacheManager.clearProjectCache(projectId.value!);
+              console.log('[useEditorExport] ✅ All caches cleared for exported project');
+            } catch (error) {
+              console.error('[useEditorExport] Failed to clear project cache:', error);
+            }
+          }, 2000);
+        } catch (error) {
+          console.error('[useEditorExport] Failed to mark project as exported:', error);
+        }
+      }
 
       // Show success message
       alert(`Video exported successfully to:\n${savePath}`);
