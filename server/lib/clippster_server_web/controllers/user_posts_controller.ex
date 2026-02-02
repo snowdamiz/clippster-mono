@@ -93,6 +93,35 @@ defmodule ClippsterServerWeb.UserPostsController do
   end
 
   @doc """
+  Get analytics summary for user's posts.
+
+  GET /api/user/posts/analytics
+  """
+  def analytics_summary(conn, params) do
+    user = conn.assigns.current_user
+
+    opts = []
+    opts = if params["days"], do: Keyword.put(opts, :days, String.to_integer(params["days"])), else: opts
+    opts = if params["account_id"], do: Keyword.put(opts, :account_id, String.to_integer(params["account_id"])), else: opts
+
+    summary = Campaigns.get_user_analytics_summary(user.id, opts)
+
+    conn
+    |> json(%{
+      success: true,
+      summary: %{
+        total_posts: summary.total_posts || 0,
+        total_views: summary.total_views || 0,
+        total_likes: summary.total_likes || 0,
+        total_comments: summary.total_comments || 0,
+        total_saves: summary.total_saves || 0,
+        total_reach: summary.total_reach || 0,
+        total_impressions: summary.total_impressions || 0
+      }
+    })
+  end
+
+  @doc """
   Get a single post with details.
 
   GET /api/user/posts/:id

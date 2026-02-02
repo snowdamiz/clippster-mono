@@ -255,6 +255,43 @@ export async function syncPostAnalytics(postId: number): Promise<PostResponse> {
   return response.data;
 }
 
+export interface UserAnalyticsSummary {
+  total_posts: number;
+  total_views: number;
+  total_likes: number;
+  total_comments: number;
+  total_saves: number;
+  total_reach: number;
+  total_impressions: number;
+}
+
+export interface AnalyticsSummaryResponse {
+  success: boolean;
+  summary?: UserAnalyticsSummary;
+  error?: string;
+}
+
+/**
+ * Get analytics summary for user's posts
+ */
+export async function getUserAnalyticsSummary(options?: {
+  account_id?: number;
+  days?: number;
+}): Promise<AnalyticsSummaryResponse> {
+  try {
+    const response = await api.get<AnalyticsSummaryResponse>('/user/posts/analytics', {
+      params: options,
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[UserInstagramApi] Failed to get analytics summary:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to get analytics summary',
+    };
+  }
+}
+
 // ============================================
 // Helper Functions
 // ============================================
