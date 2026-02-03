@@ -92,13 +92,13 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
   async function loadWaveform(): Promise<void> {
     const path = videoSourcePath.value;
     if (!path) {
-      console.log('[useWaveformRenderer] No video source path provided');
+      // console.log('[useWaveformRenderer] No video source path provided');
       return;
     }
 
     // Check if already loaded
     if (waveformService.isLoaded(path)) {
-      console.log('[useWaveformRenderer] Waveform already loaded');
+      // console.log('[useWaveformRenderer] Waveform already loaded');
       isLoaded.value = true;
       peaksCache.value.clear(); // Clear cache to regenerate with new data
       return;
@@ -106,20 +106,20 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
 
     // Skip if already loading
     if (isLoading.value) {
-      console.log('[useWaveformRenderer] Waveform already loading');
+      // console.log('[useWaveformRenderer] Waveform already loading');
       return;
     }
 
     try {
       isLoading.value = true;
-      console.log('[useWaveformRenderer] Loading waveform for:', path);
+      // console.log('[useWaveformRenderer] Loading waveform for:', path);
 
       await waveformService.loadAudio(path);
 
       isLoaded.value = true;
       peaksCache.value.clear(); // Clear cache to force regeneration with real data
 
-      console.log('[useWaveformRenderer] Waveform loaded successfully');
+      // console.log('[useWaveformRenderer] Waveform loaded successfully');
     } catch (error) {
       console.error('[useWaveformRenderer] Failed to load waveform:', error);
       isLoaded.value = false;
@@ -145,14 +145,14 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     // Minimum 50 bars for very short segments
     const finalCount = Math.max(50, cappedCount);
     
-    console.log('[getWaveformBars]', {
-      segmentDuration,
-      pixelsPerSecond: pixelsPerSecond.value,
-      segmentWidthPx,
-      barCount,
-      cappedCount,
-      finalCount
-    });
+    // console.log('[getWaveformBars]', {
+    //   segmentDuration,
+    //   pixelsPerSecond: pixelsPerSecond.value,
+    //   segmentWidthPx,
+    //   barCount,
+    //   cappedCount,
+    //   finalCount
+    // });
     return finalCount;
   }
 
@@ -171,10 +171,10 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     } else {
       width = '1px';
     }
-    console.log('[getBarWidth]', {
-      pixelsPerSecond: pixelsPerSecond.value,
-      width
-    });
+    // console.log('[getBarWidth]', {
+    //   pixelsPerSecond: pixelsPerSecond.value,
+    //   width
+    // });
     return width;
   }
 
@@ -192,13 +192,13 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     // Check cache first
     if (peaksCache.value.has(cacheKey)) {
       const cached = peaksCache.value.get(cacheKey)!;
-      console.log('[getSegmentPeaks] Cache HIT', { cacheKey, peakCount: cached.length });
+      // console.log('[getSegmentPeaks] Cache HIT', { cacheKey, peakCount: cached.length });
       return cached;
     }
 
     // If waveform not loaded yet, return empty array (will use placeholder)
     if (!isLoaded.value || !path) {
-      console.log('[getSegmentPeaks] Not loaded or no path', { isLoaded: isLoaded.value, path });
+      // console.log('[getSegmentPeaks] Not loaded or no path', { isLoaded: isLoaded.value, path });
       return [];
     }
 
@@ -210,12 +210,12 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     });
 
     if (servicePeaks) {
-      console.log('[getSegmentPeaks] Service cache HIT', { cacheKey, peakCount: servicePeaks.length });
+      // console.log('[getSegmentPeaks] Service cache HIT', { cacheKey, peakCount: servicePeaks.length });
       peaksCache.value.set(cacheKey, servicePeaks);
       return servicePeaks;
     }
 
-    console.log('[getSegmentPeaks] Cache MISS - queueing fetch', { cacheKey, numBars });
+    // console.log('[getSegmentPeaks] Cache MISS - queueing fetch', { cacheKey, numBars });
     // Trigger async fetch (don't await - return placeholder for now)
     // Use requestAnimationFrame to batch multiple fetches in same render cycle
     queuePeakFetch(path, startTime, segmentDuration, numBars, cacheKey);
@@ -305,12 +305,12 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
 
     if (peaks.length === 0 || index >= peaks.length) {
       if (index === 0) {
-        console.log('[getWaveformHeight] No peaks or out of range - using placeholder', {
-          index,
-          peakCount: peaks.length,
-          startTime,
-          segmentDuration
-        });
+        // console.log('[getWaveformHeight] No peaks or out of range - using placeholder', {
+        //   index,
+        //   peakCount: peaks.length,
+        //   startTime,
+        //   segmentDuration
+        // });
       }
       // Fallback to placeholder pattern if no data
       return getPlaceholderHeight(index, 'video');
@@ -329,15 +329,15 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
     const heightPercent = Math.max(10, amplitude * 100);
 
     if (index === 0) {
-      console.log('[getWaveformHeight] First bar with real peak', {
-        index,
-        startTime,
-        segmentDuration,
-        peakCount: peaks.length,
-        peak,
-        amplitude,
-        heightPercent
-      });
+      // console.log('[getWaveformHeight] First bar with real peak', {
+      //   index,
+      //   startTime,
+      //   segmentDuration,
+      //   peakCount: peaks.length,
+      //   peak,
+      //   amplitude,
+      //   heightPercent
+      // });
     }
 
     return `${heightPercent}%`;
@@ -375,37 +375,37 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
         const peak = syncPeaks[index];
         const amplitude = Math.max(Math.abs(peak.min), Math.abs(peak.max));
         const heightPercent = Math.max(10, amplitude * 100);
-        console.log('[getAudioWaveformHeight] Sync peak', {
-          index,
-          audioFilePath,
-          startTime,
-          segmentDuration,
-          peakCount: syncPeaks.length,
-          peak,
-          amplitude,
-          heightPercent
-        });
+        // console.log('[getAudioWaveformHeight] Sync peak', {
+        //   index,
+        //   audioFilePath,
+        //   startTime,
+        //   segmentDuration,
+        //   peakCount: syncPeaks.length,
+        //   peak,
+        //   amplitude,
+        //   heightPercent
+        // });
         return `${heightPercent}%`;
       }
 
-      console.log('[getAudioWaveformHeight] No cached or sync peaks', {
-        index,
-        audioFilePath,
-        startTime,
-        segmentDuration,
-        numBars
-      });
+      // console.log('[getAudioWaveformHeight] No cached or sync peaks', {
+      //   index,
+      //   audioFilePath,
+      //   startTime,
+      //   segmentDuration,
+      //   numBars
+      // });
       // Queue async fetch for next frame
       queuePeakFetch(audioFilePath, startTime, segmentDuration, numBars, cacheKey);
     }
 
     // Fallback to procedural waveform pattern
-    console.log('[getAudioWaveformHeight] Fallback to placeholder', {
-      index,
-      audioFilePath,
-      startTime,
-      segmentDuration
-    });
+    // console.log('[getAudioWaveformHeight] Fallback to placeholder', {
+    //   index,
+    //   audioFilePath,
+    //   startTime,
+    //   segmentDuration
+    // });
     return getPlaceholderHeight(index, 'audio');
   }
 
@@ -421,7 +421,7 @@ export function useWaveformRenderer(options: WaveformRendererOptions): WaveformR
 
   // Watch for zoom level changes with debounce to reduce cache invalidation
   const debouncedInvalidateCache = debounce(() => {
-    console.log('[useWaveformRenderer] Debounced zoom cache clear');
+    // console.log('[useWaveformRenderer] Debounced zoom cache clear');
     peaksCache.value.clear();
     pendingFetches.value.clear();
   }, 150); // 150ms debounce

@@ -2,7 +2,6 @@ import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface ProxySettings {
-  enabled: boolean;
   resolution: '360p' | '480p' | '720p' | '1080p';
   codec: 'h264' | 'prores_proxy';
   quality: 'low' | 'medium' | 'high';
@@ -27,7 +26,6 @@ export interface ProxyFile {
 }
 
 const defaultSettings: ProxySettings = {
-  enabled: true,
   resolution: '720p',
   codec: 'h264',
   quality: 'high', // High quality H.264 for best decode performance
@@ -40,7 +38,6 @@ const generationQueue = ref<string[]>([]);
 let settingsLoaded = false;
 
 export function useProxyWorkflow() {
-  const proxyEnabled = computed(() => settings.value.enabled);
   
   const pendingProxies = computed(() => 
     Array.from(proxyFiles.value.values()).filter(p => p.status === 'pending')
@@ -66,7 +63,6 @@ export function useProxyWorkflow() {
 
   function updateSettings(newSettings: Partial<ProxySettings>) {
     settings.value = { ...settings.value, ...newSettings };
-    settings.value.enabled = true;
     try {
       localStorage.setItem('proxy_workflow_settings', JSON.stringify(settings.value));
     } catch (e) {
@@ -81,7 +77,6 @@ export function useProxyWorkflow() {
       const saved = localStorage.getItem('proxy_workflow_settings');
       if (saved) {
         settings.value = { ...defaultSettings, ...JSON.parse(saved) };
-        settings.value.enabled = true;
       }
     } catch (e) {
       console.warn('[useProxyWorkflow] Failed to load settings:', e);
@@ -90,7 +85,8 @@ export function useProxyWorkflow() {
 
   function registerSource(sourceId: string, sourcePath: string, trimStart?: number, trimDuration?: number) {
     // Create a unique key that includes trim info to support multiple trims of same source
-    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+    // Use milliseconds to prevent bucket collisions (e.g., 510.0 and 510.99 both become unique keys)
+    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.round(trimStart * 1000)}` : sourceId;
     
     if (proxyFiles.value.has(proxyKey)) return proxyKey;
     
@@ -159,8 +155,26 @@ export function useProxyWorkflow() {
     if (!proxyKey) return undefined;
     
     const proxy = proxyFiles.value.get(proxyKey);
-    if (!proxy || proxy.status === 'ready' || proxy.status === 'generating') {
+    if (!proxy) return undefined;
+    
+    // If already ready, return immediately
+    if (proxy.status === 'ready') {
       return proxyKey;
+    }
+    
+    // If currently generating, wait for it to complete
+    if (proxy.status === 'generating') {
+      console.log(`[useProxyWorkflow] Waiting for proxy generation to complete: ${proxyKey}`);
+      // Poll until ready or error
+      return new Promise((resolve) => {
+        const checkInterval = setInterval(() => {
+          const currentProxy = proxyFiles.value.get(proxyKey);
+          if (currentProxy?.status === 'ready' || currentProxy?.status === 'error') {
+            clearInterval(checkInterval);
+            resolve(proxyKey);
+          }
+        }, 100); // Check every 100ms
+      });
     }
 
     const meta = await shouldGenerateProxy(sourcePath);
@@ -254,10 +268,8 @@ export function useProxyWorkflow() {
   }
 
   function getProxyPath(sourceId: string, trimStart?: number): string | null {
-    if (!settings.value.enabled) return null;
-    
-    // Try trimmed proxy key first if trimStart provided
-    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+    // Use milliseconds to prevent bucket collisions
+    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.round(trimStart * 1000)}` : sourceId;
     const proxy = proxyFiles.value.get(proxyKey);
     
     if (proxy?.status === 'ready' && proxy.proxyPath) {
@@ -268,10 +280,8 @@ export function useProxyWorkflow() {
 
   /** Get proxy info including path and trim offset for timestamp mapping */
   function getProxyInfo(sourceId: string, trimStart?: number): { path: string; trimOffset: number } | null {
-    if (!settings.value.enabled) return null;
-    
-    // Use same flooring logic as registerSource for consistent key generation
-    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+    // Use milliseconds to prevent bucket collisions
+    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.round(trimStart * 1000)}` : sourceId;
     const proxy = proxyFiles.value.get(proxyKey);
     
     if (proxy?.status === 'ready' && proxy.proxyPath) {
@@ -298,7 +308,7 @@ export function useProxyWorkflow() {
   ): { path: string; trimOffset: number } {
     const proxyInfo = getProxyInfo(sourceId, trimStart);
     if (proxyInfo) {
-      console.log(`[useProxyWorkflow] Using trimmed proxy for ${sourceId}: trimOffset=${proxyInfo.trimOffset.toFixed(2)}s, path=${proxyInfo.path.split('\\').pop()}`);
+      // Proxy lookup is frequent during playback, skip logging
       return proxyInfo;
     }
     return { path: originalPath, trimOffset: 0 };
@@ -312,8 +322,29 @@ export function useProxyWorkflow() {
     proxyFiles.value.delete(sourceId);
   }
 
+  // Clear old-format proxies on init (force regeneration with millisecond-based keys)
+  function clearOldFormatProxies() {
+    const keysToDelete: string[] = [];
+    proxyFiles.value.forEach((proxy, key) => {
+      // Check if key uses old format (_t510) vs new format (_t510000)
+      // Old format has _t followed by 1-3 digits, new format has 4+ digits
+      const oldFormatMatch = key.match(/_t\d{1,3}$/);
+      if (oldFormatMatch) {
+        console.log(`[useProxyWorkflow] Clearing old-format proxy: ${key}`);
+        keysToDelete.push(key);
+      }
+    });
+    keysToDelete.forEach(key => proxyFiles.value.delete(key));
+    if (keysToDelete.length > 0) {
+      console.log(`[useProxyWorkflow] Cleared ${keysToDelete.length} old-format proxies for regeneration`);
+    }
+  }
+
   // Initialize settings on first use
   loadSettings();
+  
+  // Clear old-format proxies on startup
+  clearOldFormatProxies();
 
   return {
     // State
@@ -323,7 +354,6 @@ export function useProxyWorkflow() {
     generationQueue,
     
     // Computed
-    proxyEnabled,
     pendingProxies,
     readyProxies,
     generatingProxies,
