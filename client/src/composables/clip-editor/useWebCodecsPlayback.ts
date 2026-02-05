@@ -499,7 +499,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   }
 
   // Initialize decoder for a video source
-  async function initializeDecoder(source: VideoSource, startTime?: number): Promise<DecoderState | null> {
+  async function initializeDecoder(source: VideoSource, startTime?: number, suppressErrors: boolean = false): Promise<DecoderState | null> {
     const { path: videoPath, trimOffset } = resolveVideoPath(source);
     
     // CRITICAL: Check if this is a proxy path or original path
@@ -528,11 +528,21 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       return await initializingDecoders.get(cacheKey)!;
     }
 
-    // Return existing decoder if already initialized
+    // Return existing decoder if already initialized and not closed
     if (decoders.has(cacheKey)) {
       const existing = decoders.get(cacheKey)!;
-      if (existing.isInitialized) {
+      if (existing.isInitialized && existing.decoder.state !== 'closed') {
         return existing;
+      } else {
+        // Clean up closed or uninitialized decoder
+        try {
+          if (existing.decoder.state !== 'closed') {
+            existing.decoder.close();
+          }
+        } catch (cleanupError) {
+          console.warn('[WebCodecsPlayback] Error cleaning up existing decoder:', cleanupError);
+        }
+        decoders.delete(cacheKey);
       }
     }
 
@@ -632,7 +642,9 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
             },
             error: (e: any) => {
               console.error('[WebCodecsPlayback] VideoDecoder error:', e);
-              onError?.(`Video decoder error: ${e.message}`);
+              if (!suppressErrors) {
+                onError?.(`Video decoder error: ${e.message}`);
+              }
             }
           });
           
@@ -1284,7 +1296,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   }, { immediate: true, deep: true });
 
   // Full video decoding for pre-upload processing
-  async function fullDecodeVideo(source: VideoSource, onProgress?: (progress: number) => void): Promise<void> {
+  async function fullDecodeVideo(source: VideoSource, onProgress?: (progress: number) => void, suppressErrors: boolean = false): Promise<void> {
     console.log(`[WebCodecsPlayback] 🚀 Starting FULL video decode for ${source.id}`);
     console.log(`[WebCodecsPlayback] 🚀 fullDecodeVideo file path: ${source.file_path}`);
 
@@ -1305,7 +1317,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     }
 
     // Initialize decoder for this source
-    const decoderState = await initializeDecoder(source);
+    const decoderState = await initializeDecoder(source, undefined, suppressErrors);
     if (!decoderState) {
       throw new Error(`Failed to initialize decoder for source ${source.id}`);
     }
@@ -1336,8 +1348,18 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
         const { done, value } = await reader.read();
         if (done) break;
         
-        decoderState.decoder.decode(value);
-        chunkCount++;
+        // Check if decoder is still in a valid state before decoding
+        if (decoderState.decoder.state === 'closed') {
+          throw new Error('Decoder was closed during decoding');
+        }
+        
+        try {
+          decoderState.decoder.decode(value);
+          chunkCount++;
+        } catch (decodeError) {
+          console.error('[WebCodecsPlayback] Failed to decode chunk:', decodeError);
+          throw decodeError;
+        }
         
         // Update progress every 50 chunks (don't update too frequently)
         if (chunkCount % 50 === 0) {
@@ -1383,6 +1405,24 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       
     } catch (error) {
       console.error(`[WebCodecsPlayback] ❌ Full decode failed for ${source.id}:`, error);
+      
+      // Clean up decoder state on failure
+      const cacheKey = `${source.id}_${source.trim_start || 0}`;
+      const decoderState = decoders.get(cacheKey);
+      if (decoderState) {
+        try {
+          if (decoderState.decoder.state !== 'closed') {
+            decoderState.decoder.close();
+          }
+        } catch (cleanupError) {
+          console.warn('[WebCodecsPlayback] Error closing decoder during cleanup:', cleanupError);
+        }
+        decoders.delete(cacheKey);
+      }
+      
+      // Remove from decoding progress tracking
+      decodingInProgress.delete(source.id);
+      
       updateSourceLoading(source.id, {
         isLoading: false,
         progress: 0,
@@ -1400,11 +1440,14 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     try {
       // Full decode the video - this will be 100% complete before returning
       console.log(`[WebCodecsPlayback] 🎬 About to call fullDecodeVideo...`);
-      await fullDecodeVideo(source);
+      await fullDecodeVideo(source, undefined, true); // suppressErrors = true for preload
       console.log(`[WebCodecsPlayback] ✅ Video preloaded and fully decoded: ${source.id}`);
     } catch (error) {
       console.error(`[WebCodecsPlayback] ❌ Failed to preload video: ${source.id}`, error);
-      throw error;
+      // For preload (upload flow), don't throw error - just log it
+      // The video will still be uploaded but won't be pre-decoded
+      // It will be decoded when added to timeline instead
+      console.log(`[WebCodecsPlayback] ℹ️ Video ${source.id} will be decoded when added to timeline`);
     }
   }
 

@@ -466,6 +466,9 @@ watch(() => props.videoSrc, async (videoUrl) => {
 
   // Store playing state before reload
   const wasPlaying = props.isPlaying;
+  
+  // CRITICAL: Pause audio immediately to prevent it from playing ahead during source change
+  audioRef.value.pause();
 
   audioRef.value.src = videoUrl;
   audioRef.value.load();
