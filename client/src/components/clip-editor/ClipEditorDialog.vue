@@ -29,6 +29,7 @@
               @panelChange="onPanelChange"
               @mediaAdded="handleMediaAdded"
               @mediaUpdated="handleMediaUpdated"
+              @videoUploaded="handleVideoUploaded"
               @detachAudio="handleDetachAudio"
               @tracksUpdated="handleTracksUpdated"
               @textAdded="handleTextAdded"
@@ -166,6 +167,7 @@ import {
   useEditorAutoSave,
   useTitleManagement,
   useDurationCalculator,
+  type VideoSource,
 } from '@/composables/clip-editor';
 import { usePlaybackEngine } from '@/composables/usePlaybackEngine';
 
@@ -566,6 +568,32 @@ async function handleMediaAdded(mediaId: string) {
 function handleMediaUpdated() {
   console.log('[ClipEditorDialog] Media library updated');
   // Refresh any media-related state if needed
+}
+
+async function handleVideoUploaded(mediaId: string, filePath: string) {
+  console.log('[ClipEditorDialog] Video uploaded, starting pre-decoding:', mediaId);
+  
+  // Create a temporary VideoSource object for pre-decoding
+  // The actual source will be created when added to timeline
+  const tempSource: VideoSource = {
+    id: mediaId,
+    file_path: filePath,
+    start_time: 0,
+    end_time: 0, // Will be determined by WebCodecs during pre-decoding
+    trim_start: 0,
+    trim_end: null,
+    original_duration: 0, // Will be determined by WebCodecs
+    order_index: 0,
+  };
+  
+  if (previewRef.value && (previewRef.value as any).preloadVideo) {
+    try {
+      await (previewRef.value as any).preloadVideo(tempSource);
+      console.log('[ClipEditorDialog] ✅ Video pre-decoded successfully:', mediaId);
+    } catch (error) {
+      console.error('[ClipEditorDialog] ❌ Failed to pre-decode video:', error);
+    }
+  }
 }
 
 // ===== Export =====

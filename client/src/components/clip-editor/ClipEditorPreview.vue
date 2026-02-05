@@ -439,19 +439,34 @@ watch(() => props.videoSrc, async (videoUrl) => {
   if (!audioRef.value || !videoUrl) return;
 
   console.log('[ClipEditorPreview] Syncing audio element with video URL:', videoUrl);
+  console.log('[ClipEditorPreview] Current playing state:', props.isPlaying);
 
   // Ensure crossOrigin for Web Audio routing
   audioRef.value.crossOrigin = 'anonymous';
   audioRef.value.preload = 'auto';
 
+  // Store playing state before reload
+  const wasPlaying = props.isPlaying;
+
   audioRef.value.src = videoUrl;
   audioRef.value.load();
 
-  // Sync time once metadata is ready
+  // Sync time once metadata is ready, then resume playback if needed
   const onLoadedMetadata = () => {
     audioRef.value?.removeEventListener('loadedmetadata', onLoadedMetadata);
     if (audioRef.value) {
       audioRef.value.currentTime = props.currentTime;
+      console.log('[ClipEditorPreview] Audio metadata loaded, seeking to:', props.currentTime);
+      
+      // Resume playback if it was playing before source change
+      if (wasPlaying) {
+        console.log('[ClipEditorPreview] Resuming audio playback after source change');
+        audioRef.value.play().catch(err => {
+          if (err.name !== 'AbortError') {
+            console.warn('[ClipEditorPreview] Audio resume failed:', err);
+          }
+        });
+      }
     }
   };
   audioRef.value.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -466,8 +481,10 @@ watch(() => props.isPlaying, (playing) => {
     // This prevents AbortError when scrubbing then playing
     const targetTime = props.currentTime;
     if (Math.abs(audioRef.value.currentTime - targetTime) > 0.05) {
+      console.log('[ClipEditorPreview] Seeking audio before play:', targetTime);
       audioRef.value.currentTime = targetTime;
     }
+    console.log('[ClipEditorPreview] Playing audio');
     audioRef.value.play().catch(err => {
       // Ignore AbortError - it's expected when rapidly toggling play/pause
       if (err.name !== 'AbortError') {
@@ -475,6 +492,7 @@ watch(() => props.isPlaying, (playing) => {
       }
     });
   } else {
+    console.log('[ClipEditorPreview] Pausing audio');
     audioRef.value.pause();
   }
 });
@@ -545,8 +563,9 @@ onUnmounted(() => {
   audioMixer.dispose();
 });
 
-// Expose audio mixer to parent component
+// Expose audio mixer and preloadVideo to parent component
 defineExpose({
   audioMixer,
+  preloadVideo: webCodecsEngine.preloadVideo,
 });
 </script>

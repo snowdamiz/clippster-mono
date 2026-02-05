@@ -143,13 +143,14 @@ export function useVideoUrlBuilder(
       return null;
     }
 
-    const proxyInfo = proxyWorkflow.getProxyInfo(activeSource.id, activeSource.trim_start);
-    if (!proxyInfo) {
-      console.warn(`[useVideoUrlBuilder] Proxy not ready for active source ${activeSource.id}; withholding video URL.`);
-      return null;
-    }
+    // Use proxy if available, otherwise use original file
+    const effectivePath = proxyWorkflow.getEffectivePathWithOffset(
+      activeSource.id,
+      activeSource.file_path,
+      activeSource.trim_start
+    );
 
-    const url = buildVideoUrl(proxyInfo.path);
+    const url = buildVideoUrl(effectivePath.path);
     return url;
   });
 
@@ -165,37 +166,38 @@ export function useVideoUrlBuilder(
 
     const firstSource = timeline.videoSources[0];
     if (!firstSource?.file_path) return null;
-    const proxyInfo = proxyWorkflow.getProxyInfo(firstSource.id, firstSource.trim_start);
-    if (!proxyInfo) {
-      return null;
-    }
-    return proxyInfo.path;
+    
+    // Use proxy if available, otherwise use original file
+    const effectivePath = proxyWorkflow.getEffectivePathWithOffset(
+      firstSource.id,
+      firstSource.file_path,
+      firstSource.trim_start
+    );
+    return effectivePath.path;
   });
 
   /**
    * Video sources for timeline rendering
-   * Returns sources with proxy paths applied (only when proxies are ready)
+   * Returns sources with effective paths (proxy if available, original if skipped)
    */
   const videoSources = computed((): VideoSource[] => {
     const timeline = getTimeline();
     if (!timeline) return [];
 
-    const proxyInfos = timeline.videoSources.map((source) =>
-      proxyWorkflow.getProxyInfo(source.id, source.trim_start)
-    );
-
-    const allReady = proxyInfos.every((info) => info?.path);
-    if (!allReady) {
-      console.warn('[useVideoUrlBuilder] Proxies not ready for all sources; withholding video sources.');
-      return [];
-    }
-
-    return timeline.videoSources.map((source, index) => {
-      const proxyInfo = proxyInfos[index]!;
-      console.log(`[useVideoUrlBuilder] Using proxy for source ${source.id}: ${proxyInfo.path.split('\\').pop()}`);
+    return timeline.videoSources.map((source) => {
+      // Use proxy if available, otherwise use original file
+      const effectivePath = proxyWorkflow.getEffectivePathWithOffset(
+        source.id,
+        source.file_path,
+        source.trim_start
+      );
+      
+      const fileName = effectivePath.path.split(/[\\/]/).pop() || effectivePath.path;
+      console.log(`[useVideoUrlBuilder] Using ${effectivePath.path === source.file_path ? 'original' : 'proxy'} for source ${source.id}: ${fileName}`);
+      
       return {
         ...source,
-        file_path: proxyInfo.path,
+        file_path: effectivePath.path,
       };
     });
   });

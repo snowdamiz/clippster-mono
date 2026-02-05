@@ -419,6 +419,8 @@ export interface MediaCRUDOptions {
   onUpdate?: () => void;
   /** Optional callback when media is added to timeline */
   onMediaAdded?: (mediaId: string) => void;
+  /** Optional callback to pre-decode video after upload */
+  onVideoUploaded?: (mediaId: string, filePath: string) => Promise<void>;
 }
 
 /**
@@ -429,6 +431,8 @@ export interface MediaCRUDReturn {
   mediaItems: Ref<MediaItem[]>;
   /** Whether items are currently loading */
   isLoading: Ref<boolean>;
+  /** Map of media IDs currently processing (proxy + decoding) */
+  processingMedia: Ref<Map<string, { progress: number; stage: 'proxy' | 'decoding' | 'complete' }>>;
   /** Load media items from database */
   load: () => Promise<void>;
   /** Handle file upload dialog and add media */
@@ -439,6 +443,8 @@ export interface MediaCRUDReturn {
   deleteMedia: (mediaId: string) => Promise<void>;
   /** Helper to get media type from file extension */
   getMediaTypeFromExtension: (extension: string) => MediaType;
+  /** Check if media is currently processing */
+  isMediaProcessing: (mediaId: string) => boolean;
 }
 
 /**
@@ -478,10 +484,11 @@ export interface MediaCRUDReturn {
  * ```
  */
 export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
-  const { projectId, editId, onUpdate, onMediaAdded } = options;
+  const { projectId, editId, onUpdate, onMediaAdded, onVideoUploaded } = options;
 
   const mediaItems = ref<MediaItem[]>([]) as Ref<MediaItem[]>;
   const isLoading = ref(false);
+  const processingMedia = ref(new Map<string, { progress: number; stage: 'proxy' | 'decoding' | 'complete' }>());
 
   /**
    * Video file extensions
@@ -541,6 +548,7 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
 
   /**
    * Handle file upload dialog and add media to project
+   * For videos: generates proxy and decodes with WebCodecs immediately
    */
   async function handleUploadClick(): Promise<void> {
     if (!projectId.value) {
@@ -564,23 +572,120 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
 
       if (!selected) return;
 
-      isLoading.value = true;
-
       const { addProjectMedia } = await import('@/services/database/project-media');
+      const { useProxyWorkflow } = await import('@/composables/useProxyWorkflow');
+      const proxyWorkflow = useProxyWorkflow();
+      
       const filePaths = Array.isArray(selected) ? selected : [selected];
+      let processedCount = 0;
 
       for (const filePath of filePaths) {
-        const fileName = filePath.split(/[\\/]/).pop() || 'unknown';
+        const fileName = filePath.split(/[\/]/).pop() || 'unknown';
         const extension = fileName.split('.').pop()?.toLowerCase() || '';
         const mediaType = getMediaTypeFromExtension(extension);
 
-        await addProjectMedia(projectId.value, {
-          mediaType,
-          filePath,
-          fileName,
-        });
+        // For videos: Generate proxy BEFORE adding to database
+        // This ensures the media doesn't appear in the library until proxy is ready
+        if (mediaType === 'video') {
+          console.log(`[useMediaCRUD] 🎬 Uploading video: ${fileName}`);
+          console.log(`[useMediaCRUD] ⏳ Generating proxy (this may take a few seconds)...`);
+          
+          // Add to database FIRST to get the real media ID
+          const media = await addProjectMedia(projectId.value, {
+            mediaType,
+            filePath,
+            fileName,
+          });
+          
+          if (!media) {
+            throw new Error('Failed to add media to database');
+          }
+          
+          // CRITICAL: Set processing state IMMEDIATELY with real media ID to prevent timeline addition
+          // This must happen before any async operations
+          processingMedia.value.set(media.id, { progress: 0, stage: 'proxy' });
+          isLoading.value = true;
+
+          try {
+            // Generate proxy with the REAL media ID (blocking operation)
+            console.log(`[useMediaCRUD] 🔄 Generating proxy for media ID: ${media.id}`);
+            
+            // Update progress for proxy generation
+            processingMedia.value.set(media.id, { progress: 25, stage: 'proxy' });
+            
+            const proxyKey = await proxyWorkflow.ensureProxyForSource(media.id, filePath);
+            
+            if (!proxyKey) {
+              throw new Error('Failed to generate proxy - no proxy key returned');
+            }
+            
+            // Check proxy status - it might be 'ready', 'skipped', or 'error'
+            const proxyInfo = proxyWorkflow.getProxyInfo(media.id);
+            const proxyPath = proxyWorkflow.getProxyPath(media.id);
+            
+            if (proxyPath) {
+              console.log(`[useMediaCRUD] ✅ Proxy ready: ${proxyPath}`);
+            } else if (proxyInfo === null) {
+              // Proxy was skipped (not needed) - use original file
+              console.log(`[useMediaCRUD] ℹ️ Proxy not needed for ${fileName}, will use original file`);
+            } else {
+              // Proxy generation failed
+              console.warn(`[useMediaCRUD] ⚠️ Proxy generation failed for ${fileName}, will generate on-demand`);
+            }
+            
+            console.log(`[useMediaCRUD] ✅ Video ready for timeline: ${fileName}`);
+          } catch (error) {
+            console.error(`[useMediaCRUD] ❌ Failed to process video ${fileName}:`, error);
+            // Video was added to database but proxy failed - it will generate on-demand later
+          }
+          
+          // Pre-decode video immediately after upload for seamless playback
+          // This is REQUIRED before allowing timeline addition
+          if (onVideoUploaded && media) {
+            console.log(`[useMediaCRUD] 🚀 Starting REQUIRED pre-decoding for ${fileName}`);
+            
+            // Update processing state for decoding stage
+            processingMedia.value.set(media.id, { progress: 50, stage: 'decoding' });
+            
+            try {
+              // Wait for COMPLETE pre-decoding (not just start)
+              await onVideoUploaded(media.id, filePath);
+              console.log(`[useMediaCRUD] ✅ REQUIRED pre-decoding complete for ${fileName}`);
+              
+              // Mark as complete - video is now ready for timeline
+              processingMedia.value.set(media.id, { progress: 100, stage: 'complete' });
+              
+              // Remove from processing after a delay to show completion
+              setTimeout(() => {
+                processingMedia.value.delete(media.id);
+              }, 2000);
+            } catch (error) {
+              console.error(`[useMediaCRUD] ❌ REQUIRED pre-decoding failed for ${fileName}:`, error);
+              // Remove from processing - video failed to process, cannot be added to timeline
+              processingMedia.value.delete(media.id);
+            }
+          } else {
+            // No onVideoUploaded callback - mark as complete after proxy only
+            processingMedia.value.set(media.id, { progress: 100, stage: 'complete' });
+            setTimeout(() => {
+              processingMedia.value.delete(media.id);
+            }, 2000);
+          }
+          
+          processedCount++;
+        } else {
+          // For non-video files (images, audio), add immediately
+          isLoading.value = true;
+          await addProjectMedia(projectId.value, {
+            mediaType,
+            filePath,
+            fileName,
+          });
+          processedCount++;
+        }
       }
 
+      console.log(`[useMediaCRUD] ✅ Processed ${processedCount}/${filePaths.length} files`);
       await load();
       onUpdate?.();
     } catch (error) {
@@ -792,6 +897,13 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
     }
   }
 
+  /**
+   * Check if media is currently processing
+   */
+  function isMediaProcessing(mediaId: string): boolean {
+    return processingMedia.value.has(mediaId);
+  }
+
   // Auto-load when projectId changes
   watch(
     projectId,
@@ -808,10 +920,12 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
   return {
     mediaItems,
     isLoading,
+    processingMedia,
     load,
     handleUploadClick,
     addToTimeline,
     deleteMedia,
     getMediaTypeFromExtension,
+    isMediaProcessing,
   };
 }

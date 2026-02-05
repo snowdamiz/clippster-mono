@@ -498,6 +498,12 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
 
     const cacheKey = `${source.id}:${videoPath}`;
 
+    // CRITICAL: Check if decoder is already being initialized
+    if (initializingDecoders.has(cacheKey)) {
+      console.log(`[WebCodecsPlayback] Decoder already initializing for ${source.id}, waiting...`);
+      return await initializingDecoders.get(cacheKey)!;
+    }
+
     // Return existing decoder if already initialized
     if (decoders.has(cacheKey)) {
       const existing = decoders.get(cacheKey)!;
@@ -516,9 +522,10 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     });
 
     try {
-      // Create a timeout race for initialization
+      // Create initialization promise and store it immediately to prevent duplicates
       const initWithTimeout = new Promise<DecoderState | null>(async (resolve, reject) => {
         const timeoutId = setTimeout(() => {
+          initializingDecoders.delete(cacheKey);
           reject(new Error('Decoder initialization timed out (15s)'));
         }, 15000);
 
@@ -642,17 +649,19 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
         }
       });
 
+      // Store the initialization promise immediately to prevent duplicates
       const initPromise = initWithTimeout;
       initializingDecoders.set(cacheKey, initPromise);
+      
       initPromise.finally(() => {
         initializingDecoders.delete(cacheKey);
         // Ensure loading state is cleared even if init fails
         if (loadingStates[source.id]?.isLoading) {
           updateSourceLoading(source.id, { isLoading: false });
-           updateSourceLoading(source.id, { isLoading: false });
         }
       });
-      return initPromise;
+      
+      return await initPromise;
     } catch (error) {
       console.error('[WebCodecsPlayback] Failed to initialize decoder:', error);
       updateSourceLoading(source.id, { 
