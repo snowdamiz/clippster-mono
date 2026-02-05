@@ -524,10 +524,18 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     try {
       // Create initialization promise and store it immediately to prevent duplicates
       const initWithTimeout = new Promise<DecoderState | null>(async (resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-          initializingDecoders.delete(cacheKey);
-          reject(new Error('Decoder initialization timed out (15s)'));
-        }, 15000);
+        let timeoutId: NodeJS.Timeout | null = null;
+        
+        const setupTimeout = (ms: number) => {
+          if (timeoutId) clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            initializingDecoders.delete(cacheKey);
+            reject(new Error(`Decoder initialization timed out (${ms/1000}s)`));
+          }, ms);
+        };
+        
+        // Start with initial 15 second timeout
+        setupTimeout(15000);
 
         try {
           // In dev: use local video server (port 48276) which handles range requests
@@ -556,6 +564,20 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
             nbStreams: mediaInfo.nb_streams,
             videoStream: mediaInfo.streams.find(s => s.codec_type_string === 'video')
           });
+          
+          // Calculate intelligent timeout based on video duration
+          // Base timeout: 30 seconds + 0.5 seconds per second of video (max 5 minutes)
+          const baseTimeout = 30000; // 30 seconds base
+          const durationMultiplier = 500; // 0.5 seconds per second of video
+          const calculatedTimeout = baseTimeout + (mediaInfo.duration * durationMultiplier);
+          const maxTimeout = 5 * 60 * 1000; // 5 minutes max
+          const timeoutMs = Math.min(calculatedTimeout, maxTimeout);
+          
+          console.log(`[WebCodecsPlayback] Set timeout to ${timeoutMs}ms for ${mediaInfo.duration}s video`);
+          
+          // Update the timeout with the calculated value
+          if (timeoutId) clearTimeout(timeoutId);
+          setupTimeout(timeoutMs);
           
           // Get video decoder config from web-demuxer
           const videoDecoderConfig = await demuxer.getDecoderConfig('video');
@@ -641,10 +663,10 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
           });
 
           // Wait for initialization to complete
-          clearTimeout(timeoutId);
+          if (timeoutId) clearTimeout(timeoutId);
           resolve(decoderState);
         } catch (error) {
-          clearTimeout(timeoutId);
+          if (timeoutId) clearTimeout(timeoutId);
           reject(error);
         }
       });
