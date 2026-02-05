@@ -462,8 +462,17 @@ watch(() => props.isPlaying, (playing) => {
   if (!audioRef.value) return;
   
   if (playing) {
+    // CRITICAL: Seek audio to correct time BEFORE playing to avoid race condition
+    // This prevents AbortError when scrubbing then playing
+    const targetTime = props.currentTime;
+    if (Math.abs(audioRef.value.currentTime - targetTime) > 0.05) {
+      audioRef.value.currentTime = targetTime;
+    }
     audioRef.value.play().catch(err => {
-      console.warn('[ClipEditorPreview] Audio play failed:', err);
+      // Ignore AbortError - it's expected when rapidly toggling play/pause
+      if (err.name !== 'AbortError') {
+        console.warn('[ClipEditorPreview] Audio play failed:', err);
+      }
     });
   } else {
     audioRef.value.pause();
@@ -473,6 +482,10 @@ watch(() => props.isPlaying, (playing) => {
 // Sync audio time with WebCodecs
 watch(() => props.currentTime, (time) => {
   if (!audioRef.value) return;
+  
+  // CRITICAL: Don't sync time during playback - let audio play naturally
+  // Only sync when paused (scrubbing) to avoid interrupting play()
+  if (props.isPlaying) return;
   
   // Only sync if difference is significant (> 0.1s) to avoid constant seeking
   const diff = Math.abs(audioRef.value.currentTime - time);
