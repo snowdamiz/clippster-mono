@@ -47,6 +47,7 @@
           :project-id="projectId"
           @mediaAdded="$emit('mediaAdded', $event)"
           @mediaUpdated="$emit('mediaUpdated')"
+          @videoUploaded="(mediaId, filePath) => $emit('videoUploaded', mediaId, filePath)"
         />
 
         <!-- Audio Panel -->
@@ -148,6 +149,7 @@
     (e: 'panelChange', value: string): void;
     (e: 'mediaAdded', mediaId: string): void;
     (e: 'mediaUpdated'): void;
+    (e: 'videoUploaded', mediaId: string, filePath: string): void;
     (e: 'detachAudio'): void;
     (e: 'tracksUpdated'): void;
     (e: 'textAdded', textId: string): void;

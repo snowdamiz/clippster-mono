@@ -642,15 +642,17 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
           // Pre-decode video immediately after upload for seamless playback
           // This is REQUIRED before allowing timeline addition
           if (onVideoUploaded && media) {
-            console.log(`[useMediaCRUD] 🚀 Starting REQUIRED pre-decoding for ${fileName}`);
+            console.log(`[useMediaCRUD] 🚀 Starting REQUIRED FULL pre-decoding for ${fileName}`);
+            console.log(`[useMediaCRUD] ⚠️ Media will be unavailable until decoding is 100% complete`);
             
             // Update processing state for decoding stage
             processingMedia.value.set(media.id, { progress: 50, stage: 'decoding' });
             
             try {
-              // Wait for COMPLETE pre-decoding (not just start)
+              // Wait for COMPLETE pre-decoding (this now fully decodes the entire video)
               await onVideoUploaded(media.id, filePath);
-              console.log(`[useMediaCRUD] ✅ REQUIRED pre-decoding complete for ${fileName}`);
+              console.log(`[useMediaCRUD] ✅ REQUIRED FULL pre-decoding complete for ${fileName}`);
+              console.log(`[useMediaCRUD] 🎬 Media is now ready for timeline addition`);
               
               // Mark as complete - video is now ready for timeline
               processingMedia.value.set(media.id, { progress: 100, stage: 'complete' });
@@ -658,14 +660,18 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
               // Remove from processing after a delay to show completion
               setTimeout(() => {
                 processingMedia.value.delete(media.id);
+                console.log(`[useMediaCRUD] 📝 Processing state cleared for ${fileName}`);
               }, 2000);
             } catch (error) {
-              console.error(`[useMediaCRUD] ❌ REQUIRED pre-decoding failed for ${fileName}:`, error);
+              console.error(`[useMediaCRUD] ❌ REQUIRED FULL pre-decoding failed for ${fileName}:`, error);
+              console.error(`[useMediaCRUD] ⚠️ Media cannot be added to timeline due to decode failure`);
+              
               // Remove from processing - video failed to process, cannot be added to timeline
               processingMedia.value.delete(media.id);
             }
           } else {
             // No onVideoUploaded callback - mark as complete after proxy only
+            console.warn(`[useMediaCRUD] ⚠️ No onVideoUploaded callback for ${fileName} - marking as complete after proxy only`);
             processingMedia.value.set(media.id, { progress: 100, stage: 'complete' });
             setTimeout(() => {
               processingMedia.value.delete(media.id);
@@ -846,7 +852,9 @@ export function useMediaCRUD(options: MediaCRUDOptions): MediaCRUDReturn {
         });
 
         // Create video source (video track) with the media
+        console.log('[useMediaCRUD] Creating video source with ID:', item.id);
         await createVideoEditorSource(projectId.value, {
+          id: item.id, // Use media ID as source ID to match pre-decoded frames
           sourceType: 'imported',
           sourceId: item.id,
           sourcePath: item.file_path,

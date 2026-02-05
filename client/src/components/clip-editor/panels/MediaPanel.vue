@@ -235,7 +235,10 @@
     editId: toRef(props, 'editId'),
     onUpdate: () => emit('mediaUpdated'),
     onMediaAdded: (id) => emit('mediaAdded', id),
-    onVideoUploaded: async (mediaId, filePath) => emit('videoUploaded', mediaId, filePath),
+    onVideoUploaded: async (mediaId, filePath) => {
+      console.log(`[MediaPanel] 🎥 videoUploaded event - mediaId: ${mediaId}, filePath: ${filePath}`);
+      emit('videoUploaded', mediaId, filePath);
+    },
   });
 
   // Media type styling (from composable)

@@ -293,7 +293,26 @@ const { appliedCSSFilters } = useVideoEffects({
 });
 
 // Video source time conversion from composable
-const { getVideoSourceTime } = useVideoSourceTime(videoSourcesRef);
+const { getVideoSourceTime, findSourceAtTime } = useVideoSourceTime(videoSourcesRef);
+
+// Get audio time accounting for proxy trim offset
+// For proxy files, the audio starts at 0s (already trimmed), so we need to subtract the trim offset
+function getAudioSourceTime(timelineTime: number): number {
+  const source = findSourceAtTime(timelineTime);
+  if (!source) return timelineTime;
+  
+  // Get the effective path and trim offset for this source
+  const { trimOffset } = getEffectivePathWithOffset(source.id, source.file_path, source.trim_start);
+  
+  // Calculate the source time (accounts for trim_start)
+  const sourceTime = getVideoSourceTime(timelineTime);
+  
+  // If using a proxy, subtract the trim offset since proxy starts at 0s
+  // If using original file, trimOffset is 0 so no change
+  const audioTime = trimOffset > 0 ? sourceTime - trimOffset : sourceTime;
+  
+  return Math.max(0, audioTime);
+}
 
 // formatTime is imported from composable
 
@@ -455,8 +474,10 @@ watch(() => props.videoSrc, async (videoUrl) => {
   const onLoadedMetadata = () => {
     audioRef.value?.removeEventListener('loadedmetadata', onLoadedMetadata);
     if (audioRef.value) {
-      audioRef.value.currentTime = props.currentTime;
-      console.log('[ClipEditorPreview] Audio metadata loaded, seeking to:', props.currentTime);
+      // Convert timeline time to audio time (accounts for proxy trim offset)
+      const audioTime = getAudioSourceTime(props.currentTime);
+      audioRef.value.currentTime = audioTime;
+      console.log('[ClipEditorPreview] Audio metadata loaded, seeking to audio time:', audioTime, '(timeline:', props.currentTime, ')');
       
       // Resume playback if it was playing before source change
       if (wasPlaying) {
@@ -479,10 +500,11 @@ watch(() => props.isPlaying, (playing) => {
   if (playing) {
     // CRITICAL: Seek audio to correct time BEFORE playing to avoid race condition
     // This prevents AbortError when scrubbing then playing
-    const targetTime = props.currentTime;
-    if (Math.abs(audioRef.value.currentTime - targetTime) > 0.05) {
-      console.log('[ClipEditorPreview] Seeking audio before play:', targetTime);
-      audioRef.value.currentTime = targetTime;
+    // Convert timeline time to audio time (accounts for proxy trim offset)
+    const audioTime = getAudioSourceTime(props.currentTime);
+    if (Math.abs(audioRef.value.currentTime - audioTime) > 0.05) {
+      console.log('[ClipEditorPreview] Seeking audio before play to audio time:', audioTime, '(timeline:', props.currentTime, ')');
+      audioRef.value.currentTime = audioTime;
     }
     console.log('[ClipEditorPreview] Playing audio');
     audioRef.value.play().catch(err => {
@@ -505,10 +527,13 @@ watch(() => props.currentTime, (time) => {
   // Only sync when paused (scrubbing) to avoid interrupting play()
   if (props.isPlaying) return;
   
+  // Convert timeline time to audio time (accounts for proxy trim offset)
+  const audioTime = getAudioSourceTime(time);
+  
   // Only sync if difference is significant (> 0.1s) to avoid constant seeking
-  const diff = Math.abs(audioRef.value.currentTime - time);
+  const diff = Math.abs(audioRef.value.currentTime - audioTime);
   if (diff > 0.1) {
-    audioRef.value.currentTime = time;
+    audioRef.value.currentTime = audioTime;
   }
 });
 

@@ -571,7 +571,8 @@ function handleMediaUpdated() {
 }
 
 async function handleVideoUploaded(mediaId: string, filePath: string) {
-  console.log('[ClipEditorDialog] Video uploaded, starting pre-decoding:', mediaId);
+  console.log('[ClipEditorDialog] 🔥 handleVideoUploaded CALLED - mediaId:', mediaId);
+  console.log('[ClipEditorDialog] 🔥 handleVideoUploaded - filePath:', filePath);
   
   // Create a temporary VideoSource object for pre-decoding
   // The actual source will be created when added to timeline
@@ -586,12 +587,21 @@ async function handleVideoUploaded(mediaId: string, filePath: string) {
     order_index: 0,
   };
   
+  console.log('[ClipEditorDialog] 🔥 About to check previewRef and call preloadVideo...');
+  
   if (previewRef.value && (previewRef.value as any).preloadVideo) {
+    console.log('[ClipEditorDialog] 🔥 previewRef and preloadVideo method exist, calling now...');
     try {
       await (previewRef.value as any).preloadVideo(tempSource);
       console.log('[ClipEditorDialog] ✅ Video pre-decoded successfully:', mediaId);
     } catch (error) {
       console.error('[ClipEditorDialog] ❌ Failed to pre-decode video:', error);
+    }
+  } else {
+    console.log('[ClipEditorDialog] ❌ previewRef or preloadVideo method missing');
+    console.log('[ClipEditorDialog] ❌ previewRef.value:', previewRef.value);
+    if (previewRef.value) {
+      console.log('[ClipEditorDialog] ❌ preloadVideo method exists:', !!(previewRef.value as any).preloadVideo);
     }
   }
 }

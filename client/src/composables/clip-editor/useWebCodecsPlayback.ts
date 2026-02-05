@@ -37,17 +37,29 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   const { canvasRef, currentTime, isPlaying, videoSources, getEffectivePathWithOffset, onError } = options;
 
   // Frame cache - keep decoded frames in memory for instant playback
-  // Eviction is time-based: keep frames within [playhead - 0.5s, playhead + 2.0s]
+  // For fully decoded sources, we keep ALL frames (no eviction)
+  // For partially decoded sources, we use time-based eviction
   const frameCache = new Map<string, CachedFrame>();
   const MAX_BEHIND_S = 0.5;   // Keep frames 0.5s behind playhead
   const MAX_AHEAD_S = 2.0;    // Keep frames up to 2s ahead of playhead
   
+  // Track which sources have been fully decoded - these should NEVER be pruned
+  const fullyDecodedSources = new Set<string>();
+  
+  // Track sources currently being decoded to prevent duplicate decode calls
+  const decodingInProgress = new Set<string>();
+  
   // Helper: evict frames that are too far from playhead
+  // IMPORTANT: Never prune frames from fully decoded sources!
   function pruneCache(playheadTime: number, sourceId?: string) {
-    // During prefill (not playing), don't prune ahead based on playhead=0
-    // Otherwise we'd delete all future frames before playback starts
+    // During prefill (not playing), don't prune at all
     if (!isPlaying.value) {
-      // Optionally prune only extreme behind (probably none yet during prefill)
+      return;
+    }
+    
+    // If the source is fully decoded, NEVER prune its frames
+    // This is critical for seamless multi-source playback
+    if (sourceId && fullyDecodedSources.has(sourceId)) {
       return;
     }
     
@@ -56,7 +68,10 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     const keysToDelete: string[] = [];
     
     for (const [key, frame] of frameCache.entries()) {
-      // Only prune frames for the specified source (or all if not specified)
+      // NEVER prune frames from fully decoded sources
+      if (fullyDecodedSources.has(frame.sourceId)) continue;
+      
+      // Only prune frames for the specified source (or all non-fully-decoded if not specified)
       if (sourceId && frame.sourceId !== sourceId) continue;
       
       // Evict if too far behind or too far ahead
@@ -469,7 +484,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     return source.trim_start + offsetInSource;
   }
 
-  // Generate cache key for a frame
+  // Generate cache key for a frame (only source ID and timestamp, not path)
   function getCacheKey(sourceId: string, timestamp: number): string {
     return `${sourceId}:${Math.round(timestamp * 1000000)}`; // Convert seconds to microseconds to match decoder
   }
@@ -491,12 +506,21 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     // If it's the original path and we expect a proxy, wait for proxy to be ready
     const isOriginalFile = !videoPath.includes('proxy_');
     if (isOriginalFile && getEffectivePathWithOffset) {
-      console.warn(`[WebCodecsPlayback] ⚠️ Attempting to load original file instead of proxy for source ${source.id}`);
-      console.warn(`[WebCodecsPlayback] Path: ${videoPath.split('\\').pop()}`);
-      console.warn(`[WebCodecsPlayback] This will cause slow playback. Waiting for proxy...`);
+      // Only warn if we actually have a proxy registered for this source
+      const proxyKey = `${source.id}_t${source.trim_start || 0}`;
+      const proxyCache = localStorage.getItem('proxyCache');
+      if (proxyCache) {
+        const proxies = JSON.parse(proxyCache);
+        const proxy = proxies[proxyKey];
+        if (proxy && proxy.status === 'ready') {
+          console.warn(`[WebCodecsPlayback] ⚠️ Proxy exists but loading original file for source ${source.id}`);
+          console.warn(`[WebCodecsPlayback] Path: ${videoPath.split('\\').pop()}`);
+          console.warn(`[WebCodecsPlayback] This will cause slow playback. Waiting for proxy...`);
+        }
+      }
     }
 
-    const cacheKey = `${source.id}:${videoPath}`;
+    const cacheKey = source.id; // Use only source ID, not path, to match frame cache
 
     // CRITICAL: Check if decoder is already being initialized
     if (initializingDecoders.has(cacheKey)) {
@@ -587,13 +611,14 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
           const decoder = new VideoDecoder({
             output: (frame: VideoFrame) => {
               // Cache decoded frame
+              // WebCodecs frame.timestamp is already in microseconds
               const key = `${source.id}:${frame.timestamp}`;
               
               // Convert VideoFrame to ImageBitmap asynchronously
               createImageBitmap(frame).then(bitmap => {
                 frameCache.set(key, {
                   bitmap,
-                  timestamp: frame.timestamp / 1000000, // Convert to seconds
+                  timestamp: frame.timestamp / 1000000, // Convert to seconds for internal use
                   sourceId: source.id
                 });
                 frame.close();
@@ -632,34 +657,11 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
           decoders.set(cacheKey, decoderState);
           console.log(`[WebCodecsPlayback] Decoder stored with key: ${cacheKey.substring(0, 60)}...`);
           
-          // CRITICAL: Read the ENTIRE video, not just 2 seconds
-          // This fixes the "plays a few seconds then freezes" issue
-          console.log('[WebCodecsPlayback] Starting full video stream decode...');
-          const videoStream = await demuxer.read('video', 0, mediaInfo.duration || 999999);
-          const reader = videoStream.getReader();
-          let chunkCount = 0;
-          
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            decoder.decode(value);
-            chunkCount++;
-            
-            // Log progress every 100 chunks
-            if (chunkCount % 100 === 0) {
-              console.log(`[WebCodecsPlayback] Decoded ${chunkCount} chunks...`);
-            }
-          }
-          
-          await decoder.flush();
-          decoderState.fullDecodeComplete = true;
-          console.log(`[WebCodecsPlayback] ✅ Full video decoded: ${chunkCount} chunks total`);
-          
-          console.log('[WebCodecsPlayback] Initial frames decoded and cached');
+          console.log('[WebCodecsPlayback] Decoder initialized successfully');
           updateSourceLoading(source.id, {
             isLoading: false,
             progress: 100,
-            message: 'Ready'
+            message: 'Decoder ready'
           });
 
           // Wait for initialization to complete
@@ -742,13 +744,26 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
 
     const source = findSourceAtTime(timestamp);
     
-    // Handle source transitions
+    // Handle source transitions - with full pre-decoding, this is just for logging
     if (source && currentSourceId !== source.id) {
       console.log(`[WebCodecsPlayback] Source transition: ${currentSourceId || 'none'} -> ${source.id}`);
       currentSourceId = source.id;
-
-      // Initialize decoder for new source
-      initializeDecoder(source);
+      
+      // Check if the new source is fully decoded
+      if (fullyDecodedSources.has(source.id)) {
+        const sourceFrames = Array.from(frameCache.values()).filter(f => f.sourceId === source.id);
+        console.log(`[WebCodecsPlayback] ✓ Source ${source.id} is fully decoded with ${sourceFrames.length} frames ready`);
+      } else if (decodingInProgress.has(source.id)) {
+        console.log(`[WebCodecsPlayback] ⏳ Source ${source.id} is still being decoded...`);
+      } else {
+        // Source not decoded yet - trigger decode now
+        console.log(`[WebCodecsPlayback] ⚠️ Source ${source.id} not decoded, starting decode now`);
+        decodingInProgress.add(source.id);
+        fullDecodeVideo(source).catch(err => {
+          console.warn(`[WebCodecsPlayback] Failed to decode source ${source.id}:`, err);
+          decodingInProgress.delete(source.id);
+        });
+      }
     }
 
     if (!source) {
@@ -765,7 +780,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     const adjustedTime = trimOffset > 0 ? sourceTime - trimOffset : sourceTime;
 
     const { path: videoPath } = resolveVideoPath(source);
-    const cacheKeyForDecoder = `${source.id}:${videoPath}`;
+    const cacheKeyForDecoder = source.id;
     const decoderState = decoders.get(cacheKeyForDecoder);
     if (decoderState?.durationSec !== undefined && adjustedTime > decoderState.durationSec) {
       const sourceFrames = Array.from(frameCache.values()).filter((f) => f.sourceId === source.id);
@@ -785,81 +800,40 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       return;
     }
 
+    // Track last render for scrub detection (no longer used for cache clearing)
     if (lastRenderSourceId !== source.id) {
       lastRenderSourceId = source.id;
-      lastRenderTime = adjustedTime;
-    } else if (!isPlaying.value && Math.abs(adjustedTime - lastRenderTime) > 0.25) {
-      if (!decoderState?.fullDecodeComplete) {
-        clearSourceCache(source);
-        resetDecoder(source);
-        initializeDecoder(source, adjustedTime);
-      }
       lastRenderTime = adjustedTime;
     } else {
       lastRenderTime = adjustedTime;
     }
-
-    // Continuously decode frames ahead of playhead during playback
-    if (isPlaying.value && source) {
-      const { path: videoPath } = resolveVideoPath(source);
-      const cacheKey = `${source.id}:${videoPath}`;
-      const decoderState = decoders.get(cacheKey);
-      
-      if (decoderState && decoderState.isInitialized) {
-        // Check if we need more frames ahead
-        const sourceCachedFrames = Array.from(frameCache.values()).filter(f => f.sourceId === source.id);
-        const maxCachedTime = sourceCachedFrames.length > 0 
-          ? Math.max(...sourceCachedFrames.map(f => f.timestamp))
-          : 0;
-        
-        // If we don't have enough frames ahead (less than 1 second), decode more
-        const needsMoreFrames = maxCachedTime < adjustedTime + 1;
-        
-        if (needsMoreFrames && !decoderState.isDecoding) {
-          decoderState.isDecoding = true;
-          const demuxer = decoderState.mp4boxFile as WebDemuxer;
-          const startTime = Math.max(maxCachedTime + 0.01, adjustedTime); // Start just after last cached frame
-          const endTime = adjustedTime + 3; // Decode 3 seconds ahead
-          
-          console.log(`[WebCodecsPlayback] 📥 Decoding ahead: ${startTime.toFixed(2)}s → ${endTime.toFixed(2)}s (playhead: ${adjustedTime.toFixed(2)}s, maxCached: ${maxCachedTime.toFixed(2)}s)`);
-          
-          // Decode frames asynchronously (don't await to avoid blocking render)
-          (async () => {
-            try {
-              const videoStream = await demuxer.read('video', startTime, endTime);
-              const reader = videoStream.getReader();
-              let chunkCount = 0;
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                decoderState.decoder.decode(value);
-                chunkCount++;
-              }
-              console.log(`[WebCodecsPlayback] ✅ Decoded ${chunkCount} chunks ahead`);
-            } catch (err) {
-              console.warn('[WebCodecsPlayback] Failed to decode ahead:', err);
-            } finally {
-              decoderState.isDecoding = false;
-            }
-          })();
-        }
-      }
-    }
-
-    // Initialize decoder for upcoming sources (but don't seek during playback)
-    if (isPlaying.value) {
-      const upcoming = videoSources.value.find(
-        (candidate) => candidate.start_time > timestamp && candidate.start_time - timestamp <= 3,
-      );
-      if (upcoming) {
-        initializeDecoder(upcoming, 0);
-      }
-    }
+    
+    // With full pre-decoding, we no longer need on-demand decoding during playback
+    // All frames should already be in cache from the initial decode
     
     // Look for cached frame
     const cacheKey = getCacheKey(source.id, adjustedTime);
     let cachedFrame = frameCache.get(cacheKey);
+    
+    // Debug: Check what frames we have for this source
+    if (!cachedFrame && cacheDebugCounter % 60 === 0) {
+      const sourceFrames = Array.from(frameCache.values()).filter(f => f.sourceId === source.id);
+      const sampleFrames = sourceFrames
+        .slice(0, 3)
+        .map((f) => Number(f.timestamp.toFixed(3)));
+      console.warn('[WebCodecsPlayback] No cached frame for time, debug:', {
+        sourceId: source.id,
+        adjustedTime: Number(adjustedTime.toFixed(3)),
+        cacheSize: frameCache.size,
+        sourceFramesCount: sourceFrames.length,
+        sampleFrames,
+        cacheKey,
+        fullDecodeComplete: decoders.get(source.id)?.fullDecodeComplete
+      });
+    }
+    
     if (!cachedFrame) {
+      // Try to find the closest frame if exact match not found
       let closestFrame: CachedFrame | null = null;
       let closestDelta = Infinity;
       let latestFrame: CachedFrame | null = null;
@@ -982,8 +956,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     let decodeQueueSize = 0;
     const activeSource = findSourceAtTime(currentTime.value);
     if (activeSource && currentSourceId) {
-      const { path: videoPath } = resolveVideoPath(activeSource);
-      const cacheKey = `${activeSource.id}:${videoPath}`;
+      const cacheKey = activeSource.id;
       const decoderStateObj = decoders.get(cacheKey);
       if (decoderStateObj?.decoder) {
         decoderState = decoderStateObj.decoder.state;
@@ -1101,7 +1074,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       const activeSource = findSourceAtTime(currentTime.value);
       if (activeSource && currentSourceId) {
         const { path: videoPath } = resolveVideoPath(activeSource);
-        const cacheKey = `${activeSource.id}:${videoPath}`;
+        const cacheKey = activeSource.id;
         const decoderState = decoders.get(cacheKey);
         if (decoderState?.decoder) {
           drainPending(currentTime.value, decoderState.decoder);
@@ -1212,8 +1185,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   }
 
   function resetDecoder(source: VideoSource) {
-    const { path: videoPath } = resolveVideoPath(source);
-    const decoderKey = `${source.id}:${videoPath}`;
+    const decoderKey = source.id;
     const existing = decoders.get(decoderKey);
     if (existing) {
       if (existing.decoder.state !== 'closed') {
@@ -1255,29 +1227,212 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     }
   });
 
-  // Watch for video sources changes - initialize decoder for current source
-  watch(videoSources, async (sources) => {
+  // Watch for video sources changes - DECODE ALL SOURCES when added to timeline
+  // This is the key to professional-grade playback: pre-decode everything upfront
+  watch(videoSources, async (sources, oldSources) => {
     if (!sources || sources.length === 0 || !isInitialized.value) return;
     
-    const source = findSourceAtTime(currentTime.value);
-    if (source) {
-      const { path: videoPath } = resolveVideoPath(source);
-      const cacheKey = `${source.id}:${videoPath}`;
-      
-      if (!decoders.has(cacheKey)) {
-        console.log(`[WebCodecsPlayback] Video sources loaded, initializing decoder for source ${source.id}`);
-        await initializeDecoder(source);
+    console.log(`[WebCodecsPlayback] 📺 Video sources changed: ${sources.length} sources on timeline`);
+    
+    // Find new sources that need to be decoded
+    const oldSourceIds = new Set((oldSources || []).map(s => s.id));
+    const newSources = sources.filter(s => !oldSourceIds.has(s.id));
+    
+    if (newSources.length > 0) {
+      console.log(`[WebCodecsPlayback] 🆕 ${newSources.length} new source(s) added to timeline`);
+    }
+    
+    // Decode ALL sources that aren't already fully decoded
+    for (const source of sources) {
+      // Skip if already fully decoded
+      if (fullyDecodedSources.has(source.id)) {
+        console.log(`[WebCodecsPlayback] ✓ Source ${source.id} already fully decoded, skipping`);
+        continue;
       }
       
-      // Render initial frame after decoder is ready
-      renderFrame(currentTime.value);
+      // Skip if currently being decoded
+      if (decodingInProgress.has(source.id)) {
+        console.log(`[WebCodecsPlayback] ⏳ Source ${source.id} decode already in progress, skipping`);
+        continue;
+      }
+      
+      // Check if this source has frames in cache
+      const sourceFrames = Array.from(frameCache.values()).filter(f => f.sourceId === source.id);
+      if (sourceFrames.length > 0) {
+        // Has some frames but not marked as fully decoded - might be partial
+        console.log(`[WebCodecsPlayback] ⚠️ Source ${source.id} has ${sourceFrames.length} frames but not marked as fully decoded`);
+      }
+      
+      // Start full decode for this source
+      const duration = source.end_time - source.start_time;
+      if (duration && duration > 0 && duration < 120) { // Decode videos under 2 minutes
+        console.log(`[WebCodecsPlayback] � Starting full decode for source ${source.id} (${duration.toFixed(1)}s)`);
+        decodingInProgress.add(source.id);
+        
+        // Decode in background - don't await to allow parallel decoding
+        fullDecodeVideo(source).catch(err => {
+          console.warn(`[WebCodecsPlayback] Failed to decode source ${source.id}:`, err);
+          decodingInProgress.delete(source.id);
+        });
+      } else {
+        console.log(`[WebCodecsPlayback] ⚠️ Source ${source.id} too long (${duration?.toFixed(1)}s), skipping full decode`);
+      }
     }
-  }, { immediate: true });
+    
+    // Render initial frame
+    renderFrame(currentTime.value);
+  }, { immediate: true, deep: true });
+
+  // Full video decoding for pre-upload processing
+  async function fullDecodeVideo(source: VideoSource, onProgress?: (progress: number) => void): Promise<void> {
+    console.log(`[WebCodecsPlayback] 🚀 Starting FULL video decode for ${source.id}`);
+    console.log(`[WebCodecsPlayback] 🚀 fullDecodeVideo file path: ${source.file_path}`);
+
+    // Check if we should use proxy for this source
+    const effectivePath = getEffectivePathWithOffset?.(source.id, source.file_path, source.trim_start);
+    if (effectivePath && !effectivePath.path.includes('proxy_')) {
+      // Check if proxy is actually registered
+      const proxyKey = `${source.id}_t${source.trim_start || 0}`;
+      const proxyCache = localStorage.getItem('proxyCache');
+      if (proxyCache) {
+        const proxies = JSON.parse(proxyCache);
+        const proxy = proxies[proxyKey];
+        if (proxy && proxy.status === 'ready') {
+          console.log(`[WebCodecsPlayback] ℹ️ Using original file instead of available proxy for source ${source.id}`);
+          console.log(`[WebCodecsPlayback] Path: ${effectivePath.path.split('\\').pop()}`);
+        }
+      }
+    }
+
+    // Initialize decoder for this source
+    const decoderState = await initializeDecoder(source);
+    if (!decoderState) {
+      throw new Error(`Failed to initialize decoder for source ${source.id}`);
+    }
+
+    const { path: videoPath } = resolveVideoPath(source);
+    const cacheKey = source.id; // Use only source ID, not path, to match frame cache
+    
+    // Update loading state for decoding
+    updateSourceLoading(source.id, {
+      isLoading: true,
+      progress: 0,
+      message: 'Decoding video...'
+    });
+
+    try {
+      const demuxer = decoderState.mp4boxFile as WebDemuxer;
+      const mediaInfo = await demuxer.getMediaInfo();
+      
+      console.log(`[WebCodecsPlayback] 📹 Starting full decode of ${mediaInfo.duration}s video`);
+      
+      // Read and decode the ENTIRE video
+      const videoStream = await demuxer.read('video', 0, mediaInfo.duration || 999999);
+      const reader = videoStream.getReader();
+      let chunkCount = 0;
+      
+      // Decode all chunks and track progress
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        decoderState.decoder.decode(value);
+        chunkCount++;
+        
+        // Update progress every 50 chunks (don't update too frequently)
+        if (chunkCount % 50 === 0) {
+          // Estimate progress based on chunks processed (rough estimate)
+          const estimatedProgress = Math.min((chunkCount / 1000) * 100, 95); // Cap at 95% until complete
+          updateSourceLoading(source.id, {
+            isLoading: true,
+            progress: estimatedProgress,
+            message: `Decoding video... ${Math.round(estimatedProgress)}%`
+          });
+          
+          if (onProgress) {
+            onProgress(estimatedProgress);
+          }
+        }
+      }
+      
+      console.log(`[WebCodecsPlayback] 📦 Processed ${chunkCount} chunks, waiting for decoder output...`);
+      
+      // Wait for all frames to be decoded
+      await decoderState.decoder.flush();
+      decoderState.fullDecodeComplete = true;
+      
+      // Give a moment for all frame callbacks to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Mark this source as fully decoded - its frames should NEVER be pruned
+      fullyDecodedSources.add(source.id);
+      decodingInProgress.delete(source.id);
+      
+      // Mark as complete
+      updateSourceLoading(source.id, {
+        isLoading: false,
+        progress: 100,
+        message: 'Fully decoded'
+      });
+      
+      // Count frames for this source
+      const sourceFrameCount = Array.from(frameCache.values()).filter(f => f.sourceId === source.id).length;
+      console.log(`[WebCodecsPlayback] ✅ FULL video decode complete: ${chunkCount} chunks decoded`);
+      console.log(`[WebCodecsPlayback] 📊 Source ${source.id} has ${sourceFrameCount} frames cached`);
+      console.log(`[WebCodecsPlayback] 📊 Total frame cache size: ${frameCache.size} frames`);
+      
+    } catch (error) {
+      console.error(`[WebCodecsPlayback] ❌ Full decode failed for ${source.id}:`, error);
+      updateSourceLoading(source.id, {
+        isLoading: false,
+        progress: 0,
+        message: 'Decode failed'
+      });
+      throw error;
+    }
+  }
+
+  // Preload video method for media upload flow
+  async function preloadVideo(source: VideoSource): Promise<void> {
+    console.log(`[WebCodecsPlayback] 🎬 preloadVideo CALLED with source: ${source.id}`);
+    console.log(`[WebCodecsPlayback] 🎬 Source file path: ${source.file_path}`);
+    
+    try {
+      // Full decode the video - this will be 100% complete before returning
+      console.log(`[WebCodecsPlayback] 🎬 About to call fullDecodeVideo...`);
+      await fullDecodeVideo(source);
+      console.log(`[WebCodecsPlayback] ✅ Video preloaded and fully decoded: ${source.id}`);
+    } catch (error) {
+      console.error(`[WebCodecsPlayback] ❌ Failed to preload video: ${source.id}`, error);
+      throw error;
+    }
+  }
 
   // Cleanup on unmount
   onUnmounted(() => {
     stopRendering();
     clearCache();
+  });
+
+  // Computed: check if all sources are fully decoded
+  const allSourcesDecoded = computed(() => {
+    if (videoSources.value.length === 0) return true;
+    return videoSources.value.every(s => fullyDecodedSources.has(s.id));
+  });
+  
+  // Computed: get decoding progress for all sources
+  const decodingStatus = computed(() => {
+    const total = videoSources.value.length;
+    const decoded = videoSources.value.filter(s => fullyDecodedSources.has(s.id)).length;
+    const inProgress = videoSources.value.filter(s => decodingInProgress.has(s.id)).length;
+    return {
+      total,
+      decoded,
+      inProgress,
+      pending: total - decoded - inProgress,
+      isComplete: decoded === total,
+      progress: total > 0 ? (decoded / total) * 100 : 100
+    };
   });
 
   return {
@@ -1288,8 +1443,12 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     updateSourceLoading,
     renderFps,
     cacheSize,
+    allSourcesDecoded,
+    decodingStatus,
     initialize,
     clearCache,
     renderFrame,
+    preloadVideo, // Expose preloadVideo for media upload flow
+    fullDecodeVideo, // Expose for direct use if needed
   };
 }
