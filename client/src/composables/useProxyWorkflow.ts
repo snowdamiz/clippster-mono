@@ -157,6 +157,15 @@ export function useProxyWorkflow() {
     const proxy = proxyFiles.value.get(proxyKey);
     if (!proxy) return undefined;
     
+    // Check if existing proxy has wrong duration - invalidate if so
+    if (proxy.status === 'ready' && proxy.trimDuration !== undefined && trimDuration !== undefined) {
+      if (Math.abs(proxy.trimDuration - trimDuration) > 0.5) {
+        console.log(`[useProxyWorkflow] Invalidating proxy ${proxyKey}: duration mismatch ${proxy.trimDuration}s vs ${trimDuration}s`);
+        proxy.status = 'pending';
+        proxy.proxyPath = '';
+      }
+    }
+    
     // If already ready, return immediately
     if (proxy.status === 'ready') {
       return proxyKey;

@@ -94,7 +94,7 @@ pub async fn generate_proxy_file(
     
     args.extend(["-i".to_string(), source_path.clone()]);
     
-    // Add duration limit AFTER input
+    // Add duration limit AFTER input (web-demuxer has no sample limits)
     if let Some(duration) = trim_duration {
         if duration > 0.0 {
             args.extend(["-t".to_string(), format!("{:.3}", duration)]);

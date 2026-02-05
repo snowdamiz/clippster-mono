@@ -1,5 +1,5 @@
 import { ref, watch, onUnmounted, reactive, computed, type Ref } from 'vue';
-import * as MP4Box from 'mp4box';
+import { WebDemuxer } from 'web-demuxer';
 import type { VideoSource } from '../usePlaybackEngine';
 
 interface WebCodecsPlaybackOptions {
@@ -18,6 +18,9 @@ interface DecoderState {
   sourceId: string;
   videoPath: string;
   isInitialized: boolean;
+  isDecoding?: boolean;
+  durationSec?: number;
+  fullDecodeComplete?: boolean;
 }
 
 interface CachedFrame {
@@ -50,6 +53,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     
     const minTime = playheadTime - MAX_BEHIND_S;
     const maxTime = playheadTime + MAX_AHEAD_S;
+    const keysToDelete: string[] = [];
     
     for (const [key, frame] of frameCache.entries()) {
       // Only prune frames for the specified source (or all if not specified)
@@ -57,6 +61,17 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       
       // Evict if too far behind or too far ahead
       if (frame.timestamp < minTime || frame.timestamp > maxTime) {
+        keysToDelete.push(key);
+      }
+    }
+    
+    if (keysToDelete.length > 0) {
+      console.log(`[WebCodecsPlayback] 🗑️ pruneCache: Evicting ${keysToDelete.length} frames (playhead=${playheadTime.toFixed(3)}s, window=[${minTime.toFixed(3)}s→${maxTime.toFixed(3)}s], sourceId=${sourceId || 'all'})`);
+    }
+    
+    for (const key of keysToDelete) {
+      const frame = frameCache.get(key);
+      if (frame) {
         // Clear lastRenderedFrame if it's this bitmap
         if (lastRenderedFrame === frame.bitmap) {
           lastRenderedFrame = null;
@@ -456,7 +471,7 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
 
   // Generate cache key for a frame
   function getCacheKey(sourceId: string, timestamp: number): string {
-    return `${sourceId}:${Math.round(timestamp * 1000)}`;
+    return `${sourceId}:${Math.round(timestamp * 1000000)}`; // Convert seconds to microseconds to match decoder
   }
 
   // Check if WebCodecs is supported
@@ -491,11 +506,6 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
       }
     }
 
-    const inFlight = initializingDecoders.get(cacheKey);
-    if (inFlight) {
-      return inFlight;
-    }
-
     console.log(`[WebCodecsPlayback] Initializing decoder for source ${source.id} with path: ${videoPath.split('\\').pop()}`);
     
     // Set loading state for this source
@@ -520,515 +530,107 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
           const videoUrl = `http://localhost:48276/video/${encodedPath}`;
           console.log(`[WebCodecsPlayback] Fetching from video server: ${videoUrl}`);
           
-          // Disable MP4Box debug logging in production (too verbose)
-          if (MP4Box.Log) {
-            MP4Box.Log.setLogLevel(MP4Box.Log.error);
-          }
+          // Use web-demuxer - no sample limits, designed for WebCodecs
+          // Must use absolute URL for WASM file since web-demuxer runs in a Web Worker
+          const wasmUrl = new URL('/web-demuxer.wasm', window.location.origin).href;
+          const demuxer = new WebDemuxer({
+            wasmFilePath: wasmUrl
+          });
+          console.log('[WebCodecsPlayback] Created WebDemuxer instance with WASM:', wasmUrl);
           
-          const mp4boxFile = MP4Box.createFile();
+          // Load video with web-demuxer
+          await demuxer.load(videoUrl);
+          console.log('[WebCodecsPlayback] Video loaded successfully');
           
-          // CRITICAL: Must set discardMdatData = false to extract samples
-          // If true, MP4Box throws away the actual video sample bytes and onSamples never fires
-          mp4boxFile.discardMdatData = false;
-          console.log('[WebCodecsPlayback] MP4Box discardMdatData set to false');
+          // Get media info to check video length
+          const mediaInfo = await demuxer.getMediaInfo();
+          console.log('[WebCodecsPlayback] Media info:', {
+            duration: mediaInfo.duration,
+            nbStreams: mediaInfo.nb_streams,
+            videoStream: mediaInfo.streams.find(s => s.codec_type_string === 'video')
+          });
           
-          // CRITICAL: Use streaming like the W3C WebCodecs example
-          // Large chunks cause onSamples to never fire (GitHub issue #520)
-          // Must use pipeTo() with small chunks for MP4Box to work correctly
-
-          // Health check the video server first
-          console.log('[WebCodecsPlayback] Checking video server health...');
-          try {
-            const healthCheck = await fetch(videoUrl, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
-            console.log('[WebCodecsPlayback] Video server health check:', healthCheck.status);
-          } catch (e) {
-            console.error('[WebCodecsPlayback] Video server not responding:', e);
-            throw new Error('Video server is not responding. Please restart the application.');
-          }
-
-          // Set up MP4Box handlers and process using STREAMING like the W3C WebCodecs example
-          // CRITICAL: Large chunks (64kb+) cause onSamples to never fire (GitHub issue #520)
-          const decoderState = await new Promise<DecoderState | null>((resolveInner, rejectInner) => {
-            let videoTrack: any = null;
-            let decoder: VideoDecoder | null = null;
-            let decoderConfigDebug: {
-              codec?: string;
-              descriptionBytes?: number;
-              avcCBytes?: number;
-              spsCount?: number;
-              ppsCount?: number;
-            } | null = null;
-            let isResolved = false;
-            let decoderConfigured = false;
-            let decodeErrorLogged = false;
-            let hasKeyframe = false;
-            let streamOffset = 0;
-
-            // MP4FileSink class to wrap MP4Box as a WritableStream sink (from W3C example)
-            class MP4FileSink {
-              write(chunk: Uint8Array) {
-                // MP4Box.js requires buffers to be ArrayBuffers with fileStart property
-                // CRITICAL: Use slice() to create standalone ArrayBuffer of exact size
-                const buffer = chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength) as ArrayBuffer & { fileStart: number };
-                buffer.fileStart = streamOffset;
-                streamOffset += buffer.byteLength;
-                
-                // Log progress periodically
-                if (streamOffset % (1024 * 1024) < chunk.byteLength) {
-                  console.log(`[WebCodecsPlayback] Streaming: ${(streamOffset / (1024 * 1024)).toFixed(1)} MiB, fileStart=${buffer.fileStart}`);
-                }
-                
-                mp4boxFile.appendBuffer(buffer);
-                
-                // DO NOT flush() here - flush() means "end-of-file" in MP4Box
-                // Calling it after each chunk prevents sample extraction
-                // Only flush once when stream is complete (in close())
-              }
+          // Get video decoder config from web-demuxer
+          const videoDecoderConfig = await demuxer.getDecoderConfig('video');
+          console.log('[WebCodecsPlayback] Got decoder config:', videoDecoderConfig);
+          
+          // Create WebCodecs VideoDecoder
+          const decoder = new VideoDecoder({
+            output: (frame: VideoFrame) => {
+              // Cache decoded frame
+              const key = `${source.id}:${frame.timestamp}`;
               
-              close() {
-                console.log('[WebCodecsPlayback] Stream complete (fileSink closed)');
-                // NOTE: Do NOT call mp4boxFile.flush() here
-                // flush() signals EOF to MP4Box, which stops further sample extraction
-                // We want MP4Box to continue extracting samples as they arrive during playback
-                // flush() should only be called explicitly when seeking or switching sources
-              }
-            }
-
-            mp4boxFile.onError = (e: any) => {
-              console.error('[WebCodecsPlayback] MP4Box error:', e);
-              if (!isResolved) {
-                isResolved = true;
-                rejectInner(new Error(`MP4Box error: ${e}`));
-              }
-            };
-
-            // Register onSamples BEFORE starting fetch (as per W3C example)
-            mp4boxFile.onSamples = async (trackId: number, _user: unknown, samples: any[]) => {
-              try {
-                console.log(`[WebCodecsPlayback] onSamples called! trackId=${trackId}, samples=${samples.length}, decoderConfigured=${decoderConfigured}, hasKeyframe=${hasKeyframe}, decoderState=${decoder?.state}`);
-                
-                let skippedCount = 0;
-                let queuedCount = 0;
-                let errorCount = 0;
-                
-                // Get track timescale for timestamp conversion
-                const track = videoTrack;
-                const timescale = track?.timescale || 1000;
-                
-                // Decode samples into frames
-                for (const sample of samples) {
-                  try {
-                    // Skip samples with no data
-                    if (!sample?.data || sample.data.byteLength === 0) {
-                      skippedCount++;
-                      continue;
-                    }
-                    
-                    // Ensure data is Uint8Array
-                    const data = sample.data instanceof Uint8Array 
-                      ? sample.data 
-                      : new Uint8Array(sample.data);
-                    
-                    if (!decoderConfigured && track?.codec?.startsWith('avc') && sample.is_sync) {
-                      const extracted = extractAvcParameterSets(data);
-                      if (extracted) {
-                        const profile = extracted.sps[0]?.[1] ?? 0;
-                        const compatibility = extracted.sps[0]?.[2] ?? 0;
-                        const level = extracted.sps[0]?.[3] ?? 0;
-                        const description = buildAvcConfigRecord({
-                          spsList: extracted.sps,
-                          ppsList: extracted.pps,
-                          profile,
-                          compatibility,
-                          level,
-                        });
-                        if (description && decoder) {
-                          const config: VideoDecoderConfig = {
-                            codec: track.codec,
-                            codedWidth: track.video?.width || 1920,
-                            codedHeight: track.video?.height || 1080,
-                            hardwareAcceleration: 'prefer-hardware',
-                            description,
-                          };
-                          decoder.configure(config);
-                          decoderConfigured = true;
-                          decoderConfigDebug = {
-                            codec: track.codec,
-                            descriptionBytes: description.byteLength,
-                            avcCBytes: undefined,
-                            spsCount: extracted.sps.length,
-                            ppsCount: extracted.pps.length,
-                          };
-                          console.log('[WebCodecsPlayback] Decoder configured from keyframe SPS/PPS.', {
-                            trackId: track.id,
-                            descriptionBytes: description.byteLength,
-                            spsCount: extracted.sps.length,
-                            ppsCount: extracted.pps.length,
-                          });
-                        }
-                      } else {
-                        console.warn('[WebCodecsPlayback] Failed to extract SPS/PPS from keyframe sample.', {
-                          trackId: track.id,
-                          sampleSize: data.byteLength,
-                        });
-                      }
-                    }
-                    
-                    if (!hasKeyframe) {
-                      if (!sample.is_sync) {
-                        skippedCount++;
-                        continue;
-                      }
-                      hasKeyframe = true;
-                    }
-                    
-                    // Normalize timestamps to start at 0 for this source
-                    const rawCts = sample.cts ?? sample.dts ?? 0;
-                    
-                    // Set base CTS from first sample if not already set
-                    if (!baseCtsBySource.has(source.id) && samples.length > 0) {
-                      baseCtsBySource.set(source.id, rawCts);
-                      console.log(`[WebCodecsPlayback] Base CTS for source ${source.id}: ${rawCts} (timescale=${timescale}, ~${(rawCts/timescale).toFixed(2)}s)`);
-                    }
-                    
-                    const baseCts = baseCtsBySource.get(source.id) ?? 0;
-                    const normCts = rawCts - baseCts; // Now starts near 0
-                    
-                    // Convert normalized timestamps
-                    const timeSec = normCts / timescale;
-                    const timestampUs = Math.round((normCts * 1_000_000) / timescale);
-                    const durationUs = Math.max(1, Math.round((sample.duration * 1_000_000) / timescale));
-                    
-                    // Create pending sample for on-demand decoding
-                    const pendingSample: PendingSample = {
-                      timeSec,
-                      timestampUs,
-                      durationUs,
-                      isKey: !!sample.is_sync,
-                      data,
-                    };
-                    
-                    // Queue sample to pending buffer
-                    pendingSamples.push(pendingSample);
-                    queuedCount++;
-                  } catch (sampleError) {
-                    errorCount++;
-                    console.warn('[WebCodecsPlayback] Sample processing error (skipping):', sampleError);
-                    continue;
-                  }
-                }
-                
-                if (queuedCount > 0 || skippedCount > 0 || errorCount > 0) {
-                  const totalPending = pendingSamples.length;
-                  console.log(`[WebCodecsPlayback] onSamples: queued=${queuedCount}, skipped=${skippedCount}, errors=${errorCount}, batch=${samples.length}, pendingTotal=${totalPending}, seenKeyframe=${hasKeyframe}`);
-                }
-                
-                // Release samples to free memory
-                mp4boxFile.releaseUsedSamples(trackId, samples[samples.length - 1].number);
-              } catch (onSamplesError) {
-                console.error('[WebCodecsPlayback] CRITICAL onSamples error:', onSamplesError);
-              }
-            };
-
-            mp4boxFile.onReady = (info: any) => {
-              updateSourceLoading(source.id, { progress: 30, message: 'Parsing video track...' });
-              console.log('[WebCodecsPlayback] MP4Box ready, tracks:', info.tracks.length);
-              
-              // Find video track
-              videoTrack = info.tracks.find((t: any) => t.type === 'video');
-              if (!videoTrack) {
-                if (!isResolved) {
-                  isResolved = true;
-                  rejectInner(new Error('No video track found'));
-                }
-                return;
-              }
-
-              console.log('[WebCodecsPlayback] Video track found:', videoTrack.codec || 'unknown');
-              console.log('[WebCodecsPlayback] Track details:', {
-                width: videoTrack.video?.width,
-                height: videoTrack.video?.height,
-                hasDescription: !!videoTrack.description,
-              });
-
-              // Create VideoDecoder
-              updateSourceLoading(source.id, { progress: 50, message: 'Configuring decoder...' });
-              
-              decoder = new VideoDecoder({
-                output: async (frame: VideoFrame) => {
-                  outputFrameCount++;
-                  const ts = frame.timestamp / 1_000_000;
-                  
-                  // Log every 60 frames to debug freeze
-                  if (outputFrameCount % 60 === 0) {
-                    console.log(`[WebCodecsPlayback] OUTPUT #${outputFrameCount}, queue:${frameCache.size}, lastTs:${ts.toFixed(3)}s`);
-                  }
-                  
-                  // Create ImageBitmap from frame (safer than caching VideoFrame)
-                  const frameTimeSec = frame.timestamp / 1_000_000;
-                  
-                  try {
-                    const bitmap = await createImageBitmap(frame);
-                    const frameCacheKey = getCacheKey(source.id, frameTimeSec);
-                    frameCache.set(frameCacheKey, {
-                      bitmap,
-                      timestamp: frameTimeSec,
-                      sourceId: source.id,
-                    });
-                    
-                    // Prune cache based on current playhead time
-                    pruneCache(currentTime.value, source.id);
-                  } catch (bitmapError) {
-                    console.warn('[WebCodecsPlayback] Failed to create ImageBitmap:', bitmapError);
-                  }
-                  
-                  // Always close the original frame from decoder
-                  frame.close();
-                  
-                  // Resolve initialization promise on first frame
-                  if (!isResolved && decoderConfigured) {
-                    isResolved = true;
-                    updateSourceLoading(source.id, {
-                      isLoading: false,
-                      progress: 100,
-                      message: 'Ready'
-                    });
-                    
-                    const decoderState: DecoderState = {
-                      decoder: decoder!,
-                      mp4boxFile,
-                      videoTrack: videoTrack!,
-                      sourceId: source.id,
-                      videoPath,
-                      isInitialized: true,
-                    };
-                    resolveInner(decoderState);
-                  }
-                  
-                  // Continue pumping after each output
-                  if (pumpDecoder) pumpDecoder();
-                },
-                error: (e: Error) => {
-                  console.error('[WebCodecsPlayback] Decoder error:', e);
-                  onError?.(e.message);
-                },
-              });
-
-              // Set up chunk pump mechanism for this decoder
-              pumpDecoder = () => {
-                if (isPumping) return;
-                if (!decoder || decoder.state === 'closed') return;
-                isPumping = true;
-                
-                const pump = () => {
-                  if (!decoder || decoder.state === 'closed') {
-                    isPumping = false;
-                    return;
-                  }
-                  
-                  try {
-                    while (pendingChunks.length > 0 && decoder.decodeQueueSize < MAX_QUEUE) {
-                      const chunk = pendingChunks.shift();
-                      if (chunk) {
-                        try {
-                          decoder.decode(chunk);
-                        } catch (decodeErr) {
-                          console.warn('[WebCodecsPlayback] decode() failed:', decodeErr);
-                        }
-                      }
-                    }
-                  } catch (e) {
-                    console.error('[WebCodecsPlayback] Pump error:', e);
-                  }
-                  
-                  if (pendingChunks.length > 0) {
-                    requestAnimationFrame(pump);
-                  } else {
-                    isPumping = false;
-                  }
-                };
-                
-                requestAnimationFrame(pump);
-              };
-
-              // Configure decoder with track info
-              const config: VideoDecoderConfig = {
-                codec: videoTrack.codec || 'avc1.64001f',
-                codedWidth: videoTrack.video?.width || 1920,
-                codedHeight: videoTrack.video?.height || 1080,
-                hardwareAcceleration: 'prefer-hardware', // Use GPU decoding
-              };
-
-              // Add description (codec-specific data) if available
-              const boxAvcC = getAvcCFromTrackBoxes(mp4boxFile, videoTrack.id);
-              const codecDescription =
-                normalizeCodecDescription(videoTrack.description) ||
-                normalizeCodecDescription(videoTrack.avcC) ||
-                normalizeCodecDescription(videoTrack.avcc) ||
-                normalizeCodecDescription(videoTrack.hvcC) ||
-                normalizeCodecDescription(videoTrack.vpcC) ||
-                normalizeCodecDescription(boxAvcC) ||
-                (videoTrack.codec?.startsWith('avc') ? buildAvcConfig(boxAvcC ?? videoTrack) : undefined);
-
-              const avcC = boxAvcC ?? videoTrack.avcC ?? videoTrack.avcc;
-              const spsCount = Array.isArray(avcC?.SPS ?? avcC?.sps) ? (avcC.SPS ?? avcC.sps).length : 0;
-              const ppsCount = Array.isArray(avcC?.PPS ?? avcC?.pps) ? (avcC.PPS ?? avcC.pps).length : 0;
-              const avcCData = normalizeCodecDescription(avcC);
-              decoderConfigDebug = {
-                codec: videoTrack.codec,
-                descriptionBytes: normalizeCodecDescription(videoTrack.description)?.byteLength ?? codecDescription?.byteLength,
-                avcCBytes: avcCData?.byteLength,
-                spsCount,
-                ppsCount,
-              };
-
-              console.log('[WebCodecsPlayback] Video track description details:', {
-                trackId: videoTrack.id,
-                ...decoderConfigDebug,
-              });
-
-              if (codecDescription) {
-                config.description = codecDescription;
-                if (videoTrack.codec?.startsWith('avc') && !normalizeCodecDescription(videoTrack.description)) {
-                  console.log('[WebCodecsPlayback] AVC decoder description built from avcC.', {
-                    trackId: videoTrack.id,
-                    descriptionBytes: codecDescription.byteLength,
-                  });
-                }
-              } else if (videoTrack.codec?.startsWith('avc')) {
-                console.warn('[WebCodecsPlayback] Missing AVC decoder description for track:', {
-                  codec: videoTrack.codec,
-                  trackId: videoTrack.id,
-                  descriptionType: typeof videoTrack.description,
-                  avcCType: typeof videoTrack.avcC,
-                  avccType: typeof videoTrack.avcc,
-                  hasAvcCData: Boolean((videoTrack.avcC as any)?.data),
+              // Convert VideoFrame to ImageBitmap asynchronously
+              createImageBitmap(frame).then(bitmap => {
+                frameCache.set(key, {
+                  bitmap,
+                  timestamp: frame.timestamp / 1000000, // Convert to seconds
+                  sourceId: source.id
                 });
-              }
-
-              console.log('[WebCodecsPlayback] Checking codec support:', config.codec);
-              updateSourceLoading(source.id, { progress: 60, message: 'Initializing hardware decoder...' });
-              
-              VideoDecoder.isConfigSupported(config).then(({ supported }) => {
-                console.log('[WebCodecsPlayback] Codec supported:', supported);
-                updateSourceLoading(source.id, { progress: 70, message: 'Starting video stream...' });
+                frame.close();
                 
-                if (!supported) {
-                  if (!isResolved) {
-                    isResolved = true;
-                    rejectInner(new Error(`Codec ${videoTrack.codec} not supported`));
-                  }
-                  return;
-                }
-
-                if (config.description || !videoTrack.codec?.startsWith('avc')) {
-                  console.log('[WebCodecsPlayback] Configuring decoder...');
-                  decoder!.configure(config);
-                  decoderConfigured = true;
-                  console.log('[WebCodecsPlayback] Decoder configured successfully');
-                } else {
-                  // Try configuring without description first - some browsers accept this
-                  console.warn('[WebCodecsPlayback] AVC description missing, attempting configuration without it...');
-                  try {
-                    decoder!.configure(config);
-                    decoderConfigured = true;
-                    console.log('[WebCodecsPlayback] Decoder configured without description (browser accepted)');
-                  } catch (configError) {
-                    console.warn('[WebCodecsPlayback] Decoder rejected config without description, deferring until SPS/PPS extracted:', configError);
-                  }
-                }
-
-                // Set up sample processing - this enables extraction for future data
-                console.log('[WebCodecsPlayback] Setting extraction options for track ID:', videoTrack.id);
-                updateSourceLoading(source.id, { progress: 50, message: 'Configuring extraction...' });
-                console.log('[WebCodecsPlayback] Track info:', JSON.stringify({
-                  id: videoTrack.id,
-                  nb_samples: videoTrack.nb_samples,
-                  duration: videoTrack.duration,
-                  timescale: videoTrack.timescale,
-                }));
-                
-                // Set extraction options and start demuxing
-                // CRITICAL: Must call setExtractionOptions BEFORE start() so MP4Box knows which track to extract
-                console.log('[WebCodecsPlayback] Verifying onSamples callback exists:', typeof mp4boxFile.onSamples, mp4boxFile.onSamples ? 'REGISTERED' : 'NOT REGISTERED');
-                
-                // Pass user parameter as per MP4Box documentation - this is passed back to onSamples
-                const extractionUser = { sourceId: source.id };
-                mp4boxFile.setExtractionOptions(videoTrack.id, extractionUser, { nbSamples: 100 });
-                console.log('[WebCodecsPlayback] Extraction options set for track', videoTrack.id, 'with nbSamples: 100');
-                
-                // Now start extraction - samples will be extracted from data that continues to stream in
-                mp4boxFile.start();
-                console.log('[WebCodecsPlayback] start() called - MP4Box will extract samples from streaming data');
-                
-                // DO NOT flush() here - flush() means "end-of-file" in MP4Box
-                // Calling it early (at ~2 MiB) when file is 50 MiB causes MP4Box to finalize without extracting samples
-                // Only flush once when stream is complete
-                
-                const decoderState: DecoderState = {
-                  decoder: decoder!,
-                  mp4boxFile,
-                  videoTrack,
-                  sourceId: source.id,
-                  videoPath,
-                  isInitialized: true,
-                };
-
-                decoders.set(cacheKey, decoderState);
-                
-                // Resolve immediately - decoder configured and MP4Box started
-                // Frames will be decoded on-demand during playback via drainPending
-                if (!isResolved) {
-                  isResolved = true;
-                  updateSourceLoading(source.id, {
-                    isLoading: false,
-                    progress: 100,
-                    message: 'Ready'
-                  });
-                  resolveInner(decoderState);
-                }
-              }).catch((err: Error) => {
-                console.error('[WebCodecsPlayback] isConfigSupported failed:', err);
-                if (!isResolved) {
-                  isResolved = true;
-                  rejectInner(err);
-                }
+                cacheDebugCounter++;
+                outputFrameCount++;
+              }).catch(err => {
+                console.error('[WebCodecsPlayback] Failed to create ImageBitmap:', err);
+                frame.close();
               });
-            };
-
-            // Use STREAMING like the W3C WebCodecs example
-            // This streams data in small chunks which is required for onSamples to fire
-            console.log('[WebCodecsPlayback] Starting streaming fetch...');
-            const fileSink = new MP4FileSink();
-            // IMPORTANT: Video server requires Range header, so request entire file with Range: bytes=0-
-            fetch(videoUrl, {
-              headers: {
-                'Range': 'bytes=0-'
-              }
-            })
-              .then(response => {
-                if (!response.ok) {
-                  throw new Error(`Failed to fetch video: ${response.status} ${response.statusText}`);
-                }
-                if (!response.body) {
-                  throw new Error('Response body is null');
-                }
-                console.log('[WebCodecsPlayback] Streaming video data through pipeTo...');
-                // Stream data through WritableStream with small buffer (highWaterMark: 2)
-                // This is critical - large chunks cause onSamples to never fire
-                return response.body.pipeTo(new WritableStream(fileSink, { highWaterMark: 2 }));
-              })
-              .then(() => {
-                console.log('[WebCodecsPlayback] Streaming complete');
-                updateSourceLoading(source.id, { progress: 100, message: 'Ready' });
-              })
-              .catch((e: Error) => {
-                console.error('[WebCodecsPlayback] Streaming error:', e);
-                if (!isResolved) {
-                  isResolved = true;
-                  rejectInner(e);
-                }
-              });
+            },
+            error: (e: any) => {
+              console.error('[WebCodecsPlayback] VideoDecoder error:', e);
+              onError?.(`Video decoder error: ${e.message}`);
+            }
+          });
+          
+          // Configure decoder
+          decoder.configure(videoDecoderConfig);
+          console.log('[WebCodecsPlayback] VideoDecoder configured');
+          
+          // Create decoder state
+          const decoderState: DecoderState = {
+            decoder,
+            mp4boxFile: demuxer, // Store demuxer here for compatibility
+            videoTrack: { id: 1 }, // Dummy track info
+            sourceId: source.id,
+            videoPath,
+            isInitialized: true,
+            isDecoding: false,
+            durationSec: typeof mediaInfo?.duration === 'number' ? mediaInfo.duration : undefined,
+            fullDecodeComplete: false
+          };
+          
+          // CRITICAL: Store decoder in map so it can be looked up for continuous decoding
+          decoders.set(cacheKey, decoderState);
+          console.log(`[WebCodecsPlayback] Decoder stored with key: ${cacheKey.substring(0, 60)}...`);
+          
+          // CRITICAL: Read the ENTIRE video, not just 2 seconds
+          // This fixes the "plays a few seconds then freezes" issue
+          console.log('[WebCodecsPlayback] Starting full video stream decode...');
+          const videoStream = await demuxer.read('video', 0, mediaInfo.duration || 999999);
+          const reader = videoStream.getReader();
+          let chunkCount = 0;
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            decoder.decode(value);
+            chunkCount++;
+            
+            // Log progress every 100 chunks
+            if (chunkCount % 100 === 0) {
+              console.log(`[WebCodecsPlayback] Decoded ${chunkCount} chunks...`);
+            }
+          }
+          
+          await decoder.flush();
+          decoderState.fullDecodeComplete = true;
+          console.log(`[WebCodecsPlayback] ✅ Full video decoded: ${chunkCount} chunks total`);
+          
+          console.log('[WebCodecsPlayback] Initial frames decoded and cached');
+          updateSourceLoading(source.id, {
+            isLoading: false,
+            progress: 100,
+            message: 'Ready'
           });
 
           // Wait for initialization to complete
@@ -1067,21 +669,24 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     const decoderState = await initializeDecoder(source);
     if (!decoderState) return;
 
-    // Seek MP4Box to the desired time position
-    // Note: mp4boxFile.start() is already called during initialization
+    // Use web-demuxer to seek and decode frames at the desired time
+    const demuxer = decoderState.mp4boxFile as WebDemuxer;
     try {
-      const seekResult = decoderState.mp4boxFile.seek(startTime, true);
-      if (seekResult) {
-        console.log(`[WebCodecsPlayback] Prefetch seek to ${startTime.toFixed(3)}s, offset: ${seekResult.offset}`);
-      }
+      // Read 2 seconds of video starting from startTime
+      const videoStream = await demuxer.read('video', startTime, startTime + 2);
       
-      // CRITICAL: flush() must be called after seek() to trigger onSamples callback
-      // MP4Box only calls onSamples when new data is appended OR when flush() is explicitly called
-      // Since all data is already loaded, flush() extracts samples at the current seek position
-      decoderState.mp4boxFile.flush();
-      console.log(`[WebCodecsPlayback] Flushed MP4Box after seek to ${startTime.toFixed(3)}s`);
+      // Decode the frames
+      const reader = videoStream.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        decoderState.decoder.decode(value);
+      }
+      await decoderState.decoder.flush();
+      
+      console.log(`[WebCodecsPlayback] Prefetched frames at ${startTime.toFixed(3)}s`);
     } catch (error) {
-      console.warn(`[WebCodecsPlayback] Failed to seek/flush for prefetch at ${startTime.toFixed(3)}s:`, error);
+      console.warn(`[WebCodecsPlayback] Failed to prefetch frames at ${startTime.toFixed(3)}s:`, error);
     }
   }
 
@@ -1128,16 +733,86 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     // Frames from proxies are cached starting at 0s (proxy start)
     const adjustedTime = trimOffset > 0 ? sourceTime - trimOffset : sourceTime;
 
+    const { path: videoPath } = resolveVideoPath(source);
+    const cacheKeyForDecoder = `${source.id}:${videoPath}`;
+    const decoderState = decoders.get(cacheKeyForDecoder);
+    if (decoderState?.durationSec !== undefined && adjustedTime > decoderState.durationSec) {
+      const sourceFrames = Array.from(frameCache.values()).filter((f) => f.sourceId === source.id);
+      if (sourceFrames.length > 0) {
+        const lastFrame = sourceFrames.reduce((max, f) => (f.timestamp > max.timestamp ? f : max));
+        try {
+          if (canvasRef.value.width !== lastFrame.bitmap.width || canvasRef.value.height !== lastFrame.bitmap.height) {
+            canvasRef.value.width = lastFrame.bitmap.width;
+            canvasRef.value.height = lastFrame.bitmap.height;
+          }
+          ctx.drawImage(lastFrame.bitmap, 0, 0);
+          lastRenderedFrame = lastFrame.bitmap;
+        } catch (e) {
+          console.warn('[WebCodecsPlayback] Failed to render last frame at end of source:', e);
+        }
+      }
+      return;
+    }
+
     if (lastRenderSourceId !== source.id) {
       lastRenderSourceId = source.id;
       lastRenderTime = adjustedTime;
     } else if (!isPlaying.value && Math.abs(adjustedTime - lastRenderTime) > 0.25) {
-      clearSourceCache(source);
-      resetDecoder(source);
-      initializeDecoder(source, adjustedTime);
+      if (!decoderState?.fullDecodeComplete) {
+        clearSourceCache(source);
+        resetDecoder(source);
+        initializeDecoder(source, adjustedTime);
+      }
       lastRenderTime = adjustedTime;
     } else {
       lastRenderTime = adjustedTime;
+    }
+
+    // Continuously decode frames ahead of playhead during playback
+    if (isPlaying.value && source) {
+      const { path: videoPath } = resolveVideoPath(source);
+      const cacheKey = `${source.id}:${videoPath}`;
+      const decoderState = decoders.get(cacheKey);
+      
+      if (decoderState && decoderState.isInitialized) {
+        // Check if we need more frames ahead
+        const sourceCachedFrames = Array.from(frameCache.values()).filter(f => f.sourceId === source.id);
+        const maxCachedTime = sourceCachedFrames.length > 0 
+          ? Math.max(...sourceCachedFrames.map(f => f.timestamp))
+          : 0;
+        
+        // If we don't have enough frames ahead (less than 1 second), decode more
+        const needsMoreFrames = maxCachedTime < adjustedTime + 1;
+        
+        if (needsMoreFrames && !decoderState.isDecoding) {
+          decoderState.isDecoding = true;
+          const demuxer = decoderState.mp4boxFile as WebDemuxer;
+          const startTime = Math.max(maxCachedTime + 0.01, adjustedTime); // Start just after last cached frame
+          const endTime = adjustedTime + 3; // Decode 3 seconds ahead
+          
+          console.log(`[WebCodecsPlayback] 📥 Decoding ahead: ${startTime.toFixed(2)}s → ${endTime.toFixed(2)}s (playhead: ${adjustedTime.toFixed(2)}s, maxCached: ${maxCachedTime.toFixed(2)}s)`);
+          
+          // Decode frames asynchronously (don't await to avoid blocking render)
+          (async () => {
+            try {
+              const videoStream = await demuxer.read('video', startTime, endTime);
+              const reader = videoStream.getReader();
+              let chunkCount = 0;
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                decoderState.decoder.decode(value);
+                chunkCount++;
+              }
+              console.log(`[WebCodecsPlayback] ✅ Decoded ${chunkCount} chunks ahead`);
+            } catch (err) {
+              console.warn('[WebCodecsPlayback] Failed to decode ahead:', err);
+            } finally {
+              decoderState.isDecoding = false;
+            }
+          })();
+        }
+      }
     }
 
     // Initialize decoder for upcoming sources (but don't seek during playback)
@@ -1303,7 +978,10 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
 
   // Helper: decode a pending sample
   function decodePendingSample(ps: PendingSample, decoder: VideoDecoder) {
-    if (!decoder || decoder.state === 'closed') return;
+    if (!decoder || decoder.state === 'closed') {
+      console.log(`[WebCodecsPlayback] ⚠️ decodePendingSample: Decoder not available (state=${decoder?.state})`);
+      return;
+    }
     
     const chunk = new EncodedVideoChunk({
       type: ps.isKey ? 'key' : 'delta',
@@ -1325,7 +1003,13 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
   
   // Helper: drain pending samples that are now within the ahead window
   function drainPending(playheadSec: number, decoder: VideoDecoder) {
-    if (!decoder || decoder.state === 'closed') return;
+    if (!decoder || decoder.state === 'closed') {
+      console.log(`[WebCodecsPlayback] ⚠️ drainPending: Decoder not available (state=${decoder?.state})`);
+      return;
+    }
+    
+    const initialPendingCount = pendingSamples.length;
+    const initialQueueSize = decoder.decodeQueueSize;
     
     // If nothing decoded yet, drop leading non-keyframes (can't decode without keyframe)
     if (frameCache.size === 0) {
@@ -1335,22 +1019,37 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
         dropped++;
       }
       if (dropped > 0) {
-        console.log(`[WebCodecsPlayback] Dropped ${dropped} non-keyframes at start`);
+        console.log(`[WebCodecsPlayback] 🔑 drainPending: Dropped ${dropped} non-keyframes at start`);
       }
     }
+    
+    let processed = 0;
+    let stoppedReason = 'none';
     
     // Keep draining until we're buffered far enough ahead OR decoder queue is full
     while (pendingSamples.length > 0) {
       const next = pendingSamples[0];
       
       // Stop if this sample is too far ahead
-      if (next.timeSec > playheadSec + KEEP_AHEAD_SEC) break;
+      if (next.timeSec > playheadSec + KEEP_AHEAD_SEC) {
+        stoppedReason = 'too-far-ahead';
+        break;
+      }
       
       // Stop if decoder queue is getting full
-      if (decoder.decodeQueueSize > 6) break;
+      if (decoder.decodeQueueSize > 6) {
+        stoppedReason = 'queue-full';
+        break;
+      }
       
       pendingSamples.shift();
       decodePendingSample(next, decoder);
+      processed++;
+    }
+    
+    if (processed > 0 || initialPendingCount > 0) {
+      const nextSampleTime = pendingSamples.length > 0 ? pendingSamples[0].timeSec.toFixed(3) : 'none';
+      console.log(`[WebCodecsPlayback] 🔄 drainPending: playhead=${playheadSec.toFixed(3)}s, processed=${processed}, pending=${initialPendingCount}→${pendingSamples.length}, queueSize=${initialQueueSize}→${decoder.decodeQueueSize}, nextSample=${nextSampleTime}s, stopped=${stoppedReason}`);
     }
   }
 
@@ -1358,21 +1057,8 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
     try {
       tickCount++;
       rafDebugCounter++;
-      const currentSecond = Math.floor(currentTime.value);
-      if (currentSecond !== lastLoggedSecond) {
-        console.log(`[WebCodecsPlayback] Playing at ${currentSecond}s`);
-        lastLoggedSecond = currentSecond;
-      }
       
-      // Debug log every 60 RAF ticks
-      if (rafDebugCounter % 60 === 0 && frameCache.size > 0) {
-        const frames = Array.from(frameCache.values()).slice(0, 5);
-        const rangeStart = frames[0]?.timestamp?.toFixed(3) ?? 'N/A';
-        const rangeEnd = frames[frames.length - 1]?.timestamp?.toFixed(3) ?? 'N/A';
-        console.log(`[WebCodecsPlayback] RAF t=${currentTime.value.toFixed(3)}, cache=${frameCache.size}, range=[${rangeStart}→${rangeEnd}]`);
-      }
-      
-      // Debug status every 500ms
+      // Debug status every 500ms (NO per-tick logs)
       logDebugStatus();
       
       if (!isPlaying.value) {
