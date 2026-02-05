@@ -766,7 +766,7 @@ class WaveformServiceImpl {
     // Check cache first
     const cached = this.getPeakFromCache(cacheKey);
     if (cached) {
-      console.log('[WaveformService] Peaks from cache:', cacheKey);
+      // Cache hit - frequent during playback, skip logging
       return cached;
     }
 

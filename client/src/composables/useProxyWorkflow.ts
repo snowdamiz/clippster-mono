@@ -2,7 +2,6 @@ import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface ProxySettings {
-  enabled: boolean;
   resolution: '360p' | '480p' | '720p' | '1080p';
   codec: 'h264' | 'prores_proxy';
   quality: 'low' | 'medium' | 'high';
@@ -27,7 +26,6 @@ export interface ProxyFile {
 }
 
 const defaultSettings: ProxySettings = {
-  enabled: true,
   resolution: '720p',
   codec: 'h264',
   quality: 'high', // High quality H.264 for best decode performance
@@ -38,9 +36,9 @@ const proxyFiles = ref<Map<string, ProxyFile>>(new Map());
 const isGenerating = ref(false);
 const generationQueue = ref<string[]>([]);
 let settingsLoaded = false;
+let proxyCacheLoaded = false;
 
 export function useProxyWorkflow() {
-  const proxyEnabled = computed(() => settings.value.enabled);
   
   const pendingProxies = computed(() => 
     Array.from(proxyFiles.value.values()).filter(p => p.status === 'pending')
@@ -66,7 +64,6 @@ export function useProxyWorkflow() {
 
   function updateSettings(newSettings: Partial<ProxySettings>) {
     settings.value = { ...settings.value, ...newSettings };
-    settings.value.enabled = true;
     try {
       localStorage.setItem('proxy_workflow_settings', JSON.stringify(settings.value));
     } catch (e) {
@@ -81,18 +78,50 @@ export function useProxyWorkflow() {
       const saved = localStorage.getItem('proxy_workflow_settings');
       if (saved) {
         settings.value = { ...defaultSettings, ...JSON.parse(saved) };
-        settings.value.enabled = true;
       }
     } catch (e) {
       console.warn('[useProxyWorkflow] Failed to load settings:', e);
     }
   }
 
+  function loadProxyCache() {
+    if (proxyCacheLoaded) return;
+    proxyCacheLoaded = true;
+    try {
+      const cached = localStorage.getItem('proxy_workflow_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached) as Array<[string, ProxyFile]>;
+        proxyFiles.value = new Map(parsed);
+        console.log(`[useProxyWorkflow] Loaded ${parsed.length} cached proxies from localStorage`);
+      }
+    } catch (e) {
+      console.warn('[useProxyWorkflow] Failed to load proxy cache:', e);
+    }
+  }
+
+  function saveProxyCache() {
+    try {
+      const entries = Array.from(proxyFiles.value.entries());
+      localStorage.setItem('proxy_workflow_cache', JSON.stringify(entries));
+    } catch (e) {
+      console.warn('[useProxyWorkflow] Failed to save proxy cache:', e);
+    }
+  }
+
   function registerSource(sourceId: string, sourcePath: string, trimStart?: number, trimDuration?: number) {
-    // Create a unique key that includes trim info to support multiple trims of same source
-    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+    // Load cache on first use
+    loadProxyCache();
     
-    if (proxyFiles.value.has(proxyKey)) return proxyKey;
+    // Create a unique key that includes trim info to support multiple trims of same source
+    // Use milliseconds to prevent bucket collisions (e.g., 510.0 and 510.99 both become unique keys)
+    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.round(trimStart * 1000)}` : sourceId;
+    
+    // If already registered, return existing key
+    if (proxyFiles.value.has(proxyKey)) {
+      const existing = proxyFiles.value.get(proxyKey);
+      console.log(`[useProxyWorkflow] Source already registered: ${proxyKey}, status: ${existing?.status}`);
+      return proxyKey;
+    }
     
     proxyFiles.value.set(proxyKey, {
       sourceId: proxyKey,
@@ -105,6 +134,8 @@ export function useProxyWorkflow() {
       trimDuration,
     });
     
+    console.log(`[useProxyWorkflow] Registered new source: ${proxyKey}`);
+    saveProxyCache();
     return proxyKey;
   }
 
@@ -159,22 +190,78 @@ export function useProxyWorkflow() {
     if (!proxyKey) return undefined;
     
     const proxy = proxyFiles.value.get(proxyKey);
-    if (!proxy || proxy.status === 'ready' || proxy.status === 'generating') {
-      return proxyKey;
+    if (!proxy) return undefined;
+    
+    // Check if existing proxy has wrong duration - invalidate if so
+    if (proxy.status === 'ready' && proxy.trimDuration !== undefined && trimDuration !== undefined) {
+      if (Math.abs(proxy.trimDuration - trimDuration) > 0.5) {
+        console.log(`[useProxyWorkflow] Invalidating proxy ${proxyKey}: duration mismatch ${proxy.trimDuration}s vs ${trimDuration}s`);
+        proxy.status = 'pending';
+        proxy.proxyPath = '';
+      }
+    }
+    
+    // If already ready, verify the proxy file actually exists on disk
+    if (proxy.status === 'ready' && proxy.proxyPath) {
+      try {
+        const proxyExists = await invoke<boolean>('check_file_exists', { path: proxy.proxyPath });
+        if (proxyExists) {
+          console.log(`[useProxyWorkflow] Proxy already exists: ${proxyKey}`);
+          return proxyKey;
+        } else {
+          console.log(`[useProxyWorkflow] Proxy file missing, regenerating: ${proxy.proxyPath}`);
+          proxy.status = 'pending';
+          proxy.proxyPath = '';
+        }
+      } catch (error) {
+        console.warn(`[useProxyWorkflow] Failed to check proxy file existence:`, error);
+        // Assume it exists if we can't check
+        return proxyKey;
+      }
+    }
+    
+    // If status is ready but no path, something went wrong - regenerate
+    if (proxy.status === 'ready' && !proxy.proxyPath) {
+      console.log(`[useProxyWorkflow] Proxy marked ready but no path, regenerating: ${proxyKey}`);
+      proxy.status = 'pending';
+    }
+    
+    // If currently generating, wait for it to complete
+    if (proxy.status === 'generating') {
+      console.log(`[useProxyWorkflow] Waiting for proxy generation to complete: ${proxyKey}`);
+      // Poll until ready or error
+      return new Promise((resolve) => {
+        const checkInterval = setInterval(() => {
+          const currentProxy = proxyFiles.value.get(proxyKey);
+          if (currentProxy?.status === 'ready' || currentProxy?.status === 'error') {
+            clearInterval(checkInterval);
+            resolve(proxyKey);
+          }
+        }, 100); // Check every 100ms
+      });
     }
 
     const meta = await shouldGenerateProxy(sourcePath);
-    if (!meta) return proxyKey;
-    proxy.width = meta.width;
-    proxy.height = meta.height;
-    proxy.codec = meta.codec;
-    proxy.fileSize = meta.fileSize;
-    if (meta.status === 'skipped') {
-      proxy.status = 'skipped';
-      return proxyKey;
+    if (!meta) {
+      console.warn(`[useProxyWorkflow] shouldGenerateProxy returned null for ${proxyKey}, generating anyway`);
+    } else {
+      proxy.width = meta.width;
+      proxy.height = meta.height;
+      proxy.codec = meta.codec;
+      proxy.fileSize = meta.fileSize;
+      if (meta.status === 'skipped') {
+        console.log(`[useProxyWorkflow] Proxy skipped for ${proxyKey} (not needed)`);
+        proxy.status = 'skipped';
+        saveProxyCache();
+        return proxyKey;
+      }
     }
 
-    await generateProxy(proxyKey);
+    console.log(`[useProxyWorkflow] Starting proxy generation for ${proxyKey}`);
+    const success = await generateProxy(proxyKey);
+    if (!success) {
+      console.error(`[useProxyWorkflow] Proxy generation failed for ${proxyKey}`);
+    }
     return proxyKey;
   }
 
@@ -213,11 +300,15 @@ export function useProxyWorkflow() {
       
       console.log(`[useProxyWorkflow] Proxy generated for ${sourceId}:`, result.proxy_path, 
         proxy.trimStart !== undefined ? `(trimmed from ${proxy.trimStart}s)` : '(full file)');
+      
+      // Save to cache after successful generation
+      saveProxyCache();
       return true;
     } catch (error) {
       proxy.status = 'error';
       proxy.error = error instanceof Error ? error.message : String(error);
       console.error('[useProxyWorkflow] Failed to generate proxy:', error);
+      saveProxyCache();
       return false;
     }
   }
@@ -254,10 +345,8 @@ export function useProxyWorkflow() {
   }
 
   function getProxyPath(sourceId: string, trimStart?: number): string | null {
-    if (!settings.value.enabled) return null;
-    
-    // Try trimmed proxy key first if trimStart provided
-    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+    // Use milliseconds to prevent bucket collisions
+    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.round(trimStart * 1000)}` : sourceId;
     const proxy = proxyFiles.value.get(proxyKey);
     
     if (proxy?.status === 'ready' && proxy.proxyPath) {
@@ -268,10 +357,8 @@ export function useProxyWorkflow() {
 
   /** Get proxy info including path and trim offset for timestamp mapping */
   function getProxyInfo(sourceId: string, trimStart?: number): { path: string; trimOffset: number } | null {
-    if (!settings.value.enabled) return null;
-    
-    // Use same flooring logic as registerSource for consistent key generation
-    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.floor(trimStart)}` : sourceId;
+    // Use milliseconds to prevent bucket collisions
+    const proxyKey = trimStart !== undefined ? `${sourceId}_t${Math.round(trimStart * 1000)}` : sourceId;
     const proxy = proxyFiles.value.get(proxyKey);
     
     if (proxy?.status === 'ready' && proxy.proxyPath) {
@@ -298,7 +385,7 @@ export function useProxyWorkflow() {
   ): { path: string; trimOffset: number } {
     const proxyInfo = getProxyInfo(sourceId, trimStart);
     if (proxyInfo) {
-      console.log(`[useProxyWorkflow] Using trimmed proxy for ${sourceId}: trimOffset=${proxyInfo.trimOffset.toFixed(2)}s, path=${proxyInfo.path.split('\\').pop()}`);
+      // Proxy lookup is frequent during playback, skip logging
       return proxyInfo;
     }
     return { path: originalPath, trimOffset: 0 };
@@ -312,8 +399,29 @@ export function useProxyWorkflow() {
     proxyFiles.value.delete(sourceId);
   }
 
+  // Clear old-format proxies on init (force regeneration with millisecond-based keys)
+  function clearOldFormatProxies() {
+    const keysToDelete: string[] = [];
+    proxyFiles.value.forEach((proxy, key) => {
+      // Check if key uses old format (_t510) vs new format (_t510000)
+      // Old format has _t followed by 1-3 digits, new format has 4+ digits
+      const oldFormatMatch = key.match(/_t\d{1,3}$/);
+      if (oldFormatMatch) {
+        console.log(`[useProxyWorkflow] Clearing old-format proxy: ${key}`);
+        keysToDelete.push(key);
+      }
+    });
+    keysToDelete.forEach(key => proxyFiles.value.delete(key));
+    if (keysToDelete.length > 0) {
+      console.log(`[useProxyWorkflow] Cleared ${keysToDelete.length} old-format proxies for regeneration`);
+    }
+  }
+
   // Initialize settings on first use
   loadSettings();
+  
+  // Clear old-format proxies on startup
+  clearOldFormatProxies();
 
   return {
     // State
@@ -323,7 +431,6 @@ export function useProxyWorkflow() {
     generationQueue,
     
     // Computed
-    proxyEnabled,
     pendingProxies,
     readyProxies,
     generatingProxies,

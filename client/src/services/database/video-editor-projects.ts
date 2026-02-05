@@ -149,6 +149,7 @@ export async function deleteVideoEditorProject(id: string): Promise<void> {
 export async function createVideoEditorSource(
   projectId: string,
   data: {
+    id?: string; // Optional ID to use instead of generating one
     sourceType: 'clip' | 'raw_video' | 'imported';
     sourceId?: string | null;
     sourcePath: string;
@@ -164,7 +165,8 @@ export async function createVideoEditorSource(
   }
 ): Promise<VideoEditorSource> {
   const db = await getDatabase();
-  const id = generateId();
+  const id = data.id || generateId(); // Use provided ID or generate new one
+  console.log('[createVideoEditorSource] Using ID:', id, '(provided:', !!data.id, ')');
   const now = timestamp();
 
   // Ensure keyframes_data column exists before inserting

@@ -41,10 +41,11 @@ pub async fn generate_proxy_file(
         .map_err(|e| format!("Failed to create proxy dir: {}", e))?;
 
     // Include trim info in filename to differentiate trimmed proxies
+    // Use milliseconds to prevent bucket collisions (match TypeScript format)
     let extension = if codec == "prores_proxy" { "mov" } else { "mp4" };
     let trim_suffix = match (trim_start, trim_duration) {
-        (Some(start), Some(dur)) => format!("_t{:.0}_{:.0}", start, dur),
-        (Some(start), None) => format!("_t{:.0}", start),
+        (Some(start), Some(dur)) => format!("_t{}_{}", (start * 1000.0).round() as i64, (dur * 1000.0).round() as i64),
+        (Some(start), None) => format!("_t{}", (start * 1000.0).round() as i64),
         _ => String::new(),
     };
     let proxy_path = proxy_dir.join(format!(
@@ -93,7 +94,7 @@ pub async fn generate_proxy_file(
     
     args.extend(["-i".to_string(), source_path.clone()]);
     
-    // Add duration limit AFTER input
+    // Add duration limit AFTER input (web-demuxer has no sample limits)
     if let Some(duration) = trim_duration {
         if duration > 0.0 {
             args.extend(["-t".to_string(), format!("{:.3}", duration)]);

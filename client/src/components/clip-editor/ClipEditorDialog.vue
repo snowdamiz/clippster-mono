@@ -29,6 +29,7 @@
               @panelChange="onPanelChange"
               @mediaAdded="handleMediaAdded"
               @mediaUpdated="handleMediaUpdated"
+              @videoUploaded="handleVideoUploaded"
               @detachAudio="handleDetachAudio"
               @tracksUpdated="handleTracksUpdated"
               @textAdded="handleTextAdded"
@@ -59,6 +60,7 @@
                 @pause="handlePause"
                 @seek="handleSeek"
                 @timeUpdate="handleTimeUpdate"
+                @error="handlePreviewError"
               />
               </div>
 
@@ -119,6 +121,27 @@
 
         <!-- Keyboard Shortcuts Modal -->
         <KeyboardShortcutsModal v-model="showShortcutsModal" />
+        
+        <!-- Error Modal -->
+        <EditorErrorModal 
+          v-model="showErrorModal"
+          :title="errorTitle"
+          :message="errorMessage"
+        />
+        
+        <!-- Proxy Generation Loading Overlay -->
+        <div v-if="isGeneratingProxies" class="absolute inset-0 bg-black/95 z-[20000] flex items-center justify-center">
+          <div class="flex flex-col items-center gap-4">
+            <div class="w-16 h-16 border-4 border-sky-500/30 border-t-sky-500 rounded-full animate-spin"></div>
+            <div class="text-white text-lg font-medium">{{ proxyGenerationMessage }}</div>
+            <div class="w-64 h-2 bg-white/10 rounded-full overflow-hidden">
+              <div 
+                class="h-full bg-gradient-to-r from-cyan-500 to-sky-500 transition-all duration-300"
+                :style="{ width: `${proxyGenerationProgress}%` }"
+              ></div>
+            </div>
+          </div>
+        </div>
       </div>
     </Transition>
   </Teleport>
@@ -144,6 +167,7 @@ import {
   useEditorAutoSave,
   useTitleManagement,
   useDurationCalculator,
+  type VideoSource,
 } from '@/composables/clip-editor';
 import { usePlaybackEngine } from '@/composables/usePlaybackEngine';
 
@@ -154,6 +178,7 @@ import ClipEditorInspector from './ClipEditorInspector.vue';
 import ClipEditorTimeline from './ClipEditorTimeline.vue';
 import ClipEditorToolbar from './ClipEditorToolbar.vue';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal.vue';
+import EditorErrorModal from './EditorErrorModal.vue';
 
 // ===== Props =====
 const props = defineProps<{
@@ -197,6 +222,16 @@ const {
 
 const activePanel = ref<string>('media');
 const showShortcutsModal = ref(false);
+
+// Error modal state
+const showErrorModal = ref(false);
+const errorTitle = ref('');
+const errorMessage = ref('');
+
+// Proxy generation loading state
+const isGeneratingProxies = ref(false);
+const proxyGenerationProgress = ref(0);
+const proxyGenerationMessage = ref('');
 
 // ===== Preview Component Ref =====
 const previewRef = ref<InstanceType<typeof ClipEditorPreview> | null>(null);
@@ -465,6 +500,13 @@ function handleRealtimeUpdate(data: { trackId: string; property: string; value: 
   // For now, just log it - the debounced database update will handle it
 }
 
+// Handle preview errors
+function handlePreviewError(error: { title: string; message: string }) {
+  errorTitle.value = error.title;
+  errorMessage.value = error.message;
+  showErrorModal.value = true;
+}
+
 async function handleItemDeleted() {
   // Clear selection using composable
   deselectItem();
@@ -528,6 +570,42 @@ function handleMediaUpdated() {
   // Refresh any media-related state if needed
 }
 
+async function handleVideoUploaded(mediaId: string, filePath: string) {
+  console.log('[ClipEditorDialog] 🔥 handleVideoUploaded CALLED - mediaId:', mediaId);
+  console.log('[ClipEditorDialog] 🔥 handleVideoUploaded - filePath:', filePath);
+  
+  // Create a temporary VideoSource object for pre-decoding
+  // The actual source will be created when added to timeline
+  const tempSource: VideoSource = {
+    id: mediaId,
+    file_path: filePath,
+    start_time: 0,
+    end_time: 0, // Will be determined by WebCodecs during pre-decoding
+    trim_start: 0,
+    trim_end: null,
+    original_duration: 0, // Will be determined by WebCodecs
+    order_index: 0,
+  };
+  
+  console.log('[ClipEditorDialog] 🔥 About to check previewRef and call preloadVideo...');
+  
+  if (previewRef.value && (previewRef.value as any).preloadVideo) {
+    console.log('[ClipEditorDialog] 🔥 previewRef and preloadVideo method exist, calling now...');
+    try {
+      await (previewRef.value as any).preloadVideo(tempSource);
+      console.log('[ClipEditorDialog] ✅ Video pre-decoded successfully:', mediaId);
+    } catch (error) {
+      console.error('[ClipEditorDialog] ❌ Failed to pre-decode video:', error);
+    }
+  } else {
+    console.log('[ClipEditorDialog] ❌ previewRef or preloadVideo method missing');
+    console.log('[ClipEditorDialog] ❌ previewRef.value:', previewRef.value);
+    if (previewRef.value) {
+      console.log('[ClipEditorDialog] ❌ preloadVideo method exists:', !!(previewRef.value as any).preloadVideo);
+    }
+  }
+}
+
 // ===== Export =====
 // isExporting and exportProgress come from useEditorExport composable
 async function handleExport() {
@@ -565,11 +643,29 @@ useEditorKeyboardShortcuts({
 watch(() => [props.modelValue, props.editorProjectId], async ([isOpen, editorProjectId]) => {
   if (isOpen && editorProjectId) {
     console.log('[ClipEditorDialog] Dialog opened with project:', editorProjectId);
-    await loadEditorData(editorProjectId as string);
-
-    // Load project sources and initialize timeline with calculated duration
-    await reloadTimeline();
-    console.log('[ClipEditorDialog] Timeline initialized');
+    
+    // Show loading state
+    isGeneratingProxies.value = true;
+    proxyGenerationMessage.value = 'Loading project...';
+    
+    try {
+      await loadEditorData(editorProjectId as string);
+      
+      proxyGenerationMessage.value = 'Generating proxies...';
+      
+      // Wait for timeline to load and proxies to generate
+      await reloadTimeline();
+      
+      console.log('[ClipEditorDialog] Timeline initialized with proxies ready');
+    } catch (error) {
+      console.error('[ClipEditorDialog] Failed to initialize:', error);
+      handlePreviewError({
+        title: 'Initialization Error',
+        message: `Failed to load editor: ${error}`,
+      });
+    } finally {
+      isGeneratingProxies.value = false;
+    }
   }
 }, { immediate: true });
 

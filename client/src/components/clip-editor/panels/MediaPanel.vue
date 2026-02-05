@@ -63,17 +63,34 @@
           :key="item.id"
           class="group flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-150 hover:translate-x-0.5"
           style="background-color: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05)"
-          :class="getHoverClasses(item.media_type)"
+          :class="[getHoverClasses(item.media_type), { 'opacity-50 cursor-not-allowed': isMediaProcessing(item.id) }]"
           @click="addToTimeline(item)"
-          :title="`Click to add to timeline`"
+          :title="isMediaProcessing(item.id) ? 'Processing... Please wait' : 'Click to add to timeline'"
         >
           <!-- Thumbnail/Preview -->
           <div
             class="w-14 h-14 shrink-0 rounded-lg overflow-hidden flex items-center justify-center relative"
             :style="getThumbnailStyles(item.media_type)"
           >
+            <!-- Processing Overlay -->
+            <div
+              v-if="isMediaProcessing(item.id)"
+              class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-1 rounded-lg"
+            >
+              <div
+                class="w-4 h-4 rounded-full animate-spin"
+                style="border: 2px solid rgba(255, 255, 255, 0.2); border-top-color: white"
+              ></div>
+              <div class="text-xs text-white font-medium">
+                {{ processingMedia.get(item.id)?.stage === 'proxy' ? 'Proxy' : 'Decoding' }}
+              </div>
+              <div class="text-xs text-white/70">
+                {{ processingMedia.get(item.id)?.progress || 0 }}%
+              </div>
+            </div>
+            
             <img
-              v-if="item.media_type === 'image' && item.thumbnail_path"
+              v-else-if="item.media_type === 'image' && item.thumbnail_path"
               :src="convertFileSrc(item.thumbnail_path)"
               :alt="item.file_name"
               class="w-full h-full object-cover"
@@ -201,20 +218,27 @@
   const emit = defineEmits<{
     (e: 'mediaAdded', mediaId: string): void;
     (e: 'mediaUpdated'): void;
+    (e: 'videoUploaded', mediaId: string, filePath: string): void;
   }>();
 
   // Use the media CRUD composable
   const {
     mediaItems,
     isLoading: loading,
+    processingMedia,
     handleUploadClick,
     addToTimeline: addToTimelineBase,
     deleteMedia: deleteMediaBase,
+    isMediaProcessing,
   } = useMediaCRUD({
     projectId: toRef(props, 'projectId'),
     editId: toRef(props, 'editId'),
     onUpdate: () => emit('mediaUpdated'),
     onMediaAdded: (id) => emit('mediaAdded', id),
+    onVideoUploaded: async (mediaId, filePath) => {
+      console.log(`[MediaPanel] 🎥 videoUploaded event - mediaId: ${mediaId}, filePath: ${filePath}`);
+      emit('videoUploaded', mediaId, filePath);
+    },
   });
 
   // Media type styling (from composable)
@@ -226,8 +250,17 @@
     await deleteMediaBase(mediaId);
   }
 
-  // Direct pass-through for addToTimeline
+  // Check if media can be added to timeline (not processing)
+  function canAddToTimeline(item: MediaItem): boolean {
+    return !isMediaProcessing(item.id);
+  }
+
+  // Wrapper for addToTimeline with processing check
   function addToTimeline(item: MediaItem) {
+    if (isMediaProcessing(item.id)) {
+      console.log('[MediaPanel] Cannot add to timeline - media still processing:', item.id);
+      return;
+    }
     addToTimelineBase(item);
   }
 </script>

@@ -143,10 +143,14 @@ export function useVideoUrlBuilder(
       return null;
     }
 
-    const effectivePath = proxyWorkflow.getEffectivePath(activeSource.id, activeSource.file_path);
-    const url = buildVideoUrl(effectivePath);
-    const isTsFile = effectivePath.toLowerCase().endsWith('.ts');
+    // Use proxy if available, otherwise use original file
+    const effectivePath = proxyWorkflow.getEffectivePathWithOffset(
+      activeSource.id,
+      activeSource.file_path,
+      activeSource.trim_start
+    );
 
+    const url = buildVideoUrl(effectivePath.path);
     return url;
   });
 
@@ -162,19 +166,40 @@ export function useVideoUrlBuilder(
 
     const firstSource = timeline.videoSources[0];
     if (!firstSource?.file_path) return null;
-    return proxyWorkflow.getEffectivePath(firstSource.id, firstSource.file_path);
+    
+    // Use proxy if available, otherwise use original file
+    const effectivePath = proxyWorkflow.getEffectivePathWithOffset(
+      firstSource.id,
+      firstSource.file_path,
+      firstSource.trim_start
+    );
+    return effectivePath.path;
   });
 
   /**
    * Video sources for timeline rendering
+   * Returns sources with effective paths (proxy if available, original if skipped)
    */
   const videoSources = computed((): VideoSource[] => {
     const timeline = getTimeline();
     if (!timeline) return [];
-    return timeline.videoSources.map((source) => ({
-      ...source,
-      file_path: proxyWorkflow.getEffectivePath(source.id, source.file_path),
-    }));
+
+    return timeline.videoSources.map((source) => {
+      // Use proxy if available, otherwise use original file
+      const effectivePath = proxyWorkflow.getEffectivePathWithOffset(
+        source.id,
+        source.file_path,
+        source.trim_start
+      );
+      
+      const fileName = effectivePath.path.split(/[\\/]/).pop() || effectivePath.path;
+      console.log(`[useVideoUrlBuilder] Using ${effectivePath.path === source.file_path ? 'original' : 'proxy'} for source ${source.id}: ${fileName}`);
+      
+      return {
+        ...source,
+        file_path: effectivePath.path,
+      };
+    });
   });
 
   /**
@@ -192,23 +217,36 @@ export function useVideoUrlBuilder(
 
   watch(
     () => getTimeline()?.videoSources,
-    (sources) => {
+    async (sources) => {
       if (!sources) return;
-      sources.forEach((source) => {
-        // Calculate trim duration from the SOURCE video
-        // If trim_end is null (using full video), calculate from timeline duration
-        const trimDuration = source.trim_end != null 
-          ? source.trim_end - source.trim_start 
-          : (source.end_time - source.start_time);
-        proxyWorkflow.ensureProxyForSource(
-          source.id, 
-          source.file_path, 
-          source.trim_start, 
+      
+      // Generate all proxies and wait for completion
+      for (const source of sources) {
+        const trimDuration = source.trim_end != null
+          ? source.trim_end - source.trim_start
+          : (source.original_duration || source.end_time - source.start_time);
+        
+        console.log('[useVideoUrlBuilder] Generating proxy with trim values:', {
+          sourceId: source.id,
+          sourcePath: source.file_path.split(/[\\/]/).pop(),
+          trimStart: source.trim_start,
+          trimEnd: source.trim_end,
           trimDuration
-        ).catch((error) => {
-          console.warn('[useVideoUrlBuilder] Failed to ensure proxy:', error);
         });
-      });
+        
+        try {
+          await proxyWorkflow.ensureProxyForSource(
+            source.id, 
+            source.file_path, 
+            source.trim_start, 
+            trimDuration
+          );
+        } catch (error) {
+          console.error('[useVideoUrlBuilder] Failed to generate proxy:', error);
+          // Emit error to parent
+          throw new Error(`Proxy generation failed: ${error}`);
+        }
+      }
     },
     { immediate: true, deep: true }
   );

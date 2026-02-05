@@ -43,7 +43,8 @@
     "reka-ui": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vue": "^3.5.13",
-    "vue-router": "4"
+    "vue-router": "4",
+    "web-demuxer": "^4.0.0"
   },
   "devDependencies": {
     "@prettier/plugin-pug": "^3.4.2",

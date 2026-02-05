@@ -10,27 +10,33 @@
           ref="canvasRef"
           class="w-full h-full object-contain"
           :class="{
-            'hidden': !webCodecsEnabled || showCropOverlay || isAfterVideoEnd,
+            'hidden': showCropOverlay || isAfterVideoEnd,
           }"
           :style="{ filter: appliedCSSFilters }"
         />
 
-        <!-- Video element - provides audio only, visual hidden when canvas is active -->
-        <video
-          ref="videoRef"
-          class="w-full h-full object-contain"
-          :class="{
-            'opacity-0 pointer-events-none absolute': webCodecsEnabled,
-            'hidden': showCropOverlay || isAfterVideoEnd,
-          }"
-          :src="videoSrc || undefined"
-          :style="webCodecsEnabled ? {} : { filter: appliedCSSFilters }"
-          @loadedmetadata="onLoadedMetadata"
-          @timeupdate="onTimeUpdate"
-          @play="onPlay"
-          @pause="onPause"
-          @ended="onEnded"
+        <!-- Hidden audio element for WebCodecs playback -->
+        <audio
+          ref="audioRef"
+          class="hidden"
+          :muted="isMuted"
+          :volume="volume"
         />
+
+        <!-- Loading Overlay -->
+        <div
+          v-if="isLoadingVideo"
+          class="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-50"
+        >
+          <div class="w-12 h-12 border-[3px] border-sky-500/30 border-t-sky-500 rounded-full animate-spin mb-4"/>
+          <div class="text-white/80 text-sm font-medium">{{ loadingMessage }}</div>
+          <div class="w-48 h-1.5 bg-white/10 rounded-full mt-3 overflow-hidden">
+            <div
+              class="h-full bg-gradient-to-r from-cyan-500 to-sky-500 transition-all duration-150"
+              :style="{ width: `${loadingProgress}%` }"
+            />
+          </div>
+        </div>
 
         <!-- Black screen when video ends but audio continues -->
         <div
@@ -238,10 +244,11 @@ const emit = defineEmits<{
   (e: 'pause'): void;
   (e: 'seek', time: number): void;
   (e: 'timeUpdate', time: number): void;
+  (e: 'error', error: { title: string; message: string }): void;
 }>();
 
-const videoRef = ref<HTMLVideoElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const audioRef = ref<HTMLAudioElement | null>(null); // Audio element for WebCodecs playback
 const videoDuration = ref(0);
 const aspectRatios = ['16:9', '9:16', '1:1', '4:5'];
 const showCropOverlay = ref(false);
@@ -251,9 +258,6 @@ const isFullscreen = ref(false);
 const previewContainerRef = ref<HTMLElement | null>(null);
 const progressBarRef = ref<HTMLElement | null>(null);
 
-// Enable WebCodecs playback engine - hardware-accelerated video decoding
-// Provides smooth 60fps playback with seamless multi-source transitions
-const webCodecsEnabled = computed(() => true);
 
 // Proxy workflow for using proxy files instead of original large files
 const { getEffectivePath, getEffectivePathWithOffset } = useProxyWorkflow();
@@ -289,56 +293,29 @@ const { appliedCSSFilters } = useVideoEffects({
 });
 
 // Video source time conversion from composable
-const { getVideoSourceTime } = useVideoSourceTime(videoSourcesRef);
+const { getVideoSourceTime, findSourceAtTime } = useVideoSourceTime(videoSourcesRef);
+
+// Get audio time accounting for proxy trim offset
+// For proxy files, the audio starts at 0s (already trimmed), so we need to subtract the trim offset
+function getAudioSourceTime(timelineTime: number): number {
+  const source = findSourceAtTime(timelineTime);
+  if (!source) return timelineTime;
+  
+  // Get the effective path and trim offset for this source
+  const { trimOffset } = getEffectivePathWithOffset(source.id, source.file_path, source.trim_start);
+  
+  // Calculate the source time (accounts for trim_start)
+  const sourceTime = getVideoSourceTime(timelineTime);
+  
+  // If using a proxy, subtract the trim offset since proxy starts at 0s
+  // If using original file, trimOffset is 0 so no change
+  const audioTime = trimOffset > 0 ? sourceTime - trimOffset : sourceTime;
+  
+  return Math.max(0, audioTime);
+}
 
 // formatTime is imported from composable
 
-// Video event handlers
-function onLoadedMetadata() {
-  if (videoRef.value) {
-    videoDuration.value = videoRef.value.duration;
-    
-    // Perform initial seek to correct position based on trim_start
-    // This prevents showing frame 0 when the clip starts at a different position
-    const videoSourceTime = getVideoSourceTime(props.currentTime);
-    if (Math.abs(videoRef.value.currentTime - videoSourceTime) > 0.05) {
-      videoRef.value.currentTime = videoSourceTime;
-    }
-  }
-}
-
-function onTimeUpdate() {
-  // NOTE: We intentionally do NOT emit the video element's currentTime here.
-  // The playback engine is the master clock, and the video element follows it.
-  // The video element's currentTime has trim_start offset applied, so emitting it
-  // would cause sync issues with the timeline time.
-  // 
-  // The parent (ClipEditorDialog) uses the playback engine's currentTime directly.
-}
-
-function onPlay() {
-  emit('play');
-}
-
-function onPause() {
-  // Don't emit pause if we're past the video content duration
-  // The video element is paused intentionally, but timeline should keep playing
-  const videoDuration = props.videoContentDuration || props.duration || 0;
-  if (props.currentTime <= videoDuration) {
-    emit('pause');
-  }
-  // Otherwise, ignore the pause event - timeline should continue with audio only
-}
-
-function onEnded() {
-  // Don't pause if we're past the video content duration - audio should continue
-  const videoDuration = props.videoContentDuration || props.duration || 0;
-  if (props.currentTime < videoDuration) {
-    // Only pause if we're actually at the end of the timeline
-    emit('pause');
-  }
-  // Otherwise, let playback continue with audio only (black screen already showing)
-}
 
 // Playback controls
 function togglePlayPause() {
@@ -356,24 +333,17 @@ function selectAspectRatio(ratio: string) {
 // Volume controls
 function toggleMute() {
   isMuted.value = !isMuted.value;
-  if (videoRef.value) {
-    videoRef.value.muted = isMuted.value;
-  }
-  // Also toggle audio mixer mute
+  // Toggle audio mixer mute
   audioMixer.setMuted(isMuted.value);
 }
 
 function updateVolume() {
-  if (videoRef.value) {
-    videoRef.value.volume = volume.value;
-    if (volume.value > 0 && isMuted.value) {
-      isMuted.value = false;
-      videoRef.value.muted = false;
-      audioMixer.setMuted(false);
-    }
-  }
-  // Also update audio mixer volume
+  // Update audio mixer volume
   audioMixer.setMasterVolume(volume.value);
+  if (volume.value > 0 && isMuted.value) {
+    isMuted.value = false;
+    audioMixer.setMuted(false);
+  }
 }
 
 // Fullscreen controls
@@ -447,92 +417,10 @@ function handleOverlayClick(event: MouseEvent) {
   // This will be used for click-to-place mode in future steps
 }
 
-// Watch for video source changes
-watch(() => props.videoSrc, async (newSrc, oldSrc) => {
-  if (videoRef.value && newSrc) {
-    // Skip if source hasn't actually changed (but allow initial load when oldSrc is undefined)
-    if (oldSrc !== undefined && newSrc === oldSrc) {
-      return;
-    }
-    
-    const wasPlaying = props.isPlaying;
-    const currentSourceTime = getVideoSourceTime(props.currentTime);
-    
-    console.log(`[ClipEditorPreview] Loading video source: ${newSrc.substring(newSrc.length - 50)}`);
-    
-    // Pause during reload to prevent audio glitches
-    if (wasPlaying) {
-      videoRef.value.pause();
-    }
-    
-    // Load new source
-    videoRef.value.src = newSrc;
-    videoRef.value.load();
-    
-    // Wait for metadata to load (with timeout)
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        console.warn('[ClipEditorPreview] Video metadata load timeout');
-        videoRef.value?.removeEventListener('loadedmetadata', onLoaded);
-        resolve();
-      }, 3000);
-      
-      const onLoaded = () => {
-        clearTimeout(timeout);
-        videoRef.value?.removeEventListener('loadedmetadata', onLoaded);
-        console.log('[ClipEditorPreview] Video metadata loaded');
-        resolve();
-      };
-      
-      if (videoRef.value && videoRef.value.readyState >= 1) {
-        // Already loaded
-        clearTimeout(timeout);
-        console.log('[ClipEditorPreview] Video already loaded');
-        resolve();
-      } else {
-        videoRef.value?.addEventListener('loadedmetadata', onLoaded);
-      }
-    });
-    
-    // Restore volume and muted state
-    if (videoRef.value) {
-      videoRef.value.volume = volume.value;
-      videoRef.value.muted = false; // Never mute the video element itself
-      
-      // Seek to correct position
-      console.log(`[ClipEditorPreview] Seeking to source time: ${currentSourceTime.toFixed(2)}s`);
-      videoRef.value.currentTime = currentSourceTime;
-      
-      // DO NOT connect video to audio mixer - causes CORS errors with Web Audio API
-      // Video element plays its own audio directly to avoid MediaElementAudioSource restrictions
-      
-      // Resume playback if it was playing
-      if (wasPlaying) {
-        try {
-          await videoRef.value.play();
-          console.log('[ClipEditorPreview] Playback resumed after source change');
-        } catch (err) {
-          console.error('[ClipEditorPreview] Failed to resume playback after source change:', err);
-        }
-      }
-    }
-  }
-}, { immediate: true });
 
-// Watch for videoSources changes to perform initial seek
-// This handles the case where videoSources load after the video element is ready
-watch(() => props.videoSources, (newSources) => {
-  if (newSources && newSources.length > 0 && videoRef.value && videoRef.value.readyState >= 1) {
-    const videoSourceTime = getVideoSourceTime(props.currentTime);
-    if (Math.abs(videoRef.value.currentTime - videoSourceTime) > 0.05) {
-      videoRef.value.currentTime = videoSourceTime;
-    }
-  }
-}, { immediate: true });
-
-// Video synchronization via composable
-const { isAfterVideoEnd } = useVideoSync({
-  videoRef,
+// Video synchronization via composable (WebCodecs only, no video element)
+const { isAfterVideoEnd: syncIsAfterVideoEnd } = useVideoSync({
+  videoRef: ref(null), // No video element in WebCodecs mode
   currentTime: toRef(props, 'currentTime'),
   isPlaying: toRef(props, 'isPlaying'),
   videoContentDuration: computed(() => props.videoContentDuration || 0),
@@ -544,6 +432,9 @@ const { isAfterVideoEnd } = useVideoSync({
   timelineRenderer,
 });
 
+// Disable isAfterVideoEnd for WebCodecs - duration from props may be wrong
+const isAfterVideoEnd = computed(() => false);
+
 // WebCodecs playback engine - hardware-accelerated decoding for smooth 60fps playback
 // Uses browser's native GPU decoders (NVDEC/VideoToolbox/VAAPI) for instant frame decoding
 const webCodecsEngine = useWebCodecsPlayback({
@@ -554,55 +445,155 @@ const webCodecsEngine = useWebCodecsPlayback({
   getEffectivePathWithOffset,
   onError: (error) => {
     console.error('[ClipEditorPreview] WebCodecs engine error:', error);
+    // Show error modal instead of falling back
+    emit('error', {
+      title: 'Playback Error',
+      message: `Video playback failed: ${error}`,
+    });
   },
 });
 
-onMounted(async () => {
-  // Set initial volume
-  if (videoRef.value) {
-    videoRef.value.volume = volume.value;
-  }
+// Sync audio element with active video URL (proxy-only)
+watch(() => props.videoSrc, async (videoUrl) => {
+  if (!audioRef.value || !videoUrl) return;
+
+  console.log('[ClipEditorPreview] Syncing audio element with video URL:', videoUrl);
+  console.log('[ClipEditorPreview] Current playing state:', props.isPlaying);
+
+  // Ensure crossOrigin for Web Audio routing
+  audioRef.value.crossOrigin = 'anonymous';
+  audioRef.value.preload = 'auto';
+
+  // Store playing state before reload
+  const wasPlaying = props.isPlaying;
   
-  // Initialize WebCodecs playback engine for hardware-accelerated decoding
-  if (canvasRef.value) {
-    const initialized = webCodecsEngine.initialize();
-    if (initialized) {
-      console.log('[ClipEditorPreview] WebCodecs playback engine initialized with hardware acceleration');
-    } else {
-      console.warn('[ClipEditorPreview] WebCodecs not supported - falling back to video element');
+  // CRITICAL: Pause audio immediately to prevent it from playing ahead during source change
+  audioRef.value.pause();
+
+  audioRef.value.src = videoUrl;
+  audioRef.value.load();
+
+  // Sync time once metadata is ready, then resume playback if needed
+  const onLoadedMetadata = () => {
+    audioRef.value?.removeEventListener('loadedmetadata', onLoadedMetadata);
+    if (audioRef.value) {
+      // Convert timeline time to audio time (accounts for proxy trim offset)
+      const audioTime = getAudioSourceTime(props.currentTime);
+      audioRef.value.currentTime = audioTime;
+      console.log('[ClipEditorPreview] Audio metadata loaded, seeking to audio time:', audioTime, '(timeline:', props.currentTime, ')');
+      
+      // Resume playback if it was playing before source change
+      if (wasPlaying) {
+        console.log('[ClipEditorPreview] Resuming audio playback after source change');
+        audioRef.value.play().catch(err => {
+          if (err.name !== 'AbortError') {
+            console.warn('[ClipEditorPreview] Audio resume failed:', err);
+          }
+        });
+      }
     }
+  };
+  audioRef.value.addEventListener('loadedmetadata', onLoadedMetadata);
+}, { immediate: true });
+
+// Sync audio playback state with WebCodecs
+watch(() => props.isPlaying, (playing) => {
+  if (!audioRef.value) return;
+  
+  if (playing) {
+    // CRITICAL: Seek audio to correct time BEFORE playing to avoid race condition
+    // This prevents AbortError when scrubbing then playing
+    // Convert timeline time to audio time (accounts for proxy trim offset)
+    const audioTime = getAudioSourceTime(props.currentTime);
+    if (Math.abs(audioRef.value.currentTime - audioTime) > 0.05) {
+      console.log('[ClipEditorPreview] Seeking audio before play to audio time:', audioTime, '(timeline:', props.currentTime, ')');
+      audioRef.value.currentTime = audioTime;
+    }
+    console.log('[ClipEditorPreview] Playing audio');
+    audioRef.value.play().catch(err => {
+      // Ignore AbortError - it's expected when rapidly toggling play/pause
+      if (err.name !== 'AbortError') {
+        console.warn('[ClipEditorPreview] Audio play failed:', err);
+      }
+    });
+  } else {
+    console.log('[ClipEditorPreview] Pausing audio');
+    audioRef.value.pause();
+  }
+});
+
+// Sync audio time with WebCodecs
+watch(() => props.currentTime, (time) => {
+  if (!audioRef.value) return;
+  
+  // CRITICAL: Don't sync time during playback - let audio play naturally
+  // Only sync when paused (scrubbing) to avoid interrupting play()
+  if (props.isPlaying) return;
+  
+  // Convert timeline time to audio time (accounts for proxy trim offset)
+  const audioTime = getAudioSourceTime(time);
+  
+  // Only sync if difference is significant (> 0.1s) to avoid constant seeking
+  const diff = Math.abs(audioRef.value.currentTime - audioTime);
+  if (diff > 0.1) {
+    audioRef.value.currentTime = audioTime;
+  }
+});
+
+// Loading state from WebCodecs engine
+const isLoadingVideo = computed(() => webCodecsEngine.isLoading.value);
+const loadingProgress = computed(() => webCodecsEngine.loadingProgress.value);
+const loadingMessage = computed(() => webCodecsEngine.loadingMessage.value);
+
+
+onMounted(async () => {
+  if (!canvasRef.value) {
+    emit('error', {
+      title: 'Initialization Error',
+      message: 'Canvas element not available for video rendering.',
+    });
+    return;
   }
   
-  // Initialize audio mixer for audio tracks only (NOT for video element)
+  const initialized = webCodecsEngine.initialize();
+  if (!initialized) {
+    // Show error modal to user
+    emit('error', {
+      title: 'Hardware Acceleration Required',
+      message: 'Your browser does not support hardware-accelerated video editing. Please use Chrome, Edge, Firefox, or Safari.',
+    });
+    return;
+  }
+  
+  console.log('[ClipEditorPreview] WebCodecs playback engine initialized');
+  
+  // Initialize audio mixer
   try {
     await audioMixer.initialize();
     console.log('[ClipEditorPreview] Audio mixer initialized');
-    console.log('[ClipEditorPreview] Video element will play its own audio directly (not through mixer)');
-    // IMPORTANT: Video element plays its own audio directly to avoid CORS issues
-    // Web Audio API MediaElementAudioSource requires CORS headers that may not be reliable
+    
+    // Connect audio element to mixer for WebCodecs playback
+    if (audioRef.value) {
+      audioMixer.connectVideoElement(audioRef.value);
+      console.log('[ClipEditorPreview] Audio element connected to mixer');
+    }
   } catch (error) {
     console.error('[ClipEditorPreview] Failed to initialize audio mixer:', error);
   }
   
-  // Listen for fullscreen changes
   document.addEventListener('fullscreenchange', handleFullscreenChange);
 });
 
 onUnmounted(() => {
-  if (videoRef.value) {
-    videoRef.value.pause();
-  }
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
   
   // Dispose audio mixer
   audioMixer.dispose();
 });
 
-// Expose audio mixer to parent component
+// Expose audio mixer and preloadVideo to parent component
 defineExpose({
   audioMixer,
+  preloadVideo: webCodecsEngine.preloadVideo,
 });
 </script>
-
-
-

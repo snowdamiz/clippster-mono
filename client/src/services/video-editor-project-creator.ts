@@ -79,20 +79,36 @@ export async function createVideoEditorProjectFromClip(
     }
   }
 
-  // If we have a clip ID, get the clip's raw video info
+  // If we have a clip ID, get the clip's video info
   if (clipId) {
     try {
       const clip = await getClip(clipId);
-      if (clip?.project_id) {
-        const rawVideos = await getRawVideosByProjectId(clip.project_id);
-        if (rawVideos.length > 0) {
-          clipVideoPath = rawVideos[0].file_path;
+      if (clip) {
+        // CRITICAL: Use the clipped video file (built_file_path) if available
+        // This ensures we load the short clip file, not the original VOD
+        if (clip.built_file_path) {
+          clipVideoPath = clip.built_file_path;
+          console.log('[video-editor-project-creator] Using clipped video file:', clip.built_file_path);
+        } else if (clip?.project_id) {
+          // Fallback to raw video only if no clipped file exists
+          const rawVideos = await getRawVideosByProjectId(clip.project_id);
+          if (rawVideos.length > 0) {
+            clipVideoPath = rawVideos[0].file_path;
+            console.warn('[video-editor-project-creator] No clipped file found, using original VOD:', clipVideoPath);
+          }
         }
       }
     } catch (error) {
-      console.warn('[video-editor-project-creator] Failed to get clip raw video:', error);
+      console.warn('[video-editor-project-creator] Failed to get clip video info:', error);
     }
   }
+
+  console.log('[video-editor-project-creator] Creating source with trim values:', {
+    clipStartTime,
+    clipEndTime,
+    clipDuration,
+    clipVideoPath: clipVideoPath.split(/[\\/]/).pop()
+  });
 
   // Create the first source from the current clip
   const sources: VideoEditorSource[] = [];
