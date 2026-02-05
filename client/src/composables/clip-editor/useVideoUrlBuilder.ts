@@ -226,6 +226,14 @@ export function useVideoUrlBuilder(
           ? source.trim_end - source.trim_start
           : (source.original_duration || source.end_time - source.start_time);
         
+        console.log('[useVideoUrlBuilder] Generating proxy with trim values:', {
+          sourceId: source.id,
+          sourcePath: source.file_path.split(/[\\/]/).pop(),
+          trimStart: source.trim_start,
+          trimEnd: source.trim_end,
+          trimDuration
+        });
+        
         try {
           await proxyWorkflow.ensureProxyForSource(
             source.id, 

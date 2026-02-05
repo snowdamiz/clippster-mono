@@ -103,6 +103,13 @@ export async function createVideoEditorProjectFromClip(
     }
   }
 
+  console.log('[video-editor-project-creator] Creating source with trim values:', {
+    clipStartTime,
+    clipEndTime,
+    clipDuration,
+    clipVideoPath: clipVideoPath.split(/[\\/]/).pop()
+  });
+
   // Create the first source from the current clip
   const sources: VideoEditorSource[] = [];
   if (clipVideoPath) {
