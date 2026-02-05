@@ -20,6 +20,8 @@ mod dvr;
 mod hls;
 mod video_editor_export;
 mod video;
+mod clip_extractor_commands;
+mod utils;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -812,7 +814,14 @@ video::clear_frame_cache,
 video::get_frame_cache_stats,
 video::get_decoder_info,
 
+// Clip Extractor commands
+clip_extractor_commands::extract_clip,
+clip_extractor_commands::generate_thumbnail,
+clip_extractor_commands::generate_waveform,
+clip_extractor_commands::delete_file,
+clip_extractor_commands::file_exists,
+
 ])
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
-}
+} 

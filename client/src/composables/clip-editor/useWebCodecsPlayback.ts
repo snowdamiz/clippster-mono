@@ -1268,6 +1268,44 @@ export function useWebCodecsPlayback(options: WebCodecsPlaybackOptions) {
         continue;
       }
       
+      // Check if this is an extracted clip (professional workflow)
+      // Extracted clips are small, independent files that don't need proxy generation
+      const isExtractedClip = source.file_path.includes('clips/') && !source.file_path.includes('proxy_');
+      
+      if (isExtractedClip) {
+        // Extracted clips are already optimized - proceed with decode
+        console.log(`[WebCodecsPlayback] ✓ Source ${source.id} is extracted clip, proceeding with decode: ${source.file_path.split(/[\\/]/).pop()}`);
+      } else {
+        // Check if this source needs a proxy but still points to original file
+        // If source.file_path is original file AND proxy exists, skip decode and wait for useVideoUrlBuilder to update the path
+        // If source.file_path already points to proxy, proceed with decode
+        const isProxyFile = source.file_path.includes('proxy_');
+        
+        if (getEffectivePathWithOffset && !isProxyFile) {
+          // Source still points to original file - check if proxy exists
+          const trimStartMs = source.trim_start !== undefined ? Math.round(source.trim_start * 1000) : 0;
+          const proxyKey = `${source.id}_t${trimStartMs}`;
+          
+          const proxyCache = localStorage.getItem('proxy_workflow_cache');
+          if (proxyCache) {
+            try {
+              const entries = JSON.parse(proxyCache) as Array<[string, any]>;
+              const proxies = new Map(entries);
+              const proxy = proxies.get(proxyKey);
+              
+              // Skip decode of original file if proxy exists or is being generated
+              // useVideoUrlBuilder will update the source.file_path when proxy is ready
+              if (proxy && (proxy.status === 'generating' || proxy.status === 'pending' || proxy.status === 'ready')) {
+                console.log(`[WebCodecsPlayback] ⏳ Source ${source.id} waiting for useVideoUrlBuilder to update path to proxy (status: ${proxy.status})`);
+                continue;
+              }
+            } catch (e) {
+              console.warn(`[WebCodecsPlayback] Failed to parse proxy cache:`, e);
+            }
+          }
+        }
+      }
+      
       // Check if this source has frames in cache
       const sourceFrames = Array.from(frameCache.values()).filter(f => f.sourceId === source.id);
       if (sourceFrames.length > 0) {

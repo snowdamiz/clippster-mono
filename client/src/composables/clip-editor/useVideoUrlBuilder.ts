@@ -83,6 +83,11 @@ export function useVideoUrlBuilder(
 
   const serverPort = ref<number | null>(null);
 
+  // Memoization cache for videoSources to prevent unnecessary object recreation
+  // This prevents the WebCodecs watch from triggering re-decode on every timeline action
+  const videoSourcesCache = ref<VideoSource[]>([]);
+  const lastSourcesHash = ref<string>('');
+
   /**
    * Initialize video server connection
    */
@@ -179,27 +184,47 @@ export function useVideoUrlBuilder(
   /**
    * Video sources for timeline rendering
    * Returns sources with effective paths (proxy if available, original if skipped)
+   * 
+   * MEMOIZED: Only recreates objects when source IDs actually change.
+   * This prevents WebCodecs watch from triggering re-decode on every timeline action.
+   * Fixes issue #191: https://github.com/snowdamiz/clippster-mono/issues/191
    */
   const videoSources = computed((): VideoSource[] => {
     const timeline = getTimeline();
     if (!timeline) return [];
 
-    return timeline.videoSources.map((source) => {
-      // Use proxy if available, otherwise use original file
-      const effectivePath = proxyWorkflow.getEffectivePathWithOffset(
-        source.id,
-        source.file_path,
-        source.trim_start
-      );
+    // Create hash of source IDs + file paths to detect actual changes
+    // Include file_path in hash to detect when proxies are generated
+    const currentHash = timeline.videoSources
+      .map(s => `${s.id}:${s.file_path}:${s.trim_start}`)
+      .join('|');
+
+    // Only recreate if sources actually changed
+    if (currentHash !== lastSourcesHash.value) {
+      console.log(`[useVideoUrlBuilder] 🔄 Video sources changed, rebuilding (${timeline.videoSources.length} sources)`);
+      lastSourcesHash.value = currentHash;
       
-      const fileName = effectivePath.path.split(/[\\/]/).pop() || effectivePath.path;
-      console.log(`[useVideoUrlBuilder] Using ${effectivePath.path === source.file_path ? 'original' : 'proxy'} for source ${source.id}: ${fileName}`);
-      
-      return {
-        ...source,
-        file_path: effectivePath.path,
-      };
-    });
+      videoSourcesCache.value = timeline.videoSources.map((source) => {
+        // Use proxy if available, otherwise use original file
+        const effectivePath = proxyWorkflow.getEffectivePathWithOffset(
+          source.id,
+          source.file_path,
+          source.trim_start
+        );
+        
+        const fileName = effectivePath.path.split(/[\\/]/).pop() || effectivePath.path;
+        console.log(`[useVideoUrlBuilder] Using ${effectivePath.path === source.file_path ? 'original' : 'proxy'} for source ${source.id}: ${fileName}`);
+        
+        return {
+          ...source,
+          file_path: effectivePath.path,
+        };
+      });
+    } else {
+      console.log(`[useVideoUrlBuilder] ✓ Video sources unchanged, returning cached (${videoSourcesCache.value.length} sources)`);
+    }
+
+    return videoSourcesCache.value;
   });
 
   /**

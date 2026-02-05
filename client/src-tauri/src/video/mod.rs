@@ -1,6 +1,7 @@
 pub mod frame_decoder;
 pub mod frame_cache;
 pub mod decoder_pool;
+pub mod ffmpeg;
 
 use decoder_pool::{DecoderPool, CacheStats, DecoderInfo};
 use std::sync::Arc;

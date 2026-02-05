@@ -1,5 +1,4 @@
 use ffmpeg_the_third as ffmpeg;
-use parking_lot::Mutex;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -84,7 +83,7 @@ impl VideoDecoder {
 
         let fps = f64::from(video_stream.avg_frame_rate());
 
-        let scaler = ffmpeg::software::scaling::Context::get(
+        let _scaler = ffmpeg::software::scaling::Context::get(
             decoder.format(),
             decoder.width(),
             decoder.height(),

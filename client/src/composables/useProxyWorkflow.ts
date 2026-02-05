@@ -198,6 +198,7 @@ export function useProxyWorkflow() {
         console.log(`[useProxyWorkflow] Invalidating proxy ${proxyKey}: duration mismatch ${proxy.trimDuration}s vs ${trimDuration}s`);
         proxy.status = 'pending';
         proxy.proxyPath = '';
+        saveProxyCache(); // Save immediately so useWebCodecsPlayback can detect pending status
       }
     }
     

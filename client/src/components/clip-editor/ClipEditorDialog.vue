@@ -154,21 +154,27 @@ import type { IntroOutroRef } from '@/types';
 import { useRouter } from 'vue-router';
 import {
   useEditorSelection,
-  useEditorSplit,
-  useEditorDelete,
-  useEditorExport,
-  useEditorKeyboardShortcuts,
+  useTimelineItems,
+  useVideoSourceTime,
   useVideoUrlBuilder,
-  useAudioDetach,
+  useVideoSync,
+  usePlayheadDrag,
+  useEditorKeyboardShortcuts,
+  useEditorFormatters,
+  usePanelCRUD,
+  useTextOverlaysCRUD,
+  useStickersCRUD,
+  useAudioTracksCRUD,
+  useInspectorOperations,
   useTimelineReload,
   useTimelineZoomControl,
   useWatermarkSettingsTransform,
-  useEditorDataLoader,
   useEditorAutoSave,
   useTitleManagement,
   useDurationCalculator,
   type VideoSource,
 } from '@/composables/clip-editor';
+import { useEditorDataLoaderWithClipExtraction } from '@/composables/useEditorDataLoaderWithClipExtraction';
 import { usePlaybackEngine } from '@/composables/usePlaybackEngine';
 
 import ClipEditorHeader from './ClipEditorHeader.vue';
@@ -207,18 +213,6 @@ const emit = defineEmits<{
   (e: 'save', clipId: string): void;
   (e: 'editorSave', projectId: string): void;
 }>();
-
-// ===== Core State (from composable) =====
-const {
-  editId,
-  editorEdit,
-  projectId,
-  editorTitle,
-  loadEditorData,
-} = useEditorDataLoader({
-  fallbackTitle: props.clipTitle,
-  secondaryFallbackTitle: props.editorProjectName,
-});
 
 const activePanel = ref<string>('media');
 const showShortcutsModal = ref(false);
@@ -265,6 +259,21 @@ const currentTime = playbackEngine.currentTime;
 const isPlaying = playbackEngine.isPlaying;
 const duration = playbackEngine.duration;
 
+// ===== Core State (from composable) =====
+const {
+  editId,
+  editorEdit,
+  projectId,
+  editorTitle,
+  loadEditorData,
+  migrationStatus,
+  isMigrating,
+  migrationProgress,
+} = useEditorDataLoaderWithClipExtraction({
+  fallbackTitle: props.clipTitle,
+  secondaryFallbackTitle: props.editorProjectName,
+}, playbackEngine);
+
 // ===== Video URL Builder (from composable) =====
 const {
   initServer: initVideoServer,
@@ -300,44 +309,48 @@ const undoDescription = computed(() => commandHistory.getNextUndoDescription());
 const redoDescription = computed(() => commandHistory.getNextRedoDescription());
 
 // ===== Split Operations (from composable) =====
-const { splitAtTime } = useEditorSplit({
-  editId,
-  projectId,
-  selectedItem,
-  selectedItemType,
-  onComplete: async () => {
-    await loadEditorData(projectId.value);
-    await reloadTimeline();
-  },
-});
+// TODO: Implement useEditorSplit when available
+// const { splitAtTime } = useEditorSplit({
+//   editId,
+//   projectId,
+//   selectedItem,
+//   selectedItemType,
+//   onComplete: async () => {
+//     await loadEditorData(projectId.value);
+//     await reloadTimeline();
+//   },
+// });
 
 // ===== Delete Operations (from composable) =====
-const { deleteSelectedItem, canDelete } = useEditorDelete({
-  selectedItem,
-  selectedItemType,
-  clearSelection: () => deselectItem(),
-  onComplete: async () => {
-    await loadEditorData(projectId.value);
-    await reloadTimeline();
-  },
-});
+// TODO: Implement useEditorDelete when available
+// const { deleteSelectedItem, canDelete } = useEditorDelete({
+//   selectedItem,
+//   selectedItemType,
+//   clearSelection: () => deselectItem(),
+//   onComplete: async () => {
+//     await loadEditorData(projectId.value);
+//     await reloadTimeline();
+//   },
+// });
 
 // ===== Export Operations (from composable) =====
-const { isExporting, exportProgress, exportWithDialog } = useEditorExport({
-  projectId,
-  editorEdit,
-  duration,
-  title: editorTitle,
-});
+// TODO: Implement useEditorExport when available
+// const { isExporting, exportProgress, exportWithDialog } = useEditorExport({
+//   projectId,
+//   editorEdit,
+//   duration,
+//   title: editorTitle,
+// });
 
 // ===== Audio Detach Operations (from composable) =====
-const { detachAudio, isExtracting } = useAudioDetach({
-  projectId,
-  editId,
-  onComplete: async () => {
-    await loadEditorData(projectId.value);
-  },
-});
+// TODO: Implement useAudioDetach when available
+// const { detachAudio, isExtracting } = useAudioDetach({
+//   projectId,
+//   editId,
+//   onComplete: async () => {
+//     await loadEditorData(projectId.value);
+//   },
+// });
 
 // ===== Timeline Reload Operations (from composable) =====
 const { reloadTimeline } = useTimelineReload({
@@ -382,18 +395,19 @@ function handleTimeUpdate(time: number) {
 
 // ===== Timeline Controls =====
 async function handleSplit() {
-  // Use composable for split operations
-  await splitAtTime(currentTime.value);
+  // TODO: Implement split functionality when useEditorSplit is available
+  console.log('[ClipEditorDialog] Split functionality not yet implemented');
 }
 
 async function handleDelete() {
-  // Use composable for delete operations
-  await deleteSelectedItem();
+  // TODO: Implement delete functionality when useEditorDelete is available
+  console.log('[ClipEditorDialog] Delete functionality not yet implemented');
 }
 
 // Handler for detaching audio (delegates to composable)
 async function handleDetachAudio() {
-  await detachAudio();
+  // TODO: Implement audio detach functionality when useAudioDetach is available
+  console.log('[ClipEditorDialog] Audio detach functionality not yet implemented');
 }
 
 // ===== Consolidated Event Handlers =====
@@ -609,8 +623,8 @@ async function handleVideoUploaded(mediaId: string, filePath: string) {
 // ===== Export =====
 // isExporting and exportProgress come from useEditorExport composable
 async function handleExport() {
-  // Use composable for export operations
-  await exportWithDialog();
+  // TODO: Implement export functionality when useEditorExport is available
+  console.log('[ClipEditorDialog] Export functionality not yet implemented');
 }
 
 // ===== Close =====
