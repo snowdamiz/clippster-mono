@@ -13,6 +13,7 @@ interface UseTimelinePlayheadProps {
 	rulerScrollRef: Ref<HTMLDivElement | null>;
 	tracksScrollRef: Ref<HTMLDivElement | null>;
 	playheadRef?: Ref<HTMLDivElement | null>;
+	autoFollow?: Ref<boolean>;
 }
 
 export function useTimelinePlayhead({
@@ -21,6 +22,7 @@ export function useTimelinePlayhead({
 	rulerScrollRef,
 	tracksScrollRef,
 	playheadRef,
+	autoFollow,
 }: UseTimelinePlayheadProps) {
 	const { editor, version } = useEditor();
 
@@ -159,6 +161,7 @@ export function useTimelinePlayhead({
 	// Auto-scroll playhead into view during playback
 	watch([playheadPosition, isPlaying, isScrubbing], ([pos, playing, scrub]) => {
 		if (!playing || scrub) return;
+		if (autoFollow && !autoFollow.value) return;
 
 		const rulerViewport = rulerScrollRef.value;
 		const tracksViewport = tracksScrollRef.value;

@@ -6,6 +6,7 @@ import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
 import { ChevronDown } from "lucide-vue-next";
+import PreviewOverlay from "./PreviewOverlay.vue";
 
 const { editor, version } = useEditor();
 
@@ -150,15 +151,22 @@ const canvasBackground = computed(() => {
 			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false" />
 		</div>
 
-		<!-- Canvas -->
+		<!-- Canvas + Interactive Overlay -->
 		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center p-4">
-			<canvas
-				ref="canvasRef"
-				:width="canvasWidth"
-				:height="canvasHeight"
-				class="block max-h-full max-w-full rounded-sm"
-				:style="{ background: canvasBackground, aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
-			/>
+			<div class="relative inline-flex max-h-full max-w-full rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]">
+				<canvas
+					ref="canvasRef"
+					:width="canvasWidth"
+					:height="canvasHeight"
+					class="block max-h-full max-w-full rounded-sm"
+					:style="{ background: canvasBackground, aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
+				/>
+				<PreviewOverlay
+					:canvas-ref="canvasRef"
+					:canvas-width="canvasWidth"
+					:canvas-height="canvasHeight"
+				/>
+			</div>
 		</div>
 	</div>
 </template>

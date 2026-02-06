@@ -13,6 +13,7 @@ export type TrackType = "video" | "text" | "audio" | "sticker";
 interface BaseTrack {
 	id: string;
 	name: string;
+	locked?: boolean;
 }
 
 export interface VideoTrack extends BaseTrack {
@@ -93,6 +94,7 @@ interface BaseTimelineElement {
 	startTime: number;
 	trimStart: number;
 	trimEnd: number;
+	keyframes?: import("./keyframes").ElementKeyframes;
 }
 
 export interface VideoElement extends BaseTimelineElement {

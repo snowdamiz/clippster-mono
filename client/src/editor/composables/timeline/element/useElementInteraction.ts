@@ -441,12 +441,18 @@ export function useElementInteraction({
 			return;
 		}
 
+		// Prevent drag on locked tracks (still allow selection)
+		if (track.locked) {
+			handleSelectionClick({ trackId: track.id, elementId: element.id, isMultiKey: event.metaKey || event.ctrlKey || event.shiftKey });
+			return;
+		}
+
 		event.stopPropagation();
 		mouseDownLocation = { x: event.clientX, y: event.clientY };
 
-		const isMultiSelect = event.metaKey || event.ctrlKey || event.shiftKey;
+		const isMultiSelect = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
 		if (isMultiSelect) {
-			handleSelectionClick({ trackId: track.id, elementId: element.id, isMultiKey: true });
+			handleSelectionClick({ trackId: track.id, elementId: element.id, isMultiKey: true, isAltKey: event.altKey, isShiftKey: event.shiftKey });
 		}
 
 		const clickOffset = getClickOffsetTime({

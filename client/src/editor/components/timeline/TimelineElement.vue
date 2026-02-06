@@ -38,6 +38,7 @@ const emit = defineEmits<{
 	(e: "rippleShiftsChange", shifts: Map<string, number>): void;
 	(e: "elementMouseDown", event: MouseEvent, element: TimelineElementType): void;
 	(e: "elementClick", event: MouseEvent, element: TimelineElementType): void;
+	(e: "elementContextMenu", event: MouseEvent, element: TimelineElementType): void;
 }>();
 
 const { editor } = useEditor();
@@ -160,6 +161,7 @@ function onContextAction(action: string) {
 				class="absolute inset-0 size-full cursor-pointer"
 				@click="emit('elementClick', $event, element)"
 				@mousedown="emit('elementMouseDown', $event, element)"
+				@contextmenu.prevent="emit('elementContextMenu', $event, element)"
 			>
 				<div class="absolute inset-0 flex h-full items-center">
 					<!-- Text element -->

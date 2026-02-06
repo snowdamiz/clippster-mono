@@ -1,6 +1,8 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import type { Transform, FlipState, ColorAdjustments } from "../../types/timeline";
+import type { ElementKeyframes } from "../../types/keyframes";
+import { getKeyframedValue } from "../../types/keyframes";
 
 const IMAGE_EPSILON = 1 / 1000;
 
@@ -18,6 +20,7 @@ export interface ImageNodeParams {
 	transform?: Transform;
 	flip?: FlipState;
 	colorAdjustments?: ColorAdjustments;
+	keyframes?: ElementKeyframes;
 }
 
 export class ImageNode extends BaseNode<ImageNodeParams> {
@@ -67,9 +70,13 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 
 		renderer.context.save();
 
-		if (this.params.opacity !== undefined) {
-			renderer.context.globalAlpha = this.params.opacity;
-		}
+		// Resolve keyframed values
+		const elapsed = time - this.params.timeOffset;
+		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
+		const kf = this.params.keyframes;
+
+		const resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: this.params.opacity ?? 1 });
+		renderer.context.globalAlpha = resolvedOpacity;
 
 		// Apply transform (scale, position, rotation)
 		const transform = this.params.transform;

@@ -70,6 +70,7 @@ export function buildScene(params: BuildSceneParams) {
 							flip: videoEl.flip,
 							colorAdjustments: videoEl.colorAdjustments,
 							speed: videoEl.speed,
+							keyframes: videoEl.keyframes,
 						}),
 					);
 				}
@@ -86,6 +87,7 @@ export function buildScene(params: BuildSceneParams) {
 							transform: imageEl.transform,
 							flip: imageEl.flip,
 							colorAdjustments: imageEl.colorAdjustments,
+							keyframes: imageEl.keyframes,
 						}),
 					);
 				}
@@ -112,6 +114,7 @@ export function buildScene(params: BuildSceneParams) {
 						transform: element.transform,
 						opacity: element.opacity,
 						color: element.color,
+						keyframes: element.keyframes,
 					}),
 				);
 			}

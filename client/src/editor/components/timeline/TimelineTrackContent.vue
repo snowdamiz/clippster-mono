@@ -9,12 +9,15 @@ import type {
 	ElementDragState,
 } from "../../types/timeline";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
+import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
+import { snapTimeToFrame } from "../../lib/time";
 
 const props = defineProps<{
 	track: TimelineTrack;
 	zoomLevel: number;
 	dragState: ElementDragState;
 	snappingEnabled: boolean;
+	razorMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -22,6 +25,8 @@ const emit = defineEmits<{
 	(e: "resizeStateChange", params: { isResizing: boolean }): void;
 	(e: "elementMouseDown", params: { event: MouseEvent; element: TimelineElementType; track: TimelineTrack }): void;
 	(e: "elementClick", params: { event: MouseEvent; element: TimelineElementType; track: TimelineTrack }): void;
+	(e: "elementContextMenu", params: { event: MouseEvent; element: TimelineElementType; track: TimelineTrack }): void;
+	(e: "razorCut", params: { trackId: string; elementId: string; time: number }): void;
 	(e: "trackMouseDown", event: MouseEvent): void;
 	(e: "trackClick", event: MouseEvent): void;
 }>();
@@ -43,6 +48,22 @@ const hasSelectedElements = computed(() =>
 	),
 );
 
+function handleElementClick(ev: MouseEvent, el: TimelineElementType) {
+	if (props.razorMode) {
+		const target = ev.currentTarget as HTMLElement;
+		const parent = target?.closest('.relative.h-full.min-w-full') as HTMLElement;
+		if (!parent) return;
+		const rect = parent.getBoundingClientRect();
+		const relativeX = ev.clientX - rect.left;
+		const rawTime = relativeX / (TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel);
+		const fps = editor.project.getActive()?.settings?.fps ?? 30;
+		const time = snapTimeToFrame({ time: rawTime, fps });
+		emit("razorCut", { trackId: props.track.id, elementId: el.id, time });
+		return;
+	}
+	emit("elementClick", { event: ev, element: el, track: props.track });
+}
+
 function onTrackClick(event: MouseEvent) {
 	clearElementSelection();
 	emit("trackClick", event);
@@ -56,7 +77,7 @@ function onTrackMouseDown(event: MouseEvent) {
 
 <template>
 	<button
-		:class="['size-full', hasSelectedElements && 'bg-white/5']"
+		:class="['size-full', hasSelectedElements && 'bg-white/5', razorMode && 'cursor-crosshair']"
 		type="button"
 		@click="onTrackClick"
 		@mousedown="onTrackMouseDown"
@@ -80,7 +101,8 @@ function onTrackMouseDown(event: MouseEvent) {
 				@resize-state-change="(p) => emit('resizeStateChange', p)"
 				@ripple-shifts-change="onRippleShiftsChange"
 				@element-mouse-down="(ev, el) => emit('elementMouseDown', { event: ev, element: el, track })"
-				@element-click="(ev, el) => emit('elementClick', { event: ev, element: el, track })"
+				@element-click="(ev, el) => handleElementClick(ev, el)"
+				@element-context-menu="(ev: MouseEvent, el: TimelineElementType) => emit('elementContextMenu', { event: ev, element: el, track })"
 			/>
 		</div>
 	</button>

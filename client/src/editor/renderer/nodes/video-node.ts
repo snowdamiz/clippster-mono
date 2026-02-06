@@ -2,6 +2,8 @@ import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import { videoCache } from "../../video-cache/service";
 import type { Transform, FlipState, ColorAdjustments } from "../../types/timeline";
+import type { ElementKeyframes } from "../../types/keyframes";
+import { getKeyframedValue } from "../../types/keyframes";
 
 const VIDEO_EPSILON = 1 / 1000;
 
@@ -22,6 +24,7 @@ export interface VideoNodeParams {
 	flip?: FlipState;
 	colorAdjustments?: ColorAdjustments;
 	speed?: number;
+	keyframes?: ElementKeyframes;
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
@@ -54,11 +57,15 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		if (frame) {
 			renderer.context.save();
 
-			if (this.params.opacity !== undefined) {
-				renderer.context.globalAlpha = this.params.opacity;
-			}
+			// Resolve keyframed values
+			const elapsed = time - this.params.timeOffset;
+			const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
+			const kf = this.params.keyframes;
 
-			// Apply transform (scale, position, rotation)
+			const resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: this.params.opacity ?? 1 });
+			renderer.context.globalAlpha = resolvedOpacity;
+
+			// Apply transform (scale, position, rotation) with keyframe overrides
 			const transform = this.params.transform;
 			if (transform) {
 				const centerX = renderer.width / 2 + transform.position.x;

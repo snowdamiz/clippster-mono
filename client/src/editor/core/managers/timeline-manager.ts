@@ -12,6 +12,7 @@ import {
 	RemoveTrackCommand,
 	ToggleTrackMuteCommand,
 	ToggleTrackVisibilityCommand,
+	ToggleTrackLockCommand,
 	InsertElementCommand,
 	UpdateElementTrimCommand,
 	UpdateElementDurationCommand,
@@ -26,9 +27,11 @@ import {
 	UpdateElementStartTimeCommand,
 	MoveElementCommand,
 	ChangeSpeedCommand,
+	UpdateElementKeyframesCommand,
 } from "../../lib/commands/timeline";
 import type { UpdatableElementProps } from "../../lib/commands/timeline";
 import type { InsertElementParams } from "../../lib/commands/timeline/element/insert-element";
+import type { ElementKeyframes } from "../../types/keyframes";
 
 export class TimelineManager {
 	private listeners = new Set<() => void>();
@@ -135,6 +138,16 @@ export class TimelineManager {
 	toggleTrackVisibility({ trackId }: { trackId: string }): void {
 		const command = new ToggleTrackVisibilityCommand(trackId);
 		this.editor.command.execute({ command });
+	}
+
+	toggleTrackLock({ trackId }: { trackId: string }): void {
+		const command = new ToggleTrackLockCommand(trackId);
+		this.editor.command.execute({ command });
+	}
+
+	isTrackLocked({ trackId }: { trackId: string }): boolean {
+		const track = this.getTrackById({ trackId });
+		return track?.locked === true;
 	}
 
 	splitElements({
@@ -253,6 +266,19 @@ export class TimelineManager {
 		speed: number;
 	}): void {
 		const command = new ChangeSpeedCommand(trackId, elementId, speed);
+		this.editor.command.execute({ command });
+	}
+
+	updateElementKeyframes({
+		trackId,
+		elementId,
+		keyframes,
+	}: {
+		trackId: string;
+		elementId: string;
+		keyframes: ElementKeyframes;
+	}): void {
+		const command = new UpdateElementKeyframesCommand(trackId, elementId, keyframes);
 		this.editor.command.execute({ command });
 	}
 

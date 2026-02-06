@@ -61,12 +61,54 @@ export function useElementSelection() {
 		editor.selection.setSelectedElements({ elements });
 	}
 
+	function rippleSelect({ trackId, elementId }: ElementRef) {
+		const track = editor.timeline.getTrackById({ trackId });
+		if (!track) return;
+		const element = track.elements.find((e) => e.id === elementId);
+		if (!element) return;
+		const rightElements = track.elements
+			.filter((e) => e.startTime >= element.startTime)
+			.map((e) => ({ trackId, elementId: e.id }));
+		editor.selection.setSelectedElements({ elements: rightElements });
+	}
+
+	function rangeSelect({ trackId, elementId }: ElementRef) {
+		const lastSelected = selectedElements.value[selectedElements.value.length - 1];
+		if (!lastSelected || lastSelected.trackId !== trackId) {
+			selectElement({ trackId, elementId });
+			return;
+		}
+		const track = editor.timeline.getTrackById({ trackId });
+		if (!track) return;
+		const clickedEl = track.elements.find((e) => e.id === elementId);
+		const lastEl = track.elements.find((e) => e.id === lastSelected.elementId);
+		if (!clickedEl || !lastEl) {
+			selectElement({ trackId, elementId });
+			return;
+		}
+		const minTime = Math.min(clickedEl.startTime, lastEl.startTime);
+		const maxTime = Math.max(
+			clickedEl.startTime + clickedEl.duration,
+			lastEl.startTime + lastEl.duration,
+		);
+		const rangeElements = track.elements
+			.filter((e) => e.startTime >= minTime && e.startTime + e.duration <= maxTime)
+			.map((e) => ({ trackId, elementId: e.id }));
+		editor.selection.setSelectedElements({ elements: rangeElements });
+	}
+
 	function handleElementClick({
 		trackId,
 		elementId,
 		isMultiKey,
-	}: ElementRef & { isMultiKey: boolean }) {
-		if (isMultiKey) {
+		isAltKey,
+		isShiftKey,
+	}: ElementRef & { isMultiKey: boolean; isAltKey?: boolean; isShiftKey?: boolean }) {
+		if (isAltKey) {
+			rippleSelect({ trackId, elementId });
+		} else if (isShiftKey) {
+			rangeSelect({ trackId, elementId });
+		} else if (isMultiKey) {
 			toggleElementSelection({ trackId, elementId });
 		} else {
 			selectElement({ trackId, elementId });
@@ -83,5 +125,7 @@ export function useElementSelection() {
 		toggleElementSelection,
 		clearElementSelection,
 		handleElementClick,
+		rippleSelect,
+		rangeSelect,
 	};
 }

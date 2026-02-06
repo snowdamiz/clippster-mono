@@ -16,7 +16,10 @@ import {
 	getTotalTracksHeight,
 	getTimelineZoomMin,
 	getTimelinePaddingPx,
+	canTracktHaveAudio,
+	canTrackBeHidden,
 } from "../../lib/timeline";
+import type { TrackType } from "../../types/timeline";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
 
 import TimelineToolbar from "./TimelineToolbar.vue";
@@ -27,12 +30,60 @@ import SnapIndicator from "./SnapIndicator.vue";
 import DragLine from "./DragLine.vue";
 import SelectionBox from "../SelectionBox.vue";
 import TimelineScrollbar from "./TimelineScrollbar.vue";
+import TimelineContextMenu from "./TimelineContextMenu.vue";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+	Lock,
+	Unlock,
+	Volume2,
+	VolumeX,
+	Eye,
+	EyeOff,
+	Plus,
+	Trash2,
+} from "lucide-vue-next";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const tracksContainerHeight = { min: 0, max: 800 };
 
 const { editor, version } = useEditor();
-const { clearElementSelection, setElementSelection } = useElementSelection();
+const { clearElementSelection, setElementSelection, selectedElements } = useElementSelection();
+
+// Context menu state
+const contextMenuPos = ref<{ x: number; y: number } | null>(null);
+const contextMenuElement = ref<{ trackId: string; elementId: string } | null>(null);
+
+function handleContextMenu(params: { event: MouseEvent; element: { id: string }; track: { id: string } }) {
+	params.event.preventDefault();
+	contextMenuPos.value = { x: params.event.clientX, y: params.event.clientY };
+	contextMenuElement.value = { trackId: params.track.id, elementId: params.element.id };
+}
+
+function closeContextMenu() {
+	contextMenuPos.value = null;
+	contextMenuElement.value = null;
+}
+
+// Track management
+function addTrack(type: TrackType) {
+	editor.timeline.addTrack({ type });
+}
+
+function removeTrack(trackId: string) {
+	editor.timeline.removeTrack({ trackId });
+}
+
+function toggleTrackLock(trackId: string) {
+	editor.timeline.toggleTrackLock({ trackId });
+}
+
+function toggleTrackMute(trackId: string) {
+	editor.timeline.toggleTrackMute({ trackId });
+}
+
+function toggleTrackVisibility(trackId: string) {
+	editor.timeline.toggleTrackVisibility({ trackId });
+}
 
 const tracks = computed(() => {
 	void version.value;
@@ -58,6 +109,23 @@ const trackLabelsScrollRef = ref<HTMLDivElement | null>(null);
 const isResizing = ref(false);
 const currentSnapPoint = ref<SnapPoint | null>(null);
 const snappingEnabled = ref(true);
+const razorMode = ref(false);
+const autoFollow = ref(true);
+
+function toggleAutoFollow() {
+	autoFollow.value = !autoFollow.value;
+}
+
+function toggleRazorMode() {
+	razorMode.value = !razorMode.value;
+}
+
+function handleRazorCut(params: { trackId: string; elementId: string; time: number }) {
+	editor.timeline.splitElements({
+		elements: [{ trackId: params.trackId, elementId: params.elementId }],
+		splitTime: params.time,
+	});
+}
 
 function handleSnapPointChange(snapPoint: SnapPoint | null) {
 	currentSnapPoint.value = snapPoint;
@@ -113,6 +181,7 @@ const { playheadPosition, handlePlayheadMouseDown: handlePlayheadRulerMouseDown 
 	rulerScrollRef: tracksScrollRef,
 	tracksScrollRef,
 	playheadRef,
+	autoFollow,
 });
 
 const playheadTotalHeight = computed(() => {
@@ -263,7 +332,11 @@ function onScrollAreaClick(event: MouseEvent) {
 		<TimelineToolbar
 			:zoom-level="zoomLevel"
 			:min-zoom="minZoomLevel"
+			:razor-mode="razorMode"
+			:auto-follow="autoFollow"
 			@set-zoom-level="setZoomLevel($event)"
+			@toggle-razor-mode="toggleRazorMode"
+			@toggle-auto-follow="toggleAutoFollow"
 		/>
 
 		<div
@@ -282,11 +355,31 @@ function onScrollAreaClick(event: MouseEvent) {
 			<div class="flex flex-1 overflow-hidden">
 				<!-- Track labels sidebar -->
 				<div class="flex w-28 shrink-0 flex-col border-r border-white/10 bg-[#18181b]">
-					<div class="flex h-4 items-center justify-between bg-[#18181b] px-3">
+					<div class="flex h-4 items-center justify-between bg-[#18181b] px-1">
 						<span class="opacity-0">.</span>
 					</div>
-					<div class="flex h-4 items-center justify-between bg-[#18181b] px-3">
-						<span class="opacity-0">.</span>
+					<div class="flex h-4 items-center justify-center gap-1 bg-[#18181b] px-1">
+						<button
+							class="flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+							@click="addTrack('video')"
+							title="Add video track"
+						>
+							<Plus class="size-2.5" />V
+						</button>
+						<button
+							class="flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+							@click="addTrack('audio')"
+							title="Add audio track"
+						>
+							<Plus class="size-2.5" />A
+						</button>
+						<button
+							class="flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+							@click="addTrack('text')"
+							title="Add text track"
+						>
+							<Plus class="size-2.5" />T
+						</button>
 					</div>
 					<div
 						v-if="tracks.length > 0"
@@ -299,11 +392,50 @@ function onScrollAreaClick(event: MouseEvent) {
 								<div
 									v-for="track in tracks"
 									:key="track.id"
-									class="group flex items-center px-3"
+									class="group flex items-center px-1"
 									:style="{ height: `${getTrackHeight({ type: track.type })}px` }"
 								>
-									<div class="flex min-w-0 flex-1 items-center justify-end gap-2">
-										<span class="text-zinc-500 text-xs capitalize">{{ track.type }}</span>
+									<div class="flex min-w-0 flex-1 items-center justify-between gap-0.5">
+										<span class="text-zinc-500 text-[10px] capitalize truncate">{{ track.name }}</span>
+										<div class="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity" :class="{ '!opacity-100': track.locked }">
+											<button
+												class="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300"
+												:class="{ '!text-yellow-500': track.locked }"
+												@click="toggleTrackLock(track.id)"
+												:title="track.locked ? 'Unlock track' : 'Lock track'"
+											>
+												<Lock v-if="track.locked" class="size-3" />
+												<Unlock v-else class="size-3" />
+											</button>
+											<button
+												v-if="canTracktHaveAudio(track)"
+												class="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300"
+												:class="{ '!text-red-400': track.muted }"
+												@click="toggleTrackMute(track.id)"
+												:title="track.muted ? 'Unmute' : 'Mute'"
+											>
+												<VolumeX v-if="track.muted" class="size-3" />
+												<Volume2 v-else class="size-3" />
+											</button>
+											<button
+												v-if="canTrackBeHidden(track)"
+												class="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300"
+												:class="{ '!text-red-400': ('hidden' in track && track.hidden) }"
+												@click="toggleTrackVisibility(track.id)"
+												:title="('hidden' in track && track.hidden) ? 'Show' : 'Hide'"
+											>
+												<EyeOff v-if="'hidden' in track && track.hidden" class="size-3" />
+												<Eye v-else class="size-3" />
+											</button>
+											<button
+												v-if="!('isMain' in track && track.isMain)"
+												class="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-red-400"
+												@click="removeTrack(track.id)"
+												title="Remove track"
+											>
+												<Trash2 class="size-3" />
+											</button>
+										</div>
 									</div>
 								</div>
 							</div>
@@ -392,10 +524,13 @@ function onScrollAreaClick(event: MouseEvent) {
 										:zoom-level="zoomLevel"
 										:drag-state="dragState"
 										:snapping-enabled="snappingEnabled"
+										:razor-mode="razorMode"
 										@snap-point-change="handleSnapPointChange"
 										@resize-state-change="handleResizeStateChange"
 										@element-mouse-down="handleElementMouseDown"
 										@element-click="handleElementClick"
+										@element-context-menu="handleContextMenu"
+										@razor-cut="handleRazorCut"
 										@track-mouse-down="(event) => { handleSelectionMouseDown(event); handleTracksMouseDown(event); }"
 										@track-click="handleTracksClick"
 									/>
@@ -406,6 +541,12 @@ function onScrollAreaClick(event: MouseEvent) {
 				</div>
 			</div>
 		</div>
+
+		<TimelineContextMenu
+			:position="contextMenuPos"
+			:element-ref="contextMenuElement"
+			@close="closeContextMenu"
+		/>
 
 		<TimelineScrollbar
 			v-if="tracksScrollRef"

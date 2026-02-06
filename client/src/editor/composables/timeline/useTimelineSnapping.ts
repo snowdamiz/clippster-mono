@@ -7,7 +7,7 @@ import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 
 export interface SnapPoint {
 	time: number;
-	type: "element-start" | "element-end" | "playhead";
+	type: "element-start" | "element-end" | "playhead" | "bookmark";
 	elementId?: string;
 	trackId?: string;
 }
@@ -33,12 +33,14 @@ export function useTimelineSnapping({
 		tracks,
 		playheadTime,
 		excludeElementId,
+		bookmarks,
 	}: {
 		tracks: Array<TimelineTrack>;
 		playheadTime: number;
 		excludeElementId?: string;
+		bookmarks?: number[];
 	}): SnapPoint[] {
-		const snapPoints: SnapPoint[] = [];
+		const snapPoints: SnapPoint[] =[];
 
 		if (enableElementSnapping) {
 			for (const track of tracks) {
@@ -66,6 +68,12 @@ export function useTimelineSnapping({
 
 		if (enablePlayheadSnapping) {
 			snapPoints.push({ time: playheadTime, type: "playhead" });
+		}
+
+		if (bookmarks) {
+			for (const time of bookmarks) {
+				snapPoints.push({ time, type: "bookmark" });
+			}
 		}
 
 		return snapPoints;

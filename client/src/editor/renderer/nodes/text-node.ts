@@ -1,6 +1,7 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import type { TextElement } from "../../types/timeline";
+import { getKeyframedValue } from "../../types/keyframes";
 
 export type TextNodeParams = TextElement & {
 	canvasCenter: { x: number; y: number };
@@ -37,8 +38,12 @@ export class TextNode extends BaseNode<TextNodeParams> {
 		renderer.context.textBaseline = this.params.textBaseline || "middle";
 		renderer.context.fillStyle = this.params.color;
 
+		const elapsed = time - this.params.startTime;
+		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
+		const resolvedOpacity = getKeyframedValue({ elementKeyframes: this.params.keyframes, property: "opacity", normalizedTime, defaultValue: this.params.opacity });
+
 		const prevAlpha = renderer.context.globalAlpha;
-		renderer.context.globalAlpha = this.params.opacity;
+		renderer.context.globalAlpha = resolvedOpacity;
 
 		if (this.params.backgroundColor) {
 			const metrics = renderer.context.measureText(this.params.content);

@@ -1,6 +1,8 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode, type BaseNodeParams } from "./base-node";
 import type { Transform } from "../../types/timeline";
+import type { ElementKeyframes } from "../../types/keyframes";
+import { getKeyframedValue } from "../../types/keyframes";
 
 const STICKER_EPSILON = 1 / 1000;
 
@@ -13,6 +15,7 @@ export type StickerNodeParams = BaseNodeParams & {
 	transform: Transform;
 	opacity: number;
 	color?: string;
+	keyframes?: ElementKeyframes;
 };
 
 export class StickerNode extends BaseNode<StickerNodeParams> {
@@ -70,8 +73,13 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		const x = renderer.width / 2 + transform.position.x - size / 2;
 		const y = renderer.height / 2 + transform.position.y - size / 2;
 
+		// Resolve keyframed values
+		const elapsed = time - this.params.timeOffset;
+		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
+		const resolvedOpacity = getKeyframedValue({ elementKeyframes: this.params.keyframes, property: "opacity", normalizedTime, defaultValue: opacity });
+
 		renderer.context.save();
-		renderer.context.globalAlpha = opacity;
+		renderer.context.globalAlpha = resolvedOpacity;
 
 		if (transform.rotate !== 0) {
 			const centerX = x + size / 2;

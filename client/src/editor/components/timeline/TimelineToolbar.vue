@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { formatTimeCode } from "../../lib/time";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
@@ -21,6 +21,10 @@ import {
 	AlignRight,
 	Snowflake,
 	SplitSquareHorizontal,
+	Undo2,
+	Redo2,
+	MousePointerClick,
+	Navigation2,
 } from "lucide-vue-next";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -28,10 +32,14 @@ import { Button } from "@/components/ui/button";
 const props = defineProps<{
 	zoomLevel: number;
 	minZoom: number;
+	razorMode?: boolean;
+	autoFollow?: boolean;
 }>();
 
 const emit = defineEmits<{
 	(e: "setZoomLevel", zoom: number): void;
+	(e: "toggleRazorMode"): void;
+	(e: "toggleAutoFollow"): void;
 }>();
 
 const { editor, version } = useEditor();
@@ -51,6 +59,15 @@ const totalDuration = computed(() => {
 const fps = computed(() => {
 	void version.value;
 	return editor.project.getActive()?.settings?.fps ?? 30;
+});
+
+const canUndo = computed(() => {
+	void version.value;
+	return editor.command.canUndo();
+});
+const canRedo = computed(() => {
+	void version.value;
+	return editor.command.canRedo();
 });
 
 const sliderValue = computed(() => zoomToSlider({ zoomLevel: props.zoomLevel, minZoom: props.minZoom }));
@@ -116,6 +133,28 @@ function handleAction(action: string, event?: MouseEvent) {
 
 				<div class="mx-1 h-6 w-px bg-white/10" />
 
+				<!-- Undo -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" :disabled="!canUndo" @click="handleAction('undo', $event)">
+							<Undo2 class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Undo (Ctrl+Z)</TooltipContent>
+				</Tooltip>
+
+				<!-- Redo -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" :disabled="!canRedo" @click="handleAction('redo', $event)">
+							<Redo2 class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Redo (Ctrl+Shift+Z)</TooltipContent>
+				</Tooltip>
+
+				<div class="mx-1 h-6 w-px bg-white/10" />
+
 				<!-- Split -->
 				<Tooltip>
 					<TooltipTrigger as-child>
@@ -176,6 +215,38 @@ function handleAction(action: string, event?: MouseEvent) {
 						</Button>
 					</TooltipTrigger>
 					<TooltipContent>Toggle bookmark</TooltipContent>
+				</Tooltip>
+
+				<div class="mx-1 h-6 w-px bg-white/10" />
+
+				<!-- Razor mode -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button
+							variant="ghost"
+							size="icon"
+							:class="{ 'bg-primary/20 text-primary': razorMode }"
+							@click="emit('toggleRazorMode')"
+						>
+							<MousePointerClick class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Razor tool (click to cut)</TooltipContent>
+				</Tooltip>
+
+				<!-- Auto-follow -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button
+							variant="ghost"
+							size="icon"
+							:class="{ 'bg-primary/20 text-primary': autoFollow }"
+							@click="emit('toggleAutoFollow')"
+						>
+							<Navigation2 class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Auto-follow playhead</TooltipContent>
 				</Tooltip>
 			</TooltipProvider>
 		</div>

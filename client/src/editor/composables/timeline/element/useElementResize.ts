@@ -68,6 +68,9 @@ export function useTimelineElementResize({
 		e.stopPropagation();
 		e.preventDefault();
 
+		// Prevent resize on locked tracks
+		if (track.value.locked) return;
+
 		const el = element.value;
 		resizing.value = {
 			elementId,

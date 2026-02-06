@@ -12,3 +12,4 @@ export { MoveElementCommand } from "./move-elements";
 export { UpdateElementCommand } from "./update-element";
 export type { UpdatableElementProps } from "./update-element";
 export { ChangeSpeedCommand } from "./change-speed";
+export { UpdateElementKeyframesCommand } from "./update-element-keyframes";
