@@ -301,6 +301,14 @@ class TauriStorageService {
 			const file = await this.fileFromPath(row.file_path, row.name);
 			const url = URL.createObjectURL(file);
 
+			// Resolve thumbnail: stored value may be a filesystem path, dead blob URL, or data URL
+			let thumbnailUrl = await this.resolveThumbnailUrl(row.thumbnail_url);
+
+			// Fallback: generate thumbnail for video assets that have none
+			if (!thumbnailUrl && row.type === "video" && row.file_path) {
+				thumbnailUrl = await this.generateAndPersistThumbnail(row.id, projectId, row.file_path);
+			}
+
 			return {
 				id: row.id,
 				name: row.name,
@@ -311,7 +319,7 @@ class TauriStorageService {
 				height: row.height ?? undefined,
 				duration: row.duration ?? undefined,
 				fps: row.fps ?? undefined,
-				thumbnailUrl: row.thumbnail_url ?? undefined,
+				thumbnailUrl,
 				ephemeral: row.ephemeral === 1,
 			};
 		} catch (error) {
@@ -337,6 +345,14 @@ class TauriStorageService {
 				const file = await this.fileFromPath(row.file_path, row.name);
 				const url = URL.createObjectURL(file);
 
+				// Resolve thumbnail: stored value may be a filesystem path, dead blob URL, or data URL
+				let thumbnailUrl = await this.resolveThumbnailUrl(row.thumbnail_url);
+
+				// Fallback: generate thumbnail for video assets that have none
+				if (!thumbnailUrl && row.type === "video" && row.file_path) {
+					thumbnailUrl = await this.generateAndPersistThumbnail(row.id, projectId, row.file_path);
+				}
+
 				assets.push({
 					id: row.id,
 					name: row.name,
@@ -347,7 +363,7 @@ class TauriStorageService {
 					height: row.height ?? undefined,
 					duration: row.duration ?? undefined,
 					fps: row.fps ?? undefined,
-					thumbnailUrl: row.thumbnail_url ?? undefined,
+					thumbnailUrl,
 					ephemeral: row.ephemeral === 1,
 				});
 			} catch (error) {
@@ -643,6 +659,76 @@ class TauriStorageService {
 			bytes: Array.from(new Uint8Array(arrayBuffer)),
 		});
 		return filePath;
+	}
+
+	/**
+	 * Resolve a stored thumbnail URL into something renderable.
+	 * Handles three cases:
+	 * 1. data: URL — already renderable, pass through
+	 * 2. Filesystem path — read via Tauri command and convert to data URL
+	 * 3. blob: URL — dead after reload, return undefined
+	 */
+	private async resolveThumbnailUrl(storedUrl: string | null): Promise<string | undefined> {
+		if (!storedUrl) return undefined;
+
+		// Data URLs are already renderable
+		if (storedUrl.startsWith("data:")) return storedUrl;
+
+		// Blob URLs are ephemeral and dead after reload
+		if (storedUrl.startsWith("blob:")) return undefined;
+
+		// HTTP URLs (e.g. video server URLs) — unlikely for thumbnails but pass through
+		if (storedUrl.startsWith("http://") || storedUrl.startsWith("https://")) return storedUrl;
+
+		// Assume it's a filesystem path — convert to data URL via Tauri
+		try {
+			const { invoke } = await import("@tauri-apps/api/core");
+			const dataUrl = await invoke<string>("read_file_as_data_url", {
+				filePath: storedUrl,
+			});
+			return dataUrl;
+		} catch (error) {
+			console.warn("[TauriStorage] Failed to load thumbnail from path:", storedUrl, error);
+			return undefined;
+		}
+	}
+
+	/**
+	 * Generate a thumbnail for a video asset that has none, persist the path
+	 * to the DB so it only needs to be generated once, and return a data URL.
+	 */
+	private async generateAndPersistThumbnail(
+		assetId: string,
+		projectId: string,
+		videoFilePath: string,
+	): Promise<string | undefined> {
+		try {
+			const { invoke } = await import("@tauri-apps/api/core");
+
+			// Generate thumbnail at 1 second into the video
+			const thumbnailPath = await invoke<string>("generate_thumbnail_at_timestamp", {
+				videoPath: videoFilePath,
+				timestampSeconds: 1.0,
+				outputFilename: `editor_asset_${assetId}`,
+			});
+
+			// Read the generated thumbnail as a data URL
+			const dataUrl = await invoke<string>("read_file_as_data_url", {
+				filePath: thumbnailPath,
+			});
+
+			// Persist the thumbnail path to the DB so we don't regenerate next time
+			const db = await getDatabase();
+			await db.execute(
+				"UPDATE opencut_media_assets SET thumbnail_url = ? WHERE id = ? AND project_id = ?",
+				[thumbnailPath, assetId, projectId],
+			);
+
+			return dataUrl;
+		} catch (error) {
+			console.warn("[TauriStorage] Failed to generate thumbnail for video:", videoFilePath, error);
+			return undefined;
+		}
 	}
 }
 

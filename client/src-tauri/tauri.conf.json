@@ -19,7 +19,8 @@
         "decorations": false,
         "titleBarStyle": "Overlay",
         "visible": false,
-        "transparent": true
+        "transparent": true,
+        "dragDropEnabled": false
       }
     ],
     "macOSPrivateApi": true,

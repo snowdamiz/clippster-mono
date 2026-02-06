@@ -13,18 +13,21 @@ import { setDragData } from "../../lib/drag-data";
 import type { MediaAsset } from "../../types/assets";
 import type { CreateTimelineElement } from "../../types/timeline";
 import { Button } from "@/components/ui/button";
-import { Upload, Image, Film, Music, Grid, List, Wand2, ArrowRightLeft, Palette, SlidersHorizontal } from "lucide-vue-next";
+import { Upload, Image, Film, Music, Grid, List, Wand2, ArrowRightLeft, Palette, SlidersHorizontal, FolderOpen, Clapperboard } from "lucide-vue-next";
 import TextView from "./assets/TextView.vue";
 import CaptionsView from "./assets/CaptionsView.vue";
 import SettingsView from "./assets/SettingsView.vue";
 import StickersView from "./assets/StickersView.vue";
 import SoundsView from "./assets/SoundsView.vue";
+import BuiltClipsView from "./assets/BuiltClipsView.vue";
+import ProjectClipsView from "./assets/ProjectClipsView.vue";
 
 const props = defineProps<{
 	activeTab: string;
 }>();
 
 const { editor, version } = useEditor();
+const mediaSubTab = ref<"upload" | "built" | "projects">("upload");
 const viewMode = ref<"grid" | "list">("grid");
 const isProcessing = ref(false);
 const progress = ref(0);
@@ -156,133 +159,165 @@ function getMediaIcon(type: string) {
 			@change="handleFileChange"
 		/>
 
-			<!-- Header -->
-			<div class="flex items-center justify-between border-b border-white/10 px-4 py-2">
-				<span class="text-zinc-400 text-sm">Assets</span>
-				<div class="flex items-center gap-1">
-					<Button variant="ghost" size="icon" @click="viewMode = viewMode === 'grid' ? 'list' : 'grid'">
-						<component :is="viewMode === 'grid' ? List : Grid" class="size-4" />
-					</Button>
-					<Button variant="outline" size="sm" class="gap-1.5" :disabled="isProcessing" @click="openFilePicker">
-						<Upload class="size-4" />
-						Upload
-					</Button>
-				</div>
+			<!-- Sub-tab navigation -->
+			<div class="flex items-center border-b border-white/10">
+				<button
+					v-for="tab in ([
+						{ key: 'upload', label: 'Upload', icon: Upload },
+						{ key: 'built', label: 'Built Clips', icon: Clapperboard },
+						{ key: 'projects', label: 'Projects', icon: FolderOpen },
+					] as const)"
+					:key="tab.key"
+					type="button"
+					:class="[
+						'flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium transition-colors border-b-2',
+						mediaSubTab === tab.key
+							? 'border-blue-500 text-blue-400'
+							: 'border-transparent text-zinc-500 hover:text-zinc-300',
+					]"
+					@click="mediaSubTab = tab.key"
+				>
+					<component :is="tab.icon" class="size-3.5" />
+					{{ tab.label }}
+				</button>
 			</div>
 
-			<!-- Content -->
-			<div
-				:class="['flex-1 overflow-y-auto p-3', isDragOver && 'bg-white/5']"
-				@dragenter="handleDragEnter"
-				@dragover="handleDragOver"
-				@dragleave="handleDragLeave"
-				@drop="handleDrop"
-			>
-				<!-- Empty / drag overlay -->
-				<div
-					v-if="isDragOver || filteredMedia.length === 0"
-					class="flex h-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-white/20 p-8 text-center cursor-pointer"
-					@click="openFilePicker"
-				>
-					<Upload class="text-zinc-500 size-8" />
-					<p class="text-zinc-500 text-sm">
-						{{ isProcessing ? `Processing... ${Math.round(progress * 100)}%` : 'Drop files here or click to upload' }}
-					</p>
-				</div>
-
-				<!-- Grid view -->
-				<div
-					v-else-if="viewMode === 'grid'"
-					class="grid gap-2"
-					style="grid-template-columns: repeat(auto-fill, minmax(100px, 1fr))"
-				>
-					<div
-						v-for="item in filteredMedia"
-						:key="item.id"
-						class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/10"
-						draggable="true"
-						@dragstart="(e: DragEvent) => {
-							if (e.dataTransfer) {
-								setDragData({ dataTransfer: e.dataTransfer, dragData: { id: item.id, type: 'media', mediaType: item.type, name: item.name } });
-							}
-						}"
-						@dblclick="addToTimeline(item)"
-					>
-						<!-- Thumbnail -->
-						<div class="relative aspect-video bg-zinc-800">
-							<img
-								v-if="item.type === 'image' && item.url"
-								:src="item.url"
-								:alt="item.name"
-								class="size-full object-cover"
-							/>
-							<img
-								v-else-if="item.type === 'video' && item.thumbnailUrl"
-								:src="item.thumbnailUrl"
-								:alt="item.name"
-								class="size-full object-cover"
-							/>
-							<div v-else class="flex size-full items-center justify-center">
-								<component :is="getMediaIcon(item.type)" class="text-zinc-500 size-6" />
-							</div>
-							<div v-if="item.duration" class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white">
-								{{ formatDuration(item.duration) }}
-							</div>
-						</div>
-						<!-- Name -->
-						<div class="truncate px-2 py-1 text-xs">{{ item.name }}</div>
-						<!-- Remove button -->
-						<button
-							type="button"
-							class="absolute top-1 right-1 hidden rounded bg-black/50 px-1 text-xs text-white group-hover:block"
-							@click.stop="removeAsset(item.id)"
-						>
-							✕
-						</button>
+			<!-- Upload sub-tab -->
+			<template v-if="mediaSubTab === 'upload'">
+				<!-- Header -->
+				<div class="flex items-center justify-between border-b border-white/10 px-4 py-2">
+					<span class="text-zinc-400 text-sm">Assets</span>
+					<div class="flex items-center gap-1">
+						<Button variant="ghost" size="icon" @click="viewMode = viewMode === 'grid' ? 'list' : 'grid'">
+							<component :is="viewMode === 'grid' ? List : Grid" class="size-4" />
+						</Button>
+						<Button variant="outline" size="sm" class="gap-1.5" :disabled="isProcessing" @click="openFilePicker">
+							<Upload class="size-4" />
+							Upload
+						</Button>
 					</div>
 				</div>
 
-				<!-- List view -->
-				<div v-else class="space-y-1">
+				<!-- Content -->
+				<div
+					:class="['flex-1 overflow-y-auto p-3', isDragOver && 'bg-white/5']"
+					@dragenter="handleDragEnter"
+					@dragover="handleDragOver"
+					@dragleave="handleDragLeave"
+					@drop="handleDrop"
+				>
+					<!-- Empty / drag overlay -->
 					<div
-						v-for="item in filteredMedia"
-						:key="item.id"
-						class="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-white/5"
-						draggable="true"
-						@dragstart="(e: DragEvent) => {
-							if (e.dataTransfer) {
-								setDragData({ dataTransfer: e.dataTransfer, dragData: { id: item.id, type: 'media', mediaType: item.type, name: item.name } });
-							}
-						}"
-						@dblclick="addToTimeline(item)"
+						v-if="isDragOver || filteredMedia.length === 0"
+						class="flex h-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-white/20 p-8 text-center cursor-pointer"
+						@click="openFilePicker"
 					>
-						<div class="size-8 shrink-0 overflow-hidden rounded bg-zinc-800">
-							<img
-								v-if="(item.type === 'image' && item.url) || (item.type === 'video' && item.thumbnailUrl)"
-								:src="item.type === 'image' ? item.url : item.thumbnailUrl"
-								:alt="item.name"
-								class="size-full object-cover"
-							/>
-							<div v-else class="flex size-full items-center justify-center">
-								<component :is="getMediaIcon(item.type)" class="text-zinc-500 size-4" />
-							</div>
-						</div>
-						<div class="min-w-0 flex-1">
-							<div class="truncate text-xs text-zinc-200">{{ item.name }}</div>
-							<div class="text-zinc-500 text-[10px]">
-								{{ item.type }}{{ item.duration ? ` · ${formatDuration(item.duration)}` : '' }}
-							</div>
-						</div>
-						<button
-							type="button"
-							class="hidden text-xs text-destructive group-hover:block"
-							@click.stop="removeAsset(item.id)"
+						<Upload class="text-zinc-500 size-8" />
+						<p class="text-zinc-500 text-sm">
+							{{ isProcessing ? `Processing... ${Math.round(progress * 100)}%` : 'Drop files here or click to upload' }}
+						</p>
+					</div>
+
+					<!-- Grid view -->
+					<div
+						v-else-if="viewMode === 'grid'"
+						class="grid gap-2"
+						style="grid-template-columns: repeat(auto-fill, minmax(100px, 1fr))"
+					>
+						<div
+							v-for="item in filteredMedia"
+							:key="item.id"
+							class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/10"
+							draggable="true"
+							@dragstart="(e: DragEvent) => {
+								if (e.dataTransfer) {
+									setDragData({ dataTransfer: e.dataTransfer, dragData: { id: item.id, type: 'media', mediaType: item.type, name: item.name } });
+								}
+							}"
+							@dblclick="addToTimeline(item)"
 						>
-							✕
-						</button>
+							<!-- Thumbnail -->
+							<div class="relative aspect-video bg-zinc-800">
+								<img
+									v-if="item.type === 'image' && item.url"
+									:src="item.url"
+									:alt="item.name"
+									class="size-full object-cover"
+								/>
+								<img
+									v-else-if="item.type === 'video' && item.thumbnailUrl"
+									:src="item.thumbnailUrl"
+									:alt="item.name"
+									class="size-full object-cover"
+								/>
+								<div v-else class="flex size-full items-center justify-center">
+									<component :is="getMediaIcon(item.type)" class="text-zinc-500 size-6" />
+								</div>
+								<div v-if="item.duration" class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white">
+									{{ formatDuration(item.duration) }}
+								</div>
+							</div>
+							<!-- Name -->
+							<div class="truncate px-2 py-1 text-xs">{{ item.name }}</div>
+							<!-- Remove button -->
+							<button
+								type="button"
+								class="absolute top-1 right-1 hidden rounded bg-black/50 px-1 text-xs text-white group-hover:block"
+								@click.stop="removeAsset(item.id)"
+							>
+								✕
+							</button>
+						</div>
+					</div>
+
+					<!-- List view -->
+					<div v-else class="space-y-1">
+						<div
+							v-for="item in filteredMedia"
+							:key="item.id"
+							class="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-white/5"
+							draggable="true"
+							@dragstart="(e: DragEvent) => {
+								if (e.dataTransfer) {
+									setDragData({ dataTransfer: e.dataTransfer, dragData: { id: item.id, type: 'media', mediaType: item.type, name: item.name } });
+								}
+							}"
+							@dblclick="addToTimeline(item)"
+						>
+							<div class="size-8 shrink-0 overflow-hidden rounded bg-zinc-800">
+								<img
+									v-if="(item.type === 'image' && item.url) || (item.type === 'video' && item.thumbnailUrl)"
+									:src="item.type === 'image' ? item.url : item.thumbnailUrl"
+									:alt="item.name"
+									class="size-full object-cover"
+								/>
+								<div v-else class="flex size-full items-center justify-center">
+									<component :is="getMediaIcon(item.type)" class="text-zinc-500 size-4" />
+								</div>
+							</div>
+							<div class="min-w-0 flex-1">
+								<div class="truncate text-xs text-zinc-200">{{ item.name }}</div>
+								<div class="text-zinc-500 text-[10px]">
+									{{ item.type }}{{ item.duration ? ` · ${formatDuration(item.duration)}` : '' }}
+								</div>
+							</div>
+							<button
+								type="button"
+								class="hidden text-xs text-destructive group-hover:block"
+								@click.stop="removeAsset(item.id)"
+							>
+								✕
+							</button>
+						</div>
 					</div>
 				</div>
-			</div>
+			</template>
+
+			<!-- Built Clips sub-tab -->
+			<BuiltClipsView v-else-if="mediaSubTab === 'built'" />
+
+			<!-- Projects sub-tab -->
+			<ProjectClipsView v-else-if="mediaSubTab === 'projects'" />
 		</div>
 
 		<!-- Text view -->

@@ -69,10 +69,16 @@ export async function createVideoEditorProjectFromClip(
   // only ever works with the short clip file — never the full VOD.
   const clipDuration = clipEndTime - clipStartTime;
   let clipVideoPath = '';
+  let clipThumbnailPath: string | null = null;
 
   if (clipId) {
     try {
       const clip = await getClip(clipId);
+
+      // Capture thumbnail path from the clip if available
+      if (clip?.built_thumbnail_path) {
+        clipThumbnailPath = clip.built_thumbnail_path;
+      }
 
       // If the clip was already built, use the built file directly
       if (clip?.built_file_path) {
@@ -152,7 +158,7 @@ export async function createVideoEditorProjectFromClip(
     sourceId: clipId || null,
     sourcePath: clipVideoPath,
     sourceName: clipTitle || 'Clip',
-    sourceThumbnail: null,
+    sourceThumbnail: clipThumbnailPath,
     sourceDuration: clipDuration,
     startTime: 0,
     endTime: clipDuration,

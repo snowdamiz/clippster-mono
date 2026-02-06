@@ -6,6 +6,10 @@ import { getAllClips } from "@/services/database/clips";
 import type { Clip } from "@/services/database/types";
 import type { MediaAsset } from "../../../types/assets";
 import { Film, Plus, Loader2, Check, Search } from "lucide-vue-next";
+import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
+import { buildVideoElement } from "../../../lib/timeline/element-utils";
+import { setDragData } from "../../../lib/drag-data";
+import type { CreateTimelineElement } from "../../../types/timeline";
 
 const { editor, version } = useEditor();
 
@@ -14,6 +18,8 @@ const loading = ref(false);
 const addingIds = ref<Set<string>>(new Set());
 const addedIds = ref<Set<string>>(new Set());
 const searchQuery = ref("");
+const thumbnailCache = ref<Map<string, string>>(new Map());
+const addedMediaIds = ref<Map<string, string>>(new Map()); // clipId → mediaAssetId
 
 const activeProject = computed(() => {
 	void version.value;
@@ -41,16 +47,8 @@ const filteredClips = computed(() => {
 	});
 });
 
-function getClipThumbnail(clip: Clip): string | null {
-	if (clip.built_thumbnail_path) {
-		return clip.built_thumbnail_path;
-	}
-	return null;
-}
-
-function getThumbnailUrl(path: string, videoServerPort: number): string {
-	const encoded = btoa(path);
-	return `http://localhost:${videoServerPort}/video/${encoded}`;
+function getCachedThumbnail(clipId: string): string | undefined {
+	return thumbnailCache.value.get(clipId);
 }
 
 function getClipName(clip: Clip): string {
@@ -69,14 +67,82 @@ function isAlreadyAdded(clip: Clip): boolean {
 	return existingMediaNames.value.has(name) || addedIds.value.has(clip.id);
 }
 
+function getMediaAssetId(clip: Clip): string | undefined {
+	// Check our local map first
+	const mapped = addedMediaIds.value.get(clip.id);
+	if (mapped) return mapped;
+	// Fall back to finding by name in the editor's assets
+	const name = getClipName(clip);
+	const asset = editor.media.getAssets().find((a) => a.name === name);
+	return asset?.id;
+}
+
+function addToTimeline(clip: Clip) {
+	const mediaId = getMediaAssetId(clip);
+	if (!mediaId) return;
+	const asset = editor.media.getAssets().find((a) => a.id === mediaId);
+	if (!asset) return;
+	const duration = asset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
+	const startTime = editor.playback.getCurrentTime();
+	const element: CreateTimelineElement = buildVideoElement({ mediaId, name: asset.name, duration, startTime });
+	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
+}
+
+function handleClipClick(clip: Clip) {
+	if (isAlreadyAdded(clip)) {
+		addToTimeline(clip);
+	} else {
+		addClipToEditor(clip);
+	}
+}
+
+function handleDragStart(e: DragEvent, clip: Clip) {
+	const mediaId = getMediaAssetId(clip);
+	if (!mediaId || !e.dataTransfer) return;
+	setDragData({
+		dataTransfer: e.dataTransfer,
+		dragData: { id: mediaId, type: "media", mediaType: "video", name: getClipName(clip) },
+	});
+}
+
 async function loadClips() {
 	loading.value = true;
 	try {
 		clips.value = await getAllClips();
+		await loadThumbnails();
 	} catch (error) {
 		console.error("[BuiltClipsView] Failed to load clips:", error);
 	} finally {
 		loading.value = false;
+	}
+}
+
+async function loadThumbnails() {
+	const clipsNeedingThumbs = builtClips.value.filter(
+		(c) => c.built_thumbnail_path && !thumbnailCache.value.has(c.id),
+	);
+	if (clipsNeedingThumbs.length === 0) return;
+
+	let hasNew = false;
+	const batchSize = 5;
+	for (let i = 0; i < clipsNeedingThumbs.length; i += batchSize) {
+		const batch = clipsNeedingThumbs.slice(i, i + batchSize);
+		await Promise.all(
+			batch.map(async (clip) => {
+				try {
+					const dataUrl = await invoke<string>("read_file_as_data_url", {
+						filePath: clip.built_thumbnail_path,
+					});
+					thumbnailCache.value.set(clip.id, dataUrl);
+					hasNew = true;
+				} catch (err) {
+					console.warn(`[BuiltClipsView] Failed to load thumbnail for ${clip.id}:`, err);
+				}
+			}),
+		);
+	}
+	if (hasNew) {
+		thumbnailCache.value = new Map(thumbnailCache.value);
 	}
 }
 
@@ -112,16 +178,22 @@ async function addClipToEditor(clip: Clip) {
 			ephemeral: false,
 		};
 
-		// Generate thumbnail URL from built_thumbnail_path if available
-		const thumbPath = getClipThumbnail(clip);
-		if (thumbPath) {
-			asset.thumbnailUrl = getThumbnailUrl(thumbPath, videoServerPort);
+		// Use cached data URL thumbnail if available
+		const cachedThumb = getCachedThumbnail(clip.id);
+		if (cachedThumb) {
+			asset.thumbnailUrl = cachedThumb;
 		}
 
 		await editor.media.addMediaAsset({
 			projectId: activeProject.value.metadata.id,
 			asset,
 		});
+
+		// Track the mapping from clip ID to the newly added media asset ID
+		const addedAsset = editor.media.getAssets().find((a) => a.name === getClipName(clip));
+		if (addedAsset) {
+			addedMediaIds.value = new Map([...addedMediaIds.value, [clip.id, addedAsset.id]]);
+		}
 
 		addedIds.value = new Set([...addedIds.value, clip.id]);
 	} catch (error) {
@@ -181,15 +253,18 @@ onMounted(loadClips);
 				<div
 					v-for="clip in filteredClips"
 					:key="clip.id"
-					class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/10 transition-colors hover:border-white/20"
-					:class="{ 'opacity-50': isAlreadyAdded(clip) }"
-					@click="addClipToEditor(clip)"
+						class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/10 transition-colors hover:border-white/20"
+					:class="{ 'ring-1 ring-green-500/30': isAlreadyAdded(clip) }"
+					:draggable="isAlreadyAdded(clip)"
+					@click="handleClipClick(clip)"
+					@dblclick="addToTimeline(clip)"
+					@dragstart="(e: DragEvent) => handleDragStart(e, clip)"
 				>
 					<!-- Thumbnail -->
 					<div class="relative aspect-video bg-zinc-800">
 						<img
-							v-if="getClipThumbnail(clip)"
-							:src="getThumbnailUrl(getClipThumbnail(clip)!, 8642)"
+							v-if="getCachedThumbnail(clip.id)"
+							:src="getCachedThumbnail(clip.id)!"
 							:alt="getClipName(clip)"
 							class="size-full object-cover"
 							@error="($event.target as HTMLImageElement).style.display = 'none'"
