@@ -4,7 +4,11 @@ import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import type { TextElement, VideoElement, ImageElement, AudioElement, StickerElement } from "../../types/timeline";
 import TextProperties from "./properties/TextProperties.vue";
-import { Settings, Volume2, Film, Image, Sticker } from "lucide-vue-next";
+import VideoProperties from "./properties/VideoProperties.vue";
+import AudioProperties from "./properties/AudioProperties.vue";
+import ImageProperties from "./properties/ImageProperties.vue";
+import StickerProperties from "./properties/StickerProperties.vue";
+import { Settings } from "lucide-vue-next";
 
 const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
@@ -13,12 +17,6 @@ const elementsWithTracks = computed(() => {
 	void version.value;
 	return editor.timeline.getElementsWithTracks({ elements: selectedElements.value });
 });
-
-function formatTime(seconds: number): string {
-	const min = Math.floor(seconds / 60);
-	const sec = (seconds % 60).toFixed(2);
-	return `${min}:${sec.padStart(5, "0")}`;
-}
 </script>
 
 <template>
@@ -28,126 +26,35 @@ function formatTime(seconds: number): string {
 				v-for="{ track, element } in elementsWithTracks"
 				:key="element.id"
 			>
-				<!-- Text properties (full editor) -->
 				<TextProperties
 					v-if="element.type === 'text'"
 					:element="(element as TextElement)"
 					:track-id="track.id"
 				/>
 
-				<!-- Audio properties -->
-				<div v-else-if="element.type === 'audio'" class="space-y-4 border-b border-white/10 p-4">
-					<div class="flex items-center gap-2">
-						<Volume2 class="text-zinc-500 size-4" />
-						<h3 class="text-sm font-medium">Audio</h3>
-					</div>
-					<div class="space-y-3">
-						<div class="space-y-1">
-							<label class="text-zinc-500 text-xs">Name</label>
-							<p class="text-sm">{{ element.name }}</p>
-						</div>
-						<div class="flex gap-4">
-							<div class="space-y-1">
-								<label class="text-zinc-500 text-xs">Start</label>
-								<p class="text-sm">{{ formatTime(element.startTime) }}</p>
-							</div>
-							<div class="space-y-1">
-								<label class="text-zinc-500 text-xs">Duration</label>
-								<p class="text-sm">{{ formatTime(element.duration) }}</p>
-							</div>
-						</div>
-						<div class="space-y-1.5">
-							<label class="text-zinc-500 text-xs">Volume</label>
-							<div class="flex items-center gap-2">
-								<input
-									type="range"
-									:value="(element as AudioElement).volume * 100"
-									min="0"
-									max="200"
-									step="1"
-									class="flex-1"
-								/>
-								<span class="text-xs w-10 text-right">{{ Math.round((element as AudioElement).volume * 100) }}%</span>
-							</div>
-						</div>
-					</div>
-				</div>
+				<VideoProperties
+					v-else-if="element.type === 'video'"
+					:element="(element as VideoElement)"
+					:track-id="track.id"
+				/>
 
-				<!-- Video/Image properties -->
-				<div v-else-if="element.type === 'video' || element.type === 'image'" class="space-y-4 border-b border-white/10 p-4">
-					<div class="flex items-center gap-2">
-						<component :is="element.type === 'video' ? Film : Image" class="text-zinc-500 size-4" />
-						<h3 class="text-sm font-medium">{{ element.type === 'video' ? 'Video' : 'Image' }}</h3>
-					</div>
-					<div class="space-y-3">
-						<div class="space-y-1">
-							<label class="text-zinc-500 text-xs">Name</label>
-							<p class="text-sm">{{ element.name }}</p>
-						</div>
-						<div class="flex gap-4">
-							<div class="space-y-1">
-								<label class="text-zinc-500 text-xs">Start</label>
-								<p class="text-sm">{{ formatTime(element.startTime) }}</p>
-							</div>
-							<div class="space-y-1">
-								<label class="text-zinc-500 text-xs">Duration</label>
-								<p class="text-sm">{{ formatTime(element.duration) }}</p>
-							</div>
-						</div>
-						<div class="space-y-1.5">
-							<label class="text-zinc-500 text-xs">Opacity</label>
-							<div class="flex items-center gap-2">
-								<input
-									type="range"
-									:value="(element as VideoElement | ImageElement).opacity * 100"
-									min="0"
-									max="100"
-									step="1"
-									class="flex-1"
-								/>
-								<span class="text-xs w-10 text-right">{{ Math.round((element as VideoElement | ImageElement).opacity * 100) }}%</span>
-							</div>
-						</div>
-					</div>
-				</div>
+				<ImageProperties
+					v-else-if="element.type === 'image'"
+					:element="(element as ImageElement)"
+					:track-id="track.id"
+				/>
 
-				<!-- Sticker properties -->
-				<div v-else-if="element.type === 'sticker'" class="space-y-4 border-b border-white/10 p-4">
-					<div class="flex items-center gap-2">
-						<Sticker class="text-zinc-500 size-4" />
-						<h3 class="text-sm font-medium">Sticker</h3>
-					</div>
-					<div class="space-y-3">
-						<div class="space-y-1">
-							<label class="text-zinc-500 text-xs">Name</label>
-							<p class="text-sm">{{ element.name }}</p>
-						</div>
-						<div class="flex gap-4">
-							<div class="space-y-1">
-								<label class="text-zinc-500 text-xs">Start</label>
-								<p class="text-sm">{{ formatTime(element.startTime) }}</p>
-							</div>
-							<div class="space-y-1">
-								<label class="text-zinc-500 text-xs">Duration</label>
-								<p class="text-sm">{{ formatTime(element.duration) }}</p>
-							</div>
-						</div>
-						<div class="space-y-1.5">
-							<label class="text-zinc-500 text-xs">Opacity</label>
-							<div class="flex items-center gap-2">
-								<input
-									type="range"
-									:value="(element as StickerElement).opacity * 100"
-									min="0"
-									max="100"
-									step="1"
-									class="flex-1"
-								/>
-								<span class="text-xs w-10 text-right">{{ Math.round((element as StickerElement).opacity * 100) }}%</span>
-							</div>
-						</div>
-					</div>
-				</div>
+				<AudioProperties
+					v-else-if="element.type === 'audio'"
+					:element="(element as AudioElement)"
+					:track-id="track.id"
+				/>
+
+				<StickerProperties
+					v-else-if="element.type === 'sticker'"
+					:element="(element as StickerElement)"
+					:track-id="track.id"
+				/>
 			</div>
 		</template>
 

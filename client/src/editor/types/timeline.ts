@@ -52,11 +52,26 @@ export interface Transform {
 	rotate: number;
 }
 
+export interface ColorAdjustments {
+	brightness: number; // -100 to 100, default 0
+	contrast: number; // -100 to 100, default 0
+	saturation: number; // -100 to 100, default 0
+	temperature: number; // -100 to 100, default 0
+}
+
+export interface FlipState {
+	horizontal: boolean;
+	vertical: boolean;
+}
+
 interface BaseAudioElement extends BaseTimelineElement {
 	type: "audio";
 	volume: number;
 	muted?: boolean;
 	buffer?: AudioBuffer;
+	speed?: number; // 0.1-16, default 1
+	fadeIn?: number; // seconds
+	fadeOut?: number; // seconds
 }
 
 export interface UploadAudioElement extends BaseAudioElement {
@@ -87,6 +102,10 @@ export interface VideoElement extends BaseTimelineElement {
 	hidden?: boolean;
 	transform: Transform;
 	opacity: number;
+	volume?: number; // 0-2, default 1
+	speed?: number; // 0.1-16, default 1
+	flip?: FlipState;
+	colorAdjustments?: ColorAdjustments;
 }
 
 export interface ImageElement extends BaseTimelineElement {
@@ -95,6 +114,8 @@ export interface ImageElement extends BaseTimelineElement {
 	hidden?: boolean;
 	transform: Transform;
 	opacity: number;
+	flip?: FlipState;
+	colorAdjustments?: ColorAdjustments;
 }
 
 export interface TextElement extends BaseTimelineElement {

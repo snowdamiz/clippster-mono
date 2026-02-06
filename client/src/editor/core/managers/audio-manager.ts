@@ -95,6 +95,7 @@ export class AudioManager {
 	};
 
 	private handleTimelineChange = (): void => {
+		this.stopPlayback();
 		this.disposeSinks();
 
 		if (!this.editor.playback.getIsPlaying()) return;
@@ -217,35 +218,64 @@ export class AudioManager {
 
 		const iteratorStartTime = Math.max(startTime, clipStart);
 		const sourceStartTime =
-			clip.trimStart + (iteratorStartTime - clip.startTime);
+			clip.trimStart + (iteratorStartTime - clip.startTime) * clip.speed;
 
 		const iterator = sink.buffers(sourceStartTime);
 		this.clipIterators.set(clip.id, iterator);
+
+		// Per-clip GainNode for volume + fade envelope
+		const clipGain = audioContext.createGain();
+		clipGain.gain.value = clip.volume;
+		clipGain.connect(this.masterGain ?? audioContext.destination);
 
 		for await (const { buffer, timestamp } of iterator) {
 			if (!this.editor.playback.getIsPlaying()) return;
 			if (sessionId !== this.playbackSessionId) return;
 
-			const timelineTime = clip.startTime + (timestamp - clip.trimStart);
+			const timelineTime = clip.startTime + (timestamp - clip.trimStart) / clip.speed;
 			if (timelineTime >= clipEnd) break;
 
 			const node = audioContext.createBufferSource();
 			node.buffer = buffer;
-			node.connect(this.masterGain ?? audioContext.destination);
+
+			// Apply speed via playbackRate
+			if (clip.speed !== 1) {
+				node.playbackRate.value = clip.speed;
+			}
+
+			node.connect(clipGain);
 
 			const startTimestamp =
 				this.playbackStartContextTime +
 				(timelineTime - this.playbackStartTime);
 
+			let actualStartTime: number;
 			if (startTimestamp >= audioContext.currentTime) {
 				node.start(startTimestamp);
+				actualStartTime = startTimestamp;
 			} else {
 				const offset = audioContext.currentTime - startTimestamp;
 				if (offset < buffer.duration) {
 					node.start(audioContext.currentTime, offset);
+					actualStartTime = audioContext.currentTime;
 				} else {
 					continue;
 				}
+			}
+
+			// Apply fade in/out via gain automation
+			const elapsedInClip = timelineTime - clip.startTime;
+			if (clip.fadeIn > 0 && elapsedInClip < clip.fadeIn) {
+				const fadeProgress = elapsedInClip / clip.fadeIn;
+				clipGain.gain.setValueAtTime(clip.volume * fadeProgress, actualStartTime);
+				const fadeRemaining = clip.fadeIn - elapsedInClip;
+				clipGain.gain.linearRampToValueAtTime(clip.volume, actualStartTime + fadeRemaining);
+			}
+			const timeUntilEnd = clipEnd - timelineTime;
+			if (clip.fadeOut > 0 && timeUntilEnd < clip.fadeOut) {
+				const fadeProgress = timeUntilEnd / clip.fadeOut;
+				clipGain.gain.setValueAtTime(clip.volume * fadeProgress, actualStartTime);
+				clipGain.gain.linearRampToValueAtTime(0, actualStartTime + timeUntilEnd);
 			}
 
 			this.queuedSources.add(node);

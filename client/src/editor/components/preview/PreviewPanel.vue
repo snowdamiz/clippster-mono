@@ -5,8 +5,31 @@ import { useRafLoop } from "../../composables/useRafLoop";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
+import { ChevronDown } from "lucide-vue-next";
 
 const { editor, version } = useEditor();
+
+const aspectPresets = [
+	{ width: 1920, height: 1080, label: "16:9" },
+	{ width: 1080, height: 1920, label: "9:16" },
+	{ width: 1080, height: 1080, label: "1:1" },
+	{ width: 1080, height: 1350, label: "4:5" },
+];
+
+const showAspectMenu = ref(false);
+
+const currentAspectLabel = computed(() => {
+	const w = canvasWidth.value;
+	const h = canvasHeight.value;
+	const match = aspectPresets.find((p) => p.width === w && p.height === h);
+	if (match) return match.label;
+	return `${w}×${h}`;
+});
+
+function setAspectRatio(preset: { width: number; height: number }) {
+	editor.project.updateSettings({ settings: { canvasSize: preset } });
+	showAspectMenu.value = false;
+}
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 let lastFrame = -1;
@@ -90,6 +113,44 @@ const canvasBackground = computed(() => {
 
 <template>
 	<div class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
+		<!-- Aspect ratio selector bar -->
+		<div class="relative flex items-center justify-center border-b border-white/10 px-3 py-1.5">
+			<button
+				type="button"
+				class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+				@click="showAspectMenu = !showAspectMenu"
+			>
+				{{ currentAspectLabel }}
+				<ChevronDown class="size-3" />
+			</button>
+
+			<!-- Dropdown -->
+			<div
+				v-if="showAspectMenu"
+				class="absolute top-full z-50 mt-0.5 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
+			>
+				<button
+					v-for="preset in aspectPresets"
+					:key="preset.label"
+					type="button"
+					:class="[
+						'flex w-full items-center gap-2 px-4 py-1.5 text-xs transition-colors',
+						canvasWidth === preset.width && canvasHeight === preset.height
+							? 'text-primary bg-primary/10'
+							: 'text-zinc-300 hover:bg-white/5',
+					]"
+					@click="setAspectRatio(preset)"
+				>
+					{{ preset.label }}
+					<span class="text-zinc-500">{{ preset.width }}×{{ preset.height }}</span>
+				</button>
+			</div>
+
+			<!-- Click-away -->
+			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false" />
+		</div>
+
+		<!-- Canvas -->
 		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center p-4">
 			<canvas
 				ref="canvasRef"

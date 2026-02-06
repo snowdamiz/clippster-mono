@@ -1,6 +1,7 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import { videoCache } from "../../video-cache/service";
+import type { Transform, FlipState, ColorAdjustments } from "../../types/timeline";
 
 const VIDEO_EPSILON = 1 / 1000;
 
@@ -17,19 +18,22 @@ export interface VideoNodeParams {
 	width?: number;
 	height?: number;
 	opacity?: number;
+	transform?: Transform;
+	flip?: FlipState;
+	colorAdjustments?: ColorAdjustments;
+	speed?: number;
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
-	private getVideoTime(time: number) {
-		return time - this.params.timeOffset + this.params.trimStart;
+	private isInRange(time: number) {
+		const elapsed = time - this.params.timeOffset;
+		return elapsed >= -VIDEO_EPSILON && elapsed < this.params.duration;
 	}
 
-	private isInRange(time: number) {
-		const videoTime = this.getVideoTime(time);
-		return (
-			videoTime >= this.params.trimStart - VIDEO_EPSILON &&
-			videoTime < this.params.trimStart + this.params.duration
-		);
+	private getSourceTime(time: number) {
+		const speed = this.params.speed ?? 1;
+		const elapsed = time - this.params.timeOffset;
+		return this.params.trimStart + elapsed * speed;
 	}
 
 	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
@@ -39,7 +43,8 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			return;
 		}
 
-		const videoTime = this.getVideoTime(time);
+		const videoTime = this.getSourceTime(time);
+
 		const frame = await videoCache.getFrameAt({
 			mediaId: this.params.mediaId,
 			file: this.params.file,
@@ -51,6 +56,48 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 
 			if (this.params.opacity !== undefined) {
 				renderer.context.globalAlpha = this.params.opacity;
+			}
+
+			// Apply transform (scale, position, rotation)
+			const transform = this.params.transform;
+			if (transform) {
+				const centerX = renderer.width / 2 + transform.position.x;
+				const centerY = renderer.height / 2 + transform.position.y;
+				renderer.context.translate(centerX, centerY);
+				if (transform.rotate !== 0) {
+					renderer.context.rotate((transform.rotate * Math.PI) / 180);
+				}
+				if (transform.scale !== 1) {
+					renderer.context.scale(transform.scale, transform.scale);
+				}
+				renderer.context.translate(-renderer.width / 2, -renderer.height / 2);
+			}
+
+			// Apply flip
+			const flip = this.params.flip;
+			if (flip?.horizontal || flip?.vertical) {
+				renderer.context.translate(renderer.width / 2, renderer.height / 2);
+				renderer.context.scale(
+					flip.horizontal ? -1 : 1,
+					flip.vertical ? -1 : 1,
+				);
+				renderer.context.translate(-renderer.width / 2, -renderer.height / 2);
+			}
+
+			// Apply color adjustments via CSS filter on canvas context
+			const ca = this.params.colorAdjustments;
+			if (ca) {
+				const filters: string[] = [];
+				if (ca.brightness !== 0) filters.push(`brightness(${1 + ca.brightness / 100})`);
+				if (ca.contrast !== 0) filters.push(`contrast(${1 + ca.contrast / 100})`);
+				if (ca.saturation !== 0) filters.push(`saturate(${1 + ca.saturation / 100})`);
+				if (ca.temperature !== 0) {
+					// Temperature approximated via hue-rotate: warm = positive, cool = negative
+					filters.push(`hue-rotate(${ca.temperature * 0.3}deg)`);
+				}
+				if (filters.length > 0) {
+					renderer.context.filter = filters.join(" ");
+				}
 			}
 
 			if (
@@ -76,6 +123,8 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				);
 			}
 
+			// Reset filter
+			renderer.context.filter = "none";
 			renderer.context.restore();
 		}
 	}

@@ -43,7 +43,7 @@ const DEFAULT_TRANSFORM: Transform = {
 
 const DEFAULT_PROJECT_SETTINGS: TProjectSettings = {
 	fps: 30,
-	canvasSize: { width: 1080, height: 1920 },
+	canvasSize: { width: 1920, height: 1080 },
 	background: { type: "color", color: "#000000" },
 };
 

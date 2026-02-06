@@ -20,11 +20,14 @@ import {
 	ToggleElementsVisibilityCommand,
 	ToggleElementsMutedCommand,
 	UpdateTextElementCommand,
+	UpdateElementCommand,
 	SplitElementsCommand,
 	PasteCommand,
 	UpdateElementStartTimeCommand,
 	MoveElementCommand,
+	ChangeSpeedCommand,
 } from "../../lib/commands/timeline";
+import type { UpdatableElementProps } from "../../lib/commands/timeline";
 import type { InsertElementParams } from "../../lib/commands/timeline/element/insert-element";
 
 export class TimelineManager {
@@ -224,6 +227,32 @@ export class TimelineManager {
 		>;
 	}): void {
 		const command = new UpdateTextElementCommand(trackId, elementId, updates);
+		this.editor.command.execute({ command });
+	}
+
+	updateElement({
+		trackId,
+		elementId,
+		updates,
+	}: {
+		trackId: string;
+		elementId: string;
+		updates: UpdatableElementProps;
+	}): void {
+		const command = new UpdateElementCommand(trackId, elementId, updates);
+		this.editor.command.execute({ command });
+	}
+
+	changeElementSpeed({
+		trackId,
+		elementId,
+		speed,
+	}: {
+		trackId: string;
+		elementId: string;
+		speed: number;
+	}): void {
+		const command = new ChangeSpeedCommand(trackId, elementId, speed);
 		this.editor.command.execute({ command });
 	}
 

@@ -1,4 +1,4 @@
-import type { TimelineTrack } from "../types/timeline";
+import type { TimelineTrack, VideoElement, ImageElement } from "../types/timeline";
 import type { MediaAsset } from "../types/assets";
 import { RootNode } from "./nodes/root-node";
 import { VideoNode } from "./nodes/video-node";
@@ -55,26 +55,37 @@ export function buildScene(params: BuildSceneParams) {
 				}
 
 				if (mediaAsset.type === "video") {
+					const videoEl = element as VideoElement;
 					contentNodes.push(
 						new VideoNode({
 							mediaId: mediaAsset.id,
 							url: mediaAsset.url,
 							file: mediaAsset.file,
-							duration: element.duration,
-							timeOffset: element.startTime,
-							trimStart: element.trimStart,
-							trimEnd: element.trimEnd,
+							duration: videoEl.duration,
+							timeOffset: videoEl.startTime,
+							trimStart: videoEl.trimStart,
+							trimEnd: videoEl.trimEnd,
+							opacity: videoEl.opacity,
+							transform: videoEl.transform,
+							flip: videoEl.flip,
+							colorAdjustments: videoEl.colorAdjustments,
+							speed: videoEl.speed,
 						}),
 					);
 				}
 				if (mediaAsset.type === "image") {
+					const imageEl = element as ImageElement;
 					contentNodes.push(
 						new ImageNode({
 							url: mediaAsset.url,
-							duration: element.duration,
-							timeOffset: element.startTime,
-							trimStart: element.trimStart,
-							trimEnd: element.trimEnd,
+							duration: imageEl.duration,
+							timeOffset: imageEl.startTime,
+							trimStart: imageEl.trimStart,
+							trimEnd: imageEl.trimEnd,
+							opacity: imageEl.opacity,
+							transform: imageEl.transform,
+							flip: imageEl.flip,
+							colorAdjustments: imageEl.colorAdjustments,
 						}),
 					);
 				}

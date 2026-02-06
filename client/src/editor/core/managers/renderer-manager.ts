@@ -3,7 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import type { EditorCore } from "../../core";
 import type { RootNode } from "../../renderer/nodes/root-node";
 import type { ExportOptions, ExportResult } from "../../types/export";
-import type { TimelineTrack, VideoElement, TextElement, AudioElement } from "../../types/timeline";
+import type { TimelineTrack, VideoElement, ImageElement, TextElement, AudioElement, StickerElement } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
 
 interface TauriVideoSource {
@@ -12,6 +12,20 @@ interface TauriVideoSource {
 	end_time: number;
 	trim_start: number | null;
 	trim_end: number | null;
+	opacity: number;
+	scale: number;
+	position_x: number;
+	position_y: number;
+	rotation: number;
+	is_muted: boolean;
+	volume: number;
+	speed: number;
+	flip_horizontal: boolean;
+	flip_vertical: boolean;
+	brightness: number;
+	contrast: number;
+	saturation: number;
+	temperature: number;
 }
 
 interface TauriAudioTrack {
@@ -20,6 +34,9 @@ interface TauriAudioTrack {
 	end_time: number;
 	volume: number;
 	is_muted: boolean;
+	speed: number;
+	fade_in: number;
+	fade_out: number;
 }
 
 interface TauriTextOverlay {
@@ -31,10 +48,23 @@ interface TauriTextOverlay {
 	style_data: string;
 }
 
+interface TauriStickerOverlay {
+	icon_url: string;
+	start_time: number;
+	end_time: number;
+	opacity: number;
+	scale: number;
+	position_x: number;
+	position_y: number;
+	rotation: number;
+	color: string | null;
+}
+
 interface TauriExportConfig {
 	video_sources: TauriVideoSource[];
 	audio_tracks: TauriAudioTrack[];
 	text_overlays: TauriTextOverlay[];
+	sticker_overlays: TauriStickerOverlay[];
 	output_path: string;
 	total_duration: number;
 	width: number;
@@ -143,6 +173,8 @@ export class RendererManager {
 		const audioTracks: TauriAudioTrack[] = [];
 		const textOverlays: TauriTextOverlay[] = [];
 
+		const stickerOverlays: TauriStickerOverlay[] = [];
+
 		for (const track of tracks) {
 			if (track.type === "video") {
 				for (const el of track.elements) {
@@ -160,6 +192,40 @@ export class RendererManager {
 						end_time: videoEl.startTime + videoEl.duration,
 						trim_start: videoEl.trimStart || null,
 						trim_end: videoEl.trimEnd || null,
+						opacity: videoEl.opacity ?? 1,
+						scale: videoEl.transform?.scale ?? 1,
+						position_x: videoEl.transform?.position?.x ?? 0,
+						position_y: videoEl.transform?.position?.y ?? 0,
+						rotation: videoEl.transform?.rotate ?? 0,
+						is_muted: videoEl.muted ?? false,
+						volume: videoEl.volume ?? 1,
+						speed: videoEl.speed ?? 1,
+						flip_horizontal: videoEl.flip?.horizontal ?? false,
+						flip_vertical: videoEl.flip?.vertical ?? false,
+						brightness: videoEl.colorAdjustments?.brightness ?? 0,
+						contrast: videoEl.colorAdjustments?.contrast ?? 0,
+						saturation: videoEl.colorAdjustments?.saturation ?? 0,
+						temperature: videoEl.colorAdjustments?.temperature ?? 0,
+					});
+				}
+			} else if (track.type === "sticker") {
+				for (const el of track.elements) {
+					const stickerEl = el as StickerElement;
+					const color = stickerEl.color
+						? `&color=${encodeURIComponent(stickerEl.color)}`
+						: "";
+					const iconUrl = `https://api.iconify.design/${stickerEl.iconName}.svg?width=200&height=200${color}`;
+
+					stickerOverlays.push({
+						icon_url: iconUrl,
+						start_time: stickerEl.startTime,
+						end_time: stickerEl.startTime + stickerEl.duration,
+						opacity: stickerEl.opacity ?? 1,
+						scale: stickerEl.transform?.scale ?? 1,
+						position_x: stickerEl.transform?.position?.x ?? 0,
+						position_y: stickerEl.transform?.position?.y ?? 0,
+						rotation: stickerEl.transform?.rotate ?? 0,
+						color: stickerEl.color ?? null,
 					});
 				}
 			} else if (track.type === "audio") {
@@ -184,6 +250,9 @@ export class RendererManager {
 						end_time: audioEl.startTime + audioEl.duration,
 						volume: audioEl.volume ?? 1,
 						is_muted: audioEl.muted ?? false,
+						speed: audioEl.speed ?? 1,
+						fade_in: audioEl.fadeIn ?? 0,
+						fade_out: audioEl.fadeOut ?? 0,
 					});
 				}
 			} else if (track.type === "text") {
@@ -211,6 +280,7 @@ export class RendererManager {
 			video_sources: videoSources,
 			audio_tracks: audioTracks,
 			text_overlays: textOverlays,
+			sticker_overlays: stickerOverlays,
 			output_path: outputPath,
 			total_duration: duration,
 			width: canvasSize.width,

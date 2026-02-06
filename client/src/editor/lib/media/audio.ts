@@ -153,6 +153,10 @@ export interface AudioClipSource {
 	trimStart: number;
 	trimEnd: number;
 	muted: boolean;
+	volume: number;
+	speed: number;
+	fadeIn: number;
+	fadeOut: number;
 }
 
 async function fetchLibraryAudioSource({
@@ -187,9 +191,17 @@ async function fetchLibraryAudioSource({
 async function fetchLibraryAudioClip({
 	element,
 	muted,
+	volume,
+	speed,
+	fadeIn,
+	fadeOut,
 }: {
 	element: LibraryAudioElement;
 	muted: boolean;
+	volume: number;
+	speed: number;
+	fadeIn: number;
+	fadeOut: number;
 }): Promise<AudioClipSource | null> {
 	try {
 		const response = await fetch(element.sourceUrl);
@@ -211,6 +223,10 @@ async function fetchLibraryAudioClip({
 			trimStart: element.trimStart,
 			trimEnd: element.trimEnd,
 			muted,
+			volume,
+			speed,
+			fadeIn,
+			fadeOut,
 		};
 	} catch (error) {
 		console.warn("Failed to fetch library audio:", error);
@@ -238,10 +254,18 @@ function collectMediaAudioClip({
 	element,
 	mediaAsset,
 	muted,
+	volume,
+	speed,
+	fadeIn,
+	fadeOut,
 }: {
 	element: TimelineElement;
 	mediaAsset: MediaAsset;
 	muted: boolean;
+	volume: number;
+	speed: number;
+	fadeIn: number;
+	fadeOut: number;
 }): AudioClipSource {
 	return {
 		id: element.id,
@@ -252,6 +276,10 @@ function collectMediaAudioClip({
 		trimStart: element.trimStart,
 		trimEnd: element.trimEnd,
 		muted,
+		volume,
+		speed,
+		fadeIn,
+		fadeOut,
 	};
 }
 
@@ -333,6 +361,10 @@ export async function collectAudioClips({
 			const muted = isTrackMuted || isElementMuted;
 
 			if (element.type === "audio") {
+				const volume = element.volume ?? 1;
+				const speed = element.speed ?? 1;
+				const fadeIn = element.fadeIn ?? 0;
+				const fadeOut = element.fadeOut ?? 0;
 				if (element.sourceType === "upload") {
 					const mediaAsset = mediaMap.get(element.mediaId);
 					if (!mediaAsset) continue;
@@ -342,10 +374,14 @@ export async function collectAudioClips({
 							element,
 							mediaAsset,
 							muted,
+							volume,
+							speed,
+							fadeIn,
+							fadeOut,
 						}),
 					);
 				} else {
-					pendingLibraryClips.push(fetchLibraryAudioClip({ element, muted }));
+					pendingLibraryClips.push(fetchLibraryAudioClip({ element, muted, volume, speed, fadeIn, fadeOut }));
 				}
 				continue;
 			}
@@ -360,6 +396,10 @@ export async function collectAudioClips({
 							element,
 							mediaAsset,
 							muted,
+							volume: element.volume ?? 1,
+							speed: element.speed ?? 1,
+							fadeIn: 0,
+							fadeOut: 0,
 						}),
 					);
 				}
