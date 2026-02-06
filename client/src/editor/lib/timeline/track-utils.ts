@@ -35,6 +35,10 @@ export function getTrackClasses({ type }: { type: TrackType }) {
 	return `${colors.background}`.trim();
 }
 
+export function getTrackBorderColor({ type }: { type: TrackType }): string {
+	return TRACK_COLORS[type].border;
+}
+
 export function getTrackHeight({ type }: { type: TrackType }): number {
 	return TRACK_HEIGHTS[type];
 }

@@ -1,18 +1,22 @@
 import type { TTimelineViewState } from "../types/project";
 import type { TrackType } from "../types/timeline";
 
-export const TRACK_COLORS: Record<TrackType, { background: string }> = {
+export const TRACK_COLORS: Record<TrackType, { background: string; border: string }> = {
 	video: {
 		background: "bg-[#2563EB]",
+		border: "#3B82F6",
 	},
 	text: {
 		background: "bg-[#5DBAA0]",
+		border: "#7CCDB8",
 	},
 	audio: {
 		background: "bg-[#915DBE]",
+		border: "#A87BD4",
 	},
 	sticker: {
 		background: "bg-amber-500",
+		border: "#F59E0B",
 	},
 } as const;
 

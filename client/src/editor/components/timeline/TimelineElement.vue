@@ -7,6 +7,7 @@ import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import {
 	getTrackClasses,
+	getTrackBorderColor,
 	getTrackHeight,
 	canElementHaveAudio,
 	canElementBeHidden,
@@ -116,6 +117,7 @@ const trackHeight = computed(() => getTrackHeight({ type: props.track.type }));
 const tileWidth = computed(() => trackHeight.value * (16 / 9));
 
 const trackClasses = computed(() => getTrackClasses({ type: props.track.type }));
+const borderColor = computed(() => getTrackBorderColor({ type: props.track.type }));
 
 const imageUrl = computed(() => {
 	if (!mediaAsset.value) return null;
@@ -141,12 +143,18 @@ function onContextAction(action: string) {
 		<!-- Element inner -->
 		<div
 			:class="[
-				'relative h-full cursor-pointer overflow-hidden rounded-[0.5rem]',
+				'relative h-full cursor-pointer overflow-hidden rounded-[0.5rem] border-2',
 				trackClasses,
 				isBeingDragged ? 'z-30' : 'z-10',
 				isHidden ? 'opacity-50' : '',
 			]"
+			:style="{ borderColor: borderColor }"
 		>
+			<!-- Track name label -->
+			<div class="pointer-events-none absolute top-0 left-1 z-20 truncate text-[10px] leading-[16px] font-medium text-white/70">
+				{{ element.name }}
+			</div>
+
 			<button
 				type="button"
 				class="absolute inset-0 size-full cursor-pointer"
@@ -155,47 +163,32 @@ function onContextAction(action: string) {
 			>
 				<div class="absolute inset-0 flex h-full items-center">
 					<!-- Text element -->
-					<div v-if="element.type === 'text'" class="flex size-full items-center justify-start pl-2">
-						<span class="truncate text-xs text-white">{{ (element as any).content }}</span>
-					</div>
+					<div v-if="element.type === 'text'" class="size-full" />
 
 					<!-- Sticker element -->
-					<div v-else-if="element.type === 'sticker'" class="flex size-full items-center gap-2 pl-2">
-						<img
-							:src="`https://api.iconify.design/${(element as any).iconName}.svg?width=20&height=20`"
-							:alt="element.name"
-							class="size-5 shrink-0"
-							width="20"
-							height="20"
-						/>
-						<span class="truncate text-xs text-white">{{ element.name }}</span>
-					</div>
+					<div v-else-if="element.type === 'sticker'" class="size-full" />
 
 					<!-- Audio element -->
-					<div v-else-if="element.type === 'audio'" class="flex size-full items-center gap-2">
-						<span class="text-zinc-200/80 truncate text-xs pl-2">{{ element.name }}</span>
-					</div>
+					<div v-else-if="element.type === 'audio'" class="size-full" />
 
 					<!-- Video/Image with thumbnail -->
-					<div v-else-if="imageUrl" class="flex size-full items-center justify-center">
-						<div :class="['relative size-full', isSelected ? 'bg-primary' : 'bg-transparent']">
+					<div v-else-if="imageUrl" class="absolute inset-0">
+						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 10%; bottom: 20%;">
 							<div
-								class="absolute right-0 left-0"
+								class="absolute inset-0"
 								:style="{
 									backgroundImage: `url(${imageUrl})`,
 									backgroundRepeat: 'repeat-x',
-									backgroundSize: `${tileWidth}px ${trackHeight}px`,
+									backgroundSize: `${tileWidth}px 100%`,
 									backgroundPosition: 'left center',
 									pointerEvents: 'none',
-									top: isSelected ? '0.25rem' : '0rem',
-									bottom: isSelected ? '0.25rem' : '0rem',
 								}"
 							/>
 						</div>
 					</div>
 
 					<!-- Fallback -->
-					<span v-else class="text-zinc-200/80 truncate text-xs pl-2">{{ element.name }}</span>
+					<div v-else class="size-full" />
 				</div>
 
 				<!-- Muted/Hidden overlay -->
