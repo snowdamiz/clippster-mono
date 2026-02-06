@@ -17,6 +17,8 @@ import { Upload, Image, Film, Music, Grid, List, Wand2, ArrowRightLeft, Palette,
 import TextView from "./assets/TextView.vue";
 import CaptionsView from "./assets/CaptionsView.vue";
 import SettingsView from "./assets/SettingsView.vue";
+import StickersView from "./assets/StickersView.vue";
+import SoundsView from "./assets/SoundsView.vue";
 
 const props = defineProps<{
 	activeTab: string;
@@ -287,33 +289,7 @@ function getMediaIcon(type: string) {
 		<TextView v-else-if="activeTab === 'text'" />
 
 		<!-- Stickers view -->
-		<div v-else-if="activeTab === 'stickers'" class="flex flex-1 flex-col overflow-y-auto p-4">
-			<p class="text-zinc-500 mb-3 text-xs">Search and add stickers to your timeline</p>
-			<div class="grid grid-cols-4 gap-2">
-				<button
-					v-for="emoji in ['😀','😂','🔥','❤️','👍','🎉','⭐','💯','🎵','🎬','✨','💪','🚀','💡','🎯','🏆']"
-					:key="emoji"
-					type="button"
-					class="flex aspect-square items-center justify-center rounded-md border border-white/10 text-2xl transition-colors hover:bg-white/5"
-					@click="() => {
-						const element = {
-							type: 'sticker' as const,
-							name: emoji,
-							iconName: emoji,
-							duration: 5,
-							startTime: editor.playback.getCurrentTime(),
-							trimStart: 0,
-							trimEnd: 0,
-							transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
-							opacity: 1,
-						};
-						editor.timeline.insertElement({ element, placement: { mode: 'auto' } });
-					}"
-				>
-					{{ emoji }}
-				</button>
-			</div>
-		</div>
+		<StickersView v-else-if="activeTab === 'stickers'" />
 
 		<!-- Effects view (placeholder) -->
 		<div v-else-if="activeTab === 'effects'" class="flex flex-1 flex-col items-center justify-center gap-3 p-4">
@@ -334,24 +310,7 @@ function getMediaIcon(type: string) {
 		</div>
 
 		<!-- Sounds view -->
-		<div v-else-if="activeTab === 'sounds'" class="flex flex-1 flex-col overflow-hidden">
-			<div class="border-b border-white/10 px-4 py-2">
-				<input
-					type="text"
-					placeholder="Search sounds..."
-					class="w-full rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-500"
-				/>
-			</div>
-			<div class="flex flex-1 flex-col items-center justify-center gap-3 p-4">
-				<Music class="size-10 text-zinc-600" :stroke-width="1" />
-				<div class="flex flex-col gap-2 text-center">
-					<p class="text-sm font-medium text-zinc-300">Sound Effects</p>
-					<p class="text-xs text-zinc-500 text-balance">
-						Upload audio files via the Media tab or drag audio files directly onto the timeline
-					</p>
-				</div>
-			</div>
-		</div>
+		<SoundsView v-else-if="activeTab === 'sounds'" />
 
 		<!-- Captions view -->
 		<CaptionsView v-else-if="activeTab === 'captions'" />

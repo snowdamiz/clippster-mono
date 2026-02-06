@@ -112,7 +112,7 @@ onUnmounted(() => {
 
 <template>
 	<div
-		class="flex h-3.5 shrink-0 items-center border-t border-white/10 bg-[#18181b]"
+		class="flex h-5 shrink-0 items-center border-t border-white/10 bg-[#18181b]"
 	>
 		<!-- Spacer matching track labels width -->
 		<div class="shrink-0 border-r border-white/10" :style="{ width: `${trackLabelsWidth}px` }" />
@@ -120,7 +120,7 @@ onUnmounted(() => {
 		<!-- Scrollbar track -->
 		<div
 			ref="trackRef"
-			class="relative mx-1 flex-1 h-2 rounded-full bg-white/5 cursor-pointer"
+			class="relative mx-1 flex-1 h-2.5 rounded-full bg-white/10 cursor-pointer"
 			@mousedown="onTrackClick"
 		>
 			<!-- Scrollbar thumb -->
@@ -129,8 +129,8 @@ onUnmounted(() => {
 				class="absolute top-0 h-full rounded-full transition-colors duration-150"
 				:class="[
 					isDragging
-						? 'bg-white/40'
-						: 'bg-white/20 hover:bg-white/30',
+						? 'bg-white/50'
+						: 'bg-white/30 hover:bg-white/40',
 				]"
 				:style="{
 					width: `${thumbWidth}px`,

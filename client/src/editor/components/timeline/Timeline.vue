@@ -215,8 +215,26 @@ const tracksAreaHeight = computed(() =>
 );
 
 function onScrollAreaWheel(event: WheelEvent) {
-	if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
-	handleWheel(event);
+	const isZoomGesture = event.ctrlKey || event.metaKey;
+
+	if (isZoomGesture) {
+		handleWheel(event);
+		return;
+	}
+
+	// Horizontal scroll: Shift+wheel, trackpad horizontal swipe, or normal vertical wheel
+	const scrollEl = tracksScrollRef.value;
+	if (!scrollEl) return;
+
+	event.preventDefault();
+
+	if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+		// Shift+scroll or trackpad horizontal swipe
+		scrollEl.scrollLeft += event.shiftKey ? event.deltaY : event.deltaX;
+	} else {
+		// Normal vertical scroll → scroll timeline horizontally
+		scrollEl.scrollLeft += event.deltaY;
+	}
 }
 
 function onScrollAreaMouseDown(event: MouseEvent) {
@@ -338,7 +356,7 @@ function onScrollAreaClick(event: MouseEvent) {
 								<TimelineRuler
 									:zoom-level="zoomLevel"
 									:dynamic-timeline-width="dynamicTimelineWidth"
-									@wheel="handleWheel"
+									@wheel="onScrollAreaWheel"
 									@ruler-click="handleRulerClick"
 									@ruler-tracking-mouse-down="handleRulerMouseDown"
 									@ruler-mouse-down="handlePlayheadRulerMouseDown"
