@@ -5,6 +5,8 @@ import type { RootNode } from "../../renderer/nodes/root-node";
 import type { ExportOptions, ExportResult } from "../../types/export";
 import type { TimelineTrack, VideoElement, ImageElement, TextElement, AudioElement, StickerElement } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
+import { TextNode } from "../../renderer/nodes/text-node";
+import type { TextNodeParams } from "../../renderer/nodes/text-node";
 
 interface TauriVideoSource {
 	source_path: string;
@@ -40,12 +42,9 @@ interface TauriAudioTrack {
 }
 
 interface TauriTextOverlay {
-	text: string;
+	image_path: string;
 	start_time: number;
 	end_time: number;
-	position_x: number;
-	position_y: number;
-	style_data: string;
 }
 
 interface TauriStickerOverlay {
@@ -125,7 +124,12 @@ export class RendererManager {
 				return { success: false, cancelled: true };
 			}
 
-			onProgress?.({ progress: 0.1 });
+			onProgress?.({ progress: 0.05 });
+
+			// Pre-render text elements to transparent PNGs for pixel-perfect export
+			const textOverlays = await this.preRenderTextOverlays({ tracks, canvasSize });
+
+			onProgress?.({ progress: 0.15 });
 
 			// Build export config from timeline data
 			const config = this.buildExportConfig({
@@ -134,6 +138,7 @@ export class RendererManager {
 				outputPath,
 				duration,
 				canvasSize,
+				textOverlays,
 			});
 
 			onProgress?.({ progress: 0.2 });
@@ -162,16 +167,17 @@ export class RendererManager {
 		outputPath,
 		duration,
 		canvasSize,
+		textOverlays,
 	}: {
 		tracks: TimelineTrack[];
 		mediaAssets: MediaAsset[];
 		outputPath: string;
 		duration: number;
 		canvasSize: { width: number; height: number };
+		textOverlays: TauriTextOverlay[];
 	}): TauriExportConfig {
 		const videoSources: TauriVideoSource[] = [];
 		const audioTracks: TauriAudioTrack[] = [];
-		const textOverlays: TauriTextOverlay[] = [];
 
 		const stickerOverlays: TauriStickerOverlay[] = [];
 
@@ -255,24 +261,7 @@ export class RendererManager {
 						fade_out: audioEl.fadeOut ?? 0,
 					});
 				}
-			} else if (track.type === "text") {
-				for (const el of track.elements) {
-					const textEl = el as TextElement;
-					textOverlays.push({
-						text: textEl.content,
-						start_time: textEl.startTime,
-						end_time: textEl.startTime + textEl.duration,
-						position_x: textEl.transform?.position?.x ?? 0.5,
-						position_y: textEl.transform?.position?.y ?? 0.5,
-						style_data: JSON.stringify({
-							fontSize: textEl.fontSize,
-							fontFamily: textEl.fontFamily,
-							color: textEl.color,
-							fontWeight: textEl.fontWeight,
-							fontStyle: textEl.fontStyle,
-						}),
-					});
-				}
+				// Text tracks are handled by preRenderTextOverlays — skip here
 			}
 		}
 
@@ -302,6 +291,64 @@ export class RendererManager {
 		} catch {
 			return null;
 		}
+	}
+
+	/**
+	 * Pre-render each text element to a transparent PNG using the same canvas
+	 * renderer as the preview. Saves each PNG to a temp file via Tauri and
+	 * returns overlay descriptors for FFmpeg's overlay filter.
+	 */
+	private async preRenderTextOverlays({
+		tracks,
+		canvasSize,
+	}: {
+		tracks: TimelineTrack[];
+		canvasSize: { width: number; height: number };
+	}): Promise<TauriTextOverlay[]> {
+		const overlays: TauriTextOverlay[] = [];
+		const center = { x: canvasSize.width / 2, y: canvasSize.height / 2 };
+
+		for (const track of tracks) {
+			if (track.type !== "text") continue;
+
+			for (const el of track.elements) {
+				const textEl = el as TextElement;
+				if (!textEl.content?.trim()) continue;
+
+				try {
+					const nodeParams: TextNodeParams = {
+						...textEl,
+						canvasCenter: center,
+					};
+					const node = new TextNode(nodeParams);
+
+					const result = await node.renderToImage({
+						canvasWidth: canvasSize.width,
+						canvasHeight: canvasSize.height,
+					});
+					if (!result) continue;
+
+					// Convert blob to Uint8Array and save via Tauri
+					const arrayBuffer = await result.blob.arrayBuffer();
+					const bytes = Array.from(new Uint8Array(arrayBuffer));
+
+					const imagePath = await invoke<string>("save_text_overlay_png", {
+						pngBytes: bytes,
+						elementId: textEl.id,
+					});
+
+					overlays.push({
+						image_path: imagePath,
+						start_time: textEl.startTime,
+						end_time: textEl.startTime + textEl.duration,
+					});
+				} catch (err) {
+					console.error(`[Export] Failed to pre-render text element ${textEl.id}:`, err);
+				}
+			}
+		}
+
+		return overlays;
 	}
 
 	subscribe(listener: () => void): () => void {

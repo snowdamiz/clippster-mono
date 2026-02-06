@@ -2,26 +2,41 @@ import { Command } from "../../../../lib/commands/base-command";
 import type { TextElement, TimelineTrack } from "../../../../types/timeline";
 import { EditorCore } from "../../../../core";
 
+export type TextElementUpdatable = Partial<
+	Pick<
+		TextElement,
+		| "content"
+		| "fontSize"
+		| "fontFamily"
+		| "fontFilePath"
+		| "color"
+		| "backgroundColor"
+		| "textAlign"
+		| "fontWeight"
+		| "fontStyle"
+		| "textDecoration"
+		| "letterSpacing"
+		| "lineHeight"
+		| "textCase"
+		| "stroke"
+		| "shadow"
+		| "glow"
+		| "gradient"
+		| "bubbleStyle"
+		| "bubbleColor"
+		| "bubblePadding"
+		| "transform"
+		| "opacity"
+	>
+>;
+
 export class UpdateTextElementCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
 
 	constructor(
 		private trackId: string,
 		private elementId: string,
-		private updates: Partial<
-			Pick<
-				TextElement,
-				| "content"
-				| "fontSize"
-				| "fontFamily"
-				| "color"
-				| "backgroundColor"
-				| "textAlign"
-				| "fontWeight"
-				| "fontStyle"
-				| "textDecoration"
-			>
-		>,
+		private updates: TextElementUpdatable,
 	) {
 		super();
 	}

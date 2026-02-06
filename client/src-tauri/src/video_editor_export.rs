@@ -1,3 +1,4 @@
+use std::path::Path;
 use tauri_plugin_shell::ShellExt;
 use serde::Deserialize;
 
@@ -38,12 +39,9 @@ pub struct AudioTrack {
 
 #[derive(Debug, Deserialize)]
 pub struct TextOverlay {
-    pub text: String,
+    pub image_path: String,
     pub start_time: f64,
     pub end_time: f64,
-    pub position_x: f64,
-    pub position_y: f64,
-    pub style_data: String, // JSON string with font, size, color, etc.
 }
 
 #[derive(Debug, Deserialize)]
@@ -100,6 +98,12 @@ pub async fn export_video_editor_project(
         }
     }
 
+    for text in &config.text_overlays {
+        if !Path::new(&text.image_path).exists() {
+            return Err(format!("Text overlay PNG not found: {}", text.image_path));
+        }
+    }
+
     let shell = app.shell();
     let mut args = vec!["-y".to_string()];
 
@@ -113,6 +117,12 @@ pub async fn export_video_editor_project(
     for audio in &config.audio_tracks {
         args.push("-i".to_string());
         args.push(audio.file_path.clone());
+    }
+
+    // Add text overlay PNG inputs (pre-rendered by frontend canvas)
+    for text in &config.text_overlays {
+        args.push("-i".to_string());
+        args.push(text.image_path.clone());
     }
 
     // Build filter_complex for video and audio processing
@@ -368,23 +378,15 @@ pub async fn export_video_editor_project(
         filters.push("[va]anull[aout]".to_string());
     }
 
-    // Add text overlays using drawtext filter
+    // Add text overlays as image composites (pre-rendered PNGs from canvas)
+    // Each text element was rendered to a transparent PNG by the frontend,
+    // giving pixel-perfect preview-export parity for all effects (bubbles,
+    // gradients, glow, stroke, etc.) that FFmpeg's drawtext cannot handle.
     let mut video_stream = "[v]".to_string();
+    let existing_input_count = config.video_sources.len() + config.audio_tracks.len();
+    
     for (i, text) in config.text_overlays.iter().enumerate() {
-        // Parse style_data JSON to get font properties
-        let style: serde_json::Value = serde_json::from_str(&text.style_data)
-            .unwrap_or(serde_json::json!({}));
-        
-        let font_size = style.get("fontSize").and_then(|v| v.as_i64()).unwrap_or(24);
-        let font_color = style.get("color").and_then(|v| v.as_str()).unwrap_or("white");
-        let font_family = style.get("fontFamily").and_then(|v| v.as_str()).unwrap_or("Arial");
-        
-        // Convert position from percentage to pixels
-        let x = (text.position_x * config.width as f64) as i32;
-        let y = (text.position_y * config.height as f64) as i32;
-        
-        // Escape text for FFmpeg
-        let escaped_text = text.text.replace("'", "\\'").replace(":", "\\:");
+        let input_idx = existing_input_count + i;
         
         let next_stream = if i == config.text_overlays.len() - 1 {
             "[vout]".to_string()
@@ -392,16 +394,12 @@ pub async fn export_video_editor_project(
             format!("[vt{}]", i + 1)
         };
         
-        // Add drawtext filter with enable expression for timing
+        // Use overlay filter with enable expression for timing
+        // The PNG is full canvas size with transparency, so overlay at 0:0
         filters.push(format!(
-            "{}drawtext=text='{}':fontfile=/path/to/fonts/{}:fontsize={}:fontcolor={}:x={}:y={}:enable='between(t,{},{})'{}",
+            "{}[{}:v]overlay=0:0:enable='between(t,{},{})'{}",
             video_stream,
-            escaped_text,
-            font_family,
-            font_size,
-            font_color,
-            x,
-            y,
+            input_idx,
             text.start_time,
             text.end_time,
             next_stream
@@ -414,7 +412,7 @@ pub async fn export_video_editor_project(
     if config.text_overlays.is_empty() {
         filters.push("[v]copy[vout]".to_string());
     }
-
+    
     // Add filter_complex argument
     if !filters.is_empty() {
         args.push("-filter_complex".to_string());
@@ -549,4 +547,27 @@ pub async fn export_video_editor_project_simple(
 
     println!("[Rust] Export completed successfully: {}", output_path);
     Ok(())
+}
+
+/// Save a pre-rendered text overlay PNG to a temp file for FFmpeg compositing.
+/// The frontend renders text with all effects (bubbles, glow, gradients, etc.)
+/// to a transparent PNG on canvas, then passes the bytes here to save to disk.
+/// Returns the absolute path to the saved PNG file.
+#[tauri::command]
+pub async fn save_text_overlay_png(
+    png_bytes: Vec<u8>,
+    element_id: String,
+) -> Result<String, String> {
+    let temp_dir = std::env::temp_dir().join("clippster_text_overlays");
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+    let file_name = format!("text_overlay_{}.png", element_id);
+    let file_path = temp_dir.join(&file_name);
+
+    std::fs::write(&file_path, &png_bytes)
+        .map_err(|e| format!("Failed to write text overlay PNG: {}", e))?;
+
+    println!("[Rust] Saved text overlay PNG: {} ({} bytes)", file_path.display(), png_bytes.len());
+    Ok(file_path.to_string_lossy().to_string())
 }

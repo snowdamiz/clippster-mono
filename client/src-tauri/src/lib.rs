@@ -22,6 +22,7 @@ mod video_editor_export;
 mod video;
 mod clip_extractor_commands;
 mod utils;
+mod font_commands;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -816,6 +817,7 @@ generate_proxy_file,
 // Video Editor Export commands
 video_editor_export::export_video_editor_project_simple,
 video_editor_export::export_video_editor_project,
+video_editor_export::save_text_overlay_png,
 
 // Video Frame Decoder commands
 video::get_video_frame,
@@ -833,6 +835,13 @@ clip_extractor_commands::generate_clip_thumbnail,
 clip_extractor_commands::generate_waveform,
 clip_extractor_commands::delete_file,
 clip_extractor_commands::file_exists,
+
+// Font commands
+font_commands::read_font_file,
+font_commands::read_bundled_font,
+font_commands::copy_font_to_app_data,
+font_commands::list_custom_fonts,
+font_commands::resolve_font_path,
 
 ])
 .run(tauri::generate_context!())

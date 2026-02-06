@@ -183,19 +183,31 @@ export function usePreviewInteraction({
 			const textEl = element as TextElement;
 			const fontSize = textEl.fontSize ?? 48;
 			const content = textEl.content ?? "";
-			const fontWeight = textEl.fontWeight === "bold" ? "bold" : "normal";
+			const fontWeight = textEl.fontWeight === "bold" ? "bold" : textEl.fontWeight || "normal";
 			const fontStyle = textEl.fontStyle === "italic" ? "italic" : "normal";
 			const fontFamily = textEl.fontFamily ?? "sans-serif";
+			const letterSpacing = textEl.letterSpacing ?? 0;
+			const lineHeight = textEl.lineHeight ?? 1.2;
 
 			const ctx = getMeasureCtx();
-			ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
-			const metrics = ctx.measureText(content || " ");
-			const textW = metrics.width;
-			const ascent = metrics.actualBoundingBoxAscent ?? fontSize * 0.8;
-			const descent = metrics.actualBoundingBoxDescent ?? fontSize * 0.2;
-			const textH = ascent + descent;
-			const padX = 8;
-			const padY = 4;
+			ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
+
+			// Measure multiline text
+			const lines = (content || " ").split("\n");
+			let maxLineW = 0;
+			for (const line of lines) {
+				let lineW = ctx.measureText(line).width;
+				if (letterSpacing > 0) lineW += letterSpacing * Math.max(0, line.length - 1);
+				if (lineW > maxLineW) maxLineW = lineW;
+			}
+			const textW = maxLineW;
+			const textH = fontSize * lineHeight * lines.length;
+
+			// Padding: bubble padding or default
+			const bubbleStyle = textEl.bubbleStyle ?? "none";
+			const bubblePad = bubbleStyle !== "none" ? (textEl.bubblePadding ?? 16) : 0;
+			const padX = bubblePad > 0 ? bubblePad : 8;
+			const padY = bubblePad > 0 ? bubblePad : 4;
 
 			width = Math.max(textW + padX * 2, 40) * transform.scale;
 			height = Math.max(textH + padY * 2, 20) * transform.scale;

@@ -222,22 +222,7 @@ export class TimelineManager {
 	}: {
 		trackId: string;
 		elementId: string;
-		updates: Partial<
-			Pick<
-				TextElement,
-				| "content"
-				| "fontSize"
-				| "fontFamily"
-				| "color"
-				| "backgroundColor"
-				| "textAlign"
-				| "fontWeight"
-				| "fontStyle"
-				| "textDecoration"
-				| "transform"
-				| "opacity"
-			>
-		>;
+		updates: import("../../lib/commands/timeline/element/update-text-element").TextElementUpdatable;
 	}): void {
 		const command = new UpdateTextElementCommand(trackId, elementId, updates);
 		this.editor.command.execute({ command });

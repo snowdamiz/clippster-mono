@@ -170,7 +170,7 @@ function getMediaIcon(type: string) {
 					:key="tab.key"
 					type="button"
 					:class="[
-						'flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium transition-colors border-b-2',
+						'flex items-center gap-1 px-2 py-2 text-[11px] font-medium whitespace-nowrap transition-colors border-b-2',
 						mediaSubTab === tab.key
 							? 'border-blue-500 text-blue-400'
 							: 'border-transparent text-zinc-500 hover:text-zinc-300',

@@ -120,17 +120,63 @@ export interface ImageElement extends BaseTimelineElement {
 	colorAdjustments?: ColorAdjustments;
 }
 
+export interface TextStroke {
+	color: string;
+	width: number;
+}
+
+export interface TextShadow {
+	color: string;
+	offsetX: number;
+	offsetY: number;
+	blur: number;
+}
+
+export interface TextGlow {
+	color: string;
+	intensity: number; // 0-20 blur radius
+}
+
+export interface TextGradient {
+	enabled: boolean;
+	colors: [string, string]; // start, end
+	angle: number; // degrees
+}
+
+export type TextBubbleStyle =
+	| "none"
+	| "rounded"
+	| "pill"
+	| "speech"
+	| "thought"
+	| "label"
+	| "neon-box"
+	| "glitch";
+
+export type TextCase = "none" | "uppercase" | "lowercase" | "capitalize";
+
 export interface TextElement extends BaseTimelineElement {
 	type: "text";
 	content: string;
 	fontSize: number;
 	fontFamily: string;
+	fontFilePath?: string; // absolute path to .ttf/.otf for custom fonts
 	color: string;
 	backgroundColor: string;
 	textAlign: "left" | "center" | "right";
-	fontWeight: "normal" | "bold";
+	fontWeight: "normal" | "bold" | "100" | "200" | "300" | "400" | "500" | "600" | "700" | "800" | "900";
 	fontStyle: "normal" | "italic";
 	textDecoration: "none" | "underline" | "line-through";
+	letterSpacing: number; // pixels, default 0
+	lineHeight: number; // multiplier, default 1.2
+	textCase: TextCase;
+	stroke?: TextStroke;
+	shadow?: TextShadow;
+	glow?: TextGlow;
+	gradient?: TextGradient;
+	bubbleStyle: TextBubbleStyle;
+	bubbleColor?: string;
+	bubblePadding?: number;
 	hidden?: boolean;
 	transform: Transform;
 	opacity: number;
