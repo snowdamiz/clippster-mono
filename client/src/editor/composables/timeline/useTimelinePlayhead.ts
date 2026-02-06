@@ -62,10 +62,12 @@ export function useTimelinePlayhead({
 	});
 
 	function handleScrub(event: MouseEvent) {
-		const ruler = rulerRef.value;
-		if (!ruler) return;
-		const rulerRect = ruler.getBoundingClientRect();
-		const relativeMouseX = event.clientX - rulerRect.left;
+		// Use rulerRef if available, otherwise fall back to tracksScrollRef
+		const container = rulerRef.value ?? tracksScrollRef.value;
+		if (!container) return;
+		const containerRect = container.getBoundingClientRect();
+		const scrollLeft = container.scrollLeft ?? 0;
+		const relativeMouseX = event.clientX - containerRect.left + scrollLeft;
 
 		const timelineContentWidth =
 			duration.value * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;

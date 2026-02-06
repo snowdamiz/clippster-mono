@@ -44,19 +44,19 @@ function handleKeyDown(event: KeyboardEvent) {
 		:aria-valuemax="duration"
 		:aria-valuenow="playheadPosition"
 		tabindex="0"
-		class="pointer-events-auto absolute z-60"
+		class="pointer-events-auto absolute z-60 cursor-col-resize"
 		:style="{
-			left: `${leftPosition}px`,
+			left: `${leftPosition - 7}px`,
 			top: 0,
 			height: `${totalHeight}px`,
-			width: '2px',
+			width: '16px',
 		}"
 		@mousedown="emit('playheadMouseDown', $event)"
 		@keydown="handleKeyDown"
 	>
-		<div class="bg-foreground absolute left-0 h-full w-0.5 cursor-col-resize" />
+		<div class="bg-foreground absolute left-[7px] h-full w-0.5" />
 		<div
-			class="absolute top-1 left-1/2 size-3 -translate-x-1/2 transform rounded-full border-2 shadow-xs"
+			class="absolute top-1 left-1/2 size-3 -translate-x-1/2 transform cursor-grab rounded-full border-2 shadow-xs active:cursor-grabbing"
 			:class="isSnappingToPlayhead ? 'bg-foreground border-foreground' : 'bg-foreground border-foreground/50'"
 		/>
 	</div>
