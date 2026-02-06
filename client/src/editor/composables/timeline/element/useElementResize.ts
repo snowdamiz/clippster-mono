@@ -43,6 +43,7 @@ export function useTimelineElementResize({
 	const currentTrimEnd = ref(0);
 	const currentStartTime = ref(0);
 	const currentDuration = ref(0);
+	const rippleShifts = ref<Map<string, number>>(new Map());
 
 	// Use plain vars for refs that don't need reactivity (perf)
 	let trimStartVal = 0;
@@ -85,6 +86,20 @@ export function useTimelineElementResize({
 		onResizeStateChange?.({ isResizing: true });
 	}
 
+	function getPreviousElementEnd(): number {
+		const els = track.value.elements;
+		const currentEl = element.value;
+		let prevEnd = 0;
+		for (const el of els) {
+			if (el.id === currentEl.id) continue;
+			const elEnd = el.startTime + el.duration;
+			if (elEnd <= currentEl.startTime + 0.001 && elEnd > prevEnd) {
+				prevEnd = elEnd;
+			}
+		}
+		return prevEnd;
+	}
+
 	function updateTrimFromMouseMove(clientX: number) {
 		const rs = resizing.value;
 		if (!rs) return;
@@ -125,20 +140,29 @@ export function useTimelineElementResize({
 			const sourceDuration = rs.initialTrimStart + rs.initialDuration + rs.initialTrimEnd;
 			const maxAllowed = sourceDuration - rs.initialTrimEnd - minDurationSeconds;
 			const calculated = rs.initialTrimStart + deltaTime;
+			const prevEnd = getPreviousElementEnd();
 
 			if (calculated >= 0 && calculated <= maxAllowed) {
 				const newTrimStart = snapTimeToFrame({ time: Math.min(maxAllowed, calculated), fps: projectFps });
 				const trimDelta = newTrimStart - rs.initialTrimStart;
-				const newStartTime = snapTimeToFrame({ time: rs.initialStartTime + trimDelta, fps: projectFps });
-				const newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
+				let newStartTime = snapTimeToFrame({ time: rs.initialStartTime + trimDelta, fps: projectFps });
+				let newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
 
-				currentTrimStart.value = trimStartVal = newTrimStart;
+				// Clamp: don't extend past previous element
+				if (newStartTime < prevEnd) {
+					const clampedDelta = rs.initialStartTime - prevEnd;
+					newStartTime = prevEnd;
+					newDuration = snapTimeToFrame({ time: rs.initialDuration + clampedDelta, fps: projectFps });
+					currentTrimStart.value = trimStartVal = snapTimeToFrame({ time: rs.initialTrimStart - clampedDelta, fps: projectFps });
+				} else {
+					currentTrimStart.value = trimStartVal = newTrimStart;
+				}
 				currentStartTime.value = startTimeVal = newStartTime;
 				currentDuration.value = durationVal = newDuration;
 			} else if (calculated < 0) {
 				if (canExtendElementDuration()) {
 					const extensionAmount = Math.abs(calculated);
-					const maxExtension = rs.initialStartTime;
+					const maxExtension = Math.min(rs.initialStartTime, rs.initialStartTime - prevEnd);
 					const actualExtension = Math.min(extensionAmount, maxExtension);
 					const newStartTime = snapTimeToFrame({ time: rs.initialStartTime - actualExtension, fps: projectFps });
 					const newDuration = snapTimeToFrame({ time: rs.initialDuration + actualExtension, fps: projectFps });
@@ -148,8 +172,14 @@ export function useTimelineElementResize({
 					currentDuration.value = durationVal = newDuration;
 				} else {
 					const trimDelta = 0 - rs.initialTrimStart;
-					const newStartTime = snapTimeToFrame({ time: rs.initialStartTime + trimDelta, fps: projectFps });
-					const newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
+					let newStartTime = snapTimeToFrame({ time: rs.initialStartTime + trimDelta, fps: projectFps });
+					let newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
+
+					// Clamp: don't extend past previous element
+					if (newStartTime < prevEnd) {
+						newStartTime = prevEnd;
+						newDuration = snapTimeToFrame({ time: rs.initialStartTime + rs.initialDuration - prevEnd, fps: projectFps });
+					}
 
 					currentTrimStart.value = trimStartVal = 0;
 					currentStartTime.value = startTimeVal = newStartTime;
@@ -186,6 +216,28 @@ export function useTimelineElementResize({
 				currentDuration.value = durationVal = newDuration;
 			}
 		}
+
+		// Compute ripple shifts for subsequent elements during right-edge resize
+		if (rs.side === "right") {
+			const newEndTime = startTimeVal + durationVal;
+			const shifts = new Map<string, number>();
+			const els = [...track.value.elements]
+				.filter((el) => el.id !== element.value.id)
+				.sort((a, b) => a.startTime - b.startTime);
+
+			let pushBoundary = newEndTime;
+			for (const el of els) {
+				if (el.startTime < pushBoundary - 0.001) {
+					shifts.set(el.id, pushBoundary);
+					pushBoundary = pushBoundary + el.duration;
+				} else {
+					break;
+				}
+			}
+			rippleShifts.value = shifts;
+		} else {
+			rippleShifts.value = new Map();
+		}
 	}
 
 	function handleResizeEnd() {
@@ -221,6 +273,7 @@ export function useTimelineElementResize({
 		}
 
 		resizing.value = null;
+		rippleShifts.value = new Map();
 		onResizeStateChange?.({ isResizing: false });
 		onSnapPointChange?.(null);
 	}
@@ -258,5 +311,6 @@ export function useTimelineElementResize({
 		currentTrimEnd,
 		currentStartTime,
 		currentDuration,
+		rippleShifts,
 	};
 }

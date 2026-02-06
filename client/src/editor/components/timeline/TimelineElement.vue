@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, toRef } from "vue";
+import { computed, ref, toRef, watch } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
@@ -28,11 +28,13 @@ const props = defineProps<{
 	isSelected: boolean;
 	dragState: ElementDragState;
 	snappingEnabled: boolean;
+	rippleShifts?: Map<string, number>;
 }>();
 
 const emit = defineEmits<{
 	(e: "snapPointChange", snapPoint: SnapPoint | null): void;
 	(e: "resizeStateChange", params: { isResizing: boolean }): void;
+	(e: "rippleShiftsChange", shifts: Map<string, number>): void;
 	(e: "elementMouseDown", event: MouseEvent, element: TimelineElementType): void;
 	(e: "elementClick", event: MouseEvent, element: TimelineElementType): void;
 }>();
@@ -54,7 +56,7 @@ const hasAudio = computed(() => mediaSupportsAudio({ media: mediaAsset.value }))
 
 const snappingRef = computed(() => props.snappingEnabled);
 
-const { handleResizeStart, resizing, currentStartTime, currentDuration } =
+const { handleResizeStart, resizing, currentStartTime, currentDuration, rippleShifts: localRippleShifts } =
 	useTimelineElementResize({
 		element: toRef(props, "element"),
 		track: toRef(props, "track"),
@@ -63,6 +65,10 @@ const { handleResizeStart, resizing, currentStartTime, currentDuration } =
 		onSnapPointChange: (sp) => emit("snapPointChange", sp),
 		onResizeStateChange: (p) => emit("resizeStateChange", p),
 	});
+
+watch(localRippleShifts, (shifts) => {
+	emit("rippleShiftsChange", shifts);
+}, { deep: true });
 
 const isResizing = computed(() => resizing.value !== null);
 
@@ -73,11 +79,16 @@ const dragOffsetY = computed(() =>
 		: 0,
 );
 
-const elementStartTime = computed(() =>
-	isBeingDragged.value && props.dragState.isDragging
-		? props.dragState.currentTime
-		: props.element.startTime,
-);
+const elementStartTime = computed(() => {
+	if (isBeingDragged.value && props.dragState.isDragging) {
+		return props.dragState.currentTime;
+	}
+	const shifted = props.rippleShifts?.get(props.element.id);
+	if (shifted !== undefined) {
+		return shifted;
+	}
+	return props.element.startTime;
+});
 
 const displayedStartTime = computed(() =>
 	isResizing.value ? currentStartTime.value : elementStartTime.value,

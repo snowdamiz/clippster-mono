@@ -1,6 +1,5 @@
 import type { TimelineTrack, ElementType } from "../../types/timeline";
 import { TRACK_HEIGHTS, TRACK_GAP } from "../../constants/timeline-constants";
-import { wouldElementOverlap } from "./element-utils";
 import type { ComputeDropTargetParams, DropTarget } from "../../types/timeline";
 import { isMainTrack } from "./track-utils";
 
@@ -176,15 +175,9 @@ export function computeDropTarget({
 		trackType: track.type,
 	});
 
-	const endTime = xPosition + elementDuration;
-	const hasOverlap = wouldElementOverlap({
-		elements: track.elements,
-		startTime: xPosition,
-		endTime,
-		excludeElementId,
-	});
-
-	if (isTrackCompatible && !hasOverlap) {
+	// Allow drop on compatible tracks even with overlap — MoveElementCommand
+	// will ripple-push overlapping elements forward automatically.
+	if (isTrackCompatible) {
 		return {
 			trackIndex,
 			isNewTrack: false,
@@ -194,7 +187,7 @@ export function computeDropTarget({
 	}
 
 	let insertAbove = isInUpperHalf;
-	if (!isTrackCompatible && verticalDragDirection) {
+	if (verticalDragDirection) {
 		insertAbove = verticalDragDirection === "up";
 	}
 

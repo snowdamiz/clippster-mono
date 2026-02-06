@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import TimelineElement from "./TimelineElement.vue";
@@ -30,6 +30,12 @@ defineExpose({});
 
 const { editor, version } = useEditor();
 const { isElementSelected, clearElementSelection } = useElementSelection();
+
+const rippleShifts = ref<Map<string, number>>(new Map());
+
+function onRippleShiftsChange(shifts: Map<string, number>) {
+	rippleShifts.value = shifts;
+}
 
 const hasSelectedElements = computed(() =>
 	props.track.elements.some((element) =>
@@ -69,8 +75,10 @@ function onTrackMouseDown(event: MouseEvent) {
 				:is-selected="isElementSelected({ trackId: track.id, elementId: element.id })"
 				:drag-state="dragState"
 				:snapping-enabled="snappingEnabled"
+				:ripple-shifts="rippleShifts"
 				@snap-point-change="(sp) => emit('snapPointChange', sp)"
 				@resize-state-change="(p) => emit('resizeStateChange', p)"
+				@ripple-shifts-change="onRippleShiftsChange"
 				@element-mouse-down="(ev, el) => emit('elementMouseDown', { event: ev, element: el, track })"
 				@element-click="(ev, el) => emit('elementClick', { event: ev, element: el, track })"
 			/>

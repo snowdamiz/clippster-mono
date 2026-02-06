@@ -26,6 +26,7 @@ import TimelineTrackContent from "./TimelineTrackContent.vue";
 import SnapIndicator from "./SnapIndicator.vue";
 import DragLine from "./DragLine.vue";
 import SelectionBox from "../SelectionBox.vue";
+import TimelineScrollbar from "./TimelineScrollbar.vue";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const tracksContainerHeight = { min: 0, max: 800 };
@@ -249,7 +250,7 @@ function onScrollAreaClick(event: MouseEvent) {
 
 		<div
 			ref="timelineRef"
-			class="relative flex flex-1 flex-col overflow-hidden"
+			class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
 		>
 			<SnapIndicator
 				:snap-point="currentSnapPoint"
@@ -319,7 +320,7 @@ function onScrollAreaClick(event: MouseEvent) {
 
 					<div
 						ref="tracksScrollRef"
-						class="size-full overflow-x-auto overflow-y-hidden"
+						class="size-full overflow-x-auto overflow-y-hidden hide-native-scrollbar"
 						@mousedown="onScrollAreaMouseDown"
 						@click="onScrollAreaClick"
 						@wheel="onScrollAreaWheel"
@@ -387,5 +388,20 @@ function onScrollAreaClick(event: MouseEvent) {
 				</div>
 			</div>
 		</div>
+
+		<TimelineScrollbar
+			v-if="tracksScrollRef"
+			:scroll-container="tracksScrollRef"
+			:track-labels-width="trackLabelsWidth"
+		/>
 	</section>
 </template>
+
+<style scoped>
+.hide-native-scrollbar {
+	scrollbar-width: none !important;
+}
+.hide-native-scrollbar::-webkit-scrollbar {
+	display: none !important;
+}
+</style>

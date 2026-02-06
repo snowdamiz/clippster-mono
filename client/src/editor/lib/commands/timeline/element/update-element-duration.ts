@@ -19,9 +19,23 @@ export class UpdateElementDurationCommand extends Command {
 
 		const updatedTracks = this.savedState.map((t) => {
 			if (t.id !== this.trackId) return t;
-			const newElements = t.elements.map((el) =>
-				el.id === this.elementId ? { ...el, duration: this.duration } : el,
-			);
+
+			const targetEl = t.elements.find((el) => el.id === this.elementId);
+			if (!targetEl) return t;
+
+			const durationDelta = this.duration - targetEl.duration;
+			const oldEndTime = targetEl.startTime + targetEl.duration;
+
+			const newElements = t.elements.map((el) => {
+				if (el.id === this.elementId) {
+					return { ...el, duration: this.duration };
+				}
+				// Ripple-push: shift elements that start at or after the old end
+				if (durationDelta > 0 && el.startTime >= oldEndTime - 0.001) {
+					return { ...el, startTime: el.startTime + durationDelta };
+				}
+				return el;
+			});
 			return { ...t, elements: newElements } as typeof t;
 		});
 
