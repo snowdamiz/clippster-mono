@@ -56,6 +56,12 @@ const router = createRouter({
       ],
     },
     {
+      path: '/editor',
+      name: 'opencut-editor',
+      component: () => import('@/pages/OpenCutEditor.vue'),
+      meta: { noLayout: true },
+    },
+    {
       path: '/live-clip',
       name: 'live-clip',
       component: () => import('@/layouts/DashboardLayout.vue'),

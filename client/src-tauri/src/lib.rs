@@ -565,9 +565,21 @@ pub fn run() {
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
+                            version: 80,
+                            description: "fix_monitored_streamers_unique_constraint",
+                            sql: include_str!("../migrations/080_fix_monitored_streamers_unique_constraint.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
                             version: 81,
                             description: "add_source_start_time_to_audio_tracks",
                             sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 82,
+                            description: "add_opencut_editor_projects",
+                            sql: include_str!("../migrations/082_add_opencut_editor_projects.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                     ],
@@ -816,7 +828,7 @@ video::get_decoder_info,
 
 // Clip Extractor commands
 clip_extractor_commands::extract_clip,
-clip_extractor_commands::generate_thumbnail,
+clip_extractor_commands::generate_clip_thumbnail,
 clip_extractor_commands::generate_waveform,
 clip_extractor_commands::delete_file,
 clip_extractor_commands::file_exists,

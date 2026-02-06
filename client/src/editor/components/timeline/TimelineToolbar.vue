@@ -1,0 +1,206 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import { useEditor } from "../../composables/useEditor";
+import { formatTimeCode } from "../../lib/time";
+import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
+import { sliderToZoom, zoomToSlider } from "../../lib/timeline/zoom-utils";
+import { invokeAction } from "../../lib/actions";
+import {
+	Play,
+	Pause,
+	SkipBack,
+	Scissors,
+	Copy,
+	Trash2,
+	Bookmark,
+	Magnet,
+	Link,
+	ZoomIn,
+	ZoomOut,
+	AlignLeft,
+	AlignRight,
+	Snowflake,
+	SplitSquareHorizontal,
+} from "lucide-vue-next";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+
+const props = defineProps<{
+	zoomLevel: number;
+	minZoom: number;
+}>();
+
+const emit = defineEmits<{
+	(e: "setZoomLevel", zoom: number): void;
+}>();
+
+const { editor, version } = useEditor();
+
+const currentTime = computed(() => {
+	void version.value;
+	return editor.playback.getCurrentTime();
+});
+const isPlaying = computed(() => {
+	void version.value;
+	return editor.playback.getIsPlaying();
+});
+const totalDuration = computed(() => {
+	void version.value;
+	return editor.timeline.getTotalDuration();
+});
+const fps = computed(() => {
+	void version.value;
+	return editor.project.getActive()?.settings?.fps ?? 30;
+});
+
+const sliderValue = computed(() => zoomToSlider({ zoomLevel: props.zoomLevel, minZoom: props.minZoom }));
+
+function handleZoom(direction: "in" | "out") {
+	const newZoom =
+		direction === "in"
+			? Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, props.zoomLevel * TIMELINE_CONSTANTS.ZOOM_BUTTON_FACTOR)
+			: Math.max(props.minZoom, props.zoomLevel / TIMELINE_CONSTANTS.ZOOM_BUTTON_FACTOR);
+	emit("setZoomLevel", newZoom);
+}
+
+function handleSliderInput(event: Event) {
+	const target = event.target as HTMLInputElement;
+	const val = parseFloat(target.value);
+	emit("setZoomLevel", sliderToZoom({ sliderPosition: val, minZoom: props.minZoom }));
+}
+
+function handleAction(action: string, event?: MouseEvent) {
+	event?.stopPropagation();
+	invokeAction(action as any);
+}
+</script>
+
+<template>
+	<div class="flex h-10 items-center justify-between border-b border-white/10 bg-[#18181b] px-2 py-1">
+		<!-- Left section: playback + editing tools -->
+		<div class="flex items-center gap-1">
+			<TooltipProvider :delay-duration="500">
+				<!-- Play/Pause -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" @click="handleAction('toggle-play', $event)">
+							<Pause v-if="isPlaying" class="size-4" />
+							<Play v-else class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>{{ isPlaying ? 'Pause' : 'Play' }}</TooltipContent>
+				</Tooltip>
+
+				<!-- Go to start -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" @click="handleAction('goto-start', $event)">
+							<SkipBack class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Go to start</TooltipContent>
+				</Tooltip>
+
+				<div class="mx-1 h-6 w-px bg-white/10" />
+
+				<!-- Time display -->
+				<div class="flex flex-row items-center justify-center px-2">
+					<div class="text-zinc-200 text-center font-mono text-xs">
+						{{ formatTimeCode({ timeInSeconds: currentTime, format: "HH:MM:SS:FF", fps }) }}
+					</div>
+					<div class="text-zinc-500 px-2 font-mono text-xs">/</div>
+					<div class="text-zinc-500 text-center font-mono text-xs">
+						{{ formatTimeCode({ timeInSeconds: totalDuration, format: "HH:MM:SS:FF", fps }) }}
+					</div>
+				</div>
+
+				<div class="mx-1 h-6 w-px bg-white/10" />
+
+				<!-- Split -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" @click="handleAction('split', $event)">
+							<Scissors class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Split element</TooltipContent>
+				</Tooltip>
+
+				<!-- Split left -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" @click="handleAction('split-left', $event)">
+							<AlignLeft class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Split left</TooltipContent>
+				</Tooltip>
+
+				<!-- Split right -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" @click="handleAction('split-right', $event)">
+							<AlignRight class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Split right</TooltipContent>
+				</Tooltip>
+
+				<!-- Duplicate -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" @click="handleAction('duplicate-selected', $event)">
+							<Copy class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Duplicate element</TooltipContent>
+				</Tooltip>
+
+				<!-- Delete -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" @click="handleAction('delete-selected', $event)">
+							<Trash2 class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Delete element</TooltipContent>
+				</Tooltip>
+
+				<div class="mx-1 h-6 w-px bg-white/10" />
+
+				<!-- Bookmark -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" @click="handleAction('toggle-bookmark', $event)">
+							<Bookmark class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Toggle bookmark</TooltipContent>
+				</Tooltip>
+			</TooltipProvider>
+		</div>
+
+		<!-- Right section: zoom controls -->
+		<div class="flex items-center gap-1">
+			<div class="mx-1 h-6 w-px bg-white/10" />
+
+			<div class="flex items-center gap-1">
+				<Button variant="ghost" size="icon" @click="handleZoom('out')">
+					<ZoomOut class="size-4" />
+				</Button>
+				<input
+					type="range"
+					class="w-28 accent-primary"
+					:value="sliderValue"
+					min="0"
+					max="1"
+					step="0.005"
+					@input="handleSliderInput"
+				/>
+				<Button variant="ghost" size="icon" @click="handleZoom('in')">
+					<ZoomIn class="size-4" />
+				</Button>
+			</div>
+		</div>
+	</div>
+</template>

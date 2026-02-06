@@ -1162,20 +1162,6 @@
       </template>
     </SearchPalette>
 
-    <!-- Clip Editor Dialog (video editor mode) -->
-    <ClipEditorDialog
-      v-model="showClipEditorDialog"
-      :clip-id="clipEditorClipId"
-      :clip-start-time="clipEditorStartTime"
-      :clip-end-time="clipEditorEndTime"
-      :clip-title="clipEditorTitle"
-      :clip-segments="clipEditorSegments"
-      :editor-mode="true"
-      :editor-project-id="clipEditorProjectId"
-      :editor-project-name="clipEditorProjectName"
-      @save="onClipEditorSave"
-      @editor-save="onClipEditorSave"
-    />
 
     <!-- Existing Project Dialog -->
     <ExistingProjectDialog
@@ -1278,7 +1264,7 @@
     type IntroOutroItem,
   } from '@/components/ClipBuildSettingsDialog.vue';
   import ClipsTab from '@/components/ClipsTab.vue';
-  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
+  import { useRouter } from 'vue-router';
   import ExistingProjectDialog from '@/components/clip-editor/ExistingProjectDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -1290,6 +1276,7 @@
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useAIPermission } from '@/composables/useAIPermission';
+  const router = useRouter();
   // AI Permission check
   const { isAIAllowed } = useAIPermission();
   const { gates } = useSubscriptionGate();
@@ -1831,15 +1818,6 @@
   const folderDownloadDropdownId = ref<string | null>(null);
   const folderPrompts = ref<Prompt[]>([]);
 
-  // Clip editor dialog state (folder clips)
-  const showClipEditorDialog = ref(false);
-  const clipEditorClipId = ref('');
-  const clipEditorStartTime = ref(0);
-  const clipEditorEndTime = ref(0);
-  const clipEditorTitle = ref('');
-  const clipEditorSegments = ref<{ start_time: number; end_time: number }[]>([]);
-  const clipEditorProjectId = ref<string | null>(null);
-  const clipEditorProjectName = ref('Video Project');
   const showExistingProjectDialog = ref(false);
   const existingProjectForClip = ref<VideoEditorProject | null>(null);
   const pendingClipToEdit = ref<{
@@ -3180,18 +3158,8 @@
         clipSegments: segments,
       });
 
-      clipEditorClipId.value = clipId;
-      clipEditorStartTime.value = startTime;
-      clipEditorEndTime.value = endTime;
-      clipEditorTitle.value = clipTitle;
-      clipEditorSegments.value = segments;
-      clipEditorProjectId.value = result.projectId;
-      clipEditorProjectName.value = result.projectName;
-
       showFolderDialog.value = false;
-      nextTick(() => {
-        showClipEditorDialog.value = true;
-      });
+      router.push({ path: '/editor', query: { projectId: result.projectId } });
     } catch (err) {
       console.error('[Projects] Failed to create video editor project:', err);
       error('Failed to Open Editor', 'Could not create video editor project. Please try again.');
@@ -3202,22 +3170,12 @@
     const pending = pendingClipToEdit.value;
     if (!pending) return;
 
-    clipEditorClipId.value = pending.clipId;
-    clipEditorStartTime.value = pending.startTime;
-    clipEditorEndTime.value = pending.endTime;
-    clipEditorTitle.value = pending.title;
-    clipEditorSegments.value = pending.segments;
-    clipEditorProjectId.value = project.id;
-    clipEditorProjectName.value = project.name;
-
     pendingClipToEdit.value = null;
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
 
     showFolderDialog.value = false;
-    nextTick(() => {
-      showClipEditorDialog.value = true;
-    });
+    router.push({ path: '/editor', query: { projectId: project.id } });
   }
 
   function onOpenExistingProject() {
@@ -3234,11 +3192,6 @@
     existingProjectForClip.value = null;
 
     await openClipInNewProject(pending.clipId, pending.title, pending.startTime, pending.endTime, pending.segments);
-  }
-
-  async function onClipEditorSave() {
-    if (!folderProject.value) return;
-    await loadFolderClips(folderProject.value.id);
   }
 
   // Build clip from folder view

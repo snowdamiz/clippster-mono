@@ -32,9 +32,9 @@ pub async fn extract_clip(
     Ok(())
 }
 
-/// Generate a thumbnail from a video file
+/// Generate a thumbnail from a video file at a specific time
 #[command]
-pub async fn generate_thumbnail(
+pub async fn generate_clip_thumbnail(
     video_path: String,
     output_path: String,
     time: f64,

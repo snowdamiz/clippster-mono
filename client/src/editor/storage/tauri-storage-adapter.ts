@@ -1,0 +1,650 @@
+/**
+ * Tauri SQLite Storage Adapter for OpenCut Editor
+ * Replaces IndexedDB/OPFS with Tauri's SQLite plugin.
+ * 
+ * Key differences from OpenCut's browser storage:
+ * - Projects stored as JSON blobs in SQLite (not IndexedDB)
+ * - Media files live on disk, referenced by path (not stored in OPFS as File blobs)
+ * - File objects are created on-the-fly from filesystem paths via fetch()
+ */
+
+import type { TProject, TProjectMetadata } from "../types/project";
+import type { MediaAsset } from "../types/assets";
+import type { MediaAssetData, SerializedProject, SerializedScene } from "./types";
+import type { SavedSoundsData, SavedSound, SoundEffect } from "../types/sounds";
+import type { TimelineTrack, TScene } from "../types/timeline";
+import { getProjectDurationFromScenes } from "../lib/scenes";
+import { getDatabase, getCurrentUserId } from "@/services/database/core";
+
+// ==========================================
+// Serialization Helpers
+// ==========================================
+
+function serializeProject(project: TProject): SerializedProject {
+	const duration =
+		project.metadata.duration ??
+		getProjectDurationFromScenes({ scenes: project.scenes });
+
+	const serializedScenes: SerializedScene[] = project.scenes.map((scene) => ({
+		id: scene.id,
+		name: scene.name,
+		isMain: scene.isMain,
+		tracks: stripAudioBuffers({ tracks: scene.tracks }),
+		bookmarks: scene.bookmarks,
+		createdAt: scene.createdAt.toISOString(),
+		updatedAt: scene.updatedAt.toISOString(),
+	}));
+
+	return {
+		metadata: {
+			id: project.metadata.id,
+			name: project.metadata.name,
+			thumbnail: project.metadata.thumbnail,
+			duration,
+			createdAt: project.metadata.createdAt.toISOString(),
+			updatedAt: project.metadata.updatedAt.toISOString(),
+		},
+		scenes: serializedScenes,
+		currentSceneId: project.currentSceneId,
+		settings: project.settings,
+		version: project.version,
+		timelineViewState: project.timelineViewState,
+	};
+}
+
+function deserializeProject(serialized: SerializedProject): TProject {
+	const scenes = (serialized.scenes ?? []).map((scene) => ({
+		id: scene.id,
+		name: scene.name,
+		isMain: scene.isMain,
+		tracks: (scene.tracks ?? []).map((track) =>
+			track.type === "video"
+				? { ...track, isMain: track.isMain ?? false }
+				: track,
+		),
+		bookmarks: scene.bookmarks ?? [],
+		createdAt: new Date(scene.createdAt),
+		updatedAt: new Date(scene.updatedAt),
+	}));
+
+	return {
+		metadata: {
+			id: serialized.metadata.id,
+			name: serialized.metadata.name,
+			thumbnail: serialized.metadata.thumbnail,
+			duration:
+				serialized.metadata.duration ??
+				getProjectDurationFromScenes({ scenes }),
+			createdAt: new Date(serialized.metadata.createdAt),
+			updatedAt: new Date(serialized.metadata.updatedAt),
+		},
+		scenes,
+		currentSceneId: serialized.currentSceneId || "",
+		settings: serialized.settings,
+		version: serialized.version,
+		timelineViewState: serialized.timelineViewState,
+	};
+}
+
+function stripAudioBuffers({ tracks }: { tracks: TimelineTrack[] }): TimelineTrack[] {
+	return tracks.map((track) => {
+		if (track.type !== "audio") return track;
+		return {
+			...track,
+			elements: track.elements.map((element) => {
+				const { buffer: _buffer, ...rest } = element;
+				return rest;
+			}),
+		};
+	});
+}
+
+// ==========================================
+// SQLite row types
+// ==========================================
+
+interface ProjectRow {
+	id: string;
+	project_data: string;
+	user_id: number | null;
+	created_at: number;
+	updated_at: number;
+}
+
+interface MediaAssetRow {
+	id: string;
+	project_id: string;
+	name: string;
+	type: string;
+	file_path: string;
+	file_size: number;
+	last_modified: number;
+	width: number | null;
+	height: number | null;
+	duration: number | null;
+	fps: number | null;
+	thumbnail_url: string | null;
+	ephemeral: number;
+	created_at: number;
+}
+
+interface SavedSoundRow {
+	id: number;
+	name: string;
+	username: string;
+	preview_url: string | null;
+	download_url: string | null;
+	duration: number;
+	tags: string | null;
+	license: string | null;
+	saved_at: string;
+	user_id: number | null;
+}
+
+// ==========================================
+// TauriStorageService
+// ==========================================
+
+class TauriStorageService {
+	// ------------------------------------------
+	// Project Operations
+	// ------------------------------------------
+
+	async saveProject({ project }: { project: TProject }): Promise<void> {
+		const db = await getDatabase();
+		const serialized = serializeProject(project);
+		const projectData = JSON.stringify(serialized);
+		const userId = getCurrentUserId();
+		const now = Math.floor(Date.now() / 1000);
+
+		// Upsert: insert or replace
+		await db.execute(
+			`INSERT INTO opencut_projects (id, project_data, user_id, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET
+			   project_data = excluded.project_data,
+			   updated_at = excluded.updated_at`,
+			[project.metadata.id, projectData, userId, now, now],
+		);
+	}
+
+	async loadProject({ id }: { id: string }): Promise<{ project: TProject } | null> {
+		const db = await getDatabase();
+		const rows = await db.select<ProjectRow[]>(
+			"SELECT * FROM opencut_projects WHERE id = ?",
+			[id],
+		);
+
+		if (rows.length === 0) return null;
+
+		try {
+			const serialized: SerializedProject = JSON.parse(rows[0].project_data);
+			return { project: deserializeProject(serialized) };
+		} catch (error) {
+			console.error("[TauriStorage] Failed to parse project data:", error);
+			return null;
+		}
+	}
+
+	async loadAllProjectsMetadata(): Promise<TProjectMetadata[]> {
+		const db = await getDatabase();
+		const userId = getCurrentUserId();
+
+		let rows: ProjectRow[];
+		if (userId === null) {
+			rows = await db.select<ProjectRow[]>(
+				"SELECT * FROM opencut_projects WHERE user_id IS NULL ORDER BY updated_at DESC",
+			);
+		} else {
+			rows = await db.select<ProjectRow[]>(
+				"SELECT * FROM opencut_projects WHERE user_id = ? OR user_id IS NULL ORDER BY updated_at DESC",
+				[userId],
+			);
+		}
+
+		const metadata: TProjectMetadata[] = [];
+		for (const row of rows) {
+			try {
+				const serialized: SerializedProject = JSON.parse(row.project_data);
+				metadata.push({
+					id: serialized.metadata.id,
+					name: serialized.metadata.name,
+					thumbnail: serialized.metadata.thumbnail,
+					duration:
+						serialized.metadata.duration ??
+						getProjectDurationFromScenes({
+							scenes: (serialized.scenes ?? []) as unknown as TScene[],
+						}),
+					createdAt: new Date(serialized.metadata.createdAt),
+					updatedAt: new Date(serialized.metadata.updatedAt),
+				});
+			} catch (error) {
+				console.error("[TauriStorage] Failed to parse project:", row.id, error);
+			}
+		}
+
+		return metadata.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+	}
+
+	async deleteProject({ id }: { id: string }): Promise<void> {
+		const db = await getDatabase();
+		await db.execute("DELETE FROM opencut_projects WHERE id = ?", [id]);
+	}
+
+	// ------------------------------------------
+	// Media Asset Operations
+	// ------------------------------------------
+
+	async saveMediaAsset({
+		projectId,
+		mediaAsset,
+	}: {
+		projectId: string;
+		mediaAsset: MediaAsset;
+	}): Promise<void> {
+		const db = await getDatabase();
+
+		// For Tauri desktop, we store the file path.
+		// The File object has a webkitRelativePath or we derive path from the URL.
+		// Media files added from our clip system will have a known filesystem path.
+		// For drag-and-drop files, we store them in a project media directory.
+		const filePath = await this.resolveFilePath({ mediaAsset, projectId });
+
+		await db.execute(
+			`INSERT INTO opencut_media_assets 
+			 (id, project_id, name, type, file_path, file_size, last_modified, width, height, duration, fps, thumbnail_url, ephemeral)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET
+			   name = excluded.name,
+			   file_path = excluded.file_path,
+			   file_size = excluded.file_size,
+			   width = excluded.width,
+			   height = excluded.height,
+			   duration = excluded.duration,
+			   fps = excluded.fps,
+			   thumbnail_url = excluded.thumbnail_url`,
+			[
+				mediaAsset.id,
+				projectId,
+				mediaAsset.name,
+				mediaAsset.type,
+				filePath,
+				mediaAsset.file.size,
+				mediaAsset.file.lastModified,
+				mediaAsset.width ?? null,
+				mediaAsset.height ?? null,
+				mediaAsset.duration ?? null,
+				mediaAsset.fps ?? null,
+				mediaAsset.thumbnailUrl ?? null,
+				mediaAsset.ephemeral ? 1 : 0,
+			],
+		);
+	}
+
+	async loadMediaAsset({
+		projectId,
+		id,
+	}: {
+		projectId: string;
+		id: string;
+	}): Promise<MediaAsset | null> {
+		const db = await getDatabase();
+		const rows = await db.select<MediaAssetRow[]>(
+			"SELECT * FROM opencut_media_assets WHERE id = ? AND project_id = ?",
+			[id, projectId],
+		);
+
+		if (rows.length === 0) return null;
+
+		const row = rows[0];
+		try {
+			const file = await this.fileFromPath(row.file_path, row.name);
+			const url = URL.createObjectURL(file);
+
+			return {
+				id: row.id,
+				name: row.name,
+				type: row.type as "image" | "video" | "audio",
+				file,
+				url,
+				width: row.width ?? undefined,
+				height: row.height ?? undefined,
+				duration: row.duration ?? undefined,
+				fps: row.fps ?? undefined,
+				thumbnailUrl: row.thumbnail_url ?? undefined,
+				ephemeral: row.ephemeral === 1,
+			};
+		} catch (error) {
+			console.error("[TauriStorage] Failed to load media file:", row.file_path, error);
+			return null;
+		}
+	}
+
+	async loadAllMediaAssets({
+		projectId,
+	}: {
+		projectId: string;
+	}): Promise<MediaAsset[]> {
+		const db = await getDatabase();
+		const rows = await db.select<MediaAssetRow[]>(
+			"SELECT * FROM opencut_media_assets WHERE project_id = ?",
+			[projectId],
+		);
+
+		const assets: MediaAsset[] = [];
+		for (const row of rows) {
+			try {
+				const file = await this.fileFromPath(row.file_path, row.name);
+				const url = URL.createObjectURL(file);
+
+				assets.push({
+					id: row.id,
+					name: row.name,
+					type: row.type as "image" | "video" | "audio",
+					file,
+					url,
+					width: row.width ?? undefined,
+					height: row.height ?? undefined,
+					duration: row.duration ?? undefined,
+					fps: row.fps ?? undefined,
+					thumbnailUrl: row.thumbnail_url ?? undefined,
+					ephemeral: row.ephemeral === 1,
+				});
+			} catch (error) {
+				console.error("[TauriStorage] Failed to load media:", row.file_path, error);
+			}
+		}
+
+		return assets;
+	}
+
+	async deleteMediaAsset({
+		projectId,
+		id,
+	}: {
+		projectId: string;
+		id: string;
+	}): Promise<void> {
+		const db = await getDatabase();
+		await db.execute(
+			"DELETE FROM opencut_media_assets WHERE id = ? AND project_id = ?",
+			[id, projectId],
+		);
+	}
+
+	async deleteProjectMedia({
+		projectId,
+	}: {
+		projectId: string;
+	}): Promise<void> {
+		const db = await getDatabase();
+		await db.execute(
+			"DELETE FROM opencut_media_assets WHERE project_id = ?",
+			[projectId],
+		);
+	}
+
+	// ------------------------------------------
+	// Saved Sounds Operations
+	// ------------------------------------------
+
+	async loadSavedSounds(): Promise<SavedSoundsData> {
+		try {
+			const db = await getDatabase();
+			const rows = await db.select<SavedSoundRow[]>(
+				"SELECT * FROM opencut_saved_sounds ORDER BY saved_at DESC",
+			);
+
+			const sounds: SavedSound[] = rows.map((row: SavedSoundRow) => ({
+				id: row.id,
+				name: row.name,
+				username: row.username,
+				previewUrl: row.preview_url ?? undefined,
+				downloadUrl: row.download_url ?? undefined,
+				duration: row.duration,
+				tags: row.tags ? JSON.parse(row.tags) : [],
+				license: row.license ?? "",
+				savedAt: row.saved_at,
+			}));
+
+			return {
+				sounds,
+				lastModified: new Date().toISOString(),
+			};
+		} catch (error) {
+			console.error("[TauriStorage] Failed to load saved sounds:", error);
+			return { sounds: [], lastModified: new Date().toISOString() };
+		}
+	}
+
+	async saveSoundEffect({ soundEffect }: { soundEffect: SoundEffect }): Promise<void> {
+		const db = await getDatabase();
+		const userId = getCurrentUserId();
+
+		await db.execute(
+			`INSERT OR IGNORE INTO opencut_saved_sounds 
+			 (id, name, username, preview_url, download_url, duration, tags, license, saved_at, user_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				soundEffect.id,
+				soundEffect.name,
+				soundEffect.username,
+				soundEffect.previewUrl ?? null,
+				soundEffect.downloadUrl ?? null,
+				soundEffect.duration,
+				JSON.stringify(soundEffect.tags),
+				soundEffect.license,
+				new Date().toISOString(),
+				userId,
+			],
+		);
+	}
+
+	async removeSavedSound({ soundId }: { soundId: number }): Promise<void> {
+		const db = await getDatabase();
+		await db.execute("DELETE FROM opencut_saved_sounds WHERE id = ?", [soundId]);
+	}
+
+	async isSoundSaved({ soundId }: { soundId: number }): Promise<boolean> {
+		const db = await getDatabase();
+		const rows = await db.select<{ count: number }[]>(
+			"SELECT COUNT(*) as count FROM opencut_saved_sounds WHERE id = ?",
+			[soundId],
+		);
+		return (rows[0]?.count ?? 0) > 0;
+	}
+
+	async clearSavedSounds(): Promise<void> {
+		const db = await getDatabase();
+		await db.execute("DELETE FROM opencut_saved_sounds");
+	}
+
+	// ------------------------------------------
+	// Storage Info
+	// ------------------------------------------
+
+	async getStorageInfo(): Promise<{
+		projects: number;
+		isOPFSSupported: boolean;
+		isIndexedDBSupported: boolean;
+	}> {
+		const db = await getDatabase();
+		const rows = await db.select<{ count: number }[]>(
+			"SELECT COUNT(*) as count FROM opencut_projects",
+		);
+
+		return {
+			projects: rows[0]?.count ?? 0,
+			isOPFSSupported: true, // Not relevant for Tauri, but keep interface
+			isIndexedDBSupported: true,
+		};
+	}
+
+	async getProjectStorageInfo({ projectId }: { projectId: string }): Promise<{
+		mediaItems: number;
+	}> {
+		const db = await getDatabase();
+		const rows = await db.select<{ count: number }[]>(
+			"SELECT COUNT(*) as count FROM opencut_media_assets WHERE project_id = ?",
+			[projectId],
+		);
+
+		return {
+			mediaItems: rows[0]?.count ?? 0,
+		};
+	}
+
+	async clearAllData(): Promise<void> {
+		const db = await getDatabase();
+		await db.execute("DELETE FROM opencut_media_assets");
+		await db.execute("DELETE FROM opencut_projects");
+		await db.execute("DELETE FROM opencut_saved_sounds");
+	}
+
+	isOPFSSupported(): boolean {
+		return true;
+	}
+
+	isIndexedDBSupported(): boolean {
+		return true;
+	}
+
+	isFullySupported(): boolean {
+		return true;
+	}
+
+	// ------------------------------------------
+	// Private Helpers
+	// ------------------------------------------
+
+	/**
+	 * Create a File object from a filesystem path.
+	 * Uses the Rust video server which has no scope restrictions.
+	 * For large files (>50MB), the server requires Range requests,
+	 * so we fetch in chunks and assemble the final blob.
+	 */
+	private async fileFromPath(filePath: string, name: string): Promise<File> {
+		const { invoke } = await import("@tauri-apps/api/core");
+		let videoServerPort: number;
+		try {
+			videoServerPort = await invoke<number>("get_video_server_port");
+		} catch {
+			videoServerPort = 8642;
+		}
+
+		const encodedPath = btoa(filePath);
+		const serverUrl = `http://localhost:${videoServerPort}/video/${encodedPath}`;
+
+		// First try a simple fetch (works for files ≤50MB)
+		const response = await fetch(serverUrl);
+
+		if (response.ok) {
+			const blob = await response.blob();
+			return new File([blob], name, {
+				type: blob.type || this.mimeFromPath(filePath),
+				lastModified: Date.now(),
+			});
+		}
+
+		// For large files (416), get file size via HEAD then fetch in chunks
+		if (response.status === 416) {
+			const headResp = await fetch(serverUrl, { method: "HEAD" });
+			const fileSize = parseInt(headResp.headers.get("Content-Length") || "0", 10);
+			if (fileSize === 0) {
+				throw new Error(`Cannot determine file size for: ${filePath}`);
+			}
+
+			const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB chunks
+			const chunks: Blob[] = [];
+
+			for (let start = 0; start < fileSize; start += CHUNK_SIZE) {
+				const end = Math.min(start + CHUNK_SIZE - 1, fileSize - 1);
+				const chunkResp = await fetch(serverUrl, {
+					headers: { Range: `bytes=${start}-${end}` },
+				});
+				if (!chunkResp.ok && chunkResp.status !== 206) {
+					throw new Error(`Failed to fetch chunk ${start}-${end} (${chunkResp.status}): ${filePath}`);
+				}
+				chunks.push(await chunkResp.blob());
+			}
+
+			const mimeType = this.mimeFromPath(filePath);
+			const fullBlob = new Blob(chunks, { type: mimeType });
+			return new File([fullBlob], name, {
+				type: mimeType,
+				lastModified: Date.now(),
+			});
+		}
+
+		throw new Error(`Failed to load file from video server (${response.status}): ${filePath}`);
+	}
+
+	private mimeFromPath(filePath: string): string {
+		const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+		const map: Record<string, string> = {
+			mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
+			avi: "video/x-msvideo", mkv: "video/x-matroska",
+			mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg",
+			aac: "audio/aac", m4a: "audio/mp4", flac: "audio/flac",
+			jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+			gif: "image/gif", webp: "image/webp",
+		};
+		return map[ext] || "application/octet-stream";
+	}
+
+	/**
+	 * Resolve the filesystem path for a media asset.
+	 * For files from our clip system, the path is already known.
+	 * For user-uploaded files, we need to save them to a project directory.
+	 */
+	private async resolveFilePath({
+		mediaAsset,
+		projectId: _projectId,
+	}: {
+		mediaAsset: MediaAsset;
+		projectId: string;
+	}): Promise<string> {
+		// If the file has a path property (from Tauri file picker), use it
+		const fileWithPath = mediaAsset.file as File & { path?: string };
+		if (fileWithPath.path) {
+			return fileWithPath.path;
+		}
+
+		// If the URL is a convertFileSrc URL, extract the path
+		if (mediaAsset.url) {
+			// Tauri asset URLs look like: https://asset.localhost/path/to/file
+			// or http://asset.localhost/path/to/file
+			const assetMatch = mediaAsset.url.match(/asset\.localhost\/(.+)/);
+			if (assetMatch) {
+				return decodeURIComponent(assetMatch[1]);
+			}
+
+			// Our video server URLs look like: http://localhost:PORT/video/BASE64PATH
+			const videoMatch = mediaAsset.url.match(/\/video\/([^?]+)/);
+			if (videoMatch) {
+				try {
+					return atob(videoMatch[1]);
+				} catch {
+					// Not a base64 path
+				}
+			}
+		}
+
+		// For drag-and-drop files without a path, save to app data directory
+		// This is a fallback — in practice, most files will have paths
+		const { appDataDir } = await import("@tauri-apps/api/path");
+		const { writeFile, mkdir } = await import("@tauri-apps/plugin-fs");
+		
+		const mediaDir = `${await appDataDir()}editor-media/${_projectId}`;
+		await mkdir(mediaDir, { recursive: true });
+		
+		const filePath = `${mediaDir}/${mediaAsset.id}_${mediaAsset.name}`;
+		const arrayBuffer = await mediaAsset.file.arrayBuffer();
+		await writeFile(filePath, new Uint8Array(arrayBuffer));
+		
+		return filePath;
+	}
+}
+
+export const storageService = new TauriStorageService();
+export { TauriStorageService as StorageService };

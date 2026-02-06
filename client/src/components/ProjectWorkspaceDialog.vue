@@ -168,29 +168,6 @@
     @confirm="onDetectClipsConfirmed"
   />
 
-  <!-- Clip Editor Dialog (always in video editor mode) -->
-  <ClipEditorDialog
-    v-model="showClipEditorDialog"
-    :clip-id="clipEditorClipId"
-    :video-src="videoSrc"
-    :clip-start-time="clipEditorStartTime"
-    :clip-end-time="clipEditorEndTime"
-    :clip-title="clipEditorTitle"
-    :clip-segments="clipEditorSegments"
-    :editor-mode="true"
-    :editor-project-id="clipEditorProjectId"
-    :editor-project-name="clipEditorProjectName"
-    :creator-watermark-id="watermarkSettings.enabled ? watermarkSettings.watermarkId : null"
-    :creator-watermark-settings="
-      watermarkSettings.enabled && watermarkSettings.perRatioSettings
-        ? JSON.stringify(watermarkSettings.perRatioSettings)
-        : null
-    "
-    :creator-default-intro="creatorDefaultIntro"
-    :creator-default-outro="creatorDefaultOutro"
-    @save="onClipEditorSave"
-    @editor-save="onClipEditorSave"
-  />
 
   <!-- Existing Project Dialog -->
   <ExistingProjectDialog
@@ -231,7 +208,7 @@
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
-  import ClipEditorDialog from './clip-editor/ClipEditorDialog.vue';
+  import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
   import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
   import { useInEditorClips } from '@/stores/useInEditorClips';
@@ -266,6 +243,8 @@
     'update:modelValue': [value: boolean];
   }>();
 
+  const router = useRouter();
+
   // Progress state
   const showProgress = ref(false);
   const clipGenerationInProgress = ref(false);
@@ -277,16 +256,6 @@
   // Clip detection confirmation state
   const showDetectConfirmDialog = ref(false);
 
-  // Clip editor dialog state
-  const showClipEditorDialog = ref(false);
-  const clipEditorClipId = ref('');
-  const clipEditorStartTime = ref(0);
-  const clipEditorEndTime = ref(0);
-  const clipEditorTitle = ref('');
-  const clipEditorSegments = ref<{ start_time: number; end_time: number }[]>([]);
-  // Video editor mode state (always true now - clip editor mode is removed)
-  const clipEditorProjectId = ref<string | null>(null);
-  const clipEditorProjectName = ref('');
   const isCreatingProject = ref(false);
 
   // Existing project dialog state (shown when clip has been edited before)
@@ -1819,25 +1788,14 @@
         assetPath: videoSrc.value,
       });
 
-      // Set the editor state
-      clipEditorClipId.value = clipId;
-      clipEditorStartTime.value = startTime;
-      clipEditorEndTime.value = endTime;
-      clipEditorTitle.value = clipTitle;
-      clipEditorSegments.value = segments;
-      clipEditorProjectId.value = result.projectId;
-      clipEditorProjectName.value = result.projectName;
-
-      // Close the workspace dialog first, then open the clip editor
+      // Close the workspace dialog first, then navigate to editor
       close();
 
-      // Open the clip editor dialog in editor mode
-      nextTick(() => {
-        showClipEditorDialog.value = true;
-      });
+      // Navigate to the new OpenCut editor
+      router.push({ path: '/editor', query: { projectId: result.projectId } });
 
       console.log(
-        `[ProjectWorkspaceDialog] Opening clip editor for "${clipTitle}" in video project ${result.projectId}`
+        `[ProjectWorkspaceDialog] Opening editor for "${clipTitle}" in video project ${result.projectId}`
       );
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to create video editor project:', error);
@@ -1861,15 +1819,6 @@
       assetPath: videoSrc.value,
     });
 
-    // Set the editor state
-    clipEditorClipId.value = pending.clipId;
-    clipEditorStartTime.value = pending.startTime;
-    clipEditorEndTime.value = pending.endTime;
-    clipEditorTitle.value = pending.title;
-    clipEditorSegments.value = pending.segments;
-    clipEditorProjectId.value = project.id;
-    clipEditorProjectName.value = project.name;
-
     // Clear pending state
     pendingClipToEdit.value = null;
     showExistingProjectDialog.value = false;
@@ -1878,13 +1827,11 @@
     // Close the workspace dialog first, then open the clip editor
     close();
 
-    // Open the clip editor dialog in editor mode
-    nextTick(() => {
-      showClipEditorDialog.value = true;
-    });
+    // Navigate to the new OpenCut editor
+    router.push({ path: '/editor', query: { projectId: project.id } });
 
     console.log(
-      `[ProjectWorkspaceDialog] Opening clip editor for "${pending.title}" in existing project ${project.id}`
+      `[ProjectWorkspaceDialog] Opening editor for "${pending.title}" in existing project ${project.id}`
     );
   }
 
@@ -1913,27 +1860,6 @@
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
     pendingClipToEdit.value = null;
-  }
-
-  // Function to handle clip editor save
-  async function onClipEditorSave(clipId: string) {
-    console.log(`[ProjectWorkspaceDialog] Clip editor saved for clip ${clipId}`);
-
-    // Refresh clips data
-    if (props.project) {
-      await loadTimelineClips(props.project.id);
-
-      // Refresh MediaPanel - await to ensure clips are fully reloaded
-      if (mediaPanelRef.value) {
-        await mediaPanelRef.value.refreshClips();
-      }
-
-      // Also emit refresh events for other components
-      const refreshEvent = new CustomEvent('refresh-clips', {
-        detail: { projectId: props.project.id },
-      });
-      document.dispatchEvent(refreshEvent);
-    }
   }
 
   // Wait for a clip element to be present in the clips list (MediaPanel -> ClipsTab)

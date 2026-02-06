@@ -29,7 +29,13 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPLOCALDATA/Clippster/**/*"
+          "$APPLOCALDATA/Clippster/**/*",
+          "$APPLOCALDATA/**/*",
+          "$HOME/**/*",
+          "$DOWNLOAD/**/*",
+          "$DESKTOP/**/*",
+          "$DOCUMENT/**/*",
+          "$VIDEO/**/*"
         ]
       }
     },

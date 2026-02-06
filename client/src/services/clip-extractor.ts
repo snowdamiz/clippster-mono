@@ -93,7 +93,7 @@ export class ClipExtractor {
     console.log(`[ClipExtractor] Generating thumbnail: ${clipPath} -> ${thumbnailPath}`);
 
     try {
-      await invoke('generate_thumbnail', {
+      await invoke('generate_clip_thumbnail', {
         videoPath: clipPath,
         outputPath: thumbnailPath,
         time,

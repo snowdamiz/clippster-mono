@@ -1,0 +1,220 @@
+<script setup lang="ts">
+import { computed, ref, toRef } from "vue";
+import { useEditor } from "../../composables/useEditor";
+import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
+import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
+import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
+import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
+import {
+	getTrackClasses,
+	getTrackHeight,
+	canElementHaveAudio,
+	canElementBeHidden,
+	hasMediaId,
+} from "../../lib/timeline";
+import { invokeAction } from "../../lib/actions";
+import type {
+	TimelineElement as TimelineElementType,
+	TimelineTrack,
+	ElementDragState,
+} from "../../types/timeline";
+import type { MediaAsset } from "../../types/assets";
+import { mediaSupportsAudio } from "../../lib/media/media-utils";
+
+const props = defineProps<{
+	element: TimelineElementType;
+	track: TimelineTrack;
+	zoomLevel: number;
+	isSelected: boolean;
+	dragState: ElementDragState;
+	snappingEnabled: boolean;
+}>();
+
+const emit = defineEmits<{
+	(e: "snapPointChange", snapPoint: SnapPoint | null): void;
+	(e: "resizeStateChange", params: { isResizing: boolean }): void;
+	(e: "elementMouseDown", event: MouseEvent, element: TimelineElementType): void;
+	(e: "elementClick", event: MouseEvent, element: TimelineElementType): void;
+}>();
+
+const { editor } = useEditor();
+const { selectedElements } = useElementSelection();
+
+const mediaAssets = computed(() => editor.media.getAssets());
+
+const mediaAsset = computed<MediaAsset | null>(() => {
+	const el = props.element;
+	if (hasMediaId(el)) {
+		return mediaAssets.value.find((a) => a.id === el.mediaId) ?? null;
+	}
+	return null;
+});
+
+const hasAudio = computed(() => mediaSupportsAudio({ media: mediaAsset.value }));
+
+const snappingRef = computed(() => props.snappingEnabled);
+
+const { handleResizeStart, resizing, currentStartTime, currentDuration } =
+	useTimelineElementResize({
+		element: toRef(props, "element"),
+		track: toRef(props, "track"),
+		zoomLevel: toRef(props, "zoomLevel"),
+		snappingEnabled: snappingRef,
+		onSnapPointChange: (sp) => emit("snapPointChange", sp),
+		onResizeStateChange: (p) => emit("resizeStateChange", p),
+	});
+
+const isResizing = computed(() => resizing.value !== null);
+
+const isBeingDragged = computed(() => props.dragState.elementId === props.element.id);
+const dragOffsetY = computed(() =>
+	isBeingDragged.value && props.dragState.isDragging
+		? props.dragState.currentMouseY - props.dragState.startMouseY
+		: 0,
+);
+
+const elementStartTime = computed(() =>
+	isBeingDragged.value && props.dragState.isDragging
+		? props.dragState.currentTime
+		: props.element.startTime,
+);
+
+const displayedStartTime = computed(() =>
+	isResizing.value ? currentStartTime.value : elementStartTime.value,
+);
+const displayedDuration = computed(() =>
+	isResizing.value ? currentDuration.value : props.element.duration,
+);
+
+const elementWidth = computed(
+	() => displayedDuration.value * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel,
+);
+const elementLeft = computed(
+	() => displayedStartTime.value * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel,
+);
+
+const isMuted = computed(
+	() => canElementHaveAudio(props.element) && props.element.muted === true,
+);
+
+const isHidden = computed(
+	() => canElementBeHidden(props.element) && props.element.hidden === true,
+);
+
+const trackHeight = computed(() => getTrackHeight({ type: props.track.type }));
+const tileWidth = computed(() => trackHeight.value * (16 / 9));
+
+const trackClasses = computed(() => getTrackClasses({ type: props.track.type }));
+
+const imageUrl = computed(() => {
+	if (!mediaAsset.value) return null;
+	if (mediaAsset.value.type === "image") return mediaAsset.value.url;
+	if (mediaAsset.value.type === "video" && mediaAsset.value.thumbnailUrl) return mediaAsset.value.thumbnailUrl;
+	return null;
+});
+
+function onContextAction(action: string) {
+	invokeAction(action as any);
+}
+</script>
+
+<template>
+	<div
+		:class="['absolute top-0 h-full select-none', isBeingDragged ? 'z-30' : 'z-10']"
+		:style="{
+			left: `${elementLeft}px`,
+			width: `${elementWidth}px`,
+			transform: isBeingDragged && dragState.isDragging ? `translate3d(0, ${dragOffsetY}px, 0)` : undefined,
+		}"
+	>
+		<!-- Element inner -->
+		<div
+			:class="[
+				'relative h-full cursor-pointer overflow-hidden rounded-[0.5rem]',
+				trackClasses,
+				isBeingDragged ? 'z-30' : 'z-10',
+				isHidden ? 'opacity-50' : '',
+			]"
+		>
+			<button
+				type="button"
+				class="absolute inset-0 size-full cursor-pointer"
+				@click="emit('elementClick', $event, element)"
+				@mousedown="emit('elementMouseDown', $event, element)"
+			>
+				<div class="absolute inset-0 flex h-full items-center">
+					<!-- Text element -->
+					<div v-if="element.type === 'text'" class="flex size-full items-center justify-start pl-2">
+						<span class="truncate text-xs text-white">{{ (element as any).content }}</span>
+					</div>
+
+					<!-- Sticker element -->
+					<div v-else-if="element.type === 'sticker'" class="flex size-full items-center gap-2 pl-2">
+						<img
+							:src="`https://api.iconify.design/${(element as any).iconName}.svg?width=20&height=20`"
+							:alt="element.name"
+							class="size-5 shrink-0"
+							width="20"
+							height="20"
+						/>
+						<span class="truncate text-xs text-white">{{ element.name }}</span>
+					</div>
+
+					<!-- Audio element -->
+					<div v-else-if="element.type === 'audio'" class="flex size-full items-center gap-2">
+						<span class="text-zinc-200/80 truncate text-xs pl-2">{{ element.name }}</span>
+					</div>
+
+					<!-- Video/Image with thumbnail -->
+					<div v-else-if="imageUrl" class="flex size-full items-center justify-center">
+						<div :class="['relative size-full', isSelected ? 'bg-primary' : 'bg-transparent']">
+							<div
+								class="absolute right-0 left-0"
+								:style="{
+									backgroundImage: `url(${imageUrl})`,
+									backgroundRepeat: 'repeat-x',
+									backgroundSize: `${tileWidth}px ${trackHeight}px`,
+									backgroundPosition: 'left center',
+									pointerEvents: 'none',
+									top: isSelected ? '0.25rem' : '0rem',
+									bottom: isSelected ? '0.25rem' : '0rem',
+								}"
+							/>
+						</div>
+					</div>
+
+					<!-- Fallback -->
+					<span v-else class="text-zinc-200/80 truncate text-xs pl-2">{{ element.name }}</span>
+				</div>
+
+				<!-- Muted/Hidden overlay -->
+				<div
+					v-if="(hasAudio ? isMuted : isHidden)"
+					class="bg-opacity-50 pointer-events-none absolute inset-0 flex items-center justify-center bg-black"
+				>
+					<span class="text-white text-xs">{{ hasAudio ? '🔇' : '👁️‍🗨️' }}</span>
+				</div>
+			</button>
+
+			<!-- Resize handles -->
+			<template v-if="isSelected">
+				<button
+					type="button"
+					class="bg-primary absolute top-0 bottom-0 left-0 z-50 flex w-[0.6rem] cursor-w-resize items-center justify-center"
+					@mousedown="handleResizeStart({ e: $event, elementId: element.id, side: 'left' })"
+					aria-label="Left resize handle"
+				>
+					<div class="bg-foreground h-[1.5rem] w-[0.2rem] rounded-full" />
+				</button>
+				<button
+					type="button"
+					class="bg-primary absolute top-0 bottom-0 right-0 z-50 flex w-[0.6rem] cursor-e-resize items-center justify-center"
+					@mousedown="handleResizeStart({ e: $event, elementId: element.id, side: 'right' })"
+					aria-label="Right resize handle"
+				>
+					<div class="bg-foreground h-[1.5rem] w-[0.2rem] rounded-full" />
+				</button>
+			</template>
+		</div>
+	</div>
+</template>
