@@ -18,7 +18,11 @@ const renameInput = ref("");
 
 const activeProject = computed(() => {
 	void version.value;
-	return editor.project.getActive();
+	try {
+		return editor.project.getActive();
+	} catch {
+		return null;
+	}
 });
 
 async function handleExit() {

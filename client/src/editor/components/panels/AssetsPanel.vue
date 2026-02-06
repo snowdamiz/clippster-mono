@@ -9,6 +9,7 @@ import {
 	buildUploadAudioElement,
 } from "../../lib/timeline/element-utils";
 import { processMediaAssets } from "../../lib/media/processing";
+import { setDragData } from "../../lib/drag-data";
 import type { MediaAsset } from "../../types/assets";
 import type { CreateTimelineElement } from "../../types/timeline";
 import { Button } from "@/components/ui/button";
@@ -198,10 +199,10 @@ function getMediaIcon(type: string) {
 						:key="item.id"
 						class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/10"
 						draggable="true"
-						@dragstart="(e) => {
-							e.dataTransfer?.setData('application/json', JSON.stringify({
-								id: item.id, type: 'media', mediaType: item.type, name: item.name,
-							}));
+						@dragstart="(e: DragEvent) => {
+							if (e.dataTransfer) {
+								setDragData({ dataTransfer: e.dataTransfer, dragData: { id: item.id, type: 'media', mediaType: item.type, name: item.name } });
+							}
 						}"
 						@dblclick="addToTimeline(item)"
 					>
@@ -246,10 +247,10 @@ function getMediaIcon(type: string) {
 						:key="item.id"
 						class="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-white/5"
 						draggable="true"
-						@dragstart="(e) => {
-							e.dataTransfer?.setData('application/json', JSON.stringify({
-								id: item.id, type: 'media', mediaType: item.type, name: item.name,
-							}));
+						@dragstart="(e: DragEvent) => {
+							if (e.dataTransfer) {
+								setDragData({ dataTransfer: e.dataTransfer, dragData: { id: item.id, type: 'media', mediaType: item.type, name: item.name } });
+							}
 						}"
 						@dblclick="addToTimeline(item)"
 					>

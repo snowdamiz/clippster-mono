@@ -521,7 +521,7 @@ class TauriStorageService {
 	 * Create a File object from a filesystem path.
 	 * Uses the Rust video server which has no scope restrictions.
 	 * For large files (>50MB), the server requires Range requests,
-	 * so we fetch in chunks and assemble the final blob.
+	 * so we use HEAD first to determine size and avoid 416 errors.
 	 */
 	private async fileFromPath(filePath: string, name: string): Promise<File> {
 		const { invoke } = await import("@tauri-apps/api/core");
@@ -535,48 +535,52 @@ class TauriStorageService {
 		const encodedPath = btoa(filePath);
 		const serverUrl = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
-		// First try a simple fetch (works for files ≤50MB)
-		const response = await fetch(serverUrl);
+		// Use HEAD to determine file size before fetching
+		const headResp = await fetch(serverUrl, { method: "HEAD" });
+		if (!headResp.ok) {
+			throw new Error(`Failed to HEAD file from video server (${headResp.status}): ${filePath}`);
+		}
+		const fileSize = parseInt(headResp.headers.get("Content-Length") || "0", 10);
+		if (fileSize === 0) {
+			throw new Error(`Cannot determine file size for: ${filePath}`);
+		}
 
-		if (response.ok) {
+		const MAX_SIMPLE_SIZE = 50 * 1024 * 1024; // 50MB
+		const mimeType = this.mimeFromPath(filePath);
+
+		// Small files: simple fetch
+		if (fileSize <= MAX_SIMPLE_SIZE) {
+			const response = await fetch(serverUrl);
+			if (!response.ok) {
+				throw new Error(`Failed to load file from video server (${response.status}): ${filePath}`);
+			}
 			const blob = await response.blob();
 			return new File([blob], name, {
-				type: blob.type || this.mimeFromPath(filePath),
+				type: blob.type || mimeType,
 				lastModified: Date.now(),
 			});
 		}
 
-		// For large files (416), get file size via HEAD then fetch in chunks
-		if (response.status === 416) {
-			const headResp = await fetch(serverUrl, { method: "HEAD" });
-			const fileSize = parseInt(headResp.headers.get("Content-Length") || "0", 10);
-			if (fileSize === 0) {
-				throw new Error(`Cannot determine file size for: ${filePath}`);
-			}
+		// Large files: fetch in chunks via Range requests
+		const CHUNK_SIZE = MAX_SIMPLE_SIZE;
+		const chunks: Blob[] = [];
 
-			const CHUNK_SIZE = 50 * 1024 * 1024; // 50MB chunks
-			const chunks: Blob[] = [];
-
-			for (let start = 0; start < fileSize; start += CHUNK_SIZE) {
-				const end = Math.min(start + CHUNK_SIZE - 1, fileSize - 1);
-				const chunkResp = await fetch(serverUrl, {
-					headers: { Range: `bytes=${start}-${end}` },
-				});
-				if (!chunkResp.ok && chunkResp.status !== 206) {
-					throw new Error(`Failed to fetch chunk ${start}-${end} (${chunkResp.status}): ${filePath}`);
-				}
-				chunks.push(await chunkResp.blob());
-			}
-
-			const mimeType = this.mimeFromPath(filePath);
-			const fullBlob = new Blob(chunks, { type: mimeType });
-			return new File([fullBlob], name, {
-				type: mimeType,
-				lastModified: Date.now(),
+		for (let start = 0; start < fileSize; start += CHUNK_SIZE) {
+			const end = Math.min(start + CHUNK_SIZE - 1, fileSize - 1);
+			const chunkResp = await fetch(serverUrl, {
+				headers: { Range: `bytes=${start}-${end}` },
 			});
+			if (!chunkResp.ok && chunkResp.status !== 206) {
+				throw new Error(`Failed to fetch chunk ${start}-${end} (${chunkResp.status}): ${filePath}`);
+			}
+			chunks.push(await chunkResp.blob());
 		}
 
-		throw new Error(`Failed to load file from video server (${response.status}): ${filePath}`);
+		const fullBlob = new Blob(chunks, { type: mimeType });
+		return new File([fullBlob], name, {
+			type: mimeType,
+			lastModified: Date.now(),
+		});
 	}
 
 	private mimeFromPath(filePath: string): string {
@@ -630,18 +634,14 @@ class TauriStorageService {
 			}
 		}
 
-		// For drag-and-drop files without a path, save to app data directory
-		// This is a fallback — in practice, most files will have paths
-		const { appDataDir } = await import("@tauri-apps/api/path");
-		const { writeFile, mkdir } = await import("@tauri-apps/plugin-fs");
-		
-		const mediaDir = `${await appDataDir()}editor-media/${_projectId}`;
-		await mkdir(mediaDir, { recursive: true });
-		
-		const filePath = `${mediaDir}/${mediaAsset.id}_${mediaAsset.name}`;
+		// For uploaded files without a path, save to editor-media via Rust command
+		const { invoke } = await import("@tauri-apps/api/core");
 		const arrayBuffer = await mediaAsset.file.arrayBuffer();
-		await writeFile(filePath, new Uint8Array(arrayBuffer));
-		
+		const filePath = await invoke<string>("save_editor_media_file", {
+			projectId: _projectId,
+			fileName: `${mediaAsset.id}_${mediaAsset.name}`,
+			bytes: Array.from(new Uint8Array(arrayBuffer)),
+		});
 		return filePath;
 	}
 }

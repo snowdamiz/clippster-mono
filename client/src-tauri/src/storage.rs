@@ -649,6 +649,35 @@ pub fn save_temp_file(file_name: String, bytes: Vec<u8>) -> Result<String, Strin
     Ok(temp_path.to_string_lossy().to_string())
 }
 
+/// Save an uploaded media file to the editor-media directory for a given project.
+/// Returns the absolute path where the file was saved.
+#[tauri::command]
+pub fn save_editor_media_file(
+    project_id: String,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    use std::fs;
+
+    let app_dir = get_app_storage_dir()?;
+    let media_dir = app_dir.join("editor-media").join(&project_id);
+
+    fs::create_dir_all(&media_dir)
+        .map_err(|e| format!("Failed to create editor-media directory: {}", e))?;
+
+    let file_path = media_dir.join(&file_name);
+
+    fs::write(&file_path, bytes)
+        .map_err(|e| format!("Failed to write editor media file: {}", e))?;
+
+    println!(
+        "[Storage] Saved editor media file: {}",
+        file_path.display()
+    );
+
+    Ok(file_path.to_string_lossy().to_string())
+}
+
 /// Tauri command to get video duration using FFmpeg
 #[tauri::command]
 pub async fn get_video_duration(app: tauri::AppHandle, video_path: String) -> Result<f64, String> {
