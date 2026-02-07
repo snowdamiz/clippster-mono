@@ -5,19 +5,22 @@
         <Transition name="dialog" appear>
           <div class="org-dialog org-dialog--cyan org-dialog--lg">
             <!-- Accent Bar -->
-            <div class="org-dialog__accent org-dialog__accent--cyan" />
+            <div class="org-dialog__accent" :class="mode === 'intro' ? 'org-dialog__accent--blue' : 'org-dialog__accent--violet'" />
 
             <!-- Header -->
             <div class="org-dialog__header">
               <button class="org-dialog__close" @click="close" title="Close">
                 <X :size="18" />
               </button>
-              <div class="org-dialog__icon org-dialog__icon--cyan">
-                <Video :size="24" />
+              <div class="org-dialog__icon" :class="mode === 'intro' ? 'org-dialog__icon--blue' : 'org-dialog__icon--violet'">
+                <Play v-if="mode === 'intro'" :size="24" />
+                <SkipForward v-else :size="24" />
               </div>
-              <h2 class="org-dialog__title">Configure Intro/Outro per Aspect Ratio</h2>
+              <h2 class="org-dialog__title">
+                {{ mode === 'intro' ? 'Intro' : 'Outro' }} Videos per Aspect Ratio
+              </h2>
               <p class="org-dialog__subtitle">
-                Set different intro and outro videos for each aspect ratio
+                Upload a different {{ mode }} video for each aspect ratio
               </p>
             </div>
 
@@ -35,7 +38,7 @@
                     'aspect-ratio-tab--configured': isRatioConfigured(ratio.id)
                   }"
                 >
-                  <div class="aspect-ratio-tab-preview" :style="{ aspectRatio: ratio.id.replace(':', '/') }"></div>
+                  <div class="aspect-ratio-tab-preview" :style="ratioPreviewStyle(ratio.id)"></div>
                   <span class="aspect-ratio-tab-label">{{ ratio.label }}</span>
                   <div v-if="isRatioConfigured(ratio.id)" class="aspect-ratio-tab-indicator">
                     <Check :size="12" />
@@ -47,105 +50,41 @@
               <div class="ratio-config">
                 <div class="ratio-config-header">
                   <h3 class="ratio-config-title">{{ getRatioLabel(activeRatio) }}</h3>
-                  <div class="ratio-config-toggle">
-                    <label class="toggle-label">
-                      <input
-                        type="checkbox"
-                        v-model="enabledRatios[activeRatio]"
-                        @change="onRatioToggle(activeRatio)"
-                      />
-                      <span class="toggle-slider"></span>
-                      <span class="toggle-text">Enable</span>
-                    </label>
-                  </div>
                 </div>
 
-                <div v-if="enabledRatios[activeRatio]" class="ratio-config-content">
-                  <!-- Intro Selection -->
-                  <div class="asset-selector">
-                    <label class="asset-selector-label">Intro Video</label>
-                    <div class="asset-dropdown-wrapper">
-                      <button
-                        @click="toggleIntroDropdown"
-                        class="asset-dropdown-trigger"
-                      >
-                        <span class="asset-dropdown-text">
-                          {{ getSelectedIntroName() || 'None' }}
-                        </span>
-                        <ChevronDown
-                          class="asset-dropdown-icon"
-                          :class="{ 'asset-dropdown-icon--open': showIntroDropdown }"
-                        />
-                      </button>
-
-                      <div v-if="showIntroDropdown" class="asset-dropdown-menu">
-                        <button
-                          @click="selectIntro(null)"
-                          class="asset-dropdown-item asset-dropdown-item--first"
-                        >
-                          None
-                        </button>
-                        <button
-                          v-for="intro in intros"
-                          :key="intro.id"
-                          @click="selectIntro(intro)"
-                          class="asset-dropdown-item"
-                        >
-                          <div class="asset-dropdown-item-content">
-                            <span class="asset-dropdown-item-name">{{ intro.name }}</span>
-                            <span class="asset-dropdown-item-duration">
-                              {{ formatDuration(intro.duration || 0) }}
-                            </span>
-                          </div>
-                        </button>
-                      </div>
+                <!-- Upload area -->
+                <div class="ratio-config-content">
+                  <!-- Has uploaded file -->
+                  <div v-if="ratioAssets[activeRatio]" class="uploaded-file-card">
+                    <div class="uploaded-file-card__icon" :class="mode === 'intro' ? 'uploaded-file-card__icon--blue' : 'uploaded-file-card__icon--violet'">
+                      <Film :size="18" />
                     </div>
+                    <div class="uploaded-file-card__info">
+                      <p class="uploaded-file-card__name">{{ ratioAssets[activeRatio]!.name }}</p>
+                      <p class="uploaded-file-card__meta">
+                        {{ ratioAssets[activeRatio]!.duration ? formatDuration(ratioAssets[activeRatio]!.duration!) : 'Video file' }}
+                      </p>
+                    </div>
+                    <button @click="removeAsset(activeRatio)" class="uploaded-file-card__remove" title="Remove">
+                      <Trash2 :size="16" />
+                    </button>
                   </div>
 
-                  <!-- Outro Selection -->
-                  <div class="asset-selector">
-                    <label class="asset-selector-label">Outro Video</label>
-                    <div class="asset-dropdown-wrapper">
-                      <button
-                        @click="toggleOutroDropdown"
-                        class="asset-dropdown-trigger"
-                      >
-                        <span class="asset-dropdown-text">
-                          {{ getSelectedOutroName() || 'None' }}
-                        </span>
-                        <ChevronDown
-                          class="asset-dropdown-icon"
-                          :class="{ 'asset-dropdown-icon--open': showOutroDropdown }"
-                        />
-                      </button>
-
-                      <div v-if="showOutroDropdown" class="asset-dropdown-menu">
-                        <button
-                          @click="selectOutro(null)"
-                          class="asset-dropdown-item asset-dropdown-item--first"
-                        >
-                          None
-                        </button>
-                        <button
-                          v-for="outro in outros"
-                          :key="outro.id"
-                          @click="selectOutro(outro)"
-                          class="asset-dropdown-item"
-                        >
-                          <div class="asset-dropdown-item-content">
-                            <span class="asset-dropdown-item-name">{{ outro.name }}</span>
-                            <span class="asset-dropdown-item-duration">
-                              {{ formatDuration(outro.duration || 0) }}
-                            </span>
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-else class="ratio-config-disabled">
-                  <p>Intro and outro videos are disabled for this aspect ratio</p>
+                  <!-- Upload button -->
+                  <button
+                    v-else
+                    @click="uploadForRatio(activeRatio)"
+                    :disabled="uploadingRatio === activeRatio"
+                    class="upload-dropzone"
+                    :class="mode === 'intro' ? 'upload-dropzone--blue' : 'upload-dropzone--violet'"
+                  >
+                    <Loader2 v-if="uploadingRatio === activeRatio" :size="24" class="upload-dropzone__spinner" />
+                    <Upload v-else :size="24" class="upload-dropzone__icon" />
+                    <p class="upload-dropzone__title">
+                      {{ uploadingRatio === activeRatio ? 'Uploading...' : `Upload ${mode} video` }}
+                    </p>
+                    <p class="upload-dropzone__hint">MP4, MOV, AVI, MKV, WEBM</p>
+                  </button>
                 </div>
               </div>
             </div>
@@ -155,7 +94,7 @@
               <button @click="close" class="org-dialog__btn org-dialog__btn--secondary">
                 Cancel
               </button>
-              <button @click="save" class="org-dialog__btn org-dialog__btn--primary">
+              <button @click="save" class="org-dialog__btn org-dialog__btn--primary" :class="mode === 'intro' ? 'org-dialog__btn--primary-blue' : 'org-dialog__btn--primary-violet'">
                 Save Settings
               </button>
             </div>
@@ -167,12 +106,19 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-  import { X, Video, ChevronDown, Check } from 'lucide-vue-next';
-  import type { CreatorIntroOutroSettings, CreatorIntroOutroRatioConfig } from '@/services/database/types';
-  import { getAllIntroOutros, type IntroOutro } from '@/services/database';
+  import { ref, watch } from 'vue';
+  import { X, Play, SkipForward, Check, Upload, Film, Loader2, Trash2 } from 'lucide-vue-next';
+  import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
+  import { createIntroOutro, generateId } from '@/services/database';
+  import { useToast } from '@/composables/useToast';
+  import type { AspectRatioId, RatioAssetMap } from '@/services/database/types';
 
-  export type AspectRatioId = '16:9' | '9:16' | '1:1' | '4:5';
+  interface RatioAssetInfo {
+    assetId: string;
+    name: string;
+    duration?: number;
+  }
 
   interface AspectRatio {
     id: AspectRatioId;
@@ -180,7 +126,6 @@
   }
 
   const aspectRatios: AspectRatio[] = [
-    { id: '16:9', label: '16:9 (Landscape)' },
     { id: '9:16', label: '9:16 (Portrait)' },
     { id: '1:1', label: '1:1 (Square)' },
     { id: '4:5', label: '4:5 (Portrait)' },
@@ -188,96 +133,43 @@
 
   const props = defineProps<{
     show: boolean;
-    initialSettings?: CreatorIntroOutroSettings | null;
+    mode: 'intro' | 'outro';
+    initialSettings?: RatioAssetMap | null;
   }>();
 
   const emit = defineEmits<{
     'update:show': [value: boolean];
-    save: [settings: CreatorIntroOutroSettings];
+    save: [settings: RatioAssetMap];
     close: [];
   }>();
 
-  // State
-  const activeRatio = ref<AspectRatioId>('16:9');
-  const intros = ref<IntroOutro[]>([]);
-  const outros = ref<IntroOutro[]>([]);
-  const enabledRatios = ref<Record<AspectRatioId, boolean>>({
-    '16:9': false,
-    '9:16': false,
-    '1:1': false,
-    '4:5': false,
-  });
-  const ratioIntroIds = ref<Record<AspectRatioId, string | null>>({
-    '16:9': null,
-    '9:16': null,
-    '1:1': null,
-    '4:5': null,
-  });
-  const ratioOutroIds = ref<Record<AspectRatioId, string | null>>({
-    '16:9': null,
-    '9:16': null,
-    '1:1': null,
-    '4:5': null,
-  });
-  const showIntroDropdown = ref(false);
-  const showOutroDropdown = ref(false);
+  const { success, error: showError } = useToast();
 
-  // Computed
+  // State
+  const activeRatio = ref<AspectRatioId>('9:16');
+  const uploadingRatio = ref<AspectRatioId | null>(null);
+  const ratioAssets = ref<Record<AspectRatioId, RatioAssetInfo | null>>({
+    '9:16': null,
+    '1:1': null,
+    '4:5': null,
+  });
+
+  // Fixed pixel dimensions for each ratio preview icon
+  const ratioPreviewStyle = (ratioId: AspectRatioId): Record<string, string> => {
+    switch (ratioId) {
+      case '9:16': return { width: '18px', height: '32px' };
+      case '1:1':  return { width: '28px', height: '28px' };
+      case '4:5':  return { width: '24px', height: '30px' };
+      default:     return { width: '32px', height: '20px' };
+    }
+  };
+
   const isRatioConfigured = (ratio: AspectRatioId): boolean => {
-    return enabledRatios.value[ratio] && 
-           (ratioIntroIds.value[ratio] !== null || ratioOutroIds.value[ratio] !== null);
+    return ratioAssets.value[ratio] !== null;
   };
 
   const getRatioLabel = (ratio: AspectRatioId): string => {
     return aspectRatios.find(r => r.id === ratio)?.label || ratio;
-  };
-
-  const getSelectedIntroName = (): string | null => {
-    const introId = ratioIntroIds.value[activeRatio.value];
-    if (!introId) return null;
-    const intro = intros.value.find(i => i.id === introId);
-    return intro?.name || null;
-  };
-
-  const getSelectedOutroName = (): string | null => {
-    const outroId = ratioOutroIds.value[activeRatio.value];
-    if (!outroId) return null;
-    const outro = outros.value.find(o => o.id === outroId);
-    return outro?.name || null;
-  };
-
-  // Methods
-  const close = () => {
-    emit('close');
-    emit('update:show', false);
-  };
-
-  const onRatioToggle = (ratio: AspectRatioId) => {
-    if (!enabledRatios.value[ratio]) {
-      // Disabling - clear selections
-      ratioIntroIds.value[ratio] = null;
-      ratioOutroIds.value[ratio] = null;
-    }
-  };
-
-  const toggleIntroDropdown = () => {
-    showIntroDropdown.value = !showIntroDropdown.value;
-    showOutroDropdown.value = false;
-  };
-
-  const toggleOutroDropdown = () => {
-    showOutroDropdown.value = !showOutroDropdown.value;
-    showIntroDropdown.value = false;
-  };
-
-  const selectIntro = (intro: IntroOutro | null) => {
-    ratioIntroIds.value[activeRatio.value] = intro?.id || null;
-    showIntroDropdown.value = false;
-  };
-
-  const selectOutro = (outro: IntroOutro | null) => {
-    ratioOutroIds.value[activeRatio.value] = outro?.id || null;
-    showOutroDropdown.value = false;
   };
 
   const formatDuration = (seconds: number): string => {
@@ -286,51 +178,125 @@
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const save = () => {
-    const buildRatioSettings = (ratio: AspectRatioId): CreatorIntroOutroRatioConfig | null => {
-      if (!enabledRatios.value[ratio]) return null;
-      return {
-        introId: ratioIntroIds.value[ratio],
-        outroId: ratioOutroIds.value[ratio],
-      };
-    };
+  const close = () => {
+    emit('close');
+    emit('update:show', false);
+  };
 
-    const settings: CreatorIntroOutroSettings = {
-      '16:9': buildRatioSettings('16:9'),
-      '9:16': buildRatioSettings('9:16'),
-      '1:1': buildRatioSettings('1:1'),
-      '4:5': buildRatioSettings('4:5'),
+  const removeAsset = (ratio: AspectRatioId) => {
+    ratioAssets.value[ratio] = null;
+  };
+
+  const uploadForRatio = async (ratio: AspectRatioId) => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [
+          { name: 'Video Files', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'] },
+        ],
+      });
+
+      if (!selected || typeof selected !== 'string') return;
+
+      const fileName = selected.split(/[\\\/]/).pop() || 'file';
+      uploadingRatio.value = ratio;
+
+      const uploadId = generateId();
+      const uploadMetadata = { type: props.mode, originalFilename: fileName };
+      const encodedMetadata = btoa(JSON.stringify(uploadMetadata));
+      const fullUploadId = `${uploadId}:${encodedMetadata}`;
+
+      // Listen for upload completion
+      const unlisten = await listen('asset-upload-complete', async (event) => {
+        const result = event.payload as {
+          upload_id: string;
+          success: boolean;
+          file_path?: string;
+          thumbnail_path?: string;
+          duration?: number;
+          error?: string;
+        };
+
+        const actualUploadId = result.upload_id.split(':')[0];
+        if (actualUploadId !== uploadId) return;
+
+        unlisten();
+
+        if (result.success && result.file_path) {
+          try {
+            const assetId = await createIntroOutro(
+              props.mode,
+              fileName,
+              result.file_path,
+              result.duration,
+              result.thumbnail_path || null,
+              'completed'
+            );
+
+            ratioAssets.value[ratio] = {
+              assetId,
+              name: fileName,
+              duration: result.duration,
+            };
+
+            const typeLabel = props.mode === 'intro' ? 'Intro' : 'Outro';
+            success(`${typeLabel} uploaded`, `"${fileName}" for ${ratio}`);
+          } catch (dbError) {
+            console.error('Failed to create database record:', dbError);
+            showError('Upload failed', `Failed to save asset: ${dbError}`);
+          }
+        } else {
+          showError('Upload failed', result.error || 'Unknown upload error');
+        }
+
+        uploadingRatio.value = null;
+      });
+
+      // Start async upload
+      await invoke('upload_asset_async', {
+        uploadId: fullUploadId,
+        assetType: props.mode,
+        sourcePath: selected,
+        originalFilename: fileName,
+      });
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      showError('Upload failed', err.message || 'Failed to upload');
+      uploadingRatio.value = null;
+    }
+  };
+
+  const save = () => {
+    const settings: RatioAssetMap = {
+      '9:16': ratioAssets.value['9:16'] ? { assetId: ratioAssets.value['9:16']!.assetId } : null,
+      '1:1': ratioAssets.value['1:1'] ? { assetId: ratioAssets.value['1:1']!.assetId } : null,
+      '4:5': ratioAssets.value['4:5'] ? { assetId: ratioAssets.value['4:5']!.assetId } : null,
     };
 
     emit('save', settings);
     close();
   };
 
-  const loadAssets = async () => {
-    try {
-      intros.value = await getAllIntroOutros('intro');
-      outros.value = await getAllIntroOutros('outro');
-    } catch (error) {
-      console.error('Failed to load intro/outro assets:', error);
-    }
-  };
+  const initializeFromProps = async () => {
+    // Reset all
+    ratioAssets.value = { '9:16': null, '1:1': null, '4:5': null };
 
-  const initializeFromProps = () => {
     if (!props.initialSettings) return;
 
-    const settings = props.initialSettings;
-    
-    // Initialize enabled ratios and selections
+    // Load asset names for any pre-configured ratios
+    const { getAllIntroOutros } = await import('@/services/database');
+    const allAssets = await getAllIntroOutros(props.mode);
+
     for (const ratio of aspectRatios) {
-      const ratioConfig = settings[ratio.id];
-      if (ratioConfig) {
-        enabledRatios.value[ratio.id] = true;
-        ratioIntroIds.value[ratio.id] = ratioConfig.introId;
-        ratioOutroIds.value[ratio.id] = ratioConfig.outroId;
-      } else {
-        enabledRatios.value[ratio.id] = false;
-        ratioIntroIds.value[ratio.id] = null;
-        ratioOutroIds.value[ratio.id] = null;
+      const config = props.initialSettings[ratio.id];
+      if (config && config.assetId) {
+        const asset = allAssets.find(a => a.id === config.assetId);
+        ratioAssets.value[ratio.id] = {
+          assetId: config.assetId,
+          name: asset?.name || 'Unknown',
+          duration: asset?.duration ?? undefined,
+        };
       }
     }
   };
@@ -338,24 +304,10 @@
   // Watch for show prop
   watch(() => props.show, (show) => {
     if (show) {
-      loadAssets();
+      activeRatio.value = '9:16';
+      uploadingRatio.value = null;
       initializeFromProps();
     }
-  });
-
-  // Close dropdowns when clicking outside
-  onMounted(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Element;
-      if (!target.closest('.asset-dropdown-wrapper')) {
-        showIntroDropdown.value = false;
-        showOutroDropdown.value = false;
-      }
-    };
-    document.addEventListener('click', handleClickOutside);
-    onUnmounted(() => {
-      document.removeEventListener('click', handleClickOutside);
-    });
   });
 </script>
 
@@ -394,14 +346,12 @@
   }
 
   .aspect-ratio-tab--configured {
-    border-color: var(--success);
+    border-color: #22c55e;
   }
 
   .aspect-ratio-tab-preview {
-    width: 32px;
-    height: 20px;
     background: var(--sidebar-border);
-    border-radius: 4px;
+    border-radius: 3px;
     transition: all 0.2s ease;
   }
 
@@ -414,7 +364,7 @@
   }
 
   .aspect-ratio-tab--configured .aspect-ratio-tab-preview {
-    background: var(--success);
+    background: #22c55e;
   }
 
   .aspect-ratio-tab-label {
@@ -429,7 +379,7 @@
     right: 0.25rem;
     width: 16px;
     height: 16px;
-    background: var(--success);
+    background: #22c55e;
     color: white;
     border-radius: 50%;
     display: flex;
@@ -449,7 +399,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
   }
 
   .ratio-config-title {
@@ -459,167 +409,139 @@
     margin: 0;
   }
 
-  .ratio-config-toggle {
-    display: flex;
-    align-items: center;
-  }
-
-  .toggle-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-  }
-
-  .toggle-label input[type="checkbox"] {
-    display: none;
-  }
-
-  .toggle-slider {
-    width: 44px;
-    height: 24px;
-    background: var(--sidebar-border);
-    border-radius: 12px;
-    position: relative;
-    transition: background 0.2s ease;
-  }
-
-  .toggle-slider::before {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 20px;
-    height: 20px;
-    background: white;
-    border-radius: 50%;
-    transition: transform 0.2s ease;
-  }
-
-  .toggle-label input[type="checkbox"]:checked + .toggle-slider {
-    background: var(--sidebar-accent);
-  }
-
-  .toggle-label input[type="checkbox"]:checked + .toggle-slider::before {
-    transform: translateX(20px);
-  }
-
-  .toggle-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-foreground);
-    font-weight: 500;
-  }
-
   .ratio-config-content {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
   }
 
-  .ratio-config-disabled {
-    text-align: center;
-    padding: 2rem;
-    color: var(--sidebar-muted);
-  }
-
-  /* ===== Asset Selectors ===== */
-  .asset-selector {
+  /* ===== Upload Dropzone ===== */
+  .upload-dropzone {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .asset-selector-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-foreground);
-  }
-
-  .asset-dropdown-wrapper {
-    position: relative;
-  }
-
-  .asset-dropdown-trigger {
-    width: 100%;
-    display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    background: var(--input-background);
-    border: 1px solid var(--input-border);
-    border-radius: 6px;
-    color: var(--input-foreground);
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 2rem 1.5rem;
+    border: 2px dashed var(--sidebar-border);
+    border-radius: 10px;
+    background: transparent;
     cursor: pointer;
     transition: all 0.2s ease;
-  }
-
-  .asset-dropdown-trigger:hover {
-    border-color: var(--input-border-hover);
-    background: var(--input-background-hover);
-  }
-
-  .asset-dropdown-text {
-    font-size: 0.875rem;
-  }
-
-  .asset-dropdown-icon {
-    transition: transform 0.2s ease;
-  }
-
-  .asset-dropdown-icon--open {
-    transform: rotate(180deg);
-  }
-
-  .asset-dropdown-menu {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    margin-top: 0.5rem;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    max-height: 200px;
-    overflow-y: auto;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
-
-  .asset-dropdown-item {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    background: none;
-    border: none;
     color: var(--sidebar-foreground);
-    cursor: pointer;
-    transition: background 0.2s ease;
   }
 
-  .asset-dropdown-item:hover {
-    background: var(--sidebar-hover);
+  .upload-dropzone:hover:not(:disabled) {
+    border-color: var(--sidebar-accent);
+    background: rgba(6, 182, 212, 0.05);
   }
 
-  .asset-dropdown-item--first {
-    border-bottom: 1px solid var(--sidebar-border);
+  .upload-dropzone--blue:hover:not(:disabled) {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.05);
   }
 
-  .asset-dropdown-item-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
+  .upload-dropzone--violet:hover:not(:disabled) {
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.05);
   }
 
-  .asset-dropdown-item-name {
+  .upload-dropzone:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .upload-dropzone__icon {
+    color: var(--sidebar-text-muted);
+  }
+
+  .upload-dropzone__spinner {
+    color: var(--sidebar-accent);
+    animation: spin 1s linear infinite;
+  }
+
+  .upload-dropzone__title {
     font-size: 0.875rem;
-    text-align: left;
+    font-weight: 500;
+    margin: 0;
   }
 
-  .asset-dropdown-item-duration {
+  .upload-dropzone__hint {
     font-size: 0.75rem;
-    color: var(--sidebar-muted);
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    opacity: 0.7;
+  }
+
+  /* ===== Uploaded File Card ===== */
+  .uploaded-file-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .uploaded-file-card__icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: white;
+  }
+
+  .uploaded-file-card__icon--blue {
+    background: #3b82f6;
+  }
+
+  .uploaded-file-card__icon--violet {
+    background: #a855f7;
+  }
+
+  .uploaded-file-card__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .uploaded-file-card__name {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-foreground);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .uploaded-file-card__meta {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.125rem 0 0;
+  }
+
+  .uploaded-file-card__remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+
+  .uploaded-file-card__remove:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
   }
 
   /* ===== Modal Styles ===== */
@@ -639,7 +561,7 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     width: 100%;
-    max-width: 700px;
+    max-width: 600px;
     margin: 1rem;
     max-height: 90vh;
     display: flex;
@@ -650,8 +572,15 @@
 
   .org-dialog__accent {
     height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
     flex-shrink: 0;
+  }
+
+  .org-dialog__accent--blue {
+    background: linear-gradient(90deg, #3b82f6, rgba(59, 130, 246, 0.5));
+  }
+
+  .org-dialog__accent--violet {
+    background: linear-gradient(90deg, #a855f7, rgba(168, 85, 247, 0.5));
   }
 
   .org-dialog__header {
@@ -690,10 +619,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(6, 182, 212, 0.1);
-    color: var(--sidebar-accent);
     border-radius: 12px;
     margin-bottom: 1rem;
+  }
+
+  .org-dialog__icon--blue {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+  }
+
+  .org-dialog__icon--violet {
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
   }
 
   .org-dialog__title {
@@ -704,7 +641,7 @@
   }
 
   .org-dialog__subtitle {
-    color: var(--sidebar-muted);
+    color: var(--sidebar-text-muted);
     margin: 0;
     font-size: 0.875rem;
   }
@@ -743,12 +680,23 @@
   }
 
   .org-dialog__btn--primary {
-    background: var(--sidebar-accent);
     color: white;
   }
 
-  .org-dialog__btn--primary:hover {
-    background: var(--sidebar-accent-hover);
+  .org-dialog__btn--primary-blue {
+    background: #3b82f6;
+  }
+
+  .org-dialog__btn--primary-blue:hover {
+    background: #2563eb;
+  }
+
+  .org-dialog__btn--primary-violet {
+    background: #a855f7;
+  }
+
+  .org-dialog__btn--primary-violet:hover {
+    background: #9333ea;
   }
 
   /* ===== Transitions ===== */
@@ -769,5 +717,9 @@
   .dialog-enter-from {
     opacity: 0;
     transform: scale(0.9) translateY(-20px);
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>

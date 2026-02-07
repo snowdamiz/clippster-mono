@@ -293,6 +293,16 @@
                           </div>
                         </div>
                       </div>
+                      <!-- Configure intro per aspect ratio -->
+                      <button
+                        type="button"
+                        @click="openRatioPicker('intro')"
+                        class="org-dialog__asset-upload"
+                        :class="{ 'org-dialog__asset-upload--active': hasIntroRatioConfig }"
+                        title="Configure intro per aspect ratio"
+                      >
+                        <Settings2 :size="16" />
+                      </button>
                       <input
                         ref="introFileInput"
                         type="file"
@@ -311,6 +321,11 @@
                         <Upload v-else :size="16" />
                       </button>
                     </div>
+                    <p class="org-dialog__asset-ratio-hint">16:9 aspect ratio</p>
+                    <p v-if="hasIntroRatioConfig" class="org-dialog__asset-hint">
+                      <Settings2 :size="12" />
+                      Per-ratio intros configured
+                    </p>
                   </div>
 
                   <!-- Outro Selection -->
@@ -370,6 +385,16 @@
                           </div>
                         </div>
                       </div>
+                      <!-- Configure outro per aspect ratio -->
+                      <button
+                        type="button"
+                        @click="openRatioPicker('outro')"
+                        class="org-dialog__asset-upload"
+                        :class="{ 'org-dialog__asset-upload--active': hasOutroRatioConfig }"
+                        title="Configure outro per aspect ratio"
+                      >
+                        <Settings2 :size="16" />
+                      </button>
                       <input
                         ref="outroFileInput"
                         type="file"
@@ -388,24 +413,11 @@
                         <Upload v-else :size="16" />
                       </button>
                     </div>
-                  </div>
-
-                  <!-- Per-Ratio Configuration -->
-                  <div class="org-dialog__asset-row org-dialog__asset-row--config">
-                    <div class="org-dialog__asset-controls org-dialog__asset-controls--full">
-                      <button
-                        type="button"
-                        @click="openIntroOutroRatioPicker"
-                        class="org-dialog__asset-upload org-dialog__asset-upload--config"
-                        :class="{ 'org-dialog__asset-upload--active': hasIntroOutroRatioConfig }"
-                        title="Configure intro/outro per aspect ratio"
-                      >
-                        <Settings2 :size="16" />
-                        <span class="org-dialog__asset-upload-text">
-                          {{ hasIntroOutroRatioConfig ? 'Per-Ratio Configured' : 'Configure per Ratio' }}
-                        </span>
-                      </button>
-                    </div>
+                    <p class="org-dialog__asset-ratio-hint">16:9 aspect ratio</p>
+                    <p v-if="hasOutroRatioConfig" class="org-dialog__asset-hint">
+                      <Settings2 :size="12" />
+                      Per-ratio outros configured
+                    </p>
                   </div>
 
                   <!-- Watermark Selection -->
@@ -553,9 +565,10 @@
   <!-- Intro/Outro Ratio Picker -->
   <IntroOutroRatioPicker
     :show="showIntroOutroRatioPicker"
-    :initial-settings="formData.intro_outro_settings ? JSON.parse(formData.intro_outro_settings) : null"
+    :mode="ratioPickerMode"
+    :initial-settings="getInitialRatioSettings(ratioPickerMode)"
     @update:show="showIntroOutroRatioPicker = $event"
-    @save="handleIntroOutroSettingsSave"
+    @save="handleRatioSettingsSave"
     @close="showIntroOutroRatioPicker = false"
   />
 </template>
@@ -611,7 +624,7 @@
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
   import IntroOutroRatioPicker from './IntroOutroRatioPicker.vue';
-  import type { CreatorIntroOutroSettings } from '@/services/database/types';
+  import type { RatioAssetMap } from '@/services/database/types';
 
   type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
 
@@ -696,6 +709,8 @@
     watermark_id: number | string | null;
     watermark_settings: CreatorWatermarkSettings | null;
     intro_outro_settings: string | null;
+    intro_ratio_settings: string | null;
+    outro_ratio_settings: string | null;
     platformLinks: PlatformLinkInput[];
     auto_dvr_enabled: boolean;
   }>({
@@ -706,6 +721,8 @@
     watermark_id: null,
     watermark_settings: null,
     intro_outro_settings: null,
+    intro_ratio_settings: null,
+    outro_ratio_settings: null,
     platformLinks: [],
     auto_dvr_enabled: false,
   });
@@ -715,6 +732,7 @@
 
   // Intro/Outro ratio picker state
   const showIntroOutroRatioPicker = ref(false);
+  const ratioPickerMode = ref<'intro' | 'outro'>('intro');
 
   // Computed assets based on mode
   const introAssets = computed<AssetItem[]>(() => {
@@ -819,6 +837,8 @@
             watermark_id: props.profile.watermark_id,
             watermark_settings: (props.profile.watermark_settings as unknown as CreatorWatermarkSettings) || null,
             intro_outro_settings: (props.profile as any).intro_outro_settings || null,
+            intro_ratio_settings: (props.profile as any).intro_ratio_settings || null,
+            outro_ratio_settings: (props.profile as any).outro_ratio_settings || null,
             auto_dvr_enabled: Boolean((props.profile as any).auto_dvr_enabled),
             platformLinks: props.profile.platform_links.map((link) => ({
               id: link.id,
@@ -840,6 +860,8 @@
             watermark_id: props.creator.watermark_id,
             watermark_settings: props.creator.watermark_settings ? JSON.parse(props.creator.watermark_settings) : null,
             intro_outro_settings: props.creator.intro_outro_settings || null,
+            intro_ratio_settings: props.creator.intro_ratio_settings || null,
+            outro_ratio_settings: props.creator.outro_ratio_settings || null,
             auto_dvr_enabled: Boolean((props.creator as any).auto_dvr_enabled),
             platformLinks: props.creator.platform_links.map((link) => ({
               id: link.id,
@@ -861,6 +883,8 @@
             watermark_id: null,
             watermark_settings: null,
             intro_outro_settings: null,
+            intro_ratio_settings: null,
+            outro_ratio_settings: null,
             platformLinks: [],
             auto_dvr_enabled: false,
           };
@@ -1162,21 +1186,44 @@
     return count;
   }
 
-  // Check if intro/outro ratio settings are configured
-  const hasIntroOutroRatioConfig = computed((): boolean => {
-    if (!formData.value.intro_outro_settings) return false;
-    const settings = JSON.parse(formData.value.intro_outro_settings);
-    return Object.values(settings).some(config => config !== null);
+  // Check if intro ratio settings are configured
+  const hasIntroRatioConfig = computed((): boolean => {
+    if (!formData.value.intro_ratio_settings) return false;
+    try {
+      const settings = JSON.parse(formData.value.intro_ratio_settings);
+      return Object.values(settings).some(config => config !== null);
+    } catch { return false; }
   });
 
-  // Open intro/outro ratio picker
-  function openIntroOutroRatioPicker() {
+  // Check if outro ratio settings are configured
+  const hasOutroRatioConfig = computed((): boolean => {
+    if (!formData.value.outro_ratio_settings) return false;
+    try {
+      const settings = JSON.parse(formData.value.outro_ratio_settings);
+      return Object.values(settings).some(config => config !== null);
+    } catch { return false; }
+  });
+
+  // Open ratio picker for intro or outro
+  function openRatioPicker(mode: 'intro' | 'outro') {
+    ratioPickerMode.value = mode;
     showIntroOutroRatioPicker.value = true;
   }
 
-  // Handle save from intro/outro ratio picker
-  function handleIntroOutroSettingsSave(settings: CreatorIntroOutroSettings) {
-    formData.value.intro_outro_settings = JSON.stringify(settings);
+  // Get initial settings for the ratio picker based on mode
+  function getInitialRatioSettings(mode: 'intro' | 'outro'): RatioAssetMap | null {
+    const raw = mode === 'intro' ? formData.value.intro_ratio_settings : formData.value.outro_ratio_settings;
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  // Handle save from ratio picker
+  function handleRatioSettingsSave(settings: RatioAssetMap) {
+    if (ratioPickerMode.value === 'intro') {
+      formData.value.intro_ratio_settings = JSON.stringify(settings);
+    } else {
+      formData.value.outro_ratio_settings = JSON.stringify(settings);
+    }
     showIntroOutroRatioPicker.value = false;
   }
 
@@ -1633,6 +1680,8 @@
           ? JSON.stringify(formData.value.watermark_settings)
           : null,
         intro_outro_settings: formData.value.intro_outro_settings,
+        intro_ratio_settings: formData.value.intro_ratio_settings,
+        outro_ratio_settings: formData.value.outro_ratio_settings,
         auto_dvr_enabled: formData.value.auto_dvr_enabled ? 1 : 0,
       });
 
@@ -1661,7 +1710,9 @@
         formData.value.watermark_id as string | null,
         formData.value.watermark_settings ? JSON.stringify(formData.value.watermark_settings) : null,
         formData.value.intro_outro_settings,
-        formData.value.auto_dvr_enabled
+        formData.value.auto_dvr_enabled,
+        formData.value.intro_ratio_settings,
+        formData.value.outro_ratio_settings
       );
 
       // Add platform links
@@ -2262,6 +2313,13 @@
     color: #f59e0b;
     opacity: 0.9;
     margin: 0;
+  }
+
+  .org-dialog__asset-ratio-hint {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+    margin: -0.25rem 0 0;
   }
 
   /* ===== Asset Select Button ===== */

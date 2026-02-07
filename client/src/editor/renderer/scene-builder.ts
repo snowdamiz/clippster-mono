@@ -1,4 +1,4 @@
-import type { TimelineTrack, VideoElement, ImageElement, EffectElement } from "../types/timeline";
+import type { TimelineTrack, VideoElement, ImageElement, EffectElement, CaptionElement } from "../types/timeline";
 import type { MediaAsset } from "../types/assets";
 import { RootNode } from "./nodes/root-node";
 import { VideoNode } from "./nodes/video-node";
@@ -7,6 +7,7 @@ import { TextNode } from "./nodes/text-node";
 import { StickerNode } from "./nodes/sticker-node";
 import { ColorNode } from "./nodes/color-node";
 import { EffectNode } from "./nodes/effect-node";
+import { CaptionNode } from "./nodes/caption-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
 import type { TBackground, TCanvasSize } from "../types/project";
 import { DEFAULT_BLUR_INTENSITY } from "../constants/project-constants";
@@ -139,6 +140,16 @@ export function buildScene(params: BuildSceneParams) {
 						timeOffset: effectEl.startTime,
 						trimStart: effectEl.trimStart,
 						trimEnd: effectEl.trimEnd,
+					}),
+				);
+			}
+
+			if (element.type === "caption") {
+				const captionEl = element as CaptionElement;
+				contentNodes.push(
+					new CaptionNode({
+						...captionEl,
+						canvasCenter: { x: canvasSize.width / 2, y: canvasSize.height / 2 },
 					}),
 				);
 			}

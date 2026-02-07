@@ -441,20 +441,20 @@ pub async fn build_clip_internal_simple(
                 if let Some((ratio_intro_path, ratio_intro_duration)) = per_ratio.get(&aspect_ratio_str) {
                     (ratio_intro_path.clone(), *ratio_intro_duration)
                 } else {
-                    (intro_path.map(|s| s.to_string()), intro_duration)
+                    (intro_path.as_ref().map(|s| s.to_string()), intro_duration)
                 }
             } else {
-                (intro_path.map(|s| s.to_string()), intro_duration)
+                (intro_path.as_ref().map(|s| s.to_string()), intro_duration)
             };
             
             let (effective_outro_path, effective_outro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
                 if let Some((ratio_outro_path, ratio_outro_duration)) = per_ratio.get(&aspect_ratio_str) {
                     (ratio_outro_path.clone(), *ratio_outro_duration)
                 } else {
-                    (outro_path.map(|s| s.to_string()), outro_duration)
+                    (outro_path.as_ref().map(|s| s.to_string()), outro_duration)
                 }
             } else {
-                (outro_path.map(|s| s.to_string()), outro_duration)
+                (outro_path.as_ref().map(|s| s.to_string()), outro_duration)
             };
             
             if let Some(ref intro) = effective_intro_path {

@@ -12,7 +12,7 @@ export interface TScene {
 	updatedAt: Date;
 }
 
-export type TrackType = "video" | "text" | "audio" | "sticker" | "effect";
+export type TrackType = "video" | "text" | "audio" | "sticker" | "effect" | "caption";
 
 interface BaseTrack {
 	id: string;
@@ -52,7 +52,13 @@ export interface EffectTrack extends BaseTrack {
 	hidden: boolean;
 }
 
-export type TimelineTrack = VideoTrack | TextTrack | AudioTrack | StickerTrack | EffectTrack;
+export interface CaptionTrack extends BaseTrack {
+	type: "caption";
+	elements: CaptionElement[];
+	hidden: boolean;
+}
+
+export type TimelineTrack = VideoTrack | TextTrack | AudioTrack | StickerTrack | EffectTrack | CaptionTrack;
 
 export interface Transform {
 	scale: number;
@@ -244,13 +250,76 @@ export interface EffectElement extends BaseTimelineElement {
 	params: Record<string, number | string>;
 }
 
+// ---- Caption Types ----
+
+export interface CaptionWord {
+	word: string;
+	start: number; // absolute time in seconds
+	end: number; // absolute time in seconds
+	confidence?: number;
+}
+
+export interface CaptionLine {
+	text: string;
+	words: CaptionWord[];
+	startTime: number;
+	endTime: number;
+}
+
+export type CaptionHighlightStyle =
+	| "none" // no word highlight
+	| "karaoke" // word-by-word color change
+	| "karaoke-scale" // word-by-word color change + scale pop
+	| "underline" // word-by-word underline
+	| "background" // word-by-word background highlight
+	| "glow"; // word-by-word glow pulse
+
+export type CaptionPresetId =
+	| "default"
+	| "karaoke"
+	| "karaoke-pop"
+	| "bold-outline"
+	| "neon-glow"
+	| "boxed"
+	| "typewriter"
+	| "minimal"
+	| "gradient-pop";
+
+export interface CaptionElement extends BaseTimelineElement {
+	type: "caption";
+	lines: CaptionLine[];
+	presetId: CaptionPresetId;
+	highlightStyle: CaptionHighlightStyle;
+	highlightColor: string; // color for the active/highlighted word
+	fontSize: number;
+	fontFamily: string;
+	fontFilePath?: string;
+	color: string; // base text color (inactive words)
+	backgroundColor: string;
+	textAlign: "left" | "center" | "right";
+	fontWeight: "normal" | "bold" | "100" | "200" | "300" | "400" | "500" | "600" | "700" | "800" | "900";
+	fontStyle: "normal" | "italic";
+	letterSpacing: number;
+	lineHeight: number;
+	textCase: TextCase;
+	stroke?: TextStroke;
+	shadow?: TextShadow;
+	glow?: TextGlow;
+	gradient?: TextGradient;
+	hidden?: boolean;
+	transform: Transform;
+	opacity: number;
+	maxWordsPerLine: number; // how many words per visual line
+}
+
 export type TimelineElement =
 	| AudioElement
 	| VideoElement
 	| ImageElement
 	| TextElement
 	| StickerElement
-	| EffectElement;
+	| EffectElement
+	| CaptionElement;
 
 export type ElementType = TimelineElement["type"];
 
@@ -264,13 +333,15 @@ export type CreateImageElement = Omit<ImageElement, "id">;
 export type CreateTextElement = Omit<TextElement, "id">;
 export type CreateStickerElement = Omit<StickerElement, "id">;
 export type CreateEffectElement = Omit<EffectElement, "id">;
+export type CreateCaptionElement = Omit<CaptionElement, "id">;
 export type CreateTimelineElement =
 	| CreateAudioElement
 	| CreateVideoElement
 	| CreateImageElement
 	| CreateTextElement
 	| CreateStickerElement
-	| CreateEffectElement;
+	| CreateEffectElement
+	| CreateCaptionElement;
 
 // ---- Drag State ----
 

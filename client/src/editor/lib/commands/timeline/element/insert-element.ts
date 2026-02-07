@@ -283,7 +283,7 @@ export class InsertElementCommand extends Command {
 		tracks: TimelineTrack[];
 		trackType: TrackType;
 	}): number {
-		if (trackType === "text") {
+		if (trackType === "text" || trackType === "caption") {
 			const firstVideoTrackIndex = tracks.findIndex(
 				(track) => track.type === "video",
 			);

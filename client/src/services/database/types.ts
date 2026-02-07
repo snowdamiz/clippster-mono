@@ -506,6 +506,11 @@ export interface CreatorIntroOutroRatioConfig {
   outroId: string | null;
 }
 
+// Per-ratio asset config: stores the asset ID for a single type (intro or outro)
+export interface CreatorRatioAssetConfig {
+  assetId: string | null;
+}
+
 // Settings can be null to indicate intro/outro are disabled for that ratio
 // Each ratio can have completely different intro and outro videos
 export interface CreatorIntroOutroSettings {
@@ -514,6 +519,10 @@ export interface CreatorIntroOutroSettings {
   '1:1': CreatorIntroOutroRatioConfig | null;
   '4:5': CreatorIntroOutroRatioConfig | null;
 }
+
+// Separate per-ratio settings for intro and outro independently
+export type AspectRatioId = '9:16' | '1:1' | '4:5';
+export type RatioAssetMap = Record<AspectRatioId, CreatorRatioAssetConfig | null>;
 
 export interface CreatorProfile {
   id: string;
@@ -525,6 +534,8 @@ export interface CreatorProfile {
   watermark_id: string | null;
   watermark_settings: string | null; // JSON string of WatermarkSettings
   intro_outro_settings: string | null; // JSON string of IntroOutroSettings
+  intro_ratio_settings: string | null; // JSON string of RatioAssetMap for intros
+  outro_ratio_settings: string | null; // JSON string of RatioAssetMap for outros
   auto_dvr_enabled?: number | boolean; // Auto DVR toggle (default off)
   user_id: string | null;
   created_at: number;

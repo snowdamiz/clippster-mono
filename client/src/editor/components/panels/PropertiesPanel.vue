@@ -2,13 +2,14 @@
 import { computed } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
-import type { TextElement, VideoElement, ImageElement, AudioElement, StickerElement, EffectElement } from "../../types/timeline";
+import type { TextElement, VideoElement, ImageElement, AudioElement, StickerElement, EffectElement, CaptionElement } from "../../types/timeline";
 import TextProperties from "./properties/TextProperties.vue";
 import VideoProperties from "./properties/VideoProperties.vue";
 import AudioProperties from "./properties/AudioProperties.vue";
 import ImageProperties from "./properties/ImageProperties.vue";
 import StickerProperties from "./properties/StickerProperties.vue";
 import EffectProperties from "./properties/EffectProperties.vue";
+import CaptionProperties from "./properties/CaptionProperties.vue";
 import KeyframeEditorPanel from "./KeyframeEditorPanel.vue";
 import { Settings } from "lucide-vue-next";
 
@@ -61,6 +62,12 @@ const elementsWithTracks = computed(() => {
 				<EffectProperties
 					v-else-if="element.type === 'effect'"
 					:element="(element as EffectElement)"
+					:track-id="track.id"
+				/>
+
+				<CaptionProperties
+					v-else-if="element.type === 'caption'"
+					:element="(element as CaptionElement)"
 					:track-id="track.id"
 				/>
 			</div>

@@ -3,13 +3,15 @@ import { save } from "@tauri-apps/plugin-dialog";
 import type { EditorCore } from "../../core";
 import type { RootNode } from "../../renderer/nodes/root-node";
 import type { ExportOptions, ExportResult } from "../../types/export";
-import type { TimelineTrack, VideoElement, ImageElement, TextElement, AudioElement, StickerElement, EffectElement } from "../../types/timeline";
+import type { TimelineTrack, VideoElement, ImageElement, TextElement, AudioElement, StickerElement, EffectElement, CaptionElement } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
 import type { VideoEffect } from "../../types/effects";
 import { TextNode } from "../../renderer/nodes/text-node";
 import type { TextNodeParams } from "../../renderer/nodes/text-node";
 import { StickerNode } from "../../renderer/nodes/sticker-node";
 import type { StickerNodeParams } from "../../renderer/nodes/sticker-node";
+import { CaptionNode } from "../../renderer/nodes/caption-node";
+import type { CaptionNodeParams } from "../../renderer/nodes/caption-node";
 
 interface TauriVideoSource {
 	source_path: string;
@@ -154,6 +156,11 @@ export class RendererManager {
 			// Pre-render sticker elements to transparent PNGs for pixel-perfect export
 			const stickerOverlays = await this.preRenderStickerOverlays({ tracks, canvasSize });
 
+			onProgress?.({ progress: 0.12 });
+
+			// Pre-render caption elements to transparent PNGs for pixel-perfect export
+			const captionOverlays = await this.preRenderCaptionOverlays({ tracks, canvasSize, duration });
+
 			onProgress?.({ progress: 0.15 });
 
 			// Build export config from timeline data
@@ -165,6 +172,7 @@ export class RendererManager {
 				canvasSize,
 				textOverlays,
 				stickerOverlays,
+				captionOverlays,
 			});
 
 			onProgress?.({ progress: 0.2 });
@@ -195,6 +203,7 @@ export class RendererManager {
 		canvasSize,
 		textOverlays,
 		stickerOverlays,
+		captionOverlays,
 	}: {
 		tracks: TimelineTrack[];
 		mediaAssets: MediaAsset[];
@@ -203,6 +212,7 @@ export class RendererManager {
 		canvasSize: { width: number; height: number };
 		textOverlays: TauriTextOverlay[];
 		stickerOverlays: TauriStickerOverlay[];
+		captionOverlays: TauriTextOverlay[];
 	}): TauriExportConfig {
 		const videoSources: TauriVideoSource[] = [];
 		const audioTracks: TauriAudioTrack[] = [];
@@ -298,7 +308,7 @@ export class RendererManager {
 		return {
 			video_sources: videoSources,
 			audio_tracks: audioTracks,
-			text_overlays: textOverlays,
+			text_overlays: [...textOverlays, ...captionOverlays],
 			sticker_overlays: stickerOverlays,
 			effect_overlays: effectOverlays,
 			output_path: outputPath,
@@ -453,6 +463,77 @@ export class RendererManager {
 		}
 
 		console.log(`[Export] Pre-rendered ${overlays.length}/${stickerCount} sticker overlays`);
+		return overlays;
+	}
+
+	/**
+	 * Pre-render caption elements to transparent PNGs for export.
+	 * Because captions have time-dependent word highlighting (karaoke),
+	 * we render one PNG per caption line at the midpoint of that line's
+	 * time range so the active word is highlighted correctly.
+	 */
+	private async preRenderCaptionOverlays({
+		tracks,
+		canvasSize,
+		duration,
+	}: {
+		tracks: TimelineTrack[];
+		canvasSize: { width: number; height: number };
+		duration: number;
+	}): Promise<TauriTextOverlay[]> {
+		const overlays: TauriTextOverlay[] = [];
+		const center = { x: canvasSize.width / 2, y: canvasSize.height / 2 };
+		let captionCount = 0;
+
+		for (const track of tracks) {
+			if (track.type !== "caption") continue;
+
+			for (const el of track.elements) {
+				const captionEl = el as CaptionElement;
+				if (!captionEl.lines || captionEl.lines.length === 0) continue;
+				captionCount++;
+
+				// For each line in the caption element, render a separate PNG
+				// at the midpoint of that line's time range
+				for (let lineIdx = 0; lineIdx < captionEl.lines.length; lineIdx++) {
+					const line = captionEl.lines[lineIdx];
+					const lineMidTime = (line.startTime + line.endTime) / 2;
+
+					try {
+						const nodeParams: CaptionNodeParams = {
+							...captionEl,
+							canvasCenter: center,
+						};
+						const node = new CaptionNode(nodeParams);
+
+						const result = await node.renderToImage({
+							canvasWidth: canvasSize.width,
+							canvasHeight: canvasSize.height,
+							time: lineMidTime,
+						});
+						if (!result) continue;
+
+						const arrayBuffer = await result.blob.arrayBuffer();
+						const bytes = Array.from(new Uint8Array(arrayBuffer));
+
+						const imagePath = await invoke<string>("save_text_overlay_png", {
+							pngBytes: bytes,
+							elementId: `caption_${captionEl.id}_line${lineIdx}`,
+						});
+
+						overlays.push({
+							image_path: imagePath,
+							start_time: line.startTime,
+							end_time: line.endTime,
+						});
+					} catch (err) {
+						console.error(`[Export] Failed to pre-render caption element ${captionEl.id} line ${lineIdx}:`, err);
+					}
+				}
+			}
+		}
+
+		console.log(`[Export] Pre-rendered ${overlays.length} caption line overlays from ${captionCount} caption elements`);
 		return overlays;
 	}
 
